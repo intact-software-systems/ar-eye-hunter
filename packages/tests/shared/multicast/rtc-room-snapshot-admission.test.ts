@@ -457,6 +457,41 @@ describe('a granted publication\'s admission on its room plan', () => {
             });
         });
 
+        it('answers a copy an ordering gap held back not-subscribed instead of asking for the gap, and keeps its ACK', () => {
+            const ordered = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'gapped' }, roomRef, 'chat.v1', {}, {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                ttlMs: 30_000,
+                orderingKey: 'room-track',
+                seq: 2
+            });
+            const gapped = planALMessageHandling(ordered, {
+                nowMs,
+                selfPeerId: 'leaf',
+                fromPeerId: 'origin',
+                connectedPeerIds: ['origin'],
+                groupMemberPeerIds: ['origin', 'leaf'],
+                orderingObservation: {
+                    status: 'gap',
+                    trackKey: 'room-track',
+                    seq: 2,
+                    expectedSeq: 1,
+                    lastContiguousSeq: 0,
+                    missingRanges: [{ from: 1, to: 1 }],
+                    releasableSeqs: []
+                }
+            });
+
+            const answered = toRtcPublicationHandlingPlan(gapped, notSubscribed, 'origin');
+
+            expect([gapped.localDelivery.deferred, gapped.ack.enabled, gapped.nack.reason]).toEqual([true, false, 'gap']);
+            expect(answered).toMatchObject({
+                localDelivery: { enabled: false, deferred: false },
+                ack: { enabled: true, algo: 'receiver', toPeerId: 'origin' },
+                nack: { enabled: true, toPeerId: 'origin', reason: 'not-subscribed', missingRanges: [] }
+            });
+        });
+
         it('only forwards a frame no receipt counts recipients of, answering nothing', () => {
             const answered = toRtcPublicationHandlingPlan(plan, notSubscribed, 'origin');
 

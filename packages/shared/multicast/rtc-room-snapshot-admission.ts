@@ -144,8 +144,9 @@ function toRtcPublicationDeliveryPlan(
 
 /**
  * A frozen recipient that delivers nothing tells its hop so, toward the origin that counts it; its hop still ends
- * with an ACK, one that confirms no recipient. Only a receipt that counts recipients asks; a plan that drops with a
- * NACK of its own keeps that NACK.
+ * with an ACK, one that confirms no recipient, even when an ordering gap held back the ACK of a copy it would have
+ * delivered. Only a receipt that counts recipients asks; a plan that drops with a NACK of its own keeps that NACK,
+ * while a gap's NACK, which asks for history this session is not entitled to, gives way to `not-subscribed`.
  */
 function toNotSubscribedHandlingPlan(
     plan: ALMessageHandlingPlan,
@@ -155,12 +156,16 @@ function toNotSubscribedHandlingPlan(
     if (!isALLogicalReceiptMode(plan.ack.algo) || fromPeerId === undefined) {
         return forwardOnly;
     }
-    return {
-        ...forwardOnly,
-        nack: plan.nack.enabled
-            ? plan.nack
-            : { enabled: true, toPeerId: fromPeerId, reason: 'not-subscribed', missingRanges: [] }
+    const notSubscribed: ALMessageHandlingPlan['nack'] = {
+        enabled: true,
+        toPeerId: fromPeerId,
+        reason: 'not-subscribed',
+        missingRanges: []
     };
+    if (plan.dropReason !== undefined) {
+        return plan.nack.enabled ? forwardOnly : { ...forwardOnly, nack: notSubscribed };
+    }
+    return { ...forwardOnly, ack: { ...plan.ack, enabled: true }, nack: notSubscribed };
 }
 
 function toRtcRefusedHandlingPlan(

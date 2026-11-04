@@ -49,6 +49,10 @@ interface ReceiptedPublicationInput {
     readonly nextHopPeerId: string;
 }
 
+interface OrderedReceiptedPublicationInput extends ReceiptedPublicationInput {
+    readonly seq: number;
+}
+
 /** The origin's receipt for a frame, fed the controls its next hop sent it. */
 interface OriginReceipt {
     accept(controls: readonly ALMessage[]): Promise<void>;
@@ -193,6 +197,65 @@ describe('a receipted granted publication at a frozen recipient that is not subs
             ['nack', 'q', 'not-subscribed']
         ]);
         expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: ['p', 'l'], outside: ['q'], complete: true });
+    });
+
+    it.each<[string, readonly number[]]>([
+        ['its first copy arriving past a gap', [2]],
+        ['a later copy arriving past a gap', [1, 3]]
+    ])('answers not-subscribed and confirms nobody on an ordered track, with %s', async (_shape, seqs) => {
+        const chain = await createRelayChain(['a', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'] });
+        const frames: ALMessage[] = [];
+        for (const seq of seqs) {
+            frames.push(await signOrderedReceiptedPublication(chain, { resourceId: 'feed-1', recipientPeerIds: ['c'], nextHopPeerId: 'c', seq }));
+        }
+        const gapped = frames.at(-1)!;
+        const origin = await createOriginReceipt(gapped, { expectedPeerIds: ['c'], nextHopPeerIds: ['c'] });
+
+        for (const frame of frames) {
+            await leaf.receive(frame, 'a');
+        }
+        const gappedControls = (await leaf.readSentControls('a')).filter((control) => toControlledMsgId(control) === gapped.id.msgId);
+        await origin.accept((await leaf.readSent('a')).filter((sent) => {
+            const control = decodeALControlMessage(sent).right;
+            return control !== undefined && control.type !== 'receipt' && toControlledMsgId(control) === gapped.id.msgId;
+        }));
+
+        expect(leaf.delivered).toEqual([]);
+        // A session not entitled to the track never asks for its history.
+        expect(toControlTuples(gappedControls).toSorted()).toEqual([
+            ['ack', 'c', 'subtree-complete-not-subscribed'],
+            ['nack', 'c', 'not-subscribed']
+        ]);
+        // A receipt whose every recipient is outside confirmed nothing, so it stays open until its deadline.
+        expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: [], outside: ['c'], complete: false });
+    });
+
+    it('ends a not-subscribed relay\'s hop past a gap with a completion that confirms nobody, its leaf answering likewise', async () => {
+        const chain = await createRelayChain(['a', 'q', 'l'], { a: PUBLISH_AND_SUBSCRIBE, q: SUBSCRIBE_ONLY, l: SUBSCRIBE_ONLY });
+        const q = createChainHop(chain, { selfPeerId: 'q', neighbourPeerIds: ['a', 'l'] });
+        const l = createChainHop(chain, { selfPeerId: 'l', neighbourPeerIds: ['q'] });
+        const gapped = await signOrderedReceiptedPublication(chain, {
+            resourceId: 'feed-1',
+            recipientPeerIds: ['q', 'l'],
+            nextHopPeerId: 'q',
+            seq: 2
+        });
+        const origin = await createOriginReceipt(gapped, { expectedPeerIds: ['q', 'l'], nextHopPeerIds: ['q'] });
+
+        await q.receive(gapped, 'a');
+        await l.receive((await q.readSent('l'))[0]!, 'q');
+        await deliverEach(await l.readSent('q'), q, 'l');
+        await origin.accept(await q.readSent('a'));
+
+        expect([q.delivered, l.delivered]).toEqual([[], []]);
+        expect(toControlTuples(await q.readSentControls('a')).toSorted()).toEqual([
+            ['ack', 'q', 'subtree-complete-not-subscribed'],
+            ['nack', 'l', 'not-subscribed'],
+            ['nack', 'q', 'not-subscribed']
+        ]);
+        // A receipt whose every recipient is outside confirmed nothing, so it stays open until its deadline.
+        expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: [], outside: ['q', 'l'], complete: false });
     });
 
     it('answers not-subscribed for a subscribe holder whose own token is still pending, delivering nothing (PL12)', async () => {
@@ -359,6 +422,23 @@ async function signReceiptedPublication(chain: RelayChain, input: ReceiptedPubli
     });
 }
 
+/** A receipted granted frame on the origin's ordered at-least-once track, at `seq`. */
+async function signOrderedReceiptedPublication(chain: RelayChain, input: OrderedReceiptedPublicationInput): Promise<ALMessage> {
+    const frozen = createFrozenGrantedMulticast({
+        senderId: 'a',
+        resourceId: input.resourceId,
+        recipientPeerIds: input.recipientPeerIds,
+        snapshotVersion: 3,
+        ack: 'receiver'
+    });
+    return await signPublication(chain.keys.a!, {
+        ...frozen,
+        delivery: { ...frozen.delivery, reliability: 'at-least-once' },
+        ordering: { orderingKey: 'feed-track', seq: input.seq },
+        forwarding: { ...frozen.forwarding, nextHopPeerIds: [input.nextHopPeerId] }
+    });
+}
+
 /** The origin's own `receiver` receipt for the frame, as its RTC dispatch tracks it. */
 async function createOriginReceipt(
     signed: ALMessage,
@@ -418,6 +498,11 @@ function toReceiptStatement(facts: readonly ALOutboundSettlementFact[]) {
     return last?.kind === 'acknowledgement'
         ? { confirmed: last.confirmedRecipientPeerIds, outside: last.outsideAudienceRecipientPeerIds, complete: last.complete }
         : undefined;
+}
+
+/** The message a control answers. */
+function toControlledMsgId(control: ALPeerControlMessage): string {
+    return control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
 }
 
 /** Each control as its type, the recipient it speaks for, and its status or reason. */
