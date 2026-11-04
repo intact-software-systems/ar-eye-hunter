@@ -6,8 +6,22 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import type { RefObject } from 'react';
 
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
+import { CappedFrameLoop } from '@shared/resilience/timing/capped-frame-loop.ts';
 
+import type { ArenaSimulationState } from '@ar-eye-hunter/arena-contracts.ts';
+import {
+    createInitialPlayerState,
+    EMPTY_INPUT,
+    type LocalPlayerState
+} from '@ar-eye-hunter/arena-player-state.ts';
+import type { ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
+import {
+    createInitialArenaState,
+    hydrateArenaSnapshot,
+    toArenaSnapshot
+} from '@ar-eye-hunter/simulation.ts';
 import {
     calculateArenaMusicLayerState,
     ProceduralArenaAudio,
@@ -15,19 +29,12 @@ import {
     type ArenaMusicLayerState
 } from '../arena-audio.ts';
 import type { PlayerPose } from '../arena-contracts.ts';
-import { type ArenaSimulationState } from '../arena-contracts.ts';
-import { createInitialPlayerState, EMPTY_INPUT, type LocalPlayerState } from '../arena-player-state.ts';
 import {
     calculateVirtualStick,
     createInitialTouchControlState,
     type InputDeviceKind,
     type MobileControlSettings
 } from '../mobile-input.ts';
-import {
-    createInitialArenaState,
-    hydrateArenaSnapshot,
-    toArenaSnapshot
-} from '../simulation.ts';
 import type {
     ArenaSceneClock,
     BabylonArenaProps,
@@ -52,6 +59,11 @@ import { resolveTouchShotDirection } from './arena-shot-aim.ts';
 import { syncTargetAvatars } from './arena-target-view.ts';
 import { setInputKey } from './arena-touch-input.ts';
 import { buildArena, buildLayoutProps } from './arena-world-view.ts';
+
+interface ArenaGraphics {
+    readonly scene: Scene;
+    readonly camera: FreeCamera;
+}
 
 export namespace ArenaSceneRuntime {
     export interface Input {
@@ -91,6 +103,11 @@ export class ArenaSceneRuntime {
     readonly pickupSeqRef = { current: 0 };
     readonly localPoseRef: { current: LocalPoseHistory | undefined; } = { current: undefined };
     private readonly pulseTimers = new Set<ReturnType<typeof setTimeout>>();
+    private started = false;
+    private readonly frameLoop: CappedFrameLoop;
+    private previewInteracted = false;
+    private presentedTerminal: ArenaTournamentSnapshot | undefined;
+    private idlePlayer: LocalPlayerState | undefined;
     localPlayer: LocalPlayerState;
     lastFrameEpochMs: number;
     lastSnapshotRevision = -1;
@@ -144,6 +161,17 @@ export class ArenaSceneRuntime {
             toArenaSnapshot(initial, input.props.current.roomId, this.lastFrameEpochMs)
         );
         syncTargetAvatars(this, this.lastFrameEpochMs);
+        this.frameLoop = new CappedFrameLoop({
+            driver: {
+                start: (frame) => this.engine.runRenderLoop(frame),
+                stop: (frame) => this.engine.stopRenderLoop(frame),
+                resetTiming: () => {
+                    this.lastFrameEpochMs = this.clock.nowEpochMs();
+                }
+            },
+            nowMs: this.clock.nowMonotonicMs,
+            renderFrame: () => this.render()
+        }, { frameIntervalMs: 0 });
     }
 
     get arenaState(): ArenaSimulationState {
@@ -154,6 +182,10 @@ export class ArenaSceneRuntime {
     }
 
     start(): void {
+        if (this.started || this.scene.isDisposed) {
+            return;
+        }
+        this.started = true;
         window.addEventListener('resize', this.resize);
         window.addEventListener('keydown', this.onKeyDown);
         window.addEventListener('keyup', this.onKeyUp);
@@ -162,10 +194,54 @@ export class ArenaSceneRuntime {
         this.canvas.addEventListener('pointerup', this.onPointerUp, true);
         this.canvas.addEventListener('contextmenu', this.onContextMenu, true);
         this.scene.onBeforeRenderObservable.add(this.advanceFrame);
-        this.engine.runRenderLoop(this.render);
+        this.refreshPresentation();
+    }
+
+    /** Reconcile native presentation after React has installed the current room scene and props. */
+    refreshPresentation(): void {
+        if (!this.started) {
+            return;
+        }
+        const snapshot = this.props.current.tournament?.snapshot;
+        if (isTerminalTournament(snapshot)) {
+            if (isSameTerminalPresentation(this.presentedTerminal, snapshot)) {
+                return;
+            }
+            this.frameLoop.pauseWhenReady();
+            this.frameLoop.invalidate();
+            return;
+        }
+        if (this.idlePlayer) {
+            this.resetIdleInput();
+            this.idlePlayer = undefined;
+        }
+        this.presentedTerminal = undefined;
+        if (this.isUntouchedPreview()) {
+            this.frameLoop.pauseWhenReady();
+        }
+        else {
+            this.frameLoop.resume();
+            this.frameLoop.start();
+        }
+    }
+
+    beginInteraction(): boolean {
+        if (!this.acceptsInput()) {
+            return false;
+        }
+        this.previewInteracted = true;
+        this.frameLoop.resume();
+        return true;
+    }
+
+    private isUntouchedPreview(): boolean {
+        const props = this.props.current;
+        return !this.previewInteracted && props.roomId === undefined && !props.tournament && !props.spectating;
     }
 
     stop(): void {
+        this.started = false;
+        this.frameLoop.dispose();
         window.removeEventListener('resize', this.resize);
         window.removeEventListener('keydown', this.onKeyDown);
         window.removeEventListener('keyup', this.onKeyUp);
@@ -177,13 +253,16 @@ export class ArenaSceneRuntime {
             clearTimeout(timer);
         }
         this.pulseTimers.clear();
-        this.engine.stopRenderLoop(this.render);
         this.audio.dispose();
         this.scene.dispose();
         this.canvas.dataset.arenaRuntimeReady = 'false';
     }
 
     pulse(action: MutableButtonAction, durationMs: number): void {
+        if (!this.acceptsInput()) {
+            return;
+        }
+        this.beginInteraction();
         this.input[action] = true;
         const timer = setTimeout(() => {
             this.pulseTimers.delete(timer);
@@ -193,34 +272,96 @@ export class ArenaSceneRuntime {
     }
 
     private readonly advanceFrame = (): void => {
+        if (this.idlePlayer) {
+            this.resetIdleInput();
+        }
         runFrame({
             ...this.props.current,
             runtime: this
         });
     };
-    private readonly render = (): void => {
+    private readonly render = (): 'ready' | 'pending' => {
+        if (!this.started) {
+            return 'ready';
+        }
+        const snapshot = this.props.current.tournament?.snapshot;
+        const terminal = isTerminalTournament(snapshot);
+        // A terminal frame is complete only after its materials were ready before drawing and remain
+        // ready afterwards: applying the native snapshot can introduce meshes during onBeforeRender.
+        const settling = terminal || this.isUntouchedPreview();
+        const readyBeforeRender = !settling || this.scene.isReady();
         this.scene.render();
         writeArenaDiagnostics(this.canvas, this);
+        if (settling && (!readyBeforeRender || !this.scene.isReady())) {
+            return 'pending';
+        }
+        if (terminal) {
+            this.idlePlayer = this.localPlayer;
+            this.resetIdleInput();
+            this.presentedTerminal = snapshot;
+        }
+        return 'ready';
     };
-    private readonly resize = (): void => this.engine.resize();
+    private readonly resize = (): void => {
+        if (!this.started) {
+            return;
+        }
+        this.engine.resize();
+        this.frameLoop.invalidate();
+    };
+    private acceptsInput(): boolean {
+        return this.started && !isTerminalTournament(this.props.current.tournament?.snapshot);
+    }
+    private resetIdleInput(): void {
+        Object.assign(this.input, EMPTY_INPUT);
+        for (const timer of this.pulseTimers) {
+            clearTimeout(timer);
+        }
+        this.pulseTimers.clear();
+        this.touchState = createInitialTouchControlState();
+        this.touchStick = calculateVirtualStick({ x: 0, y: 0 }, { x: 0, y: 0 }, 72);
+        this.localPoseRef.current = undefined;
+        this.lastFrameEpochMs = this.clock.nowEpochMs();
+        if (this.idlePlayer) {
+            this.localPlayer = { ...this.localPlayer, yaw: this.idlePlayer.yaw, pitch: this.idlePlayer.pitch };
+        }
+    }
     private readonly onKeyDown = (event: KeyboardEvent): void => {
+        if (
+            !this.acceptsInput() ||
+            event.target instanceof Element &&
+                event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+        ) {
+            return;
+        }
+        if (!setInputKey(this.input, event.code, true)) {
+            return;
+        }
+        if (event.code !== 'Escape') {
+            this.beginInteraction();
+        }
         this.inputDevice = 'keyboard-mouse';
-        setInputKey(this.input, event.code, true);
     };
-    private readonly onKeyUp = (event: KeyboardEvent): void => setInputKey(this.input, event.code, false);
+    private readonly onKeyUp = (event: KeyboardEvent): void => {
+        setInputKey(this.input, event.code, false);
+    };
     private readonly onPointerMove = (event: PointerEvent): void => {
-        if (document.pointerLockElement === this.canvas) {
+        if (this.acceptsInput() && document.pointerLockElement === this.canvas) {
             this.inputDevice = 'keyboard-mouse';
             applyLook(this, event.movementX * 0.0024, event.movementY * 0.002);
         }
     };
     private readonly onPointerDown = (event: PointerEvent): void => {
+        if (!this.acceptsInput()) {
+            return;
+        }
         this.pointerDownCount += 1;
         unlockArenaAudio(this);
         const props = this.props.current;
         if (props.spectating) {
             return;
         }
+        this.beginInteraction();
         if (event.button === 0) {
             const touch = event.pointerType === 'touch';
             const aim = touch
@@ -258,9 +399,19 @@ export class ArenaSceneRuntime {
     private readonly onContextMenu = (event: MouseEvent): void => event.preventDefault();
 }
 
-interface ArenaGraphics {
-    readonly scene: Scene;
-    readonly camera: FreeCamera;
+function isTerminalTournament(snapshot: ArenaTournamentSnapshot | undefined): snapshot is ArenaTournamentSnapshot {
+    return snapshot?.status === 'finished' || snapshot?.status === 'cancelled';
+}
+
+function isSameTerminalPresentation(
+    previous: ArenaTournamentSnapshot | undefined,
+    current: ArenaTournamentSnapshot
+): boolean {
+    return previous !== undefined && previous.status === current.status &&
+        previous.binding.gameId === current.binding.gameId &&
+        isSameGroupRef(previous.binding.roomRef, current.binding.roomRef) &&
+        previous.state?.arena.revision === current.state?.arena.revision &&
+        previous.state?.simulatedAtEpochMs === current.state?.simulatedAtEpochMs;
 }
 
 function createArenaGraphics(engine: Engine): ArenaGraphics {

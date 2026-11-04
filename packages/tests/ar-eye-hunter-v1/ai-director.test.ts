@@ -1,15 +1,13 @@
 import { createRallarAiAcceptedResultTracker, validateRallarAiJsonValue, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it } from 'vitest';
 
+import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import {
-    createAiArenaLayoutRequest,
     createAiDirectorRequest,
     materializeAiArenaEvent,
-    validateAiArenaLayoutProposal,
     validateAiDirectorProposalValue
 } from '../../../apps/ar-eye-hunter-v1/src/game/ai-director.ts';
 import type { AiDirectorProposalValue } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
-import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
 describe('AR Eye Hunter AI director', () => {
     it('validates and clamps live chaos proposals', () => {
@@ -99,68 +97,13 @@ describe('AR Eye Hunter AI director', () => {
         expect(applyCount).toBe(1);
     });
 
-    it('validates bounded AI layout proposals before Babylon can render them', () => {
-        const validation = validateAiArenaLayoutProposal({
-            schema: 'ar-eye-hunter.arena-layout',
-            version: '1',
-            id: 'ai-layout-1',
-            revision: 2,
-            name: 'Exit Through Gift Shop Protocol',
-            halfSize: 60,
-            theme: {
-                base: '#020805',
-                grid: '#49ff86',
-                accent: '#00e5ff',
-                warning: '#ff3df2',
-                reward: '#ffe66d'
-            },
-            spawnPoints: [
-                [-45, 1.72, -45],
-                [45, 1.72, 45]
-            ],
-            pickupAnchors: [
-                { id: 'pickup-a', position: [0, 1, 0] },
-                { id: 'pickup-b', position: [14, 1, 0] },
-                { id: 'pickup-c', position: [-14, 1, 0] }
-            ],
-            props: [{
-                id: 'cover-a',
-                kind: 'cover',
-                position: [0, 1, 8],
-                size: [4, 2, 2],
-                blocksShots: true
-            }],
-            signs: [{
-                id: 'sign-a',
-                title: 'MORALE PATCH',
-                detail: 'fun is mandatory and logged',
-                position: [0, 3, 57],
-                rotationY: Math.PI
-            }]
-        });
-
-        expect(validation.ok).toBe(true);
-        expect(validation.layout.id).toBe('ai-layout-1');
-        expect(validation.layout.halfSize).toBe(60);
-        expect(validation.layout.pickupAnchors.length).toBe(3);
-    });
-
-    it('requests AI layouts and chaos with the 120m wave-aware FPS context', () => {
-        const now = 15_000;
-        const state = createInitialArenaState(987, now);
-        const layoutRequest = createAiArenaLayoutRequest(state, 'room-1');
-        const chaosRequest = createAiDirectorRequest(state, 'room-1');
-        const layoutSchema = layoutRequest.schema as {
-            properties: { halfSize: { minimum: number; maximum: number; }; };
-        };
-
-        expect(layoutSchema.properties.halfSize.minimum).toBe(32);
-        expect(layoutSchema.properties.halfSize.maximum).toBe(72);
-        expect(layoutRequest.prompt).toContain('120m x 120m arena');
-        expect(layoutRequest.context?.waveNumber).toBe(1);
-        expect(layoutRequest.context?.wavePhase).toBe('warmup');
-        expect(layoutRequest.context?.hostileCount).toBeGreaterThan(0);
-        expect(chaosRequest.prompt).toContain('wave context');
+    it('requests chaos with the current wave context', () => {
+        const state = createInitialArenaState(987, 15000);
+        const request = createAiDirectorRequest(state, 'room-1');
+        expect(request.context?.waveNumber).toBe(1);
+        expect(request.context?.wavePhase).toBe('warmup');
+        expect(request.context?.hostileCount).toBeGreaterThan(0);
+        expect(request.prompt).toContain('wave context');
     });
 
     it('omits undefined optional fields from AI request context', () => {

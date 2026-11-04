@@ -8,8 +8,11 @@ import {
     type ReadApiV1ConfigurationInput
 } from '@api-v1/src/configuration/read-api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '@api-v1/src/configuration/to-api-v1-public-configuration.ts';
+import { RELIC_ROOM_DATA_BINDING } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import { RELIC_TOURNAMENT_GAME_PROFILE } from '@relic-hunters/server/relic-tournament.ts';
+import { requireRoomOwnedAppDataBinding } from '@shared-server/app-data/room-owned-app-data.ts';
+import { bindTournamentGameProfile } from '@shared-server/rallar-system/tournaments/tournament-game-profile.ts';
 import type { ApiConfig } from '@shared/api/api-config.ts';
-import { requireRelicRoomOwnedAppDataBindings } from './create-relic-game-services.ts';
 
 export type RelicRestAuthorizationMode = 'authenticated' | 'group-policy';
 
@@ -65,8 +68,15 @@ export const RELIC_AI_EXPEDITION_DEFAULT_CONFIGURATION: RelicAiExpeditionConfigu
 export async function readRelicHunterServerConfiguration(
     input: ReadRelicHunterServerConfigurationInput
 ): Promise<RelicHunterServerConfiguration> {
-    const apiV1 = await readApiV1Configuration(input);
-    requireRelicRoomOwnedAppDataBindings(apiV1.group.roomOwnedAppDataBindings);
+    const configured = await readApiV1Configuration(input);
+    const apiV1 = {
+        ...configured,
+        tournaments: {
+            ...configured.tournaments,
+            profiles: bindTournamentGameProfile(configured.tournaments.profiles, RELIC_TOURNAMENT_GAME_PROFILE)
+        }
+    };
+    requireRoomOwnedAppDataBinding(apiV1.group.roomOwnedAppDataBindings, RELIC_ROOM_DATA_BINDING);
     const source = readRelicHunterServerEnvironmentSource(input.environment);
     const restAuthorization = await readRelicRestAuthorization(input, apiV1.profile.name, source);
     const expeditionAi = decodeRelicAiExpeditionConfiguration(source);

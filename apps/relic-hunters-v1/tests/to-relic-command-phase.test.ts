@@ -48,12 +48,12 @@ describe('what the hunter sees after a command (D57 as applied, D72)', () => {
             createRelicGame('room-1', 'room-1', 1_700_000_000_000)
         );
 
-        expect(toRelicCommandPhase({ transport: 'rest', snapshot }, true)).toMatchObject({
+        expect(toRelicCommandPhase({ transport: 'rest', operation: 'command', snapshot }, true)).toMatchObject({
             phase: 'ready',
             patch: { commandTransport: 'rest', lastError: undefined },
             error: undefined
         });
-        expect(toRelicCommandPhase({ transport: 'rest', snapshot: undefined }, false))
+        expect(toRelicCommandPhase({ transport: 'rest', operation: 'command', snapshot: undefined }, false))
             .toMatchObject({
                 phase: 'degraded',
                 patch: { lastError: 'No relic snapshot returned for command.' }

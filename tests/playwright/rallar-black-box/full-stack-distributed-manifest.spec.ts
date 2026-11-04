@@ -29,7 +29,7 @@ import path from 'node:path';
 import type { ApiV1Configuration } from '../../../apps/api-v1/src/configuration/api-v1-configuration.ts';
 import { readApiV1Configuration } from '../../../apps/api-v1/src/configuration/read-api-v1-configuration.ts';
 import {
-    createFullStackApiProfileEnvBlock,
+    createFullStackApiProfileEnvironment,
     readFullStackApiBaseUrl,
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
@@ -498,9 +498,7 @@ async function writeProvenance(artifactDir: string, source: Buffer, participantC
 }
 
 async function readLocalApiConfiguration(): Promise<ApiV1Configuration> {
-    const profileEnvironment = Object.fromEntries(
-        createFullStackApiProfileEnvBlock().split(' ').map((entry) => entry.split('='))
-    );
+    const profileEnvironment = createFullStackApiProfileEnvironment();
     const resourceUrl = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
     return readApiV1Configuration({
         environment: { get: (key) => profileEnvironment[key] ?? process.env[key] },

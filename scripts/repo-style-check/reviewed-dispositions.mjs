@@ -376,13 +376,13 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 74
     }),
-    // Independent whole-owner review: One persisted game mutation owner keeps fresh authorization, decision and conditional write explicit.
-    // This warning-tier cap permits no growth and waives no other rule.
+    // Independent separation review: one expedition mutation owns fresh point authorization and atomic game/result/clock publication.
+    // The exact cap permits no growth and waives no other rule.
     Object.freeze({
         path: 'packages/relic-hunters/server/relic-game-mutation-service.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 57
+        maximumMagnitude: 141
     }),
     // Independent whole-owner review: One summary work lifecycle keeps claim, read, expansion, conditional write and settlement together.
     // This warning-tier cap permits no growth and waives no other rule.

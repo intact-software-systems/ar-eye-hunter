@@ -31,6 +31,8 @@ import {
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import {
     cleanupTopologyApplicationRows,
     createPostgresSql,
@@ -123,7 +125,7 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
     // exercise; a no-op consumer keeps the dequeue loop quiet.
     outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
         onMessage: async () => {}
-    });
+    }, [GROUP_PRESENCE_SUMMARY_TOPIC]);
     outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
@@ -134,7 +136,8 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
             topologyPlanning: topologyManagement.planning,
             executionRepository,
             serviceId: 'topology-frozen-test'
-        })
+        }),
+        [RTC_TOPOLOGY_OUTBOX_TOPIC]
     );
     return {
         outboxQueueReader,

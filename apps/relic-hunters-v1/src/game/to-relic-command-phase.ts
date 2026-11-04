@@ -8,7 +8,11 @@ import type { RelicWsCommandDelivery } from './send-relic-ws-command.ts';
 
 export type RelicCommandOutcome =
     | { readonly transport: 'ws'; readonly delivery: RelicWsCommandDelivery; }
-    | { readonly transport: 'rest'; readonly snapshot: RelicPublicSnapshot | undefined; };
+    | {
+        readonly transport: 'rest';
+        readonly operation: 'command' | 'reset';
+        readonly snapshot: RelicPublicSnapshot | undefined;
+    };
 
 export interface RelicCommandPhase {
     readonly phase: RelicHuntersRuntimePhase;
@@ -33,7 +37,7 @@ export function toRelicCommandPhase(
                 snapshotReady,
                 commandTransport: 'rest',
                 lastCommandDelivery: undefined,
-                lastError: outcome.snapshot ? undefined : 'No relic snapshot returned for command.'
+                lastError: outcome.snapshot ? undefined : `No relic snapshot returned for ${outcome.operation}.`
             },
             error: undefined
         };

@@ -8,12 +8,12 @@ import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 
+import type { ArenaEvent, ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
+import { arenaRevisionKey, hydrateArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import { createAiDirectorMockProvider } from '../../ai-director.ts';
-import type { ArenaEvent, ArenaSnapshot } from '../../arena-contracts.ts';
 import { resolveArenaBrowserAiConfig } from '../../browser-ai/arena-browser-ai-config.ts';
 import { createArenaBrowserAiProvider } from '../../browser-ai/arena-browser-ai-provider.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import type { ArenaAiStatus, ArenaConnectionState } from '../arena-connection-contracts.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import { generateArenaAiDirectorOutput } from './generate-arena-ai-director-output.ts';

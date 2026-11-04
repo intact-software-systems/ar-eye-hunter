@@ -18,6 +18,7 @@ export function decodeRelicGameStateAppData(value: JsonWireValue): RelicGameStat
     const setup = decodeSetup(state.setup);
     const publicSnapshotCandidate = {
         ...state,
+        tournament: null,
         submittedPlayerIds: pendingActions.map((pending) => pending.playerId),
         setup: toPublicSetup(setup)
     };

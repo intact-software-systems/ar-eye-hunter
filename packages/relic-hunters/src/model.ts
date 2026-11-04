@@ -1,6 +1,7 @@
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isRallarGameRematch, type RallarGameRematch } from '@shared/rallar-game/rematch.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { isRelicTournamentParticipation, type RelicTournamentParticipation } from './relic-tournament-participation.ts';
 
 import { RELIC_PROTOCOL_VERSION } from './protocol.ts';
 
@@ -217,6 +218,7 @@ export interface RelicGameState {
 }
 
 export interface RelicPublicSnapshot {
+    readonly tournament: RelicTournamentParticipation | null;
     readonly protocolVersion: typeof RELIC_PROTOCOL_VERSION;
     readonly gameId: string;
     readonly roomId: string;
@@ -393,8 +395,12 @@ export function isRelicRoundTrackOfGame(orderingKey: string, gameId: string): bo
     return orderingKey.startsWith(prefix) && /^\d+$/.test(orderingKey.slice(prefix.length));
 }
 
-export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapshot {
+export function toPublicRelicSnapshot(
+    state: RelicGameState,
+    tournament: RelicTournamentParticipation | null = null
+): RelicPublicSnapshot {
     return {
+        tournament,
         protocolVersion: state.protocolVersion,
         gameId: state.gameId,
         roomId: state.roomId,
@@ -503,6 +509,7 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
         value.protocolVersion === RELIC_PROTOCOL_VERSION &&
         typeof value.gameId === 'string' &&
         typeof value.roomId === 'string' &&
+        isRelicTournamentParticipation(value.tournament, value.gameId, value.roomId) &&
         isRelicGamePhase(value.phase) &&
         isFiniteNumber(value.round) &&
         isFiniteNumber(value.maxRounds) &&

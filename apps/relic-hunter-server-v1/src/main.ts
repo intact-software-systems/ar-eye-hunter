@@ -1,3 +1,4 @@
+import { serveApiApplication } from '@api-v1/src/runtime/serve-api-application.ts';
 import { loadSync } from '@std/dotenv';
 import { Hono } from 'hono';
 
@@ -53,16 +54,12 @@ const rallar = await createDefaultRallarServer({
         defaultFanout: 'live-only'
     }
 });
-addEventListener('unload', () => {
-    void rallar.runtime.backgroundTasks.stop().catch((error) => {
-        console.error('Failed to stop embedded API-v1 resources:', error);
-    });
-});
 const relicServices = createRelicGameServices({
     database: databaseLifecycle.database,
     groups: rallar.runtime.groupsRepository,
     sessions: rallar.runtime.authSessionRepository,
     appInbox: rallar.appInbox,
+    outbox: rallar.runtime.outboxQueueReader,
     roomOwnedAppDataBindings: configuration.apiV1.group.roomOwnedAppDataBindings,
     serviceId: myServerId,
     wsRuntimeName: rallar.ws.serverPeerId,
@@ -113,13 +110,7 @@ initRelicSwaggerRoutes(app);
 
 initRelicGameRoutes(app, { relicGame, sessions: rallar.runtime.authSessionRepository });
 
-rallar.installSystemTopics();
-rallar.installWebSocketLifecycle();
-rallar.mountWebSocket(app);
-rallar.mountRest(app);
-rallar.start({ queueWorkers: configuration.apiV1.topology.replay.queueWorkers });
-
-Deno.serve({ port: configuration.http.port }, app.fetch);
+await serveApiApplication({ app, rallar, configuration: configuration.apiV1 });
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
 
 function loadEnvironment(): void {

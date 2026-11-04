@@ -36,6 +36,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -387,7 +388,8 @@ Deno.test(
                     database: sql,
                     topologyPlanning: topologyManagement.planning,
                     executionRepository
-                })
+                }),
+                [RTC_TOPOLOGY_OUTBOX_TOPIC]
             );
             const topologyWork = computeCoalescedRtcTopologyGroupRevisionWork({
                 traceId: 'trace-pglite-topology-command',

@@ -1,10 +1,3 @@
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     beforeEach,
     describe,
@@ -12,22 +5,31 @@ import {
     it,
     vi
 } from 'vitest';
+
+import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
+import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type * as AppointRoomDirectorModule from '@shared-web/browser/director/appoint-room-director.ts';
+import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
+import type * as AuthModule from '@shared/api/auth.ts';
+import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
+
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
-
-type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
-type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
-type AppointRoomDirectorModule = typeof import('@shared-web/browser/director/appoint-room-director.ts');
-type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
-type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
-type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
-type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
-type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
-type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 
 interface DirectorMove {
     readonly move: string;
@@ -50,7 +52,7 @@ const mocks = await vi.hoisted(async () => {
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<MiddlewareModule> => ({
+    (): Partial<typeof MiddlewareModule> => ({
         initialiseMiddleware: async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
@@ -61,7 +63,7 @@ vi.mock(
 
 vi.mock(
     import('@shared-web/browser/state-read/state-event-http-api.ts'),
-    (): Partial<StateEventHttpApiModule> => ({
+    (): Partial<typeof StateEventHttpApiModule> => ({
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
@@ -69,25 +71,25 @@ vi.mock(
     })
 );
 
-vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<typeof AuthApiModule> => ({
     loginToApi: mocks.loginToApi,
     logoutFromApi: mocks.logoutFromApi,
     registerWithApi: mocks.registerWithApi
 }));
 
-vi.mock(import('@shared-web/browser/director/appoint-room-director.ts'), (): Partial<AppointRoomDirectorModule> => ({
+vi.mock(import('@shared-web/browser/director/appoint-room-director.ts'), (): Partial<typeof AppointRoomDirectorModule> => ({
     appointStateGroupDirector: mocks.appointStateGroupDirector
 }));
-vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<RefreshStateSnapshotsModule> => ({
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<typeof RefreshStateSnapshotsModule> => ({
     refreshStateSnapshots: mocks.refreshStateSnapshots
 }));
-vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<RoomMutationWorkflowsModule> => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<typeof RoomMutationWorkflowsModule> => ({
     updateStateGroupMetadata: mocks.updateStateGroupMetadata
 }));
 
 vi.mock(
     import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
-    (): Partial<RoomGroupStateWorkflowsModule> => ({
+    (): Partial<typeof RoomGroupStateWorkflowsModule> => ({
         createAndJoinStateGroup: mocks.createAndJoinStateGroup,
         joinStateGroup: mocks.joinStateGroup,
         leaveStateGroup: mocks.leaveStateGroup
@@ -96,7 +98,7 @@ vi.mock(
 
 vi.mock(
     import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
-    (): Partial<StateCacheLifecycleModule> => ({
+    (): Partial<typeof StateCacheLifecycleModule> => ({
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
@@ -108,7 +110,7 @@ vi.mock(
 
 vi.mock(
     import('@shared/api/auth.ts'),
-    (): Partial<AuthModule> => ({
+    (): Partial<typeof AuthModule> => ({
         clearSession: mocks.clearSession,
         isLoggedIn: vi.fn(() => true),
         readSession: mocks.readSession,
@@ -118,7 +120,7 @@ vi.mock(
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
-    (): Partial<ClientStateSnapshotsRepositoryModule> => ({
+    (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
@@ -126,7 +128,7 @@ vi.mock(
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
-    (): Partial<GroupStateSnapshotsRepositoryModule> => ({
+    (): Partial<typeof GroupStateSnapshotsRepositoryModule> => ({
         findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
@@ -210,7 +212,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-2',
             accessToken: 'token-2'
         };
-        const rejoined: GroupSnapshot = {
+        let rejoined: GroupSnapshot = {
             ...created,
             activeSessions: [
                 {
@@ -228,7 +230,15 @@ describe('Rallar director relay', () => {
         };
         mockGroupSnapshot(created);
         mocks.createAndJoinStateGroup.mockResolvedValueOnce(created);
-        mocks.joinStateGroup.mockImplementationOnce(async () => {
+        mocks.joinStateGroup.mockImplementationOnce(async (input) => {
+            rejoined = {
+                ...rejoined,
+                activeSessions: rejoined.activeSessions.map((presence) => ({
+                    ...presence,
+                    generationId: input.generationId,
+                    expiresAtEpochMs: Date.now() + 120_000
+                }))
+            };
             mockGroupSnapshot(rejoined);
             return rejoined;
         });
@@ -341,7 +351,7 @@ describe('Rallar director relay', () => {
                 },
                 delivery: { reliability: 'at-least-once', ack: 'group-leader' }
             });
-            // The mocked carriers deliver no receipt, so the command must not read as sent (correction 11).
+            // The mocked carriers deliver no receipt, so the command must not read as sent.
             expect(result).toMatchObject({
                 status: 'failed',
                 receipt: expect.objectContaining({ typeId }),
@@ -389,20 +399,16 @@ describe('Rallar director relay', () => {
             targets: { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } },
             delivery: { reliability: 'at-least-once', ack: 'group-leader', ownership: 'exclusive' }
         });
-        expect(wsIntents[0]?.constraints?.expiresAtMs).toBe(wsIntents[0]!.id.ts + 4_000);
+        expect(wsIntents[0]?.constraints?.expiresAtMs).toBe(wsIntents[0].id.ts + 4_000);
         expect(result.status).toBe('failed');
         expect(result.receipt?.lifecycle().evidence).toMatchObject({ attempts: [], carrierFallback: undefined });
     });
 
-    it('delivers RTC director commands to the director\'s handlers (correction 13)', async () => {
+    it('delivers RTC director commands to the director\'s handlers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const rtcInbox = new Map<string, Parameters<typeof mocks.rtcRxStreamer.onInboxMessageDo>[1]>();
-        mocks.rtcRxStreamer.onInboxMessageDo.mockImplementation((typeId, callback) => {
-            rtcInbox.set(typeId, callback);
-            return mocks.ctx.middleware.rtcRxStreamer;
-        });
+        const rtcInbox = captureRtcInbox();
         mockGroupSnapshot(createDirectorGroupSnapshot({
             sessionId: 'session-1',
             principalId: 'principal-1',
@@ -521,7 +527,7 @@ describe('Rallar director relay', () => {
         expect(intents).toEqual([]);
     });
 
-    it('delivers a director command that arrives over the WS fallback leg to onIntent once (D60)', async () => {
+    it('delivers a director command that arrives over the WS fallback leg to onIntent once', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
@@ -572,11 +578,7 @@ describe('Rallar director relay', () => {
             '@shared-web/browser/rallar.ts'
         );
         const wsInbox = captureWsInbox();
-        const rtcInbox = new Map<string, Parameters<typeof mocks.rtcRxStreamer.onInboxMessageDo>[1]>();
-        mocks.rtcRxStreamer.onInboxMessageDo.mockImplementation((typeId, callback) => {
-            rtcInbox.set(typeId, callback);
-            return mocks.ctx.middleware.rtcRxStreamer;
-        });
+        const rtcInbox = captureRtcInbox();
         mockGroupSnapshot(createDirectorGroupSnapshot({
             sessionId: 'session-1',
             principalId: 'principal-1',

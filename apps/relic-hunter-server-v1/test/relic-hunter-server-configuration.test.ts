@@ -57,6 +57,12 @@ describe('Relic Hunter server configuration', () => {
             corsOrigins: ['http://localhost:5175', 'https://relic.example.test'],
             preflightMaxAgeSeconds: 600
         });
+        expect(configuration.apiV1.tournaments.profiles).toEqual([{
+            scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+            rulesId: 'relic-native-10-rounds-v1',
+            noShowGraceMs: 600000,
+            gameLifecycleTopic: 'app:relic:tournament-lifecycle'
+        }]);
         expect(configuration.restAuthorization).toEqual({ mode: 'group-policy' });
         expect(configuration.expeditionAi).toEqual({
             mode: 'ollama',
@@ -92,10 +98,10 @@ describe('Relic Hunter server configuration', () => {
 
     it('rejects omitted and mismatched database-wide save ownership instead of appending a local binding', async () => {
         await expect(readConfiguration({ RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: undefined }))
-            .rejects.toThrow('exact Relic save binding');
+            .rejects.toThrow('exact room-owned binding');
         for (const catalog of [[], [{ applicationId: 'rallar-server', workspaceId: 'other', namespace: 'relic-hunter-v1', storeName: 'relic-hunter-games' }]]) {
             await expect(readConfiguration({ RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify(catalog) }))
-                .rejects.toThrow('exact Relic save binding');
+                .rejects.toThrow('exact room-owned binding');
         }
     });
 

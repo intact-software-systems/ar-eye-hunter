@@ -143,8 +143,9 @@ function useGyroInput(runtimeRef: RefObject<ArenaSceneRuntime | undefined>, enab
                 (event.beta - previous.beta) * 1.45,
                 runtime.mobileSettings
             );
-            applyLook(runtime, delta.yawDelta, delta.pitchDelta);
-            runtime.inputDevice = 'gyro-touch';
+            if (applyLook(runtime, delta.yawDelta, delta.pitchDelta)) {
+                runtime.inputDevice = 'gyro-touch';
+            }
         };
         window.addEventListener('deviceorientation', onOrientation);
         return () => window.removeEventListener('deviceorientation', onOrientation);

@@ -1,6 +1,6 @@
 import { isALDeliveryTerminalState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
-import type { ArenaMatchState } from '../game/arena-contracts.ts';
+import type { ArenaMatchState } from '@ar-eye-hunter/arena-contracts.ts';
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 
 export function toDirectorLabel(
@@ -17,7 +17,8 @@ export function toDirectorLabel(
 
 export function toMatchLabel(
     match: ArenaMatchState | undefined,
-    remainingMs: number
+    remainingMs: number,
+    tournament: boolean
 ): string {
     if (!match) {
         return 'infinite';
@@ -26,6 +27,9 @@ export function toMatchLabel(
         return toDurationLabel(remainingMs);
     }
     const winner = match.results?.[0];
+    if (tournament && winner && match.results?.[1]?.scoreDelta === winner.scoreDelta) {
+        return 'tied · replay required';
+    }
     return winner ? `${winner.username} won` : 'complete';
 }
 

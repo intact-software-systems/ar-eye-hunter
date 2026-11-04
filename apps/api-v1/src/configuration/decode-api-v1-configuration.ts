@@ -7,6 +7,7 @@ import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-syst
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { decodeApiV1Matchmaking } from './decode-api-v1-matchmaking.ts';
+import { decodeApiV1Tournaments } from './decode-api-v1-tournaments.ts';
 
 import type {
     ApiV1AppInboxConfiguration,
@@ -76,6 +77,7 @@ export function decodeApiV1Configuration(
         group: decodeGroup(decoder),
         friends: decodeFriends(decoder),
         matchmaking: decodeApiV1Matchmaking(decoder),
+        tournaments: decodeApiV1Tournaments(decoder),
         parties: decodeParties(decoder),
         topology: decodeTopology(decoder),
         appInbox: decodeAppInbox(decoder),

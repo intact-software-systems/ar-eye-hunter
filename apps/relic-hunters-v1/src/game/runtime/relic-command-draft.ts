@@ -9,6 +9,7 @@ export type RelicRematchDraft =
     | { readonly kind: 'set-rematch-round-limit'; readonly timeLimitMs: number; };
 
 export type RelicCommandDraft =
+    | { readonly kind: 'reset-expedition'; }
     | (Exclude<RelicRematchDraft, { kind: 'set-rematch-ready'; }> & {
         readonly completedGameId: string;
         readonly settingsKey: string;

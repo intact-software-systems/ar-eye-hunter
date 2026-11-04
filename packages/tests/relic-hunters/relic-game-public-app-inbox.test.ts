@@ -8,9 +8,12 @@ import {
     RELIC_TYPES
 } from '@relic-hunters/mod.ts';
 import { encodeRelicGameStateAppData } from '@relic-hunters/server/encode-relic-game-state-app-data.ts';
-import { captureRelicGameCommand } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import { captureRelicGameCommand, decodeRelicGameIngress } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import { decodeJsonWireText, encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALBroadcastMessage, newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -32,13 +35,13 @@ describe('Relic public application AppInbox', () => {
                 resourceId: fixture.command.requestId,
                 senderId: fixture.owner.sessionId,
                 traceId: 'trace-relic-retained-row',
-                data: { ...command },
-                authority: {
+                data: encodeJsonWireValue(command, 'Retained Relic command'),
+                authority: encodeJsonWireValue({
                     command: { ...command },
                     initial: encodeRelicGameStateAppData(initial),
                     capturedAtEpochMs: fixture.nowEpochMs - 5,
                     serverPeerId: 'retained-server'
-                }
+                }, 'Retained Relic authority')
             };
             const entry = createAppInboxResourceEntry(enqueue, 'retained-api', {
                 creationNow: () => Temporal.Instant.fromEpochMilliseconds(fixture.nowEpochMs),
@@ -123,7 +126,10 @@ describe('Relic public application AppInbox', () => {
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             const key = toRelicInboxTestKey(fixture, raw.id.msgId);
             expect((await fixture.resources.entries.findByKey(key))?.dequeueAudit.attempts).toBe(1);
-            expect(JSON.parse((await fixture.results.findByKey(key))!.resource)).toEqual({ status: 'applied', gameId: fixture.ref.groupId });
+            const result = await fixture.results.findByKey(key);
+            expect(result).toBeDefined();
+            expect(decodeJsonWireText(result!.resource, 'Retained Relic result'))
+                .toEqual({ status: 'applied', gameId: fixture.ref.groupId });
             expect((await fixture.data.read(fixture.ref))[0].entry).not.toBeNull();
         }
         finally {
@@ -150,20 +156,24 @@ describe('Relic public application AppInbox', () => {
             ]);
             const key = toRelicInboxTestKey(fixture);
             const retained = await fixture.resources.entries.findByKey(key);
-            const envelope = JSON.parse(JSON.parse(retained!.resource).payload.resource);
+            expect(retained).toBeDefined();
+            const message = decodePersistedALMessage(retained!.resource);
+            const envelope = requireRecord(JSON.parse(message.payload.resource), 'Retained Relic envelope');
+            const ingress = decodeRelicGameIngress(envelope.authority);
             expect(proposals).toBe(2);
             expect(envelope.data).toEqual(captureRelicGameCommand(fixture.command));
             expect(envelope.senderId).toBe(fixture.owner.sessionId);
-            expect(envelope.authority.command).toEqual(captureRelicGameCommand(fixture.command));
-            expect(envelope.authority.capturedAtEpochMs).toBe(fixture.nowEpochMs);
-            expect([fixture.nowEpochMs + 1, fixture.nowEpochMs + 2]).toContain(envelope.authority.initial.createdAtEpochMs);
+            expect(ingress.command).toEqual(captureRelicGameCommand(fixture.command));
+            expect(ingress.capturedAtEpochMs).toBe(fixture.nowEpochMs);
+            expect(ingress.initial).not.toBeNull();
+            expect([fixture.nowEpochMs + 1, fixture.nowEpochMs + 2]).toContain(ingress.initial!.createdAtEpochMs);
             await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect(await Promise.all(admissions.map((admission) => fixture.inbox.wait(admission)))).toEqual([
                 { status: 'initialized', gameId: fixture.ref.groupId },
                 { status: 'initialized', gameId: fixture.ref.groupId }
             ]);
             expect((await fixture.resources.entries.findByKey(key))?.dequeueAudit.attempts).toBe(1);
-            expect((await fixture.data.read(fixture.ref))[0].entry?.value).toMatchObject({ createdAtEpochMs: envelope.authority.initial.createdAtEpochMs });
+            expect((await fixture.data.read(fixture.ref))[0].entry?.value).toMatchObject({ createdAtEpochMs: ingress.initial!.createdAtEpochMs });
         }
         finally {
             await fixture.storage.close();

@@ -142,6 +142,26 @@ describe('Relic Hunters game rules', () => {
             });
     });
 
+    it('rejects self-stealing without duplicating a carried relic or increasing its score', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = requireRelicCommandApplied(applyRelicCommand(state, join('Alice'), { presentPlayerIds: ['alice'], senderId: 'alice', now: 2 })).state;
+        state = requireRelicCommandApplied(applyRelicCommand(state, start('Alice'), { presentPlayerIds: ['alice'], senderId: 'alice', now: 3 })).state;
+        state =
+            requireRelicCommandApplied(applyRelicCommand(state, pickup('Alice', 'visitor-badge'), { presentPlayerIds: ['alice'], senderId: 'alice', now: 4 }))
+                .state;
+        const before = structuredClone(state);
+        const attempted = applyRelicCommand(state, submit('Alice', { kind: 'steal', targetPlayerId: 'alice' }), {
+            presentPlayerIds: ['alice'],
+            senderId: 'alice',
+            now: 5
+        });
+        expect(attempted.left?.code).toBe('steal-self-forbidden');
+        expect(attempted.right).toBeUndefined();
+        expect(state).toEqual(before);
+        expect(state.players[0].relicIds).toEqual(['visitor-badge']);
+        expect(state.players[0].score).toBe(1);
+    });
+
     it('lets an active hunter instantly pick up a visible same-room relic', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = requireRelicCommandApplied(applyRelicCommand(state, join('Alice'), { presentPlayerIds: ['alice'], senderId: 'alice', now: 2 })).state;

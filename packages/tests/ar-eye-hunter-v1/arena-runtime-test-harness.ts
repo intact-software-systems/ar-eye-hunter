@@ -10,10 +10,10 @@ import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import { arenaRecentRooms, arenaRoomEntry } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-room-entry.ts';
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
 export { mockMatch, mockRallar };
 
@@ -149,7 +149,9 @@ vi.mock('@shared-web/browser/auth/websocket-ticket-http-api.ts', () => ({
 
 vi.mock('@shared-web/browser/rallar-ai.ts', () => ({
     createRallarBrowserAi: () => ({
-        complete: vi.fn()
+        generateJson: vi.fn(async () => {
+            throw new Error('Avatar AI is unavailable in this runtime fixture');
+        })
     })
 }));
 
@@ -180,6 +182,9 @@ export class ArenaRuntimeTestHarness {
         arenaRoomEntry.cancel();
         this.current = undefined;
         vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+            if (String(input).endsWith('/tournament')) {
+                return Response.json(null);
+            }
             if (String(input).endsWith('/group-moves')) {
                 return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
             }

@@ -6,9 +6,9 @@ import { arenaMembershipSnapshot, ArenaRuntimeTestHarness, mockMatch, mockRallar
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
+import { createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
+import { createInitialLoadoutState } from '@ar-eye-hunter/arena-weapons.ts';
 import { isArenaPlayerSession, isArenaSpectator } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-participation.ts';
-import { createInitialLoadoutState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-weapons.ts';
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 
 const arena = new ArenaRuntimeTestHarness();

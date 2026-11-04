@@ -13,7 +13,7 @@ interface RelicRoomMoveProps {
 export function RelicRoomMove({ game, party }: RelicRoomMoveProps) {
     const blockedReason = game.participation === 'spectator'
         ? 'Spectators stay. Join as player before proposing or confirming a move.'
-        : hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId)
+        : hasUnfinishedRelicParticipation(game.snapshot, game.playerId)
         ? 'Finish or explicitly Leave expedition before confirming a move.'
         : null;
     return (

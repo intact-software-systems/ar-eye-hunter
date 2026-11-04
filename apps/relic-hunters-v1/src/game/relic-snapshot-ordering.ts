@@ -12,6 +12,7 @@ export type RelicSnapshotSource =
 
 export type RelicSnapshotRejectionReason =
     | 'room-mismatch'
+    | 'tournament-status-regression'
     | 'older-updated-at'
     | 'older-round'
     | 'phase-regression'
@@ -59,6 +60,13 @@ export function classifyRelicSnapshotAcceptance({
 
     if (candidate.gameId !== current.gameId || candidate.roomId !== current.roomId) {
         return { accepted: true };
+    }
+
+    if (
+        current.tournament !== null && current.tournament.status !== 'playing' &&
+        candidate.tournament?.status !== current.tournament.status
+    ) {
+        return { accepted: false, reason: 'tournament-status-regression' };
     }
 
     if (candidate.updatedAtEpochMs < current.updatedAtEpochMs) {

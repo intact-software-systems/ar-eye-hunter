@@ -17,7 +17,7 @@ interface RelicOverlaysProps {
 export function RelicFloatingHud({ game, turn, preferences, playback }: RelicOverlaysProps) {
     const view = turn.viewModel;
     const choosing = turn.planning && game.snapshot && game.session &&
-        !game.snapshot.submittedPlayerIds.includes(game.session.sessionId);
+        !!game.playerId && !game.snapshot.submittedPlayerIds.includes(game.playerId);
     return (
         <>
             {playback.personalFlash && (
@@ -39,7 +39,7 @@ export function RelicFloatingHud({ game, turn, preferences, playback }: RelicOve
                         : <span>Pick an action and submit</span>}
                 </div>
             )}
-            {game.snapshot && <SceneMinimapOverlay snapshot={game.snapshot} localPlayerId={game.session?.sessionId} />}
+            {game.snapshot && <SceneMinimapOverlay snapshot={game.snapshot} localPlayerId={game.playerId} />}
             <RelicPhaseAnnouncements playback={playback} />
         </>
     );

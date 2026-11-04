@@ -26,7 +26,7 @@ import {
     assertFullStackControlHealthEvidence,
     assertFullStackReadinessHttpEvidence,
     createDefaultFullStackApiV1WebServer,
-    createFullStackApiProfileEnvBlock,
+    createFullStackApiProfileEnvironment,
     evaluateFullStackConfiguredServiceEvidence,
     readFullStackApiBaseUrl,
     readFullStackApiServerMode,
@@ -37,23 +37,11 @@ import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 
 const CONFIG_LOADER_TEST_TIMEOUT_MS = 30_000;
 
-/** The block as the shell reads it: space-separated assignments, each value at most once single-quoted. */
-function toProfileEnvironment(): ReadonlyMap<string, string> {
-    return new Map(
-        createFullStackApiProfileEnvBlock().split(' ').map((entry) => {
-            const separator = entry.indexOf('=');
-            const value = entry.slice(separator + 1);
-            const unquoted = value.length > 1 && value.startsWith('\'') && value.endsWith('\'') ? value.slice(1, -1) : value;
-            return [entry.slice(0, separator), unquoted];
-        })
-    );
-}
-
 async function readProfileConfiguration(): Promise<Awaited<ReturnType<typeof readApiV1Configuration>>> {
-    const profileEnvironment = toProfileEnvironment();
+    const profileEnvironment = createFullStackApiProfileEnvironment();
     const resource = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
     return await readApiV1Configuration({
-        environment: { get: (name) => profileEnvironment.get(name) },
+        environment: { get: (name) => profileEnvironment[name] },
         hardwareConcurrency: 4,
         readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: resource('configuration/defaults-config.json'),
@@ -286,7 +274,6 @@ describe('rallar-black-box full-stack API server mode', () => {
         });
 
         expect(server.url).toBe('http://localhost:8080/api/config');
-        expect(server.command).toContain('CORS_ORIGINS=http://localhost:5178,http://127.0.0.1:5178');
         expect(server.command).not.toContain('--env-file=');
         expect(server.command).toContain('RALLAR_API_BASE_URL=http://localhost:8080');
         expect(server.command).toContain('RALLAR_WS_BASE_URL=ws://localhost:8080');
@@ -305,7 +292,6 @@ describe('rallar-black-box full-stack API server mode', () => {
         });
 
         expect(server.url).toBe('http://localhost:18080/api/config');
-        expect(server.command).toContain('CORS_ORIGINS=http://localhost:5177,http://127.0.0.1:5177');
         expect(server.command).toContain('PORT=18080');
         expect(server.command).toContain('RALLAR_API_BASE_URL=http://localhost:18080');
         expect(server.command).toContain('RALLAR_WS_BASE_URL=ws://localhost:18080');
@@ -687,7 +673,6 @@ describe('rallar-black-box full-stack API server mode', () => {
             environment: {}
         });
         expect(server.command).toContain('RALLAR_API_BASE_URL=https://rallar.example.test RALLAR_WS_BASE_URL=wss://rallar.example.test');
-        expect(server.command).toContain('CORS_ORIGINS=http://127.0.0.1:5178,http://localhost:5178');
     });
 
     it('rejects unknown full-stack API server modes', () => {

@@ -31,10 +31,12 @@ export class OutboxQueueReader {
             creationNow,
             dequeueOptions: {}
         });
+        this.reader.registerTopics([]);
     }
 
     /** A handler may answer a typed outcome, such as a retryable conflict with its own retry delay. */
-    onOutboxMessageDo(type: string, callback: OnQueuedMessageCallback): this {
+    onOutboxMessageDo(type: string, callback: OnQueuedMessageCallback, topics: readonly string[]): this {
+        this.reader.registerTopics(topics);
         this.reader.onMessageDo(type, callback);
         return this;
     }

@@ -1,17 +1,17 @@
 import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
 import { describe, expect, it } from 'vitest';
 
-import type { ArenaEvent, ArenaLayoutProp, ShotIntent, Vec3Tuple } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
-import { blocksShot, FALLBACK_ARENA_LAYOUT, validateArenaLayoutSpec } from '../../../apps/ar-eye-hunter-v1/src/game/arena-layout.ts';
-import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
+import type { ArenaEvent, ArenaLayoutProp, ShotIntent, Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
+import { blocksShot, FALLBACK_ARENA_LAYOUT, validateArenaLayoutSpec } from '@ar-eye-hunter/arena-layout.ts';
+import { finishArenaMatchIfDue, startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
 import {
     createInitialCombatState,
     createInitialPlayerState,
     createInitialVitalsState,
     stepLocalPlayer
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
-import { resolveShot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-targets.ts';
-import { createInitialLoadoutState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-weapons.ts';
+} from '@ar-eye-hunter/arena-player-state.ts';
+import { resolveShot } from '@ar-eye-hunter/arena-targets.ts';
+import { createInitialLoadoutState } from '@ar-eye-hunter/arena-weapons.ts';
 import {
     applyArenaEvent,
     createInitialArenaState,
@@ -22,7 +22,7 @@ import {
     stepArenaDirectorState,
     toArenaSnapshot,
     upsertPlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
 
 describe('AR Eye Hunter simulation', () => {
     it('accelerates fast FPS movement and applies dash cooldowns', () => {

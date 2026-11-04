@@ -2,6 +2,8 @@ import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
 
+import { GAME_PROTOCOL, type ArenaEvent } from '@ar-eye-hunter/arena-contracts.ts';
+import { arenaRevisionKey, hydrateArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import {
     createAiDirectorRequest,
     materializeAiArenaEvent,
@@ -11,12 +13,9 @@ import {
 import {
     GAME_AI_LANE_ID,
     GAME_AI_TOPIC_ID,
-    GAME_PROTOCOL,
     type AiDirectorProposal,
-    type AiDirectorProposalValue,
-    type ArenaEvent
+    type AiDirectorProposalValue
 } from '../../arena-contracts.ts';
-import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 import type { ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 

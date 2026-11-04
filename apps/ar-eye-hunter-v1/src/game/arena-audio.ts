@@ -1,4 +1,4 @@
-import type { WeaponKind } from './arena-contracts.ts';
+import type { WeaponKind } from '@ar-eye-hunter/arena-contracts.ts';
 import type { ArenaLinkTone } from './squad-link.ts';
 
 export interface ArenaAudioSettings {

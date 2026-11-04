@@ -1,9 +1,24 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import { requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime, seedRoomSnapshots } from '../room-workflow-test-runtime.ts';
+import {
+    createRoomSnapshot,
+    getRoomWorkflowMocks,
+    resetRoomWorkflowTestRuntime,
+    seedRoomSnapshots
+} from '../room-workflow-test-runtime.ts';
 
 const runtime = getRoomWorkflowMocks();
 installFakeBroadcastChannelPerTest();
@@ -42,16 +57,19 @@ describe('activating an admitted group move', () => {
 
     it('connects destination presence and disconnects source without removing either membership', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        seedRoomSnapshots([createRoomSnapshot('previous', ['session-1'])]);
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        seedRoomSnapshots([previous]);
         const requests: { path: string; method: string; body: object; }[] = [];
         vi.stubGlobal(
             'fetch',
-            vi.fn(async (url: string, init: RequestInit) => {
-                requests.push({ path: String(url), method: String(init.method), body: JSON.parse(String(init.body)) });
-                const snapshot = createRoomSnapshot(
-                    String(url).includes('/previous/') ? 'previous' : 'destination',
-                    String(url).includes('/disconnect/') ? [] : ['session-1']
-                );
+            async (url: string, init: RequestInit) => {
+                const body = requireRecord(JSON.parse(String(init.body)), 'Presence request');
+                requests.push({ path: String(url), method: String(init.method), body });
+                const generationId = body.generationId;
+                requireString(generationId, 'generationId');
+                const snapshot = String(url).includes('/previous/')
+                    ? { ...previous, activeSessions: [], onlineMemberCount: 0 }
+                    : createRoomSnapshot('destination', ['session-1']);
                 return new Response(
                     JSON.stringify({
                         ...snapshot,
@@ -60,14 +78,18 @@ describe('activating an admitted group move', () => {
                         activeSessions: snapshot.activeSessions.map((session) => ({
                             ...session,
                             expiresAtEpochMs: Date.now() + 120000,
-                            generationId: JSON.parse(String(init.body)).generationId
+                            generationId
                         }))
                     }),
                     { status: 200 }
                 );
-            })
+            }
         );
         const facade = createRallarFacade();
+        const selectedRooms: (string | undefined)[] = [];
+        const unsubscribe = facade.rooms.onChange((state) => {
+            selectedRooms.push(state.currentRoomRef?.groupId);
+        });
         await facade.rooms.activateMove(move);
         expect(requests.map((request) => request.method)).toEqual(['PUT', 'POST']);
         expect(requests[0].path).toContain('/groups/destination/sessions/session-1/requests/');
@@ -75,6 +97,12 @@ describe('activating an admitted group move', () => {
         expect(requests[1].path).toContain('/groups/previous/sessions/session-1/disconnect/requests/');
         expect(facade.rooms.current()?.group.groupId).toBe('destination');
         expect(runtime.leaveStateGroup).not.toHaveBeenCalled();
+        expect(facade.rooms.session(source).snapshot()?.members).toEqual(previous.members);
+        expect(facade.rooms.session(source).snapshot()?.activeSessions).toEqual([]);
+        expect(facade.rooms.session(destination).snapshot()?.members).toEqual(createRoomSnapshot('destination', ['session-1']).members);
+        expect(selectedRooms.filter((room, index) => index === 0 || room !== selectedRooms[index - 1]))
+            .toEqual(['previous', 'destination']);
+        unsubscribe();
     });
 
     it('keeps the current third room unchanged when an old move is explicitly retried', async () => {
@@ -90,18 +118,23 @@ describe('activating an admitted group move', () => {
 
     it('waits for destination presence before disconnecting the source and acknowledging arrival', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        seedRoomSnapshots([createRoomSnapshot('previous', ['session-1'])]);
+        const previous = createRoomSnapshot('previous', ['session-1']);
+        seedRoomSnapshots([previous]);
         const methods: string[] = [];
         let destinationGeneration = '';
         vi.stubGlobal(
             'fetch',
-            vi.fn(async (url: string, init: RequestInit) => {
+            async (url: string, init: RequestInit) => {
                 const method = String(init.method);
                 methods.push(method);
                 const source = String(url).includes('/previous');
-                const snapshot = createRoomSnapshot(source ? 'previous' : 'destination', method === 'GET' && !source ? ['session-1'] : []);
+                const snapshot = source
+                    ? { ...previous, activeSessions: [], onlineMemberCount: 0 }
+                    : createRoomSnapshot('destination', method === 'GET' ? ['session-1'] : []);
                 if (method === 'PUT') {
-                    destinationGeneration = JSON.parse(String(init.body)).generationId;
+                    const generationId = requireRecord(JSON.parse(String(init.body)), 'Presence request').generationId;
+                    requireString(generationId, 'generationId');
+                    destinationGeneration = generationId;
                     expect(destinationGeneration).not.toBe(runtime.context.middleware.heartbeat.generationId);
                 }
                 const response = {
@@ -123,7 +156,7 @@ describe('activating an admitted group move', () => {
                         'rallar-presence-revision': String(response.causalRevision.presenceRevision)
                     }
                 });
-            })
+            }
         );
         const facade = createRallarFacade();
         await facade.rooms.activateMove(move);
@@ -134,7 +167,7 @@ describe('activating an admitted group move', () => {
     it('keeps the source selected when destination presence fails', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         seedRoomSnapshots([createRoomSnapshot('previous', ['session-1'])]);
-        vi.stubGlobal('fetch', vi.fn(async () => new Response('Unavailable', { status: 503 })));
+        vi.stubGlobal('fetch', async () => new Response('Unavailable', { status: 503 }));
         const facade = createRallarFacade();
         await expect(facade.rooms.activateMove(move, { maxAttempts: 1 })).rejects.toThrow();
         expect(facade.rooms.current()?.group.groupId).toBe('previous');

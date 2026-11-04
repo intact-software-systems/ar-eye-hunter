@@ -5,9 +5,9 @@ Last reviewed: 2026-10-23.
 ## Current presentation
 
 The active gameplay scene is the procedural neon facility in
-`src/game/RelicSceneNext.tsx`. Its palette is `scene/neonTheme.ts`; facility
+`src/game/relic-scene.tsx`. Its palette is `scene/neonTheme.ts`; facility
 positions, room callsigns, signage, and camera planning are in
-`scene/relicSceneNextModel.ts`. The opening scene remains a lightweight ambient
+`scene/relic-scene-model.ts`. The opening scene remains a lightweight ambient
 backdrop while no expedition snapshot is available.
 
 The former castle renderer and its exclusive avatar/camera/effect selectors have

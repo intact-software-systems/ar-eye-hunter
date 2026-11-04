@@ -111,6 +111,27 @@ The next game stays in the same room and includes only eligible consenting playe
 their characters and resets expedition progress; AR Eye starts fresh score baselines. Finished results
 remain visible until accepted start. Reset and the old start controls cannot bypass this consent flow.
 
+## Individual tournaments
+
+Both games offer four-account tournaments with two registration-order semifinals and a final.
+The organizer creates and shares the bracket; each player registers explicitly. The organizer
+schedules each match, both competitors check in, and the organizer starts at or after its scheduled
+time. Enter match opens the admitted room without removing earlier room memberships. The bracket
+and accepted results survive reload and account sessions.
+
+The game server decides native scores: AR Eye runs a one-minute arena match; Relic runs ten rounds.
+Relic keeps the 60-second planning timeout and advances each round review after 10 seconds, even
+if the Keeper disconnects. Tournament rooms remain recoverable for 15 minutes after everyone
+disconnects, then follow the seven-day archived-room deletion policy. Ordinary rooms keep their
+10-minute reconnect grace. Only the two bound accounts can play. Spectators remain read-only. A tie requires a new attempt in a
+fresh room; secondary statistics never select a tournament winner. Ordinary rematch, reset and
+settings controls cannot change an active tournament or rewrite its accepted result.
+
+The no-show grace defaults to ten minutes and is configurable per game. After the deadline, only a
+checked-in opponent may advance, including when the other entrant withdrew. Neither checking in
+leaves the match unresolved for organizer rescheduling or cancellation. A disconnected player is not
+an explicit withdrawal. Cancellation stops unfinished play and keeps completed evidence available.
+
 ## Scheduled sessions
 
 AR Eye and Relic let an organizer schedule an unlisted temporary room, copy its session link,
@@ -226,6 +247,8 @@ Shared packages are the reusable surface. Apps are consumers.
   is not a game server. See `apps/api-v1/README.md`.
 - `apps/ar-eye-hunter-v1` is the broad browser game: rooms, RTC, game
   authority, Motion, and a RallarAI director.
+- `packages/ar-eye-hunter` owns renderer-independent arena rules and the native tournament authority.
+- `apps/ar-eye-hunter-server-v1` composes that authority with Rallar for tournament matches.
 - `apps/relic-hunters-v1` is the browser game with a narrow runtime adapter.
   Its notes live in `apps/relic-hunters-v1/docs/README.md`.
 - `apps/relic-hunter-server-v1` composes the Rallar server with Relic rules and

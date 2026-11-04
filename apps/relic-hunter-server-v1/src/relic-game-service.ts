@@ -47,7 +47,7 @@ export namespace RelicHunterGameService {
     }
 
     export interface Options {
-        readonly mode: RelicGameMutationService.Command['authorization'];
+        readonly mode: RelicGameMutationService.PlayerCommand['authorization'];
         readonly inbox: Pick<RelicGameInboxService, 'execute' | 'enqueue'>;
         readonly mutations: Pick<RelicGameMutationService, 'readCurrentSnapshot'>;
         readonly createInitialState: RelicInitialStateFactory;
@@ -182,7 +182,7 @@ export function installRelicHunterGame(
     return service;
 }
 
-function toActor(session: RelicHunterGameService.Session): RelicGameMutationService.Command['actor'] {
+function toActor(session: RelicHunterGameService.Session): RelicGameMutationService.PlayerCommand['actor'] {
     return { clientId: session.clientId, sessionId: session.sessionId, issuedAtEpochMs: session.issuedAtEpochMs };
 }
 

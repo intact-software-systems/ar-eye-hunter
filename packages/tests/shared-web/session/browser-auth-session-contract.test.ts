@@ -1,4 +1,3 @@
-import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import {
     beforeEach,
     describe,
@@ -6,6 +5,9 @@ import {
     it,
     vi
 } from 'vitest';
+
+import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
+
 import {
     createAuthSessionApiHttpError,
     createAuthSessionGroupSnapshot,
@@ -284,14 +286,28 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             applicationId: 'app-1',
             workspaceId: 'workspace-1'
         });
-        mocks.joinStateGroup.mockResolvedValueOnce(oldRoom);
+        mocks.joinStateGroup.mockImplementationOnce(async (input) => ({
+            ...oldRoom,
+            activeSessions: oldRoom.activeSessions.map((presence) => ({
+                ...presence,
+                generationId: input.generationId,
+                expiresAtEpochMs: Date.now() + 120_000
+            }))
+        }));
         await facade.rooms.join('old-room');
         installGroupSnapshotRepositoryMocks(mocks, [oldRoom]);
 
         facade.auth.onChange((authState) => {
             authStates.push(authState);
         }, { emitCurrent: false });
-        mocks.joinStateGroup.mockResolvedValueOnce(newRoom);
+        mocks.joinStateGroup.mockImplementationOnce(async (input) => ({
+            ...newRoom,
+            activeSessions: newRoom.activeSessions.map((presence) => ({
+                ...presence,
+                generationId: input.generationId,
+                expiresAtEpochMs: Date.now() + 120_000
+            }))
+        }));
         mocks.leaveStateGroup.mockRejectedValueOnce(
             createAuthSessionApiHttpError(401, 'Unauthorized')
         );

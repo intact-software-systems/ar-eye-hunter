@@ -1,5 +1,7 @@
 import {
     test,
+    type Browser,
+    type BrowserContextOptions,
     type CDPSession,
     type Page,
     type TestInfo
@@ -25,32 +27,45 @@ export const roomBrowserTest = test.extend<RoomBrowserFixtures>({
         }
     }, { auto: true }],
     guest: async ({ browser }, use, testInfo) => {
-        // Separate browsers keep active game scenes from sharing one software graphics process.
-        const guestBrowser = await browser.browserType().launch();
-        try {
-            const guestContext = await guestBrowser.newContext();
-            try {
-                const page = await guestContext.newPage();
-                const capture = await startPageTiming(page, testInfo, 'guest');
-                try {
-                    await use(page);
-                }
-                finally {
-                    await capture?.stop();
-                }
-            }
-            finally {
-                // Playwright exports failure traces and screenshots when the context closes.
-                await guestContext.close();
-            }
-        }
-        finally {
-            await guestBrowser.close();
-        }
+        await useIsolatedRoomPage(browser, use, testInfo, 'guest', {});
     }
 });
 
-async function startPageTiming(page: Page, testInfo: TestInfo, role: 'host' | 'guest'): Promise<BrowserTimingCapture | undefined> {
+/** Owns one player's independent graphics process, timing capture and exported context trace. */
+export async function useIsolatedRoomPage(
+    browser: Browser,
+    use: (page: Page) => Promise<void>,
+    testInfo: TestInfo,
+    role: 'guest' | 'third' | 'fourth',
+    contextOptions: BrowserContextOptions
+): Promise<void> {
+    const isolatedBrowser = await browser.browserType().launch();
+    try {
+        const context = await isolatedBrowser.newContext(contextOptions);
+        try {
+            const page = await context.newPage();
+            const capture = await startPageTiming(page, testInfo, role);
+            try {
+                await use(page);
+            }
+            finally {
+                await capture?.stop();
+            }
+        }
+        finally {
+            await context.close();
+        }
+    }
+    finally {
+        await isolatedBrowser.close();
+    }
+}
+
+async function startPageTiming(
+    page: Page,
+    testInfo: TestInfo,
+    role: 'host' | 'guest' | 'third' | 'fourth'
+): Promise<BrowserTimingCapture | undefined> {
     if (process.env.RALLAR_BROWSER_TIMING !== '1') {
         return undefined;
     }
@@ -65,17 +80,31 @@ async function startPageTiming(page: Page, testInfo: TestInfo, role: 'host' | 'g
         browserSession = await browser.newBrowserCDPSession();
         const { gpu } = await browserSession.send('SystemInfo.getInfo');
         const artifactPath = testInfo.outputPath(`browser-timing-${role}.jsonl`);
-        writeFileSync(artifactPath, JSON.stringify({
-            kind: 'environment', startedAtEpochMs: Date.now(), role,
-            sourceRevision: process.env.RALLAR_ROOM_JOURNEY_REVISION ?? null,
-            browserVersion: browser.version(), nodeVersion: process.version,
-            platform: platform(), arch: arch(), availableParallelism: availableParallelism(), totalMemoryBytes: totalmem(),
-            rendererTimeDomain: 'timeTicks', sampleIntervalMs: 1000,
-            graphics: gpu.devices.map((device) => ({ vendor: device.vendorString, device: device.deviceString })),
-            testId: testInfo.testId, repeatEachIndex: testInfo.repeatEachIndex, retry: testInfo.retry
-        }) + '\n');
+        writeFileSync(
+            artifactPath,
+            JSON.stringify({
+                kind: 'environment',
+                startedAtEpochMs: Date.now(),
+                role,
+                sourceRevision: process.env.RALLAR_ROOM_JOURNEY_REVISION ?? null,
+                browserVersion: browser.version(),
+                nodeVersion: process.version,
+                platform: platform(),
+                arch: arch(),
+                availableParallelism: availableParallelism(),
+                totalMemoryBytes: totalmem(),
+                rendererTimeDomain: 'timeTicks',
+                sampleIntervalMs: 1000,
+                graphics: gpu.devices.map((device) => ({ vendor: device.vendorString, device: device.deviceString })),
+                testId: testInfo.testId,
+                repeatEachIndex: testInfo.repeatEachIndex,
+                retry: testInfo.retry
+            }) + '\n'
+        );
         const capture = new BrowserTimingCapture({
-            renderer, browser: browserSession, timers: createDefaultTimers(),
+            renderer,
+            browser: browserSession,
+            timers: createDefaultTimers(),
             record: (observation) => appendFileSync(artifactPath, JSON.stringify(observation) + '\n')
         });
         await capture.start();

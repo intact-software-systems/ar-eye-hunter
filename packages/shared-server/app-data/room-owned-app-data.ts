@@ -198,3 +198,20 @@ function assertObservedSave(read: RoomOwnedAppData.Read): void {
         throw new TypeError('Room-owned data revision must be a nonnegative safe integer');
     }
 }
+
+/** Every writer must be covered by the same catalog used by room retirement. */
+export function requireRoomOwnedAppDataBinding(
+    bindings: readonly RoomOwnedAppData.Binding[],
+    required: RoomOwnedAppData.Binding
+): void {
+    if (
+        !bindings.some((binding) =>
+            binding.applicationId === required.applicationId && binding.workspaceId === required.workspaceId &&
+            binding.namespace === required.namespace && binding.storeName === required.storeName
+        )
+    ) {
+        throw new Error(
+            `The complete database-wide catalog must include the exact room-owned binding for ${required.namespace}/${required.storeName}`
+        );
+    }
+}

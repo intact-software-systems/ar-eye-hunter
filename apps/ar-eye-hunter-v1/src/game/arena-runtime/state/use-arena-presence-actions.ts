@@ -4,12 +4,8 @@ import { useCallback } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { shouldSendRallarMotionSample } from '@shared/rallar-motion/mod.ts';
 
-import {
-    GAME_MOTION_LANE_ID,
-    GAME_PROTOCOL,
-    type GameRealtimeMessage,
-    type PlayerPose
-} from '../../arena-contracts.ts';
+import { GAME_PROTOCOL } from '@ar-eye-hunter/arena-contracts.ts';
+import { GAME_MOTION_LANE_ID, type GameRealtimeMessage, type PlayerPose } from '../../arena-contracts.ts';
 import type { AvatarProfile } from '../../avatarProfile.ts';
 import { createDeterministicAvatarProfile } from '../../avatarProfile.ts';
 import { colorForId } from '../../color.ts';
@@ -18,6 +14,7 @@ import type { ArenaConnection } from '../arena-connection-contracts.ts';
 import { isCurrentArenaSpectator } from '../arena-participation.ts';
 
 interface ArenaPresenceActionsInput {
+    readonly nowMs: () => number;
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
     readonly isNetworkEnabled: () => boolean;
     readonly localAvatarProfileRef: RefObject<AvatarProfile | undefined>;
@@ -36,7 +33,7 @@ export function useArenaPresenceActions(
 ): Pick<ArenaConnection, 'sendPose'> {
     const sendPose = useCallback(
         (pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>) => sendArenaPose(input, pose),
-        [input.isNetworkEnabled, input.runBestEffortNetworkTask]
+        [input.isNetworkEnabled, input.runBestEffortNetworkTask, input.nowMs]
     );
     return { sendPose };
 }
@@ -52,7 +49,7 @@ function sendArenaPose(
     }
     const generation = input.networkGenerationRef.current;
 
-    const now = Date.now();
+    const now = input.nowMs();
     if (!shouldSendRallarMotionSample(now, input.poseSendBudget.current, 50)) {
         return;
     }

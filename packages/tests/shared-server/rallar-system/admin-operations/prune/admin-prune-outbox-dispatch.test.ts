@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
+    ADMIN_PRUNE_APP_OUTBOX_TOPIC,
     decodeAdminPruneOutboxMessage,
     decodeAdminPruneWork,
     toAdminPruneOutbox,
@@ -44,7 +45,7 @@ describe('admin prune application outbox dispatch', () => {
             onMessage: async (_message, reserved) => {
                 delivered.push(decodeAdminPruneWork(reserved));
             }
-        });
+        }, [ADMIN_PRUNE_APP_OUTBOX_TOPIC]);
         await queue.enqueueIfAbsent(entry);
 
         await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience());

@@ -1,6 +1,7 @@
 import type { RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import type { FriendsConfig } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
+import type { TournamentGameProfile } from '@shared-server/rallar-system/tournaments/tournament-game-profile.ts';
 import type { RallarServerWsFanout } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
@@ -308,6 +309,11 @@ export interface ApiV1MatchmakingConfiguration {
     readonly rateLimit: ApiV1RateLimitConfiguration;
 }
 
+export interface ApiV1TournamentConfiguration {
+    readonly profiles: readonly TournamentGameProfile[];
+    readonly rateLimit: ApiV1RateLimitConfiguration;
+}
+
 export interface ApiV1Configuration {
     readonly profile: ApiV1ConfigurationProfile;
     readonly http: ApiV1HttpConfiguration;
@@ -318,6 +324,7 @@ export interface ApiV1Configuration {
     readonly stateApi: ApiV1StateApiConfiguration;
     readonly friends: ApiV1FriendsConfiguration;
     readonly matchmaking: ApiV1MatchmakingConfiguration;
+    readonly tournaments: ApiV1TournamentConfiguration;
     readonly parties: ApiV1PartiesConfiguration;
     readonly group: ApiV1GroupConfiguration;
     readonly topology: ApiV1TopologyConfiguration;

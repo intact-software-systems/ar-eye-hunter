@@ -1,17 +1,14 @@
+import { hasValidArenaRematch } from '@ar-eye-hunter/arena-rematch.ts';
 import type {
     Dispatch,
     RefObject,
     SetStateAction
 } from 'react';
-import { hasValidArenaRematch } from '../../arena-rematch.ts';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 
-import type {
-    ArenaEvent,
-    ArenaSnapshot,
-    GameRealtimeMessage
-} from '../../arena-contracts.ts';
+import type { ArenaEvent, ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
+import type { GameRealtimeMessage } from '../../arena-contracts.ts';
 import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import { isCurrentArenaPlayerSession } from '../arena-participation.ts';
 import type { ArenaPeerMessageHandlers } from '../messages/use-arena-peer-message-handlers.ts';

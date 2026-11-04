@@ -34,23 +34,19 @@ import {
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { type ArenaSnapshot, type MatchEndedAccepted } from '@ar-eye-hunter/arena-contracts.ts';
 import {
-    GAME_DIRECTOR_TOPIC_ID,
-    type ArenaSnapshot,
-    type MatchEndedAccepted,
-    type PlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+    createInitialArenaState,
+    toArenaSnapshot
+} from '@ar-eye-hunter/simulation.ts';
+import { GAME_DIRECTOR_TOPIC_ID, type PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import {
     createArenaRallarGameMatch,
     type ArenaRallarGameMatchHandle
 } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import {
-    createInitialArenaState,
-    toArenaSnapshot
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
-import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
+import { finishArenaMatchIfDue, startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
+import { createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import {
     createRallarTestFacade,
@@ -424,7 +420,7 @@ describe('arena match lifecycle delivery', () => {
         const match = createMatchFixture(Date.now());
         const delivery = await renderDirector(arena, match.active);
 
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
 
         expect(mockMatch.publishEvent).toHaveBeenCalledWith(
             { protocol: 'ar-eye-hunter.v1', kind: 'director-match-ended', accepted: match.endedAccepted },
@@ -452,7 +448,7 @@ describe('arena match lifecycle delivery', () => {
     it('keeps a late joiner out of the expected set the receipt froze at admission', async () => {
         const match = createMatchFixture(Date.now());
         const delivery = await renderDirector(arena, match.active);
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
             currentRoomId: 'arena-1',
@@ -491,7 +487,7 @@ describe('arena match lifecycle delivery', () => {
         });
         const publication = Promise.withResolvers<Awaited<ReturnType<typeof mockMatch.publishEvent>>>();
         mockMatch.publishEvent.mockReturnValueOnce(publication.promise);
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
 
         await arena.unmount();
         await act(async () => {
@@ -505,8 +501,8 @@ describe('arena match lifecycle delivery', () => {
     it('publishes the match end once per completed match', async () => {
         const match = createMatchFixture(Date.now());
         await renderDirector(arena, match.active);
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
-        await act(async () => arena.current?.publishArenaSnapshot({ ...match.ended, revision: match.ended.revision + 1 }));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
+        await act(async () => void arena.current?.publishArenaSnapshot({ ...match.ended, revision: match.ended.revision + 1 }, arena.current?.arenaSnapshot));
         expect(mockMatch.publishEvent).toHaveBeenCalledTimes(1);
     });
 
@@ -523,8 +519,8 @@ describe('arena match lifecycle delivery', () => {
         });
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
-        await act(async () => arena.current?.publishArenaSnapshot(match.active));
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.active, arena.current?.arenaSnapshot));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
         expect(mockMatch.publishEvent).not.toHaveBeenCalled();
         expect(arena.current?.matchDelivery).toBeUndefined();
     });
@@ -714,7 +710,7 @@ async function renderDirector(arena: ArenaRuntimeTestHarness, initial: ArenaSnap
     });
     await arena.render();
     await waitForState(() => arena.current?.connectionState === 'connected');
-    await act(async () => arena.current?.publishArenaSnapshot(initial));
+    await act(async () => void arena.current?.publishArenaSnapshot(initial, arena.current?.arenaSnapshot));
     mockMatch.publishEvent.mockClear();
     return delivery;
 }

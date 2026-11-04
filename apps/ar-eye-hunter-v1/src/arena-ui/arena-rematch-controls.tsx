@@ -1,8 +1,8 @@
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
 import { evaluateRallarGameRematchStart, type RallarGameParticipant } from '@shared/rallar-game/rematch.ts';
 
-import type { ArenaMatchState } from '../game/arena-contracts.ts';
-import { createArenaRematch, type ArenaRematch } from '../game/arena-rematch.ts';
+import type { ArenaMatchState } from '@ar-eye-hunter/arena-contracts.ts';
+import { createArenaRematch, type ArenaRematch } from '@ar-eye-hunter/arena-rematch.ts';
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import type { ArenaRematchDraft } from '../game/arena-runtime/game-actions/use-arena-world-actions.ts';
 import { useArenaRematchConfirmation } from './use-arena-rematch-confirmation.ts';
@@ -21,7 +21,7 @@ export function ArenaRematchControls({ match, arena }: ArenaRematchControlsProps
     const sessionId = arena.session?.sessionId;
     const member = participants.find((participant) => participant.sessionId === sessionId);
     const { pending, error, send } = useArenaRematchConfirmation({ arena, match, rematch, member });
-    if (!rematch || !arena.session) {
+    if (!rematch || !arena.session || arena.tournament.mode !== 'casual') {
         return null;
     }
     const confirmation = rematch.preparation.players.find((player) => player.sessionId === sessionId);

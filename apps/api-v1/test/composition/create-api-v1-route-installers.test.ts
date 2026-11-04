@@ -68,6 +68,7 @@ Deno.test('route installers mount representative API and websocket behavior in o
     assert.equal((await app.request('/api/parties/apps/app/workspaces/workspace/requests/request-1', { method: 'POST' })).status, 401);
     assert.equal((await app.request('/api/matchmaking/apps/app/workspaces/workspace')).status, 401);
     assert.equal((await app.request('/api/matchmaking/apps/app/workspaces/workspace/requests/request-1', { method: 'POST' })).status, 401);
+    assert.equal((await app.request('/api/tournaments/apps/app/workspaces/workspace/tournaments/cup')).status, 401);
     assert.equal((await app.request('/api/docs')).status, 200);
 });
 
@@ -86,6 +87,11 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
         topology: createTopology(),
         admin: createAdmin(),
         parties: {
+            reader: { read: rejectUnusedOperation },
+            mutation: { submit: rejectUnusedOperation },
+            mutationQuota: { timebasedFilterMs: 60000, maxNumberToAllow: 60 }
+        },
+        tournaments: {
             reader: { read: rejectUnusedOperation },
             mutation: { submit: rejectUnusedOperation },
             mutationQuota: { timebasedFilterMs: 60000, maxNumberToAllow: 60 }

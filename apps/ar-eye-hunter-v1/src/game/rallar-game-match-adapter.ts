@@ -10,14 +10,13 @@ import {
 } from '@shared-web/game/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 
+import { GAME_PROTOCOL, type ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
 import {
     GAME_AI_LANE_ID,
     GAME_COMBAT_LANE_ID,
     GAME_DIRECTOR_TOPIC_ID,
     GAME_FX_LANE_ID,
     GAME_MOTION_LANE_ID,
-    GAME_PROTOCOL,
-    type ArenaSnapshot,
     type GameRealtimeMessage
 } from './arena-contracts.ts';
 

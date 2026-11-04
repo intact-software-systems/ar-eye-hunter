@@ -36,6 +36,9 @@
       ],
       "@shared/*": [
         "../../packages/shared/*"
+      ],
+      "@ar-eye-hunter/*": [
+        "../../packages/ar-eye-hunter/*"
       ]
     },
     "types": [
@@ -48,6 +51,7 @@
   },
   "include": [
     "**/*.ts",
+    "**/*.tsx",
     "**/*.d.ts"
   ],
   "exclude": [

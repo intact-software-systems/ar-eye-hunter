@@ -1,3 +1,4 @@
+import { decodePostgresTimestamp } from '../../postgres/decode-postgres-timestamp.ts';
 import { decodeJsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import { AppDataCorruptionError } from '../app-data-corruption-error.ts';
 import type { AppDataEntry } from '../app-data-repository.ts';
@@ -7,13 +8,8 @@ export function decodePSqlAppDataRow(row: PSqlAppDataRow): AppDataEntry {
     assertIdentity(row);
     const schemaVersion = decodeNonNegativeInteger(row, row.schema_version, 'schema version');
     const revision = decodeNonNegativeInteger(row, row.revision, 'revision');
-    const expireAtTimestamp = Date.parse(row.expire_at_ts);
-    if (!Number.isFinite(expireAtTimestamp)) {
-        throwCorruption(row, 'has an invalid expiry timestamp.');
-    }
-    if (!Number.isFinite(Date.parse(row.updated_ts))) {
-        throwCorruption(row, 'has an invalid update timestamp.');
-    }
+    const expireAtTimestamp = decodeAppDataTimestamp(row, row.expire_at_ts, 'expiry').getTime();
+    const updatedTimestamp = decodeAppDataTimestamp(row, row.updated_ts, 'update').toISOString();
 
     return {
         namespace: row.app_namespace,
@@ -22,9 +18,18 @@ export function decodePSqlAppDataRow(row: PSqlAppDataRow): AppDataEntry {
         value: decodeStoredValue(row),
         schemaVersion,
         expireAtTimestamp,
-        updatedTimestamp: row.updated_ts,
+        updatedTimestamp,
         revision
     };
+}
+
+function decodeAppDataTimestamp(row: PSqlAppDataRow, value: string | Date, label: string): Date {
+    try {
+        return decodePostgresTimestamp(value, `app data ${label}`);
+    }
+    catch {
+        throwCorruption(row, `has an invalid ${label} timestamp.`);
+    }
 }
 
 function decodeStoredValue(row: PSqlAppDataRow): AppDataEntry['value'] {

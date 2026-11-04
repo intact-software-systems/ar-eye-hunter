@@ -1,5 +1,6 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
+import type { DecodeApiV1ConfigurationInput } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -35,12 +36,25 @@ export interface TracedRequest {
     readonly body: CreateGroupRequest | JoinGroupRequest | ConnectGroupPresenceSessionRequest;
 }
 
-export async function createPGliteTracedRallarServer(): Promise<PGliteTracedRallarServer> {
+export async function createPGliteTracedRallarServer(
+    environmentSource: DecodeApiV1ConfigurationInput['environmentSource'] = {}
+): Promise<PGliteTracedRallarServer> {
+    const server = await preparePGliteTracedRallarServer(environmentSource);
+    server.rallar.mountRest(server.app);
+    server.rallar.start();
+    return server;
+}
+
+/** Embedders install their own handlers after shared setup and before sealing the app inbox. */
+export async function preparePGliteTracedRallarServer(
+    environmentSource: DecodeApiV1ConfigurationInput['environmentSource']
+): Promise<PGliteTracedRallarServer> {
     const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const engineStopped = Promise.withResolvers<void>();
     const rallar = await createDefaultRallarServer({
         configuration: decodeApiV1Configuration({
             ...validDecodeApiV1ConfigurationInput(),
+            environmentSource,
             defaultsSource: { ...defaults, observability: { ...defaults.observability, timingLogs: false } }
         }),
         databaseLifecycle: {
@@ -54,9 +68,7 @@ export async function createPGliteTracedRallarServer(): Promise<PGliteTracedRall
     const app = createTracedApiTestApp();
     rallar.installSystemTopics();
     rallar.installWebSocketLifecycle();
-    rallar.mountRest(app);
     await rallar.runtime.readiness;
-    rallar.start();
     return {
         rallar,
         sql: databaseLifecycle.database,

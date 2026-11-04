@@ -6,6 +6,7 @@ import {
     type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { hasRelicRematchParticipation } from '@relic-hunters/src/relic-rematch.ts';
+import { relicPlayerId } from '@relic-hunters/src/relic-tournament-participation.ts';
 import type { RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
@@ -33,6 +34,7 @@ export namespace RelicExpeditionParticipation {
         readonly session: AuthSession;
     }
     export interface Dependencies {
+        createRequestId(): string;
         withParticipationLock<T>(roomId: string, sessionId: string, run: () => Promise<T>): Promise<T>;
         readonly data: Pick<RallarDataFacade, 'open'>;
         fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined>;
@@ -59,7 +61,11 @@ export class RelicExpeditionParticipation {
     ): boolean {
         return this.hasPending(roomId, session?.sessionId) ||
             (participation === 'player' &&
-                (!snapshot || hasUnfinishedRelicParticipation(snapshot, session?.sessionId)));
+                (!snapshot ||
+                    hasUnfinishedRelicParticipation(
+                        snapshot,
+                        session ? relicPlayerId(snapshot?.tournament?.binding ?? null, session) : undefined
+                    )));
     }
 
     join(roomId: string, sessionId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined> {
@@ -92,6 +98,12 @@ export class RelicExpeditionParticipation {
             return undefined;
         }
         const latest = await this.dependencies.fetchSnapshot(roomId);
+        if (latest?.tournament && isCurrent()) {
+            if (hasUnfinishedRelicParticipation(latest, session.clientId)) {
+                throw new Error('Withdraw from the tournament bracket or finish this match before leaving.');
+            }
+            return latest;
+        }
         if (
             !isCurrent() ||
             !(hasUnfinishedRelicParticipation(latest, session.sessionId) ||
@@ -102,7 +114,7 @@ export class RelicExpeditionParticipation {
         const snapshot = await this.dependencies.sendRestCommand({
             gameId: roomId,
             sessionId: session.sessionId,
-            requestId: crypto.randomUUID(),
+            requestId: this.dependencies.createRequestId(),
             command: {
                 protocolVersion: RELIC_PROTOCOL_VERSION,
                 gameId: roomId,
@@ -134,7 +146,9 @@ export class RelicExpeditionParticipation {
         });
         try {
             const previous = decodeAdmissionRecord(await store.get(roomId), roomId);
-            const proposed: AdmissionRecord = { pending: command ? { requestId: crypto.randomUUID(), command } : null };
+            const proposed: AdmissionRecord = {
+                pending: command ? { requestId: this.dependencies.createRequestId(), command } : null
+            };
             const record = previous?.pending ? previous : proposed;
             this.pending.set(key, record.pending !== null);
             if (!record.pending) {

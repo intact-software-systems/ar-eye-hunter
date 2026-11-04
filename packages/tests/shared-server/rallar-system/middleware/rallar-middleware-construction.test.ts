@@ -291,7 +291,8 @@ describe('createRallarMiddleware', () => {
                 onMessage: async (receivedMessage) => {
                     receivedMessages.push(receivedMessage);
                 }
-            }
+            },
+            ['app-outbox.worker-test']
         );
         await runtime.outboxQueueReader.enqueueIfAbsent(message);
         await runtime.qboxEngine.executeOnce();
@@ -325,7 +326,8 @@ describe('createRallarMiddleware', () => {
                     receivedOutboxMessages.push(receivedMessage);
                     await outboxBlocked.promise;
                 }
-            }
+            },
+            ['app-outbox.worker-test']
         );
         const outboxEntry = await runtime.outboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(

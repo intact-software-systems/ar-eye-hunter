@@ -18,7 +18,13 @@ interface RelicInboxFixtureOptions {
 }
 
 export async function createInboxFixture(options: RelicInboxFixtureOptions = {}) {
-    const fixture = await createGameFixture(options.gameId);
+    return createRelicGameInboxFixture(await createGameFixture(options.gameId), options);
+}
+
+export function createRelicGameInboxFixture(
+    fixture: Awaited<ReturnType<typeof createGameFixture>>,
+    options: RelicInboxFixtureOptions
+) {
     const resources = createPSqlResourceInboxRepository(fixture.storage.sql, () => new Date(fixture.nowEpochMs));
     const queue = new PSqlQueueBox(resources, () => Temporal.Instant.fromEpochMilliseconds(fixture.nowEpochMs));
     const reader = new InboxQueueReader(queue, {

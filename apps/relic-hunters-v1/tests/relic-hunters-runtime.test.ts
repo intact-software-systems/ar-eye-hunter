@@ -1,3 +1,4 @@
+import { startRelicTournament } from '@relic-hunters/src/tournament-expedition.ts';
 import {
     describe,
     expect,
@@ -33,6 +34,45 @@ import {
 } from './relic-runtime-backend.ts';
 
 describe('RelicHuntersRuntime', () => {
+    it('restores the same tournament hunter after signing in with a new session', async () => {
+        const backend = new RelicRuntimeBackend();
+        const peerSnapshots = vi.spyOn(backend, 'publishRtcSnapshot');
+        const actor = backend.session!;
+        const snapshot = {
+            ...toPublicRelicSnapshot(startRelicTournament('room-1', [actor.clientId, 'opponent'], 20)),
+            tournament: {
+                status: 'playing' as const,
+                binding: {
+                    tournamentRef: { applicationId: 'rallar-server', workspaceId: 'default', tournamentId: 'cup' },
+                    slot: 'semifinal-1' as const,
+                    attemptId: 'attempt',
+                    gameId: 'room-1',
+                    roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' },
+                    rulesId: 'relic-native-10-rounds-v1',
+                    principalIds: [actor.clientId, 'opponent'] as const
+                }
+            }
+        };
+        backend.deliverSnapshot(snapshot);
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        expect(runtime.getState().playerId).toBe(actor.clientId);
+        await backend.timers.advance(2000);
+        expect(peerSnapshots).not.toHaveBeenCalled();
+        backend.signOut();
+        expect(runtime.getState().playerId).toBeUndefined();
+        backend.signIn({ ...actor, sessionId: 'new-session' });
+        await vi.waitFor(() => expect(runtime.getState().connectionState).toBe('ready'));
+        expect(runtime.getState().playerId).toBe(actor.clientId);
+        expect(runtime.getState().snapshot?.tournament).toEqual(snapshot.tournament);
+        await runtime.getState().leaveRoom();
+        expect(runtime.getState().roomId).toBe('room-1');
+        expect(runtime.getState().error).toContain('Withdraw from the tournament bracket');
+        backend.deliverSnapshot({ ...snapshot, tournament: { ...snapshot.tournament, status: 'cancelled' } });
+        await runtime.getState().leaveRoom();
+        expect(runtime.getState().roomId).toBeUndefined();
+    });
+
     it('cleans up every auth subscription after a listener stops and restarts startup', async () => {
         const backend = new RelicRuntimeBackend();
         const runtime = createRuntime(backend);
@@ -945,7 +985,7 @@ describe('RelicHuntersRuntime', () => {
         await runtime.getState().leaveRoom();
         expect(requests.map((request) => request.kind)).toEqual(['join-expedition', 'join-expedition', 'leave-expedition']);
         expect(requests[1].requestId).toBe(requests[0].requestId);
-        expect(requests[0].requestId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(requests[0].requestId).toBe('relic-request-1');
         expect(backend.roomState().currentRoomId).toBeUndefined();
     });
 

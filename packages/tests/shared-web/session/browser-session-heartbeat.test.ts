@@ -1,3 +1,12 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { decodeJsonWireText, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { toCreateWsUrl } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -5,7 +14,8 @@ import {
     initHeartbeat,
     SESSION_HEARTBEAT_INTERVAL_MS,
     SESSION_HEARTBEAT_RENEWAL_MARGIN_MS,
-    SESSION_HEARTBEAT_RETRY_MS
+    SESSION_HEARTBEAT_RETRY_MS,
+    stopHeartbeat
 } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
@@ -13,15 +23,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
+
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { RFC_7517_PUBLICATION_KEY } from '../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import {
@@ -37,6 +39,19 @@ interface FetchCall {
     readonly url: string;
     readonly method: string;
     readonly body: JsonWireValue | undefined;
+}
+
+interface OwnSessionLease {
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
+
+interface GroupSnapshotFixtureInput {
+    readonly groupId: string;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly principalId: string;
+    readonly sessionId: string;
 }
 
 /** With a lease that outlives the browser cache, the cache TTL bounds the first renewal. */
@@ -65,6 +80,7 @@ describe('Browser session heartbeat', () => {
     });
 
     afterEach(() => {
+        stopHeartbeat();
         vi.unstubAllGlobals();
         vi.useRealTimers();
     });
@@ -95,8 +111,8 @@ describe('Browser session heartbeat', () => {
         vi.useFakeTimers();
         stubFetch(({ url, method }) =>
             method === 'POST' && url.includes('/clients/principal-1/')
-                ? jsonResponse(clientSnapshot('principal-1'))
-                : textResponse('unexpected', 500)
+                ? createJsonResponse(createOwnClientSnapshot('principal-1'))
+                : createTextResponse('unexpected', 500)
         );
 
         const handle = await initHeartbeat(clientData, {
@@ -116,12 +132,12 @@ describe('Browser session heartbeat', () => {
 
     it('runs the first renewal at the own session lease expiry minus the margin when the lease is shorter', async () => {
         vi.useFakeTimers();
-        const own = clientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 30_000 });
+        const own = createOwnClientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 30_000 });
         clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId('principal-1', own);
         stubFetch(({ url, method }) =>
             method === 'POST' && url.includes('/clients/principal-1/')
-                ? jsonResponse(own)
-                : textResponse('unexpected', 500)
+                ? createJsonResponse(own)
+                : createTextResponse('unexpected', 500)
         );
 
         const handle = await initHeartbeat(clientData, {
@@ -140,11 +156,23 @@ describe('Browser session heartbeat', () => {
 
     it('skips a renewal when a connect stamped the lease inside the interval, and renews at the next interval', async () => {
         vi.useFakeTimers();
-        stubFetch(({ url, method }) =>
-            method === 'POST' && url.includes('/clients/principal-1/')
-                ? jsonResponse(clientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 3_600_000 }))
-                : textResponse('unexpected', 500)
-        );
+        const joined = createJoinedGroupSnapshot({
+            groupId: 'live-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshot(joined);
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.includes('/clients/principal-1/')) {
+                return createJsonResponse(createOwnClientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 3_600_000 }));
+            }
+            if (method === 'POST' && url.includes('/groups/live-room/')) {
+                return createJsonResponse(joined);
+            }
+            return createTextResponse('unexpected', 500);
+        });
 
         const handle = await initHeartbeat(clientData, {
             publicationKey: null,
@@ -152,9 +180,9 @@ describe('Browser session heartbeat', () => {
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
         await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
-        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(1);
         clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId('principal-1', {
-            ...clientSnapshot('principal-1', {
+            ...createOwnClientSnapshot('principal-1', {
                 lastHeartbeatAtEpochMs: Date.now() + SESSION_HEARTBEAT_INTERVAL_MS - 5_000,
                 expiresAtEpochMs: Date.now() + 3_600_000
             }),
@@ -162,20 +190,32 @@ describe('Browser session heartbeat', () => {
         });
 
         await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
-        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         handle.stop();
-        expect(fetchCalls).toHaveLength(2);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(2);
     });
 
     it('renews when a client-session connect stamp lies in the browser clock\'s future', async () => {
         vi.useFakeTimers();
-        stubFetch(({ url, method }) =>
-            method === 'POST' && url.includes('/clients/principal-1/')
-                ? jsonResponse(clientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 3_600_000 }))
-                : textResponse('unexpected', 500)
-        );
+        const joined = createJoinedGroupSnapshot({
+            groupId: 'live-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshot(joined);
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.includes('/clients/principal-1/')) {
+                return createJsonResponse(createOwnClientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 3_600_000 }));
+            }
+            if (method === 'POST' && url.includes('/groups/live-room/')) {
+                return createJsonResponse(joined);
+            }
+            return createTextResponse('unexpected', 500);
+        });
 
         const handle = await initHeartbeat(clientData, {
             publicationKey: null,
@@ -183,9 +223,9 @@ describe('Browser session heartbeat', () => {
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
         await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
-        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(1);
         clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId('principal-1', {
-            ...clientSnapshot('principal-1', {
+            ...createOwnClientSnapshot('principal-1', {
                 lastHeartbeatAtEpochMs: Date.now() + SESSION_HEARTBEAT_INTERVAL_MS + 120_000,
                 expiresAtEpochMs: Date.now() + 3_600_000
             }),
@@ -194,12 +234,12 @@ describe('Browser session heartbeat', () => {
 
         await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         handle.stop();
-        expect(fetchCalls).toHaveLength(2);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(2);
     });
 
     it('runs the first renewal before a joined group snapshot written before the start lapses from the cache', async () => {
         vi.useFakeTimers();
-        const joined = groupSnapshot({
+        const joined = createJoinedGroupSnapshot({
             groupId: 'joined-room',
             applicationId: 'ar-eye-hunter',
             workspaceId: 'default',
@@ -210,12 +250,12 @@ describe('Browser session heartbeat', () => {
         await vi.advanceTimersByTimeAsync(15_000);
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.includes('/clients/principal-1/')) {
-                return jsonResponse(clientSnapshot('principal-1'));
+                return createJsonResponse(createOwnClientSnapshot('principal-1'));
             }
             if (method === 'POST' && url.includes('/groups/joined-room/')) {
-                return jsonResponse(joined);
+                return createJsonResponse(joined);
             }
-            return textResponse('unexpected', 500);
+            return createTextResponse('unexpected', 500);
         });
 
         const handle = await initHeartbeat(clientData, {
@@ -231,7 +271,7 @@ describe('Browser session heartbeat', () => {
 
     it('registers the page\'s publication key on each renewal of a joined group\'s presence', async () => {
         vi.useFakeTimers();
-        const joined = groupSnapshot({
+        const joined = createJoinedGroupSnapshot({
             groupId: 'joined-room',
             applicationId: 'ar-eye-hunter',
             workspaceId: 'default',
@@ -239,7 +279,11 @@ describe('Browser session heartbeat', () => {
             sessionId: authSession.sessionId
         });
         groupStateSnapshotsRepository.setGroupStateSnapshots([joined]);
-        stubFetch(({ url }) => url.includes('/clients/principal-1/') ? jsonResponse(clientSnapshot('principal-1')) : jsonResponse(joined));
+        stubFetch(({ url }) =>
+            url.includes('/clients/principal-1/')
+                ? createJsonResponse(createOwnClientSnapshot('principal-1'))
+                : createJsonResponse(joined)
+        );
 
         const handle = await initHeartbeat(clientData, {
             publicationKey: RFC_7517_PUBLICATION_KEY,
@@ -258,12 +302,15 @@ describe('Browser session heartbeat', () => {
         vi.useFakeTimers();
         vi.spyOn(console, 'warn').mockImplementation(() => {});
         let remainingFailures = 1;
-        stubFetch(() => {
+        stubFetch(({ method, url }) => {
+            if (method === 'GET' && url.endsWith('/groups')) {
+                return Response.json([]);
+            }
             if (remainingFailures > 0) {
                 remainingFailures -= 1;
-                return textResponse('unavailable', 503);
+                return createTextResponse('unavailable', 503);
             }
-            return jsonResponse(clientSnapshot('principal-1'));
+            return createJsonResponse(createOwnClientSnapshot('principal-1'));
         });
 
         const handle = await initHeartbeat(clientData, {
@@ -272,22 +319,22 @@ describe('Browser session heartbeat', () => {
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
         await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
-        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(1);
         await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_RETRY_MS - 1);
-        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(1);
         await vi.advanceTimersByTimeAsync(1);
-        expect(fetchCalls).toHaveLength(2);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(2);
         await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS - 1);
-        expect(fetchCalls).toHaveLength(2);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(2);
         await vi.advanceTimersByTimeAsync(1);
         handle.stop();
 
-        expect(fetchCalls).toHaveLength(3);
+        expect(fetchCalls.filter((call) => call.url.includes('/clients/principal-1/'))).toHaveLength(3);
     });
 
     it('uses the active scope and prunes a cached group after an authoritative heartbeat 404', async () => {
         vi.useFakeTimers();
-        const staleGroup = groupSnapshot({
+        const staleGroup = createJoinedGroupSnapshot({
             groupId: 'stale-room',
             applicationId: 'ar-eye-hunter',
             workspaceId: 'default',
@@ -301,7 +348,7 @@ describe('Browser session heartbeat', () => {
                 url.includes('/clients/principal-1/') &&
                 url.includes('/sessions/session-1/heartbeat/requests/')
             ) {
-                return jsonResponse(clientSnapshot('principal-1'));
+                return createJsonResponse(createOwnClientSnapshot('principal-1'));
             }
 
             if (
@@ -309,10 +356,10 @@ describe('Browser session heartbeat', () => {
                 url.includes('/groups/stale-room/') &&
                 url.includes('/sessions/session-1/heartbeat/requests/')
             ) {
-                return textResponse('Group presence session not found: session-1', 404);
+                return createTextResponse('Group presence session not found: session-1', 404);
             }
 
-            return textResponse('unexpected', 500);
+            return createTextResponse('unexpected', 500);
         });
 
         const handle = await initHeartbeat(clientData, {
@@ -354,7 +401,7 @@ describe('Browser session heartbeat', () => {
 
     it('preserves a newer group publication that races an authoritative heartbeat 404', async () => {
         vi.useFakeTimers();
-        const observed = groupSnapshot({
+        const observed = createJoinedGroupSnapshot({
             groupId: 'stale-room',
             applicationId: 'ar-eye-hunter',
             workspaceId: 'default',
@@ -372,13 +419,13 @@ describe('Browser session heartbeat', () => {
         groupStateSnapshotsRepository.setGroupStateSnapshots([observed]);
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.includes('/clients/principal-1/')) {
-                return jsonResponse(clientSnapshot('principal-1'));
+                return createJsonResponse(createOwnClientSnapshot('principal-1'));
             }
             if (method === 'POST' && url.includes('/groups/stale-room/')) {
                 groupStateSnapshotsRepository.setGroupStateSnapshots([newer]);
-                return textResponse('Group presence session not found: session-1', 404);
+                return createTextResponse('Group presence session not found: session-1', 404);
             }
-            return textResponse('unexpected', 500);
+            return createTextResponse('unexpected', 500);
         });
 
         const handle = await initHeartbeat(clientData, {
@@ -396,11 +443,8 @@ describe('Browser session heartbeat', () => {
 
     it('keeps the joined room after the memory TTL when a heartbeat only advances session leases', async () => {
         vi.useFakeTimers();
-        onTestFinished(() => {
-            vi.useRealTimers();
-        });
         vi.setSystemTime(1_000_000);
-        const joined = groupSnapshot({
+        const joined = createJoinedGroupSnapshot({
             groupId: 'live-room',
             applicationId: 'ar-eye-hunter',
             workspaceId: 'default',
@@ -419,12 +463,12 @@ describe('Browser session heartbeat', () => {
         vi.setSystemTime(1_040_000 - FIRST_RENEWAL_MS);
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.includes('/clients/principal-1/')) {
-                return jsonResponse(clientSnapshot('principal-1'));
+                return createJsonResponse(createOwnClientSnapshot('principal-1'));
             }
             if (method === 'POST' && url.includes('/groups/live-room/')) {
-                return jsonResponse(renewed);
+                return createJsonResponse(renewed);
             }
-            return textResponse('unexpected', 500);
+            return createTextResponse('unexpected', 500);
         });
 
         const handle = await initHeartbeat(clientData, {
@@ -444,7 +488,7 @@ describe('Browser session heartbeat', () => {
 
     it('does not mutate client or group caches after an in-flight heartbeat is stopped', async () => {
         vi.useFakeTimers();
-        const observed = groupSnapshot({
+        const observed = createJoinedGroupSnapshot({
             groupId: 'active-room',
             applicationId: 'ar-eye-hunter',
             workspaceId: 'default',
@@ -464,13 +508,13 @@ describe('Browser session heartbeat', () => {
         groupStateSnapshotsRepository.setGroupStateSnapshot(observed);
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.includes('/clients/principal-1/')) {
-                return jsonResponse(clientSnapshot('principal-1'));
+                return createJsonResponse(createOwnClientSnapshot('principal-1'));
             }
             if (method === 'POST' && url.includes('/groups/active-room/')) {
                 groupRequestStarted.resolve();
                 return groupResponse.promise;
             }
-            return textResponse('unexpected', 500);
+            return createTextResponse('unexpected', 500);
         });
 
         const handle = await initHeartbeat(clientData, {
@@ -481,7 +525,7 @@ describe('Browser session heartbeat', () => {
         await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
         await groupRequestStarted.promise;
         handle.stop();
-        groupResponse.resolve(jsonResponse(advanced));
+        groupResponse.resolve(createJsonResponse(advanced));
         await vi.advanceTimersByTimeAsync(0);
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
@@ -505,7 +549,7 @@ describe('Browser session heartbeat', () => {
                 return firstResponse.promise;
             }
             replacementRequestStarted.resolve();
-            return jsonResponse(clientSnapshot('principal-1'));
+            return createJsonResponse(createOwnClientSnapshot('principal-1'));
         });
 
         await initHeartbeat(clientData, {
@@ -524,7 +568,7 @@ describe('Browser session heartbeat', () => {
         });
         await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
         await replacementRequestStarted.promise;
-        firstResponse.resolve(textResponse('Unauthorized', 401));
+        firstResponse.resolve(createTextResponse('Unauthorized', 401));
         await vi.advanceTimersByTimeAsync(0);
         replacement.stop();
 
@@ -540,10 +584,10 @@ describe('Browser session heartbeat', () => {
                 url.includes('/clients/principal-1/') &&
                 url.includes('/sessions/session-1/heartbeat/requests/')
             ) {
-                return textResponse('Unauthorized', 401);
+                return createTextResponse('Unauthorized', 401);
             }
 
-            return textResponse('unexpected', 500);
+            return createTextResponse('unexpected', 500);
         });
 
         const handle = await initHeartbeat(clientData, {
@@ -569,12 +613,12 @@ describe('Browser session heartbeat', () => {
 
     it('carries the generation the server issued for the session once the client snapshot holds it', async () => {
         vi.useFakeTimers();
-        const own = clientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 3_600_000 });
+        const own = createOwnClientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 3_600_000 });
         clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId('principal-1', own);
         stubFetch(({ url, method }) =>
             method === 'POST' && url.includes('/clients/principal-1/')
-                ? jsonResponse(own)
-                : textResponse('unexpected', 500)
+                ? createJsonResponse(own)
+                : createTextResponse('unexpected', 500)
         );
 
         const handle = await initHeartbeat(clientData, {
@@ -599,10 +643,10 @@ describe('Browser session heartbeat', () => {
                 url.includes('/clients/principal-1/') &&
                 url.includes('/sessions/session-1/heartbeat/requests/')
             ) {
-                return jsonResponse(clientSnapshot('principal-1'));
+                return createJsonResponse(createOwnClientSnapshot('principal-1'));
             }
 
-            return textResponse('unexpected', 500);
+            return createTextResponse('unexpected', 500);
         });
 
         const first = await initHeartbeat(clientData, { publicationKey: null, authSession });
@@ -624,29 +668,26 @@ describe('Browser session heartbeat', () => {
     });
 
     function stubFetch(handler: (call: FetchCall) => Response | Promise<Response>): void {
-        vi.stubGlobal(
-            'fetch',
-            vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-                const call: FetchCall = {
-                    url: String(input),
-                    method: init?.method ?? 'GET',
-                    body: init?.body ? decodeJsonWireText(String(init.body)) : undefined
-                };
-                fetchCalls.push(call);
-                return handler(call);
-            })
-        );
+        vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+            const call: FetchCall = {
+                url: String(input),
+                method: init?.method ?? 'GET',
+                body: init?.body ? decodeJsonWireText(String(init.body)) : undefined
+            };
+            fetchCalls.push(call);
+            return handler(call);
+        });
     }
 });
 
-function jsonResponse(body: ClientSnapshot | GroupSnapshot, status = 200): Response {
+function createJsonResponse(body: ClientSnapshot | GroupSnapshot, status = 200): Response {
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' }
     });
 }
 
-function textResponse(body: string, status: number): Response {
+function createTextResponse(body: string, status: number): Response {
     return new Response(body, { status });
 }
 
@@ -654,12 +695,7 @@ function hasRequestId(value: JsonWireValue | undefined): boolean {
     return typeof value === 'object' && value !== null && 'requestId' in value;
 }
 
-interface OwnSessionLease {
-    readonly lastHeartbeatAtEpochMs?: number;
-    readonly expiresAtEpochMs?: number;
-}
-
-function clientSnapshot(principalId: string, lease: OwnSessionLease = {}): ClientSnapshot {
+function createOwnClientSnapshot(principalId: string, lease: OwnSessionLease = {}): ClientSnapshot {
     const snapshot = createClientSnapshotFixture({
         applicationId: 'ar-eye-hunter',
         workspaceId: 'default',
@@ -691,15 +727,7 @@ function clientSnapshot(principalId: string, lease: OwnSessionLease = {}): Clien
     };
 }
 
-interface GroupSnapshotFixtureInput {
-    readonly groupId: string;
-    readonly applicationId: string;
-    readonly workspaceId: string;
-    readonly principalId: string;
-    readonly sessionId: string;
-}
-
-function groupSnapshot(input: GroupSnapshotFixtureInput): GroupSnapshot {
+function createJoinedGroupSnapshot(input: GroupSnapshotFixtureInput): GroupSnapshot {
     const { applicationId, groupId, principalId, sessionId, workspaceId } = input;
     const snapshot = createGroupSnapshotFixture({
         applicationId,

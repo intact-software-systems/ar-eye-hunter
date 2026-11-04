@@ -1,7 +1,9 @@
+import type { ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
 import type { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import type { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import type { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+import type { ArenaTournamentClient } from '../tournament/arena-tournament-client.ts';
 
 import type {
     ArenaEvent,
@@ -11,17 +13,23 @@ import type {
     PlayerCombatState,
     PlayerHitAccepted,
     PlayerHitIntent,
-    PlayerPose,
-    RemotePlayer,
-    RemoteShot,
     ShotAccepted,
     ShotIntent,
     Vec3Tuple
+} from '@ar-eye-hunter/arena-contracts.ts';
+import type {
+    PlayerPose,
+    RemotePlayer,
+    RemoteShot
 } from '../arena-contracts.ts';
 import type { ArenaLinkState, ArenaPresenceNotice } from '../squad-link.ts';
 import type { ArenaSceneState } from './arena-scene-state.ts';
 
 export interface BabylonArenaProps {
+    readonly tournament?: {
+        readonly snapshot: ArenaTournamentSnapshot;
+        readonly sendControls: (input: ArenaTournamentClient.Controls) => void;
+    };
     readonly localSessionId?: string;
     readonly localUsername: string;
     readonly localColor: string;
@@ -47,7 +55,7 @@ export interface BabylonArenaProps {
     readonly onPickupIntent: (intent: PickupIntent) => void;
     readonly onLocalCombatChange: (combat: PlayerCombatState) => void;
     readonly onLocalPlayerChange: (player: Pick<PlayerArenaState, 'vitals' | 'loadout'>) => void;
-    readonly onArenaSnapshot: (snapshot: ArenaSnapshot) => void;
+    readonly onArenaSnapshot: ArenaSceneState.PublishSnapshot;
 }
 
 export interface RemoteAvatar {

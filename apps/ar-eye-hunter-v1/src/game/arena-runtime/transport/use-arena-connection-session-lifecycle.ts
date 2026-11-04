@@ -9,7 +9,8 @@ import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browse
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
-import type { ArenaSnapshot, RemotePlayer } from '../../arena-contracts.ts';
+import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
+import type { RemotePlayer } from '../../arena-contracts.ts';
 import { ARENA_RALLAR_GAME_DATA_CHANNEL_LANES } from '../../rallar-game-match-adapter.ts';
 import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
 import { isArenaPlayerSession, isCurrentArenaSpectator } from '../arena-participation.ts';

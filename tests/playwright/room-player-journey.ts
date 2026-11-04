@@ -66,12 +66,10 @@ export function toGroupId(link: string): string {
 
 export async function openArenaOperations(page: Page): Promise<void> {
     const panel = page.getByRole('region', { name: 'Arena operations', exact: true });
-    if (await panel.isVisible()) {
-        return;
-    }
     const button = page.getByRole('button', { name: 'Ops', exact: true });
     await expect(panel.or(button).first()).toBeVisible({ timeout: 30000 });
-    if (!await panel.isVisible()) {
+    // A translated mobile drawer is still DOM-visible; use its explicit expanded state.
+    if (await button.isVisible() && await button.getAttribute('aria-expanded') === 'false') {
         await button.click();
     }
     await expect(panel).toBeVisible();

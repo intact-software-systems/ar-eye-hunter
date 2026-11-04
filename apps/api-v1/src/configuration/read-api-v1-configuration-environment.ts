@@ -38,6 +38,7 @@ interface ApiV1ConfigurationEnvironmentOverlay extends MutableSourceObject {
     appInbox: MutableSourceObject & { retry: MutableSourceObject; completionWait: MutableSourceObject; };
     ice: MutableSourceObject & { rateLimit: MutableSourceObject; };
     crdt: MutableSourceObject;
+    tournaments: MutableSourceObject;
     blackBox: MutableSourceObject & {
         operatorToken: MutableSourceObject;
         pgliteEvidence: MutableSourceObject;
@@ -133,6 +134,7 @@ function createEnvironmentOverlay(): ApiV1ConfigurationEnvironmentOverlay {
         appInbox: { retry: {}, completionWait: {} },
         ice: { rateLimit: {} },
         crdt: {},
+        tournaments: {},
         blackBox: { operatorToken: {}, pgliteEvidence: {} },
         observability: {}
     };
@@ -446,6 +448,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
         decode: decodeJson,
         apply: (source, value) => source.crdt.documentTypePolicies = value
+    },
+    {
+        name: 'RALLAR_TOURNAMENT_PROFILES_JSON',
+        decode: decodeJson,
+        apply: (source, value) => source.tournaments.profiles = value
     },
     {
         name: 'RALLAR_GRANTED_WS_TOPICS_JSON',

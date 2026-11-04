@@ -21,10 +21,9 @@ The SPA is `apps/relic-hunters-v1`, the paired authority is
   warnings, and submission blockers from the accepted public snapshot.
 - `src/game/ai/` owns the advisory planning companion and its presentation.
   Generated proposals must pass domain validation before they can prime a draft.
-- `RelicSceneNext.tsx` is the active procedural neon facility renderer. Its
-  camera/facility model is `scene/relicSceneNextModel.ts`; cosmetic room-scoped
-  motion is `scene/networking.ts`. `OpeningRelicScene.tsx` renders while no
-  expedition snapshot is available. The retired castle renderer and disabled
+- `relic-scene.tsx` is the active procedural neon facility renderer. Its
+  camera/facility model is `scene/relic-scene-model.ts`; cosmetic room-scoped
+  motion is `scene/networking.ts`. `src/app.tsx` displays static opening artwork while no expedition snapshot is available; the artwork allocates no graphics context. The retired castle renderer and disabled
   intro/onboarding implementation are removed.
 
 ## Room entry and participation
