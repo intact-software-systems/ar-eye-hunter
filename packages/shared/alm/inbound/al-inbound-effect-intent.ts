@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALInboundNackPlanReason } from '../../al-contracts/al-control-value-codec.ts';
 import type {
     ALAckStatus,
     ALNackReason,
@@ -249,21 +250,6 @@ function toEffectId(
 ): string {
     return parts.map((part) => encodeURIComponent(String(part))).join(':');
 }
-
-/** Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and `not-subscribed`. */
-export const AL_INBOUND_NACK_PLAN_REASONS = [
-    'resync-required',
-    'gap',
-    'expired',
-    'overloaded',
-    'held-by-other',
-    'not-yet-in-sync',
-    'membership-fenced',
-    'unauthorized',
-    'not-subscribed'
-] as const;
-
-export type ALInboundNackPlanReason = typeof AL_INBOUND_NACK_PLAN_REASONS[number];
 
 function toNackReason(reason: ALInboundNackPlanReason): ALNackReason {
     switch (reason) {

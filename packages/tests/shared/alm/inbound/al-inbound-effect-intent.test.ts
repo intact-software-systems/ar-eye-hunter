@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALInboundNackPlanReason } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import {
-    toALInboundNegativeControlEffects,
-    type ALInboundNackPlanReason
-} from '@shared/alm/inbound/al-inbound-effect-intent.ts';
+import { toALInboundNegativeControlEffects } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
 
 /**
  * Every plan reason the inbound path can emit, with the NACK reason it goes out as. A new plan reason fails to

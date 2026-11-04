@@ -49,11 +49,21 @@ describe('AL control value codec', () => {
         expect(decodeALControlMessage(message).right).toEqual({ type: 'nack', payload: notSubscribedNack });
     });
 
-    it('refuses a NACK that names no logical recipient as malformed', () => {
+    // An older peer's NACK names no logical recipient: it speaks for its sender.
+    it('reads a NACK that names no logical recipient as speaking for its sender', () => {
         const { logicalRecipientPeerId: _omitted, ...withoutRecipient } = notSubscribedNack;
         const message = withResource(newALNackControlMessage(controlId, notSubscribedNack), withoutRecipient);
 
-        expect(decodeALControlMessage(message).left).toMatchObject({ code: 'malformed' });
+        expect(decodeALControlMessage(message).right).toEqual({
+            type: 'nack',
+            payload: { ...notSubscribedNack, logicalRecipientPeerId: 'relay' }
+        });
+    });
+
+    it('builds no NACK that names no logical recipient', () => {
+        const { logicalRecipientPeerId: _omitted, ...withoutRecipient } = notSubscribedNack;
+
+        expect(() => newALNackControlMessage(controlId, withoutRecipient as ALNackPayload)).toThrow(TypeError);
     });
 
     it('refuses a NACK with an empty logical recipient as malformed', () => {
@@ -71,9 +81,22 @@ describe('AL control value codec', () => {
         expect(decodeALControlMessage(message).right).toEqual({ type: 'receipt', payload: receipt });
     });
 
-    it('refuses a receipt that omits its outside-audience list as malformed', () => {
+    // An older server's receipt lists nobody outside the audience.
+    it('reads a receipt that omits its outside-audience list as holding nobody outside', () => {
         const { outsideAudienceRecipientPeerIds: _omitted, ...withoutOutside } = receipt;
         const message = withResource(newALReceiptControlMessage(controlId, receipt), withoutOutside);
+
+        expect(decodeALControlMessage(message).right).toEqual({
+            type: 'receipt',
+            payload: { ...receipt, outsideAudienceRecipientPeerIds: [] }
+        });
+    });
+
+    it('refuses a receipt whose outside-audience list names an empty recipient as malformed', () => {
+        const message = withResource(
+            newALReceiptControlMessage(controlId, receipt),
+            { ...receipt, outsideAudienceRecipientPeerIds: [''] }
+        );
 
         expect(decodeALControlMessage(message).left).toMatchObject({ code: 'malformed' });
     });

@@ -95,6 +95,20 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
     };
 }
 
+/** A NACK off the wire: an older peer's NACK names no logical recipient, so it speaks for its sender. */
+export function decodeALNackWirePayload(value: unknown): ALNackPayload {
+    return isControlRecord(value) && !Object.hasOwn(value, 'logicalRecipientPeerId')
+        ? decodeALNackPayload({ ...value, logicalRecipientPeerId: value.fromPeerId })
+        : decodeALNackPayload(value);
+}
+
+/** A receipt off the wire: an older server's receipt lists nobody outside the audience. */
+export function decodeALReceiptWirePayload(value: unknown): ALReceiptPayload {
+    return isControlRecord(value) && !Object.hasOwn(value, 'outsideAudienceRecipientPeerIds')
+        ? decodeALReceiptPayload({ ...value, outsideAudienceRecipientPeerIds: [] })
+        : decodeALReceiptPayload(value);
+}
+
 export function decodeALRepairPayload(value: unknown): ALRepairPayload {
     const record = decodeControlRecord(
         value,
@@ -146,6 +160,10 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
 
 interface ControlRecord {
     readonly [key: string]: unknown;
+}
+
+function isControlRecord(value: unknown): value is ControlRecord {
+    return typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function decodeControlRecord(
@@ -285,6 +303,21 @@ export function decodeALDeliveryCarrier(value: unknown, label: string): ALDelive
 
 /** The one enumeration of `ALDeliveryCarrier` values, for a decoder that must find the matching one. */
 export const AL_DELIVERY_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
+
+/** Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and `not-subscribed`. */
+export const AL_INBOUND_NACK_PLAN_REASONS = [
+    'resync-required',
+    'gap',
+    'expired',
+    'overloaded',
+    'held-by-other',
+    'not-yet-in-sync',
+    'membership-fenced',
+    'unauthorized',
+    'not-subscribed'
+] as const;
+
+export type ALInboundNackPlanReason = typeof AL_INBOUND_NACK_PLAN_REASONS[number];
 
 function decodeNackReason(value: unknown): ALNackReason {
     if (

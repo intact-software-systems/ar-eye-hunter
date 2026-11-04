@@ -1,3 +1,4 @@
+import { AL_INBOUND_NACK_PLAN_REASONS } from '../../al-contracts/al-control-value-codec.ts';
 import { assertPersistedALQos } from '../../al-contracts/al-message-persistence/assert-persisted-al-qos.ts';
 import {
     requireOptionalPersistedALNonEmptyString,
@@ -16,7 +17,6 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionSeqRanges
 } from '../al-admission-value-validation.ts';
-import { AL_INBOUND_NACK_PLAN_REASONS } from './al-inbound-effect-intent.ts';
 
 const PLAN_FIELDS = [
     'requested',

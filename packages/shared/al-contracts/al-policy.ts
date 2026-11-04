@@ -1,6 +1,6 @@
 import type { ALStoreDurability } from '../alm/al-runtime-stores.ts';
-import type { ALInboundNackPlanReason } from '../alm/inbound/al-inbound-effect-intent.ts';
 import type { ALMessage, ALTargets } from './al-contract.ts';
+import type { ALInboundNackPlanReason } from './al-control-value-codec.ts';
 
 import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } from './al-runtime.ts';
 import { toALSeqRangesText } from './al-seq-range.ts';

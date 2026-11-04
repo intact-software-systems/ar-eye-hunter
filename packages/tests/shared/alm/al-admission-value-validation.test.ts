@@ -129,6 +129,13 @@ describe('admission control decoding', () => {
         expect(() => decodeALAdmissionControlValue({ kind: 'pending', value: { ...pending, localRecipient: true } }, 'msg', 'pending')).toThrow(TypeError);
     });
 
+    // Only the wire reads an older NACK's absent recipient as its sender; a stored row written before the field existed stays undecodable.
+    it('rejects a stored NACK that names no logical recipient', () => {
+        const nack = { msgId: 'msg', fromPeerId: 'a', toPeerId: 'b', reason: 'resync-required', observedAtEpochMs: 7 };
+
+        expect(() => decodeALAdmissionControlValue({ kind: 'nacks', values: [nack] }, 'msg', 'nacks')).toThrow(TypeError);
+    });
+
     // A row written before the carrier field existed is undecodable until its control TTL passes.
     it('rejects an acknowledgement or a pending receipt that names no carrier', () => {
         const { carrier: _ackCarrier, ...uncarriedAck } = ack;

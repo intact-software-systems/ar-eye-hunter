@@ -13,7 +13,9 @@ import {
 import {
     decodeALAckPayload,
     decodeALNackPayload,
+    decodeALNackWirePayload,
     decodeALReceiptPayload,
+    decodeALReceiptWirePayload,
     decodeALRepairPayload
 } from './al-control-value-codec.ts';
 import {
@@ -173,11 +175,11 @@ export function parseALControlMessage(msg: ALMessage): ALParsedControlMessage | 
         case AL_CONTROL_ACK_TYPE_ID:
             return { type: 'ack', payload: decodeALAckPayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_NACK_TYPE_ID:
-            return { type: 'nack', payload: decodeALNackPayload(parseControlPayload(msg.payload.resource)) };
+            return { type: 'nack', payload: decodeALNackWirePayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_REPAIR_TYPE_ID:
             return { type: 'repair', payload: decodeALRepairPayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_RECEIPT_TYPE_ID:
-            return { type: 'receipt', payload: decodeALReceiptPayload(parseControlPayload(msg.payload.resource)) };
+            return { type: 'receipt', payload: decodeALReceiptWirePayload(parseControlPayload(msg.payload.resource)) };
         default:
             return undefined;
     }
