@@ -109,8 +109,9 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * A proof on an ungranted topic is refused whatever its room; a granted frame without a readable snapshot fails
-     * closed, and one its room refused keeps the room's refusal. Any other frame keeps its room plan.
+     * A proof on an ungranted topic is judged by the publication admission whatever its room: held while the page's
+     * snapshot is behind the frame's, refused once it is not. A granted frame without a readable snapshot fails closed,
+     * and one its room refused keeps the room's refusal. Any other frame keeps its room plan.
      */
     planIncomingPublication(input: RtcGrantedPublicationCarrier.IncomingPlanInput): ALMessageHandlingPlan {
         const { msg, snapshot, admission } = input;

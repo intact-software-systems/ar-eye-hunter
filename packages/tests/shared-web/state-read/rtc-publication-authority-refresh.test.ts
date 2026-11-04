@@ -7,9 +7,11 @@ import {
     vi
 } from 'vitest';
 
+import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
+import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createRtcGrantedTopicsFixture } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
@@ -33,7 +35,14 @@ interface RefreshedReceiver {
     readonly refreshedRooms: readonly string[];
 }
 
-const GRANTS = { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY } as const;
+type PublicationKeys = Readonly<Record<'a' | 'c', AvailablePublicationCrypto>>;
+
+type RoomGrants = Readonly<Record<string, GroupPublicationTopicPermissions>>;
+
+const GRANTS: RoomGrants = { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY };
+
+/** A room whose snapshot grants no topic: a page that declared no granted channel classifies none as granted. */
+const NO_GRANTS: RoomGrants = {};
 
 describe('a granted RTC publication whose key the receiver has not yet observed', () => {
     beforeEach(() => {
@@ -54,9 +63,9 @@ describe('a granted RTC publication whose key the receiver has not yet observed'
             outcomes: ['not-yet-in-sync: unknown-key', 'not-yet-in-sync: unknown-key']
         }
     ])('re-enters admission once after one refresh, which $refreshed', async ({ namesKey, outcomes }) => {
-        const keys = { a: await createAvailablePublicationCryptoFixture(), c: await createAvailablePublicationCryptoFixture() };
+        const keys = await createPublicationKeys();
         const { receiver, refreshedRooms } = createRefreshedReceiver(keys, namesKey);
-        const signed = await publishFromOrigin(keys);
+        const signed = await publishFromOrigin(keys, 3);
 
         await receiver.receive(signed, 'a');
 
@@ -66,11 +75,48 @@ describe('a granted RTC publication whose key the receiver has not yet observed'
     });
 });
 
+describe('a signed RTC frame on a topic the receiver\'s snapshot does not grant', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('holds it not-yet-in-sync while its snapshot is older than the frame, and admits it once the refresh grants the topic', async () => {
+        const keys = await createPublicationKeys();
+        const { receiver, refreshedRooms } = createUngrantedReceiver(keys, 3);
+        const signed = await publishFromOrigin(keys, 4);
+
+        await receiver.receive(signed, 'a');
+
+        expect(refreshedRooms).toEqual([ORIGIN_ROOM.groupId]);
+        expect(readAdmissionReasons(receiver)).toEqual(['not-yet-in-sync: authority-ahead', 'admitted']);
+        expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
+    });
+
+    it('drops it unauthorized once its snapshot is as new as the frame: no refresh, no NACK, no delivery', async () => {
+        const keys = await createPublicationKeys();
+        const { receiver, refreshedRooms } = createUngrantedReceiver(keys, 4);
+        const signed = await publishFromOrigin(keys, 4);
+
+        await receiver.receive(signed, 'a');
+
+        expect(refreshedRooms).toEqual([]);
+        expect(readAdmissionReasons(receiver)).toEqual(['unauthorized: proof-on-ungranted-topic']);
+        expect([receiver.delivered, await receiver.readSent('a')]).toEqual([[], []]);
+    });
+});
+
+async function createPublicationKeys(): Promise<PublicationKeys> {
+    return { a: await createAvailablePublicationCryptoFixture(), c: await createAvailablePublicationCryptoFixture() };
+}
+
 /** The receiver `c` observed the room before `a` registered its key; its one refresh reads the room again. */
-function createRefreshedReceiver(
-    keys: Readonly<Record<'a' | 'c', AvailablePublicationCrypto>>,
-    refreshNamesKey: boolean
-): RefreshedReceiver {
+function createRefreshedReceiver(keys: PublicationKeys, refreshNamesKey: boolean): RefreshedReceiver {
     const refreshedRooms: string[] = [];
     const registered = { c: toGroupPresencePublicationKey(keys.c)! };
     const receiver = createRtcRelayOverlayFixture({
@@ -95,20 +141,47 @@ function createRefreshedReceiver(
     return { receiver, refreshedRooms };
 }
 
-function toRoomSnapshot(
-    snapshotVersion: number,
-    keys: Readonly<Record<string, GroupPresencePublicationKey>>
-): GroupSnapshot {
-    return createPublicationRoomSnapshot({ sessionIds: ['a', 'c'], snapshotVersion, keys, grants: GRANTS });
+/**
+ * The receiver `c` declared no granted channel and observed the room at `snapshotVersion` with no grant row, so it
+ * classifies the topic by its snapshot alone; its one refresh reads the room at version 4, which grants the topic.
+ */
+function createUngrantedReceiver(keys: PublicationKeys, snapshotVersion: number): RefreshedReceiver {
+    const refreshedRooms: string[] = [];
+    let current = toRoomSnapshot(snapshotVersion, toRegisteredKeys(keys), NO_GRANTS);
+    const receiver = createRtcRelayOverlayFixture({
+        selfPeerId: 'c',
+        snapshot: current,
+        neighbourPeerIds: ['a'],
+        grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => current }),
+        publicationCrypto: keys.c,
+        topicSubscriptions: createRtcTopicSubscriptionsFixture([PUBLICATION_TOPIC_ID]),
+        roomAuthorityRefresh: new RtcGroupSnapshotRefresh({
+            refreshGroupSnapshot: async (roomRef) => {
+                refreshedRooms.push(roomRef.groupId);
+                current = toRoomSnapshot(4, toRegisteredKeys(keys), GRANTS);
+                receiver.acceptSnapshot(current);
+            }
+        })
+    });
+    return { receiver, refreshedRooms };
 }
 
-/** The transport copy the signing origin `a` sends `c` for one granted room multicast. */
-async function publishFromOrigin(keys: Readonly<Record<'a' | 'c', AvailablePublicationCrypto>>): Promise<ALMessage> {
+function toRegisteredKeys(keys: PublicationKeys): Readonly<Record<string, GroupPresencePublicationKey>> {
+    return { a: toGroupPresencePublicationKey(keys.a)!, c: toGroupPresencePublicationKey(keys.c)! };
+}
+
+function toRoomSnapshot(
+    snapshotVersion: number,
+    keys: Readonly<Record<string, GroupPresencePublicationKey>>,
+    grants: RoomGrants = GRANTS
+): GroupSnapshot {
+    return createPublicationRoomSnapshot({ sessionIds: ['a', 'c'], snapshotVersion, keys, grants });
+}
+
+/** The transport copy the signing origin `a` sends `c` for one granted room multicast, frozen at `snapshotVersion`. */
+async function publishFromOrigin(keys: PublicationKeys, snapshotVersion: number): Promise<ALMessage> {
     const origin = createRtcOriginOverlayFixture({
-        snapshot: toRoomSnapshot(3, {
-            a: toGroupPresencePublicationKey(keys.a)!,
-            c: toGroupPresencePublicationKey(keys.c)!
-        }),
+        snapshot: toRoomSnapshot(snapshotVersion, toRegisteredKeys(keys)),
         nextHopPeerIds: ['c'],
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto: keys.a

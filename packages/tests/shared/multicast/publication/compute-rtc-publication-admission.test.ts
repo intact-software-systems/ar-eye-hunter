@@ -76,7 +76,22 @@ describe('computeRtcPublicationAdmission', () => {
         expect(admission.left).toEqual({ code: 'unbound-target' });
     });
 
-    it('refuses a frame on a topic the page does not grant before anything else: only a granted frame may carry a proof', () => {
+    it.each<[string, RtcPublicationRefusalCode, Partial<RtcPublicationAdmissionInput>]>([
+        ['no readable snapshot', 'authority-ahead', { snapshot: null }],
+        ['a snapshot older than the frame', 'authority-ahead', {
+            snapshot: createPublicationRoomSnapshot({ ...ROOM, snapshotVersion: 2 })
+        }],
+        ['a snapshot as new as the frame', 'proof-on-ungranted-topic', {}],
+        ['a snapshot newer than the frame', 'proof-on-ungranted-topic', {
+            snapshot: createPublicationRoomSnapshot({ ...ROOM, snapshotVersion: 4 })
+        }]
+    ])('judges a proof on a topic the page does not grant by snapshot freshness first: %s answers %s', (_name, code, override) => {
+        const admission = computeRtcPublicationAdmission({ ...toAdmissionInput(), topicGranted: false, ...override });
+
+        expect(admission.left).toEqual({ code });
+    });
+
+    it('refuses a proof on a topic the page does not grant on a frame naming no room before anything else: no snapshot can grant it', () => {
         const admission = computeRtcPublicationAdmission({
             ...toAdmissionInput(),
             topicGranted: false,

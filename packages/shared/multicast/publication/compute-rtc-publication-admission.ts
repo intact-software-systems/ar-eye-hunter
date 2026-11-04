@@ -7,7 +7,10 @@ import { resolveRoomObservationDenial } from '../rtc-room-snapshot-admission.ts'
 
 export interface RtcPublicationAdmissionInput {
     readonly message: ALMessage;
-    /** Whether the receiving page classifies the frame's topic as granted: only a granted frame may carry a proof. */
+    /**
+     * Whether the receiving page classifies the frame's topic as granted: only a granted frame may carry a proof, and a
+     * page whose snapshot is behind the frame's may not yet see the grant.
+     */
     readonly topicGranted: boolean;
     /** The receiver's readable room snapshot: `null` when absent, or unrenewed for its cache's TTL. */
     readonly snapshot: GroupSnapshot | null;
@@ -42,15 +45,15 @@ export interface RtcPublicationAdmitted {
 /**
  * A granted publication a relay or receiver judges against its own readable snapshot: it forwards only an admitted
  * frame, and delivers one only to a principal that may subscribe and holds an active token. A proof on a topic the
- * page does not grant is refused first, since no rule of a granted topic may read it; a frame naming no room is unbound
- * next, since no snapshot of a room can attest it.
+ * page does not grant is judged first, since no rule of a granted topic may read it: by snapshot freshness (S3-R4), then
+ * refused. A frame naming no room is unbound next, since no snapshot of a room can attest it.
  */
 export function computeRtcPublicationAdmission(
     input: RtcPublicationAdmissionInput
 ): Either<RtcPublicationRefusal, RtcPublicationAdmitted> {
     const { message, snapshot } = input;
     if (!input.topicGranted) {
-        return toRefusal('proof-on-ungranted-topic');
+        return toRefusal(isUngrantedProofAhead(input) ? 'authority-ahead' : 'proof-on-ungranted-topic');
     }
     const roomRef = readALTargetGroupRef(message);
     if (roomRef === undefined) {
@@ -77,6 +80,19 @@ export function computeRtcPublicationAdmission(
         return toRefusal('invalid-signature');
     }
     return toPublicationDelivery(input, snapshot);
+}
+
+/**
+ * A page with no readable snapshot of the frame's room, or one older than the frame's, may not yet see the topic's
+ * grant: its refresh judges the frame again. A frame naming no room can never be granted by a snapshot.
+ */
+function isUngrantedProofAhead({ message, snapshot }: RtcPublicationAdmissionInput): boolean {
+    const targets = message.targets;
+    if (readALTargetGroupRef(message) === undefined) {
+        return false;
+    }
+    const frozenAt = targets?.mode === 'multicast' ? targets.snapshotVersion : undefined;
+    return snapshot === null || (frozenAt !== undefined && snapshot.group.snapshotVersion < frozenAt);
 }
 
 /** After the proof and its key: the sender must hold publish, and the receiver delivers only what it may subscribe. */

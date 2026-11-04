@@ -206,14 +206,9 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(plan.nack).toMatchObject({ enabled: true, toPeerId: fromPeerId, reason: 'not-yet-in-sync' });
     });
 
-    it.each([
-        { room: 'a current snapshot admits', snapshot: createSnapshot() },
-        { room: 'no snapshot yet judges', snapshot: undefined }
-    ])('drops a frame carrying a proof on a topic the page does not grant, where $room the frame', ({ snapshot }) => {
+    it('drops a frame carrying a proof on a topic its current snapshot does not grant', () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
-        if (snapshot) {
-            groupCache.accept('room-1', snapshot);
-        }
+        groupCache.accept('room-1', createSnapshot());
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
         const proven: ALMessage = {
             ...createRoomMessage('multicast'),
@@ -228,6 +223,20 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(plan.localDelivery.enabled).toBe(false);
         expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
         expect(plan.nack.enabled).toBe(false);
+    });
+
+    it('holds a frame carrying a proof on a topic it cannot judge yet not-yet-in-sync: no snapshot of its room is readable', () => {
+        const manager = createDefaultSnapshotAdmissionManager(new LatestRepository<string, GroupSnapshot>());
+        const proven: ALMessage = {
+            ...createRoomMessage('multicast'),
+            proof: { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
+        };
+
+        const plan = manager.planIncomingMessage(proven, { kind: 'rtc-peer', peerId: 'peer-1' });
+
+        expect(plan.dropReason).toBe('not-yet-in-sync: authority-ahead');
+        expect(plan.localDelivery.enabled).toBe(false);
+        expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
     });
 
     it('requires authority for unversioned and originating room plans', () => {

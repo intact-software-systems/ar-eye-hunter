@@ -23,9 +23,10 @@ export function decodeALDeadlinedMessage(msg: ALMessage): ALDeadlinedMessage {
  * A signed message keeps its origin's expiry, a signed field: the receiver's own earlier deadline is the one its
  * plan resolves and its work rows carry. Every other message takes the earlier of the two.
  *
- * Invariant: a proof here is a granted publication's. The RTC planner refuses a proof on any other topic at its first
- * plan (`unauthorized: proof-on-ungranted-topic`), so such a frame commits no work, and verifies a granted frame before
- * it forwards or delivers it; a WS message carries one only after a hand-over its server already normalized.
+ * Invariant: a proof here is a granted publication's. The RTC planner drops a proof on any other topic at every plan
+ * (`not-yet-in-sync: authority-ahead` while its snapshot is behind the frame's, so one refresh judges it again, else
+ * `unauthorized: proof-on-ungranted-topic`), so such a frame commits no work, and verifies a granted frame before it
+ * forwards or delivers it; a WS message carries one only after a hand-over its server already normalized.
  */
 export function toALInboundMessageWithDeadline(msg: ALMessage, expireAtTimestamp: number): ALDeadlinedMessage {
     const ownExpiresAtMs = msg.constraints?.expiresAtMs ?? expireAtTimestamp;
