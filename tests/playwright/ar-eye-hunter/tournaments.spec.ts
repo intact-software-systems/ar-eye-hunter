@@ -52,6 +52,12 @@ tournamentBrowserTest(
                 );
             }
             await playArenaTournament(winner, opponent);
+            if (slot === 'semifinal-1') {
+                const results = players[2].getByRole('dialog', { name: 'Match results', exact: true });
+                await expect(results).toBeVisible();
+                await results.getByRole('button', { name: 'Return to tournament bracket', exact: true }).click();
+                await expect(results).toHaveCount(0);
+            }
             await expect(tournamentMatch(page, slot)).toContainText(`Winner: ${winnerId} · score`, {
                 timeout: 30000
             });

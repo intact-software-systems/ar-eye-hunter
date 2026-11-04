@@ -1,3 +1,4 @@
+import { TournamentCatalogCursor } from '@shared-server/rallar-system/tournaments/catalog/tournament-catalog-cursor.ts';
 import { TournamentCatalogReader } from '@shared-server/rallar-system/tournaments/catalog/tournament-catalog-reader.ts';
 import { TOURNAMENT_PUBLICATIONS_NAMESPACE } from '@shared-server/rallar-system/tournaments/tournament-publication.ts';
 import { TOURNAMENTS_NAMESPACE } from '@shared-server/rallar-system/tournaments/tournament-repository.ts';
@@ -28,7 +29,7 @@ describe('bounded tournament discovery and personal history', () => {
     beforeEach(async () => {
         const storage = await createResourceInboxTestStorage('tournament_catalog', 4);
         runtime = new PSqlRuntimeStateRepository(storage.sql);
-        reader = new TournamentCatalogReader(runtime, () => 1000);
+        reader = new TournamentCatalogReader(runtime, () => 1000, new TournamentCatalogCursor('test-only-catalogue-key'));
         return () => storage.close();
     });
 
@@ -102,6 +103,10 @@ describe('bounded tournament discovery and personal history', () => {
         const first = await reader.read({ ...request, view: 'mine' });
         expect(first.entries).toEqual([]);
         expect(first.nextCursor).not.toBeNull();
+        expect(
+            () => JSON.parse(Buffer.from(first.nextCursor!, 'base64url').toString('utf8')),
+            'a sparse continuation must not disclose the filtered storage key'
+        ).toThrow();
         const last = await reader.read({ ...request, view: 'mine', cursor: first.nextCursor });
         expect(last.entries.map((entry) => entry.title)).toEqual(['200']);
         expect(last.nextCursor).toBeNull();

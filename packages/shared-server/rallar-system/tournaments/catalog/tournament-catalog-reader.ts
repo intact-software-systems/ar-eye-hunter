@@ -16,7 +16,7 @@ import {
 } from '../tournament-publication.ts';
 import { decodeTournamentEntry, TOURNAMENTS_NAMESPACE } from '../tournament-repository.ts';
 import { decodeTournamentStorageKey } from '../tournament-storage-key.ts';
-import { decodeTournamentCatalogCursor, toTournamentCatalogCursor } from './tournament-catalog-cursor.ts';
+import { TournamentCatalogCursor } from './tournament-catalog-cursor.ts';
 
 export namespace TournamentCatalogReader {
     export interface Request {
@@ -31,13 +31,16 @@ export namespace TournamentCatalogReader {
 /** Reads one bounded storage page; never fills sparse personal history through an unbounded scan. */
 export class TournamentCatalogReader {
     private readonly runtime: Pick<RuntimeStateRepositoryLike, 'findEntriesByPrefixPage' | 'readRuntimeStateBatch'>;
+    private readonly cursor: TournamentCatalogCursor;
     private readonly nowEpochMs: () => number;
 
     constructor(
         runtime: Pick<RuntimeStateRepositoryLike, 'findEntriesByPrefixPage' | 'readRuntimeStateBatch'>,
-        nowEpochMs: () => number
+        nowEpochMs: () => number,
+        cursor: TournamentCatalogCursor
     ) {
         this.runtime = runtime;
+        this.cursor = cursor;
         this.nowEpochMs = nowEpochMs;
     }
 
@@ -48,7 +51,7 @@ export class TournamentCatalogReader {
         if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 50) {
             throw new TypeError('Tournament catalogue limit must be between 1 and 50');
         }
-        const afterKey = decodeTournamentCatalogCursor(request);
+        const afterKey = await this.cursor.decode(request);
         const rows = await this.runtime.findEntriesByPrefixPage(
             TOURNAMENTS_NAMESPACE,
             `${groupStateScopeStorageKey(request.scope)}:tournament=`,
@@ -71,7 +74,7 @@ export class TournamentCatalogReader {
             }
         }
         const nextCursor = scanned > 0 && (scanned < rows.length || rows.length === 200)
-            ? toTournamentCatalogCursor(request, rows[scanned - 1].key)
+            ? await this.cursor.encode(request, rows[scanned - 1].key)
             : null;
         return {
             scope: request.scope,

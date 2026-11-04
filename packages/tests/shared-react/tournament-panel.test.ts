@@ -19,7 +19,7 @@ it('opens a linked bracket without registering or leaving a room, then registers
         activity: { isActive: () => true, onChange: () => () => {} },
         createId: () => crypto.randomUUID(),
         timers: createDefaultTimers(),
-        entry: { enter },
+        entry: { enter, getState: () => ({ status: 'idle', destination: null, principalId: null, failure: null }) },
         api: {
             change,
             read: async () => ({

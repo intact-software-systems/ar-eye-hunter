@@ -1,3 +1,4 @@
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
 import type { TournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
@@ -17,20 +18,41 @@ function browser() {
         read: vi.fn<RallarTournament.Api['read']>(async () => snapshot),
         change: vi.fn<RallarTournament.Api['change']>(async (input) => ({ ref, requestId: input.requestId, status: 'applied', code: null }))
     };
-    const enter = vi.fn();
+    const saved = new Map<string, string>();
+    const entry = new RallarRoomEntry({
+        auth: { session: () => session, onChange: () => () => {} },
+        rooms: {
+            onChange: () => () => {},
+            join: async () => {
+                throw new Error('No admission is requested in this owner test');
+            }
+        },
+        storage: {
+            getItem: (key) => saved.get(key) ?? null,
+            setItem: (key, value) => {
+                saved.set(key, value);
+            },
+            removeItem: (key) => {
+                saved.delete(key);
+            }
+        },
+        location: { read: () => 'https://game.example/', replace: () => {}, onChange: () => () => {} }
+    }, { scope });
+    const enter = vi.spyOn(entry, 'enter');
     const owner = new RallarTournament({
         auth: { session: () => session, onChange: () => () => {} },
         activity: { isActive: () => true, onChange: () => () => {} },
         timers: createDefaultTimers(),
         createId: () => crypto.randomUUID(),
         api,
-        entry: { enter }
+        entry
     }, { scope, tournamentId: 'cup', refreshIntervalMs: 10000 });
     owners.push(owner);
     return {
         owner,
         api,
         enter,
+        entry,
         snapshot(next: TournamentSnapshot) {
             snapshot = next;
         }
@@ -95,10 +117,19 @@ describe('Tournament browser ownership', () => {
             joinCode: null,
             preserveCurrentMembership: true
         });
+        const delayed = Promise.withResolvers<TournamentSnapshot>();
+        const canonical = test.owner.getState().view!;
+        test.api.read.mockReturnValueOnce(delayed.promise);
+        const pendingEntry = test.owner.enter('semifinal-1');
+        test.entry.enter({ intent: 'join', roomRef: { ...scope, groupId: 'newer-user-choice' }, participation: 'player', joinCode: null });
+        delayed.resolve(canonical);
+        await pendingEntry;
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
+        expect(test.owner.getState().error).toContain('room choice changed');
         test.api.read.mockRejectedValueOnce(new Error('Bracket refresh unavailable'));
         await test.owner.enter('semifinal-1');
         expect(test.owner.getState().error).toBe('Bracket refresh unavailable');
-        expect(test.enter).toHaveBeenCalledTimes(1);
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
         await test.owner.refresh();
         apply({
             type: 'schedule',
@@ -111,11 +142,11 @@ describe('Tournament browser ownership', () => {
         test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
         await test.owner.enter('semifinal-1');
         expect(test.owner.getState().error).toContain('rescheduled');
-        expect(test.enter).toHaveBeenCalledTimes(1);
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
         apply({ type: 'cancel' });
         test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
         await test.owner.enter('semifinal-1');
         expect(test.owner.getState().error).toContain('not available');
-        expect(test.enter).toHaveBeenCalledTimes(1);
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
     });
 });

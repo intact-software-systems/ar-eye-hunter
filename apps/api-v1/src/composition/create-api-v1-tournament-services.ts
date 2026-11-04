@@ -1,3 +1,4 @@
+import { TournamentCatalogCursor } from '@shared-server/rallar-system/tournaments/catalog/tournament-catalog-cursor.ts';
 import { TournamentCatalogReader } from '@shared-server/rallar-system/tournaments/catalog/tournament-catalog-reader.ts';
 import { registerTournamentInbox } from '@shared-server/rallar-system/tournaments/register-tournament-inbox.ts';
 import { TournamentReader } from '@shared-server/rallar-system/tournaments/tournament-reader.ts';
@@ -37,7 +38,11 @@ export function createApiV1TournamentServices(
     const mutation = registerTournamentInbox({ appInbox: runtime.appInbox, service });
     installTournamentReconciliation({ outbox: runtime.outboxQueueReader, operation: mutation, nowEpochMs });
     return {
-        catalog: new TournamentCatalogReader(input.runtimeStateRepository, nowEpochMs),
+        catalog: new TournamentCatalogReader(
+            input.runtimeStateRepository,
+            nowEpochMs,
+            new TournamentCatalogCursor(configuration.authentication.credentialSecret)
+        ),
         reader: new TournamentReader(repository, nowEpochMs),
         mutation,
         mutationQuota: new RateLimiterPolicy(

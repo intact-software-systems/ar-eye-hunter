@@ -27,7 +27,7 @@ export namespace RallarTournament {
     }
     export interface Dependencies extends AuthenticatedResource.Dependencies {
         readonly api: Api;
-        readonly entry: Pick<RallarRoomEntry, 'enter'>;
+        readonly entry: Pick<RallarRoomEntry, 'enter' | 'getState'>;
     }
     export interface Config extends AuthenticatedResource.Config {
         readonly tournamentId: string;
@@ -37,7 +37,7 @@ export namespace RallarTournament {
 /** One selected bracket and its exact user intents; RoomEntry and game owners retain admission and gameplay. */
 export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, TournamentRequest> {
     readonly ref: TournamentRef;
-    private readonly entry: Pick<RallarRoomEntry, 'enter'>;
+    private readonly entry: Pick<RallarRoomEntry, 'enter' | 'getState'>;
 
     static createBrowser(
         browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
@@ -81,6 +81,7 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
     }
 
     async enter(slot: TournamentMatch['slot']): Promise<void> {
+        const roomChoice = this.entry.getState();
         const attempt = this.beginOperation();
         if (attempt === null) {
             return;
@@ -89,6 +90,10 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
         try {
             await this.refresh();
             if (!this.current(attempt)) {
+                return;
+            }
+            if (this.entry.getState() !== roomChoice) {
+                this.setError('Your room choice changed. Choose Enter again if you still want this match.');
                 return;
             }
             const snapshot = this.getState().view;

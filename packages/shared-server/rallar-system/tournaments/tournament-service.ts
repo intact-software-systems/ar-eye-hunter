@@ -65,6 +65,12 @@ export namespace TournamentService {
         readonly traceId: string;
         readonly signalRetentionMs: number;
     }
+    export interface AdmissionReadInput {
+        readonly command: Command;
+        readonly bracket: TournamentRepository.Read;
+        readonly nowEpochMs: number;
+        readonly attempt: AppInboxCommandAttempt;
+    }
     export interface Computed {
         readonly result: TournamentMutationResult;
         readonly storage: RuntimeStateConditionalBatch | null;
@@ -126,7 +132,7 @@ export class TournamentService {
             command.materialized.capturedAtEpochMs,
             ...bracket.attempts.map((attempt) => attempt.result?.finishedAtEpochMs ?? 0)
         );
-        const admission = await this.readAdmission(command, bracket, nowEpochMs, attempt);
+        const admission = await this.readAdmission({ command, bracket, nowEpochMs, attempt });
         return {
             command,
             bracket,
@@ -161,11 +167,9 @@ export class TournamentService {
         await writeAppOutboxInserts(transaction, computed.outbox);
     }
     private async readAdmission(
-        command: TournamentService.Command,
-        bracket: TournamentRepository.Read,
-        nowEpochMs: number,
-        attempt: AppInboxCommandAttempt
+        input: TournamentService.AdmissionReadInput
     ): Promise<NewGroupCohortAdmissionInput | null> {
+        const { command, bracket, nowEpochMs, attempt } = input;
         if (command.request.type !== 'start' || bracket.record === null || command.materialized === null) {
             return null;
         }
