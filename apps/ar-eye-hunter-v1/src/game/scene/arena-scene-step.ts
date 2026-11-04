@@ -85,8 +85,8 @@ export function runFrame(input: ArenaSceneStepInput): void {
     }
     advancePlayerPrediction(input, dtMs, now);
     syncScenePresentation(input, now);
+    maybeFireHeldShot(input, now);
     if (input.networkEnabled) {
-        maybeFireHeldShot(input, now);
         detectLocalPickup(input);
     }
     input.onLocalPlayerChange({ vitals: runtime.localPlayer.vitals, loadout: runtime.localPlayer.loadout });
@@ -440,7 +440,10 @@ function syncCamera(runtime: ArenaSceneRuntime, nowEpochMs: number): void {
     runtime.recoil *= 0.82;
 }
 
-export function applyLook(runtime: ArenaSceneRuntime, yawDelta: number, pitchDelta: number): void {
+export function applyLook(runtime: ArenaSceneRuntime, yawDelta: number, pitchDelta: number): boolean {
+    if (yawDelta === 0 && pitchDelta === 0 || !runtime.beginInteraction()) {
+        return false;
+    }
     runtime.localPlayer = {
         ...runtime.localPlayer,
         yaw: runtime.localPlayer.yaw + yawDelta,
@@ -450,6 +453,7 @@ export function applyLook(runtime: ArenaSceneRuntime, yawDelta: number, pitchDel
             1.1
         )
     };
+    return true;
 }
 
 function detectLocalPickup(input: ArenaSceneStepInput): void {

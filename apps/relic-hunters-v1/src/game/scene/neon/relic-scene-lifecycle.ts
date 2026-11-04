@@ -1,13 +1,11 @@
 import { type CappedFrameLoop } from '@shared/resilience/timing/capped-frame-loop.ts';
-import { readRelicFrameReadiness } from './read-relic-frame-readiness.ts';
-import { writeRelicFrameObservation } from './relic-scene-diagnostics.ts';
-import { syncRelicAvatarPresentation } from './sync-relic-avatar-presentation.ts';
 
 import { type RelicCameraMode } from '../relic-scene-model.ts';
 import { startCappedRenderLoop } from '../start-capped-render-loop.ts';
 import { computeRelicTerminalPresentationKey } from './compute-relic-terminal-presentation-key.ts';
+import { readRelicFrameReadiness } from './read-relic-frame-readiness.ts';
 import { changeRuntimeCameraMode, updateCamera } from './relic-camera.ts';
-import { clearSceneDiagnostics, writeDiagnostics } from './relic-scene-diagnostics.ts';
+import { clearSceneDiagnostics, writeDiagnostics, writeRelicFrameObservation } from './relic-scene-diagnostics.ts';
 import { RelicSceneInput } from './relic-scene-input.ts';
 import {
     createRelicSceneRuntime,
@@ -15,6 +13,8 @@ import {
     syncRelicSceneSnapshot,
     updateRelicSceneMotion
 } from './relic-scene-runtime.ts';
+
+import { syncRelicAvatarPresentation } from './sync-relic-avatar-presentation.ts';
 
 /** Owns one graphics lifetime; React and room/network state stay subscribed outside it. */
 export class RelicSceneLifecycle {
@@ -144,10 +144,9 @@ export function renderRelicFrame(runtime: RelicSceneRuntime): 'ready' | 'pending
         localPlayerId: runtime.localPlayerId.value,
         cameraMode: runtime.cameraMode.value
     });
-    const before = readRelicFrameReadiness(runtime);
-    runtime.scene.render();
+    const before = runtime.renderScene();
     const after = readRelicFrameReadiness(runtime);
-    const ready = before.ready && after.ready && before.meshKey === after.meshKey;
+    const ready = before !== undefined && before.ready && after.ready && before.meshKey === after.meshKey;
     writeRelicFrameObservation(runtime, after, ready);
     if (ready) {
         writeDiagnostics(runtime);

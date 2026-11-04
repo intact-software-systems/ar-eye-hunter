@@ -26,6 +26,7 @@ import {
 } from '../relic-scene-model.ts';
 import { type ScenePrompt } from '../types.ts';
 import { computeRelicTerminalPresentationKey } from './compute-relic-terminal-presentation-key.ts';
+import { readRelicFrameReadiness, type RelicFrameReadiness } from './read-relic-frame-readiness.ts';
 import { createFirstPersonRig, syncAvatars, type AvatarBundle, type FirstPersonRig } from './relic-avatars.ts';
 import {
     ensureCameraModeHasPlayer,
@@ -45,8 +46,7 @@ import {
     type ReviewAvatarMotion,
     type ReviewPlaybackState
 } from './relic-review.ts';
-import { updateCameraYawFromKeys } from './relic-scene-input.ts';
-import { updatePromptForSelection, type PointerLookState } from './relic-scene-input.ts';
+import { updateCameraYawFromKeys, updatePromptForSelection, type PointerLookState } from './relic-scene-input.ts';
 import { clamp, ROOM_HALF_ROAM } from './relic-scene-space.ts';
 import { updateAvatarPositions } from './update-avatar-positions.ts';
 
@@ -127,6 +127,7 @@ export class RelicSceneRuntime {
     onCameraModeChange: { value(mode: RelicCameraMode): void; };
     reviewDirector: { value: boolean; };
     onReviewPlaybackComplete: { value: () => void; };
+    private frameReadinessBeforeDraw: RelicFrameReadiness | undefined;
     renderCount = 0;
     terminal = false;
     terminalKey: string | undefined;
@@ -164,6 +165,19 @@ export class RelicSceneRuntime {
         this.onCameraModeChange = { value: input.onCameraModeChange };
         this.reviewDirector = { value: input.reviewDirector };
         this.onReviewPlaybackComplete = { value: input.onReviewPlaybackComplete };
+        // The Scene owns this observer; current membership is selected before glow and main draws.
+        this.scene.onAfterActiveMeshesEvaluationObservable.add(() => {
+            if (this.scene.activeCamera === this.camera) {
+                this.frameReadinessBeforeDraw = readRelicFrameReadiness(this);
+            }
+        });
+    }
+
+    /** Draws once and returns this camera's readiness captured before its contributing passes. */
+    renderScene(): RelicFrameReadiness | undefined {
+        this.frameReadinessBeforeDraw = undefined;
+        this.scene.render();
+        return this.frameReadinessBeforeDraw;
     }
 }
 

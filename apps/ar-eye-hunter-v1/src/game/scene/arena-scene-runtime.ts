@@ -8,6 +8,7 @@ import type { RefObject } from 'react';
 
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
+import { CappedFrameLoop } from '@shared/resilience/timing/capped-frame-loop.ts';
 
 import type { ArenaSimulationState } from '@ar-eye-hunter/arena-contracts.ts';
 import {
@@ -103,7 +104,8 @@ export class ArenaSceneRuntime {
     readonly localPoseRef: { current: LocalPoseHistory | undefined; } = { current: undefined };
     private readonly pulseTimers = new Set<ReturnType<typeof setTimeout>>();
     private started = false;
-    private renderLoopActive = false;
+    private readonly frameLoop: CappedFrameLoop;
+    private previewInteracted = false;
     private presentedTerminal: ArenaTournamentSnapshot | undefined;
     private idlePlayer: LocalPlayerState | undefined;
     localPlayer: LocalPlayerState;
@@ -159,6 +161,17 @@ export class ArenaSceneRuntime {
             toArenaSnapshot(initial, input.props.current.roomId, this.lastFrameEpochMs)
         );
         syncTargetAvatars(this, this.lastFrameEpochMs);
+        this.frameLoop = new CappedFrameLoop({
+            driver: {
+                start: (frame) => this.engine.runRenderLoop(frame),
+                stop: (frame) => this.engine.stopRenderLoop(frame),
+                resetTiming: () => {
+                    this.lastFrameEpochMs = this.clock.nowEpochMs();
+                }
+            },
+            nowMs: this.clock.nowMonotonicMs,
+            renderFrame: () => this.render()
+        }, { frameIntervalMs: 0 });
     }
 
     get arenaState(): ArenaSimulationState {
@@ -194,24 +207,41 @@ export class ArenaSceneRuntime {
             if (isSameTerminalPresentation(this.presentedTerminal, snapshot)) {
                 return;
             }
+            this.frameLoop.pauseWhenReady();
+            this.frameLoop.invalidate();
+            return;
+        }
+        if (this.idlePlayer) {
+            this.resetIdleInput();
+            this.idlePlayer = undefined;
+        }
+        this.presentedTerminal = undefined;
+        if (this.isUntouchedPreview()) {
+            this.frameLoop.pauseWhenReady();
         }
         else {
-            if (this.idlePlayer) {
-                this.resetIdleInput();
-                this.idlePlayer = undefined;
-            }
-            this.presentedTerminal = undefined;
+            this.frameLoop.resume();
+            this.frameLoop.start();
         }
-        if (!this.renderLoopActive) {
-            this.lastFrameEpochMs = this.clock.nowEpochMs();
-            this.renderLoopActive = true;
-            this.engine.runRenderLoop(this.render);
+    }
+
+    beginInteraction(): boolean {
+        if (!this.acceptsInput()) {
+            return false;
         }
+        this.previewInteracted = true;
+        this.frameLoop.resume();
+        return true;
+    }
+
+    private isUntouchedPreview(): boolean {
+        const props = this.props.current;
+        return !this.previewInteracted && props.roomId === undefined && !props.tournament && !props.spectating;
     }
 
     stop(): void {
         this.started = false;
-        this.renderLoopActive = false;
+        this.frameLoop.dispose();
         window.removeEventListener('resize', this.resize);
         window.removeEventListener('keydown', this.onKeyDown);
         window.removeEventListener('keyup', this.onKeyUp);
@@ -223,7 +253,6 @@ export class ArenaSceneRuntime {
             clearTimeout(timer);
         }
         this.pulseTimers.clear();
-        this.engine.stopRenderLoop(this.render);
         this.audio.dispose();
         this.scene.dispose();
         this.canvas.dataset.arenaRuntimeReady = 'false';
@@ -233,6 +262,7 @@ export class ArenaSceneRuntime {
         if (!this.acceptsInput()) {
             return;
         }
+        this.beginInteraction();
         this.input[action] = true;
         const timer = setTimeout(() => {
             this.pulseTimers.delete(timer);
@@ -250,35 +280,34 @@ export class ArenaSceneRuntime {
             runtime: this
         });
     };
-    private readonly render = (): void => {
+    private readonly render = (): 'ready' | 'pending' => {
         if (!this.started) {
-            return;
+            return 'ready';
         }
         const snapshot = this.props.current.tournament?.snapshot;
         const terminal = isTerminalTournament(snapshot);
         // A terminal frame is complete only after its materials were ready before drawing and remain
         // ready afterwards: applying the native snapshot can introduce meshes during onBeforeRender.
-        const readyBeforeRender = !terminal || this.scene.isReady();
+        const settling = terminal || this.isUntouchedPreview();
+        const readyBeforeRender = !settling || this.scene.isReady();
         this.scene.render();
         writeArenaDiagnostics(this.canvas, this);
-        if (!terminal || !readyBeforeRender || !this.scene.isReady()) {
-            return;
+        if (settling && (!readyBeforeRender || !this.scene.isReady())) {
+            return 'pending';
         }
-        this.engine.stopRenderLoop(this.render);
-        this.renderLoopActive = false;
-        this.idlePlayer = this.localPlayer;
-        this.resetIdleInput();
-        this.presentedTerminal = snapshot;
+        if (terminal) {
+            this.idlePlayer = this.localPlayer;
+            this.resetIdleInput();
+            this.presentedTerminal = snapshot;
+        }
+        return 'ready';
     };
     private readonly resize = (): void => {
         if (!this.started) {
             return;
         }
         this.engine.resize();
-        if (!this.renderLoopActive) {
-            this.presentedTerminal = undefined;
-            this.refreshPresentation();
-        }
+        this.frameLoop.invalidate();
     };
     private acceptsInput(): boolean {
         return this.started && !isTerminalTournament(this.props.current.tournament?.snapshot);
@@ -298,13 +327,24 @@ export class ArenaSceneRuntime {
         }
     }
     private readonly onKeyDown = (event: KeyboardEvent): void => {
-        if (!this.acceptsInput()) {
+        if (
+            !this.acceptsInput() ||
+            event.target instanceof Element &&
+                event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+        ) {
             return;
         }
+        if (!setInputKey(this.input, event.code, true)) {
+            return;
+        }
+        if (event.code !== 'Escape') {
+            this.beginInteraction();
+        }
         this.inputDevice = 'keyboard-mouse';
-        setInputKey(this.input, event.code, true);
     };
-    private readonly onKeyUp = (event: KeyboardEvent): void => setInputKey(this.input, event.code, false);
+    private readonly onKeyUp = (event: KeyboardEvent): void => {
+        setInputKey(this.input, event.code, false);
+    };
     private readonly onPointerMove = (event: PointerEvent): void => {
         if (this.acceptsInput() && document.pointerLockElement === this.canvas) {
             this.inputDevice = 'keyboard-mouse';
@@ -321,6 +361,7 @@ export class ArenaSceneRuntime {
         if (props.spectating) {
             return;
         }
+        this.beginInteraction();
         if (event.button === 0) {
             const touch = event.pointerType === 'touch';
             const aim = touch

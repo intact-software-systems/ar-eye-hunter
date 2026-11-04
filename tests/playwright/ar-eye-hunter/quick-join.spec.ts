@@ -367,6 +367,106 @@ async function inspectRendererFrame(page: Page): Promise<RendererFrameInspection
     return JSON.parse(await page.getByTestId('renderer-frame-inspection').innerText());
 }
 
+roomBrowserTest.describe('untouched mobile preview', () => {
+    roomBrowserTest.use({ hasTouch: true });
+    for (const action of ['Fire', 'Jump', 'Move and sprint', 'Look and aim', 'Gyro']) {
+        roomBrowserTest(`untouched preview wakes from real ${action} input`, async ({ page }) => {
+            roomBrowserTest.skip(
+                process.env.RALLAR_ARENA_FULL_STACK === '1',
+                'Component integration uses the Vite source server.'
+            );
+            const fixture =
+                new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url)
+                    .pathname;
+            await page.goto(`/@fs${fixture}`);
+            await page.getByRole('button', { name: 'Open untouched preview', exact: true }).click();
+            await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+            const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+            if (action === 'Gyro') {
+                await page.getByRole('button', { name: 'Tune', exact: true }).click();
+                await page.getByRole('button', { name: 'Enable gyro fine-aim', exact: true }).click();
+                expect((await inspectRendererFrame(page)).loops).toBe(0);
+                await page.evaluate(() => {
+                    window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 0 }));
+                    window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 1, gamma: 1 }));
+                });
+                await expect(canvas).toHaveAttribute('data-arena-gyro-enabled', 'true');
+            }
+            else if (action === 'Fire' || action === 'Jump') {
+                const button = page.getByRole('button', { name: action, exact: true });
+                await button.scrollIntoViewIfNeeded();
+                if (action === 'Fire') {
+                    await button.hover();
+                    await page.mouse.down();
+                    try {
+                        await expect.poll(async () => Number(await canvas.getAttribute('data-arena-shot-sequence')))
+                            .toBeGreaterThan(0);
+                    }
+                    finally {
+                        await page.mouse.up();
+                    }
+                }
+                else {
+                    await button.click();
+                }
+            }
+            else {
+                await page.getByLabel(action, { exact: true }).click();
+                await expect(canvas).toHaveAttribute('data-arena-input-mode', 'touch');
+            }
+            await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+            const active = await inspectRendererFrame(page);
+            await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(active.frame);
+            await page.getByRole('button', { name: 'Unmount arena', exact: true }).click();
+            await expect(canvas).toHaveCount(0);
+            expect((await inspectRendererFrame(page)).loops).toBe(0);
+        });
+    }
+});
+
+roomBrowserTest(
+    'untouched preview idles while Ops typing and resize preserve interactive solo and room entry',
+    async ({ page }) => {
+        roomBrowserTest.skip(
+            process.env.RALLAR_ARENA_FULL_STACK === '1',
+            'Component integration uses the Vite source server.'
+        );
+        const fixture =
+            new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url)
+                .pathname;
+        await page.goto(`/@fs${fixture}`);
+        await page.getByRole('button', { name: 'Open untouched preview', exact: true }).click();
+        const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        const initial = await inspectRendererFrame(page);
+        expect(initial.ready).toBe(true);
+        await page.getByRole('textbox', { name: 'Ops note', exact: true }).pressSequentially('wasd');
+        await page.waitForTimeout(250);
+        expect(await inspectRendererFrame(page)).toEqual(initial);
+        await page.getByRole('button', { name: 'Resize arena', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBe(initial.frame + 1);
+        expect((await inspectRendererFrame(page)).loops).toBe(0);
+        await canvas.click({ position: { x: 320, y: 200 } });
+        await expect.poll(async () => Number(await canvas.getAttribute('data-arena-shot-sequence'))).toBeGreaterThan(0);
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => document.exitPointerLock());
+        await page.getByRole('button', { name: 'Join fixture room', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await page.getByRole('button', { name: 'Open untouched preview', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        await page.getByRole('button', { name: 'Toggle spectator', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        const watched = await inspectRendererFrame(page);
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(watched.frame);
+        await page.getByRole('button', { name: 'Unmount arena', exact: true }).click();
+        await expect(canvas).toHaveCount(0);
+        expect((await inspectRendererFrame(page)).loops).toBe(0);
+    }
+);
+
 roomBrowserTest(
     'director canvas shots idle completed native games and resume without replacing graphics',
     async ({ page }) => {

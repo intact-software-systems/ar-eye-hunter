@@ -84,8 +84,12 @@ function NativeTournamentScene(props: BabylonArenaProps) {
     const [tournament, setTournament] = useState<ArenaTournamentSnapshot>();
     const [spectating, setSpectating] = useState(false);
     const [nativeControls, setNativeControls] = useState('');
+    const [preview, setPreview] = useState(false);
     return (
-        <>
+        <div data-preview-controls={preview ? 'true' : 'false'}>
+            <button onClick={() => setPreview(true)}>Open untouched preview</button>
+            <button onClick={() => setPreview(false)}>Join fixture room</button>
+            <input aria-label="Ops note" />
             <button onClick={() => setMounted(false)}>Unmount arena</button>
             <button onClick={() => setMounted(true)}>Mount arena</button>
             <button onClick={() => setTournament(createFixtureTournament('native-match-1'))}>Enter native match</button>
@@ -115,7 +119,7 @@ function NativeTournamentScene(props: BabylonArenaProps) {
             <output data-testid="native-controls">{nativeControls}</output>
             {mounted && (
                 <BabylonArena
-                    {...props}
+                    {...toPreviewSceneProps(props, preview)}
                     spectating={spectating}
                     tournament={tournament && {
                         snapshot: tournament,
@@ -123,8 +127,21 @@ function NativeTournamentScene(props: BabylonArenaProps) {
                     }}
                 />
             )}
-        </>
+        </div>
     );
+}
+
+function toPreviewSceneProps(props: BabylonArenaProps, preview: boolean): BabylonArenaProps {
+    return preview
+        ? {
+            ...props,
+            roomId: undefined,
+            roomReady: true,
+            networkEnabled: false,
+            arenaSnapshot: undefined,
+            authority: { roomId: undefined, sessionId: undefined, epoch: undefined, local: false, fresh: false, freshUntilEpochMs: 0 }
+        }
+        : props;
 }
 
 function RendererInspection() {
