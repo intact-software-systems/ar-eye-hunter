@@ -321,7 +321,9 @@ export function decodeALDeliveryCarrier(value: unknown, label: string): ALDelive
 /** The one enumeration of `ALDeliveryCarrier` values, for a decoder that must find the matching one. */
 export const AL_DELIVERY_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
 
-/** Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and `not-subscribed`. */
+/**
+ * Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and `not-subscribed`.
+ */
 export const AL_INBOUND_NACK_PLAN_REASONS = [
     'resync-required',
     'gap',

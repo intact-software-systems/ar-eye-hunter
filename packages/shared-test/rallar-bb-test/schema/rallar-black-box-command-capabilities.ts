@@ -318,7 +318,9 @@ const COMMAND_CAPABILITIES_WITHOUT_FIELDS: readonly CommandCapabilityWithoutFiel
         kind: 'rtc.send',
         title: 'RTC Send',
         description:
-            'Sends JSON through a connected RTC/realtime provider. A typed messages.rtc send fails on a rejected, failed, expired, cancelled or superseded handle; with observe "rejected" a rejected handle is the command\'s value and any other end of the send fails it.',
+            'Sends JSON through a connected RTC/realtime provider. A typed messages.rtc send fails on a rejected, ' +
+            'failed, expired, cancelled or superseded handle; with observe "rejected" a rejected handle is the ' +
+            'command\'s value and any other end of the send fails it.',
         supportedProviderModes: [
             'simulated',
             'browser-rallar',

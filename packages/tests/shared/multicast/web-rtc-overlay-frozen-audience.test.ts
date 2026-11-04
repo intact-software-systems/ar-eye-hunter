@@ -340,7 +340,7 @@ describe('computeFrozenAudience', () => {
             .toEqual({ recipientPeerIds, snapshotVersion: 4 });
     });
 
-    it('freezes a granted group-leader send to its leader only while the leader holds subscribe, else to none, which its leader refusal names no-leader', () => {
+    it('freezes a granted group-leader send to its leader only while it holds subscribe, else to none, which its refusal names no-leader', () => {
         const message: ALMessage = {
             ...createOriginReceiverMulticast('leader'),
             delivery: { ...createOriginReceiverMulticast('leader').delivery!, ack: 'group-leader' }

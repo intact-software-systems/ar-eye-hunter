@@ -31,7 +31,9 @@ import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-ve
 import type { RtcTopicSubscriptionReader } from './rtc-topic-subscription-reader.ts';
 import { signRtcPublication, type RtcPublicationSigningFailure } from './sign-rtc-publication.ts';
 
-/** Why a granted leg is not signed: a shape RTC cannot carry (not a room multicast), or its origin could not sign it. */
+/**
+ * Why a granted leg is not signed: a shape RTC cannot carry (not a room multicast), or its origin could not sign it.
+ */
 type RtcGrantedLegRefusal = Readonly<{ kind: 'unsupported-shape'; message: string; }> | RtcPublicationSigningFailure;
 
 export namespace RtcGrantedPublicationCarrier {

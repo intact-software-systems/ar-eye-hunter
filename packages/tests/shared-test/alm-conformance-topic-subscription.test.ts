@@ -247,7 +247,7 @@ describe('ALM topic subscription conformance', () => {
             { carrier: 'rtc-with-ws-fallback', outsideAudience: 1 }
         ] as const
     )(
-        'ends a publish loop over $carrier only when the receipt expected the awaited recipients and $outsideAudience outside, all others confirming, then cues it',
+        'ends a publish loop over $carrier once the receipt expects the awaited recipients and $outsideAudience outside, the rest confirming',
         ({ carrier, outsideAudience }) => {
             const [delivery] = toTopicSubscriptionScenarios(carrier);
             for (const [producer, name] of [[delivery?.sender, 'publication-a'], [delivery?.publisherB, 'publication-c']] as const) {

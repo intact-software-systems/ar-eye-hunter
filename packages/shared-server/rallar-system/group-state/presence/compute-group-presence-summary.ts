@@ -41,7 +41,9 @@ export type GroupPresenceSummaryComputed =
         evaluatedAtEpochMs: number;
         operation: 'update';
         expectedRevision: number;
-        /** Only session publication keys differ from the stored summary: members adopt them, no topology input moved. */
+        /**
+         * Only session publication keys differ from the stored summary: members adopt them, no topology input moved.
+         */
         publicationKeysOnly: boolean;
         summary: GroupPresenceSummary;
     }>;

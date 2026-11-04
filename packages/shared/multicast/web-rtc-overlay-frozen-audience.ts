@@ -23,7 +23,10 @@ import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 /** The origin that freezes its own room send, and for a granted publication the sessions it may reach. */
 export interface RtcFreezingOrigin {
     readonly selfPeerId: string;
-    /** The sessions whose principal holds effective `subscribe` on a granted publication's topic; `null` for any other send. */
+    /**
+     * The sessions whose principal holds effective `subscribe` on a granted publication's topic; `null` for any other
+     * send.
+     */
     readonly subscribeHolders: ReadonlySet<string> | null;
 }
 

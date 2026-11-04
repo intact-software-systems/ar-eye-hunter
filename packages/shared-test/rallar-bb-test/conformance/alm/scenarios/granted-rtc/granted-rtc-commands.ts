@@ -165,9 +165,10 @@ export function toRtcAdmittedWait(step: AlmConformanceStepInput): RallarBlackBox
 }
 
 /**
- * Sends through the `rallar.messages.rtc.send` lane entry until one attempt's handle settles `rejected` with every fact,
- * which a refusal before admission does at once: the send observes `rejected`, so a rejected handle is its value. Until
- * the page's snapshot holds the grant the cell needs, an attempt ends another way, fails, and the poll sends again.
+ * Sends through the `rallar.messages.rtc.send` lane entry until one attempt's handle settles `rejected` with every
+ * fact, which a refusal before admission does at once: the send observes `rejected`, so a rejected handle is its
+ * value. Until the page's snapshot holds the grant the cell needs, an attempt ends another way, fails, and the poll
+ * sends again.
  */
 export function toGrantedRefusalPollCommand(
     { step, delivery, facts }: GrantedRtcRefusalPollInput

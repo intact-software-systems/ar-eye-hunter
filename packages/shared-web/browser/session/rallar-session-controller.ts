@@ -68,7 +68,9 @@ export interface RallarSessionController {
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
     requireSession(): AuthSession;
-    /** The public half of the session's key, which room entry registers on the presence row; `null` for a keyless page. */
+    /**
+     * The public half of the session's key, which room entry registers on the presence row; `null` for a keyless page.
+     */
     readPublicationKey(): Promise<GroupPresencePublicationKey | null>;
     readDefaults(): RallarDefaults | undefined;
     readDefaultScope(): StateScope | undefined;

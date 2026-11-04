@@ -14,8 +14,8 @@ export interface ToALOutboundReplanRefusalComputedInput<TPrepared> {
 
 /**
  * A re-plan of a stored message its carrier refuses because the sender holds no `publish` any more ends the message
- * (S3-R8), as the trusted server's own `no-publish-grant` refusal of a send does: a revoke is a terminal policy fact, so
- * the handle settles `rejected`. Every other re-plan refusal keeps its silent drop.
+ * (S3-R8), as the trusted server's own `no-publish-grant` refusal of a send does: a revoke is a terminal policy fact,
+ * so the handle settles `rejected`. Every other re-plan refusal keeps its silent drop.
  */
 export function resolveALOutboundReplanRefusalSettlement(
     msg: ALMessage,

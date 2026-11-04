@@ -44,8 +44,8 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-successor',
     scenarioKey: 'subscription-successor',
     tags: FULL_TAGS,
-    // The harness holds one RTC peer per session: over `rtc` and the fallback carrier the successor page's connect would
-    // wait for RTC readiness while the owner page still holds the session's peer, and never reach it.
+    // The harness holds one RTC peer per session: over `rtc` and the fallback carrier the successor page's connect
+    // would wait for RTC readiness while the owner page still holds the session's peer, and never reach it.
     carriers: ['ws'],
     roles: ['sender', 'receiver', 'successor'],
     laneFamily: 'same-context',

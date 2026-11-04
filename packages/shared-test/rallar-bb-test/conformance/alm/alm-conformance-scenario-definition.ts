@@ -119,7 +119,9 @@ export interface AlmConformanceConnect {
     readonly minReadyPeers: number;
 }
 
-/** A step of `role`'s recipe, named as a step names its commands, after which the lane starts a recipe it holds back. */
+/**
+ * A step of `role`'s recipe, named as a step names its commands, after which the lane starts a recipe it holds back.
+ */
 export interface AlmConformanceRecipeGate {
     readonly role: AlmConformanceRole;
     readonly commandName: string;

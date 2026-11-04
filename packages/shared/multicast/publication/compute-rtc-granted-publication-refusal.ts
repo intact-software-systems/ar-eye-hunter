@@ -22,9 +22,9 @@ export interface ResolveRtcGrantedLeaderRefusalInput {
 }
 
 /**
- * A granted `group-leader` send whose room's leader holds no `subscribe` on its topic has no leader RTC may reach: it is
- * refused as unsupported, the refusal a fallback carrier takes over. A room without a leader, or one the sender leads,
- * keeps the planner's `no-leader`, as any room send does.
+ * A granted `group-leader` send whose room's leader holds no `subscribe` on its topic has no leader RTC may reach: it
+ * is refused as unsupported, the refusal a fallback carrier takes over. A room without a leader, or one the sender
+ * leads, keeps the planner's `no-leader`, as any room send does.
  */
 export function resolveRtcGrantedLeaderRefusal(input: ResolveRtcGrantedLeaderRefusalInput): string | undefined {
     if (input.msg.delivery?.ack !== 'group-leader' || input.snapshot === null) {

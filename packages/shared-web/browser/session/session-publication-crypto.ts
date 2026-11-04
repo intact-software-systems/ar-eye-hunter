@@ -11,7 +11,10 @@ export namespace SessionPublicationCrypto {
     }
 }
 
-/** The page's signing crypto for the session it is signed into: read once per session, and again after a session change. */
+/**
+ * The page's signing crypto for the session it is signed into: read once per session, and again after a session
+ * change.
+ */
 export class SessionPublicationCrypto {
     readonly #input: SessionPublicationCrypto.Input;
     #current: Readonly<{ sessionId: string; crypto: Promise<PublicationCrypto>; }> | undefined;

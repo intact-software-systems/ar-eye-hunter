@@ -19,10 +19,11 @@ export async function registerRelicHunter(page: Page, role: string): Promise<Rel
 }
 
 /**
- * Where the page's Babylon scene runs: in its own browser (the room fixture's guests), or in a browser context that already
- * drives a live scene (a second tab of the shared-session specs). A second tab shares the first tab's GPU process, so its
- * context creation and shader work on portable SwiftShader block the tab's main thread for 8–12 s on a developer machine
- * and 20–27 s on a CI runner (measured 2026-11-04 across six commits; the network part of the entry is done in 0.4 s).
+ * Where the page's Babylon scene runs: in its own browser (the room fixture's guests), or in a browser context that
+ * already drives a live scene (a second tab of the shared-session specs). A second tab shares the first tab's GPU
+ * process, so its context creation and shader work on portable SwiftShader block the tab's main thread for 8–12 s on a
+ * developer machine and 20–27 s on a CI runner (measured 2026-11-04 across six commits; the network part of the entry
+ * is done in 0.4 s).
  */
 export type ExpeditionSceneHost = 'own-browser' | 'shared-context';
 

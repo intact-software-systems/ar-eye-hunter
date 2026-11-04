@@ -95,7 +95,9 @@ async function writeFirstPublicationKeyPair(db: IDBDatabase, stored: StoredPubli
     await completed;
 }
 
-/** The session's pair, or why there is none: no record, or a record that is not a P-256 signing pair of this session. */
+/**
+ * The session's pair, or why there is none: no record, or a record that is not a P-256 signing pair of this session.
+ */
 function decodeStoredPublicationKeyPair(
     value: unknown,
     sessionId: string

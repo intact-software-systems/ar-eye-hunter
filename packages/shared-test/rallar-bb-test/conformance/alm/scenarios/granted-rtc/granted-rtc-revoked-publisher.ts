@@ -22,7 +22,9 @@ import {
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { toGrantedRtcOwnerCommands } from './granted-rtc-commands.ts';
 
-/** Lets the revoke's delta reach both pages' snapshots after the owner's cue, so the sender's own check refuses first. */
+/**
+ * Lets the revoke's delta reach both pages' snapshots after the owner's cue, so the sender's own check refuses first.
+ */
 const REVOKE_DELTA_MARGIN_MS = 2_000;
 
 /**

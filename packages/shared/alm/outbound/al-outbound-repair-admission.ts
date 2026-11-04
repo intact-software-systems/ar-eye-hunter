@@ -59,8 +59,8 @@ export namespace ALOutboundRepairAdmission {
         readonly hopPeerIds: readonly string[] | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         /**
-         * The lane's guarded emitter: where a receipt and a not-yet-in-sync budget state that they ran out, and a receipt
-         * whose message a revoked publisher may no longer re-send states that refusal.
+         * The lane's guarded emitter: where a receipt and a not-yet-in-sync budget state that they ran out, and a
+         * receipt whose message a revoked publisher may no longer re-send states that refusal.
          */
         readonly settlements: ALOutboundSettlementEmitter;
     }

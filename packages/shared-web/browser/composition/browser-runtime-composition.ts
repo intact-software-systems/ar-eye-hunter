@@ -5,7 +5,9 @@ import {
     type RallarConnectionRuntimePort,
     type RallarStateRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import { createDefaultPublicationKeyStore } from '@shared-web/browser/composition/create-default-publication-key-store.ts';
+import {
+    createDefaultPublicationKeyStore
+} from '@shared-web/browser/composition/create-default-publication-key-store.ts';
 import {
     browserTransportRuntime,
     type BrowserTransportRuntimePort
