@@ -142,7 +142,7 @@ is refused until its next heartbeat lands.
   targets' `mode`, `GroupRef`, `recipientPeerIds`, `snapshotVersion`, `minSnapshotVersion`, `rosterVersion`,
   `exceptPeerIds`, `principalRef` (target intent; the frozen `snapshotVersion` is the authority generation);
   `constraints.expiresAtMs` (expiry); `ordering`, `delivery`, `actions` and `qos` field by field in a pinned order;
-  `payload.typeId`, `contentType` and the SHA-256 of `payload.resource`'s UTF-8 bytes. Absent values are `null`.
+  `payload.typeId`, `contentType` and `resource`, signed directly. Absent values are `null`.
   Excluded: the relay-mutable `forwarding`, `constraints.ttlHops`, `diagnostics`; `id.traceId`, `audit`, `proof`.
   A type classifying every `ALMessage` key stops compiling when a field is added. RTC carrier admission signs once,
   after its first synchronous plan froze and normalized the envelope, before storing it; later stages must leave
@@ -318,7 +318,7 @@ export type ALPublicationProofCheck =
     | 'invalid-signature'
     | 'unknown-key'
     | 'missing-proof';
-// toALPublicationProofSigningInput(message, payloadDigest): Uint8Array, pure, S3-R3's field list
+// toALPublicationProofSigningInput(message): string, the pure canonical JSON of S3-R3's field list
 // signALPublicationProof(message, keyPair): Promise<ALMessage>
 // verifyALPublicationProof(message, snapshot): Promise<ALPublicationProofCheck>
 
