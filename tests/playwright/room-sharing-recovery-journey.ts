@@ -11,21 +11,29 @@ export async function roomSharingCacheRecoveryJourney(page: Page, game: 'arena' 
     const createdLink = await roomLink.inputValue();
     const applicationId = game === 'arena' ? 'ar-eye-hunter' : 'rallar-server';
     const groupsPath = `/api/state/apps/${applicationId}/workspaces/default/groups`;
-    const collection = (url: URL) => url.pathname === groupsPath;
-    await page.route(collection, async (route) => {
-        if (route.request().method() === 'GET') {
-            await route.fulfill({ json: [] });
-        }
-        else {
+    const roomPath = `${groupsPath}/${toGroupId(createdLink)}`;
+    const readPaths = (url: URL) => url.pathname === groupsPath || url.pathname === roomPath;
+    const resumePointReads = Promise.withResolvers<void>();
+    await page.route(readPaths, async (route) => {
+        if (route.request().method() !== 'GET') {
             await route.continue();
+            return;
         }
+        if (new URL(route.request().url()).pathname === groupsPath) {
+            await route.fulfill({ json: [] });
+            return;
+        }
+        // Access checks can restore the cache before React presents the missing snapshot.
+        await resumePointReads.promise;
+        await route.continue();
     });
     try {
         await page.getByRole('button', { name: 'Refresh', exact: true }).click();
         await expect(roomLink).toHaveCount(0);
     }
     finally {
-        await page.unroute(collection);
+        resumePointReads.resolve();
+        await page.unrouteAll({ behavior: 'wait' });
     }
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(roomLink).toHaveValue(createdLink);
