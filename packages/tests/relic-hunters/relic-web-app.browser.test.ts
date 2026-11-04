@@ -34,6 +34,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type { RallarRoomState } from '@shared-web/browser/rallar.ts';
+import type { RallarAuthFacade } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import {
     newALBroadcastMessage,
     newALPrincipalBroadcastMessage,
@@ -45,7 +46,12 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonRequest, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
+import {
+    createRallarAiJsonResult,
+    createRallarAiMockProvider,
+    type RallarAiJsonRequest,
+    type RallarAiJsonResult
+} from '@shared/rallar-ai/mod.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
 import '../setup-browser-indexeddb.ts';
@@ -134,14 +140,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: {
         auth: {
             restore: () => rallarMock.session,
-            onChange: vi.fn((
-                listener: (state: {
-                    authenticated: boolean;
-                    reason: 'current';
-                    session?: AuthSession;
-                }) => void,
-                options?: { emitCurrent?: boolean; }
-            ) => {
+            onChange: vi.fn<RallarAuthFacade['onChange']>((listener, options) => {
                 if (options?.emitCurrent ?? true) {
                     listener({
                         authenticated: rallarMock.session !== undefined,
@@ -157,6 +156,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
         },
         session: () => rallarMock.session,
         people: { onChange: () => () => undefined },
+        ws: { onLifecycle: () => () => undefined },
         // Absent unless a test sets it: commands then take the REST fallback these tests read.
         serverPeerId: () => rallarMock.serverPeerId,
         start: async () => {
@@ -1173,15 +1173,11 @@ function generatedSnapshotWithPlayers(): RelicPublicSnapshot {
     return toPublicRelicSnapshot(state);
 }
 
-async function waitFor(assertion: () => boolean, attempts = 20): Promise<void> {
-    for (let index = 0; index < attempts; index += 1) {
+async function waitFor(assertion: () => boolean): Promise<void> {
+    await vi.waitFor(async () => {
         await flushBrowserEffects();
-        if (assertion()) {
-            return;
-        }
-    }
-
-    throw new Error(`Timed out waiting for browser app state: ${document.body.textContent?.slice(0, 1_000) ?? ''}`);
+        expect(assertion(), `Browser app state: ${document.body.textContent?.slice(0, 1_000) ?? ''}`).toBe(true);
+    });
 }
 
 /** The principal broadcast that carries a suggestion to the local hunter's own sessions in the room. */
