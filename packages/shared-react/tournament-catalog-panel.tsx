@@ -56,7 +56,7 @@ export function TournamentCatalogPanel({ owner, onSelect }: TournamentCatalogPan
                     Load more tournaments
                 </button>
             )}
-            <p>Listed by reference. Start times belong to individual matches.</p>
+            <p>Open a tournament to see match times and registration.</p>
         </section>
     );
 }
