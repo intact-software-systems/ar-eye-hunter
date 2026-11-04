@@ -11,6 +11,7 @@ import type { RallarParty } from './rallar-party.ts';
 export const partyHttpApi: RallarParty.Api = {
     async read({ scope, session, signal }) {
         const response = await readApiView({
+            timeoutMs: 10000,
             baseUrl: readApiBaseUrl(),
             path: partyPath(scope),
             session,

@@ -85,7 +85,7 @@ function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
                 <BrowserTournamentPanel
                     browser={rallar}
                     entry={arenaRoomEntry}
-                    catalogConfig={{ scope: ARENA_ROOM_SCOPE, limit: 20, refreshIntervalMs: 30000, timeoutMs: 10000 }}
+                    catalogConfig={{ scope: ARENA_ROOM_SCOPE, limit: 20, timeoutMs: 10000 }}
                     bracketRefreshIntervalMs={1000}
                 />
             )}

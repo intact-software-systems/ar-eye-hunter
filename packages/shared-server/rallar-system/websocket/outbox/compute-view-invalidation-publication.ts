@@ -13,12 +13,17 @@ import { computeWsOutboxProvenanceRecord } from './ws-outbox-provenance.ts';
 export type ViewInvalidationPublicationInput =
     & ViewInvalidationPublicationFacts
     & (
-        | Pick<ViewInvalidation.ScopedAccount, 'resource' | 'scope'>
-        | Pick<ViewInvalidation.Account, 'resource' | 'scope'>
+        | (
+            & (
+                | Pick<ViewInvalidation.ScopedAccount, 'resource' | 'scope'>
+                | Pick<ViewInvalidation.Account, 'resource' | 'scope'>
+            )
+            & { readonly principalIds: readonly string[]; }
+        )
+        | (Pick<ViewInvalidation.PublicCatalog, 'resource' | 'scope'> & { readonly principalIds: null; })
     );
 
 interface ViewInvalidationPublicationFacts {
-    readonly principalIds: readonly string[];
     readonly changeId: string;
     readonly createdAtEpochMs: number;
     readonly retentionMs: number;
@@ -37,7 +42,7 @@ export function computeViewInvalidationPublication(
 ): ViewInvalidationPublication {
     const outbox: AppOutboxInsert[] = [];
     const provenance: RuntimeStateGuardedBatchEffect[] = [];
-    for (const principalId of [...new Set(input.principalIds)].sort()) {
+    for (const principalId of input.principalIds === null ? [null] : [...new Set(input.principalIds)].sort()) {
         const notice = decodeViewInvalidation({
             version: 1,
             resource: input.resource,
@@ -56,9 +61,11 @@ export function computeViewInvalidationPublication(
             entry,
             message,
             expiresAtMs: input.createdAtEpochMs + input.retentionMs,
-            target: notice.scope === null
-                ? { kind: 'account-view', accountView: { version: 1, principalId } }
-                : { kind: 'scoped-account-view', principalRef: { ...notice.scope, principalId } }
+            target: notice.principalId === null
+                ? { kind: 'scoped-world-broadcast', scope: notice.scope }
+                : notice.scope === null
+                ? { kind: 'account-view', accountView: { version: 1, principalId: notice.principalId } }
+                : { kind: 'scoped-account-view', principalRef: { ...notice.scope, principalId: notice.principalId } }
         });
         provenance.push({ effectId: `view:${entry.key.resourceId}`, operation: 'insert', ...record });
         outbox.push(computeAppOutboxInsert(entry));
@@ -71,7 +78,9 @@ function toViewInvalidationMessage(input: ViewInvalidationPublicationInput, noti
     const route = toAppQueueKey({
         topicId: AppTopics.viewInvalidated,
         resourceId: identity,
-        contextId: computeSha256CanonicalJson({ scope: input.scope, principalId: notice.principalId })
+        contextId: notice.principalId === null
+            ? notice.scope.applicationId
+            : computeSha256CanonicalJson({ scope: input.scope, principalId: notice.principalId })
     });
     return decodePersistedALMessageValue({
         id: {
@@ -82,11 +91,15 @@ function toViewInvalidationMessage(input: ViewInvalidationPublicationInput, noti
             traceId: input.traceId
         },
         route,
-        targets: notice.scope === null ? { mode: 'unicast', toPeerId: notice.principalId } : {
-            mode: 'broadcast',
-            scope: 'principal',
-            principalRef: { ...input.scope, principalId: notice.principalId }
-        },
+        targets: notice.principalId === null
+            ? { mode: 'broadcast', scope: 'world' }
+            : notice.scope === null
+            ? { mode: 'unicast', toPeerId: notice.principalId }
+            : {
+                mode: 'broadcast',
+                scope: 'principal',
+                principalRef: { ...input.scope, principalId: notice.principalId }
+            },
         constraints: { expiresAtMs: input.createdAtEpochMs + input.retentionMs },
         delivery: { ownership: 'shared', reliability: 'at-least-once', ack: 'none' },
         payload: {

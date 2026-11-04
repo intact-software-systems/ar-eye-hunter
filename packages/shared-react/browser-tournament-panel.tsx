@@ -1,3 +1,4 @@
+import type { SubscribeViewInvalidations } from '@shared-web/browser/api/subscribe-view-invalidations.ts';
 import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { RallarTournamentCatalog } from '@shared-web/browser/tournaments/rallar-tournament-catalog.ts';
 import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
@@ -5,7 +6,7 @@ import { useCallback, useState } from 'react';
 import { TournamentPanel } from './tournament-panel.tsx';
 
 export interface BrowserTournamentPanelProps {
-    readonly browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>;
+    readonly browser: SubscribeViewInvalidations.Browser & Pick<RallarRoomEntry.Browser, 'auth'>;
     readonly entry: RallarRoomEntry;
     readonly catalogConfig: RallarTournamentCatalog.Config;
     readonly bracketRefreshIntervalMs: number;

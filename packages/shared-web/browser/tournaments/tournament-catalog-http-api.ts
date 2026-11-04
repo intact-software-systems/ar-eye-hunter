@@ -1,6 +1,6 @@
 import { decodeTournamentCatalogPage } from '@shared/api/tournaments/tournament-catalog.ts';
 import { readApiBaseUrl } from '../api-client-config.ts';
-import { sendApiHttpRequest } from '../api/send-api-http-request.ts';
+import { readApiView } from '../api/read-api-view.ts';
 import type { RallarTournamentCatalog } from './rallar-tournament-catalog.ts';
 
 export const tournamentCatalogHttpApi: RallarTournamentCatalog.Api = {
@@ -13,12 +13,12 @@ export const tournamentCatalogHttpApi: RallarTournamentCatalog.Api = {
             encodeURIComponent(scope.workspaceId)
         }/catalog?${query}`;
         return decodeTournamentCatalogPage(
-            await sendApiHttpRequest({
+            await readApiView({
                 baseUrl: readApiBaseUrl(),
                 path,
-                method: 'GET',
-                body: undefined,
-                options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) }
+                session,
+                signal,
+                timeoutMs
             })
         );
     }

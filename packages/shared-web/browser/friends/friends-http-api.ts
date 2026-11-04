@@ -10,6 +10,7 @@ import type { RallarFriends } from './rallar-friends.ts';
 export const friendsHttpApi: RallarFriends.Api = {
     async read({ scope, session, signal }) {
         const response = await readApiView({
+            timeoutMs: 10000,
             baseUrl: readApiBaseUrl(),
             path: `/api/friends/apps/${encodeURIComponent(scope.applicationId)}/workspaces/${
                 encodeURIComponent(scope.workspaceId)

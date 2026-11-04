@@ -6,9 +6,16 @@ import { decodeStateScope, type StateScope } from '../state-types.ts';
 export namespace ViewInvalidation {
     export interface ScopedAccount {
         readonly version: 1;
-        readonly resource: 'party' | 'matchmaking' | 'friends' | 'sessions';
+        readonly resource: 'party' | 'matchmaking' | 'friends' | 'sessions' | 'tournament-catalog' | 'tournament';
         readonly scope: StateScope;
         readonly principalId: string;
+        readonly changeId: string;
+    }
+    export interface PublicCatalog {
+        readonly version: 1;
+        readonly resource: 'tournament-catalog';
+        readonly scope: StateScope;
+        readonly principalId: null;
         readonly changeId: string;
     }
     export interface Account {
@@ -20,7 +27,10 @@ export namespace ViewInvalidation {
     }
 }
 
-export type ViewInvalidation = ViewInvalidation.ScopedAccount | ViewInvalidation.Account;
+export type ViewInvalidation =
+    | ViewInvalidation.ScopedAccount
+    | ViewInvalidation.Account
+    | ViewInvalidation.PublicCatalog;
 
 /** A hint to read authority again, never a replacement snapshot or permission to access a resource. */
 export function decodeViewInvalidation(value: unknown): ViewInvalidation {
@@ -29,8 +39,20 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     if (record.version !== 1) {
         throw new TypeError('Unsupported view invalidation version');
     }
-    requireString(record.principalId, 'View principal');
     requireString(record.changeId, 'View change identity');
+    if (record.principalId === null) {
+        if (record.resource !== 'tournament-catalog') {
+            throw new TypeError('Only public tournament catalogs permit scope-wide invalidations');
+        }
+        return {
+            version: 1,
+            resource: 'tournament-catalog',
+            scope: decodeStateScope(record.scope),
+            principalId: null,
+            changeId: record.changeId
+        };
+    }
+    requireString(record.principalId, 'View principal');
     if (record.scope === null) {
         if (record.resource !== 'friends') {
             throw new TypeError('Only friends list invalidations can be account-wide');
@@ -45,7 +67,14 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     }
     return {
         version: 1,
-        resource: requireOneOf(record.resource, ['party', 'matchmaking', 'friends', 'sessions'], 'View resource'),
+        resource: requireOneOf(record.resource, [
+            'party',
+            'matchmaking',
+            'friends',
+            'sessions',
+            'tournament-catalog',
+            'tournament'
+        ], 'View resource'),
         scope: decodeStateScope(record.scope),
         principalId: record.principalId,
         changeId: record.changeId
@@ -72,6 +101,16 @@ export function decodeViewInvalidationMessage(message: ALMessage): ViewInvalidat
     }
     const notice = decodeViewInvalidation(JSON.parse(message.payload.resource));
     const targets = requireRecord(message.targets, 'View targets');
+    if (notice.principalId === null) {
+        requireExactKeys(targets, ['mode', 'scope'], 'Public catalog targets');
+        if (
+            targets.mode !== 'broadcast' || targets.scope !== 'world' ||
+            message.route.contextId !== notice.scope.applicationId
+        ) {
+            throw new TypeError('Public catalog differs from its scoped world target');
+        }
+        return notice;
+    }
     if (notice.scope === null) {
         requireExactKeys(targets, ['mode', 'toPeerId'], 'Account view targets');
         if (targets.mode !== 'unicast' || targets.toPeerId !== notice.principalId) {

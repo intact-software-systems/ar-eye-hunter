@@ -50,7 +50,8 @@ export function subscribeViewInvalidations(input: SubscribeViewInvalidations.Inp
         if (
             notice.resource === input.resource &&
             (notice.scope === null || isSameGroupScope(notice.scope, input.scope)) &&
-            notice.principalId === input.browser.session()?.clientId
+            input.browser.session() !== undefined &&
+            (notice.principalId === null || notice.principalId === input.browser.session()?.clientId)
         ) {
             input.changed();
         }

@@ -1,7 +1,8 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { readApiView } from '@shared-web/browser/api/read-api-view.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 const session: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'session', accessToken: 'test', expiresAtEpochMs: 9999999999999 };
 afterEach(() => {
@@ -9,12 +10,18 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-function fixture() {
+interface ReadViewFixture {
+    readonly fetch: Mock<typeof globalThis.fetch>;
+    readonly controller: AbortController;
+    read(): Promise<ApiJsonValue>;
+}
+
+function fixture(): ReadViewFixture {
     vi.useFakeTimers();
     const fetch = vi.fn<typeof globalThis.fetch>();
     vi.stubGlobal('fetch', fetch);
     const controller = new AbortController();
-    return { fetch, controller, read: () => readApiView({ baseUrl: 'https://api.test', path: '/view', session, signal: controller.signal }) };
+    return { fetch, controller, read: () => readApiView({ timeoutMs: 10000, baseUrl: 'https://api.test', path: '/view', session, signal: controller.signal }) };
 }
 
 describe('canonical view transport recovery', () => {

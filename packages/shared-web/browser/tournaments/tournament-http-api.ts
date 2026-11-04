@@ -4,18 +4,19 @@ import { decodeTournamentSnapshot } from '@shared/api/tournaments/tournament-sna
 import type { TournamentRef } from '@shared/api/tournaments/tournament-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { readApiBaseUrl } from '../api-client-config.ts';
+import { readApiView } from '../api/read-api-view.ts';
 import { sendApiHttpRequest } from '../api/send-api-http-request.ts';
 import type { RallarTournament } from './rallar-tournament.ts';
 
 export const tournamentHttpApi: RallarTournament.Api = {
     async read({ ref, session, signal }) {
         return decodeTournamentSnapshot(
-            await sendApiHttpRequest({
+            await readApiView({
                 baseUrl: readApiBaseUrl(),
                 path: tournamentPath(ref),
-                method: 'GET',
-                body: undefined,
-                options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) }
+                session,
+                signal,
+                timeoutMs: 10000
             })
         );
     },

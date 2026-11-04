@@ -173,3 +173,23 @@ it('receives global friends list changes and only same-scope friends presence hi
     expect(test.changed).toHaveBeenCalledTimes(2);
     test.stop();
 });
+
+it('refreshes public catalog readers only while authenticated in the exact game and workspace', () => {
+    const test = fixture('tournament-catalog');
+    const initial = notice();
+    const publicNotice = { version: 1, resource: 'tournament-catalog', scope, principalId: null, changeId: 'opaque' };
+    const message: ALMessage = {
+        ...initial,
+        route: { ...initial.route, contextId: scope.applicationId },
+        targets: { mode: 'broadcast', scope: 'world' },
+        payload: { ...initial.payload, resource: JSON.stringify(publicNotice) }
+    };
+    test.deliver(message);
+    expect(test.changed).toHaveBeenCalledTimes(1);
+    test.deliver({ ...message, payload: { ...message.payload, resource: JSON.stringify({ ...publicNotice, scope: { ...scope, workspaceId: 'other' } }) } });
+    test.deliver(message, 'rtc');
+    test.login(undefined);
+    test.deliver(message);
+    expect(test.changed).toHaveBeenCalledTimes(1);
+    test.stop();
+});

@@ -35,6 +35,7 @@ async function listSessions(
 ): Promise<GroupSessionPage> {
     const query = after === null ? '' : `?after=${encodeURIComponent(after)}`;
     const response = await readApiView({
+        timeoutMs: 10000,
         baseUrl: readApiBaseUrl(),
         path: `${toStateScopeHttpPath(scope)}/group-sessions${query}`,
         session,
@@ -50,6 +51,7 @@ async function readSession(
 ): Promise<GroupSessionPreview | null> {
     try {
         const response = await readApiView({
+            timeoutMs: 10000,
             baseUrl: readApiBaseUrl(),
             path: `${toStateGroupHttpPath(ref, ref.groupId)}/session`,
             session,

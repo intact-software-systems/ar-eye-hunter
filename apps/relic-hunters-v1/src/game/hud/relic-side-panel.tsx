@@ -104,7 +104,7 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
                 <BrowserTournamentPanel
                     browser={rallar}
                     entry={game.roomEntry}
-                    catalogConfig={{ scope: RELIC_ROOM_SCOPE, limit: 20, refreshIntervalMs: 30000, timeoutMs: 10000 }}
+                    catalogConfig={{ scope: RELIC_ROOM_SCOPE, limit: 20, timeoutMs: 10000 }}
                     bracketRefreshIntervalMs={1000}
                 />
             )}

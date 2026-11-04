@@ -10,6 +10,7 @@ export interface ReadApiViewInput {
     readonly path: string;
     readonly session: AuthSession;
     readonly signal: AbortSignal;
+    readonly timeoutMs: number;
 }
 
 /** A lost invalidation read gets bounded transport recovery; domain decoding stays with its view owner. */
@@ -35,7 +36,7 @@ export async function readApiView(input: ReadApiViewInput): Promise<ApiJsonValue
                         options: { authSession: input.session, signal }
                     });
                 });
-        }, { signal: input.signal, timeoutMs: 10000, maxAttempts: 1, errorOnNull: false }).run();
+        }, { signal: input.signal, timeoutMs: input.timeoutMs, maxAttempts: 1, errorOnNull: false }).run();
     }
     catch (error) {
         // Preserve definitive authority errors even when the last bounded attempt receives one.

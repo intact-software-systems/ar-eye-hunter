@@ -43,3 +43,21 @@ it('keeps session-view invalidations scoped to their exact account', () => {
     expect(() => decodeViewInvalidation({ ...scoped, scope: null })).toThrow();
     expect(() => decodeViewInvalidationMessage({ ...message, payload: { ...message.payload, resource: JSON.stringify(scoped) } })).toThrow();
 });
+
+it('accepts only identity-free public catalog hints bound to their scoped world route', () => {
+    const scope = { applicationId: 'game', workspaceId: 'default' };
+    const publicNotice = { version: 1, resource: 'tournament-catalog', scope, principalId: null, changeId: 'opaque-change' };
+    const broadcast: ALMessage = {
+        ...message,
+        route: { ...message.route, contextId: scope.applicationId },
+        targets: { mode: 'broadcast', scope: 'world' },
+        payload: { ...message.payload, resource: JSON.stringify(publicNotice) }
+    };
+    expect(decodeViewInvalidationMessage(broadcast)).toEqual(publicNotice);
+    expect(() => decodeViewInvalidationMessage({ ...broadcast, route: { ...broadcast.route, contextId: 'other' } })).toThrow();
+    for (const replacement of [{ resource: 'tournament' }, { resource: 'friends' }, { scope: null }, { principalId: 'alice' }, { tournamentId: 'private' }]) {
+        expect(() =>
+            decodeViewInvalidationMessage({ ...broadcast, payload: { ...broadcast.payload, resource: JSON.stringify({ ...publicNotice, ...replacement }) } })
+        ).toThrow();
+    }
+});

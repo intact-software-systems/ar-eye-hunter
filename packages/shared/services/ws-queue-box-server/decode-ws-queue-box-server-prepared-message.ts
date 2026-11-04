@@ -210,7 +210,7 @@ function validateScopedRecipientTarget(input: ScopedRecipientTargetInput): reado
 function validatePreparedViewTarget(input: ScopedRecipientTargetInput): readonly string[] {
     try {
         const notice = decodeViewInvalidationMessage(input.message);
-        return notice.scope !== null && input.principalTargetId === notice.principalId &&
+        return notice.scope !== null && input.principalTargetId === (notice.principalId ?? undefined) &&
                 input.peerId === input.connectionId && input.scope.applicationId === notice.scope.applicationId &&
                 input.scope.workspaceId === notice.scope.workspaceId
             ? []

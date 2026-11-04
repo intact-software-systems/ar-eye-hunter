@@ -314,7 +314,7 @@ function validateLiveSendAuthority(input: WsServerLiveSendInputDto): readonly st
         try {
             const notice = decodeViewInvalidationMessage(input.message);
             if (
-                notice.scope === null || notice.principalId !== input.recipientPrincipalId ||
+                notice.scope === null || (notice.principalId ?? undefined) !== input.recipientPrincipalId ||
                 notice.scope.applicationId !== input.recipientScope?.applicationId ||
                 notice.scope.workspaceId !== input.recipientScope.workspaceId
             ) {

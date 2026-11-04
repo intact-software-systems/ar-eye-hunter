@@ -11,6 +11,7 @@ import type { RallarMatchmaking } from './rallar-matchmaking.ts';
 export const matchmakingHttpApi: RallarMatchmaking.Api = {
     async read({ scope, session, signal }) {
         const response = await readApiView({
+            timeoutMs: 10000,
             baseUrl: readApiBaseUrl(),
             path: matchmakingPath(scope),
             session,

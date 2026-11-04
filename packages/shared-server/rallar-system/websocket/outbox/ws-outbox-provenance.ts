@@ -17,7 +17,7 @@ import {
     decodeALSessionInvalidationAuthority,
     type ALSessionInvalidationAuthority
 } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
+import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -455,12 +455,7 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
     const { message, entry, proof, nowMs } = input;
     const issues: string[] = [];
     const expiresAtMs = resolveALMessageExpireAtMs(message);
-    if (
-        (proof.producerKind === 'view-invalidation') !==
-            (proof.target.kind === 'scoped-account-view' || proof.target.kind === 'account-view')
-    ) {
-        issues.push('View invalidation producer differs from its own-account authority');
-    }
+    issues.push(...validateViewProducer(message, proof));
     if (proof.producerKind === 'rtc-topology' || proof.producerKind === 'room-application') {
         const principalPublication = proof.producerKind === 'room-application' &&
             proof.target.kind === 'scoped-principal-broadcast';
@@ -480,7 +475,8 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
     }
     if (
         (proof.target.kind === 'scoped-world-broadcast' || proof.target.kind === 'scoped-principal-unicast') &&
-        proof.producerKind !== 'crdt'
+        proof.producerKind !== 'crdt' &&
+        !(proof.target.kind === 'scoped-world-broadcast' && proof.producerKind === 'view-invalidation')
     ) {
         issues.push('CRDT publication variant has another producer');
     }
@@ -500,5 +496,26 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
         issues.push('WS provenance is expired or has an inconsistent deadline');
     }
     issues.push(...validateWsOutboxProvenanceTarget(message, proof.target));
+    return issues;
+}
+
+/** A reserved view envelope can only use the view publisher's exact account or public catalog authority. */
+function validateViewProducer(message: ALMessage, proof: WsOutboxProvenance): readonly string[] {
+    const issues: string[] = [];
+    if (
+        (proof.producerKind === 'view-invalidation') !==
+            (proof.target.kind === 'scoped-account-view' || proof.target.kind === 'account-view' ||
+                (proof.target.kind === 'scoped-world-broadcast' &&
+                    message.route.topicId === AppTopics.viewInvalidated &&
+                    message.payload.typeId === AppTopics.viewInvalidated))
+    ) {
+        issues.push('View invalidation producer differs from its account or public catalog authority');
+    }
+    if (
+        (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) &&
+        proof.producerKind !== 'view-invalidation'
+    ) {
+        issues.push('Reserved view topics require their committed view publisher');
+    }
     return issues;
 }

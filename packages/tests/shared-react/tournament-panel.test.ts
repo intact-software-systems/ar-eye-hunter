@@ -39,11 +39,12 @@ it('opens a linked bracket without registering or leaving a room, then registers
         }
     }, { scope, tournamentId: 'cup', refreshIntervalMs: 10000 });
     const catalog = new RallarTournamentCatalog({
+        onChanged: () => () => {},
         auth: { session: () => session, onChange: () => () => {} },
         activity: { isActive: () => true, onChange: () => () => {} },
         timers: createDefaultTimers(),
         api: { read: async ({ view }) => ({ scope, principalId: 'alice', view, observedAtEpochMs: 1000, entries: [], nextCursor: null }) }
-    }, { scope, limit: 20, refreshIntervalMs: 30000, timeoutMs: 10000 });
+    }, { scope, limit: 20, timeoutMs: 10000 });
     window.location.hash = '#rallar-tournament?applicationId=game&workspaceId=default&tournamentId=cup';
     const container = document.createElement('div');
     document.body.append(container);
