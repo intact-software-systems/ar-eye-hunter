@@ -93,7 +93,7 @@ it.each(['before', 'during'] as const)('keeps the created room code delivered %s
             expect(container.querySelector('input')?.value).toContain('created-code');
         }
         facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
-        await act(async () => root.render(createElement(RelicRoomHosting, { game: { ...game, rooms: [] } })));
+        await act(async () => root.render(createElement(RelicRoomHosting, { game: { ...game, roomId: undefined, rooms: [] } })));
         if (delivery === 'during') {
             await act(async () => rotation.resolve(response));
         }
@@ -101,6 +101,47 @@ it.each(['before', 'during'] as const)('keeps the created room code delivered %s
         await act(async () => root.render(createElement(RelicRoomHosting, { game })));
         expect(container.querySelector('input')?.value).toContain('created-code');
         expect(container.querySelector('[role="alert"]')).toBeNull();
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it('discards an unfinished rotation when the host leaves and returns without rotating again', async () => {
+    const { session, snapshot, game } = createHostFixture();
+    const other = { ...snapshot, group: { ...snapshot.group, groupId: 'another-room' } };
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+    const rotation = Promise.withResolvers<GroupJoinCodeResponse>();
+    facade.rooms.rotateJoinCode.mockReturnValueOnce(rotation.promise);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(RelicRoomHosting, { game })));
+        const rotate = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Rotate room code');
+        if (!rotate) {
+            throw new Error('The host must be able to rotate the room code');
+        }
+        await act(async () => rotate.click());
+        for (const current of [other, snapshot]) {
+            facade.rooms.state.mockReturnValue({ currentRoomRef: current.group });
+            await act(async () =>
+                root.render(createElement(RelicRoomHosting, {
+                    game: {
+                        ...game,
+                        roomId: current.group.groupId,
+                        rooms: [{ ...game.rooms[0], roomId: current.group.groupId, roomRef: current.group, snapshot: current }]
+                    }
+                }))
+            );
+        }
+        const returnedRotate = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Rotate room code');
+        expect(returnedRotate?.disabled).toBe(false);
+        await act(async () => rotation.resolve({ joinCode: 'departed-code', expiresAtEpochMs: 4_000_000_000_000, snapshot }));
+        expect(container.querySelector('input')?.value).toBe('');
+        expect(container.textContent).not.toContain('departed-code');
     }
     finally {
         await act(async () => root.unmount());

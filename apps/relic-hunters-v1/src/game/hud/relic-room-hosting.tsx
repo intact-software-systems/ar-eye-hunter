@@ -1,15 +1,13 @@
 import {
-    useEffect,
-    useRef,
-    useState,
-    type RefObject
-} from 'react';
-
+    useRoomHostingState,
+    type RoomHostingPending,
+    type RoomHostingState
+} from '@shared-react/use-room-hosting-state.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { toScopedRoomKey } from '@shared/api/api-type-utils.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
-import type { GroupJoinMode, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
+import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { RelicHuntersRuntime } from '../relic-hunters-runtime.ts';
 import { isCurrentRelicRoom, RelicRoomSharing } from './relic-room-sharing.tsx';
@@ -20,44 +18,20 @@ interface RelicRoomHostingProps {
     };
 }
 
-interface RelicRoomCode {
-    readonly sessionId: string;
-    readonly response: GroupJoinCodeResponse;
-}
-
-type RelicPendingHosting =
-    | { readonly kind: 'creating'; readonly sessionId: string; }
-    | { readonly kind: 'rotating'; readonly sessionId: string; readonly room: GroupRef; };
-
-interface RelicHostingOperation {
+interface RelicHostingOperation
+    extends Pick<RoomHostingState, 'pendingOperation' | 'setPending' | 'setError' | 'setCode'> {
     readonly game: RelicRoomHostingProps['game'];
     readonly snapshot: GroupSnapshot | undefined;
-    readonly pendingOperation: RefObject<RelicPendingHosting | undefined>;
-    readonly setPending: (pending: RelicPendingHosting | undefined) => void;
-    readonly setError: (error: string | undefined) => void;
-    readonly setCode: (code: RelicRoomCode | undefined) => void;
 }
 
 export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
-    const [pending, setPending] = useState<RelicPendingHosting | undefined>();
-    const pendingOperation = useRef<RelicPendingHosting | undefined>(undefined);
-    const [error, setError] = useState<string | undefined>();
-    const [code, setCode] = useState<RelicRoomCode | undefined>();
     const snapshot = game.rooms.find((room) => room.roomId === game.roomId)?.snapshot;
-    const roomKey = snapshot
-        ? JSON.stringify([snapshot.group.applicationId, snapshot.group.workspaceId, snapshot.group.groupId])
-        : null;
-    useEffect(() => {
-        setCode((current) =>
-            current && current.sessionId === game.session?.sessionId &&
-                (!snapshot || isSameGroupRef(current.response.snapshot.group, snapshot.group))
-                ? current
-                : undefined
-        );
-        setError(undefined);
-    }, [game.session?.sessionId, roomKey]);
-    const busy = pending !== undefined && pending.sessionId === game.session?.sessionId &&
-        (pending.kind === 'creating' || (snapshot !== undefined && isSameGroupRef(pending.room, snapshot.group)));
+    const roomKey = snapshot ? toScopedRoomKey(snapshot.group) : null;
+    const { busy, code, error, pendingOperation, setPending, setError, setCode } = useRoomHostingState({
+        session: game.session,
+        roomId: game.roomId,
+        snapshot
+    });
     const operation = { game, snapshot, pendingOperation, setPending, setError, setCode };
     const unavailable = busy || !game.diagnostics.middlewareConnected;
     const hosting = snapshot &&
@@ -65,7 +39,6 @@ export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
             member.principalId === game.session?.clientId && member.status === 'active' &&
             (member.role === 'owner' || member.role === 'admin')
         );
-    const currentCode = code?.sessionId === game.session?.sessionId ? code?.response : undefined;
     return (
         <section className="stack" aria-label="Expedition hosting">
             <RelicRoomCreationControls operation={operation} disabled={unavailable} />
@@ -74,7 +47,7 @@ export function RelicRoomHosting({ game }: RelicRoomHostingProps) {
                 <RelicRoomSharing
                     key={`${game.session?.sessionId}:${roomKey}`}
                     snapshot={snapshot}
-                    code={currentCode}
+                    code={code}
                     busy={busy}
                     rotate={() => rotateRelicRoomCode(operation)}
                 />
@@ -126,7 +99,7 @@ async function createRelicRoom(
         return;
     }
     let room = rallar.rooms.state().currentRoomRef;
-    const pending = { kind: 'creating', sessionId: session.sessionId } as const;
+    let pending: RoomHostingPending = { kind: 'creating', sessionKey: toAuthSessionKey(session) };
     operation.pendingOperation.current = pending;
     operation.setPending(pending);
     operation.setError(undefined);
@@ -136,12 +109,18 @@ async function createRelicRoom(
         room = snapshot?.group ?? room;
         if (
             operation.pendingOperation.current === pending && snapshot &&
-            rallar.session()?.sessionId === session.sessionId &&
+            rallar.session()?.sessionId === session.sessionId && rallar.session()?.clientId === session.clientId &&
             joinMode === 'code'
         ) {
+            pending = { kind: 'rotating', sessionKey: toAuthSessionKey(session), room: snapshot.group };
+            operation.pendingOperation.current = pending;
+            operation.setPending(pending);
             const response = await rallar.rooms.rotateJoinCode(snapshot.group);
-            if (operation.pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId) {
-                operation.setCode({ sessionId: session.sessionId, response });
+            if (
+                operation.pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId &&
+                rallar.session()?.clientId === session.clientId
+            ) {
+                operation.setCode({ sessionKey: toAuthSessionKey(session), response });
             }
         }
     }
@@ -166,15 +145,18 @@ async function rotateRelicRoomCode(operation: RelicHostingOperation): Promise<vo
     if (!session || !room) {
         return;
     }
-    const pending = { kind: 'rotating', sessionId: session.sessionId, room: room } as const;
+    const pending = { kind: 'rotating', sessionKey: toAuthSessionKey(session), room: room } as const;
     operation.pendingOperation.current = pending;
     operation.setPending(pending);
     operation.setError(undefined);
     operation.setCode(undefined);
     try {
         const response = await rallar.rooms.rotateJoinCode(room);
-        if (operation.pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId) {
-            operation.setCode({ sessionId: session.sessionId, response });
+        if (
+            operation.pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId &&
+            rallar.session()?.clientId === session.clientId
+        ) {
+            operation.setCode({ sessionKey: toAuthSessionKey(session), response });
         }
     }
     catch {

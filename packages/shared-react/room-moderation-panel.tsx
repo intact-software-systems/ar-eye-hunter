@@ -1,13 +1,10 @@
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
-import type { RallarRoomSession, RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import { readRoomMembershipRevocation } from '@shared-web/browser/rooms/read-room-membership-revocation.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { isSameGroupRef, toScopedRoomKey } from '@shared/api/api-type-utils.ts';
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import { toScopedRoomKey } from '@shared/api/api-type-utils.ts';
 import { computeGroupMemberPresence } from '@shared/api/group-member-presence.ts';
-import type { GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { useEffect, useRef, useState } from 'react';
+import { useRoomModerationState, type RoomModerationStateInput } from './use-room-moderation-state.ts';
 
 type ModerationAction = 'remove' | 'ban' | 'unban';
 interface ModerationSelection {
@@ -15,12 +12,10 @@ interface ModerationSelection {
     readonly principalId: string;
 }
 
-export interface RoomModerationPanelProps {
-    readonly session: AuthSession;
-    readonly accessCheckIntervalMs: number;
-    readonly rooms: Pick<BrowserRallarRooms, 'state' | 'onChange' | 'removeMember' | 'banMember' | 'unbanMember'> & {
-        session(room: GroupRef): Pick<RallarRoomSession, 'refresh'>;
-    };
+export interface RoomModerationPanelProps extends RoomModerationStateInput {
+    readonly rooms:
+        & RoomModerationStateInput['rooms']
+        & Pick<BrowserRallarRooms, 'removeMember' | 'banMember' | 'unbanMember'>;
 }
 
 export function RoomModerationPanel(props: RoomModerationPanelProps) {
@@ -47,73 +42,6 @@ function RoomModerationSession(props: RoomModerationPanelProps) {
             )}
         </section>
     );
-}
-
-interface RoomModerationObservation {
-    readonly state: RallarRoomState | undefined;
-    readonly notice: string | null;
-}
-
-function useRoomModerationState(props: RoomModerationPanelProps): RoomModerationObservation {
-    const [state, setState] = useState<RallarRoomState>();
-    const observed = useRef<RallarRoomState | undefined>(undefined);
-    const [notice, setNotice] = useState<string | null>(null);
-    useEffect(() =>
-        props.rooms.onChange((next) => {
-            const previous = observed.current?.currentRoomRef;
-            observed.current = next;
-            const revoked = previous && !next.currentRoomRef
-                ? next.rooms.find((room) => isSameGroupRef(room.roomRef, previous))?.snapshot.members
-                    .find((member) => member.principalId === props.session.clientId)?.status
-                : undefined;
-            if (previous && (revoked === 'banned' || revoked === 'removed')) {
-                setNotice(`You were ${revoked} from room ${previous.groupId}. Choose another room.`);
-            }
-            setState(next);
-        }), [props.rooms, props.session.clientId]);
-    useEffect(() => {
-        if (state?.currentRoomRef) {
-            setNotice(null);
-        }
-    }, [state?.currentRoomRef?.applicationId, state?.currentRoomRef?.workspaceId, state?.currentRoomRef?.groupId]);
-    useEffect(() => {
-        const controller = new AbortController();
-        const stop = startRepeating({
-            timers: createDefaultTimers(),
-            intervalMs: props.accessCheckIntervalMs,
-            firstRun: 'after-interval',
-            run: () =>
-                observed.current ? checkCurrentRoomAccess({ props, signal: controller.signal, setNotice }) : undefined
-        });
-        return () => {
-            controller.abort();
-            stop();
-        };
-    }, [props.rooms, props.session.clientId, props.session.sessionId, props.accessCheckIntervalMs]);
-    return { state, notice };
-}
-
-interface CheckCurrentRoomAccessInput {
-    readonly props: RoomModerationPanelProps;
-    readonly signal: AbortSignal;
-    readonly setNotice: (notice: string) => void;
-}
-
-async function checkCurrentRoomAccess({ props, signal, setNotice }: CheckCurrentRoomAccessInput): Promise<void> {
-    const room = props.rooms.state().currentRoomRef;
-    if (!room) {
-        return;
-    }
-    try {
-        await props.rooms.session(room).refresh({ signal, timeoutMs: props.accessCheckIntervalMs });
-    }
-    catch (error) {
-        const revoked = readRoomMembershipRevocation(error);
-        const current = props.rooms.state().currentRoomRef;
-        if (!signal.aborted && revoked && !current) {
-            setNotice(`You were ${revoked} from room ${room.groupId}. Choose another room.`);
-        }
-    }
 }
 
 interface RoomMemberControlsProps {

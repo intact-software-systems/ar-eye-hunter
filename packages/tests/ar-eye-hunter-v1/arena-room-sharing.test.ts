@@ -179,6 +179,82 @@ it.each(['success', 'failure'] as const)('ignores a superseded rotation %s after
     }
 });
 
+it.each(['before', 'during'] as const)('keeps the created room code delivered %s a room-cache gap', async (delivery) => {
+    const { session, snapshot, arena } = createHostFixture();
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+    const rotation = Promise.withResolvers<GroupJoinCodeResponse>();
+    facade.rooms.rotateJoinCode.mockReturnValueOnce(rotation.promise);
+    const response = { joinCode: 'created-code', expiresAtEpochMs: 4_000_000_000_000, snapshot };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena })));
+        const create = [...container.querySelectorAll('button')].find((button) => button.textContent === 'New code arena');
+        expect(create?.disabled).toBe(false);
+        await act(async () => create?.click());
+        if (delivery === 'before') {
+            await act(async () => rotation.resolve(response));
+            expect(container.querySelector('input')?.value).toContain('created-code');
+        }
+        facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena: { ...arena, roomId: undefined, rooms: [] } })));
+        if (delivery === 'during') {
+            await act(async () => rotation.resolve(response));
+        }
+        facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena })));
+        expect(container.querySelector('input')?.value).toContain('created-code');
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it('discards an unfinished rotation when the host leaves and returns without rotating again', async () => {
+    const { session, snapshot, arena } = createHostFixture();
+    const other = { ...snapshot, group: { ...snapshot.group, groupId: 'another-room' } };
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+    const rotation = Promise.withResolvers<GroupJoinCodeResponse>();
+    facade.rooms.rotateJoinCode.mockReturnValueOnce(rotation.promise);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena })));
+        const rotate = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Rotate room code');
+        if (!rotate) {
+            throw new Error('The host must be able to rotate the room code');
+        }
+        await act(async () => rotate.click());
+        for (const current of [other, snapshot]) {
+            facade.rooms.state.mockReturnValue({ currentRoomRef: current.group });
+            await act(async () =>
+                root.render(createElement(ArenaRoomHosting, {
+                    arena: {
+                        ...arena,
+                        roomId: current.group.groupId,
+                        rooms: [{ ...arena.rooms[0], roomId: current.group.groupId, roomRef: current.group, snapshot: current }]
+                    }
+                }))
+            );
+        }
+        const returnedRotate = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Rotate room code');
+        expect(returnedRotate?.disabled).toBe(false);
+        await act(async () => rotation.resolve({ joinCode: 'departed-code', expiresAtEpochMs: 4_000_000_000_000, snapshot }));
+        expect(container.querySelector('input')?.value).toBe('');
+        expect(container.textContent).not.toContain('departed-code');
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
 function createHostFixture() {
     const session: AuthSession = {
         clientId: 'host',

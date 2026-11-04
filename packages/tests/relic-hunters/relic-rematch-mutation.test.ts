@@ -3,7 +3,7 @@ import { createRelicRematch } from '@relic-hunters/src/relic-rematch.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { readRallarGameParticipants } from '@shared/rallar-game/read-rallar-game-participants.ts';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestAuthSession } from '../shared-server/rallar-system/group-state/group-state-test-runtime.ts';
 import { connectGameSession, createGameFixture, prepareGameWrite } from './relic-game-database-fixture.ts';
 
@@ -88,137 +88,114 @@ async function expireGuest(fixture: Awaited<ReturnType<typeof createRematchFixtu
 }
 
 describe('Relic rematch optimistic mutation', () => {
+    let fixture: Awaited<ReturnType<typeof createRematchFixture>>;
+    beforeEach(async () => {
+        fixture = await createRematchFixture();
+        const storage = fixture.storage;
+        return async () => await storage.close();
+    });
+
     it('captures a new proposal only for a ready current leader and refuses Reset as a consent bypass', async () => {
-        const fixture = await createRematchFixture();
-        try {
-            const waiting = await prepareGameWrite(fixture, fixture.start, null);
-            expect(fixture.service.needsInitialState(waiting.read)).toBe(false);
-            await confirmGuest(fixture);
-            const ready = await prepareGameWrite(fixture, fixture.start, null);
-            expect(fixture.service.needsInitialState(ready.read)).toBe(true);
-            const reset = await prepareGameWrite(fixture, {
-                ...fixture.command,
-                operation: 'reset',
-                requestId: 'reset-bypass'
-            }, createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1));
-            expect(fixture.service.needsInitialState(reset.read)).toBe(false);
-            expect(reset.computed.result).toMatchObject({ status: 'refused', code: 'rematch-required' });
-            expect(reset.computed.save).toBeNull();
-        }
-        finally {
-            await fixture.storage.close();
-        }
+        const waiting = await prepareGameWrite(fixture, fixture.start, null);
+        expect(fixture.service.needsInitialState(waiting.read)).toBe(false);
+        await confirmGuest(fixture);
+        const ready = await prepareGameWrite(fixture, fixture.start, null);
+        expect(fixture.service.needsInitialState(ready.read)).toBe(true);
+        const reset = await prepareGameWrite(fixture, {
+            ...fixture.command,
+            operation: 'reset',
+            requestId: 'reset-bypass'
+        }, createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1));
+        expect(fixture.service.needsInitialState(reset.read)).toBe(false);
+        expect(reset.computed.result).toMatchObject({ status: 'refused', code: 'rematch-required' });
+        expect(reset.computed.save).toBeNull();
     });
 
     it.each([false, true])('excludes expired authentication with live presence (ready=%s)', async (ready) => {
-        const fixture = await createRematchFixture();
-        try {
-            if (ready) {
-                await confirmGuest(fixture);
-            }
-            const sessions = new AuthSessionPersistence(fixture.runtime);
-            await sessions.putSession({ ...fixture.guest, expiresAtEpochMs: fixture.nowEpochMs + 1 });
-            fixture.nowEpochMs += 2;
-            const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
-            const prepared = await prepareGameWrite(fixture, fixture.start, proposal);
-            expect(prepared.computed.result.status).toBe('applied');
-            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed));
-            const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
-            expect(current?.players.map((player) => player.playerId)).toEqual([fixture.owner.sessionId]);
+        if (ready) {
+            await confirmGuest(fixture);
         }
-        finally {
-            await fixture.storage.close();
-        }
+        const sessions = new AuthSessionPersistence(fixture.runtime);
+        await sessions.putSession({ ...fixture.guest, expiresAtEpochMs: fixture.nowEpochMs + 1 });
+        fixture.nowEpochMs += 2;
+        const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
+        const prepared = await prepareGameWrite(fixture, fixture.start, proposal);
+        expect(prepared.computed.result.status).toBe('applied');
+        await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed));
+        const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
+        expect(current?.players.map((player) => player.playerId)).toEqual([fixture.owner.sessionId]);
     });
 
     it('rechecks candidate authentication after a revocation races with start', async () => {
-        const fixture = await createRematchFixture();
-        try {
-            await confirmGuest(fixture);
-            const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
-            const prepared = await prepareGameWrite(fixture, fixture.start, proposal);
-            await new AuthSessionPersistence(fixture.runtime).deleteSession(fixture.guest);
-            await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed)))
-                .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const retry = await prepareGameWrite(fixture, fixture.start, proposal);
-            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, retry.computed));
-            const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
-            expect(current?.players.map((player) => player.playerId)).toEqual([fixture.owner.sessionId]);
-        }
-        finally {
-            await fixture.storage.close();
-        }
+        await confirmGuest(fixture);
+        const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
+        const prepared = await prepareGameWrite(fixture, fixture.start, proposal);
+        await new AuthSessionPersistence(fixture.runtime).deleteSession(fixture.guest);
+        await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed)))
+            .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        const retry = await prepareGameWrite(fixture, fixture.start, proposal);
+        await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, retry.computed));
+        const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
+        expect(current?.players.map((player) => player.playerId)).toEqual([fixture.owner.sessionId]);
     });
 
     it('starts only once when two valid starts overlap and reauthorizes the losing attempt', async () => {
-        const fixture = await createRematchFixture();
-        try {
-            await confirmGuest(fixture);
-            const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
-            const first = await prepareGameWrite(fixture, fixture.start, proposal);
-            const second = await prepareGameWrite(fixture, { ...fixture.start, requestId: 'other-start' }, proposal);
-            expect(first.computed.result.status).toBe('applied');
-            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, first.computed));
-            await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, second.computed)))
-                .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const retry = await prepareGameWrite(fixture, { ...fixture.start, requestId: 'other-start' }, proposal);
-            expect(retry.computed.result).toMatchObject({ status: 'refused', code: 'rule-refused' });
-            const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
-            expect(current?.phase).toBe('planning');
-            expect(current?.createdAtEpochMs).toBe(proposal.createdAtEpochMs);
-            expect(current?.players.map((player) => player.playerId).sort())
-                .toEqual([fixture.owner.sessionId, fixture.guest.sessionId].sort());
-            expect(current?.rematch).toBeUndefined();
-        }
-        finally {
-            await fixture.storage.close();
-        }
+        await confirmGuest(fixture);
+        const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
+        const first = await prepareGameWrite(fixture, fixture.start, proposal);
+        const second = await prepareGameWrite(fixture, { ...fixture.start, requestId: 'other-start' }, proposal);
+        expect(first.computed.result.status).toBe('applied');
+        await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, first.computed));
+        await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, second.computed)))
+            .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        const retry = await prepareGameWrite(fixture, { ...fixture.start, requestId: 'other-start' }, proposal);
+        expect(retry.computed.result).toMatchObject({ status: 'refused', code: 'rule-refused' });
+        const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
+        expect(current?.phase).toBe('planning');
+        expect(current?.createdAtEpochMs).toBe(proposal.createdAtEpochMs);
+        expect(current?.players.map((player) => player.playerId).sort())
+            .toEqual([fixture.owner.sessionId, fixture.guest.sessionId].sort());
+        expect(current?.rematch).toBeUndefined();
     });
 
     it.each(['renew', 'recreate', 'absent'] as const)('fences %s of an unconfirmed guest lease before commit', async (race) => {
-        const fixture = await createRematchFixture();
-        try {
-            const { ref, presence } = await expireGuest(fixture);
-            if (race === 'absent' || race === 'recreate') {
-                const expired = await fixture.repository.findPresenceEntry(ref);
-                if (!expired) {
-                    throw new Error('Expected retained expired presence');
-                }
-                await fixture.repository.deletePresence(ref, expired.entry.revision);
-                if (race === 'recreate') {
-                    await fixture.repository.insertPresence(expired.value);
-                }
+        const { ref, presence } = await expireGuest(fixture);
+        if (race === 'absent' || race === 'recreate') {
+            const expired = await fixture.repository.findPresenceEntry(ref);
+            if (!expired) {
+                throw new Error('Expected retained expired presence');
             }
-            const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
-            const prepared = await prepareGameWrite(fixture, fixture.start, proposal);
-            expect(prepared.computed.result.status).toBe('applied');
-            if (race === 'renew') {
+            await fixture.repository.deletePresence(ref, expired.entry.revision);
+            if (race === 'recreate') {
+                await fixture.repository.insertPresence(expired.value);
+            }
+        }
+        const proposal = createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs + 1);
+        const prepared = await prepareGameWrite(fixture, fixture.start, proposal);
+        expect(prepared.computed.result.status).toBe('applied');
+        if (race === 'renew') {
+            const expired = await fixture.repository.findPresenceEntry(ref);
+            if (!expired) {
+                throw new Error('Expected expired presence');
+            }
+            await fixture.repository.updatePresence({ ...expired.value, expiresAtEpochMs: fixture.nowEpochMs + 60_000 }, expired.entry.revision);
+        }
+        else {
+            if (race === 'recreate') {
                 const expired = await fixture.repository.findPresenceEntry(ref);
                 if (!expired) {
                     throw new Error('Expected expired presence');
                 }
-                await fixture.repository.updatePresence({ ...expired.value, expiresAtEpochMs: fixture.nowEpochMs + 60_000 }, expired.entry.revision);
+                await fixture.repository.deletePresence(ref, expired.entry.revision);
             }
-            else {
-                if (race === 'recreate') {
-                    const expired = await fixture.repository.findPresenceEntry(ref);
-                    if (!expired) {
-                        throw new Error('Expected expired presence');
-                    }
-                    await fixture.repository.deletePresence(ref, expired.entry.revision);
-                }
-                await fixture.repository.insertPresence({ ...presence.value, expiresAtEpochMs: fixture.nowEpochMs + 60_000 });
-            }
-            await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed)))
-                .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-            const retry = await prepareGameWrite(fixture, fixture.start, proposal);
-            expect(retry.computed.result).toMatchObject({ status: 'refused', message: 'Waiting for the remaining players to confirm.' });
-            const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
-            expect(current?.phase).toBe('finished');
-            expect(current?.createdAtEpochMs).toBe(fixture.initial.createdAtEpochMs);
+            await fixture.repository.insertPresence({ ...presence.value, expiresAtEpochMs: fixture.nowEpochMs + 60_000 });
         }
-        finally {
-            await fixture.storage.close();
-        }
+        await expect(fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, prepared.computed)))
+            .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        const retry = await prepareGameWrite(fixture, fixture.start, proposal);
+        expect(retry.computed.result).toMatchObject({ status: 'refused', message: 'Waiting for the remaining players to confirm.' });
+        const current = await fixture.service.readCurrentSnapshot(fixture.command, 'default-qbox-server');
+        expect(current?.phase).toBe('finished');
+        expect(current?.createdAtEpochMs).toBe(fixture.initial.createdAtEpochMs);
     });
 });

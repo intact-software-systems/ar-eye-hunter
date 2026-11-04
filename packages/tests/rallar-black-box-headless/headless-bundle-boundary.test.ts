@@ -1,3 +1,4 @@
+import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import {
     buildSync,
     type Metafile
@@ -13,6 +14,7 @@ import {
     constants
 } from 'node:zlib';
 import {
+    beforeAll,
     describe,
     expect,
     it
@@ -24,11 +26,14 @@ interface HeadlessBundleMeasurement {
 }
 
 describe('rallar-black-box-headless bundle boundary', () => {
-    it('excludes operator UI dependencies and surfaces', () => {
-        const result = bundleHeadlessEntry(
+    let result: HeadlessBundleMeasurement;
+    beforeAll(() => {
+        result = bundleHeadlessEntry(
             process.cwd(),
             path.join(tmpdir(), 'rallar-black-box-headless-boundary-test')
         );
+    });
+    it('excludes operator UI dependencies and surfaces', () => {
         const inputs = Object.keys(result.metafile.inputs);
 
         for (
@@ -70,7 +75,14 @@ function readBrotliBudgetKiB(): number {
 }
 
 function decodeBrotliBudget(text: string): number {
-    return JSON.parse(text).brotliBudgetKiB;
+    const value: ApiJsonValue = JSON.parse(text);
+    if (
+        !isApiJsonObject(value) ||
+        typeof value.brotliBudgetKiB !== 'number' || !Number.isFinite(value.brotliBudgetKiB) || value.brotliBudgetKiB <= 0
+    ) {
+        throw new Error('Expected a positive finite brotliBudgetKiB in the headless bundle budget');
+    }
+    return value.brotliBudgetKiB;
 }
 
 function bundleHeadlessEntry(repoRoot: string, outputDir: string): HeadlessBundleMeasurement {
