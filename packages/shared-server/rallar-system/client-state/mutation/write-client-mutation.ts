@@ -3,6 +3,7 @@ import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guard
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { writeRuntimeStateGuardedBatch } from '../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 import { writeAppOutboxInserts } from '../../app-outbox/app-outbox-insert.ts';
+import { writePartyMemberViewPublication } from '../../parties/party-member-view-publication.ts';
 import { ClientStateEventCollisionError } from '../../state-events/client-state-event-store.ts';
 import type { ClientStateEventCollisionRow } from '../../state-events/postgres/client-state-event-row-codec.ts';
 import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '../../websocket/outbox/ws-outbox-provenance.ts';
@@ -36,6 +37,7 @@ export async function writeClientMutationRecords(
         await writeClientEvent(transaction, computed.persistence.eventWrite);
     }
     if (computed.outcome === 'write') {
+        await writePartyMemberViewPublication(transaction, computed.partyViewPublication);
         await writeAppOutboxInserts(transaction, computed.outbox.map(({ write }) => write));
     }
     return computed.receipt;

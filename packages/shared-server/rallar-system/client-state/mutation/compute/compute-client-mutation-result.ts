@@ -6,6 +6,7 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { computePartyMemberViewPublication } from '../../../parties/party-member-view-publication.ts';
 import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync
@@ -64,13 +65,17 @@ export function computeClientMutationResult(
     });
     const stateSyncEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
     const outbox = stateSyncEntries.map(({ entry, message }) => ({ write: computeAppOutboxInsert(entry), message }));
+    const partyViewPublication = computePartyMemberViewPublication(command, read, snapshot);
     const receipt = toAppliedClientMutationReceipt({
         command,
         read,
         principal,
         event,
         stateRevision,
-        outboxIds: outbox.map(({ write }) => write.entry.key.resourceId)
+        outboxIds: [
+            ...outbox.map(({ write }) => write.entry.key.resourceId),
+            ...partyViewPublication?.outbox.map((write) => write.entry.key.resourceId) ?? []
+        ]
     });
     const computed: ClientMutationDomainAppliedWrite = {
         outcome: 'write',
@@ -85,6 +90,7 @@ export function computeClientMutationResult(
         idempotency: command.requestId === null
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
+        partyViewPublication,
         stateSync,
         outbox,
         principalAudienceSessionIds

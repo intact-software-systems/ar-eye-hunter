@@ -1,4 +1,5 @@
 import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import { assertPartyMemberViewRead } from '../../../parties/party-member-view-publication.ts';
 
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
@@ -37,12 +38,14 @@ export function assertClientMutationRead(
             'expiredSessionEntry',
             'snapshot',
             'receiptEvent',
+            'partyMemberView',
             'audienceObservedAtEpochMs',
             'audienceGroupSnapshots',
             'audienceCoMemberSessions'
         ],
         'Client mutation read'
     );
+    assertPartyMemberViewRead(command.aggregateRef, read.partyMemberView);
     assertNullableEntryValue(read.principal, 'Client principal read', validateClientPrincipal);
     assertNullableEntryValue(read.instance, 'Client instance read', validateClientInstance);
     assertNullableEntryValue(read.session, 'Client session read', validateClientSession);

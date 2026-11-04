@@ -16,6 +16,8 @@ import type { AuthWsTicketConsumptionClaim } from '../../auth/ws-ticket/auth-ws-
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupStateCurrentSnapshotCache } from '../../group-state/snapshot/group-state-current-snapshot-cache.ts';
+import { readPartyMemberView } from '../../parties/party-member-view-publication.ts';
+import type { PartyRepository } from '../../parties/persistence/party-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { PrincipalAudienceSessions } from '../../state-sync/state-sync-principal-audience.ts';
 import {
@@ -59,6 +61,7 @@ interface ClientMutationAudienceRead {
 export interface ReadClientMutationInput {
     readonly repository: ClientStateRepository;
     readonly groupRepository: GroupStateRepositoryReads;
+    readonly parties: PartyRepository;
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
     readonly timing?: ClientStateMutationTiming;
@@ -145,7 +148,10 @@ async function readClientMutationAudience(
         ? await readPrincipalAudience(input)
         : EMPTY_AUDIENCE_READ;
 
-    return { ...state, receiptEvent, audienceObservedAtEpochMs, ...audience };
+    const partyMemberView = needsPartyMemberRead(command, state, audienceObservedAtEpochMs)
+        ? await readPartyMemberView(input.parties, command.aggregateRef)
+        : null;
+    return { ...state, receiptEvent, audienceObservedAtEpochMs, partyMemberView, ...audience };
 }
 
 async function readClientMutationState(
@@ -290,4 +296,22 @@ async function readReceiptEvent(
         );
     }
     return receiptEvent;
+}
+
+function needsPartyMemberRead(
+    command: ClientMutationCommand,
+    state: ClientMutationStateRead,
+    observedAtEpochMs: number
+): boolean {
+    if (state.idempotency !== null || command.operation === 'upsertInstance') {
+        return false;
+    }
+    if (command.operation !== 'heartbeatSession') {
+        return true;
+    }
+    return state.principal?.value.status === 'active' &&
+        !state.snapshot?.activeSessions.some((session) =>
+            session.status === 'active' && session.disconnectedAtEpochMs === null &&
+            session.expiresAtEpochMs > observedAtEpochMs
+        );
 }

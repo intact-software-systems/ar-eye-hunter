@@ -108,6 +108,7 @@ function assertAppliedWriteResult(value: ValidationRecord): void {
             'idempotency',
             'stateSync',
             'outbox',
+            'partyViewPublication',
             'principalAudienceSessionIds',
             'persistence'
         ],

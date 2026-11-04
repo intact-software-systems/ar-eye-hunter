@@ -123,6 +123,7 @@ export function emptyClientMutationRead(sessionId = 'session-1'): ClientMutation
         receiptEvent: null,
         audienceObservedAtEpochMs: 1_000,
         audienceGroupSnapshots: [],
+        partyMemberView: null,
         audienceCoMemberSessions: []
     };
 }

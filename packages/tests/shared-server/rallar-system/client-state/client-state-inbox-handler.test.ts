@@ -760,6 +760,7 @@ function clientMutationRead(
         receiptEvent: null,
         audienceObservedAtEpochMs: command.facts.nowEpochMs,
         audienceGroupSnapshots: [],
+        partyMemberView: null,
         audienceCoMemberSessions: []
     };
     if (!sessionPresent || !requiresCurrentSession(command)) {

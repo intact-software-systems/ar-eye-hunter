@@ -11,6 +11,7 @@ import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/cli
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import { groupStateScopeStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import { PartyRepository } from '@shared-server/rallar-system/parties/persistence/party-repository.ts';
 import {
     computePrincipalStateSyncAudience,
     toPrincipalAudienceSessions
@@ -140,6 +141,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('audience-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -178,6 +180,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('stale-instance-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -212,6 +215,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('retained-disconnected-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -243,6 +247,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('moved-co-member'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -290,6 +295,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('concurrent-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -349,6 +355,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('audience-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -373,6 +380,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: heartbeatCommandFor('superseded-generation'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -392,6 +400,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -412,6 +421,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -431,6 +441,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -457,6 +468,7 @@ describe('client mutation principal audience read', () => {
         const coMemberRead = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('audience-carrying-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -488,6 +500,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('forged-audience'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -508,6 +521,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -530,6 +544,7 @@ describe('client mutation principal audience read', () => {
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
@@ -547,6 +562,7 @@ describe('client mutation principal audience read', () => {
                     ...read,
                     session: { ...session, value: { ...session.value, generationId: 'superseded-generation' } },
                     audienceGroupSnapshots: [],
+                    partyMemberView: null,
                     audienceCoMemberSessions: []
                 },
                 computed
@@ -588,6 +604,7 @@ describe('client mutation principal audience read', () => {
         await expect(readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('corrupt-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
@@ -625,6 +642,7 @@ describe('client mutation principal audience read', () => {
         await expect(readClientMutation({
             repository: clients,
             groupRepository: groups,
+            parties: new PartyRepository(runtime, () => AUDIENCE_EPOCH_MS),
             command: principalCommand('corrupt-co-group-client'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({

@@ -2,6 +2,7 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { ClientSession } from '@shared/api/client-types.ts';
 
 import { GroupStateRepositoryReads } from '../group-state/persistence/group-state-repository-reads.ts';
+import { PartyRepository } from '../parties/persistence/party-repository.ts';
 import { toClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import {
@@ -31,6 +32,7 @@ export function createClientStateService(
     const toReadInput = (command: ClientMutationCommand): ReadClientMutationInput => ({
         repository: repositoryFor(runtimeRepository),
         groupRepository,
+        parties: new PartyRepository(runtimeRepository, nowMs),
         command,
         audienceObservedAtEpochMs: nowMs(),
         timing: { sink: dependencies.timing, serviceId: dependencies.serviceId },
