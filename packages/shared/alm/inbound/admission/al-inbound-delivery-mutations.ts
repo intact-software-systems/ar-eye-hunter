@@ -35,7 +35,8 @@ export function toALInboundAdmittedMessageMutations(
                 msgId: read.msg.id.msgId,
                 senderId: read.msg.id.senderId,
                 source: read.source,
-                supersedenceKey: read.plan.supersedence.key ?? null
+                supersedenceKey: read.plan.supersedence.key ?? null,
+                deliveredLocally: read.plan.localDelivery.enabled
             },
             expireAtTimestamp: computeALInboundMessageOwnerExpiryMs(read, deadlineAtMs)
         }

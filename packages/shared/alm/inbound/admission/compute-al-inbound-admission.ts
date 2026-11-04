@@ -222,7 +222,8 @@ export function computeALInboundBufferedRelease(
                     msgId: read.snapshot.msg.id.msgId,
                     senderId: read.snapshot.msg.id.senderId,
                     source: read.source,
-                    supersedenceKey: read.snapshot.plan.supersedence.key ?? null
+                    supersedenceKey: read.snapshot.plan.supersedence.key ?? null,
+                    deliveredLocally: read.snapshot.plan.localDelivery.enabled
                 },
                 expireAtTimestamp: Math.max(
                     computeALInboundMessageOwnerExpiryMs(read, expireAtTimestamp),

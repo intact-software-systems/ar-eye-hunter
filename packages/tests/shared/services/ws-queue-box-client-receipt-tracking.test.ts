@@ -93,6 +93,24 @@ describe('WS client receipt tracking for a receiver room send', () => {
         });
     });
 
+    it('records the recipients a receipt names outside the audience and completes on the rest confirmed', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        const outside = { msgId: 'room-message-1', expectedRecipientPeerIds: ['b', 'c'], outsideAudienceRecipientPeerIds: ['c'] };
+
+        expect((await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b'], outside))).left).toBeUndefined();
+
+        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b'], outsideAudiencePeerIds: ['c'] });
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b'],
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['c'],
+            complete: true
+        });
+    });
+
     it('writes nothing for a repeated receipt or one about a message this origin never sent', async () => {
         const fixture = await createReceiptTrackingFixture();
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());

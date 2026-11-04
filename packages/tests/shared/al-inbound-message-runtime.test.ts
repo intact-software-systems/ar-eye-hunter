@@ -311,7 +311,8 @@ describe('ALInboundMessageRuntime', () => {
                     msgId: 'missing-msg',
                     senderId: 'peer-1',
                     source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp
             }, {

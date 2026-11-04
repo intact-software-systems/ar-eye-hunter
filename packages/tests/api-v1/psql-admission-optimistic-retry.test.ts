@@ -65,7 +65,8 @@ describe('PSql admission optimistic retry', () => {
                     msgId: 'inbound-conflict',
                     senderId: 'peer-1',
                     source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp: Date.now() + 60_000
             }]
@@ -98,7 +99,8 @@ describe('PSql admission optimistic retry', () => {
                     msgId: 'inbound-error',
                     senderId: 'peer-1',
                     source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp: Date.now() + 60_000
             }]

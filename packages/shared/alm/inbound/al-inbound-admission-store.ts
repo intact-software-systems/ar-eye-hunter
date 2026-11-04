@@ -76,6 +76,8 @@ export interface ALInboundMessageOwner {
     readonly senderId: string;
     readonly source: ALInboundMessageRuntime.Source;
     readonly supersedenceKey: string | null;
+    /** Whether the admission that wrote the row delivers the message here; a later copy is never delivered again. */
+    readonly deliveredLocally: boolean;
 }
 
 export interface ALInboundControlOwnerIndex {

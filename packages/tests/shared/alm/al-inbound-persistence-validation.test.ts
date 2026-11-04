@@ -194,7 +194,8 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                 msgId: message.id.msgId,
                 senderId: input.senderId,
                 source: { kind: 'ws-client', peerId: input.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             expireAtTimestamp: input.expireAtTimestamp
         }, {
@@ -241,6 +242,29 @@ describe('inbound admission persisted values', () => {
         await expect(readOwner(backend, store.namespace)).resolves.toMatchObject({
             source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope }
         });
+    });
+
+    it.each<[string, unknown, boolean | 'corrupt']>([
+        ['written before the field existed, as delivered', undefined, true],
+        ['that delivered nothing', false, false],
+        ['whose local delivery is no boolean', 'no', 'corrupt']
+    ])('reads a message owner %s', async (_name, deliveredLocally, expected) => {
+        const { backend, store } = createFixture();
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                supersedenceKey: null,
+                ...(deliveredLocally === undefined ? {} : { deliveredLocally })
+            });
+        });
+
+        const read = readOwner(backend, store.namespace);
+
+        await (expected === 'corrupt'
+            ? expect(read).rejects.toBeInstanceOf(ALAdmissionCorruptionError)
+            : expect(read).resolves.toMatchObject({ deliveredLocally: expected }));
     });
 
     it.each([
@@ -387,7 +411,8 @@ describe('inbound admission persisted values', () => {
                             authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
                             groupRecipientPeerIds
                         },
-                        supersedenceKey: null
+                        supersedenceKey: null,
+                        deliveredLocally: true
                     },
                     expireAtTimestamp
                 }],
@@ -778,7 +803,8 @@ describe('inbound admission persisted values', () => {
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp: work.expireAtTimestamp
             }],
@@ -826,7 +852,8 @@ describe('inbound admission persisted values', () => {
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp: Date.now() + 60_000
             }],
@@ -847,7 +874,8 @@ describe('inbound admission persisted values', () => {
                             peerId: secondMessage.id.senderId,
                             authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
                         },
-                        supersedenceKey: null
+                        supersedenceKey: null,
+                        deliveredLocally: true
                     },
                     expireAtTimestamp: Date.now() + 60_000
                 }],
@@ -1066,7 +1094,8 @@ async function seedPendingAcknowledgement(
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp
             }, {

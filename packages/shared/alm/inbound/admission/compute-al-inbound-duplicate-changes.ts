@@ -229,13 +229,23 @@ function toReparentedRowMutation(
     };
 }
 
-/** A peer outside the frozen audience, or not subscribed, delivered nothing: its ACK only ends its own empty subtree. */
+/**
+ * A peer outside the frozen audience, or not subscribed, delivered nothing: its ACK only ends its own empty subtree.
+ * A frozen recipient whose first admission delivered nothing never confirms itself on a later copy either, whatever
+ * the carrier it arrives on plans: the copy is a duplicate, so it is not delivered now.
+ */
 function toOwnAckStatus(read: ALInboundMessageReadDto, selfPeerId: string): ALAckStatus {
     if (isALInboundNotSubscribedPlan(read.plan)) {
         return 'subtree-complete-not-subscribed';
     }
     const frozen = resolveALFrozenMulticastAudience(read.msg.targets);
-    return frozen === undefined || frozen.recipientPeerIds.includes(selfPeerId) ? 'delivered' : 'subtree-complete';
+    if (frozen === undefined) {
+        return 'delivered';
+    }
+    if (!frozen.recipientPeerIds.includes(selfPeerId)) {
+        return 'subtree-complete';
+    }
+    return read.observations.messageOwner?.deliveredLocally === false ? 'subtree-complete-not-subscribed' : 'delivered';
 }
 
 function toRepeatedNotSubscribed(

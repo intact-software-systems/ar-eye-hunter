@@ -202,7 +202,7 @@ export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgeme
  * outside confirmed nothing, so it stays open until its deadline. A receipt that expected nobody is complete.
  */
 export function isALOutboundReceiptComplete(
-    pending: ALOutboundPendingAckSnapshot
+    pending: Pick<ALOutboundPendingAckSnapshot, 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'>
 ): boolean {
     const classes = toALOutboundReceiptClasses(pending);
     return pending.expectedPeerIds.length === 0 ||

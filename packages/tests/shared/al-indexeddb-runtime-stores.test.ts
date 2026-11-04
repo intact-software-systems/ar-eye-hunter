@@ -102,7 +102,8 @@ describe('IndexedDB AL runtime stores', () => {
                             peerId: 'peer-default-schema',
                             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
                         },
-                        supersedenceKey: null
+                        supersedenceKey: null,
+                        deliveredLocally: true
                     },
                     expireAtTimestamp: Date.now() + 60_000
                 }]
@@ -366,7 +367,8 @@ describe('IndexedDB AL runtime stores', () => {
                             msgId: msg.id.msgId,
                             senderId: msg.id.senderId,
                             source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
-                            supersedenceKey: null
+                            supersedenceKey: null,
+                            deliveredLocally: true
                         },
                         expireAtTimestamp: Date.now() + 20
                     },

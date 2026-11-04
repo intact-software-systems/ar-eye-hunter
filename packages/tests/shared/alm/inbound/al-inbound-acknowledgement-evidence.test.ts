@@ -158,7 +158,11 @@ class AcknowledgementFixture {
                 admissionExpiresAtMs: null,
                 observations: read.observations,
                 mutations: [
-                    { kind: 'set-msg-owner', value: { msgId: 'subject', senderId: 'origin', source: this.source, supersedenceKey: null }, expireAtTimestamp },
+                    {
+                        kind: 'set-msg-owner',
+                        value: { msgId: 'subject', senderId: 'origin', source: this.source, supersedenceKey: null, deliveredLocally: true },
+                        expireAtTimestamp
+                    },
                     {
                         kind: 'set-control-owners',
                         msgId: 'subject',

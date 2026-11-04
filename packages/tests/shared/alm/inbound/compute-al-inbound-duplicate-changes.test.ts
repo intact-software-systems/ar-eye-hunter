@@ -12,6 +12,8 @@ import type {
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
+import { toRtcPublicationHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import {
     describe,
     expect,
@@ -30,6 +32,7 @@ const SOURCES: Readonly<Record<ALDeliveryCarrier, ALInboundMessageRuntime.Source
     rtc: { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID },
     ws: { kind: 'ws-client', peerId: INBOUND_TEST_SENDER_PEER_ID, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
 };
+const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 /** Two downstream peers, so the relay's first admission forwards and keeps a relay row. */
 const DOWNSTREAM_PEER_IDS = ['downstream-1', 'downstream-2'];
 
@@ -53,6 +56,30 @@ const RELAY_PEER: ReceivingPeer = {
     canForward: true
 };
 
+/** A frozen leaf of the sender's room, planning every copy as the room authorizes it. */
+const FROZEN_LEAF_PEER: ReceivingPeer = {
+    planner: (msg, _source, observations) =>
+        planALMessageHandling(msg, {
+            ...observations,
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
+            groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID]
+        }),
+    canForward: false
+};
+
+/** The same leaf holding no active token: its RTC carrier plans a granted copy forward-not-subscribed. */
+const NOT_SUBSCRIBED_OVER_RTC_PEER: ReceivingPeer = {
+    planner: (msg, source, observations) => {
+        const plan = FROZEN_LEAF_PEER.planner(msg, source, observations);
+        return source.kind === 'rtc-peer'
+            ? toRtcPublicationHandlingPlan(plan, Either.ofRight({ delivery: 'forward-not-subscribed' }), INBOUND_TEST_SENDER_PEER_ID)
+            : plan;
+    },
+    canForward: false
+};
+
 interface RepeatedAck {
     /** The runtime that claims the `send-control` row. */
     readonly rowCarrier: ALDeliveryCarrier;
@@ -61,6 +88,23 @@ interface RepeatedAck {
     readonly toPeerId: string;
     readonly ackedMsgId: string;
     readonly status: ALAckStatus;
+}
+
+/** A `receiver` room multicast its origin froze to this peer alone. */
+function createFrozenReceiverMessage(msgId: string): ALMessage {
+    const message = newALMulticastMessage(
+        INBOUND_TEST_SENDER_PEER_ID,
+        { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
+        ROOM,
+        'room.feed.v1',
+        { text: msgId },
+        { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000 }
+    );
+    return {
+        ...message,
+        id: { ...message.id, msgId },
+        targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 }
+    };
 }
 
 /** A room message acknowledged by every logical recipient, the shape a relay forwards down the RTC tree. */
@@ -207,6 +251,30 @@ describe('a duplicate on the other carrier than its first admission (D56, R-S3b-
 
         expect(toRepeatedAcks(bundle)).toEqual(expected);
         expect(bundle.durableEffects.map((effect) => effect.payload.kind)).toEqual(expected.map(() => 'send-control'));
+    });
+
+    // A frozen recipient that answered `not-subscribed` over RTC delivered nothing, and the WS copy is a duplicate it
+    // never delivers either: its own ACK on the arrival carrier ends its hop and confirms nobody.
+    it('answers a WS copy of a message its RTC copy found not subscribed with the ACK that confirms nobody, delivering nothing', async () => {
+        const msg = createFrozenReceiverMessage('not-subscribed-then-ws');
+
+        const bundle = await computeSecondArrival(msg, NOT_SUBSCRIBED_OVER_RTC_PEER, ['rtc', 'ws']);
+
+        expect(toRepeatedAcks(bundle)).toEqual([{
+            rowCarrier: 'ws',
+            carrier: 'ws',
+            toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            ackedMsgId: 'not-subscribed-then-ws',
+            status: 'subtree-complete-not-subscribed'
+        }]);
+        expect(bundle.durableEffects.map((effect) => effect.payload.kind)).toEqual(['send-control']);
+    });
+
+    it('keeps the delivered ACK for a WS copy of a message its RTC copy delivered', async () => {
+        const msg = createFrozenReceiverMessage('delivered-then-ws');
+
+        expect(toRepeatedAcks(await computeSecondArrival(msg, FROZEN_LEAF_PEER, ['rtc', 'ws'])).map((ack) => ack.status))
+            .toEqual(['delivered']);
     });
 
     it('answers nothing for a message that asked for no acknowledgement', async () => {

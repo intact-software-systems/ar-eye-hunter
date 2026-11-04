@@ -41,6 +41,7 @@ const AGGREGATE_ACK_GUARDS = [
     'sender-recipient-mismatch',
     'outside-frozen-audience',
     'already-confirmed',
+    'already-outside',
     'deadline-expired'
 ];
 

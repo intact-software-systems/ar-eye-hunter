@@ -128,7 +128,8 @@ async function seedRelayRow(admissionStore: ALInboundAdmissionStore, seeded: See
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source,
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp
             }, {
@@ -393,7 +394,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'rtc-peer', peerId: message.id.senderId },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -470,7 +472,8 @@ describe('inbound control admission', () => {
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source: { kind: 'rtc-peer', peerId: message.id.senderId },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 pending: {
                     toPeerId: message.id.senderId,
@@ -511,7 +514,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'rtc-peer', peerId: message.id.senderId },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -556,7 +560,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -602,7 +607,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -680,7 +686,8 @@ function admitRelayAcknowledgements(
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'rtc-peer', peerId: row.toPeerId },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending,
             acks,

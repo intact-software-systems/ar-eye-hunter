@@ -11,6 +11,7 @@ import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
     newALAckControlMessage,
     type ALAckPayload,
+    type ALAckStatus,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -385,6 +386,42 @@ describe('WS server receipt aggregate', () => {
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });
 
+    it('records a recipient whose ACK ends its hop delivering nothing outside the audience, never confirmed, and completes with it', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
+        aggregation.recordAdmission(admission());
+        const notSubscribed = aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' });
+
+        await aggregation.acceptControlMessage(aggregateAckControl(notSubscribed));
+        const repeated = aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c' }));
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+
+        expect(repeated?.message).toBe('AL acknowledgement answers for a peer the receipt already records outside the audience');
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))).toMatchObject([{
+            phase: 'complete',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b'],
+            outsideAudienceRecipientPeerIds: ['c']
+        }]);
+    });
+
+    it('keeps a receipt whose every recipient answered outside open until its deadline, as it confirmed nobody', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
+        aggregation.recordAdmission({ ...admission(), expectedRecipientPeerIds: ['c'] });
+
+        await aggregation.acceptControlMessage(
+            aggregateAckControl(aggregateAck({ fromPeerId: 'c', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' }))
+        );
+
+        expect(enqueued).toEqual([]);
+        expect(aggregation.sweep(Number.MAX_SAFE_INTEGER).map(({ receipt }) => receipt)).toMatchObject([{
+            phase: 'timed-out',
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['c']
+        }]);
+    });
+
     it('writes the admitted receipt once for a message admitted again while its aggregate lives', async () => {
         const enqueued: ALMessage[] = [];
         const aggregation = createAggregation(enqueued);
@@ -542,7 +579,7 @@ function admission(): WsQueueBoxServerReceiptAggregation.Admission {
 }
 
 function aggregateAck(
-    ack: Readonly<{ fromPeerId: string; logicalRecipientPeerId: string; ackedMsgId?: string; }>
+    ack: Readonly<{ fromPeerId: string; logicalRecipientPeerId: string; ackedMsgId?: string; status?: ALAckStatus; }>
 ): ALAckPayload {
     return {
         ackedMsgId: ack.ackedMsgId ?? 'room-message-1',
@@ -551,7 +588,7 @@ function aggregateAck(
         originPeerId: 'a',
         logicalRecipientPeerId: ack.logicalRecipientPeerId,
         carrier: 'ws',
-        status: 'delivered',
+        status: ack.status ?? 'delivered',
         observedAtEpochMs: 1_000
     };
 }

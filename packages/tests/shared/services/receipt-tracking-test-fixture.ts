@@ -30,6 +30,8 @@ export interface ReceiptTrackingFixture {
 interface ReceiptMessageInput {
     readonly msgId: string;
     readonly expectedRecipientPeerIds: readonly string[];
+    /** Absent, the receipt records nobody outside the audience. */
+    readonly outsideAudienceRecipientPeerIds?: readonly string[];
 }
 
 export interface ReceiptTrackingFixtureInput {
@@ -92,7 +94,7 @@ export function receiptMessage(
             originPeerId: 'self',
             expectedRecipientPeerIds: input.expectedRecipientPeerIds,
             confirmedRecipientPeerIds,
-            outsideAudienceRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: input.outsideAudienceRecipientPeerIds ?? [],
             snapshotVersion: 7,
             phase,
             observedAtEpochMs: Date.now()

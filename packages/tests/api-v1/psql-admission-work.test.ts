@@ -134,7 +134,8 @@ describe('PostgreSQL inbound admission', () => {
                         msgId: 'msg-1',
                         senderId: 'peer-1',
                         source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                        supersedenceKey: null
+                        supersedenceKey: null,
+                        deliveredLocally: true
                     },
                     expireAtTimestamp: Date.now() + 60_000
                 }
@@ -178,7 +179,8 @@ describe('PostgreSQL inbound admission', () => {
                         msgId: 'msg-1',
                         senderId: 'peer-1',
                         source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                        supersedenceKey: null
+                        supersedenceKey: null,
+                        deliveredLocally: true
                     },
                     expireAtTimestamp
                 },
