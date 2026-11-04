@@ -1,4 +1,4 @@
-import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type { GrowthReader } from './growth-surface.ts';
 
@@ -133,10 +133,6 @@ function toGrowthValue(value: ApiJsonValue, reader: GrowthReader): number | unde
         current = next;
     }
     return typeof current === 'number' && Number.isFinite(current) ? current : undefined;
-}
-
-export function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function toAgentBucketMaxima(readings: readonly GrowthSeriesPoint[]): readonly GrowthSeriesPoint[] {

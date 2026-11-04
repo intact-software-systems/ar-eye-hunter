@@ -1,7 +1,7 @@
-import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import { decodeGrowthLines, isPositiveNumber, type DecodedGrowthPoints } from './decode-growth-lines.ts';
-import { isApiJsonObject, type GrowthSamplePoint } from './growth-series.ts';
+import type { GrowthSamplePoint } from './growth-series.ts';
 
 /** One agent's stats snapshot as a sample point, and whether its page heap was read without a forced collection. */
 interface BrowserStatsSnapshot {

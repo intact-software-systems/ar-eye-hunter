@@ -1,10 +1,9 @@
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import { computeGrowthAssessment } from './compute-growth-assessment.ts';
 import { computeGrowthPageHeapAssessment } from './compute-growth-page-heap-assessment.ts';
 import type { GrowthAssessment, GrowthOutcome } from './growth-assessment.ts';
 import {
-    isApiJsonObject,
     toGrowthAgentReadings,
     toGrowthSeries,
     type GrowthSamplePoint
