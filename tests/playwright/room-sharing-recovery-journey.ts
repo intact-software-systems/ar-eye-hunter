@@ -57,9 +57,9 @@ export async function roomRotationReturnJourney(page: Page, game: 'arena' | 'rel
         await page.getByRole('button', { name: 'Rotate room code', exact: true }).click();
         await pending.promise;
         await page.getByRole('button', { name: `Return to ${previousRoom}`, exact: true }).click();
-        await expect(page.getByText(`Entered ${previousRoom}.`, { exact: true })).toBeVisible();
+        await expect(page.locator('.room-row.active')).toHaveAttribute('data-room-id', previousRoom);
         await page.getByRole('button', { name: `Return to ${codeRoom}`, exact: true }).click();
-        await expect(page.getByText(`Entered ${codeRoom}.`, { exact: true })).toBeVisible();
+        await expect(page.locator('.room-row.active')).toHaveAttribute('data-room-id', codeRoom);
         await expect(page.getByRole('button', { name: 'Rotate room code', exact: true })).toBeEnabled();
         const delivered = page.waitForResponse(rotationPath);
         release.resolve();
@@ -71,6 +71,6 @@ export async function roomRotationReturnJourney(page: Page, game: 'arena' | 'rel
     }
     finally {
         release.resolve();
-        await page.unroute(rotationPath);
+        await page.unrouteAll({ behavior: 'wait' });
     }
 }
