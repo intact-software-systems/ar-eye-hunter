@@ -159,6 +159,11 @@ export interface ALPendingAckSnapshot {
      * ACK for anyone else is not relayed. Absent for any other message, whose child ACKs are all relayed.
      */
     readonly upwardAudiencePeerIds?: readonly string[];
+    /**
+     * The recipients a `not-subscribed` NACK named, each relayed upward once: recipients that delivered nothing, for
+     * whom no ACK is admitted after it.
+     */
+    readonly outsideAudiencePeerIds: readonly string[];
     readonly expireAtTimestamp?: number;
     /** The carrier the acknowledged data message arrived on. */
     readonly carrier: ALDeliveryCarrier;

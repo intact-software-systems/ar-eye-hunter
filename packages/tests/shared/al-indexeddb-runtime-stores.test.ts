@@ -382,6 +382,7 @@ describe('IndexedDB AL runtime stores', () => {
                                 localReady: false,
                                 expectedFromPeerIds: ['peer-2', 'peer-3'],
                                 ackedFromPeerIds: [],
+                                outsideAudiencePeerIds: [],
                                 carrier: 'ws'
                             }
                         },

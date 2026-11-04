@@ -174,6 +174,7 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
                     localReady: false,
                     expectedFromPeerIds: ['peer-2'],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     carrier: 'ws'
                 }
             }

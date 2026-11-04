@@ -2,6 +2,7 @@ import { createTestALInboundControlAdmission } from '@shared-test/shared/create-
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
+    newALNackControlMessage,
     parseALControlMessage,
     type ALAckPayload,
     type ALPendingAckSnapshot
@@ -96,6 +97,18 @@ async function seedPendingAcknowledgement(
         authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
     }
 ): Promise<void> {
+    await seedRelayRow(admissionStore, { controlOwners, source, row: {} });
+}
+
+interface SeededRelayRow {
+    readonly controlOwners: ALInboundControlOwnerIndex;
+    readonly source: ALInboundMessageRuntime.Source;
+    /** What differs from a ready row toward `upstream` waiting on `receiver` alone. */
+    readonly row: Partial<ALPendingAckSnapshot>;
+}
+
+async function seedRelayRow(admissionStore: ALInboundAdmissionStore, seeded: SeededRelayRow): Promise<void> {
+    const { controlOwners, source } = seeded;
     const expireAtTimestamp = Date.now() + 60_000;
     const nowMs = Date.now();
     const read = await admissionStore.readIncomingMessage({
@@ -130,8 +143,10 @@ async function seedPendingAcknowledgement(
                         localReady: true,
                         expectedFromPeerIds: ['receiver'],
                         ackedFromPeerIds: [],
+                        outsideAudiencePeerIds: [],
                         expireAtTimestamp,
-                        carrier: 'ws'
+                        carrier: 'ws',
+                        ...seeded.row
                     }
                 },
                 expireAtTimestamp
@@ -386,6 +401,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['lower-relay', 'leaf'],
                 ackedFromPeerIds: ['lower-relay'],
+                outsideAudiencePeerIds: [],
                 carrier: 'rtc'
             },
             acks: [toAck('lower-relay', 'deep-recipient')],
@@ -462,6 +478,7 @@ describe('inbound control admission', () => {
                     localReady: true,
                     expectedFromPeerIds: ['child-relay', 'leaf'],
                     ackedFromPeerIds: ['child-relay'],
+                    outsideAudiencePeerIds: [],
                     carrier: 'rtc'
                 },
                 acks: [toAck('grandchild-1')],
@@ -502,6 +519,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['leaf'],
                 ackedFromPeerIds: [],
+                outsideAudiencePeerIds: [],
                 carrier: 'rtc'
             },
             acks: [],
@@ -546,6 +564,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['receiver'],
                 ackedFromPeerIds: [],
+                outsideAudiencePeerIds: [],
                 carrier: 'ws'
             },
             acks: [],
@@ -591,6 +610,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['receiver'],
                 ackedFromPeerIds: ['stranger'],
+                outsideAudiencePeerIds: [],
                 carrier: 'ws'
             },
             acks: [{
@@ -644,6 +664,7 @@ function admitRelayAcknowledgements(
         localReady: true,
         expectedFromPeerIds: row.expectedFromPeerIds,
         ackedFromPeerIds: [],
+        outsideAudiencePeerIds: [],
         carrier: 'rtc'
     };
     let acks: readonly ALAckPayload[] = [];
@@ -693,3 +714,118 @@ function toRelayAck(
         observedAtEpochMs: 1_800_000_000_000
     };
 }
+
+describe('a not-subscribed NACK at a relay (PL9)', () => {
+    /** A receipted room message whose frozen audience names the child `receiver` and `below` it. */
+    const FROZEN_ROW: Partial<ALPendingAckSnapshot> = { upwardAudiencePeerIds: ['receiver', 'below'] };
+    const SEEDED = {
+        controlOwners: TRACKED_CONTROL_OWNERS,
+        source: { kind: 'rtc-peer', peerId: message.id.senderId } as const,
+        row: FROZEN_ROW
+    };
+
+    function createNotSubscribedNack(logicalRecipientPeerId: string, reason: 'not-subscribed' | 'gap' = 'not-subscribed'): ALMessage {
+        return newALNackControlMessage(
+            { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
+            {
+                msgId: message.id.msgId,
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                logicalRecipientPeerId,
+                reason,
+                observedAtEpochMs: 1
+            }
+        );
+    }
+
+    async function readUpwardControls(admissionStore: ALInboundAdmissionStore, workQueue: QueueBoxResourceEntryRepository) {
+        return (await readRetainedWork(admissionStore, workQueue, 'rtc')).flatMap((work) => {
+            const control = work.payload.kind === 'send-control' ? parseALControlMessage(work.payload.msg) : undefined;
+            return control === undefined || control.type === 'receipt' || control.type === 'repair' ? [] : [control];
+        });
+    }
+
+    it('re-originates a child\'s NACK for a recipient below it to its parent from itself, naming the same recipient', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        const result = await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL);
+
+        expect(result).toEqual({ kind: 'committed', acceptance: { handled: true, completedPendingAcks: [] } });
+        expect(await readUpwardControls(admissionStore, workQueue)).toEqual([{
+            type: 'nack',
+            payload: expect.objectContaining({
+                msgId: message.id.msgId,
+                fromPeerId: 'self',
+                toPeerId: 'upstream',
+                logicalRecipientPeerId: 'below',
+                reason: 'not-subscribed'
+            })
+        }]);
+        expect((await readAcknowledgements(backend, admissionStore)).pendingAck).toMatchObject({
+            ackedFromPeerIds: [],
+            outsideAudiencePeerIds: ['below']
+        });
+    });
+
+    it('ends the hop of a child that answers for itself, so the row completes and sends its terminal ACK beside the NACK', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        const result = await control.admit(createNotSubscribedNack('receiver'), WS_ARRIVAL);
+
+        expect(result.kind === 'committed' && result.acceptance.completedPendingAcks).toHaveLength(1);
+        expect((await readUpwardControls(admissionStore, workQueue)).map((upward) => [upward.type, upward.payload.fromPeerId]).toSorted())
+            .toEqual([['ack', 'self'], ['nack', 'self']]);
+    });
+
+    it.each<[string, Partial<ALPendingAckSnapshot>, string]>([
+        ['a peer outside the frozen audience', FROZEN_ROW, 'stranger'],
+        ['a recipient of a message no receipt counts recipients of', {}, 'below']
+    ])('refuses a NACK naming %s, relaying nothing', async (_name, row, logicalRecipientPeerId) => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, { ...SEEDED, row });
+
+        expect(await control.admit(createNotSubscribedNack(logicalRecipientPeerId), WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound NACK names no recipient of the frozen audience'
+        });
+        expect(await readUpwardControls(admissionStore, workQueue)).toEqual([]);
+    });
+
+    it('relays each recipient once, and admits no ACK for a recipient it relayed a NACK for', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+        await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL);
+        const forwarded = newALAckControlMessage(
+            { v: 4, msgId: 'ack-below', ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
+            {
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'below',
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                status: 'forwarded',
+                observedAtEpochMs: 1,
+                carrier: 'rtc'
+            }
+        );
+
+        expect(await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound NACK names a recipient already relayed outside the audience'
+        });
+        expect(await control.admit(forwarded, WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound acknowledgement names a recipient that answered it is not subscribed'
+        });
+        expect(await readUpwardControls(admissionStore, workQueue)).toHaveLength(1);
+    });
+
+    it('leaves every other NACK to its outbound owner, as before', async () => {
+        const { admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        expect(await control.admit(createNotSubscribedNack('receiver', 'gap'), WS_ARRIVAL)).toEqual({ kind: 'not-handled' });
+    });
+});

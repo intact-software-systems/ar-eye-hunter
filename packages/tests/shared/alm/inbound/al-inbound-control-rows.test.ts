@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, parseALControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
@@ -13,7 +13,8 @@ import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/al
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import {
     applyALInboundControlMutation,
-    readControlDecisionSurface
+    readControlDecisionSurface,
+    type ALInboundControlSubject
 } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -101,12 +102,12 @@ const UNRESOLVED_CONTROL_OWNERS: readonly UnresolvedControlOwnerCase[] = [
     }
 ];
 
-function toAckPayload(ack: ALMessage): ALAckPayload {
+function toAckSubject(ack: ALMessage): ALInboundControlSubject {
     const parsed = parseALControlMessage(ack);
     if (parsed?.type !== 'ack') {
         throw new Error('Expected an acknowledgement');
     }
-    return parsed.payload;
+    return { msgId: parsed.payload.ackedMsgId, fromPeerId: parsed.payload.fromPeerId };
 }
 
 async function writeControlOwners(
@@ -167,7 +168,7 @@ describe.each<InboundTestStorage>(['memory', 'indexeddb'])('inbound control rows
         await admitOverRtc(stores, msg);
         const ack = createDownstreamAcknowledgement(msg, 'intruder');
 
-        expect(await readControlDecisionSurface(backend, namespace, toAckPayload(ack))).toBeUndefined();
+        expect(await readControlDecisionSurface(backend, namespace, toAckSubject(ack))).toBeUndefined();
         expect(await control.admit(ack, { kind: 'trusted-server' })).toEqual({ kind: 'not-handled' });
         const rows = await readRows();
         expect(rows.acks).toEqual([]);
@@ -182,7 +183,7 @@ describe.each<InboundTestStorage>(['memory', 'indexeddb'])('inbound control rows
             await writeControlOwners(backend, namespace, { msgId: msg.id.msgId, value: controlOwners });
             const ack = createDownstreamAcknowledgement(msg, 's2');
 
-            expect(await readControlDecisionSurface(backend, namespace, toAckPayload(ack))).toBeUndefined();
+            expect(await readControlDecisionSurface(backend, namespace, toAckSubject(ack))).toBeUndefined();
             expect(await control.admit(ack, { kind: 'trusted-server' })).toEqual({ kind: 'not-handled' });
             const rows = await readRows();
             expect(rows.acks).toEqual([]);

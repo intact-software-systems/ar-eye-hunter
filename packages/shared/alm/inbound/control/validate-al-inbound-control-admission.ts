@@ -23,6 +23,11 @@ export function validateALInboundControlAdmission(
     if (acks.some((prior) => isSameAckIdentity(prior, ack))) {
         issues.push(rejectInboundControl('Inbound acknowledgement was already admitted'));
     }
+    if (pending.outsideAudiencePeerIds.includes(ack.logicalRecipientPeerId)) {
+        issues.push(
+            rejectInboundControl('Inbound acknowledgement names a recipient that answered it is not subscribed')
+        );
+    }
     if (
         candidate.acks.values.length > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
         !Number.isSafeInteger(candidate.controlExpireAtTimestamp) ||

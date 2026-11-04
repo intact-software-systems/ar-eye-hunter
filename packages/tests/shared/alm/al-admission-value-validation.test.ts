@@ -63,6 +63,7 @@ describe('admission control decoding', () => {
         localReady: false,
         expectedFromPeerIds: ['a'],
         ackedFromPeerIds: [],
+        outsideAudiencePeerIds: [],
         carrier: 'ws'
     };
 

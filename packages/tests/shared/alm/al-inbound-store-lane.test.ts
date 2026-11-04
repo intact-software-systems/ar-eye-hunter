@@ -301,6 +301,7 @@ async function seedPendingAcknowledgement(store: ALInboundAdmissionStore, messag
                     localReady: true,
                     expectedFromPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     expireAtTimestamp,
                     carrier: 'ws'
                 }

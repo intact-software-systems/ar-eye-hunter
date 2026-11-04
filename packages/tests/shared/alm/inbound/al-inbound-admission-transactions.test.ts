@@ -158,6 +158,7 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
                         localReady: true,
                         expectedFromPeerIds: [ACKNOWLEDGING_PEER_ID],
                         ackedFromPeerIds: [],
+                        outsideAudiencePeerIds: [],
                         expireAtTimestamp,
                         carrier: 'ws'
                     }

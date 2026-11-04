@@ -59,6 +59,7 @@ const RELAY_ROW: ALPendingAckSnapshot = {
     localReady: true,
     expectedFromPeerIds: ['child-relay', 'leaf'],
     ackedFromPeerIds: [],
+    outsideAudiencePeerIds: [],
     carrier: 'rtc'
 };
 
@@ -119,7 +120,8 @@ describe('a logical recipient that relays a group-leader send', () => {
             toPeerId: 'relay',
             localReady: true,
             expectedFromPeerIds: DIRECTOR_CHILD_PEER_IDS,
-            ackedFromPeerIds: []
+            ackedFromPeerIds: [],
+            outsideAudiencePeerIds: []
         });
     });
 

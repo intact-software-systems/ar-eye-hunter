@@ -67,6 +67,7 @@ import {
     readStoredAcknowledgements,
     readStoredControlOwnerIndex,
     type AcksControlValue,
+    type ALInboundControlSubject,
     type PendingControlValue
 } from './control/al-inbound-control-rows.ts';
 
@@ -385,7 +386,7 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     ): Promise<ALInboundStoredPlanningRead | undefined>;
 
     /** Absent when the owner index names no single original sender for the acknowledging peer. */
-    readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined>;
+    readControlDecisionSurface(subject: ALInboundControlSubject): Promise<ALInboundControlDecisionSurface | undefined>;
 
     /** The audience a WS client's message was frozen to at ingress; absent for any other message or a missing row. */
     readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined>;
@@ -953,8 +954,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return owner;
     }
 
-    async readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined> {
-        return await this.backend.readWithin((session) => readControlDecisionSurface(session, this.namespace, ack));
+    async readControlDecisionSurface(
+        subject: ALInboundControlSubject
+    ): Promise<ALInboundControlDecisionSurface | undefined> {
+        return await this.backend.readWithin((session) => readControlDecisionSurface(session, this.namespace, subject));
     }
 
     async readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined> {

@@ -327,6 +327,7 @@ describe('ALInboundMessageRuntime', () => {
                         localReady: false,
                         expectedFromPeerIds: ['peer-2'],
                         ackedFromPeerIds: [],
+                        outsideAudiencePeerIds: [],
                         carrier: 'ws'
                     }
                 }

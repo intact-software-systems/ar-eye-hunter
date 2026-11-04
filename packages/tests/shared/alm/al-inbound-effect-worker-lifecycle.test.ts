@@ -1259,6 +1259,7 @@ async function seedTrackedAcknowledgement(
                     localReady: true,
                     expectedFromPeerIds: [...expectedFromPeerIds],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     expireAtTimestamp,
                     carrier: 'ws'
                 }

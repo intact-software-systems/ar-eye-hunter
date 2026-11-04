@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALAckPayload, ALControlAcceptance } from '../../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALControlAcceptance, ALNackPayload } from '../../../al-contracts/al-control.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
@@ -7,19 +7,26 @@ import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
-import type { ALInboundAdmissionStore } from '../al-inbound-admission-store.ts';
+import type {
+    ALInboundAdmissionStore,
+    ALInboundControlDecisionSurface,
+    ALInboundMessageOwner
+} from '../al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
 import { toALInboundPendingControlId } from '../al-inbound-pending-admission.ts';
 import { toALDeliveryCarrier, toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry } from '../al-inbound-work-entry.ts';
 import type { ALInboundAcknowledgementEvidence } from './al-inbound-acknowledgement-evidence.ts';
+import type { ALInboundControlSubject } from './al-inbound-control-rows.ts';
 import {
     computeALInboundControlAdmission,
     toALInboundControlCommitBundle,
     type ALInboundControlAdmissionCandidate,
     type ALInboundControlAdmissionRead
 } from './compute-al-inbound-control-admission.ts';
+import { computeALInboundNackAdmission, toALInboundNackCommitBundle } from './compute-al-inbound-nack-admission.ts';
 import { validateALInboundControlAdmission } from './validate-al-inbound-control-admission.ts';
+import { validateALInboundNackAdmission } from './validate-al-inbound-nack-admission.ts';
 
 export interface ALInboundControlAdmissionDependencies {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -102,16 +109,26 @@ export class ALInboundControlAdmission {
         };
     }
 
+    /** A relay admits a child's ACK, and its `not-subscribed` NACK; every other control is its outbound owner's. */
     private async admitArrival(
         arrival: ALInboundControlArrival,
         evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
-        const decoded = decodeALControlMessage(arrival.msg);
-        if (decoded.left || decoded.right!.type !== 'ack') {
-            return { kind: 'not-handled' };
+        const control = decodeALControlMessage(arrival.msg).right;
+        if (control?.type === 'ack') {
+            return await this.admitAcknowledgement(arrival, { ...control.payload, carrier: arrival.carrier }, evidence);
         }
+        return control?.type === 'nack' && control.payload.reason === 'not-subscribed'
+            ? await this.admitNotSubscribedNack(arrival, control.payload)
+            : { kind: 'not-handled' };
+    }
+
+    private async admitAcknowledgement(
+        arrival: ALInboundControlArrival,
+        ack: ALAckPayload,
+        evidence: ALInboundAcknowledgementEvidence | undefined
+    ): Promise<ALInboundControlAdmissionResult> {
         const nowMs = this.clock.nowMs();
-        const ack = { ...decoded.right!.payload, carrier: arrival.carrier };
         const read = await this.readControlAdmission(arrival, ack, nowMs);
         if (read === undefined) {
             return { kind: 'not-handled' };
@@ -123,6 +140,37 @@ export class ALInboundControlAdmission {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         return await this.commitControlAdmission(arrival, candidate, evidence);
+    }
+
+    private async admitNotSubscribedNack(
+        arrival: ALInboundControlArrival,
+        nack: ALNackPayload
+    ): Promise<ALInboundControlAdmissionResult> {
+        const nowMs = this.clock.nowMs();
+        const surface = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId });
+        if (surface === undefined) {
+            return { kind: 'not-handled' };
+        }
+        const candidate = computeALInboundNackAdmission({
+            namespace: this.admissionStore.namespace,
+            nack,
+            controlOwners: surface.controlOwners,
+            owner: surface.owner,
+            pending: surface.pendingAck,
+            acks: surface.acks,
+            nowMs,
+            controlMsgId: this.newControlId(),
+            traceId: arrival.msg.id.traceId
+        }, this.retention);
+        const issues = validateALInboundNackAdmission(candidate);
+        if (issues.length > 0) {
+            return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
+        }
+        if (await this.admissionStore.commitBundle(toALInboundNackCommitBundle(candidate)) === 'committed') {
+            return { kind: 'committed', acceptance: candidate.acceptance };
+        }
+        await this.retainPendingControl(arrival, nowMs);
+        return { kind: 'pending-control' };
     }
 
     private async commitControlAdmission(
@@ -181,26 +229,34 @@ export class ALInboundControlAdmission {
         ack: ALAckPayload,
         nowMs: number
     ): Promise<ALInboundControlAdmissionRead | undefined> {
-        const surface = await this.admissionStore.readControlDecisionSurface(ack);
-        if (surface === undefined) {
-            return undefined;
-        }
-        if (surface.messageOwner === undefined) {
-            throw new ALAdmissionCorruptionError(
-                toALInboundMessageOwnerKey(this.admissionStore.namespace, ack.ackedMsgId, surface.senderId),
-                new TypeError('Retained inbound acknowledgement state has no message provenance')
-            );
-        }
-        return {
+        const surface = await this.readDecisionSurface({ msgId: ack.ackedMsgId, fromPeerId: ack.fromPeerId });
+        return surface === undefined ? undefined : {
             namespace: this.admissionStore.namespace,
             ack,
             controlOwners: surface.controlOwners,
-            owner: surface.messageOwner,
+            owner: surface.owner,
             pending: surface.pendingAck,
             acks: surface.acks,
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
         };
+    }
+
+    /** The surface of a child's control: none for a peer that owes no tracked message, never one without provenance. */
+    private async readDecisionSurface(
+        subject: ALInboundControlSubject
+    ): Promise<(ALInboundControlDecisionSurface & { readonly owner: ALInboundMessageOwner; }) | undefined> {
+        const surface = await this.admissionStore.readControlDecisionSurface(subject);
+        if (surface === undefined) {
+            return undefined;
+        }
+        if (surface.messageOwner === undefined) {
+            throw new ALAdmissionCorruptionError(
+                toALInboundMessageOwnerKey(this.admissionStore.namespace, subject.msgId, surface.senderId),
+                new TypeError('Retained inbound acknowledgement state has no message provenance')
+            );
+        }
+        return { ...surface, owner: surface.messageOwner };
     }
 }

@@ -8,6 +8,7 @@ import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts'
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
 import {
+    isALInboundNotSubscribedPlan,
     toALInboundAckEffect,
     type ALInboundAckRecipient,
     type ALInboundEffectIntent
@@ -45,9 +46,24 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
  * answer (R-S2c-ii-14). A copy on the other carrier than the first admission -- the envelope a sender
  * re-admitted there after a hand-over (D56) -- gets the own ACK of this peer again over the carrier it came
  * in on, whatever its next hops and whether or not it holds a relay row: the first ACK went out on the
- * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21).
+ * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21). A peer
+ * that answers `not-subscribed` answers the copy with that NACK again and never with an ACK naming itself.
  */
 export function computeALInboundDuplicateChanges(
+    read: ALInboundMessageReadDto,
+    input: ComputeALInboundDuplicateChangesInput
+): ALInboundDuplicateChanges {
+    const changes = computeDuplicateAnswer(read, input);
+    return isALInboundNotSubscribedPlan(read.plan)
+        ? { ...changes, effects: changes.effects.filter((effect) => !isOwnAck(effect)) }
+        : changes;
+}
+
+function isOwnAck(effect: ALInboundEffectIntent): boolean {
+    return effect.payload.kind === 'send-ack' && effect.payload.logicalRecipient.kind === 'self';
+}
+
+function computeDuplicateAnswer(
     read: ALInboundMessageReadDto,
     input: ComputeALInboundDuplicateChangesInput
 ): ALInboundDuplicateChanges {

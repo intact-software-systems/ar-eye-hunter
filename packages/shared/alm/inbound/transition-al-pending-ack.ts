@@ -3,6 +3,7 @@ import {
     isALHopCompletionAck,
     type ALAckPayload,
     type ALCompletedPendingAck,
+    type ALNackPayload,
     type ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
@@ -74,6 +75,7 @@ export function trackALPendingAckSnapshot(
             ackedFromPeerIds: input.current?.ackedFromPeerIds ?? [],
             ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp }),
             ...(upwardAudiencePeerIds === undefined ? {} : { upwardAudiencePeerIds }),
+            outsideAudiencePeerIds: input.current?.outsideAudiencePeerIds ?? [],
             carrier: input.carrier
         },
         relayedRecipientPeerIds: []
@@ -130,6 +132,29 @@ export function acceptALPendingAckPayload(
         previous: current,
         pending: { ...current, ackedFromPeerIds },
         relayedRecipientPeerIds: relayed ? [ack.logicalRecipientPeerId] : []
+    });
+}
+
+/**
+ * An admitted `not-subscribed` NACK names a recipient that delivered nothing, which the row relays upward and records.
+ * The NACK of the child hop itself ends that hop, since such a child never ACKs for itself.
+ */
+export function acceptALPendingNotSubscribedNack(
+    current: ALPendingAckSnapshot,
+    nack: ALNackPayload
+): ALPendingAckTransition {
+    const ackedFromPeerIds = nack.fromPeerId === nack.logicalRecipientPeerId
+        ? [...new Set([...current.ackedFromPeerIds, nack.fromPeerId])]
+        : current.ackedFromPeerIds;
+    return toALPendingAckTransition({
+        msgId: nack.msgId,
+        previous: current,
+        pending: {
+            ...current,
+            ackedFromPeerIds,
+            outsideAudiencePeerIds: [...current.outsideAudiencePeerIds, nack.logicalRecipientPeerId]
+        },
+        relayedRecipientPeerIds: []
     });
 }
 

@@ -127,7 +127,15 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
 export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot {
     const record = decodeControlRecord(
         value,
-        ['toPeerId', 'status', 'localReady', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
+        [
+            'toPeerId',
+            'status',
+            'localReady',
+            'expectedFromPeerIds',
+            'ackedFromPeerIds',
+            'outsideAudiencePeerIds',
+            'carrier'
+        ],
         ['expireAtTimestamp', 'upwardAudiencePeerIds']
     );
     if (typeof record.localReady !== 'boolean') {
@@ -154,6 +162,10 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
                 )
             }
             : {}),
+        outsideAudiencePeerIds: decodeControlIdentifierArray(
+            record.outsideAudiencePeerIds,
+            'pending ACK outside-audience recipient identity'
+        ),
         carrier: decodeALDeliveryCarrier(record.carrier, 'pending ACK carrier')
     };
 }

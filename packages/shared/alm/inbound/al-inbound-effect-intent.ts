@@ -166,9 +166,18 @@ export function toALInboundNegativeControlEffects(
     return authorityRefusal ? [nack] : [nack, ...toRepairEffects(input)];
 }
 
-/** An authority refusal is about the receiver's roster or a claim, never the ordering track, so it asks for no repair. */
+/**
+ * An authority refusal is about the receiver's roster, a claim or its own subscription, never the ordering track, so it
+ * asks for no repair.
+ */
 function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
-    return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other';
+    return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other' ||
+        reason === 'not-subscribed';
+}
+
+/** A frozen recipient that delivers nothing answers `not-subscribed` for itself and never ACKs for itself. */
+export function isALInboundNotSubscribedPlan(plan: ALMessageHandlingPlan): boolean {
+    return plan.nack.enabled && plan.nack.reason === 'not-subscribed';
 }
 
 function toRepairEffects(

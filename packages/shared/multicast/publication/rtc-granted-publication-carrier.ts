@@ -132,6 +132,7 @@ export class RtcGrantedPublicationCarrier {
                 signatureValid: publicationVerifier.getVerifiedSignature(msg),
                 ownSubscriptionActive: groupRef !== undefined &&
                     topicSubscriptions.isSubscriptionActive(groupRef, msg.route.topicId),
+                frozenRecipient: admission.kind === 'authorized' && admission.deliversLocally,
                 nowEpochMs: input.nowMs
             }),
             input.fromPeerId

@@ -5,6 +5,7 @@ import {
 } from '../al-contracts/al-contract.ts';
 import { resolveALAdmittedRoomAudience } from '../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageDropReasonCode, ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { OverlayInfo } from '../api/api-config.ts';
 import { isSameGroupRef } from '../api/api-type-utils.ts';
 import { resolveRallarGroupLeaderSessionId } from '../api/group-director.ts';
@@ -122,8 +123,46 @@ export function toRtcPublicationHandlingPlan(
             plan.dropReasonCode === 'expired'
                 ? plan
                 : toRtcRefusedHandlingPlan(plan, toRtcPublicationRefusal(refusal), fromPeerId),
-        (admitted) => admitted.delivery === 'deliver' ? plan : toForwardOnlyHandlingPlan(plan)
+        (admitted) => toRtcPublicationDeliveryPlan(plan, admitted.delivery, fromPeerId)
     );
+}
+
+function toRtcPublicationDeliveryPlan(
+    plan: ALMessageHandlingPlan,
+    delivery: RtcPublicationAdmitted['delivery'],
+    fromPeerId: string | undefined
+): ALMessageHandlingPlan {
+    switch (delivery) {
+        case 'deliver':
+            return plan;
+        case 'forward-only':
+            return toForwardOnlyHandlingPlan(plan);
+        case 'forward-not-subscribed':
+            return toNotSubscribedHandlingPlan(plan, fromPeerId);
+    }
+}
+
+/**
+ * A frozen recipient that delivers nothing tells its hop so, toward the origin that counts it, and never speaks for
+ * itself in an ACK: `ack.enabled` is off while the relay row its forward needs stays, so the ACKs of the recipients
+ * below it still pass upward. Only a receipt that counts recipients asks; a plan that drops with a NACK of its own
+ * keeps that NACK.
+ */
+function toNotSubscribedHandlingPlan(
+    plan: ALMessageHandlingPlan,
+    fromPeerId: string | undefined
+): ALMessageHandlingPlan {
+    const forwardOnly = toForwardOnlyHandlingPlan(plan);
+    if (!isALLogicalReceiptMode(plan.ack.algo) || fromPeerId === undefined) {
+        return forwardOnly;
+    }
+    return {
+        ...forwardOnly,
+        ack: { ...plan.ack, enabled: false },
+        nack: plan.nack.enabled
+            ? plan.nack
+            : { enabled: true, toPeerId: fromPeerId, reason: 'not-subscribed', missingRanges: [] }
+    };
 }
 
 function toRtcRefusedHandlingPlan(

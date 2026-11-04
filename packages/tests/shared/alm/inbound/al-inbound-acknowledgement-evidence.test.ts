@@ -178,6 +178,7 @@ class AcknowledgementFixture {
                                 localReady: true,
                                 expectedFromPeerIds: ['child'],
                                 ackedFromPeerIds: [],
+                                outsideAudiencePeerIds: [],
                                 expireAtTimestamp,
                                 carrier: 'rtc'
                             }

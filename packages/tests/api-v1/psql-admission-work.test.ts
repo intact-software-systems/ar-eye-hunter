@@ -189,6 +189,7 @@ describe('PostgreSQL inbound admission', () => {
                             localReady: false,
                             expectedFromPeerIds: ['peer-2'],
                             ackedFromPeerIds: [],
+                            outsideAudiencePeerIds: [],
                             carrier: 'ws'
                         }
                     },

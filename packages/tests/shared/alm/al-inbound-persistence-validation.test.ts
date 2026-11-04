@@ -209,6 +209,7 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                     localReady: true,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     expireAtTimestamp: input.expireAtTimestamp,
                     carrier: 'ws'
                 }
@@ -912,6 +913,7 @@ describe('inbound admission persisted values', () => {
                             localReady: false,
                             expectedFromPeerIds: ['receiver'],
                             ackedFromPeerIds: [],
+                            outsideAudiencePeerIds: [],
                             expireAtTimestamp: Date.now() + 60_000,
                             carrier: 'ws'
                         }
@@ -962,7 +964,8 @@ describe('inbound admission persisted values', () => {
                     status: 'subtree-complete',
                     localReady: false,
                     expectedFromPeerIds: ['receiver'],
-                    ackedFromPeerIds: []
+                    ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: []
                 }
             });
         });
@@ -1078,6 +1081,7 @@ async function seedPendingAcknowledgement(
                         localReady: true,
                         expectedFromPeerIds,
                         ackedFromPeerIds,
+                        outsideAudiencePeerIds: [],
                         expireAtTimestamp,
                         carrier: 'ws'
                     }

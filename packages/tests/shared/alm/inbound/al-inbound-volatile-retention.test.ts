@@ -477,6 +477,7 @@ async function seedRelayRow(
                     localReady: true,
                     expectedFromPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     ...(deadlineAtMs === undefined ? {} : { expireAtTimestamp: deadlineAtMs }),
                     carrier: 'ws'
                 }
