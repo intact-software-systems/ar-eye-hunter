@@ -69,6 +69,7 @@ const RTC_ACKNOWLEDGEMENT: ALDeliverySettlement = {
     expectedRecipientPeerIds: ['b'],
     confirmedRecipientPeerIds: [],
     unconfirmedRecipientPeerIds: ['b'],
+    outsideAudienceRecipientPeerIds: [],
     complete: false,
     traceId: 'trace-resolve-al-delivery-fallback-trigger'
 };
@@ -195,6 +196,7 @@ describe('the declared retryable outcomes (D56)', () => {
             mode: 'receiver',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['b'],
+            outsideAudiencePeerIds: [],
             cause: 'budget',
             detail: 'The receipt ran out of retries after 3 of 3.',
             traceId: 'trace-resolve-al-delivery-fallback-trigger'

@@ -525,6 +525,7 @@ describe('IndexedDB AL runtime stores', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
@@ -605,6 +606,7 @@ describe('IndexedDB AL runtime stores', () => {
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1,

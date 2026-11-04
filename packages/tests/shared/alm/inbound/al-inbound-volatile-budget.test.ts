@@ -192,6 +192,7 @@ function toReceivedNack(): ALMessage {
         { v: 4, msgId: 'received-nack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-volatile-budget' },
         {
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            logicalRecipientPeerId: INBOUND_TEST_SENDER_PEER_ID,
             toPeerId: INBOUND_TEST_SELF_PEER_ID,
             msgId: 'sent-message',
             reason: 'gap',

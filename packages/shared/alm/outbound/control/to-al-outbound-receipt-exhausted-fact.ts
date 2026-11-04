@@ -1,9 +1,16 @@
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import type { ALDeliveryReceiptExhaustion } from '../../delivery/al-delivery-failure.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
+import {
+    toALOutboundOutsideAudiencePeerIds,
+    toALOutboundUnconfirmedPeerIds
+} from '../transition-al-outbound-pending-ack.ts';
 
 export interface ToALOutboundReceiptExhaustedFactInput {
-    readonly receipt: Pick<ALOutboundPendingAckSnapshot, 'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds'>;
+    readonly receipt: Pick<
+        ALOutboundPendingAckSnapshot,
+        'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'
+    >;
     readonly exhaustion: ALDeliveryReceiptExhaustion;
     readonly detail: string;
     /** The trace of the request whose commit ended the receipt. */
@@ -21,7 +28,8 @@ export function toALOutboundReceiptExhaustedFact(
         traceId: input.traceId,
         mode: receipt.mode,
         confirmedPeerIds: receipt.expectedPeerIds.filter((peerId) => receipt.ackedPeerIds.includes(peerId)),
-        unconfirmedPeerIds: receipt.expectedPeerIds.filter((peerId) => !receipt.ackedPeerIds.includes(peerId)),
+        unconfirmedPeerIds: toALOutboundUnconfirmedPeerIds(receipt),
+        outsideAudiencePeerIds: toALOutboundOutsideAudiencePeerIds(receipt),
         ...exhaustion,
         detail
     };

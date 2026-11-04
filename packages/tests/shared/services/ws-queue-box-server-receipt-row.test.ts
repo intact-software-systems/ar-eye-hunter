@@ -214,6 +214,7 @@ function receiptMessage(input: ReceiptMessageInput): ALMessage {
                 originPeerId: 'a',
                 expectedRecipientPeerIds: ['b', 'c'],
                 confirmedRecipientPeerIds: ['b', 'c'],
+                outsideAudienceRecipientPeerIds: [],
                 snapshotVersion: SNAPSHOT_VERSION,
                 phase: 'complete',
                 observedAtEpochMs: input.observedAtEpochMs

@@ -738,6 +738,7 @@ function recordReceipt(delivery: MessageDeliveryFixture, confirmed: readonly str
         expectedRecipientPeerIds: expected,
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: expected.filter((peerId) => !confirmed.includes(peerId)),
+        outsideAudienceRecipientPeerIds: [],
         complete,
         traceId: 'trace-arena-director-delivery'
     });

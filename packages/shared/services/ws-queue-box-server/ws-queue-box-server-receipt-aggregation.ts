@@ -505,7 +505,8 @@ export class WsQueueBoxServerReceiptAggregation {
             ? Object.freeze({
                 ...receipt,
                 expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
-                confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds])
+                confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
+                outsideAudienceRecipientPeerIds: Object.freeze([...receipt.outsideAudienceRecipientPeerIds])
             })
             : undefined;
         const enqueued = await this.#dependencies.enqueueOutbox(
@@ -654,6 +655,7 @@ function toReceiptPayload(
         originPeerId: aggregate.originPeerId,
         expectedRecipientPeerIds: aggregate.expectedRecipientPeerIds,
         confirmedRecipientPeerIds: aggregate.confirmedRecipientPeerIds,
+        outsideAudienceRecipientPeerIds: [],
         snapshotVersion: aggregate.snapshotVersion,
         phase,
         observedAtEpochMs

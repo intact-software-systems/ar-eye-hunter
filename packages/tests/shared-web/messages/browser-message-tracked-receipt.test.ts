@@ -379,7 +379,14 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
 
         await ws.acceptIncomingMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-no-leader', senderId: SERVER_PEER_ID, ts: Date.now(), traceId: 'trace-browser-message-tracked-receipt' },
-            { msgId: handle.msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason: 'no-leader', observedAtEpochMs: Date.now() }
+            {
+                msgId: handle.msgId,
+                fromPeerId: SERVER_PEER_ID,
+                logicalRecipientPeerId: SERVER_PEER_ID,
+                toPeerId: SESSION_ID,
+                reason: 'no-leader',
+                observedAtEpochMs: Date.now()
+            }
         ));
 
         await expect.poll(() => handle.lifecycle().state).toBe('rejected');
@@ -559,7 +566,7 @@ function createGrantedTopicSend(): ALMessage {
 function createServerNack(msgId: string, reason: ALNackReason, nowMs: () => number): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `nack-${reason}-${msgId}`, senderId: SERVER_PEER_ID, ts: nowMs(), traceId: 'trace-browser-message-tracked-receipt' },
-        { msgId, fromPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason, observedAtEpochMs: nowMs() }
+        { msgId, fromPeerId: SERVER_PEER_ID, logicalRecipientPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason, observedAtEpochMs: nowMs() }
     );
 }
 
@@ -571,6 +578,7 @@ function createServerReceipt(input: CreateServerReceiptInput): ALMessage {
             originPeerId: SESSION_ID,
             expectedRecipientPeerIds: input.expectedRecipientPeerIds,
             confirmedRecipientPeerIds: input.confirmedRecipientPeerIds,
+            outsideAudienceRecipientPeerIds: [],
             snapshotVersion: 4,
             phase: input.phase,
             observedAtEpochMs: input.nowMs()

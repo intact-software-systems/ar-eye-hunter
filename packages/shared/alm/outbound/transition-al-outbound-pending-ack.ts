@@ -20,7 +20,10 @@ export interface OverlayTree {
 
 /** A receipt row as far as its acknowledgement states it, with the local hop view of its origin. */
 export interface ToALOutboundAcknowledgementFactInput {
-    readonly receipt: Pick<ALOutboundPendingAckSnapshot, 'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds'>;
+    readonly receipt: Pick<
+        ALOutboundPendingAckSnapshot,
+        'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'
+    >;
     readonly hops: OverlayTree;
     readonly complete: boolean;
     /** The trace of the request whose commit moved the receipt. */
@@ -88,11 +91,14 @@ export function toALOutboundTrackedReceipt(
             }
         }
     }
+    const outsideAudiencePeerIds = (input.current?.outsideAudiencePeerIds ?? [])
+        .filter((peerId) => expectedPeerIds.has(peerId));
     return {
         msgId: input.msgId,
         mode,
         expectedPeerIds: [...expectedPeerIds],
         ackedPeerIds: [...ackedPeerIds],
+        outsideAudiencePeerIds,
         timeoutMs: input.tracking.timeoutMs,
         maxAttempts: input.tracking.maxAttempts,
         attempts: input.current?.attempts ?? 0,
@@ -155,7 +161,7 @@ export function toALOutboundCompletedHopPeerIds(acks: readonly ALAckPayload[]): 
  */
 export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgementFactInput): ALOutboundSettlementFact {
     const { receipt, hops } = input;
-    const unconfirmed = receipt.expectedPeerIds.filter((peerId) => !receipt.ackedPeerIds.includes(peerId));
+    const unconfirmed = toALOutboundUnconfirmedPeerIds(receipt);
     const receiverHops = isALLogicalReceiptMode(receipt.mode);
     return {
         kind: 'acknowledgement',
@@ -169,15 +175,38 @@ export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgeme
         expectedRecipientPeerIds: receipt.expectedPeerIds,
         confirmedRecipientPeerIds: receipt.ackedPeerIds,
         unconfirmedRecipientPeerIds: unconfirmed,
+        outsideAudienceRecipientPeerIds: toALOutboundOutsideAudiencePeerIds(receipt),
         complete: input.complete
     };
 }
 
+/**
+ * Every expected peer is acked or outside the audience, and somebody confirmed: a receipt whose every recipient is
+ * outside confirmed nothing, so it stays open until its deadline. A receipt that expected nobody is complete.
+ */
 export function isALOutboundReceiptComplete(
     pending: ALOutboundPendingAckSnapshot
 ): boolean {
     return pending.expectedPeerIds.length === 0 ||
-        pending.expectedPeerIds.every((peerId) => pending.ackedPeerIds.includes(peerId));
+        (pending.ackedPeerIds.length > 0 && toALOutboundUnconfirmedPeerIds(pending).length === 0);
+}
+
+/** The expected peers outside the audience that never confirmed: a confirmation outranks a later outside answer. */
+export function toALOutboundOutsideAudiencePeerIds(
+    receipt: Pick<ALOutboundPendingAckSnapshot, 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'>
+): readonly string[] {
+    return receipt.expectedPeerIds.filter((peerId) =>
+        receipt.outsideAudiencePeerIds.includes(peerId) && !receipt.ackedPeerIds.includes(peerId)
+    );
+}
+
+/** The expected peers a receipt still owes: neither acked nor outside the audience, and so the ones a retry targets. */
+export function toALOutboundUnconfirmedPeerIds(
+    receipt: Pick<ALOutboundPendingAckSnapshot, 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'>
+): readonly string[] {
+    return receipt.expectedPeerIds.filter((peerId) =>
+        !receipt.ackedPeerIds.includes(peerId) && !receipt.outsideAudiencePeerIds.includes(peerId)
+    );
 }
 
 /**
@@ -192,7 +221,13 @@ export function toALOutboundEmptyAudienceReceipt<TPrepared>(
         return undefined;
     }
     return toALOutboundAcknowledgementFact({
-        receipt: { msgId: plan.msg.id.msgId, mode: 'receiver', expectedPeerIds: [], ackedPeerIds: [] },
+        receipt: {
+            msgId: plan.msg.id.msgId,
+            mode: 'receiver',
+            expectedPeerIds: [],
+            ackedPeerIds: [],
+            outsideAudiencePeerIds: []
+        },
         hops: { nextHopPeerIds: [], completedHopPeerIds: [] },
         complete: true,
         traceId: plan.msg.id.traceId

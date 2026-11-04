@@ -112,7 +112,7 @@ describe('inbound control addressing', () => {
     it('refuses a nonlocal NACK and an ACK without relay authority', () => {
         const nack = newALNackControlMessage(
             { v: 4, msgId: 'nack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
-            { msgId: 'message-1', fromPeerId: 'recipient', toPeerId: 'origin', reason: 'gap', observedAtEpochMs: 1 }
+            { msgId: 'message-1', fromPeerId: 'recipient', logicalRecipientPeerId: 'recipient', toPeerId: 'origin', reason: 'gap', observedAtEpochMs: 1 }
         );
 
         expect(readALInboundMessageAuthorization(nack, toWsClientSource('recipient'), SERVER).left?.code).toBe('unauthorized');
@@ -196,6 +196,7 @@ function createServerReceipt(): ALMessage {
             originPeerId: 'origin',
             expectedRecipientPeerIds: ['recipient'],
             confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             snapshotVersion: 3,
             phase: 'admitted',
             observedAtEpochMs: 1

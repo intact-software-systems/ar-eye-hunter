@@ -49,7 +49,14 @@ describe('RTC snapshot rejection controls', () => {
             const result = await fixture.runtime.admitIncomingMessage(
                 newALNackControlMessage(
                     { v: 4, msgId: 'nack-control', senderId: 'sender', ts: Date.now(), traceId: 'trace-rtc-snapshot-nack' },
-                    { fromPeerId: 'sender', toPeerId: 'receiver', msgId: fixture.message.id.msgId, reason: 'not-yet-in-sync', observedAtEpochMs: Date.now() }
+                    {
+                        fromPeerId: 'sender',
+                        logicalRecipientPeerId: 'sender',
+                        toPeerId: 'receiver',
+                        msgId: fixture.message.id.msgId,
+                        reason: 'not-yet-in-sync',
+                        observedAtEpochMs: Date.now()
+                    }
                 ),
                 source
             );
@@ -94,6 +101,7 @@ describe('RTC snapshot rejection controls', () => {
                     payload: {
                         fromPeerId: 'receiver',
                         toPeerId: 'sender',
+                        logicalRecipientPeerId: 'receiver',
                         msgId: fixture.message.id.msgId,
                         reason: 'membership-fenced',
                         observedAtEpochMs: expect.any(Number)

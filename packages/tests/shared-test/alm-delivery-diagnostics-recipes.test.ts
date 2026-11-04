@@ -413,6 +413,7 @@ class DeliveryLane {
             expectedRecipientPeerIds: ['receiver-session'],
             confirmedRecipientPeerIds: this.failure === 'bad-receipt' ? [] : ['receiver-session'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             attempts: 1,
             attemptOutcomes: ['sent'],
             attemptCarriers: ['ws'],

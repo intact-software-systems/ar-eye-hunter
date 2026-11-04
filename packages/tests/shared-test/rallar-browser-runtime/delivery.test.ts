@@ -98,6 +98,7 @@ const unknownObservation = {
     expectedRecipientPeerIds: [],
     confirmedRecipientPeerIds: [],
     unconfirmedRecipientPeerIds: [],
+    outsideAudienceRecipientPeerIds: [],
     reason: undefined,
     backpressured: false,
     enqueued: false
@@ -182,6 +183,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: [],
         confirmedRecipientPeerIds: [],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         reason: undefined,
         backpressured: false,
         enqueued: true
@@ -224,6 +226,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
         unconfirmedRecipientPeerIds: ['peer-3'],
+        outsideAudienceRecipientPeerIds: [],
         complete: false,
         traceId: 'trace-delivery'
     });
@@ -235,6 +238,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
         unconfirmedRecipientPeerIds: ['peer-3'],
+        outsideAudienceRecipientPeerIds: [],
         attempts: 1
     });
     delivery.registry.record({
@@ -248,6 +252,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-delivery'
     });

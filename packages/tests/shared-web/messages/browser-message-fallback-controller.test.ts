@@ -178,6 +178,7 @@ function toExhausted(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettl
         mode: 'receiver',
         confirmedPeerIds: [],
         unconfirmedPeerIds: ['peer-1'],
+        outsideAudiencePeerIds: [],
         cause: 'budget',
         detail: EXHAUSTED_DETAIL,
         traceId: 'trace-browser-message-fallback-controller'
@@ -211,6 +212,7 @@ function toReceipt(
         expectedRecipientPeerIds: ['peer-1'],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: ['peer-1'].filter((peerId) => !confirmed.includes(peerId)),
+        outsideAudienceRecipientPeerIds: [],
         complete: confirmed.length === 1,
         traceId: 'trace-browser-message-fallback-controller'
     };

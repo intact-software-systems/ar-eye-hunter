@@ -58,6 +58,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
                     phase: 'complete',
                     expectedRecipientPeerIds: ['recipient'],
                     confirmedRecipientPeerIds: ['recipient'],
+                    outsideAudienceRecipientPeerIds: [],
                     snapshotVersion: 7,
                     observedAtEpochMs: 1000
                 }
@@ -137,6 +138,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
                     phase: 'complete',
                     expectedRecipientPeerIds: ['recipient'],
                     confirmedRecipientPeerIds: ['recipient'],
+                    outsideAudienceRecipientPeerIds: [],
                     snapshotVersion: 7,
                     observedAtEpochMs: 1000
                 }

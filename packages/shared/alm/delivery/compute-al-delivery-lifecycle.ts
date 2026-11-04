@@ -207,7 +207,10 @@ function toAcknowledgementLifecycle(
     return isAcknowledged(settlement) ? { ...previous, state: 'acknowledged', evidence } : { ...previous, evidence };
 }
 
-/** Under `receiver` and `leader` only logical completeness acknowledges: every expected recipient confirmed. */
+/**
+ * Under `receiver` and `leader` only logical completeness acknowledges: every expected recipient confirmed or outside
+ * the audience.
+ */
 function isAcknowledged(settlement: ALDeliveryAcknowledgementSettlement): boolean {
     return isALLogicalReceiptMode(settlement.mode)
         ? settlement.complete && settlement.unconfirmedRecipientPeerIds.length === 0
@@ -247,10 +250,12 @@ function toReceiptExhaustedLifecycle(
                 : failed.evidence.unconfirmedHopPeerIds,
             expectedRecipientPeerIds: [
                 ...settlement.confirmedPeerIds,
-                ...settlement.unconfirmedPeerIds
+                ...settlement.unconfirmedPeerIds,
+                ...settlement.outsideAudiencePeerIds
             ],
             confirmedRecipientPeerIds: [...settlement.confirmedPeerIds],
-            unconfirmedRecipientPeerIds: [...settlement.unconfirmedPeerIds]
+            unconfirmedRecipientPeerIds: [...settlement.unconfirmedPeerIds],
+            outsideAudienceRecipientPeerIds: [...settlement.outsideAudiencePeerIds]
         }
     };
 }
@@ -543,6 +548,7 @@ function toAcknowledgementEvidence(
         unconfirmedHopPeerIds: [...settlement.unconfirmedHopPeerIds],
         expectedRecipientPeerIds: [...settlement.expectedRecipientPeerIds],
         confirmedRecipientPeerIds: [...settlement.confirmedRecipientPeerIds],
-        unconfirmedRecipientPeerIds: [...settlement.unconfirmedRecipientPeerIds]
+        unconfirmedRecipientPeerIds: [...settlement.unconfirmedRecipientPeerIds],
+        outsideAudienceRecipientPeerIds: [...settlement.outsideAudienceRecipientPeerIds]
     };
 }

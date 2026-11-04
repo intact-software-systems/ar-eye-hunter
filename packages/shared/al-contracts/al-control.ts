@@ -40,7 +40,8 @@ export type ALNackReason =
     | 'no-leader'
     | 'held-by-other'
     | 'unsupported'
-    | 'no-publish-grant';
+    | 'no-publish-grant'
+    | 'not-subscribed';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
 
 export interface ALAckPayload {
@@ -64,6 +65,8 @@ export interface ALNackPayload {
     readonly msgId: string;
     readonly fromPeerId: string;
     readonly toPeerId: string;
+    /** The recipient this NACK speaks for: its sender's own session, or a recipient below a relay that re-sends it. */
+    readonly logicalRecipientPeerId: string;
     readonly reason: ALNackReason;
     readonly observedAtEpochMs: number;
     readonly orderingKey?: string;
@@ -89,6 +92,7 @@ export interface ALReceiptPayload {
     readonly originPeerId: string;
     readonly expectedRecipientPeerIds: readonly string[];
     readonly confirmedRecipientPeerIds: readonly string[];
+    readonly outsideAudienceRecipientPeerIds: readonly string[];
     readonly snapshotVersion: number;
     readonly phase: 'admitted' | 'complete' | 'timed-out';
     readonly observedAtEpochMs: number;

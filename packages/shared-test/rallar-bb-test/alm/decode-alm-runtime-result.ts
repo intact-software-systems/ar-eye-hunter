@@ -242,6 +242,11 @@ export function decodeAlmDeliveryResultValue(
             path,
             'unconfirmedRecipientPeerIds'
         ),
+        outsideAudienceRecipientPeerIds: requireAlmStringListField(
+            record,
+            path,
+            'outsideAudienceRecipientPeerIds'
+        ),
         attempts: requireAlmNumberField(record, path, 'attempts'),
         attemptOutcomes,
         attemptCarriers: requireAlmAttemptCarriersField(record, path, attemptOutcomes.length),

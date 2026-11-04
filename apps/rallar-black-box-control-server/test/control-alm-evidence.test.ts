@@ -419,6 +419,7 @@ function toReceiptsFabricatedValue(
         expectedRecipientPeerIds: confirmed,
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         attempts: 1,
         attemptOutcomes: ['sent'],
         attemptCarriers: [send?.carrier === 'ws' ? 'ws' : 'rtc'],

@@ -201,6 +201,7 @@ async function seedAcknowledgeableMessage(
                     mode: 'hop',
                     expectedPeerIds: ['peer-1'],
                     ackedPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     timeoutMs: 2_000,
                     maxAttempts: 3,
                     attempts: 0,

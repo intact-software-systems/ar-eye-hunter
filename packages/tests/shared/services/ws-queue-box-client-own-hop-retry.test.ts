@@ -317,6 +317,7 @@ function serverGapNack(trigger: ALMessage, missingRanges: readonly ALSeqRange[])
         {
             msgId: trigger.id.msgId,
             fromPeerId: SERVER_PEER_ID,
+            logicalRecipientPeerId: SERVER_PEER_ID,
             toPeerId: 'self',
             reason: 'gap',
             observedAtEpochMs: Date.now(),
@@ -340,6 +341,7 @@ function serverNotYetInSyncNack(trigger: ALMessage): ALMessage {
         {
             msgId: trigger.id.msgId,
             fromPeerId: SERVER_PEER_ID,
+            logicalRecipientPeerId: SERVER_PEER_ID,
             toPeerId: 'self',
             reason: 'not-yet-in-sync',
             observedAtEpochMs: Date.now()

@@ -54,6 +54,7 @@ function toReceipt(
         expectedRecipientPeerIds: ['b', 'c'],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: ['b', 'c'].filter((peerId) => !confirmed.includes(peerId)),
+        outsideAudienceRecipientPeerIds: [],
         complete,
         traceId: 'trace-al-delivery-carrier-fallback'
     };
@@ -68,6 +69,7 @@ function toExhausted(carrier: ALDeliveryCarrier): ALDeliverySettlement {
         mode: 'receiver',
         confirmedPeerIds: [],
         unconfirmedPeerIds: ['b', 'c'],
+        outsideAudiencePeerIds: [],
         cause: 'budget',
         detail: EXHAUSTED_DETAIL,
         traceId: 'trace-al-delivery-carrier-fallback'

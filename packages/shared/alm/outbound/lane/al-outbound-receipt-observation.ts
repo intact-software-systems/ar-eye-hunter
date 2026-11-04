@@ -192,6 +192,7 @@ export function toALOutboundReceiptFacts(message: ALMessage): ALOutboundReceiptF
                 phase: value.phase,
                 expectedRecipientPeerIds: Object.freeze([...value.expectedRecipientPeerIds]),
                 confirmedRecipientPeerIds: Object.freeze([...value.confirmedRecipientPeerIds]),
+                outsideAudienceRecipientPeerIds: Object.freeze([...value.outsideAudienceRecipientPeerIds]),
                 snapshotVersion: value.snapshotVersion,
                 observedAtEpochMs: value.observedAtEpochMs
             })
@@ -213,6 +214,8 @@ function isReceiptFacts(value: unknown): value is ALReceiptPayload {
         fields.expectedRecipientPeerIds.every((id) => typeof id === 'string') &&
         Array.isArray(fields.confirmedRecipientPeerIds) &&
         fields.confirmedRecipientPeerIds.every((id) => typeof id === 'string') &&
+        Array.isArray(fields.outsideAudienceRecipientPeerIds) &&
+        fields.outsideAudienceRecipientPeerIds.every((id) => typeof id === 'string') &&
         typeof fields.snapshotVersion === 'number' && Number.isFinite(fields.snapshotVersion) &&
         typeof fields.observedAtEpochMs === 'number' && Number.isFinite(fields.observedAtEpochMs);
 }

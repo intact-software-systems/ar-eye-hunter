@@ -144,7 +144,7 @@ export function toALInboundLocalDeliveryEffects(
 export function toALInboundNegativeControlEffects(
     input: ALInboundControlEffectInput
 ): readonly ALInboundEffectIntent[] {
-    if (!input.plan.nack.enabled) {
+    if (!input.plan.nack.enabled || input.plan.nack.reason === undefined) {
         return [];
     }
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
@@ -250,24 +250,33 @@ function toEffectId(
     return parts.map((part) => encodeURIComponent(String(part))).join(':');
 }
 
-function toNackReason(reason?: string) {
+/** Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and `not-subscribed`. */
+export const AL_INBOUND_NACK_PLAN_REASONS = [
+    'resync-required',
+    'gap',
+    'expired',
+    'overloaded',
+    'held-by-other',
+    'not-yet-in-sync',
+    'membership-fenced',
+    'unauthorized',
+    'not-subscribed'
+] as const;
+
+export type ALInboundNackPlanReason = typeof AL_INBOUND_NACK_PLAN_REASONS[number];
+
+function toNackReason(reason: ALInboundNackPlanReason): ALNackReason {
     switch (reason) {
-        case 'gap':
-            return 'gap' as const;
         case 'resync-required':
-            return 'resync-required' as const;
+        case 'gap':
         case 'expired':
-            return 'expired' as const;
         case 'overloaded':
-            return 'overloaded' as const;
-        case 'not-yet-in-sync':
-            return 'not-yet-in-sync' as const;
-        case 'membership-fenced':
-            return 'membership-fenced' as const;
         case 'held-by-other':
-            return 'held-by-other' as const;
-        default:
-            return 'stale' as const;
+        case 'not-yet-in-sync':
+        case 'membership-fenced':
+        case 'unauthorized':
+        case 'not-subscribed':
+            return reason;
     }
 }
 

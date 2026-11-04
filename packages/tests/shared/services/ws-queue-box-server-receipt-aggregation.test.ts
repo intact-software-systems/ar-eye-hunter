@@ -438,6 +438,7 @@ describe('WS server receipt aggregates at their cap', () => {
                 originPeerId: 'a',
                 expectedRecipientPeerIds: ['b', 'c'],
                 confirmedRecipientPeerIds: ['b'],
+                outsideAudienceRecipientPeerIds: [],
                 snapshotVersion: SNAPSHOT_VERSION,
                 phase: 'timed-out',
                 observedAtEpochMs: 1_000

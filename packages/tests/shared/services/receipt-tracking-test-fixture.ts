@@ -92,6 +92,7 @@ export function receiptMessage(
             originPeerId: 'self',
             expectedRecipientPeerIds: input.expectedRecipientPeerIds,
             confirmedRecipientPeerIds,
+            outsideAudienceRecipientPeerIds: [],
             snapshotVersion: 7,
             phase,
             observedAtEpochMs: Date.now()

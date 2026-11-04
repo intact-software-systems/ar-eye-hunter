@@ -259,6 +259,7 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
         'mode',
         'expectedPeerIds',
         'ackedPeerIds',
+        'outsideAudiencePeerIds',
         'timeoutMs',
         'maxAttempts',
         'attempts',
@@ -270,11 +271,15 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
         throw new TypeError('Persisted AL pending acknowledgement identity does not match its slot');
     }
     requirePersistedALReceiptMode(snapshot.mode, 'pending acknowledgement mode');
-    if (snapshot.expectedPeerIds === undefined || snapshot.ackedPeerIds === undefined) {
+    if (
+        snapshot.expectedPeerIds === undefined || snapshot.ackedPeerIds === undefined ||
+        snapshot.outsideAudiencePeerIds === undefined
+    ) {
         throw new TypeError('Persisted AL pending acknowledgement peer arrays are missing');
     }
     requireOptionalPersistedALUniqueStringArray(snapshot.expectedPeerIds, 'expected acknowledgement peers');
     requireOptionalPersistedALUniqueStringArray(snapshot.ackedPeerIds, 'acknowledged peers');
+    requireOptionalPersistedALUniqueStringArray(snapshot.outsideAudiencePeerIds, 'outside-audience peers');
     requirePersistedALSafeInteger(snapshot.timeoutMs, 0, 'acknowledgement timeout');
     requirePersistedALSafeInteger(snapshot.maxAttempts, 0, 'acknowledgement maximum attempts');
     requirePersistedALSafeInteger(snapshot.attempts, 0, 'acknowledgement attempts');

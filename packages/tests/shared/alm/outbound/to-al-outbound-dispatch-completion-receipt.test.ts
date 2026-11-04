@@ -23,6 +23,7 @@ const HOP_ROW: ALOutboundPendingAckSnapshot = {
     mode: 'hop',
     expectedPeerIds: ['peer-1', 'peer-2'],
     ackedPeerIds: ['peer-1'],
+    outsideAudiencePeerIds: [],
     timeoutMs: 2_000,
     maxAttempts: 3,
     attempts: 1,
@@ -69,6 +70,7 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
             expectedRecipientPeerIds: ['peer-1'],
             confirmedRecipientPeerIds: ['peer-1'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             complete: true,
             traceId: MESSAGE.id.traceId
         });

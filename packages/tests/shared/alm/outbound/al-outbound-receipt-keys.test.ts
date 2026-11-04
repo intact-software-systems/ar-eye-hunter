@@ -82,6 +82,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             unconfirmedHopPeerIds: [],
             confirmedRecipientPeerIds: ['r1', 'r2'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             complete: true
         });
 
@@ -210,6 +211,7 @@ function toPendingSnapshot(obligation: ReceiptTestObligation, observedAtMs: numb
         mode: obligation.mode,
         expectedPeerIds: obligation.expectedPeerIds,
         ackedPeerIds: [],
+        outsideAudiencePeerIds: [],
         timeoutMs: 2_000,
         maxAttempts: 3,
         attempts: 0,

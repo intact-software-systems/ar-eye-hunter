@@ -195,6 +195,8 @@ type ALDeliverySettlementStatement =
         expectedRecipientPeerIds: readonly string[];
         confirmedRecipientPeerIds: readonly string[];
         unconfirmedRecipientPeerIds: readonly string[];
+        /** Expected recipients that answered they are outside the audience: neither confirmed nor unconfirmed. */
+        outsideAudienceRecipientPeerIds: readonly string[];
         complete: boolean;
     }>
     /**
@@ -211,6 +213,7 @@ type ALDeliverySettlementStatement =
             mode: ALReceiptMode;
             confirmedPeerIds: readonly string[];
             unconfirmedPeerIds: readonly string[];
+            outsideAudiencePeerIds: readonly string[];
             detail: string;
         }>
         & ALDeliveryReceiptExhaustion
@@ -299,6 +302,8 @@ export interface ALDeliveryReceiptEvidence {
     readonly expectedRecipientPeerIds: readonly string[];
     readonly confirmedRecipientPeerIds: readonly string[];
     readonly unconfirmedRecipientPeerIds: readonly string[];
+    /** The expected recipients outside the audience; the expected list is the other three together. */
+    readonly outsideAudienceRecipientPeerIds: readonly string[];
 }
 
 /**
@@ -426,6 +431,7 @@ export function createInitialALDeliveryLifecycle(
             expectedRecipientPeerIds: [],
             confirmedRecipientPeerIds: [],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             relayRejection: undefined,
             receiptDowngrade: undefined,
             durabilityDowngrade: undefined,

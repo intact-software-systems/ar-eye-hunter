@@ -93,6 +93,7 @@ function toObservation(handleId: string, carrier: AlmConformanceCarrier): object
         expectedRecipientPeerIds: ['receiver-session'],
         confirmedRecipientPeerIds: ['receiver-session'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         attempts: 1,
         attemptOutcomes: ['sent'],
         attemptCarriers: [carrier === 'ws' ? 'ws' : 'rtc'],

@@ -36,10 +36,15 @@ function createAdmittedLifecycle(): ALDeliveryLifecycle {
     });
 }
 
+interface ReceiptPeerLists {
+    readonly confirmed: readonly string[];
+    readonly unconfirmed: readonly string[];
+    readonly outsideAudience: readonly string[];
+}
+
 function toReceiptExhausted(
     mode: ALReceiptMode,
-    confirmedPeerIds: readonly string[],
-    unconfirmedPeerIds: readonly string[]
+    peers: ReceiptPeerLists
 ): Extract<ALDeliverySettlement, Readonly<{ kind: 'receipt-exhausted'; }>> {
     return {
         kind: 'receipt-exhausted',
@@ -47,8 +52,9 @@ function toReceiptExhausted(
         carrier: 'rtc',
         atMs: AT_MS,
         mode,
-        confirmedPeerIds,
-        unconfirmedPeerIds,
+        confirmedPeerIds: peers.confirmed,
+        unconfirmedPeerIds: peers.unconfirmed,
+        outsideAudiencePeerIds: peers.outsideAudience,
         cause: 'budget',
         detail: EXHAUSTED_DETAIL,
         traceId: 'trace-al-delivery-receipt-ends'
@@ -59,7 +65,7 @@ describe('receipt ends (D56, R-S3a-4)', () => {
     it('ends a receiver receipt that ran out of retries failed, keeping who confirmed and who did not', () => {
         const next = computeALDeliveryLifecycle(
             createAdmittedLifecycle(),
-            toReceiptExhausted('receiver', ['b'], ['c'])
+            toReceiptExhausted('receiver', { confirmed: ['b'], unconfirmed: ['c'], outsideAudience: [] })
         );
 
         expect(next.state).toBe('failed');
@@ -79,7 +85,7 @@ describe('receipt ends (D56, R-S3a-4)', () => {
     it('states the peer lists of a hop receipt as its hop lists too', () => {
         const next = computeALDeliveryLifecycle(
             createAdmittedLifecycle(),
-            toReceiptExhausted('hop', ['relay-1'], ['relay-2'])
+            toReceiptExhausted('hop', { confirmed: ['relay-1'], unconfirmed: ['relay-2'], outsideAudience: [] })
         );
 
         expect(next.evidence).toMatchObject({
@@ -104,17 +110,59 @@ describe('receipt ends (D56, R-S3a-4)', () => {
             expectedRecipientPeerIds: ['b'],
             confirmedRecipientPeerIds: ['b'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             complete: true,
             traceId: 'trace-al-delivery-receipt-ends'
         });
 
         const late = computeALDeliveryLifecycle(
             acknowledged,
-            toReceiptExhausted('receiver', [], ['b'])
+            toReceiptExhausted('receiver', { confirmed: [], unconfirmed: ['b'], outsideAudience: [] })
         );
 
         expect(late).toMatchObject({ state: 'acknowledged', lateSettlementCount: 1 });
         expect(late.evidence.confirmedRecipientPeerIds).toEqual(['b']);
+    });
+
+    it('acknowledges a complete receiver receipt whose other recipient is outside the audience', () => {
+        const next = computeALDeliveryLifecycle(createAdmittedLifecycle(), {
+            kind: 'acknowledgement',
+            msgId: MSG_ID,
+            carrier: 'rtc',
+            atMs: AT_MS,
+            mode: 'receiver',
+            confirmedHopPeerIds: ['b', 'c'],
+            unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b'],
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['c'],
+            complete: true,
+            traceId: 'trace-al-delivery-receipt-ends'
+        });
+
+        expect(next.state).toBe('acknowledged');
+        expect(next.evidence).toMatchObject({
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b'],
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['c']
+        });
+    });
+
+    it('keeps the outside recipients in the evidence of a receipt that ran out unconfirmed', () => {
+        const next = computeALDeliveryLifecycle(
+            createAdmittedLifecycle(),
+            toReceiptExhausted('receiver', { confirmed: [], unconfirmed: [], outsideAudience: ['b', 'c'] })
+        );
+
+        expect(next.state).toBe('failed');
+        expect(next.evidence).toMatchObject({
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['b', 'c']
+        });
     });
 
     it('records a not-yet-in-sync exhaustion as a fact that ends nothing on its own', () => {

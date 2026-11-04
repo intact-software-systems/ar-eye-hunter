@@ -105,7 +105,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         const fixture = await createRelayFixture();
         const nack = newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-ws-queue-box-client-relay-rejection' },
-            { msgId: 'ordered-gapped', fromPeerId: 'b', toPeerId: 'a', reason: 'resync-required', observedAtEpochMs: Date.now() }
+            { msgId: 'ordered-gapped', fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'resync-required', observedAtEpochMs: Date.now() }
         );
 
         const admitted = await fixture.server.acceptIncomingMessage(nack, 'b');
@@ -422,6 +422,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             mode: 'hop',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['server-1'],
+            outsideAudiencePeerIds: [],
             cause: 'hop-refused',
             hopPeerId: 'server-1',
             nackReason: 'unauthorized',
@@ -577,6 +578,7 @@ function serverReceipt(msgId: string, phase: ALReceiptPayload['phase']): ALMessa
             originPeerId: 'a',
             expectedRecipientPeerIds: ['b'],
             confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             snapshotVersion: 3,
             phase,
             observedAtEpochMs
@@ -589,7 +591,7 @@ function serverNack(msgId: string, reason: ALNackReason): ALMessage {
     const observedAtEpochMs = Date.now();
     return newALNackControlMessage(
         { v: 4, msgId: `nack-${msgId}`, senderId: 'server-1', ts: observedAtEpochMs, traceId: 'trace-ws-queue-box-client-relay-rejection' },
-        { msgId, fromPeerId: 'server-1', toPeerId: 'a', reason, observedAtEpochMs }
+        { msgId, fromPeerId: 'server-1', logicalRecipientPeerId: 'server-1', toPeerId: 'a', reason, observedAtEpochMs }
     );
 }
 

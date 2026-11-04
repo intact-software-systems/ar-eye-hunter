@@ -391,6 +391,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 expectedRecipientPeerIds: ['peer-1', 'peer-2'],
                 confirmedRecipientPeerIds: ['peer-1'],
                 unconfirmedRecipientPeerIds: ['peer-2'],
+                outsideAudienceRecipientPeerIds: [],
                 complete,
                 traceId: 'trace-compute-al-delivery-lifecycle'
             });
@@ -462,6 +463,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 expectedRecipientPeerIds: ['peer-1'],
                 confirmedRecipientPeerIds: ['peer-1'],
                 unconfirmedRecipientPeerIds: [],
+                outsideAudienceRecipientPeerIds: [],
                 complete: true,
                 traceId: 'trace-compute-al-delivery-lifecycle'
             });
@@ -564,6 +566,7 @@ describe('terminal guard', () => {
             expectedRecipientPeerIds: ['peer-1', 'peer-2'],
             confirmedRecipientPeerIds: ['peer-1'],
             unconfirmedRecipientPeerIds: ['peer-2'],
+            outsideAudienceRecipientPeerIds: [],
             complete: true,
             traceId: 'trace-compute-al-delivery-lifecycle'
         });
@@ -718,6 +721,7 @@ describe('relay rejection (D50)', () => {
             mode: 'hop',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['relay-1'],
+            outsideAudiencePeerIds: [],
             cause: 'hop-refused',
             hopPeerId: 'relay-1',
             nackReason: 'membership-fenced',
@@ -1335,6 +1339,7 @@ function toReceiverReceipt(
         expectedRecipientPeerIds: ['b', 'c', 'd'],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: unconfirmed,
+        outsideAudienceRecipientPeerIds: [],
         complete,
         traceId: 'trace-compute-al-delivery-lifecycle'
     };

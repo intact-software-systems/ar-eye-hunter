@@ -562,6 +562,7 @@ function toExhausted(msgId: string): ALDeliverySettlement {
         mode: 'receiver',
         confirmedPeerIds: [],
         unconfirmedPeerIds: [DIRECTOR],
+        outsideAudiencePeerIds: [],
         detail: 'The receipt ran out of retries after 3 of 3.',
         cause: 'budget',
         traceId: 'trace-browser-rtc-peer-send'
@@ -580,6 +581,7 @@ function toReceipt(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettlem
         expectedRecipientPeerIds: [DIRECTOR],
         confirmedRecipientPeerIds: [DIRECTOR],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-browser-rtc-peer-send'
     };

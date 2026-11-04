@@ -49,6 +49,7 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
         'originPeerId',
         'expectedRecipientPeerIds',
         'confirmedRecipientPeerIds',
+        'outsideAudienceRecipientPeerIds',
         'snapshotVersion',
         'phase',
         'observedAtEpochMs'
@@ -64,6 +65,10 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
             record.confirmedRecipientPeerIds,
             'receipt confirmed recipient identity'
         ),
+        outsideAudienceRecipientPeerIds: decodeControlIdentifierArray(
+            record.outsideAudienceRecipientPeerIds,
+            'receipt outside-audience recipient identity'
+        ),
         snapshotVersion: decodeControlNumber(record.snapshotVersion, 'receipt snapshot version'),
         phase: decodeReceiptPhase(record.phase),
         observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'receipt observation time')
@@ -73,11 +78,15 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
 export function decodeALNackPayload(value: unknown): ALNackPayload {
     const record = decodeControlRecord(
         value,
-        ['msgId', 'fromPeerId', 'toPeerId', 'reason', 'observedAtEpochMs'],
+        ['msgId', 'fromPeerId', 'toPeerId', 'logicalRecipientPeerId', 'reason', 'observedAtEpochMs'],
         ['orderingKey', 'expectedSeq', 'missingRanges', 'serverSnapshotVersion']
     );
     return {
         ...decodeControlRoute(record, 'NACK'),
+        logicalRecipientPeerId: decodeControlIdentifier(
+            record.logicalRecipientPeerId,
+            'NACK logical recipient identity'
+        ),
         reason: decodeNackReason(record.reason),
         ...decodeOptionalIdentifier(record, 'orderingKey', 'NACK ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'NACK expected sequence'),
@@ -282,7 +291,8 @@ function decodeNackReason(value: unknown): ALNackReason {
         value !== 'duplicate' && value !== 'gap' && value !== 'resync-required' && value !== 'expired' &&
         value !== 'unauthorized' && value !== 'no-route' && value !== 'overloaded' && value !== 'stale' &&
         value !== 'not-yet-in-sync' && value !== 'membership-fenced' && value !== 'no-leader' &&
-        value !== 'held-by-other' && value !== 'unsupported' && value !== 'no-publish-grant'
+        value !== 'held-by-other' && value !== 'unsupported' && value !== 'no-publish-grant' &&
+        value !== 'not-subscribed'
     ) {
         throw new TypeError('Control NACK reason is invalid');
     }

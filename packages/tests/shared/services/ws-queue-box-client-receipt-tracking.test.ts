@@ -466,6 +466,7 @@ describe('WS client receipt admission edges', () => {
                 expectedRecipientPeerIds: ['b', 'c'],
                 confirmedRecipientPeerIds: confirmed,
                 unconfirmedRecipientPeerIds: unconfirmed,
+                outsideAudienceRecipientPeerIds: [],
                 complete
             },
             traceId: 'trace-receipt-tracking-test-fixture',

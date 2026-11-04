@@ -138,6 +138,7 @@ describe('RTC frozen room audience', () => {
             {
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'resync-required',
                 observedAtEpochMs: Date.now()
@@ -170,6 +171,7 @@ describe('RTC frozen room audience', () => {
             {
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'resync-required',
                 observedAtEpochMs: Date.now()
@@ -229,7 +231,7 @@ describe('the origin receipt of a frozen room multicast', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-frozen-audience' },
-            { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+            { msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
         ));
         await vi.advanceTimersByTimeAsync(100);
 

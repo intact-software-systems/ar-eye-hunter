@@ -50,6 +50,7 @@ describe('outbound control version candidate', () => {
         const control = newALNackControlMessage({ v: 4, msgId: 'nack', senderId: 'peer-1', ts: 1_000, traceId: 'trace-outbound-control-version-candidate' }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
+            logicalRecipientPeerId: 'peer-1',
             toPeerId: 'self',
             reason: 'not-yet-in-sync',
             observedAtEpochMs: 1_000
@@ -120,6 +121,7 @@ describe('outbound control version candidate', () => {
                 mode: 'hop',
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
+                outsideAudiencePeerIds: [],
                 timeoutMs: 2_000,
                 maxAttempts: 3,
                 attempts: 3,
@@ -167,6 +169,7 @@ describe('outbound control version candidate', () => {
         }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
+            logicalRecipientPeerId: 'peer-1',
             toPeerId: 'self',
             reason: 'not-yet-in-sync',
             observedAtEpochMs: Date.now()

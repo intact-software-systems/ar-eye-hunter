@@ -75,6 +75,7 @@ describe('admission control decoding', () => {
                     msgId: 'msg',
                     fromPeerId: 'a',
                     toPeerId: 'b',
+                    logicalRecipientPeerId: 'a',
                     reason: 'resync-required',
                     observedAtEpochMs: 7,
                     orderingKey: 'track',

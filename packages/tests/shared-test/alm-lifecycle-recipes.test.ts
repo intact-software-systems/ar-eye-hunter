@@ -116,6 +116,7 @@ describe('ALM lifecycle recipe evidence', () => {
             expectedRecipientPeerIds: ['receiver'],
             confirmedRecipientPeerIds: ['receiver'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             attempts: 1,
             attemptOutcomes: [],
             attemptCarriers: [],

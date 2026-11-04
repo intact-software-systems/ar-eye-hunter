@@ -211,6 +211,7 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     ...toControlOrdering(payload.ordering),
                     fromPeerId: facts.selfPeerId,
                     toPeerId: payload.toPeerId,
+                    logicalRecipientPeerId: facts.selfPeerId,
                     msgId: payload.msgId,
                     reason: payload.reason,
                     observedAtEpochMs: facts.observedAtEpochMs

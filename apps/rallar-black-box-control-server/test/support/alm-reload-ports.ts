@@ -1427,6 +1427,7 @@ function toPortDeliveryObservation(
         expectedRecipientPeerIds: message?.receiptEvidence.expectedRecipientPeerIds ?? [],
         confirmedRecipientPeerIds: message?.receiptEvidence.confirmedRecipientPeerIds ?? [],
         unconfirmedRecipientPeerIds: message?.receiptEvidence.unconfirmedRecipientPeerIds ?? [],
+        outsideAudienceRecipientPeerIds: message?.receiptEvidence.outsideAudienceRecipientPeerIds ?? [],
         attempts: message?.attemptCarriers.length ?? 0,
         attemptCarriers: message?.attemptCarriers ?? [],
         attemptOutcomes: message?.attemptOutcomes ?? [],
@@ -1507,7 +1508,8 @@ function createInitialPortReceiptEvidence(
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds,
         confirmedRecipientPeerIds: [],
-        unconfirmedRecipientPeerIds: expectedRecipientPeerIds
+        unconfirmedRecipientPeerIds: expectedRecipientPeerIds,
+        outsideAudienceRecipientPeerIds: []
     };
 }
 
@@ -1549,6 +1551,7 @@ function computePortAcknowledgement(
         expectedRecipientPeerIds: receiptEvidence.expectedRecipientPeerIds,
         confirmedRecipientPeerIds: receiptEvidence.confirmedRecipientPeerIds,
         unconfirmedRecipientPeerIds: receiptEvidence.unconfirmedRecipientPeerIds,
+        outsideAudienceRecipientPeerIds: receiptEvidence.outsideAudienceRecipientPeerIds,
         complete: receiptEvidence.unconfirmedRecipientPeerIds.length === 0,
         traceId: toPortMessageTrace(message).traceId
     });

@@ -212,6 +212,7 @@ function toServerRefusal(message: ALMessage): ALMessage {
         { v: 4, msgId: `refusal-${message.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now(), traceId: 'trace-al-outbound-volatile-retention' },
         {
             fromPeerId: SERVER_PEER_ID,
+            logicalRecipientPeerId: SERVER_PEER_ID,
             toPeerId: message.id.senderId,
             msgId: message.id.msgId,
             reason: 'unauthorized',

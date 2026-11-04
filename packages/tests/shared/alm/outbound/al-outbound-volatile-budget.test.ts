@@ -170,6 +170,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
                 { v: 4, msgId: 'nack-at-the-bound', senderId: 'self', ts: Date.now(), traceId: 'trace-al-outbound-volatile-budget' },
                 {
                     fromPeerId: 'self',
+                    logicalRecipientPeerId: 'self',
                     toPeerId: 'peer-1',
                     msgId: 'received-message',
                     reason: 'gap',
@@ -186,6 +187,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
                     originPeerId: 'peer-1',
                     expectedRecipientPeerIds: ['self'],
                     confirmedRecipientPeerIds: ['self'],
+                    outsideAudienceRecipientPeerIds: [],
                     snapshotVersion: 1,
                     phase: 'complete',
                     observedAtEpochMs: Date.now()

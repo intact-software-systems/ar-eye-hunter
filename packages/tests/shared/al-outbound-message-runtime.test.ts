@@ -923,6 +923,7 @@ describe('ALOutboundMessageRuntime', () => {
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1,
@@ -972,6 +973,7 @@ describe('ALOutboundMessageRuntime', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1,
@@ -1043,6 +1045,7 @@ describe('ALOutboundMessageRuntime', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1
@@ -1091,6 +1094,7 @@ describe('ALOutboundMessageRuntime', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1
@@ -1104,6 +1108,7 @@ describe('ALOutboundMessageRuntime', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 2
@@ -1155,6 +1160,7 @@ describe('ALOutboundMessageRuntime', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: serverSnapshotVersion,
@@ -1458,6 +1464,7 @@ describe('ALOutboundMessageRuntime', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
