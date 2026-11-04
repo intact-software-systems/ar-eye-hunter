@@ -23,10 +23,13 @@ import {
     type ALInboundControlOwnerIndex
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {
     decodeALInboundWorkEntry,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
+import type { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
 import { computeALInboundControlAdmission } from '@shared/alm/inbound/control/compute-al-inbound-control-admission.ts';
 import { validateALInboundControlAdmission } from '@shared/alm/inbound/control/validate-al-inbound-control-admission.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
@@ -903,5 +906,98 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
         await seedRelayRow(admissionStore, SEEDED);
 
         expect(await control.admit(createNotSubscribedNack('receiver', 'gap'), WS_ARRIVAL)).toEqual({ kind: 'not-handled' });
+    });
+
+    /** Admits a NACK with the evidence a capturing sink installs, and returns the association it publishes. */
+    async function admitWithEvidence(control: ALInboundControlAdmission, nack: ALMessage) {
+        const events: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const evidence = ALInboundAcknowledgementEvidence.tryCreate({
+            msg: nack,
+            carrier: 'ws',
+            sink: (event) => events.push(event),
+            workerId: 'relay-worker'
+        });
+        evidence?.beginAttempt('durable');
+        const result = await control.admit(nack, WS_ARRIVAL, evidence);
+        evidence?.admissionResult(result.kind);
+        evidence?.publishAssociation('ingress', 'control');
+        return { result, association: events.find((event) => event.kind === 'acknowledgement-association') };
+    }
+
+    it.each(
+        [
+            {
+                name: 'commits',
+                row: FROZEN_ROW,
+                conflicts: false,
+                attempt: { validated: true, commit: 'committed', retention: 'not-called', result: 'committed' }
+            },
+            {
+                name: 'refuses',
+                row: {},
+                conflicts: false,
+                attempt: { validated: false, commit: 'not-called', retention: 'not-called', result: 'rejected' }
+            },
+            {
+                name: 'conflicts on',
+                row: FROZEN_ROW,
+                conflicts: true,
+                attempt: { validated: true, commit: 'conflict', retention: 'returned', result: 'pending-control' }
+            }
+        ] as const
+    )('records a NACK\'s candidate and commit as an ACK\'s when it $name it', async ({ row, conflicts, attempt }) => {
+        const { backend, admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, { ...SEEDED, row });
+        if (conflicts) {
+            vi.spyOn(backend, 'write').mockImplementationOnce(() => {
+                throw new ALAdmissionBackendConflictError('simulated inbound NACK conflict');
+            });
+        }
+
+        const { result, association } = await admitWithEvidence(control, createNotSubscribedNack('below'));
+
+        expect(result.kind).toBe(attempt.result);
+        expect(association).toMatchObject({
+            incoming: {
+                control: 'nack',
+                controlMsgId: 'nack-below',
+                subjectMsgId: message.id.msgId,
+                logicalRecipientPeerId: 'below',
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                carrier: 'ws',
+                traceId: 'trace-not-subscribed'
+            },
+            attempts: [{
+                lane: 'durable',
+                candidate: { ownerPeerId: message.id.senderId, parentPeerId: 'upstream', validated: attempt.validated },
+                commit: attempt.commit,
+                retention: attempt.retention,
+                result: attempt.result
+            }]
+        });
+    });
+
+    it('names the NACK it relays upward among the candidate\'s generated controls', async () => {
+        const { admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        const { association } = await admitWithEvidence(control, createNotSubscribedNack('below'));
+
+        expect(association).toMatchObject({
+            attempts: [{
+                candidate: {
+                    generated: [{
+                        control: 'nack',
+                        controlMsgId: 'generated-control:0',
+                        subjectMsgId: message.id.msgId,
+                        logicalRecipientPeerId: 'below',
+                        fromPeerId: 'self',
+                        toPeerId: 'upstream',
+                        carrier: 'rtc'
+                    }]
+                }
+            }]
+        });
     });
 });

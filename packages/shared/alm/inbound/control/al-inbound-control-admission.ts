@@ -9,6 +9,7 @@ import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-v
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
+    ALInboundCommitBundle,
     ALInboundControlDecisionSurface,
     ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
@@ -56,6 +57,13 @@ export interface ALInboundPendingControl {
 }
 
 type ALInboundControlArrival = Pick<ALInboundPendingControl, 'msg' | 'carrier'>;
+
+/** What an admitted ACK or NACK commits, the acceptance it returns, and the admission clock its retention uses. */
+interface ALInboundControlCommit {
+    readonly bundle: ALInboundCommitBundle;
+    readonly acceptance: ALControlAcceptance;
+    readonly nowMs: number;
+}
 
 /** A replay that commits owes its caller the same acceptance the inline admission returned. */
 export interface ALInboundControlReplayResult {
@@ -119,7 +127,7 @@ export class ALInboundControlAdmission {
             return await this.admitAcknowledgement(arrival, { ...control.payload, carrier: arrival.carrier }, evidence);
         }
         return control?.type === 'nack' && control.payload.reason === 'not-subscribed'
-            ? await this.admitNotSubscribedNack(arrival, control.payload)
+            ? await this.admitNotSubscribedNack(arrival, control.payload, evidence)
             : { kind: 'not-handled' };
     }
 
@@ -139,12 +147,17 @@ export class ALInboundControlAdmission {
         if (issues.length > 0) {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
-        return await this.commitControlAdmission(arrival, candidate, evidence);
+        return await this.commitControlAdmission(arrival, {
+            bundle: toALInboundControlCommitBundle(this.toStoreCandidate(candidate)),
+            acceptance: candidate.acceptance,
+            nowMs: candidate.read.nowMs
+        }, evidence);
     }
 
     private async admitNotSubscribedNack(
         arrival: ALInboundControlArrival,
-        nack: ALNackPayload
+        nack: ALNackPayload,
+        evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
         const nowMs = this.clock.nowMs();
         const surface = await this.readDecisionSurface({ msgId: nack.msgId, fromPeerId: nack.fromPeerId });
@@ -163,30 +176,30 @@ export class ALInboundControlAdmission {
             traceId: arrival.msg.id.traceId
         }, this.retention);
         const issues = validateALInboundNackAdmission(candidate);
+        evidence?.candidate(candidate, issues.length === 0);
         if (issues.length > 0) {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
-        if (await this.admissionStore.commitBundle(toALInboundNackCommitBundle(candidate)) === 'committed') {
-            return { kind: 'committed', acceptance: candidate.acceptance };
-        }
-        await this.retainPendingControl(arrival, nowMs);
-        return { kind: 'pending-control' };
+        return await this.commitControlAdmission(arrival, {
+            bundle: toALInboundNackCommitBundle(candidate),
+            acceptance: candidate.acceptance,
+            nowMs
+        }, evidence);
     }
 
     private async commitControlAdmission(
         arrival: ALInboundControlArrival,
-        candidate: ALInboundControlAdmissionCandidate,
+        admitted: ALInboundControlCommit,
         evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
-        const bundle = toALInboundControlCommitBundle(this.toStoreCandidate(candidate));
         evidence?.commit('pending');
-        const status = await this.admissionStore.commitBundle(bundle);
+        const status = await this.admissionStore.commitBundle(admitted.bundle);
         evidence?.commit(status);
         if (status === 'committed') {
-            return { kind: 'committed', acceptance: candidate.acceptance };
+            return { kind: 'committed', acceptance: admitted.acceptance };
         }
         evidence?.retention('pending');
-        await this.retainPendingControl(arrival, candidate.read.nowMs);
+        await this.retainPendingControl(arrival, admitted.nowMs);
         evidence?.retention('returned');
         return { kind: 'pending-control' };
     }
