@@ -4,7 +4,19 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+
+interface BrowserFixture {
+    readonly owner: RallarMatchmaking;
+    readonly api: {
+        readonly read: Mock<RallarMatchmaking.Api['read']>;
+        readonly change: Mock<RallarMatchmaking.Api['change']>;
+    };
+    readonly enter: Mock<RallarMatchmaking.Dependencies['entry']['enter']>;
+    state(state: MatchmakingSnapshot['state']): void;
+    login(next: AuthSession | undefined): void;
+    active(next: boolean): void;
+}
 
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'alice-session', accessToken: 'test', expiresAtEpochMs: 9999999999999 };
 const scope = { applicationId: 'game', workspaceId: 'default' };
@@ -27,7 +39,7 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-function browser() {
+function browser(): BrowserFixture {
     let session: AuthSession | undefined = alice;
     let active = true;
     const auth = new SynchronousNotifications<RallarAuthState>((error) => {
@@ -52,7 +64,7 @@ function browser() {
             code: null
         }))
     };
-    const enter = vi.fn();
+    const enter = vi.fn<RallarMatchmaking.Dependencies['entry']['enter']>();
     const owner = new RallarMatchmaking({
         auth: { session: () => session, onChange: (listener) => auth.subscribe(listener).unsubscribe },
         activity: { isActive: () => active, onChange: (listener) => activity.subscribe(listener).unsubscribe },
@@ -157,8 +169,13 @@ describe('matchmaking browser recovery and consent', () => {
     it('discards late reads after login replacement and clears pending consent on logout', async () => {
         const test = browser();
         const late = Promise.withResolvers<MatchmakingSnapshot>();
-        test.api.read.mockReturnValueOnce(late.promise);
+        const started = Promise.withResolvers<void>();
+        test.api.read.mockImplementationOnce(() => {
+            started.resolve();
+            return late.promise;
+        });
         const start = test.owner.start();
+        await started.promise;
         test.login({ ...alice, clientId: 'bob', sessionId: 'bob-session' });
         await test.owner.refresh();
         late.resolve({ scope, principalId: 'alice', observedAtEpochMs: 1000, state: confirming });

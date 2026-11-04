@@ -5488,6 +5488,51 @@ moved or changed test.
         "requiredConstraint": "The API has one initial read through sixty seconds inactive, and two reads after resumption through the first 29999 milliseconds of the 30000 millisecond refresh interval.",
         "failureRationale": "Identical cards can conceal background polling or an early timer; outbound request counts prove the required suppression and cadence."
       }
+    },
+    {
+      "id": "authenticated-refresh-stop-cancels-queued-reads",
+      "domain": "Authenticated browser refresh lifetime",
+      "owner": "Rallar browser maintainers",
+      "summary": "Stopping the owner suppresses a queued old-generation API read while a restarted owner reads fresh state.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#discards an in-flight read after stop and restarts with fresh account state",
+      "coverageRelation": "The test drives refresh, authentication or stop through the public owner and observes the owned API read port together with the resulting private view.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource.Api.read",
+        "observableEffect": "Every invocation starts an authenticated resource read against the API.",
+        "requiredConstraint": "The held initial read and fresh restart are the only two API reads; draining stopped work must not issue a third request.",
+        "failureRationale": "Final state can be correct even after a stopped owner sends an unnecessary authenticated request."
+      }
+    },
+    {
+      "id": "authenticated-refresh-burst-coalescing",
+      "domain": "Authenticated browser refresh lifetime",
+      "owner": "Rallar browser maintainers",
+      "summary": "Concurrent refresh requests during a held read converge to the latest view with one trailing network read.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#covers changes arriving during a read with one trailing read for the burst",
+      "coverageRelation": "The test drives refresh, authentication or stop through the public owner and observes the owned API read port together with the resulting private view.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource.Api.read",
+        "observableEffect": "Every invocation starts an authenticated resource read against the API.",
+        "requiredConstraint": "After initial load, one held read and three concurrent refresh marks require exactly one additional read covering all three marks.",
+        "failureRationale": "The latest view alone cannot distinguish bounded coalescing from one HTTP request per notification."
+      }
+    },
+    {
+      "id": "authenticated-refresh-replaced-account-suppression",
+      "domain": "Authenticated browser refresh lifetime",
+      "owner": "Rallar browser maintainers",
+      "summary": "Account replacement prevents queued refreshes from sending requests with the previous account credentials.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#starts replacement-account reads without waiting for old account refreshes",
+      "coverageRelation": "The test drives refresh, authentication or stop through the public owner and observes the owned API read port together with the resulting private view.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource.Api.read",
+        "observableEffect": "Every invocation starts an authenticated resource read against the API.",
+        "requiredConstraint": "Only the initial and already-started requests may use Alice credentials; the queued mark must not send a third Alice request after replacement.",
+        "failureRationale": "A correct Bob view can hide an obsolete authenticated request sent after account replacement."
+      }
     }
   ],
   "entries": [
@@ -11584,6 +11629,39 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The count before the next interval proves resumption does not leave an extra immediate or early poll.",
       "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes immediately on return with cadence after completion"
+    },
+    {
+      "id": "test-structure-coupling-b03e00e732b2bb09",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-refresh-stop-cancels-queued-reads",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The held initial read and fresh restart are the only two API reads; draining stopped work must not issue a third request.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#discards an in-flight read after stop and restarts with fresh account state"
+    },
+    {
+      "id": "test-structure-coupling-eecc1894a817c3c7",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-refresh-burst-coalescing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "After initial load, one held read and three concurrent refresh marks require exactly one additional read covering all three marks.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#covers changes arriving during a read with one trailing read for the burst"
+    },
+    {
+      "id": "test-structure-coupling-ffb00489341d2298",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-refresh-replaced-account-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Only the initial and already-started requests may use Alice credentials; the queued mark must not send a third Alice request after replacement.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#starts replacement-account reads without waiting for old account refreshes"
     }
   ]
 }

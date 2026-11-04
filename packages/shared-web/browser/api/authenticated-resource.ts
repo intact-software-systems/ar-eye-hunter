@@ -1,10 +1,10 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import type { BrowserActivity } from '../browser-activity.ts';
@@ -57,7 +57,8 @@ export class AuthenticatedResource<View, Request> {
     private readonly notifications = new SynchronousNotifications<AuthenticatedResource.State<View>>((error) =>
         console.error('Authenticated resource listener failed', error)
     );
-    private readonly reads = new SingleFlight<number, void>();
+    private reads: ThrottledFlush | null = null;
+    private readRevision = -1;
     private subscriptions: SubscriptionScope | null = null;
     private controller = new AbortController();
     private revision = 0;
@@ -122,9 +123,26 @@ export class AuthenticatedResource<View, Request> {
     refresh(): Promise<void> {
         const attempt = this.attempt();
         const revision = this.revision;
-        return attempt === null
-            ? Promise.resolve()
-            : this.reads.run(revision, () => this.readCurrent(attempt, revision));
+        if (attempt === null) {
+            return Promise.resolve();
+        }
+        if (this.reads === null || this.readRevision !== revision) {
+            const previous = this.reads;
+            this.readRevision = revision;
+            this.reads = new ThrottledFlush({
+                timers: this.dependencies.timers,
+                write: async () => {
+                    const current = this.attempt();
+                    if (current !== null) {
+                        await this.readCurrent(current, revision);
+                    }
+                }
+            }, { minIntervalMs: 0, firstMarkDelayMs: 0 });
+            void previous?.stop();
+        }
+        const covered = this.reads.mark();
+        void this.reads.drain();
+        return covered;
     }
 
     act(request: Request): Promise<void> {
@@ -163,6 +181,9 @@ export class AuthenticatedResource<View, Request> {
     }
 
     private async readCurrent(attempt: AuthenticatedResource.ReadInput, revision: number): Promise<void> {
+        if (!this.current(attempt) || revision !== this.revision) {
+            return;
+        }
         try {
             const view = await this.api.read(attempt);
             if (this.current(attempt) && revision === this.revision) {
@@ -242,7 +263,10 @@ export class AuthenticatedResource<View, Request> {
         this.revision++;
         this.controller.abort();
         this.controller = new AbortController();
-        this.reads.clear();
+        const reads = this.reads;
+        this.reads = null;
+        this.readRevision = -1;
+        void reads?.stop();
         this.pending = null;
         this.publish({ view: null, busy: false, retryPending: false, error: null });
     }

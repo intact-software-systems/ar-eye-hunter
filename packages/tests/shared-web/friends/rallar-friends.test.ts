@@ -5,7 +5,18 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { FriendsView } from '@shared/api/friends/friends-view.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+
+interface BrowserFixture {
+    readonly owner: RallarFriends;
+    readonly api: {
+        readonly read: Mock<RallarFriends.Api['read']>;
+        readonly change: Mock<RallarFriends.Api['change']>;
+    };
+    readonly enter: Mock<RallarFriends.Dependencies['entry']['enter']>;
+    changeAuth(next: AuthSession | undefined): void;
+    activity(next: boolean): void;
+}
 
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'alice-session', accessToken: 'test', expiresAtEpochMs: 9_999_999_999_999 };
 const scope = { applicationId: 'game', workspaceId: 'default' };
@@ -29,7 +40,7 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-function browser() {
+function browser(): BrowserFixture {
     let session: AuthSession | undefined = alice;
     let active = true;
     const authChanges = new SynchronousNotifications<RallarAuthState>((error) => {
@@ -42,7 +53,7 @@ function browser() {
         read: vi.fn<RallarFriends.Api['read']>(async ({ session: caller }) => ({ ...view, principalId: caller.clientId })),
         change: vi.fn<RallarFriends.Api['change']>(async ({ session: caller, requestId }) => ({ principalId: caller.clientId, requestId, status: 'applied' }))
     };
-    const enter = vi.fn();
+    const enter = vi.fn<RallarFriends.Dependencies['entry']['enter']>();
     const owner = new RallarFriends({
         auth: { session: () => session, onChange: (listener) => authChanges.subscribe(listener).unsubscribe },
         activity: { isActive: () => active, onChange: (listener) => activityChanges.subscribe(listener).unsubscribe },
@@ -130,8 +141,13 @@ describe('friends browser lifecycle', () => {
     it('discards late reads and pending writes on account replacement', async () => {
         const test = browser();
         const late = Promise.withResolvers<FriendsView>();
-        test.api.read.mockReturnValueOnce(late.promise);
+        const started = Promise.withResolvers<void>();
+        test.api.read.mockImplementationOnce(() => {
+            started.resolve();
+            return late.promise;
+        });
         const start = test.owner.start();
+        await started.promise;
         test.changeAuth({ ...alice, clientId: 'carol', sessionId: 'carol-session' });
         await test.owner.refresh();
         late.resolve(view);
