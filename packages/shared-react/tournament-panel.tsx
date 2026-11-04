@@ -1,17 +1,20 @@
+import type { RallarTournamentCatalog } from '@shared-web/browser/tournaments/rallar-tournament-catalog.ts';
 import type { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
 import { readTournamentLink, toTournamentLink } from '@shared-web/browser/tournaments/tournament-link.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { TournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
 import type { Tournament, TournamentMatch } from '@shared/api/tournaments/tournament-types.ts';
 import { useEffect, useState } from 'react';
+import { TournamentCatalogPanel } from './tournament-catalog-panel.tsx';
 
 export interface TournamentPanelProps {
     readonly scope: StateScope;
+    readonly catalog: RallarTournamentCatalog;
     readonly createOwner: (tournamentId: string) => RallarTournament;
 }
 
 /** Owns selection and presentation; the resource owns authenticated commands and room entry. */
-export function TournamentPanel({ scope, createOwner }: TournamentPanelProps) {
+export function TournamentPanel({ scope, catalog, createOwner }: TournamentPanelProps) {
     const [owner, setOwner] = useState(() => {
         const ref = readTournamentLink(window.location.hash, scope);
         return ref === null ? null : createOwner(ref.tournamentId);
@@ -35,9 +38,10 @@ export function TournamentPanel({ scope, createOwner }: TournamentPanelProps) {
         <section className="panel stack" aria-label="Tournaments">
             <h3>Tournaments</h3>
             <p>Four players, two semifinals and a final. Registration order sets the seeds. Ties are replayed.</p>
+            <TournamentCatalogPanel owner={catalog} onSelect={selectOwner} />
             <TournamentLinkPreview scope={scope} onSelect={selectOwner} />
             <button type="button" onClick={() => selectOwner(crypto.randomUUID())}>New tournament</button>
-            {owner && <SelectedTournament owner={owner} />}
+            {owner && <SelectedTournament key={owner.ref.tournamentId} owner={owner} />}
         </section>
     );
 }
@@ -152,7 +156,6 @@ interface TournamentBracketProps extends TournamentOwnerProps {
 function TournamentBracket(props: TournamentBracketProps) {
     const { tournament, snapshot, owner, disabled } = props;
     const organizer = tournament.organizerPrincipalId === snapshot.principalId;
-    const entrant = tournament.entrants.find((entry) => entry.principalId === snapshot.principalId);
     const ended = tournament.status === 'complete' || tournament.status === 'cancelled';
     return (
         <article aria-label="Tournament bracket" className="stack">
@@ -169,6 +172,8 @@ function TournamentBracket(props: TournamentBracketProps) {
                 Organizer: {tournament.organizerPrincipalId}. No-show grace: {tournament.noShowGraceMs / 60_000}{' '}
                 minutes.
             </p>
+            <TournamentPublication {...props} />
+            <TournamentParticipationSummary {...props} />
             <ol>
                 {tournament.entrants.map((entry) => (
                     <li key={entry.principalId}>
@@ -177,6 +182,22 @@ function TournamentBracket(props: TournamentBracketProps) {
                     </li>
                 ))}
             </ol>
+            <TournamentRegistration {...props} />
+            {!ended && organizer && <TournamentExit owner={owner} disabled={disabled} action="cancel" />}
+            {tournament.championPrincipalId && <p role="status">Champion: {tournament.championPrincipalId}</p>}
+            {tournament.matches.map((match) => (
+                <TournamentMatchCard key={match.slot} {...props} match={match} organizer={organizer} />
+            ))}
+        </article>
+    );
+}
+
+function TournamentRegistration({ tournament, snapshot, owner, disabled }: TournamentBracketProps) {
+    const organizer = tournament.organizerPrincipalId === snapshot.principalId;
+    const entrant = tournament.entrants.find((entry) => entry.principalId === snapshot.principalId);
+    const ended = tournament.status === 'complete' || tournament.status === 'cancelled';
+    return (
+        <>
             {tournament.status === 'registration' && !entrant && (
                 <button
                     type="button"
@@ -198,12 +219,65 @@ function TournamentBracket(props: TournamentBracketProps) {
             {!ended && entrant && entrant.withdrawnAtEpochMs === null && (
                 <TournamentExit owner={owner} disabled={disabled} action="withdraw" />
             )}
-            {!ended && organizer && <TournamentExit owner={owner} disabled={disabled} action="cancel" />}
-            {tournament.championPrincipalId && <p role="status">Champion: {tournament.championPrincipalId}</p>}
-            {tournament.matches.map((match) => (
-                <TournamentMatchCard key={match.slot} {...props} match={match} organizer={organizer} />
-            ))}
-        </article>
+        </>
+    );
+}
+
+function TournamentPublication({ tournament, snapshot, owner, disabled }: TournamentBracketProps) {
+    const organizer = tournament.organizerPrincipalId === snapshot.principalId;
+    const ended = tournament.status === 'complete' || tournament.status === 'cancelled';
+    return (
+        <div className="stack">
+            <p>
+                {snapshot.listing === 'listed'
+                    ? (ended ? 'Ended · no longer in Discover' : 'Published in Discover')
+                    : 'Unlisted · available through its share link'}
+            </p>
+            {organizer && (!ended || snapshot.listing === 'listed') && (
+                <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => void owner.act({ type: snapshot.listing === 'listed' ? 'unlist' : 'publish' })}
+                >
+                    {snapshot.listing === 'listed' ? 'Unlist tournament' : 'Publish tournament'}
+                </button>
+            )}
+        </div>
+    );
+}
+
+function TournamentParticipationSummary({ tournament, snapshot }: TournamentBracketProps) {
+    const entrant = tournament.entrants.find((entry) => entry.principalId === snapshot.principalId);
+    if (!entrant) {
+        return null;
+    }
+    if (entrant.withdrawnAtEpochMs !== null) {
+        return <p role="status">You withdrew. Your bracket history remains here.</p>;
+    }
+    if (tournament.status === 'cancelled') {
+        return <p role="status">Tournament cancelled. No further match is available.</p>;
+    }
+    if (tournament.status === 'complete') {
+        return <p role="status">Tournament finished. Accepted results are shown below.</p>;
+    }
+    const next = tournament.matches.find((match) =>
+        match.principalIds?.includes(snapshot.principalId) && !['complete', 'cancelled'].includes(match.status)
+    );
+    if (!next) {
+        return (
+            <p role="status">
+                {tournament.status === 'registration'
+                    ? 'Registered. Waiting for the organizer to launch.'
+                    : 'No next match is assigned to you yet.'}
+            </p>
+        );
+    }
+    const checkedIn = next.attempt?.checkedInPrincipalIds.includes(snapshot.principalId);
+    return (
+        <p role="status">
+            Your next match: {next.slot.replace('-', ' ')} · {next.status}.{' '}
+            {checkedIn ? 'Check-in confirmed for this attempt.' : 'Check in below when the match is scheduled.'}
+        </p>
     );
 }
 

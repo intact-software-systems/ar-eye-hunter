@@ -58,6 +58,8 @@ export function executeRecipeSegment(input: RecipeSegmentInput): ReturnType<type
             variables: {
                 apiPrimary: 'http://causal.test',
                 rallarApiBaseUrl: 'http://causal.test',
+                rallarApiBaseUrlSecondary: 'http://causal-secondary.test',
+                rallarApiBaseUrlTertiary: 'http://causal-tertiary.test',
                 applicationId: 'causal-app',
                 workspaceId: 'causal-workspace',
                 groupId: 'causal-group',

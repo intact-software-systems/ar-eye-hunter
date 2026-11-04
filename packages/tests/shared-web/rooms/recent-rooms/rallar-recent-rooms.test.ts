@@ -303,7 +303,7 @@ describe('recent room navigation history', () => {
         const history = browser.createHistory();
         const starting = history.start();
         await opened.promise;
-        browser.entry.enter({ roomRef: { ...SCOPE, groupId: 'room-a' }, joinCode: null, participation: 'preserve' });
+        browser.entry.enter({ intent: 'join', roomRef: { ...SCOPE, groupId: 'room-a' }, joinCode: null, participation: 'preserve' });
         await browser.entry.resume();
         const stopping = history.stop();
         const restarting = history.start();

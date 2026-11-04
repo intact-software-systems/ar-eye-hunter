@@ -7,6 +7,8 @@ import type { TournamentMatchBinding } from './tournament-types.ts';
 export type TournamentRequest =
     | { readonly type: 'create'; readonly title: string; }
     | { readonly type: 'register' | 'withdraw' | 'launch' | 'cancel'; }
+    | { readonly type: 'publish'; }
+    | { readonly type: 'unlist'; }
     | {
         readonly type: 'check-in' | 'start';
         readonly slot: TournamentMatchBinding['slot'];
@@ -42,6 +44,9 @@ export function decodeTournamentRequest(value: unknown): TournamentRequest {
         };
     }
     requireExactKeys(request, ['type'], 'Tournament request');
+    if (request.type === 'publish' || request.type === 'unlist') {
+        return { type: request.type };
+    }
     return {
         type: requireOneOf(request.type, ['register', 'withdraw', 'launch', 'cancel'], 'Tournament request type')
     };

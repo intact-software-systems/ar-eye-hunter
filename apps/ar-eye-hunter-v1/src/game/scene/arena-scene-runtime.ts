@@ -367,6 +367,7 @@ export class ArenaSceneRuntime {
             const aim = touch
                 ? resolveTouchShotDirection({
                     runtime: this,
+                    tournamentState: props.tournament?.snapshot.state,
                     event: event,
                     remotePlayers: props.remotePlayers,
                     localSessionId: props.localSessionId ?? 'local'

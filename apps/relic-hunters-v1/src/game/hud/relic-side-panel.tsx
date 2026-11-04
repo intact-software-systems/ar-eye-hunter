@@ -1,15 +1,14 @@
+import { BrowserTournamentPanel } from '@shared-react/browser-tournament-panel.tsx';
 import { FriendsPanel } from '@shared-react/friends-panel.tsx';
 import { MatchmakingPanel } from '@shared-react/matchmaking-panel.tsx';
 import { PartyPanel } from '@shared-react/party-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
-import { TournamentPanel } from '@shared-react/tournament-panel.tsx';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
-import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RELIC_ROOM_SCOPE } from '../relic-hunters-browser.ts';
 import { RelicRoomMove } from './relic-room-move.tsx';
 
@@ -88,15 +87,6 @@ export function RelicSidePanel({ game, turn, preferences, playback }: RelicSideP
 }
 
 function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game' | 'preferences'>) {
-    const createTournament = useCallback(
-        (tournamentId: string) =>
-            RallarTournament.createBrowser(rallar, game.roomEntry, {
-                scope: RELIC_ROOM_SCOPE,
-                tournamentId,
-                refreshIntervalMs: 1000
-            }),
-        [game.roomEntry]
-    );
     const [scheduledSessions] = useState(() =>
         RallarScheduledSessions.createBrowser(rallar, game.roomEntry, {
             scope: RELIC_ROOM_SCOPE,
@@ -115,7 +105,14 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
     return (
         <>
             <RelicRoomEntry game={game} />
-            {game.session && <TournamentPanel scope={RELIC_ROOM_SCOPE} createOwner={createTournament} />}
+            {game.session && (
+                <BrowserTournamentPanel
+                    browser={rallar}
+                    entry={game.roomEntry}
+                    catalogConfig={{ scope: RELIC_ROOM_SCOPE, limit: 20, refreshIntervalMs: 30000, timeoutMs: 10000 }}
+                    bracketRefreshIntervalMs={1000}
+                />
+            )}
             {game.session && <PartyPanel owner={party} friends={friends} />}
             {game.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find an expedition" />}
             {game.session && (

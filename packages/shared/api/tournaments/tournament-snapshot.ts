@@ -1,5 +1,5 @@
 import { jsonEquals } from '../../repository/state-utils.ts';
-import { requireEpoch, requireExactKeys, requireRecord } from '../exact-object-decoding.ts';
+import { requireEpoch, requireExactKeys, requireOneOf, requireRecord } from '../exact-object-decoding.ts';
 import { assertValidRallarRouteId } from '../rallar-validation.ts';
 import { decodeTournamentRef } from './decode-tournament-match-binding.ts';
 import { decodeTournament } from './decode-tournament.ts';
@@ -10,11 +10,16 @@ export interface TournamentSnapshot {
     readonly principalId: string;
     readonly observedAtEpochMs: number;
     readonly tournament: Tournament | null;
+    readonly listing: 'listed' | 'unlisted';
 }
 
 export function decodeTournamentSnapshot(value: unknown): TournamentSnapshot {
     const snapshot = requireRecord(value, 'Tournament snapshot');
-    requireExactKeys(snapshot, ['ref', 'principalId', 'observedAtEpochMs', 'tournament'], 'Tournament snapshot');
+    requireExactKeys(
+        snapshot,
+        ['ref', 'principalId', 'observedAtEpochMs', 'tournament', 'listing'],
+        'Tournament snapshot'
+    );
     const ref = decodeTournamentRef(snapshot.ref);
     requireEpoch(snapshot.observedAtEpochMs, 'Tournament observation');
     const tournament = snapshot.tournament === null ? null : decodeTournament(snapshot.tournament);
@@ -25,6 +30,7 @@ export function decodeTournamentSnapshot(value: unknown): TournamentSnapshot {
         ref,
         principalId: assertValidRallarRouteId(snapshot.principalId),
         observedAtEpochMs: snapshot.observedAtEpochMs,
-        tournament
+        tournament,
+        listing: requireOneOf(snapshot.listing, ['listed', 'unlisted'], 'Tournament listing')
     };
 }

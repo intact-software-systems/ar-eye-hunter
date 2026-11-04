@@ -20,6 +20,7 @@ import type { GroupStateRepository } from '../group-state/persistence/group-stat
 import { computeTournamentMutation } from './compute-tournament-mutation.ts';
 import { decodeTournamentCommand } from './decode-tournament-command.ts';
 import { decodeTournamentGameProfiles, type TournamentGameProfile } from './tournament-game-profile.ts';
+import type { TournamentPublicationRead } from './tournament-publication.ts';
 import type { TournamentRepository } from './tournament-repository.ts';
 import { TOURNAMENT_SIGNAL_RETENTION_MS } from './tournament-signal.ts';
 
@@ -57,11 +58,18 @@ export namespace TournamentService {
         readonly command: Command;
         readonly nowEpochMs: number;
         readonly bracket: TournamentRepository.Read;
+        readonly publication: TournamentPublicationRead | null;
         readonly sessions: readonly RuntimeStateEntryValue<PersistedAuthSession>[];
         readonly admission: NewGroupCohortAdmissionInput | null;
         readonly serviceId: string;
         readonly traceId: string;
         readonly signalRetentionMs: number;
+    }
+    export interface AdmissionReadInput {
+        readonly command: Command;
+        readonly bracket: TournamentRepository.Read;
+        readonly nowEpochMs: number;
+        readonly attempt: AppInboxCommandAttempt;
     }
     export interface Computed {
         readonly result: TournamentMutationResult;
@@ -124,10 +132,13 @@ export class TournamentService {
             command.materialized.capturedAtEpochMs,
             ...bracket.attempts.map((attempt) => attempt.result?.finishedAtEpochMs ?? 0)
         );
-        const admission = await this.readAdmission(command, bracket, nowEpochMs, attempt);
+        const admission = await this.readAdmission({ command, bracket, nowEpochMs, attempt });
         return {
             command,
             bracket,
+            publication: request.type === 'publish' || request.type === 'unlist'
+                ? await this.dependencies.repository.readPublication(command.ref)
+                : null,
             sessions,
             admission,
             nowEpochMs,
@@ -156,11 +167,9 @@ export class TournamentService {
         await writeAppOutboxInserts(transaction, computed.outbox);
     }
     private async readAdmission(
-        command: TournamentService.Command,
-        bracket: TournamentRepository.Read,
-        nowEpochMs: number,
-        attempt: AppInboxCommandAttempt
+        input: TournamentService.AdmissionReadInput
     ): Promise<NewGroupCohortAdmissionInput | null> {
+        const { command, bracket, nowEpochMs, attempt } = input;
         if (command.request.type !== 'start' || bracket.record === null || command.materialized === null) {
             return null;
         }

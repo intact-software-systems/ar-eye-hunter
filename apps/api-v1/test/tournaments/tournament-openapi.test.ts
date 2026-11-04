@@ -11,6 +11,8 @@ Deno.test('published tournament API documents exact user intent without score up
     const paths = requireRecord(document.paths, 'paths');
     const base = '/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/{tournamentId}';
     assert.ok(requireRecord(paths[base], 'tournament read').get);
+    const catalog = requireRecord(requireRecord(paths['/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/catalog'], 'catalog').get, 'catalog get');
+    assert.deepEqual(catalog.security, [{ bearerAuth: [], clientIdHeader: [] }]);
     const mutation = requireRecord(requireRecord(paths[`${base}/requests/{requestId}`], 'mutation').post, 'post');
     assert.deepEqual(mutation.security, [{ bearerAuth: [], clientIdHeader: [] }]);
     const schemas = requireRecord(requireRecord(document.components, 'components').schemas, 'schemas');
@@ -23,6 +25,15 @@ Deno.test('published tournament API documents exact user intent without score up
         const properties = requireRecord(schema.properties, 'properties');
         assert.ok(!('scores' in properties || 'actor' in properties || 'materialized' in properties || 'roomId' in properties));
     }
-    assert.deepEqual(requireRecord(schemas.TournamentSnapshot, 'snapshot').required, ['ref', 'principalId', 'observedAtEpochMs', 'tournament']);
+    assert.deepEqual(requireRecord(schemas.TournamentSnapshot, 'snapshot').required, ['ref', 'principalId', 'observedAtEpochMs', 'tournament', 'listing']);
+    assert.deepEqual(requireRecord(schemas.TournamentCatalogEntry, 'card').required, [
+        'ref',
+        'title',
+        'organizerPrincipalId',
+        'status',
+        'activeEntrantCount',
+        'nextScheduledAtEpochMs'
+    ]);
+    assert.equal(requireRecord(schemas.TournamentCatalogEntry, 'card').additionalProperties, false);
     assert.deepEqual(requireRecord(schemas.TournamentMutationResult, 'result').required, ['ref', 'requestId', 'status', 'code']);
 });
