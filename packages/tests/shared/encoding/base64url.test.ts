@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { describe, expect, it } from 'vitest';
 
-import { decodeBase64Any, decodeBase64Url, toBase64Url } from '@shared/encoding/base64url.ts';
+import { decodeBase64Any, decodeBase64Url, isBase64UrlOfByteLength, toBase64Url } from '@shared/encoding/base64url.ts';
 
 const INVALID_BASE64URL = [{ path: '$', code: 'invalid-base64url', message: expect.any(String) }];
 const INVALID_BASE64 = [{ path: '$', code: 'invalid-base64', message: expect.any(String) }];
@@ -56,6 +56,18 @@ describe('base64url', () => {
     ])('accepts canonical %j and refuses %j, whose unused trailing bits are not zero', (canonical, noncanonical) => {
         expect(decodeBase64Url(canonical).right).toEqual(decodeBase64Any(noncanonical).right);
         expect(decodeBase64Url(noncanonical).left).toEqual(INVALID_BASE64URL);
+    });
+
+    it.each<[unknown, number, boolean]>([
+        ['Zm9v', 3, true],
+        ['Zm9v', 2, false],
+        ['Zm9vYg', 4, true],
+        ['Zm9vYh', 4, false],
+        ['Zm9v+g', 4, false],
+        [3, 3, false],
+        [undefined, 0, false]
+    ])('judges %j as strict base64url text of %d bytes: %s', (value, byteLength, expected) => {
+        expect(isBase64UrlOfByteLength(value, byteLength)).toBe(expected);
     });
 });
 

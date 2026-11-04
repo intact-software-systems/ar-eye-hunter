@@ -50,6 +50,10 @@ const APP_TOPIC_ID = 'app.granted-feed';
 
 const GRANTS_WITH_UNSUBSCRIBED_RELAY = { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY } as const;
 
+const GRANTED_TYPE_ID = 'room.granted-feed.v1';
+
+const MEMBERS_TYPE_ID = 'room.chat.v1';
+
 describe('a granted RTC publication at its relays and receivers', () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -115,7 +119,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
             'a',
             { topicId: APP_TOPIC_ID, resourceId: 'forged-1', contextId: ORIGIN_ROOM.groupId },
             'r',
-            'room.granted-feed.v1',
+            GRANTED_TYPE_ID,
             { text: 'forged' },
             { ttlMs: 30_000, traceId: 'trace-forged' }
         );
@@ -207,19 +211,23 @@ describe('a granted RTC publication at its relays and receivers', () => {
     it('delivers a members-topic frame without a proof as before: only granted topics are judged by proof', async () => {
         const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: false });
-        const members = toTransportCopy(newALMulticastMessage(
-            'a',
-            { topicId: 'room.chat', resourceId: 'chat-1', contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            'room.chat.v1',
-            { text: 'hello' },
-            { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-members' }
-        ));
+        const members = createMembersTransportCopy();
 
         await relay.receive(members, 'a');
 
         expect(relay.delivered.map((message) => message.id.msgId)).toEqual([members.id.msgId]);
         expect(await relay.readSent('c')).toHaveLength(1);
+    });
+
+    it('drops a members-topic frame carrying a proof at the first hop, unauthorized: it never forwards or answers it', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: false });
+        const signed = await publishFromOrigin(chain, 'feed-1');
+
+        await relay.receive({ ...createMembersTransportCopy(), proof: signed.proof }, 'a');
+
+        expect([relay.delivered, await relay.readSent('c'), await relay.readSent('a')]).toEqual([[], [], []]);
+        expect(readAdmissionReasons(relay, MEMBERS_TYPE_ID)).toEqual(['unauthorized: proof-on-ungranted-topic']);
     });
 
     it('keeps a snapshot readable for its cache TTL: delivered a second before it lapses, dropped no-authority a second after', async () => {
@@ -300,7 +308,7 @@ async function publishFromOrigin(chain: RelayChain, resourceId: string): Promise
             'a',
             { topicId: PUBLICATION_TOPIC_ID, resourceId, contextId: ORIGIN_ROOM.groupId },
             ORIGIN_ROOM,
-            'room.granted-feed.v1',
+            GRANTED_TYPE_ID,
             { text: `feed ${resourceId}` },
             { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-${resourceId}` }
         ),
@@ -309,6 +317,18 @@ async function publishFromOrigin(chain: RelayChain, resourceId: string): Promise
     await vi.advanceTimersByTimeAsync(0);
     expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
     return chain.origin.channels.r!.sent[sentBefore]!;
+}
+
+/** A members-topic room multicast as the origin's transport copy to `r`. */
+function createMembersTransportCopy(): ALMessage {
+    return toTransportCopy(newALMulticastMessage(
+        'a',
+        { topicId: 'room.chat', resourceId: 'chat-1', contextId: ORIGIN_ROOM.groupId },
+        ORIGIN_ROOM,
+        MEMBERS_TYPE_ID,
+        { text: 'hello' },
+        { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-members' }
+    ));
 }
 
 function toTransportCopy(message: ALMessage): ALMessage {
@@ -331,6 +351,6 @@ function toRevokedSnapshot(chain: RelayChain): GroupSnapshot {
     };
 }
 
-function readAdmissionReasons(fixture: RtcRelayOverlayFixture): readonly string[] {
-    return fixture.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.typeId === 'room.granted-feed.v1' ? [event.reason] : []);
+function readAdmissionReasons(fixture: RtcRelayOverlayFixture, typeId = GRANTED_TYPE_ID): readonly string[] {
+    return fixture.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.typeId === typeId ? [event.reason] : []);
 }

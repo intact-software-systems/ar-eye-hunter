@@ -101,7 +101,7 @@ const FOUR_ROLE_KEYS_BY_CARRIER = {
 const GRANTED_RTC_TWO_AGENT_KEYS = [
     'granted-rtc-delivered',
     'granted-rtc-missing-proof',
-    'granted-rtc-lane-refused',
+    'granted-rtc-publish-refused',
     'granted-rtc-receipted-unsupported'
 ] as const;
 

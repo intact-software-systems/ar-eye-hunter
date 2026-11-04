@@ -87,7 +87,8 @@ export function validateGroupPresenceMutationRequest(
     const generationFields = operation === 'connectPresence'
         ? ['generationId', 'connectionGenerationId']
         : ['generationId'];
-    const keyFields = operation === 'disconnectPresence' ? [] : ['publicationKey'];
+    const carriesKey = operation !== 'disconnectPresence';
+    const keyFields = carriesKey ? ['publicationKey'] : [];
     const issues = [
         ...validateGroupInputKeys(
             request,
@@ -98,7 +99,7 @@ export function validateGroupPresenceMutationRequest(
             ...generationFields.map((key) => ({ key, kind: 'string' as const, required: true })),
             ...identityFields.map((key) => ({ key, kind: 'string' as const }))
         ], `Group ${operation}`),
-        ...(operation === 'disconnectPresence' ? [] : validatePresencePublicationKey(operation, request))
+        ...(carriesKey ? validatePresencePublicationKey(operation, request) : [])
     ];
     const timestampIssues = validateGroupInputFields(
         request,
@@ -110,7 +111,7 @@ export function validateGroupPresenceMutationRequest(
 }
 
 function validatePresencePublicationKey(
-    operation: 'connectPresence' | 'heartbeatPresence',
+    operation: PresenceOperation,
     request: object
 ): readonly TypeError[] {
     return decodeGroupPresencePublicationKey(Reflect.get(request, 'publicationKey')).fold(

@@ -145,9 +145,7 @@ export function toALPublicationProofSigningInput(message: ALMessage): string {
     const sectionValues = toALPublicationProofSectionValues(message);
     return serializeCanonicalJson([
         AL_PUBLICATION_PROOF_DOMAIN_TAG,
-        ...toSignedFieldValues(sectionValues, AL_PUBLICATION_PROOF_FIELD_CLASSES.message).flatMap((values) =>
-            values ?? []
-        )
+        ...toSignedFieldValues(sectionValues, AL_PUBLICATION_PROOF_FIELD_CLASSES.message).flat()
     ]);
 }
 

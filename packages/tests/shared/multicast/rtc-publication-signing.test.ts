@@ -225,7 +225,13 @@ describe('signRtcPublication', () => {
     it.each<[RtcPublicationSigningFailure['kind'], (crypto: AvailablePublicationCrypto) => SignRtcPublicationInput]>([
         [
             'signing-unavailable',
-            () => ({ crypto: UNAVAILABLE_PUBLICATION_CRYPTO, snapshot: null, selfSessionId: 'a', message: createGrantedMulticast('none') })
+            () => ({
+                crypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                snapshot: null,
+                selfSessionId: 'a',
+                nowEpochMs: Date.now(),
+                message: createGrantedMulticast('none')
+            })
         ],
         ['no-authority', (crypto) => toSigningInput(crypto, null, createGrantedMulticast('none'))],
         [
@@ -307,7 +313,7 @@ function toFrozen(message: ALMessage): ALMessage {
 }
 
 function toSigningInput(crypto: PublicationCrypto, snapshot: GroupSnapshot | null, message: ALMessage): SignRtcPublicationInput {
-    return { crypto, snapshot, selfSessionId: 'a', message };
+    return { crypto, snapshot, selfSessionId: 'a', nowEpochMs: Date.now(), message };
 }
 
 async function verifyProof(crypto: AvailablePublicationCrypto, message: ALMessage) {

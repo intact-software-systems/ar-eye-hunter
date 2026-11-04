@@ -86,7 +86,9 @@ export class RtcPublicationProofVerifier implements RtcPublicationProofVerifierP
     ): Promise<boolean> {
         const groupRef = readALTargetGroupRef(message);
         const snapshot = groupRef === undefined ? undefined : this.#findGroupSnapshot(groupRef);
-        const registered = snapshot === undefined ? null : resolvePublicationKey(snapshot, message.id.senderId);
+        const registered = snapshot === undefined
+            ? null
+            : resolvePublicationKey(snapshot, message.id.senderId, this.#nowEpochMs());
         if (registered === null || registered.keyId !== proof.keyId) {
             return false;
         }

@@ -1,6 +1,6 @@
-import type { ApiJsonObject, ApiJsonValue } from '../api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from '../api/api-json-value.ts';
 import type { RallarValidationIssue } from '../api/rallar-validation.ts';
-import { decodeBase64Url, toBase64Url } from '../encoding/base64url.ts';
+import { decodeBase64Url, isBase64UrlOfByteLength, toBase64Url } from '../encoding/base64url.ts';
 import { serializeCanonicalJson } from '../encoding/canonical-json.ts';
 import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
@@ -19,7 +19,7 @@ export interface SigningKeyPair {
     readonly keyId: string;
 }
 
-export type SignatureFailureKind =
+type SignatureFailureKind =
     | 'subtle-unavailable'
     | 'key-generation-failed'
     | 'invalid-key'
@@ -158,10 +158,6 @@ export function decodeEcdsaP256PublicJwk(value: unknown): Either<readonly Rallar
         : Either.ofRight({ kty: 'EC', crv: 'P-256', x: String(value.x), y: String(value.y) });
 }
 
-function isApiJsonObject(value: unknown): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function toPublicJwkKeyIssues(jwk: ApiJsonObject): RallarValidationIssue[] {
     return [
         ...Object.keys(jwk)
@@ -196,5 +192,5 @@ function toPublicJwkMemberIssues(jwk: ApiJsonObject): RallarValidationIssue[] {
 }
 
 function isEcdsaP256Coordinate(value: ApiJsonValue): boolean {
-    return typeof value === 'string' && decodeBase64Url(value).right?.length === ECDSA_P256_COORDINATE_BYTES;
+    return isBase64UrlOfByteLength(value, ECDSA_P256_COORDINATE_BYTES);
 }

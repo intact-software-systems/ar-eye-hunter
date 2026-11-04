@@ -400,8 +400,11 @@ function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly C
         return [];
     }
     const rewrite = decodeAlmFaultRewrite(command);
-    if (rewrite !== undefined) {
-        return rewrite.fold((issue) => [toControlCommandIssue(issue)], () => []);
+    if (rewrite.left !== undefined) {
+        return [toControlCommandIssue(rewrite.left)];
+    }
+    if (rewrite.right !== null) {
+        return [];
     }
     if (command.carrier === 'rtc') {
         return [

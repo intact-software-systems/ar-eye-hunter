@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_ROLES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -78,7 +79,7 @@ describe('the granted rtc cells', () => {
                     ? [
                         ['granted-rtc-delivered', 'two-agent'],
                         ['granted-rtc-missing-proof', 'two-agent'],
-                        ['granted-rtc-lane-refused', 'two-agent'],
+                        ['granted-rtc-publish-refused', 'two-agent'],
                         ['granted-rtc-receipted-unsupported', 'two-agent'],
                         ['granted-rtc-forged-sender', 'three-agent']
                     ]
@@ -105,9 +106,29 @@ describe('the granted rtc cells', () => {
         expect(pair.filter(namesPrincipal).map(({ scenarioKey }) => scenarioKey)).toEqual([
             'granted-rtc-delivered',
             'granted-rtc-missing-proof',
-            'granted-rtc-lane-refused',
+            'granted-rtc-publish-refused',
             'granted-rtc-receipted-unsupported'
         ]);
+    });
+
+    it('declares in principalRoles exactly the roles every scenario writes as {principal:<role>}', () => {
+        const sentinels = Object.fromEntries(ALM_CONFORMANCE_ROLES.map((role) => [role, `principal-sentinel-${role}`]));
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const input = { ...toConformanceInput(carrier), principalIdsByRole: sentinels };
+            // A role is declared exactly when creation without it leaves the scenario out.
+            const keysWithout = new Map(ALM_CONFORMANCE_ROLES.map((role) => {
+                const { [role]: _omitted, ...others } = sentinels;
+                const created = createAlmConformanceRecipes({ ...input, principalIdsByRole: others });
+                return [role, new Set(created.map(({ scenarioKey }) => scenarioKey))] as const;
+            }));
+            for (const scenario of createAlmConformanceRecipes(input)) {
+                const text = JSON.stringify(scenario);
+                const written = ALM_CONFORMANCE_ROLES.filter((role) => text.includes(sentinels[role]!));
+                const declared = ALM_CONFORMANCE_ROLES.filter((role) => !keysWithout.get(role)!.has(scenario.scenarioKey));
+
+                expect(declared, `${carrier} ${scenario.scenarioKey}`).toEqual(written);
+            }
+        }
     });
 
     it('states ack on every granted send: none for a publication, receiver for the receipted refusal', () => {
@@ -115,7 +136,7 @@ describe('the granted rtc cells', () => {
             'granted-rtc-delivered',
             'granted-rtc-forged-sender',
             'granted-rtc-missing-proof',
-            'granted-rtc-lane-refused',
+            'granted-rtc-publish-refused',
             'granted-rtc-receipted-unsupported'
         ].map((scenarioId) => {
             const scenario = toGrantedRtcScenario(scenarioId);
@@ -127,7 +148,7 @@ describe('the granted rtc cells', () => {
             ['granted-rtc-delivered', ['none']],
             ['granted-rtc-forged-sender', ['none']],
             ['granted-rtc-missing-proof', ['none']],
-            ['granted-rtc-lane-refused', ['none']],
+            ['granted-rtc-publish-refused', ['none']],
             ['granted-rtc-receipted-unsupported', ['receiver']]
         ]);
     });
@@ -163,6 +184,19 @@ describe('the granted rtc cells', () => {
         expect(toFlatCommands(scenario.recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
     });
 
+    it('asserts recipient-b drops the forged frame for its signature too, before it waits for the cue', () => {
+        const recipe = toGrantedRtcScenario('granted-rtc-forged-sender').recipientB!;
+        const recipientB = toFlatCommands(recipe);
+        const outcome = recipientB.findIndex((command) => command.kind === 'wait' && command.match.topic === INBOUND_DIAGNOSTICS_TOPIC);
+        const cue = recipientB.findIndex((command) => command.kind === 'wait' && command.match.kind === 'message');
+
+        expect(toOutcomeWaits(recipe)).toEqual([
+            `"typeId":"alm.conformance.rtc.granted-rtc-forged-sender","carrier":"rtc","outcome":"unauthorized","reason":"unauthorized: invalid-signature"`
+        ]);
+        expect(outcome).toBeGreaterThanOrEqual(0);
+        expect(outcome).toBeLessThan(cue);
+    });
+
     it('strips the proof and waits for the receiver to drop the frame unauthorized for its missing proof', () => {
         const scenario = toGrantedRtcScenario('granted-rtc-missing-proof');
 
@@ -176,11 +210,11 @@ describe('the granted rtc cells', () => {
     });
 
     it('refuses the subscribe-only receiver\'s rtc publication no-publish-grant and a receipted one unsupported, before any attempt', () => {
-        const laneRefused = toGrantedRtcScenario('granted-rtc-lane-refused');
+        const publishRefused = toGrantedRtcScenario('granted-rtc-publish-refused');
         const receipted = toGrantedRtcScenario('granted-rtc-receipted-unsupported');
 
-        expect(toGrantedSends(laneRefused.sender)).toEqual([]);
-        expect(toVerdictFacts(laneRefused.receiver)).toEqual([
+        expect(toGrantedSends(publishRefused.sender)).toEqual([]);
+        expect(toVerdictFacts(publishRefused.receiver)).toEqual([
             ['failure.kind', 'refused'],
             ['failure.reason', 'no-publish-grant'],
             ['attempts', 0]
@@ -190,8 +224,8 @@ describe('the granted rtc cells', () => {
             ['failure.reason', 'unsupported'],
             ['attempts', 0]
         ]);
-        // The lane cell's receiver opens no granted channel: only the snapshot's grant makes its send a granted one.
-        expect(toFlatCommands(laneRefused.receiver).find((command) => command.kind === 'rtc.connect'))
+        // The cell's receiver opens no granted channel: only the snapshot's grant makes its send a granted one.
+        expect(toFlatCommands(publishRefused.receiver).find((command) => command.kind === 'rtc.connect'))
             .not.toHaveProperty('rallar.messageSelector');
     });
 });

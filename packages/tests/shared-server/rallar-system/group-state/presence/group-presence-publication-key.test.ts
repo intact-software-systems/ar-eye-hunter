@@ -38,7 +38,7 @@ describe('the publication key on the presence row', () => {
 
         expect((await readStoredSession(scenario)).publicationKey).toEqual(RFC_7517_PUBLICATION_KEY);
         await converge(scenario, 'key-connect-converge');
-        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION))
+        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION, BASE_EPOCH_MS))
             .toEqual(RFC_7517_PUBLICATION_KEY);
     });
 
@@ -47,7 +47,7 @@ describe('the publication key on the presence row', () => {
 
         expect((await readStoredSession(scenario)).publicationKey).toBeNull();
         await converge(scenario, 'key-connect-null-converge');
-        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION))
+        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION, BASE_EPOCH_MS))
             .toBeNull();
     });
 
@@ -62,7 +62,7 @@ describe('the publication key on the presence row', () => {
         const envelope = await computeHeartbeatDelta(scenario);
         expect(envelope.sessions.map((session) => session.publicationKey)).toEqual([ROTATED_PUBLICATION_KEY]);
         await converge(scenario, 'key-rotate-heartbeat-converge');
-        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION))
+        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION, BASE_EPOCH_MS))
             .toEqual(ROTATED_PUBLICATION_KEY);
     });
 
@@ -85,7 +85,7 @@ describe('the publication key on the presence row', () => {
         expect(receipt.outboxIds).toHaveLength(1);
         expect((await readStoredSession(scenario)).publicationKey).toBeNull();
         await converge(scenario, 'key-to-null-heartbeat-converge');
-        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION))
+        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION, BASE_EPOCH_MS))
             .toBeNull();
     });
 
@@ -127,7 +127,7 @@ describe('the publication key on the presence row', () => {
     )('drops the key with the session on %s', async (label, end) => {
         const scenario = await createConnectedScenario(`key-${label}`, RFC_7517_PUBLICATION_KEY);
         await converge(scenario, `key-${label}-converge`);
-        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION))
+        expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION, BASE_EPOCH_MS))
             .toEqual(RFC_7517_PUBLICATION_KEY);
 
         await end(scenario);
@@ -135,7 +135,7 @@ describe('the publication key on the presence row', () => {
 
         const snapshot = await requireSnapshot(scenario.runtime, scenario.groupId);
         expect(snapshot.activeSessions.map((session) => session.sessionId)).not.toContain(BOB_SESSION);
-        expect(resolvePublicationKey(snapshot, BOB_SESSION)).toBeNull();
+        expect(resolvePublicationKey(snapshot, BOB_SESSION, BASE_EPOCH_MS)).toBeNull();
     });
 });
 

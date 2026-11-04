@@ -309,8 +309,14 @@ export class BlackBoxRallarConnectionRuntime {
         }
     }
 
-    /** The forged principal is read at injection, from the room snapshot the page holds then; none fails the step. */
+    /**
+     * The forged principal is read at injection, from the room snapshot the page holds then; none fails the step. A
+     * release (`remaining: 0`) spends the held fault, which never acts again, so it reads no principal.
+     */
     #resolveRewriteFault({ rewrite, ...fault }: BlackBoxRallarRewriteFault): ScriptedTransportFault {
+        if (fault.remaining === 0) {
+            return { ...fault, action: 'drop' };
+        }
         const roomRef = blackBoxRallarRoomRefOf(requireConnectionConfig(this.#foundation.connectionState));
         const snapshot = roomRef === undefined ? undefined : this.#foundation.rallar.peers.getRoomSnapshot(roomRef);
         return resolveAlmFaultRewrite({ rewrite, snapshot, nowMs: this.#clock.now() }).fold(

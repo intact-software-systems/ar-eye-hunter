@@ -1,3 +1,4 @@
+import { isLiveRoomSession } from '@shared/api/group-presence/is-live-room-session.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -105,9 +106,4 @@ function toOtherLiveSessions(
     return roomSessions.filter((session) =>
         isLiveRoomSession(session, own.nowMs) && session.sessionId !== own.ownSessionId
     );
-}
-
-/** A session the roster still lists as active whose lease has not lapsed by `nowMs`. */
-export function isLiveRoomSession(session: GroupPresenceSession, nowMs: number): boolean {
-    return session.status === 'active' && session.expiresAtEpochMs > nowMs;
 }

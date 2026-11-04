@@ -1,4 +1,4 @@
-import { decodeBase64Url } from '../../encoding/base64url.ts';
+import { isBase64UrlOfByteLength } from '../../encoding/base64url.ts';
 import { ECDSA_P256_KEY_ID_BYTES, ECDSA_P256_SIGNATURE_BYTES } from '../../signature/ecdsa-p256-signature.ts';
 import {
     requirePersistedALFields,
@@ -13,14 +13,10 @@ export function assertPersistedALProof(value: PersistedALValue): void {
     if (proof.alg !== 'ES256') {
         throw new TypeError('Persisted AL proof algorithm is invalid');
     }
-    if (!isBase64UrlOfLength(proof.keyId, ECDSA_P256_KEY_ID_BYTES)) {
+    if (!isBase64UrlOfByteLength(proof.keyId, ECDSA_P256_KEY_ID_BYTES)) {
         throw new TypeError('Persisted AL proof key id is invalid');
     }
-    if (!isBase64UrlOfLength(proof.signature, ECDSA_P256_SIGNATURE_BYTES)) {
+    if (!isBase64UrlOfByteLength(proof.signature, ECDSA_P256_SIGNATURE_BYTES)) {
         throw new TypeError('Persisted AL proof signature is invalid');
     }
-}
-
-function isBase64UrlOfLength(value: PersistedALValue | undefined, byteLength: number): boolean {
-    return typeof value === 'string' && decodeBase64Url(value).right?.length === byteLength;
 }

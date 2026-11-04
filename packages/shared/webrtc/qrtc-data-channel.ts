@@ -351,7 +351,7 @@ export class QRtcDataChannel {
             return this.recordSendResult('closed', 'Data channel not open', options.key);
         }
 
-        const faulted = this.rejectFaultedSend(data, options);
+        const faulted = this.resolveFaultedSend(data, options);
         if (faulted.kind === 'reject') {
             return faulted.result;
         }
@@ -408,7 +408,7 @@ export class QRtcDataChannel {
     }
 
     /** A `delay` decision is not supported for RTC in F1 and is treated as `pass`. */
-    private rejectFaultedSend(data: RtcDataChannelPayload, options: RtcDataChannelSendOptions): RtcFaultedSend {
+    private resolveFaultedSend(data: RtcDataChannelPayload, options: RtcDataChannelSendOptions): RtcFaultedSend {
         const decision = typeof data === 'string' ? this.input.faultPort.decideSend('rtc', data) : undefined;
         if (decision?.kind === 'rewrite') {
             return { kind: 'send-rewritten', data: decision.serialized };

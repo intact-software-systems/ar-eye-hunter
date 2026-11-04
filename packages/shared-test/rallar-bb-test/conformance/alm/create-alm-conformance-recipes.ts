@@ -58,8 +58,8 @@ import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbou
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
 import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-delivered.ts';
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
-import { grantedRtcLaneRefused } from './scenarios/granted-rtc/granted-rtc-lane-refused.ts';
 import { grantedRtcMissingProof } from './scenarios/granted-rtc/granted-rtc-missing-proof.ts';
+import { grantedRtcPublishRefused } from './scenarios/granted-rtc/granted-rtc-publish-refused.ts';
 import { grantedRtcReceiptedUnsupported } from './scenarios/granted-rtc/granted-rtc-receipted-unsupported.ts';
 import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
@@ -197,7 +197,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     pacedIsolationLists,
     grantedRtcDelivered,
     grantedRtcMissingProof,
-    grantedRtcLaneRefused,
+    grantedRtcPublishRefused,
     grantedRtcReceiptedUnsupported,
     backpressureHandsOver,
     backpressureRefused,

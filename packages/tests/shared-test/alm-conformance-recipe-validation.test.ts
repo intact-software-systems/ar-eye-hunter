@@ -120,7 +120,7 @@ const CARRIER_SCENARIO_IDS = {
         'paced-isolation-lists',
         'granted-rtc-delivered',
         'granted-rtc-missing-proof',
-        'granted-rtc-lane-refused',
+        'granted-rtc-publish-refused',
         'granted-rtc-receipted-unsupported',
         'backpressure-refused',
         'backpressure-deferred',

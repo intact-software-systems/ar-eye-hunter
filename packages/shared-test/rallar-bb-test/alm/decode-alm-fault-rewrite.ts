@@ -13,13 +13,14 @@ const REWRITE_SHAPE_MESSAGE =
     'fault.inject.action.rewrite must be "strip-proof" or an object naming forgeSender.principal.';
 
 /**
- * `undefined` when the fault's action names no rewrite, so the caller judges it as any other transport fault. Only an
- * RTC frame is rewritten, so a rewrite on any other carrier is refused; it names `strip-proof` or exactly one forged
- * principal, which the page resolves to that principal's live session and registered key at injection.
+ * Right `null` when the fault's action names no rewrite, so the caller judges it as any other transport fault (an
+ * `Either` never holds `undefined`). Only an RTC frame is rewritten, so a rewrite on any other carrier is refused; it
+ * names `strip-proof` or exactly one forged principal, which the page resolves to that principal's live session and
+ * registered key at injection.
  */
-export function decodeAlmFaultRewrite(fault: unknown): Either<string, AlmFaultRewrite> | undefined {
+export function decodeAlmFaultRewrite(fault: unknown): Either<string, AlmFaultRewrite | null> {
     if (!isJsonRecordValue(fault) || !isJsonRecordValue(fault.action) || !('rewrite' in fault.action)) {
-        return undefined;
+        return Either.ofRight(null);
     }
     const { carrier, action } = fault;
     if (carrier !== 'rtc') {

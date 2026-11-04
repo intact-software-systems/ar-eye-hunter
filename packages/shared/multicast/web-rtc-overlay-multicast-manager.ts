@@ -15,7 +15,6 @@ import {
     shouldAwaitALRoute,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { assertALPublicationProofSigningInputKept } from '../al-contracts/publication-proof/al-publication-proof.ts';
 import {
     resolveALOwnedChildPeerIds,
     toALAcceptedOverlayAdjacency
@@ -95,15 +94,10 @@ import {
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
-import {
-    computeRtcGrantedPublicationRefusal,
-    resolveRtcGrantedPublicationShapeRefusal
-} from './publication/compute-rtc-granted-publication-refusal.ts';
-import { computeRtcPublicationAdmission } from './publication/compute-rtc-publication-admission.ts';
+import { RtcGrantedPublicationCarrier } from './publication/rtc-granted-publication-carrier.ts';
 import type { RtcGrantedTopicReader } from './publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './publication/rtc-publication-proof-verifier-port.ts';
 import type { RtcTopicSubscriptionReader } from './publication/rtc-topic-subscription-reader.ts';
-import { signRtcPublication, type RtcPublicationSigningFailure } from './publication/sign-rtc-publication.ts';
 import {
     readRtcGroupSnapshotByRef,
     readRtcOutboundObservation,
@@ -112,7 +106,6 @@ import {
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import {
     computeRtcRoomSnapshotAdmission,
-    toRtcPublicationHandlingPlan,
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from './rtc-room-snapshot-admission.ts';
@@ -138,9 +131,6 @@ import {
 
 /** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
 type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
-
-/** Why a granted leg is not carried: a shape RTC cannot carry, or its origin could not sign it. */
-type RtcGrantedLegRefusal = Readonly<{ kind: 'unsupported-shape'; message: string; }> | RtcPublicationSigningFailure;
 
 /** What one incoming plan reads beside its room admission. */
 interface RtcRoomMessagePlanningInput {
@@ -224,12 +214,8 @@ export class WebRtcOverlayMulticastManager {
     private readonly rateLimiter: RateLimiter;
     private readonly quotaNow: () => number;
     private readonly faultPort: TransportFaultPort;
-    private readonly grantedTopics: RtcGrantedTopicReader;
-    private readonly publicationVerifier: RtcPublicationProofVerifierPort;
-    private readonly topicSubscriptions: RtcTopicSubscriptionReader;
-    private readonly selfPrincipalId: string;
-    /** An ES private field: the advanced middleware hands app code this manager, never the page key. */
-    readonly #publicationCrypto: PublicationCrypto;
+    /** An ES private field: the advanced middleware hands app code this manager, never its signing carrier. */
+    readonly #publications: RtcGrantedPublicationCarrier;
     private readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
@@ -245,11 +231,16 @@ export class WebRtcOverlayMulticastManager {
         this.quotaNow = dependencies.quotaNow;
         this.qosProvider = dependencies.qosProvider;
         this.faultPort = dependencies.faultPort;
-        this.grantedTopics = dependencies.grantedTopics;
-        this.publicationVerifier = dependencies.publicationVerifier;
-        this.topicSubscriptions = dependencies.topicSubscriptions;
-        this.selfPrincipalId = dependencies.selfPrincipalId;
-        this.#publicationCrypto = dependencies.publicationCrypto;
+        this.#publications = new RtcGrantedPublicationCarrier({
+            groupCache: dependencies.groupCache,
+            grantedTopics: dependencies.grantedTopics,
+            publicationCrypto: dependencies.publicationCrypto,
+            publicationVerifier: dependencies.publicationVerifier,
+            topicSubscriptions: dependencies.topicSubscriptions,
+            selfPrincipalId: dependencies.selfPrincipalId,
+            selfSessionId: dependencies.connectionService.input.sessionId,
+            clock: dependencies.outboundRuntime.clock
+        });
         this.outboundDiagnostics = dependencies.outboundDiagnostics;
         this.clock = dependencies.outboundRuntime.clock;
         this.submission = new RtcOutboundSubmission({
@@ -345,39 +336,19 @@ export class WebRtcOverlayMulticastManager {
      * unsupported before admission, the refusal a fallback carrier takes over.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
-        if (this.disposed || !this.isGrantedPublication(msg)) {
+        if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
             return await this.enqueueCarriedLegIfAbsent(msg, carrierGap);
         }
-        const signed = await this.signGrantedPublication(msg);
+        const signed = await this.#publications.signLeg(msg, (leg) => this.toRtcOriginAdmittedMessage(leg).message);
         return await signed.fold(
-            async (refusal) =>
+            async (detail) =>
                 WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
                     kind: 'refused',
                     reason: 'unsupported',
-                    detail: toRtcGrantedLegRefusalDetail(refusal)
+                    detail
                 }),
             async (carried) => await this.enqueueCarriedLegIfAbsent(carried, carrierGap)
         );
-    }
-
-    /**
-     * A granted leg is refused for the shape its sender gave before any freezing or signing work, else signed as
-     * its admission carries it.
-     */
-    private async signGrantedPublication(msg: ALMessage): Promise<Either<RtcGrantedLegRefusal, ALMessage>> {
-        const shapeRefusal = resolveRtcGrantedPublicationShapeRefusal(msg);
-        if (shapeRefusal !== undefined) {
-            return Either.ofLeft({ kind: 'unsupported-shape', message: shapeRefusal });
-        }
-        const admitted = this.toRtcOriginAdmittedMessage(msg).message;
-        const groupRef = readALTargetGroupRef(admitted);
-        const signed = await signRtcPublication({
-            crypto: this.#publicationCrypto,
-            snapshot: (groupRef && this.readGroupSnapshotByRef(groupRef)) ?? null,
-            selfSessionId: this.connectionService.input.sessionId,
-            message: admitted
-        });
-        return signed.mapLeft<RtcGrantedLegRefusal>((failure) => failure);
     }
 
     /**
@@ -489,12 +460,9 @@ export class WebRtcOverlayMulticastManager {
         return { verdict, message: msg, entries: [], reason: verdict.detail, trackedReceiptAlgo: 'none' };
     }
 
-    /**
-     * Awaited on each message object before it is planned, so the planner reads a granted frame's verdict
-     * synchronously; any other frame carries no verdict the planner reads.
-     */
+    /** Awaited on each message object before it is planned, so the planner reads a granted frame's verdict. */
     async verifyPublicationProof(msg: ALMessage): Promise<boolean> {
-        return this.isGrantedPublication(msg) && await this.publicationVerifier.verifyPublicationProof(msg);
+        return await this.#publications.verifyPublicationProof(msg);
     }
 
     /** A forward its store could not persist throws into the inbound claim, which retries it. */
@@ -556,7 +524,7 @@ export class WebRtcOverlayMulticastManager {
             qos: this.readForwardingQosInput(msg, context, fromPeerId)
         });
         const planned = this.planOutboundDispatch(
-            toRtcOutboundMessage(msg, dispatchPlan.handlingPlan.effective),
+            this.#publications.toForwardedMessage(msg, dispatchPlan.handlingPlan.effective),
             dispatchPlan
         );
         return {
@@ -608,24 +576,15 @@ export class WebRtcOverlayMulticastManager {
             nowMs
         });
         const plan = this.planRoomMessageHandling({ msg, fromPeerId, admission, overlay, observations, nowMs });
-        const roomPlan = toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId);
-        // A granted frame without a readable snapshot fails closed; one its room refused keeps the room's refusal.
-        if (!this.isGrantedPublication(msg) || (snapshot !== undefined && admission.kind !== 'authorized')) {
-            return roomPlan;
-        }
-        return toRtcPublicationHandlingPlan(
-            admission.kind === 'authorized' ? roomPlan : plan,
-            computeRtcPublicationAdmission({
-                message: msg,
-                snapshot: snapshot ?? null,
-                selfPrincipalId: this.selfPrincipalId,
-                signatureValid: this.publicationVerifier.getVerifiedSignature(msg),
-                ownSubscriptionActive: groupRef !== undefined &&
-                    this.topicSubscriptions.isSubscriptionActive(groupRef, msg.route.topicId),
-                nowEpochMs: nowMs
-            }),
-            fromPeerId
-        );
+        return this.#publications.planIncomingPublication({
+            msg,
+            fromPeerId,
+            snapshot,
+            admission,
+            plan,
+            roomPlan: toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId),
+            nowMs
+        });
     }
 
     private planRoomMessageHandling(input: RtcRoomMessagePlanningInput): ALMessageHandlingPlan {
@@ -697,11 +656,6 @@ export class WebRtcOverlayMulticastManager {
         return readRtcGroupSnapshotByRef(this.groupCache, ref);
     }
 
-    /** By topic, whatever the target: a granted topic's frame naming no room is still judged, and refused unbound. */
-    private isGrantedPublication(msg: ALMessage): boolean {
-        return this.grantedTopics.isGrantedTopic(readALTargetGroupRef(msg), msg.route.topicId);
-    }
-
     private planDirectDispatch(
         msg: ALMessage
     ): OverlayMulticastDispatchPlan {
@@ -754,9 +708,7 @@ export class WebRtcOverlayMulticastManager {
             toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
             this.connectionService.input.sessionId
         );
-        if (original.proof !== undefined && planned.dropReasonCode === undefined) {
-            assertALPublicationProofSigningInputKept(original, planned.msg);
-        }
+        this.#publications.assertSignedPlanKept(original, planned);
         return planned;
     }
 
@@ -783,10 +735,7 @@ export class WebRtcOverlayMulticastManager {
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
-                (carried) =>
-                    this.isGrantedPublication(carried)
-                        ? computeRtcGrantedPublicationRefusal(carried, original)
-                        : Either.ofRight(carried)
+                (carried) => this.#publications.computeOriginRefusal(carried, original)
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
@@ -1272,9 +1221,4 @@ export class WebRtcOverlayMulticastManager {
             repairTracking: repair
         };
     }
-}
-
-/** A shape refusal reads as its own text; a signing failure names its kind first. */
-function toRtcGrantedLegRefusalDetail(refusal: RtcGrantedLegRefusal): string {
-    return refusal.kind === 'unsupported-shape' ? refusal.message : `${refusal.kind}: ${refusal.message}`;
 }

@@ -1,7 +1,7 @@
-import { decodeBase64Url } from '../../encoding/base64url.ts';
+import { isBase64UrlOfByteLength } from '../../encoding/base64url.ts';
 import { Either } from '../../resilience/Either.ts';
 import { decodeEcdsaP256PublicJwk, ECDSA_P256_KEY_ID_BYTES } from '../../signature/ecdsa-p256-signature.ts';
-import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from '../api-json-value.ts';
 import type { GroupPresencePublicationKey } from '../group-types.ts';
 import type { RallarValidationIssue } from '../rallar-validation.ts';
 
@@ -20,7 +20,7 @@ export function decodeGroupPresencePublicationKey(
     if (value === null) {
         return Either.ofRight(null);
     }
-    if (typeof value !== 'object' || !isApiJsonObject(value)) {
+    if (!isApiJsonObject(value)) {
         return Either.ofLeft([{ path: '$', code: 'invalid-record', message: 'publicationKey must be an object.' }]);
     }
     const publicJwk = Object.hasOwn(value, 'publicJwk') ? decodeEcdsaP256PublicJwk(value.publicJwk) : undefined;
@@ -32,10 +32,6 @@ export function decodeGroupPresencePublicationKey(
     return issues.length > 0 || publicJwk?.right === undefined
         ? Either.ofLeft(issues)
         : Either.ofRight({ keyId: String(value.keyId), publicJwk: publicJwk.right });
-}
-
-function isApiJsonObject(value: object): value is ApiJsonObject {
-    return !Array.isArray(value);
 }
 
 function toPublicationKeyMemberIssues(key: ApiJsonObject): RallarValidationIssue[] {
@@ -64,5 +60,5 @@ function toPublicationKeyIdIssues(key: ApiJsonObject): RallarValidationIssue[] {
 }
 
 function isPublicationKeyId(value: ApiJsonValue): boolean {
-    return typeof value === 'string' && decodeBase64Url(value).right?.length === ECDSA_P256_KEY_ID_BYTES;
+    return isBase64UrlOfByteLength(value, ECDSA_P256_KEY_ID_BYTES);
 }

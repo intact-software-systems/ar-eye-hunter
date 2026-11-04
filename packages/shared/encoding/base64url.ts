@@ -31,6 +31,11 @@ export function decodeBase64Url(text: string): Either<readonly RallarValidationI
     return Either.ofRight(toBytesFromBase64UrlDigits(text));
 }
 
+/** Whether `value` is strict base64url text (as `decodeBase64Url` reads it) of exactly `byteLength` bytes. */
+export function isBase64UrlOfByteLength(value: unknown, byteLength: number): boolean {
+    return typeof value === 'string' && decodeBase64Url(value).right?.length === byteLength;
+}
+
 /** Lenient: the standard or the URL-safe alphabet, unpadded or padded to a whole four-digit group. */
 export function decodeBase64Any(text: string): Either<readonly RallarValidationIssue[], Uint8Array> {
     const digits = BASE64_ANY_TEXT.exec(text)?.groups?.digits;

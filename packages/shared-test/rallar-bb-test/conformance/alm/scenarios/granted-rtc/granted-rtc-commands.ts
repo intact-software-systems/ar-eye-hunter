@@ -126,15 +126,23 @@ export function toRefusedReceiverCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toGrantedRtcOwnerCommands(receiver),
-        toAdmissionOutcomeWait(receiver, {
-            name: `${refusal}-outcome`,
-            contains: `"carrier":"rtc","outcome":"unauthorized","reason":"unauthorized: ${refusal}"`,
-            timeoutMs: SUBSCRIPTION_PHASE_MS
-        }),
+        toInboundRefusalWait(receiver, refusal),
         ...toCueSendCommands(receiver, 'refused'),
         toPublicationWait(receiver, PUBLICATION, true),
         ...toUnsubscribeCommands(receiver, 'receiver')
     ];
+}
+
+/** This page dropped a rewritten frame `unauthorized` for `refusal`. */
+export function toInboundRefusalWait(
+    step: AlmConformanceStepInput,
+    refusal: GrantedRtcInboundRefusal
+): RallarBlackBoxTestWaitCommand {
+    return toAdmissionOutcomeWait(step, {
+        name: `${refusal}-outcome`,
+        contains: `"carrier":"rtc","outcome":"unauthorized","reason":"unauthorized: ${refusal}"`,
+        timeoutMs: SUBSCRIPTION_PHASE_MS
+    });
 }
 
 /**

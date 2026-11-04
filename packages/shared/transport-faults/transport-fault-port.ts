@@ -5,7 +5,7 @@ import {
     AL_CONTROL_REPAIR_TYPE_ID,
     isALControlTypeId
 } from '../al-contracts/al-control-type-ids.ts';
-import type { ApiJsonObject } from '../api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject } from '../api/api-json-value.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';
 
@@ -196,8 +196,8 @@ function toRewrittenFrame(serialized: string, rewrite: TransportFaultRewrite): s
     }
     return JSON.stringify({
         ...unsigned,
-        id: { ...(isRecord(unsigned.id) ? unsigned.id : {}), senderId: rewrite.senderId },
-        ...(proof === undefined ? {} : { proof: isRecord(proof) ? { ...proof, keyId: rewrite.keyId } : proof })
+        id: { ...(isApiJsonObject(unsigned.id) ? unsigned.id : {}), senderId: rewrite.senderId },
+        ...(proof === undefined ? {} : { proof: isApiJsonObject(proof) ? { ...proof, keyId: rewrite.keyId } : proof })
     });
 }
 
@@ -238,11 +238,11 @@ function toSerializedFrameFacts(serialized: string): SerializedFrameFacts | unde
 }
 
 function decodeSerializedFrameFacts(value: unknown): SerializedFrameFacts | undefined {
-    if (!isRecord(value)) {
+    if (!isApiJsonObject(value)) {
         return undefined;
     }
-    const id: ApiJsonObject = isRecord(value.id) ? value.id : {};
-    const payload: ApiJsonObject = isRecord(value.payload) ? value.payload : {};
+    const id: ApiJsonObject = isApiJsonObject(value.id) ? value.id : {};
+    const payload: ApiJsonObject = isApiJsonObject(value.payload) ? value.payload : {};
     const typeId = typeof payload.typeId === 'string' ? payload.typeId : undefined;
     return {
         typeId,
@@ -260,7 +260,7 @@ function decodeReferencedMsgId(resource: unknown): string | undefined {
     }
     try {
         const control = JSON.parse(resource);
-        if (!isRecord(control)) {
+        if (!isApiJsonObject(control)) {
             return undefined;
         }
         if (typeof control.ackedMsgId === 'string') {
@@ -271,8 +271,4 @@ function decodeReferencedMsgId(resource: unknown): string | undefined {
     catch {
         return undefined;
     }
-}
-
-function isRecord(value: unknown): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

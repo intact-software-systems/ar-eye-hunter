@@ -167,6 +167,34 @@ it('forges a sender by the principal the page resolves in its room snapshot, and
     await runtime.close();
 });
 
+it('releases a forging fault without resolving its principal again, even once that principal has left the room', async () => {
+    const { runtime } = await loadConnectedMessageRuntime('messages.rtc');
+    const charlie = {
+        ...toRoomRosterSession('charlie-session', { principalId: 'principal-charlie' }),
+        publicationKey: { keyId: 'charlie-key-id', publicJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' } }
+    } as const;
+    const room = createGroupSnapshotFixture({ ...roomRef, sessionIds: [] });
+    facade.behavior.getRoomSnapshot.mockReturnValue({ ...room, activeSessions: [charlie] });
+    const message = newALUnicastMessage('sender', { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' }, 'receiver', 'granted', {});
+    const frame = JSON.stringify({ ...message, proof: { alg: 'ES256', keyId: 'sender-key', signature: 'signature' } });
+    const fault = {
+        faultId: 'forge',
+        carrier: 'rtc',
+        match: { typeId: 'granted' },
+        action: { rewrite: { forgeSender: { principal: 'principal-charlie' } } },
+        remaining: 'until-cleared'
+    };
+    await runtime.injectFault(fault);
+    facade.behavior.getRoomSnapshot.mockReturnValue({ ...room, activeSessions: [] });
+    facade.behavior.getRoomSnapshot.mockClear();
+
+    await runtime.injectFault({ ...fault, remaining: 0 });
+
+    expect(facade.behavior.getRoomSnapshot).not.toHaveBeenCalled();
+    expect(facade.rallar.diagnostics.faults.decideSend('rtc', frame)).toEqual({ kind: 'pass' });
+    await runtime.close();
+});
+
 it('closes and reopens the product socket of the connection and refuses any other product-socket action', async () => {
     const { runtime } = await loadConnectedMessageRuntime('messages.ws');
 

@@ -65,6 +65,8 @@ export interface RtcRelayOverlayFixtureInput {
     readonly topicSubscriptions?: RtcTopicSubscriptionReader;
     /** How long the relay's room snapshot stays readable without a renewal; absent, for ever. */
     readonly groupCacheTtlMs?: number;
+    /** The receive pipeline's one re-entry after an authority refresh; absent, a refusal is final. */
+    readonly roomAuthorityRefresh?: shared.WebRtcRxStreamerService.RoomAuthorityRefresh;
 }
 
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
@@ -178,7 +180,7 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         sessionId: input.selfPeerId,
         inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
-        roomAuthorityRefresh: undefined,
+        roomAuthorityRefresh: input.roomAuthorityRefresh,
         inboundDiagnostics: (event) => diagnostics.push(event)
     });
     onTestFinished(() => service.dispose());

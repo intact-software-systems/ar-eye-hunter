@@ -97,35 +97,32 @@ export function decodeBlackBoxRallarFaultInput(
             return decodeStorageFault(value);
         case 'product-socket':
             return decodeProductSocketFault(value);
-        default: {
-            const rewrite = decodeAlmFaultRewrite(value);
-            return rewrite === undefined ? decodeTransportFault(value) : decodeRewriteFault(value, rewrite);
-        }
+        default:
+            return decodeAlmFaultRewrite(value).fold(
+                (message) => toInputIssue(message),
+                (rewrite) => rewrite === null ? decodeTransportFault(value) : decodeRewriteFault(value, rewrite)
+            );
     }
 }
 
 function decodeRewriteFault(
     value: BlackBoxRallarCommandRecord,
-    decoded: Either<string, AlmFaultRewrite>
+    rewrite: AlmFaultRewrite
 ): Either<BlackBoxRallarInputIssue, BlackBoxRallarRewriteFault> {
     const faultId = decodeBlackBoxCommandString(value.faultId);
     if (faultId === undefined) {
         return toInputIssue('fault.inject.faultId is required.');
     }
-    return decoded.fold(
-        (message) => toInputIssue(message),
-        (rewrite) =>
-            decodeFaultMatch(value.match).flatMap(
-                (issue) => Either.ofLeft(issue),
-                (match) =>
-                    decodeFaultRemaining(value.remaining).mapRight((remaining) => ({
-                        faultId,
-                        carrier: 'rtc',
-                        match,
-                        rewrite,
-                        remaining
-                    }))
-            )
+    return decodeFaultMatch(value.match).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (match) =>
+            decodeFaultRemaining(value.remaining).mapRight((remaining) => ({
+                faultId,
+                carrier: 'rtc',
+                match,
+                rewrite,
+                remaining
+            }))
     );
 }
 

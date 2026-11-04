@@ -933,6 +933,24 @@ describe('Rallar typed message channel', () => {
         expect(received).toEqual(['room-2:room-2-feed']);
     });
 
+    it('a granted subscribe handler never receives another room\'s WS delivery on its topic', async () => {
+        const wsCallbacks = captureWsInboxCallbacks();
+        stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const received: string[] = [];
+        for (const groupId of ['room-1', 'room-2'] as const) {
+            const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition(groupId));
+            await channel.subscribe((_payload, event) => {
+                received.push(`${groupId}:${event.resourceId}`);
+            }).wait();
+        }
+
+        await deliverWsFeed(wsCallbacks, 'room-2-feed', 'room-2');
+
+        expect(received).toEqual(['room-2:room-2-feed']);
+    });
+
     it('a granted subscribe handler sees one delivery when the RTC and WS copies of one publication both arrive', async () => {
         const wsCallbacks = captureWsInboxCallbacks();
         const rtcCallbacks = captureRtcInboxCallbacks();
@@ -993,10 +1011,11 @@ function captureWsInboxCallbacks(): Map<string, WsInboxCallback> {
     return wsCallbacks;
 }
 
-async function deliverWsFeed(wsCallbacks: Map<string, WsInboxCallback>, msgId: string): Promise<void> {
-    const message = newALBroadcastMessage('peer-1', newALRoute('room.feed', 'room-1', msgId), 'room', 'room.feed.v1', {
+/** A granted room publication as the server delivers it over WS: a broadcast to its room. */
+async function deliverWsFeed(wsCallbacks: Map<string, WsInboxCallback>, msgId: string, groupId = 'room-1'): Promise<void> {
+    const message = newALBroadcastMessage('peer-1', newALRoute('room.feed', groupId, msgId), 'room', 'room.feed.v1', {
         text: 'feed'
-    });
+    }, { groupRef: toGrantedFeedDefinition(groupId).roomRef! });
     for (const callback of wsCallbacks.values()) {
         await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
     }

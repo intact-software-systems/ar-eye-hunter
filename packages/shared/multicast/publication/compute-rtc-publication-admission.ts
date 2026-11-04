@@ -7,6 +7,8 @@ import { resolveRoomObservationDenial } from '../rtc-room-snapshot-admission.ts'
 
 export interface RtcPublicationAdmissionInput {
     readonly message: ALMessage;
+    /** Whether the receiving page classifies the frame's topic as granted: only a granted frame may carry a proof. */
+    readonly topicGranted: boolean;
     /** The receiver's readable room snapshot: `null` when absent, or unrenewed for its cache's TTL. */
     readonly snapshot: GroupSnapshot | null;
     /** The receiving session's principal: the one field of the receiver the admission reads. */
@@ -19,6 +21,7 @@ export interface RtcPublicationAdmissionInput {
 }
 
 export type RtcPublicationRefusalCode =
+    | 'proof-on-ungranted-topic'
     | 'no-authority'
     | 'missing-proof'
     | 'unbound-target'
@@ -38,13 +41,17 @@ export interface RtcPublicationAdmitted {
 
 /**
  * A granted publication a relay or receiver judges against its own readable snapshot: it forwards only an admitted
- * frame, and delivers one only to a principal that may subscribe and holds an active token. A frame naming no room
- * is unbound before anything else, since no snapshot of a room can attest it.
+ * frame, and delivers one only to a principal that may subscribe and holds an active token. A proof on a topic the
+ * page does not grant is refused first, since no rule of a granted topic may read it; a frame naming no room is unbound
+ * next, since no snapshot of a room can attest it.
  */
 export function computeRtcPublicationAdmission(
     input: RtcPublicationAdmissionInput
 ): Either<RtcPublicationRefusal, RtcPublicationAdmitted> {
     const { message, snapshot } = input;
+    if (!input.topicGranted) {
+        return toRefusal('proof-on-ungranted-topic');
+    }
     const roomRef = readALTargetGroupRef(message);
     if (roomRef === undefined) {
         return toRefusal('unbound-target');
@@ -60,7 +67,7 @@ export function computeRtcPublicationAdmission(
     if (targets?.mode !== 'multicast' || targets.snapshotVersion === undefined) {
         return toRefusal('unbound-target');
     }
-    if (resolvePublicationKey(snapshot, message.id.senderId)?.keyId !== proof.keyId) {
+    if (resolvePublicationKey(snapshot, message.id.senderId, input.nowEpochMs)?.keyId !== proof.keyId) {
         return toRefusal('unknown-key');
     }
     if (snapshot.group.snapshotVersion < targets.snapshotVersion) {

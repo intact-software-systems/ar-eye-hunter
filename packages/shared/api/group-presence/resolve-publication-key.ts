@@ -1,9 +1,12 @@
 import type { GroupPresencePublicationKey, GroupSnapshot } from '../group-types.ts';
+import { isLiveRoomSession } from './is-live-room-session.ts';
 
-/** The key an active session registered on its presence row; `null` when it registered none or is not active. */
+/** `null` when the session registered no key, or is not live at `nowMs`: a lapsed lease attests no key. */
 export function resolvePublicationKey(
     snapshot: GroupSnapshot,
-    sessionId: string
+    sessionId: string,
+    nowMs: number
 ): GroupPresencePublicationKey | null {
-    return snapshot.activeSessions.find((session) => session.sessionId === sessionId)?.publicationKey ?? null;
+    const session = snapshot.activeSessions.find((candidate) => candidate.sessionId === sessionId);
+    return session !== undefined && isLiveRoomSession(session, nowMs) ? session.publicationKey : null;
 }

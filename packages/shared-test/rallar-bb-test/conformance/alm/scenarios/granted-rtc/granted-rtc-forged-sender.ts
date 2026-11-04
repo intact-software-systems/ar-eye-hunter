@@ -5,14 +5,15 @@ import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscri
 import { toCueListenCommands, toCueWait } from '../topic-subscription/topic-subscription-publications.ts';
 import {
     GRANTED_RTC_CARRIERS,
+    toInboundRefusalWait,
     toRefusedReceiverCommands,
     toRewritingPublisherCommands
 } from './granted-rtc-commands.ts';
 
 /**
  * The sender's page names each frame it signed as recipient-b's: that member's live session and its registered key,
- * so the forged identity is neither the sender nor the receiver. The receiver finds the key and refuses the frame for
- * its signature, `unauthorized` and never delivered; recipient-b only stays live meanwhile.
+ * so the forged identity is neither the sender nor the receiver. The receiver and recipient-b each find the key and
+ * drop the frame for its signature, `unauthorized`; the receiver never delivers it.
  */
 export const grantedRtcForgedSender: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-forged-sender',
@@ -28,5 +29,9 @@ export const grantedRtcForgedSender: AlmConformanceScenarioDefinition = {
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'
             ? toRefusedReceiverCommands(recipient, 'invalid-signature')
-            : [...toCueListenCommands(recipient), toCueWait(recipient, 'refused')]
+            : [
+                ...toCueListenCommands(recipient),
+                toInboundRefusalWait(recipient, 'invalid-signature'),
+                toCueWait(recipient, 'refused')
+            ]
 };

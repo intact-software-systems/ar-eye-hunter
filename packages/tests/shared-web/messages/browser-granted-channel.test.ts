@@ -94,12 +94,16 @@ describe('a granted typed channel', () => {
         }));
     });
 
-    it('onRtc on a granted channel throws the unsupported issue', () => {
+    it('onRtc on a granted channel throws the unsupported issue: its RTC copies reach subscribe(handler) only', () => {
         const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
 
         expect(() => channel.onRtc(() => {})).toThrow(expect.objectContaining({
             name: 'RallarValidationError',
-            issues: [expect.objectContaining({ path: '$.access', code: 'unsupported' })]
+            issues: [expect.objectContaining({
+                path: '$.access',
+                code: 'unsupported',
+                message: 'A granted channel\'s RTC copies reach subscribe(handler) only; onRtc is not offered.'
+            })]
         }));
         expect(() => channel.onWs(() => {})).not.toThrow();
     });

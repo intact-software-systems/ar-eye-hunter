@@ -2,11 +2,15 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { toVerdictCommands, type AlmConformanceVerdictFact } from '../../alm-conformance-message-commands.ts';
+import {
+    RTC_REFUSAL_FACTS,
+    toVerdictCommands,
+    type AlmConformanceVerdictFact
+} from '../../alm-conformance-message-commands.ts';
 import { toAudienceSendCommand, type AlmConformanceSendClaim } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
-import { RTC_REFUSAL_FACTS, WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
+import { WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
 
 /** Only the WS server arbitrates a claim; a strategy that allows WS routes an exclusive send there at once. */
 export const CLAIM_WS_ROUTE_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];

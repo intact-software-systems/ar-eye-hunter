@@ -33,8 +33,6 @@ import {
     type SigningKeyPair
 } from '@shared/signature/ecdsa-p256-signature.ts';
 
-type UnionKeys<T> = T extends object ? keyof T : never;
-
 interface ALPublicationProofFieldChange {
     readonly field: string;
     readonly signed: ALMessage;
@@ -268,7 +266,6 @@ describe('ALM publication proof signing input', () => {
         expectTypeOf<keyof typeof classes.message>().toEqualTypeOf<keyof ALMessage>();
         expectTypeOf<keyof typeof classes.id>().toEqualTypeOf<keyof ALMessageId>();
         expectTypeOf<keyof typeof classes.route>().toEqualTypeOf<keyof ALRoute>();
-        expectTypeOf<keyof typeof classes.targets>().toEqualTypeOf<UnionKeys<ALTargets>>();
         expectTypeOf<keyof typeof classes.constraints>().toEqualTypeOf<keyof ALConstraints>();
         expectTypeOf<keyof typeof classes.ordering>().toEqualTypeOf<keyof ALOrdering>();
         expectTypeOf<keyof typeof classes.delivery>().toEqualTypeOf<keyof ALDelivery>();

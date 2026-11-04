@@ -60,7 +60,7 @@ export type AlmConformanceScenarioId =
     | 'flush-on-hide'
     | 'granted-rtc-delivered'
     | 'granted-rtc-forged-sender'
-    | 'granted-rtc-lane-refused'
+    | 'granted-rtc-publish-refused'
     | 'granted-rtc-missing-proof'
     | 'granted-rtc-receipted-unsupported'
     | 'leader-confirms'

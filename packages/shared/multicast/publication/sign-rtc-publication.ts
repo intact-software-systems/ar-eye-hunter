@@ -11,6 +11,7 @@ export interface SignRtcPublicationInput {
     /** The origin's cached snapshot of the message's room; `null` when it holds none. */
     readonly snapshot: GroupSnapshot | null;
     readonly selfSessionId: string;
+    readonly nowEpochMs: number;
     /** The admitted message: frozen to its room audience and normalized, so its signed fields never change again. */
     readonly message: ALMessage;
 }
@@ -31,7 +32,7 @@ export async function signRtcPublication(
     if (snapshot === null) {
         return toSigningFailure('no-authority', 'The origin holds no snapshot of the room to attest its key.');
     }
-    if (resolvePublicationKey(snapshot, input.selfSessionId)?.keyId !== crypto.keyPair.keyId) {
+    if (resolvePublicationKey(snapshot, input.selfSessionId, input.nowEpochMs)?.keyId !== crypto.keyPair.keyId) {
         return toSigningFailure('key-not-registered', 'The room snapshot does not yet name this page\'s key.');
     }
     if (isRtcUnfrozenRoomMessage(message)) {

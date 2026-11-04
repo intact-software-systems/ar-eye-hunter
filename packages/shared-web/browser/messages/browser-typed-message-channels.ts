@@ -139,12 +139,16 @@ export class BrowserTypedMessageChannels {
             return throwUnsupportedSubscribe();
         }
         const token = this.input.topicSubscriptions.hold({ roomRef, topicId });
-        const removeWsHandler = channel.onWs(handler);
+        const removeWsHandler = channel.onWs(async (payload, message) => {
+            if (isRoomFrame(message.raw, roomRef)) {
+                await handler(payload, message);
+            }
+        });
         // Not `onRtc`, which a granted channel refuses: only its own room's admitted granted multicast reaches here.
         const removeRtcHandler = this.input.rtc.onMessage<T>(
             { topicId, typeId: definition.typeId },
             async (message) => {
-                if (isRoomMulticast(message.raw, roomRef)) {
+                if (message.raw.targets?.mode === 'multicast' && isRoomFrame(message.raw, roomRef)) {
                     await handler(message.payload, message);
                 }
             }
@@ -161,11 +165,10 @@ export class BrowserTypedMessageChannels {
     }
 }
 
-/** A granted room frame is a multicast to that room: a unicast or another room's frame is never this channel's. */
-function isRoomMulticast(message: ALMessage, roomRef: GroupRef): boolean {
+/** A granted room channel's frame targets its room: another room's frame, or one naming no room, is never its. */
+function isRoomFrame(message: ALMessage, roomRef: GroupRef): boolean {
     const targetRoomRef = readALTargetGroupRef(message);
-    return message.targets?.mode === 'multicast' && targetRoomRef !== undefined &&
-        isSameGroupRef(targetRoomRef, roomRef);
+    return targetRoomRef !== undefined && isSameGroupRef(targetRoomRef, roomRef);
 }
 
 /** The send a channel hands its sender: a live channel's is refused here, where its policy is known, before a handle opens. */
@@ -186,13 +189,13 @@ function throwUnsupportedSubscribe(): never {
     }]);
 }
 
-/** A granted channel listens on WS only; it sends on RTC only the room multicast its origin signs. */
+/** A granted channel's RTC copies reach its `subscribe(handler)` only, which judges them per room and token. */
 function throwIfGrantedRtc(policy: BrowserTypedChannelPolicy): void {
     if (policy.access === 'granted') {
         throwRallarValidation([{
             path: '$.access',
             code: 'unsupported',
-            message: 'A granted channel listens on WS only.'
+            message: 'A granted channel\'s RTC copies reach subscribe(handler) only; onRtc is not offered.'
         }]);
     }
 }

@@ -76,6 +76,17 @@ describe('computeRtcPublicationAdmission', () => {
         expect(admission.left).toEqual({ code: 'unbound-target' });
     });
 
+    it('refuses a frame on a topic the page does not grant before anything else: only a granted frame may carry a proof', () => {
+        const admission = computeRtcPublicationAdmission({
+            ...toAdmissionInput(),
+            topicGranted: false,
+            snapshot: null,
+            message: { ...createSignedLookingMulticast(), targets: { mode: 'broadcast', scope: 'world' } }
+        });
+
+        expect(admission.left).toEqual({ code: 'proof-on-ungranted-topic' });
+    });
+
     it('fails closed on a null snapshot before it reads anything else of the frame', () => {
         const admission = computeRtcPublicationAdmission({
             ...toAdmissionInput(),
@@ -171,6 +182,7 @@ function createSignedLookingMulticast(input: SignedLookingMulticastInput = {}): 
 function toAdmissionInput(): RtcPublicationAdmissionInput {
     return {
         message: createSignedLookingMulticast(),
+        topicGranted: true,
         snapshot: createPublicationRoomSnapshot(ROOM),
         selfPrincipalId: 'b',
         signatureValid: true,
