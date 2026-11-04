@@ -28,10 +28,7 @@ export function createDefaultPublicationKeyStore(): PublicationKeyStore {
     return {
         read: (sessionId) =>
             runPublicationKeyStoreOperation(async () =>
-                decodeStoredPublicationKeyPair(
-                    await readStoredPublicationKeyPair(await connection.open(), sessionId),
-                    sessionId
-                )
+                await readStoredPublicationKeyPair(await connection.open(), sessionId)
             ),
         write: (sessionId, keyPair) =>
             runPublicationKeyStoreOperation(async () => {
@@ -58,11 +55,17 @@ async function runPublicationKeyStoreOperation<Result>(
     }
 }
 
-async function readStoredPublicationKeyPair(db: IDBDatabase, sessionId: string): Promise<unknown> {
+async function readStoredPublicationKeyPair(
+    db: IDBDatabase,
+    sessionId: string
+): Promise<Either<PublicationKeyStoreFailure, SigningKeyPair | null>> {
     const transaction = db.transaction(PUBLICATION_KEY_STORE_NAME, 'readonly');
-    return await readIndexedDbTransaction(
-        transaction,
-        async () => await readIndexedDbRequest(transaction.objectStore(PUBLICATION_KEY_STORE_NAME).get(sessionId))
+    return decodeStoredPublicationKeyPair(
+        await readIndexedDbTransaction(
+            transaction,
+            async () => await readIndexedDbRequest(transaction.objectStore(PUBLICATION_KEY_STORE_NAME).get(sessionId))
+        ),
+        sessionId
     );
 }
 

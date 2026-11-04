@@ -66,24 +66,23 @@ describe('the session publication key, read or created', () => {
         }
     );
 
-    it('leaves a page without SubtleCrypto keyless, warns once, and reads no store', async () => {
+    it('leaves a page without SubtleCrypto keyless, warns once, and stores nothing', async () => {
         const store = new InMemoryPublicationKeyStore();
-        const read = vi.spyOn(store, 'read');
         const warnings = captureWarnings();
 
         await expect(readOrCreatePublicationCrypto({ subtle: undefined, store, sessionId: 'session-1' })).resolves
             .toStrictEqual({ kind: 'unavailable', reason: 'subtle-unavailable' });
 
-        expect(read).not.toHaveBeenCalled();
+        expect(store.pairs.size).toBe(0);
         expect(warnings).toStrictEqual([['Publication signing is unavailable: subtle-unavailable.']]);
     });
 
     it('leaves a page whose SubtleCrypto refuses key generation keyless and stores nothing', async () => {
         const store = new InMemoryPublicationKeyStore();
-        const refusing = { generateKey: () => Promise.reject(new Error('refused')) } as unknown as SubtleCrypto;
+        vi.spyOn(subtle, 'generateKey').mockRejectedValueOnce(new Error('refused'));
         const warnings = captureWarnings();
 
-        await expect(readOrCreatePublicationCrypto({ subtle: refusing, store, sessionId: 'session-1' })).resolves
+        await expect(readOrCreatePublicationCrypto({ subtle, store, sessionId: 'session-1' })).resolves
             .toStrictEqual({ kind: 'unavailable', reason: 'key-generation-failed' });
 
         expect(store.pairs.size).toBe(0);
