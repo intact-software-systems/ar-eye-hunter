@@ -147,33 +147,46 @@ describe('the RTC origin of a granted publication', () => {
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b'] });
     });
 
-    it.each<[string, Readonly<Record<string, GroupPublicationTopicPermissions>>, readonly string[] | undefined]>([
-        ['holds subscribe, signed and frozen to the leader alone', { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }, ['c']],
-        ['holds no subscribe, refused before signing as unsupported', { b: SUBSCRIBE_ONLY }, undefined]
-    ])('carries a granted group-leader leg whose leader %s', async (_name, grants, recipientPeerIds) => {
-        const crypto = await createAvailablePublicationCryptoFixture();
-        const fixture = createGrantedFixture(crypto, toOriginDirectedSnapshot(toKeyedSnapshot(crypto, grants), 'c', Date.now()));
-        const message = createGrantedMulticast('group-leader');
-
-        const result = await enqueueLegAndDrain(fixture, message, 'hand-over');
-
-        if (recipientPeerIds === undefined) {
-            expect(result).toMatchObject({
-                verdict: {
-                    kind: 'refused',
-                    reason: 'unsupported',
-                    detail: 'no-leader: the room has no active leader inside the audience the send names'
-                },
-                message,
-                entries: []
-            });
-            expect(result.message.proof).toBeUndefined();
-            expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
-            return;
+    it.each<{
+        name: string;
+        director: string | undefined;
+        grants: Readonly<Record<string, GroupPublicationTopicPermissions>>;
+        verdict: Partial<ALOutboundEnqueueResult['verdict']>;
+    }>([
+        {
+            name: 'a leader that holds subscribe, signed and frozen to the leader alone',
+            director: 'c',
+            grants: { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY },
+            verdict: { kind: 'admitted' }
+        },
+        {
+            name: 'a leader that holds no subscribe, refused before signing as unsupported',
+            director: 'c',
+            grants: { b: SUBSCRIBE_ONLY },
+            verdict: { kind: 'refused', reason: 'unsupported', detail: RTC_GRANTED_PUBLICATION_REFUSALS.leaderNotSubscribed }
+        },
+        {
+            name: 'no leader at all, refused no-leader as any room send is',
+            director: undefined,
+            grants: { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY },
+            verdict: { kind: 'refused', reason: 'no-leader' }
         }
-        expect(result.verdict.kind, result.reason).toBe('admitted');
-        expect(result.message.targets).toEqual(toOriginFrozenTargets(recipientPeerIds, 3));
-        expect((await verifyProof(crypto, result.message)).left).toBeUndefined();
+    ])('carries a granted group-leader leg to $name', async ({ director, grants, verdict }) => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const keyed = toKeyedSnapshot(crypto, grants);
+        const fixture = createGrantedFixture(crypto, director === undefined ? keyed : toOriginDirectedSnapshot(keyed, director, Date.now()));
+
+        const result = await enqueueLegAndDrain(fixture, createGrantedMulticast('group-leader'), 'hand-over');
+
+        expect(result.verdict, result.reason).toMatchObject(verdict);
+        if (verdict.kind === 'admitted') {
+            expect(result.message.targets).toEqual(toOriginFrozenTargets(['c'], 3));
+            expect((await verifyProof(crypto, result.message)).left).toBeUndefined();
+        }
+        else {
+            expect(result.entries).toEqual([]);
+            expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+        }
     });
 
     it.each<[string, Partial<Extract<ALTargets, { mode: 'broadcast'; }>>]>([

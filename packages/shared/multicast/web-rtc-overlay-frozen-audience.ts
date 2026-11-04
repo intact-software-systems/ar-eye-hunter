@@ -169,9 +169,9 @@ export function computeRtcFrozenAudienceRefusal(
 
 /**
  * A `group-leader` room send frozen to no session has no leader to confirm it: the room appoints no director present
- * at admission, the sender is the director, the audience its sender names leaves the director out (D165), or the
- * director holds no `subscribe` on the granted topic. It is refused, never handed to another carrier, which reads the
- * same room; the RTC carrier refuses a granted one before admission instead, as unsupported.
+ * at admission, the sender is the director, or the audience its sender names leaves the director out (D165). It is
+ * refused, never handed to another carrier, which reads the same room. A granted send whose director holds no
+ * `subscribe` never reaches it: its carrier refuses it before freezing, as unsupported.
  */
 export function computeRtcLeaderRefusal(
     msg: ALMessage,
@@ -189,7 +189,11 @@ export function computeRtcLeaderRefusal(
         });
 }
 
+/** A refusal names the targets its sender gave; a signed message keeps the audience its origin signed. */
 function toUnfrozenRoomMessage(msg: ALMessage, original: ALMessage): ALMessage {
+    if (msg.proof !== undefined) {
+        return msg;
+    }
     return original.targets?.mode === 'broadcast'
         ? { ...msg, targets: original.targets }
         : toUnfrozenMulticastMessage(msg);

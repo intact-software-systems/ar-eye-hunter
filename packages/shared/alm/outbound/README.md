@@ -556,9 +556,10 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   effective `subscribe` on its topic in the origin's cached snapshot
   ([`computeGrantedSubscribeHolders`](../../multicast/publication/compute-granted-subscribe-holders.ts), passed as
   `subscribeHolders`; `null` for any other send), before the origin signs it, so the signed targets and the receipt
-  row's expected set are the narrowed audience, receipted or not. A granted `group-leader` send that freezes to no
-  session (no leader, or a leader that holds no `subscribe`) is refused before admission as `refused/unsupported`,
-  which a fallback carrier takes over.
+  row's expected set are the narrowed audience, receipted or not. A granted `group-leader` send whose room's director
+  holds no `subscribe` is refused before freezing as `refused/unsupported`, which a fallback carrier takes over
+  ([`resolveRtcGrantedLeaderRefusal`](../../multicast/publication/compute-rtc-granted-publication-refusal.ts)); a
+  room without a director, or one the sender directs, keeps `refused/no-leader` as any room send does.
 - A `group-leader` room send narrows that audience to the room's leader (D164, D165, D166). The narrowing
   comes from the message, its `delivery.ack` on a room-bounded target, never from a side input, and its
   `sessionId` is resolved at admission from the room snapshot the carrier holds by

@@ -14,10 +14,10 @@ import type { PublicationCrypto } from '../../signature/publication-crypto.ts';
 import { readRtcGroupSnapshotByRef } from '../read-rtc-outbound-observation.ts';
 import { toRtcPublicationHandlingPlan, type RtcRoomSnapshotAdmission } from '../rtc-room-snapshot-admission.ts';
 import { toRtcOutboundMessage } from '../to-rtc-outbound-message.ts';
-import { computeRtcLeaderRefusal } from '../web-rtc-overlay-frozen-audience.ts';
 import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';
 import {
     computeRtcGrantedPublicationRefusal,
+    resolveRtcGrantedLeaderRefusal,
     resolveRtcGrantedPublicationShapeRefusal
 } from './compute-rtc-granted-publication-refusal.ts';
 import { computeRtcPublicationAdmission } from './compute-rtc-publication-admission.ts';
@@ -80,8 +80,8 @@ export class RtcGrantedPublicationCarrier {
     /**
      * A granted leg is refused for the shape its sender gave before any freezing or signing work, else frozen to the
      * live sessions whose principal holds `subscribe` on its topic and signed as `toAdmittedMessage` carries it: the
-     * signed audience is already the narrowed one. A `group-leader` leg whose leader is outside that audience has no
-     * leader to confirm it. Left: the refusal's detail, which a fallback carrier takes over.
+     * signed audience is already the narrowed one. A `group-leader` leg whose leader holds no `subscribe` is refused
+     * before freezing. Left: the refusal's detail, which a fallback carrier takes over.
      */
     async signLeg(
         msg: ALMessage,
@@ -97,11 +97,16 @@ export class RtcGrantedPublicationCarrier {
         const subscribeHolders = snapshot === null
             ? new Set<string>()
             : computeGrantedSubscribeHolders(snapshot, msg.route.topicId, nowEpochMs);
-        const admitted = toAdmittedMessage(msg, subscribeHolders);
-        const leaderRefusal = computeRtcLeaderRefusal(admitted, msg).left?.dropReason;
+        const leaderRefusal = resolveRtcGrantedLeaderRefusal({
+            msg,
+            snapshot,
+            selfSessionId: this.#dependencies.selfSessionId,
+            subscribeHolders
+        });
         if (leaderRefusal !== undefined) {
             return Either.ofLeft(leaderRefusal);
         }
+        const admitted = toAdmittedMessage(msg, subscribeHolders);
         const signed = await signRtcPublication({
             crypto: this.#publicationCrypto,
             snapshot,
