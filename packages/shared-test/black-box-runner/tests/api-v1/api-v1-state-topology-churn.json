@@ -1125,7 +1125,7 @@
     },
     {
       "name": "readSharedGroupThroughTertiary",
-      "type": "http",
+      "type": "http.poll-until",
       "connection": "apiTertiary",
       "request": {
         "method": "GET",
@@ -1134,12 +1134,11 @@
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
-        "retry": {
-          "maxAttempts": 6,
-          "backoffMs": 250,
-          "backoffMultiplier": 2,
-          "onStatus": [409],
-          "onException": false
+        "poll": {
+          "maxAttempts": 8,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
         },
         "outputs": {
           "sharedFinalGroupRevision": "body.causalRevision.groupRevision",
@@ -1159,7 +1158,7 @@
     },
     {
       "name": "readChurnGroupThroughPrimary",
-      "type": "http",
+      "type": "http.poll-until",
       "connection": "apiPrimary",
       "request": {
         "method": "GET",
@@ -1168,12 +1167,11 @@
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
-        "retry": {
-          "maxAttempts": 6,
-          "backoffMs": 250,
-          "backoffMultiplier": 2,
-          "onStatus": [409],
-          "onException": false
+        "poll": {
+          "maxAttempts": 8,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
         },
         "outputs": {
           "churnFinalGroupRevision": "body.causalRevision.groupRevision",

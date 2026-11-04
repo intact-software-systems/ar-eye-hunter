@@ -397,17 +397,17 @@ describe('API-v1 three-server recipe semantics', () => {
             (step) => step.name === 'readChurnGroupThroughPrimary'
         );
         expect(churnRead).toMatchObject({
+            type: 'http.poll-until',
             connection: 'apiPrimary',
             request: {
                 path: expect.stringContaining(
                     'minGroupRevision={churnReadFloor.groupRevision}&minPresenceRevision={churnReadFloor.presenceRevision}'
                 ),
-                retry: {
-                    maxAttempts: 6,
-                    backoffMs: 250,
-                    backoffMultiplier: 2,
-                    onStatus: [409],
-                    onException: false
+                poll: {
+                    maxAttempts: 8,
+                    maxDurationMs: 15000,
+                    backoffMs: 100,
+                    backoffMultiplier: 2
                 }
             },
             expect: {
@@ -493,17 +493,17 @@ describe('API-v1 three-server recipe semantics', () => {
             (step) => step.name === 'readSharedGroupThroughTertiary'
         );
         expect(sharedRead).toMatchObject({
+            type: 'http.poll-until',
             connection: 'apiTertiary',
             request: {
                 path: expect.stringContaining(
                     'minGroupRevision={sharedReadFloor.groupRevision}&minPresenceRevision={sharedReadFloor.presenceRevision}'
                 ),
-                retry: {
-                    maxAttempts: 6,
-                    backoffMs: 250,
-                    backoffMultiplier: 2,
-                    onStatus: [409],
-                    onException: false
+                poll: {
+                    maxAttempts: 8,
+                    maxDurationMs: 15000,
+                    backoffMs: 100,
+                    backoffMultiplier: 2
                 }
             },
             expect: {
