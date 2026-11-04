@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 import { RtcGrantedPublicationCarrier } from '@shared/multicast/publication/rtc-granted-publication-carrier.ts';
+import { toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from '../rtc-granted-topic-reader-fixtures.ts';
-import { createFrozenGrantedMulticast, PUBLICATION_TOPIC_ID } from '../rtc-publication-proof-fixtures.ts';
+import {
+    createFrozenGrantedMulticast,
+    createPublicationRoomSnapshot,
+    PUBLICATION_TOPIC_ID
+} from '../rtc-publication-proof-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from '../rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../rtc-topic-subscription-reader-fixtures.ts';
 
@@ -49,6 +55,33 @@ describe('RtcGrantedPublicationCarrier', () => {
 
         expect(carrier.toForwardedMessage(granted, effective)).toBe(granted);
         expect(carrier.toForwardedMessage(MEMBERS, effective)).toEqual(toALOutboundMessage(MEMBERS, effective));
+    });
+
+    it('keeps the room\'s not-yet-in-sync plan for an ungranted proof while the room it names is still pending', () => {
+        const ungrantedProof = { ...MEMBERS, proof: PROOF };
+        const plan = planALMessageHandling(ungrantedProof, {
+            nowMs: Date.now(),
+            selfPeerId: 'b',
+            fromPeerId: 'a',
+            connectedPeerIds: ['a'],
+            groupMemberPeerIds: ['a', 'b'],
+            overlayNeighborPeerIds: []
+        });
+        const roomPlan = toRtcRoomSnapshotHandlingPlan(plan, { kind: 'pending', reason: 'Awaiting room session authority' }, 'a');
+        const snapshot = createPublicationRoomSnapshot({ sessionIds: ['a', 'b'], snapshotVersion: 3, keys: {}, grants: {} });
+
+        const planned = createKeylessCarrier().planIncomingPublication({
+            msg: ungrantedProof,
+            fromPeerId: 'a',
+            snapshot,
+            admission: { kind: 'pending', reason: 'Awaiting room session authority' },
+            plan,
+            roomPlan,
+            nowMs: Date.now()
+        });
+
+        expect(planned).toBe(roomPlan);
+        expect(planned).toMatchObject({ dropReasonCode: 'not-yet-in-sync' });
     });
 });
 

@@ -161,6 +161,40 @@ describe('a receipted granted publication at a frozen recipient that is not subs
         expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: ['p', 'l'], outside: ['q'], complete: true });
     });
 
+    it('records a nested not-subscribed relay outside at the origin when its NACK is lost, from its completion ACK alone', async () => {
+        const chain = await createRelayChain(['a', 'p', 'q', 'l'], {
+            a: PUBLISH_AND_SUBSCRIBE,
+            p: SUBSCRIBE_ONLY,
+            q: SUBSCRIBE_ONLY,
+            l: SUBSCRIBE_ONLY
+        });
+        const p = createChainHop(chain, { selfPeerId: 'p', neighbourPeerIds: ['a', 'q'], topicSubscriptions: ACTIVE_TOKEN });
+        const q = createChainHop(chain, { selfPeerId: 'q', neighbourPeerIds: ['p', 'l'] });
+        const l = createChainHop(chain, { selfPeerId: 'l', neighbourPeerIds: ['q'], topicSubscriptions: ACTIVE_TOKEN });
+        const signed = await signReceiptedPublication(chain, {
+            resourceId: 'feed-1',
+            recipientPeerIds: ['p', 'q', 'l'],
+            nextHopPeerId: 'p'
+        });
+        const origin = await createOriginReceipt(signed, { expectedPeerIds: ['p', 'q', 'l'], nextHopPeerIds: ['p'] });
+
+        await p.receive(signed, 'a');
+        await q.receive((await p.readSent('q'))[0]!, 'p');
+        await l.receive((await q.readSent('l'))[0]!, 'q');
+        await deliverEach(await l.readSent('q'), q, 'l');
+        // `q`'s own NACK is lost on its way to `p`; its ACKs, its hop's completion included, arrive.
+        const qAcks = (await q.readSent('p')).filter((control) => decodeALControlMessage(control).right?.type === 'ack');
+        await deliverEach(qAcks, p, 'q');
+        await origin.accept(await p.readSent('a'));
+
+        expect(l.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
+        expect(q.delivered).toEqual([]);
+        expect(toControlTuples(await p.readSentControls('a')).filter(([type]) => type === 'nack')).toEqual([
+            ['nack', 'q', 'not-subscribed']
+        ]);
+        expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: ['p', 'l'], outside: ['q'], complete: true });
+    });
+
     it('answers not-subscribed for a subscribe holder whose own token is still pending, delivering nothing (PL12)', async () => {
         const chain = await createRelayChain(['a', 'r', 'c'], { a: PUBLISH_AND_SUBSCRIBE, r: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY });
         const relay = createChainHop(chain, { selfPeerId: 'r', neighbourPeerIds: ['a', 'c'], topicSubscriptions: ACTIVE_TOKEN });
