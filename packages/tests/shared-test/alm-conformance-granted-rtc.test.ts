@@ -115,7 +115,7 @@ function toRewriteFaults(recipe: RallarBlackBoxTestRecipe): readonly RallarBlack
     );
 }
 
-function toOutcomeWaits(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+function toOutcomeWaits(recipe: RallarBlackBoxTestRecipe | undefined): readonly string[] {
     return toFlatCommands(recipe).flatMap((command) =>
         command.kind === 'wait' && command.match.topic === INBOUND_DIAGNOSTICS_TOPIC && command.match.contains !== undefined
             ? [command.match.contains]
