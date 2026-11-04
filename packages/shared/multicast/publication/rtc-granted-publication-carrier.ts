@@ -109,14 +109,15 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * A proof on an ungranted topic is judged by the publication admission whatever its room: held while the page's
-     * snapshot is behind the frame's, refused once it is not. A granted frame without a readable snapshot fails closed,
-     * and one its room refused keeps the room's refusal. Any other frame keeps its room plan.
+     * A frame its room refused keeps the room's refusal, granted or not. A granted frame, and a proof on an ungranted
+     * topic, is judged by the publication admission on a plan its room authorized, or with no readable snapshot (a
+     * granted frame then fails closed; an ungranted proof is held while the page's snapshot is behind the frame's and
+     * refused once it is not). Any other frame keeps its room plan.
      */
     planIncomingPublication(input: RtcGrantedPublicationCarrier.IncomingPlanInput): ALMessageHandlingPlan {
         const { msg, snapshot, admission } = input;
         const topicGranted = this.isGrantedPublication(msg);
-        if (topicGranted ? snapshot !== undefined && admission.kind !== 'authorized' : msg.proof === undefined) {
+        if ((!topicGranted && msg.proof === undefined) || (snapshot !== undefined && admission.kind !== 'authorized')) {
             return input.roomPlan;
         }
         const groupRef = readALTargetGroupRef(msg);

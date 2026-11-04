@@ -1,11 +1,11 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import { toTopicGrantCommand } from '../topic-subscription/topic-subscription-commands.ts';
 import { GRANTED_RTC_CARRIERS, toGrantedRefusalPollCommand, UNRECEIPTED_DELIVERY } from './granted-rtc-commands.ts';
 

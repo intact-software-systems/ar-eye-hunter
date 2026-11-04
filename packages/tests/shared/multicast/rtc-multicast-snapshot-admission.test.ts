@@ -239,6 +239,26 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
     });
 
+    it('keeps its room\'s unauthorized refusal of a proof frame frozen at a newer snapshot: it holds nothing for a refresh', () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const snapshot = createSnapshot();
+        // The room is closed by the outbound clock (1 000): its admission refuses every frame unauthorized.
+        groupCache.accept('room-1', { ...snapshot, group: { ...snapshot.group, expiresAtEpochMs: 999 } });
+        const manager = createDefaultSnapshotAdmissionManager(groupCache);
+        const message = createRoomMessage('multicast');
+        const proven: ALMessage = {
+            ...message,
+            targets: { mode: 'multicast', groupRef: roomRef, recipientPeerIds: ['peer-1', 'self'], snapshotVersion: 5 },
+            proof: { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
+        };
+
+        const plan = manager.planIncomingMessage(proven, { kind: 'rtc-peer', peerId: 'peer-1' });
+
+        expect(plan.dropReason).toBe('unauthorized');
+        expect(plan.nack.enabled).toBe(false);
+        expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
+    });
+
     it('requires authority for unversioned and originating room plans', () => {
         const manager = createDefaultSnapshotAdmissionManager(new LatestRepository());
         const versioned = createRoomMessage('multicast');

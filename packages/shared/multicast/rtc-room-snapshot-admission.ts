@@ -107,9 +107,10 @@ export function toRtcRoomSnapshotHandlingPlan(
 }
 
 /**
- * A granted publication's admission on a plan its room admission already authorized, or on the plan of a frame with
- * no readable snapshot. A key or authority the receiver has not yet observed is not yet in sync, which the receiver's
- * one-shot room refresh answers; every other refusal is unauthorized, with no NACK and no forward.
+ * The publication admission of a granted frame, or of a proof frame on an ungranted topic, on a plan its room admission
+ * authorized or on the plan of a frame with no readable snapshot; a frame its room refused never reaches it. A key or
+ * authority the receiver has not yet observed is not yet in sync, which the receiver's one-shot room refresh answers;
+ * every other refusal is unauthorized, with no NACK and no forward.
  */
 export function toRtcPublicationHandlingPlan(
     plan: ALMessageHandlingPlan,

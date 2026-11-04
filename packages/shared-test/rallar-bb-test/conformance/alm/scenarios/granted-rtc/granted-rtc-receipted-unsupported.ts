@@ -1,5 +1,5 @@
-import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import { TOPIC_SUBSCRIPTION_SELECTOR, toTopicGrantCommand } from '../topic-subscription/topic-subscription-commands.ts';
 import { GRANTED_RTC_CARRIERS, RECEIPTED_DELIVERY, toGrantedRefusalPollCommand } from './granted-rtc-commands.ts';
 
