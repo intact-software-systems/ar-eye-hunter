@@ -146,7 +146,7 @@ export class RtcGrantedPublicationCarrier {
     ): RtcRepairPlan {
         const isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission = (peerId, receiptMode) =>
             this.isRepairTargetAdmitted({ msg, targetPeerId: peerId, receiptMode });
-        return this.authorizeOwnRepair(msg).fold(
+        return this.readOwnRepairRefusal(msg).fold(
             (refusal) => refusal,
             () => toRequesterAdmittedPlan(plan(isTargetAdmitted), request.requestedByPeerId, isTargetAdmitted)
         );
@@ -157,7 +157,9 @@ export class RtcGrantedPublicationCarrier {
      * Any other message, and a snapshot that attests nothing, passes to the room-authority planning. Left: the drop the
      * re-send is planned as, which ends its handle as the dispatch's own refusal does.
      */
-    private authorizeOwnRepair(msg: ALMessage): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
+    private readOwnRepairRefusal(
+        msg: ALMessage
+    ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
         const { selfSessionId, selfPrincipalId, clock } = this.#dependencies;
         if (msg.id.senderId !== selfSessionId || !this.isGrantedPublication(msg)) {
             return Either.ofRight(msg);
@@ -258,7 +260,7 @@ export class RtcGrantedPublicationCarrier {
         }
         return computeRtcGrantedPublicationRefusal(carried, input.original).flatMap(
             (refusal) => Either.ofLeft(refusal),
-            (signed) => input.storedSend ? this.authorizeOwnRepair(signed) : Either.ofRight(signed)
+            (signed) => input.storedSend ? this.readOwnRepairRefusal(signed) : Either.ofRight(signed)
         );
     }
 }
