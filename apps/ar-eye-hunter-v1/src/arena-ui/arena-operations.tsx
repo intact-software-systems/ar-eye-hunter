@@ -71,8 +71,7 @@ export function ArenaOperations(props: ArenaOperationsProps) {
 function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     const [scheduledSessions] = useState(() =>
         RallarScheduledSessions.createBrowser(rallar, arenaRoomEntry, {
-            scope: ARENA_ROOM_SCOPE,
-            refreshIntervalMs: 5_000
+            scope: ARENA_ROOM_SCOPE
         })
     );
     const [party] = useState(() => RallarParty.createBrowser(rallar, { scope: ARENA_ROOM_SCOPE }));

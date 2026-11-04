@@ -89,8 +89,7 @@ export function RelicSidePanel({ game, turn, preferences, playback }: RelicSideP
 function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game' | 'preferences'>) {
     const [scheduledSessions] = useState(() =>
         RallarScheduledSessions.createBrowser(rallar, game.roomEntry, {
-            scope: RELIC_ROOM_SCOPE,
-            refreshIntervalMs: 5_000
+            scope: RELIC_ROOM_SCOPE
         })
     );
     const [party] = useState(() => RallarParty.createBrowser(rallar, { scope: RELIC_ROOM_SCOPE }));

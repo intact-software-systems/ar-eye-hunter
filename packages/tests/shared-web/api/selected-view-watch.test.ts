@@ -1,0 +1,166 @@
+import { SelectedViewWatch } from '@shared-web/browser/api/selected-view-watch.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { SessionPreviewWatchResult } from '@shared/api/views/view-watch.ts';
+import { describe, expect, it, onTestFinished, vi, type Mock } from 'vitest';
+
+const session: AuthSession = {
+    clientId: 'alice',
+    sessionId: 'alice-session',
+    username: 'alice',
+    accessToken: 'test',
+    expiresAtEpochMs: 9999999999999
+};
+const input: SelectedViewWatch.Selection = {
+    session,
+    groupId: 'friday',
+    connectionGenerationId: 'connection-1',
+    signal: new AbortController().signal
+};
+
+function applied(call: SelectedViewWatch.ChangeInput): SessionPreviewWatchResult {
+    return {
+        status: 'applied',
+        requestId: call.requestId,
+        registrationId: call.request.groupId === null ? null : call.requestId,
+        groupId: call.request.groupId
+    };
+}
+
+interface WatchFixture {
+    readonly owner: SelectedViewWatch;
+    readonly change: Mock<SelectedViewWatch.Dependencies['change']>;
+}
+
+function fixture(): WatchFixture {
+    const change = vi.fn<SelectedViewWatch.Dependencies['change']>((call) => Promise.resolve(applied(call)));
+    return { owner: new SelectedViewWatch({ change, createId: () => crypto.randomUUID() }), change };
+}
+
+describe('selected preview watch lifecycle', () => {
+    it('awaits committed registration and reuses it until the selection or connection changes', async () => {
+        const test = fixture();
+        const answer = Promise.withResolvers<SessionPreviewWatchResult>();
+        test.change.mockImplementationOnce(() => answer.promise);
+        let ready = false;
+        const registering = test.owner.select(input).then(() => {
+            ready = true;
+        });
+        await vi.waitFor(() => expect(test.change).toHaveBeenCalledOnce());
+        expect(ready).toBe(false);
+        answer.resolve(applied(test.change.mock.calls[0]![0]));
+        await registering;
+        await test.owner.select(input);
+        expect(test.change).toHaveBeenCalledOnce();
+        await test.owner.select({ ...input, connectionGenerationId: 'connection-2' });
+        expect(test.change).toHaveBeenCalledTimes(2);
+    });
+
+    it('learns an existing slot from conflict and makes a new conditional request identity', async () => {
+        const test = fixture();
+        test.change.mockImplementationOnce((call) =>
+            Promise.resolve({
+                status: 'conflict',
+                requestId: call.requestId,
+                registrationId: 'prior-owner',
+                groupId: 'old-room'
+            })
+        );
+        await test.owner.select(input);
+        const [first, second] = test.change.mock.calls.map(([call]) => call);
+        expect(second!.request.expectedRegistrationId).toBe('prior-owner');
+        expect(second!.requestId).not.toBe(first!.requestId);
+        expect(second!.request.groupId).toBe('friday');
+    });
+
+    it('reasserts the same target after a conflict and can clear a slot after an owner restart', async () => {
+        const test = fixture();
+        test.change.mockImplementationOnce((call) =>
+            Promise.resolve({
+                status: 'conflict',
+                requestId: call.requestId,
+                registrationId: 'prior-generation',
+                groupId: 'friday'
+            })
+        );
+        await test.owner.select(input);
+        expect(test.change).toHaveBeenCalledTimes(2);
+        await test.owner.release();
+        await test.owner.select({ ...input, groupId: null });
+        expect(test.change).toHaveBeenCalledTimes(4);
+    });
+
+    it('retries uncertain registration with the same command identity and body', async () => {
+        const test = fixture();
+        test.change.mockRejectedValueOnce(new Error('Response lost'));
+        await expect(test.owner.select(input)).rejects.toThrow('Response lost');
+        await test.owner.select(input);
+        const [first, second] = test.change.mock.calls.map(([call]) => call);
+        expect(second!.requestId).toBe(first!.requestId);
+        expect(second!.request).toEqual(first!.request);
+    });
+
+    it('does not follow a cleanup conflict and erase a replacement selection', async () => {
+        const test = fixture();
+        await test.owner.select(input);
+        const registration = test.change.mock.calls[0]![0].requestId;
+        test.change.mockImplementationOnce((call) =>
+            Promise.resolve({
+                status: 'conflict',
+                requestId: call.requestId,
+                registrationId: 'new-owner',
+                groupId: 'new-room'
+            })
+        );
+        await test.owner.release();
+        expect(test.change).toHaveBeenCalledTimes(2);
+        expect(test.change.mock.calls[1]![0].request).toMatchObject({ groupId: null, expectedRegistrationId: registration });
+    });
+
+    it.each([false, true])('replays an uncertain owned registration before cleanup (replacement=%s)', async (replacement) => {
+        const test = fixture();
+        if (replacement) {
+            await test.owner.select({ ...input, groupId: 'earlier' });
+        }
+        test.change.mockRejectedValueOnce(new Error('Committed response lost'));
+        await expect(test.owner.select(input)).rejects.toThrow('Committed response lost');
+        const uncertain = test.change.mock.calls.at(-1)![0];
+        await test.owner.release();
+        const calls = test.change.mock.calls.map(([call]) => call);
+        expect(calls.at(-2)!.requestId).toBe(uncertain.requestId);
+        expect(calls.at(-1)!.request).toMatchObject({ groupId: null, expectedRegistrationId: uncertain.requestId });
+    });
+
+    it('never clears a foreign token learned during conflict backoff', async () => {
+        vi.useFakeTimers();
+        onTestFinished(() => { vi.useRealTimers(); });
+        const test = fixture();
+        test.change.mockImplementation((call) =>
+            Promise.resolve({
+                status: 'conflict',
+                requestId: call.requestId,
+                registrationId: 'another-owner',
+                groupId: 'another-room'
+            })
+        );
+        const selecting = test.owner.select(input);
+        await vi.advanceTimersByTimeAsync(0);
+        const releasing = test.owner.release();
+        await vi.advanceTimersByTimeAsync(1_000);
+        await Promise.all([selecting, releasing]);
+        expect(test.change).toHaveBeenCalledOnce();
+    });
+
+    it('new authentication does not wait for an obsolete pending registration', async () => {
+        const test = fixture();
+        const answer = Promise.withResolvers<SessionPreviewWatchResult>();
+        test.change.mockImplementationOnce(() => answer.promise);
+        const old = test.owner.select(input);
+        await vi.waitFor(() => expect(test.change).toHaveBeenCalledOnce());
+        await test.owner.select({ ...input, session: { ...session, clientId: 'bob', sessionId: 'bob-session' } });
+        expect(test.change.mock.calls[1]![0].session.clientId).toBe('bob');
+        answer.resolve(applied(test.change.mock.calls[0]![0]));
+        await old;
+        await test.owner.select({ ...input, session: { ...session, clientId: 'bob', sessionId: 'bob-session' } });
+        expect(test.change).toHaveBeenCalledTimes(2);
+    });
+});

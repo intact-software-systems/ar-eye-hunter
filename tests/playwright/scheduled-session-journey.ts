@@ -6,6 +6,7 @@ import {
     signInRoomPlayer,
     startAndVerifyRoomPlay
 } from './room-player-journey.ts';
+import { assertIdleViewReads } from './view-push-observation.ts';
 
 /** Exercise only visible SPA controls against the actual API and game authority. */
 export async function scheduledSessionRecoveryJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
@@ -13,6 +14,7 @@ export async function scheduledSessionRecoveryJourney(host: Page, guest: Page, g
     await signInRoomPlayer(guest, 'bob', game);
     const session = await scheduleThroughControls(host, 20 * 60_000);
     await followSessionLink(guest, session.link, game);
+    await observeUnreservedPreviewChange(host, guest, game);
     const guestPanel = guest.getByRole('region', { name: 'Scheduled sessions', exact: true });
     const hostPanel = host.getByRole('region', { name: 'Scheduled sessions', exact: true });
     await expect(guestPanel.getByRole('button', { name: 'Enter lobby', exact: true })).toBeDisabled();
@@ -48,6 +50,33 @@ export async function scheduledSessionRecoveryJourney(host: Page, guest: Page, g
         { timeout: 30_000 }
     );
     await expect(guestPanel.getByRole('button', { name: 'Enter lobby', exact: true })).toBeDisabled();
+}
+
+/** A share-link visitor receives updates before acquiring any reservation or room membership. */
+async function observeUnreservedPreviewChange(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
+    const hostPanel = host.getByRole('region', { name: 'Scheduled sessions', exact: true });
+    const guestPanel = guest.getByRole('region', { name: 'Scheduled sessions', exact: true });
+    await expect(guestPanel).toContainText('No scheduled sessions saved for this account.');
+    await expect(guestPanel).toContainText('Reserve a seat before entering.');
+    await assertIdleViewReads(guest, 'sessions');
+    const oldStart = await guestPanel.getByText(/^Starts /).innerText();
+    await hostPanel.getByText('Change schedule', { exact: true }).click();
+    const next = await localStartInput(host, 22 * 60_000);
+    await hostPanel.getByLabel('New session start', { exact: true }).fill(next.input);
+    await hostPanel.getByRole('button', { name: 'Reschedule session', exact: true }).click();
+    await expect(guestPanel.getByText(/^Starts /)).not.toHaveText(oldStart);
+    await expect(guestPanel.getByText(/^Starts /)).toHaveText(await hostPanel.getByText(/^Starts /).innerText());
+    await expect(guestPanel).toContainText('No scheduled sessions saved for this account.');
+    await assertIdleViewReads(guest, 'sessions');
+    const previewLink = guest.url();
+    await guest.goto('about:blank');
+    await hostPanel.getByText('Change schedule', { exact: true }).click();
+    const whileAway = await localStartInput(host, 23 * 60_000);
+    await hostPanel.getByLabel('New session start', { exact: true }).fill(whileAway.input);
+    await hostPanel.getByRole('button', { name: 'Reschedule session', exact: true }).click();
+    await followSessionLink(guest, previewLink, game);
+    await expect(guestPanel.getByText(/^Starts /)).toHaveText(await hostPanel.getByText(/^Starts /).innerText());
+    await expect(guestPanel).toContainText('No scheduled sessions saved for this account.');
 }
 
 export async function scheduledSessionPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
@@ -90,7 +119,13 @@ export async function scheduledSessionPlayJourney(host: Page, guest: Page, game:
     }
 }
 
-export async function scheduleThroughControls(page: Page, delayMs: number) {
+export interface ScheduledSessionDestination {
+    readonly link: string;
+    readonly groupId: string;
+    readonly startsAtEpochMs: number;
+}
+
+export async function scheduleThroughControls(page: Page, delayMs: number): Promise<ScheduledSessionDestination> {
     const panel = page.getByRole('region', { name: 'Scheduled sessions', exact: true });
     await expect(panel).toBeVisible();
     await panel.getByText('Schedule a session', { exact: true }).click();

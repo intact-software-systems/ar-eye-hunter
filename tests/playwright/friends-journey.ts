@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
 import { scheduleThroughControls } from './scheduled-session-journey.ts';
-import { assertIdleSocialReads } from './view-push-observation.ts';
+import { assertIdleViewReads } from './view-push-observation.ts';
 
 /** Two independent accounts, visible controls, real API and actual shared gameplay. */
 export async function friendsPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
@@ -11,7 +11,7 @@ export async function friendsPlayJourney(host: Page, guest: Page, game: 'arena' 
     await openFriends(guest);
     await expect(friendsPanel(host)).toContainText('No friends or pending requests');
     await expect(friendsPanel(guest)).toContainText('No friends or pending requests');
-    await assertIdleSocialReads(host);
+    await assertIdleViewReads(host, 'social');
     await recoverTerminalFriendsFailure(host);
     await exerciseFriendConsent(host, guest);
     await recoverFriendPresence(host, guest, game);
@@ -88,7 +88,7 @@ async function recoverFriendPresence(host: Page, guest: Page, game: 'arena' | 'r
     await openFriends(guest);
     await expect(friendsPanel(host)).toContainText('Online in this game');
     await expect(friendsPanel(guest).getByRole('article', { name: 'Friend alice', exact: true })).toBeVisible();
-    await assertIdleSocialReads(host);
+    await assertIdleViewReads(host, 'social');
 }
 
 async function removeAndRestoreFriendship(host: Page, guest: Page): Promise<void> {

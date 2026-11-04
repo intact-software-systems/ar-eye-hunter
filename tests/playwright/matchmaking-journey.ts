@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
-import { assertIdleSocialReads } from './view-push-observation.ts';
+import { assertIdleViewReads } from './view-push-observation.ts';
 
 /** The API owns reservations; both browsers reach it only through visible game controls. */
 export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
@@ -10,7 +10,7 @@ export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'are
     const guestPanel = panel(guest);
     await expect(hostPanel).toBeVisible();
     await expect(guestPanel).toBeVisible();
-    await assertIdleSocialReads(host);
+    await assertIdleViewReads(host, 'social');
     await hostPanel.getByRole('button', { name: /Find a game|Find an expedition/ }).click();
     await expect(hostPanel).toContainText('Searching for players');
     await host.reload();

@@ -1,5 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type {
     ChangeGroupSessionRequest,
     GroupSessionChange,
@@ -9,17 +9,23 @@ import type {
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../../api/http-error.ts';
+import { SelectedViewWatch } from '../../api/selected-view-watch.ts';
+import { subscribeViewDeadline } from '../../api/subscribe-view-deadline.ts';
+import { subscribeViewInvalidations, type SubscribeViewInvalidations } from '../../api/subscribe-view-invalidations.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
+import { BrowserActivity } from '../../browser-activity.ts';
+import type { RallarConnectionOperations } from '../../rallar-connection-facade.ts';
 import type { RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
 import type { RallarRoomEntry } from '../entry/rallar-room-entry.ts';
-import { scheduledSessionHttpApi } from './scheduled-session-http-api.ts';
+import { requireOwnWsConnectionGenerationId } from '../require-own-ws-connection-generation-id.ts';
+import { changeSessionPreviewWatch, scheduledSessionHttpApi } from './scheduled-session-http-api.ts';
+import { earliestSessionDeadline, ScheduledSessionViewReader } from './scheduled-session-view-reader.ts';
 
 export namespace RallarScheduledSessions {
     export interface State {
@@ -72,10 +78,13 @@ export namespace RallarScheduledSessions {
         readonly entry: Pick<RallarRoomEntry, 'getState' | 'onChange' | 'enter' | 'enterScheduledLobby'>;
         readonly timers: Timers;
         readonly createId: () => string;
+        readonly activity: Pick<BrowserActivity, 'isActive' | 'onChange'>;
+        readonly watch: Pick<SelectedViewWatch, 'select' | 'release'>;
+        readConnectionGeneration(signal: AbortSignal): Promise<string>;
+        onChanged(listener: () => Promise<void>): () => void;
     }
     export interface Config {
         readonly scope: StateScope;
-        readonly refreshIntervalMs: number;
     }
     export interface Attempt {
         readonly generation: number;
@@ -87,14 +96,21 @@ export namespace RallarScheduledSessions {
         | Readonly<{ kind: 'change'; roomRef: GroupRef; request: ChangeGroupSessionRequest; }>;
 }
 
+interface SessionViewDeadline {
+    readonly atEpochMs: number;
+}
+
 /** Owns account-bound scheduling requests. RoomEntry owns saved destinations and game admission. */
 export class RallarScheduledSessions {
     private readonly dependencies: RallarScheduledSessions.Dependencies;
     private readonly config: RallarScheduledSessions.Config;
+    private readonly reader: ScheduledSessionViewReader;
     private readonly notifications = new SynchronousNotifications<RallarScheduledSessions.State>((error) => {
         console.error('Error notifying scheduled-session listener', error);
     });
-    private readonly reads = new SingleFlight<string, void>();
+    private reads: ThrottledFlush | null = null;
+    private readRevision = -1;
+    private deadline: SessionViewDeadline | null = null;
     private subscriptions: SubscriptionScope | null = null;
     private controller = new AbortController();
     private generation = 0;
@@ -113,7 +129,10 @@ export class RallarScheduledSessions {
     };
 
     public static createBrowser(
-        browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
+        browser:
+            & SubscribeViewInvalidations.Browser
+            & Pick<RallarRoomEntry.Browser, 'auth'>
+            & Pick<RallarConnectionOperations, 'connect'>,
         entry: RallarRoomEntry,
         config: RallarScheduledSessions.Config
     ): RallarScheduledSessions {
@@ -123,6 +142,17 @@ export class RallarScheduledSessions {
                 onChange: (listener, options) => browser.auth.onChange(listener, options)
             },
             entry,
+            activity: new BrowserActivity(),
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'sessions', changed }),
+            watch: new SelectedViewWatch({
+                createId: () => crypto.randomUUID(),
+                change: (input) => changeSessionPreviewWatch(config.scope, input)
+            }),
+            readConnectionGeneration: async (signal) => {
+                const context = await browser.connect({ scope: config.scope, signal });
+                return await requireOwnWsConnectionGenerationId(context, signal);
+            },
             api: scheduledSessionHttpApi,
             timers: createDefaultTimers(),
             createId: () => crypto.randomUUID()
@@ -130,11 +160,9 @@ export class RallarScheduledSessions {
     }
 
     public constructor(dependencies: RallarScheduledSessions.Dependencies, config: RallarScheduledSessions.Config) {
-        if (!Number.isSafeInteger(config.refreshIntervalMs) || config.refreshIntervalMs <= 0) {
-            throw new TypeError('Session refresh interval must be a positive integer');
-        }
         this.dependencies = dependencies;
         this.config = config;
+        this.reader = new ScheduledSessionViewReader(dependencies, config.scope);
     }
 
     public getState(): RallarScheduledSessions.State {
@@ -152,16 +180,21 @@ export class RallarScheduledSessions {
             this.subscriptions.add(
                 this.dependencies.auth.onChange(() => this.authenticationChanged(), { emitCurrent: false })
             );
-            this.subscriptions.add(this.dependencies.entry.onChange(() => this.entryChanged()));
-            this.subscriptions.add(startRepeating({
-                timers: this.dependencies.timers,
-                intervalMs: this.config.refreshIntervalMs,
-                firstRun: 'after-interval',
-                run: () => this.refresh()
+            const refresh = () => this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve();
+            this.subscriptions.add(this.dependencies.onChanged(refresh));
+            this.subscriptions.add(this.dependencies.activity.onChange(() => {
+                void refresh();
             }));
+            this.subscriptions.add(subscribeViewDeadline<SessionViewDeadline>({
+                timers: this.dependencies.timers,
+                onChange: (listener) => this.onChange(() => listener({ view: this.deadline })),
+                remainingMs: (deadline) => deadline.atEpochMs - this.dependencies.timers.nowMs(),
+                refresh
+            }));
+            this.subscriptions.add(this.dependencies.entry.onChange(() => this.entryChanged()));
             this.entryChanged();
         }
-        return this.refresh();
+        return this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve();
     }
 
     public stop(): void {
@@ -181,7 +214,23 @@ export class RallarScheduledSessions {
             return Promise.resolve();
         }
         const revision = this.revision;
-        return this.reads.run(`${attempt.generation}:${revision}`, () => this.readCurrent(attempt, revision));
+        if (this.reads === null || this.readRevision !== revision) {
+            const previous = this.reads;
+            this.readRevision = revision;
+            this.reads = new ThrottledFlush({
+                timers: this.dependencies.timers,
+                write: async () => {
+                    const current = this.attempt();
+                    if (current !== null) {
+                        await this.readCurrent(current, revision);
+                    }
+                }
+            }, { minIntervalMs: 0, firstMarkDelayMs: 0 });
+            void previous?.stop();
+        }
+        const covered = this.reads.mark();
+        void this.reads.drain();
+        return covered;
     }
 
     public async loadMore(): Promise<void> {
@@ -262,50 +311,34 @@ export class RallarScheduledSessions {
     private async readCurrent(attempt: RallarScheduledSessions.Attempt, revision: number): Promise<void> {
         const selectedRef = this.selectedRef;
         try {
-            const sessions: GroupSessionPreview[] = [];
-            let cursor: string | null = null;
-            const visited = new Set<string>();
-            for (let page = 0; page < this.pageCount; page++) {
-                const result = await this.dependencies.api.list({
-                    scope: this.config.scope,
-                    after: cursor,
-                    session: attempt.session,
-                    signal: attempt.signal
-                });
-                if (!this.current(attempt) || revision !== this.revision) {
-                    return;
-                }
-                for (const session of result.sessions) {
-                    this.assertScope(session.roomRef);
-                    if (!sessions.some((existing) => isSameGroupRef(existing.roomRef, session.roomRef))) {
-                        sessions.push(session);
-                    }
-                }
-                cursor = result.nextKey;
-                if (cursor === null) {
-                    break;
-                }
-                if (visited.has(cursor)) {
-                    throw new TypeError('Session directory repeated its pagination cursor');
-                }
-                visited.add(cursor);
+            const read = { attempt, isCurrent: () => this.current(attempt) && revision === this.revision };
+            const page = await this.reader.readPages({ ...read, pageCount: this.pageCount });
+            if (page === null) {
+                return;
             }
-            const selected = selectedRef === null
-                ? null
-                : await this.dependencies.api.read(selectedRef, attempt.session, attempt.signal);
+            let selected: ScheduledSessionViewReader.Preview = { preview: null, deadlineAtEpochMs: null };
+            let previewError: string | null = null;
+            try {
+                if (selectedRef === null) {
+                    this.releasePreviewWatch();
+                }
+                else {
+                    selected = await this.reader.readPreview({ ...read, ref: selectedRef });
+                }
+            }
+            catch (error) {
+                previewError = toError(error).message;
+            }
             if (!this.current(attempt) || revision !== this.revision) {
                 return;
             }
-            if (selected !== null && (selectedRef === null || !isSameGroupRef(selected.roomRef, selectedRef))) {
-                throw new TypeError('Session preview names a different room');
-            }
-            this.publish({
+            this.publishCanonical({
                 ...this.state,
-                sessions,
-                selected,
-                hasMore: cursor !== null,
-                error: this.pending === null ? null : this.state.error
-            });
+                sessions: page.sessions,
+                selected: selected.preview,
+                hasMore: page.nextKey !== null,
+                error: previewError ?? (this.pending === null ? null : this.state.error)
+            }, earliestSessionDeadline(page.deadlineAtEpochMs, selected.deadlineAtEpochMs));
         }
         catch (error) {
             if (this.current(attempt) && revision === this.revision) {
@@ -394,7 +427,9 @@ export class RallarScheduledSessions {
         this.selectedRef = ref;
         this.revision++;
         this.publish({ ...this.state, selected: null, error: null });
-        void this.refresh();
+        if (this.dependencies.activity.isActive()) {
+            void this.refresh();
+        }
     }
 
     private authenticationChanged(): void {
@@ -405,15 +440,26 @@ export class RallarScheduledSessions {
         this.sessionKey = key;
         this.invalidate();
         this.entryChanged();
-        void this.refresh();
+        if (this.dependencies.activity.isActive()) {
+            void this.refresh();
+        }
+    }
+
+    private releasePreviewWatch(): void {
+        void this.dependencies.watch.release().catch((error) => {
+            console.error('Scheduled preview watch cleanup failed', toError(error));
+        });
     }
 
     private invalidate(): void {
         this.generation++;
+        this.releasePreviewWatch();
         this.controller.abort();
         this.controller = new AbortController();
-        this.reads.clear();
+        void this.reads?.stop();
+        this.reads = null;
         this.pending = null;
+        this.deadline = null;
         this.selectedRef = null;
         this.pageCount = 1;
         this.publish({ sessions: [], selected: null, hasMore: false, busy: false, retryPending: false, error: null });
@@ -438,10 +484,16 @@ export class RallarScheduledSessions {
 
     private assertScope(ref: GroupRef): void {
         if (
-            ref.applicationId !== this.config.scope.applicationId || ref.workspaceId !== this.config.scope.workspaceId
+            !isSameGroupScope(ref, this.config.scope)
         ) {
             throw new TypeError('Session room belongs to another application or workspace scope');
         }
+    }
+
+    /** Local busy/error changes retain this observation's absolute deadline. */
+    private publishCanonical(state: RallarScheduledSessions.State, deadlineAtEpochMs: number | null): void {
+        this.deadline = deadlineAtEpochMs === null ? null : { atEpochMs: deadlineAtEpochMs };
+        this.publish(state);
     }
 
     private publish(state: RallarScheduledSessions.State): void {
