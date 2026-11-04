@@ -238,7 +238,9 @@ roomBrowserTest(
             await expect(other.locator('.lobby-party-row')).toHaveCount(0);
             // Leaving disconnects this session; the account remains because it is the room's last owner.
             expect((await membershipRemoval).status()).toBe(403);
-            // Re-enter from the room link to verify persisted withdrawal independently of either tab's cache.
+            // Open the link in a new document to verify withdrawal independently of either tab's cache.
+            // A fragment-only navigation retains the departed runtime instead of loading the saved state.
+            await other.goto('about:blank');
             await other.goto(link);
             await waitForExpeditionScene(other);
             await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');

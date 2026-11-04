@@ -1,15 +1,14 @@
+import { BrowserTournamentPanel } from '@shared-react/browser-tournament-panel.tsx';
 import { FriendsPanel } from '@shared-react/friends-panel.tsx';
 import { MatchmakingPanel } from '@shared-react/matchmaking-panel.tsx';
 import { PartyPanel } from '@shared-react/party-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
-import { TournamentPanel } from '@shared-react/tournament-panel.tsx';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
-import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
-import { useCallback, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { GAME_ROOM_NAME } from '../game/arena-contracts.ts';
 import { ARENA_ROOM_SCOPE, arenaRoomEntry } from '../game/arena-runtime/arena-room-entry.ts';
 import { ArenaRoomMove } from './arena-room-move.tsx';
@@ -70,15 +69,6 @@ export function ArenaOperations(props: ArenaOperationsProps) {
 }
 
 function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
-    const createTournament = useCallback(
-        (tournamentId: string) =>
-            RallarTournament.createBrowser(rallar, arenaRoomEntry, {
-                scope: ARENA_ROOM_SCOPE,
-                tournamentId,
-                refreshIntervalMs: 1000
-            }),
-        []
-    );
     const [scheduledSessions] = useState(() =>
         RallarScheduledSessions.createBrowser(rallar, arenaRoomEntry, {
             scope: ARENA_ROOM_SCOPE,
@@ -97,7 +87,12 @@ function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     return (
         <>
             {arena.session && arena.tournament.enabled && (
-                <TournamentPanel scope={ARENA_ROOM_SCOPE} createOwner={createTournament} />
+                <BrowserTournamentPanel
+                    browser={rallar}
+                    entry={arenaRoomEntry}
+                    catalogConfig={{ scope: ARENA_ROOM_SCOPE, limit: 20, refreshIntervalMs: 30000, timeoutMs: 10000 }}
+                    bracketRefreshIntervalMs={1000}
+                />
             )}
             {arena.session && <PartyPanel owner={party} friends={friends} />}
             {arena.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find a game" />}

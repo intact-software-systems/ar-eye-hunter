@@ -27,7 +27,7 @@ export namespace RallarTournament {
     }
     export interface Dependencies extends AuthenticatedResource.Dependencies {
         readonly api: Api;
-        readonly entry: Pick<RallarRoomEntry, 'enter'>;
+        readonly entry: Pick<RallarRoomEntry, 'enter' | 'getState'>;
     }
     export interface Config extends AuthenticatedResource.Config {
         readonly tournamentId: string;
@@ -37,7 +37,7 @@ export namespace RallarTournament {
 /** One selected bracket and its exact user intents; RoomEntry and game owners retain admission and gameplay. */
 export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, TournamentRequest> {
     readonly ref: TournamentRef;
-    private readonly entry: Pick<RallarRoomEntry, 'enter'>;
+    private readonly entry: Pick<RallarRoomEntry, 'enter' | 'getState'>;
 
     static createBrowser(
         browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
@@ -81,28 +81,46 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
     }
 
     async enter(slot: TournamentMatch['slot']): Promise<void> {
+        const roomChoice = this.entry.getState();
         const attempt = this.beginOperation();
         if (attempt === null) {
             return;
         }
+        const previous = this.getState().view?.tournament?.matches.find((match) => match.slot === slot)?.attempt;
         try {
             await this.refresh();
-            const match = this.getState().view?.tournament?.matches.find((match) => match.slot === slot);
-            if (
-                this.current(attempt) && match?.attempt && match.attempt.startedAtEpochMs !== null &&
-                (match.status === 'playing' || match.status === 'complete')
-            ) {
-                const participation = match.attempt.binding.principalIds.includes(attempt.session.clientId)
-                    ? 'player'
-                    : 'spectator';
-                this.entry.enter({
-                    intent: 'join',
-                    roomRef: match.attempt.binding.roomRef,
-                    participation,
-                    joinCode: null,
-                    preserveCurrentMembership: true
-                });
+            if (!this.current(attempt)) {
+                return;
             }
+            if (this.entry.getState() !== roomChoice) {
+                this.setError('Your room choice changed. Choose Enter again if you still want this match.');
+                return;
+            }
+            const snapshot = this.getState().view;
+            if (snapshot === null) {
+                return;
+            }
+            const match = snapshot.tournament?.matches.find((match) => match.slot === slot);
+            if (previous && match?.attempt && previous.binding.attemptId !== match.attempt.binding.attemptId) {
+                this.setError('This match was rescheduled. Review its current attempt before entering.');
+                return;
+            }
+            if (
+                !match?.attempt || match.attempt.startedAtEpochMs === null ||
+                !['playing', 'complete'].includes(match.status)
+            ) {
+                this.setError('This match is not available to enter. Review the current bracket.');
+                return;
+            }
+            this.entry.enter({
+                intent: 'join',
+                roomRef: match.attempt.binding.roomRef,
+                participation: match.attempt.binding.principalIds.includes(attempt.session.clientId)
+                    ? 'player'
+                    : 'spectator',
+                joinCode: null,
+                preserveCurrentMembership: true
+            });
         }
         catch (error) {
             if (this.current(attempt)) {

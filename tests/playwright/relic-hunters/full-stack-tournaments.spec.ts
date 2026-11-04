@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test';
 import { observeBrowserWebGlContexts } from '../../../packages/shared-test/observe-browser-web-gl-contexts.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
+    recoverTournamentFromHistory,
     registerTournament,
     startTournamentMatch,
     tournamentMatch
@@ -21,7 +22,7 @@ tournamentBrowserTest(
         for (const player of players) {
             await player.addInitScript(observeBrowserWebGlContexts);
         }
-        await registerTournament(players, 'relic');
+        const title = await registerTournament(players, 'relic');
         const champion = await page.getByRole('region', { name: 'Tournaments', exact: true })
             .locator('ol li').first().innerText();
         for (
@@ -58,7 +59,7 @@ tournamentBrowserTest(
             });
         }
         await expect(page.getByRole('status').filter({ hasText: `Champion: ${champion}` })).toBeVisible();
-        await page.reload();
+        await recoverTournamentFromHistory({ page, game: 'relic', title, completedMatch: true });
         await expect(page.getByRole('status').filter({ hasText: `Champion: ${champion}` })).toBeVisible();
     }
 );

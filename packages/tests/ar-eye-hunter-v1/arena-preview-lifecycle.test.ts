@@ -10,6 +10,8 @@ import {
     vi
 } from 'vitest';
 
+import { createTournamentArena, type TournamentArena } from '@ar-eye-hunter/tournament-arena.ts';
+import type { ArenaTournamentClient } from '../../../apps/ar-eye-hunter-v1/src/game/tournament/arena-tournament-client.ts';
 import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import { createDefaultArenaAudioSettings } from '../../../apps/ar-eye-hunter-v1/src/game/arena-audio.ts';
 import { createDefaultMobileControlSettings } from '../../../apps/ar-eye-hunter-v1/src/game/mobile-input.ts';
@@ -66,6 +68,54 @@ class PreviewFixture {
         this.engine.dispose();
     }
 }
+
+it('aims a native touch shot from the latest accepted targets before another frame renders', () => {
+    const fixture = new PreviewFixture();
+    const controls: ArenaTournamentClient.Controls[] = [];
+    try {
+        vi.spyOn(fixture.engine, 'getRenderingCanvas').mockReturnValue(fixture.canvas);
+        vi.spyOn(fixture.canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1280, 720));
+        const initial = createTournamentArena({
+            gameId: 'game', principalIds: ['one', 'two'], seed: 44,
+            startedAtEpochMs: 1000, durationMs: 60000
+        });
+        const state: TournamentArena = {
+            ...initial,
+            arena: {
+                ...initial.arena,
+                layout: { ...initial.arena.layout, props: [] },
+                targets: [{ ...initial.arena.targets[0], position: [-45, 1.72, -25], velocity: [0, 0, 0] }]
+            }
+        };
+        const tournament = {
+            snapshot: { ...cancelledTournament().snapshot, status: 'playing' as const, state },
+            sendControls: (input: ArenaTournamentClient.Controls) => controls.push(input)
+        };
+        fixture.props.current = { ...fixture.props.current, localSessionId: 'one', roomId: 'room', tournament };
+        fixture.runtime.refreshPresentation();
+        fixture.frames(2);
+        controls.length = 0;
+        fixture.props.current = {
+            ...fixture.props.current,
+            tournament: {
+                ...tournament,
+                snapshot: {
+                    ...tournament.snapshot,
+                    state: { ...state, arena: { ...state.arena, targets: [{ ...state.arena.targets[0], position: [-44, 1.72, -25] }] } }
+                }
+            }
+        };
+        fixture.canvas.dispatchEvent(new PointerEvent('pointerdown', {
+            pointerType: 'touch', clientX: 640, clientY: 360, button: 0
+        }));
+        expect(controls).toHaveLength(1);
+        expect(controls[0].controls.fire).toBe(true);
+        expect(controls[0].yaw).toBeCloseTo(Math.atan2(1, 20));
+    }
+    finally {
+        fixture.dispose();
+    }
+});
 
 describe('untouched arena preview', () => {
     it.each(['stopped', 'terminal'])('rejects real touch controls and look changes after the scene is %s', async (boundary) => {
@@ -216,7 +266,7 @@ describe('untouched arena preview', () => {
     });
 });
 
-function cancelledTournament(): BabylonArenaProps['tournament'] {
+function cancelledTournament(): NonNullable<BabylonArenaProps['tournament']> {
     return {
         snapshot: {
             binding: {

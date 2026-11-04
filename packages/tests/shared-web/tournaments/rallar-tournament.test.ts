@@ -1,3 +1,4 @@
+import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
 import type { TournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
@@ -12,25 +13,46 @@ const owners: RallarTournament[] = [];
 afterEach(() => owners.splice(0).forEach((owner) => owner.stop()));
 
 function browser() {
-    let snapshot: TournamentSnapshot = { ref, principalId: 'alice', observedAtEpochMs: 1000, tournament: null };
+    let snapshot: TournamentSnapshot = { ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament: null };
     const api = {
         read: vi.fn<RallarTournament.Api['read']>(async () => snapshot),
         change: vi.fn<RallarTournament.Api['change']>(async (input) => ({ ref, requestId: input.requestId, status: 'applied', code: null }))
     };
-    const enter = vi.fn();
+    const saved = new Map<string, string>();
+    const entry = new RallarRoomEntry({
+        auth: { session: () => session, onChange: () => () => {} },
+        rooms: {
+            onChange: () => () => {},
+            join: async () => {
+                throw new Error('No admission is requested in this owner test');
+            }
+        },
+        storage: {
+            getItem: (key) => saved.get(key) ?? null,
+            setItem: (key, value) => {
+                saved.set(key, value);
+            },
+            removeItem: (key) => {
+                saved.delete(key);
+            }
+        },
+        location: { read: () => 'https://game.example/', replace: () => {}, onChange: () => () => {} }
+    }, { scope });
+    const enter = vi.spyOn(entry, 'enter');
     const owner = new RallarTournament({
         auth: { session: () => session, onChange: () => () => {} },
         activity: { isActive: () => true, onChange: () => () => {} },
         timers: createDefaultTimers(),
         createId: () => crypto.randomUUID(),
         api,
-        entry: { enter }
+        entry
     }, { scope, tournamentId: 'cup', refreshIntervalMs: 10000 });
     owners.push(owner);
     return {
         owner,
         api,
         enter,
+        entry,
         snapshot(next: TournamentSnapshot) {
             snapshot = next;
         }
@@ -40,11 +62,11 @@ function browser() {
 describe('Tournament browser ownership', () => {
     it('rejects responses belonging to another tournament or account', async () => {
         const test = browser();
-        test.snapshot({ ref: { ...ref, tournamentId: 'other' }, principalId: 'alice', observedAtEpochMs: 1000, tournament: null });
+        test.snapshot({ ref: { ...ref, tournamentId: 'other' }, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament: null });
         await test.owner.start();
         expect(test.owner.getState().view).toBeNull();
         expect(test.owner.getState().error).toContain('another account or tournament');
-        test.snapshot({ ref, principalId: 'bob', observedAtEpochMs: 1000, tournament: null });
+        test.snapshot({ ref, principalId: 'bob', observedAtEpochMs: 1000, listing: 'unlisted', tournament: null });
         await test.owner.refresh();
         expect(test.owner.getState().view).toBeNull();
     });
@@ -78,7 +100,7 @@ describe('Tournament browser ownership', () => {
         }
         apply({ type: 'launch' });
         apply({ type: 'schedule', slot: 'semifinal-1', attemptId: 'attempt', roomId: 'room', gameId: 'room', scheduledAtEpochMs: 1000 });
-        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, tournament });
+        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
         await test.owner.start();
         await test.owner.enter('semifinal-1');
         expect(test.enter).not.toHaveBeenCalled();
@@ -86,7 +108,7 @@ describe('Tournament browser ownership', () => {
             apply({ type: 'check-in', slot: 'semifinal-1', attemptId: 'attempt' }, actor);
         }
         apply({ type: 'start', slot: 'semifinal-1', attemptId: 'attempt' });
-        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, tournament });
+        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
         await test.owner.enter('semifinal-1');
         expect(test.enter).toHaveBeenCalledWith({
             intent: 'join',
@@ -95,5 +117,36 @@ describe('Tournament browser ownership', () => {
             joinCode: null,
             preserveCurrentMembership: true
         });
+        const delayed = Promise.withResolvers<TournamentSnapshot>();
+        const canonical = test.owner.getState().view!;
+        test.api.read.mockReturnValueOnce(delayed.promise);
+        const pendingEntry = test.owner.enter('semifinal-1');
+        test.entry.enter({ intent: 'join', roomRef: { ...scope, groupId: 'newer-user-choice' }, participation: 'player', joinCode: null });
+        delayed.resolve(canonical);
+        await pendingEntry;
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
+        expect(test.owner.getState().error).toContain('room choice changed');
+        test.api.read.mockRejectedValueOnce(new Error('Bracket refresh unavailable'));
+        await test.owner.enter('semifinal-1');
+        expect(test.owner.getState().error).toBe('Bracket refresh unavailable');
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
+        await test.owner.refresh();
+        apply({
+            type: 'schedule',
+            slot: 'semifinal-1',
+            attemptId: 'replacement',
+            roomId: 'replacement-room',
+            gameId: 'replacement-room',
+            scheduledAtEpochMs: 1000
+        });
+        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
+        await test.owner.enter('semifinal-1');
+        expect(test.owner.getState().error).toContain('rescheduled');
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
+        apply({ type: 'cancel' });
+        test.snapshot({ ref, principalId: 'alice', observedAtEpochMs: 1000, listing: 'unlisted', tournament });
+        await test.owner.enter('semifinal-1');
+        expect(test.owner.getState().error).toContain('not available');
+        expect(test.entry.getState().destination?.roomRef.groupId).toBe('newer-user-choice');
     });
 });
