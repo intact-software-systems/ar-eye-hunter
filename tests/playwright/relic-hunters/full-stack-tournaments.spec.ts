@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
+import { decodeRelicSnapshotPayload } from '../../../packages/relic-hunters/mod.ts';
 import { observeBrowserWebGlContexts } from '../../../packages/shared-test/observe-browser-web-gl-contexts.ts';
+import { RoomSocketInterruption } from '../room-socket-interruption.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
     recoverTournamentFromHistory,
@@ -75,8 +77,19 @@ tournamentBrowserTest(
         for (const player of players) {
             await player.addInitScript(observeBrowserWebGlContexts);
         }
+        const spectator = players[2];
+        const interruption = await RoomSocketInterruption.install(spectator);
         await registerTournament(players, 'relic');
         await startTournamentMatch(players[0], [players[0], players[1]], 'semifinal-1');
+        await tournamentMatch(spectator, 'semifinal-1').getByRole('button', {
+            name: 'Watch tournament match',
+            exact: true
+        }).click();
+        await expect(
+            spectator.getByLabel('Current turn summary', { exact: true }).getByText('Watching', { exact: true })
+        ).toBeVisible();
+        const spectatorUrl = spectator.url();
+        await interruption.disconnect();
         const ownerCanvas = players[0].getByLabel('Relic Hunters neon cyber-dojo canvas', { exact: true });
         await players[0].getByRole('button', { name: 'First-person view', exact: true }).click();
         await expect(ownerCanvas).toHaveAttribute('data-camera-mode', 'first-person');
@@ -93,6 +106,18 @@ tournamentBrowserTest(
             await expect(bracket.getByRole('button', { name: 'New tournament', exact: true })).toBeEnabled();
             await expect(bracket.getByText(/^Champion:/)).toHaveCount(0);
         }
+        const canonical = spectator.waitForResponse((response) =>
+            response.request().method() === 'GET' &&
+            /^\/api\/relic\/games\/[^/]+$/.test(new URL(response.url()).pathname) && response.ok()
+        );
+        await interruption.reconnect();
+        const snapshot = decodeRelicSnapshotPayload(await (await canonical).json()).right;
+        expect(snapshot?.tournament?.status, 'The unchanged spectator room must hydrate the committed cancellation')
+            .toBe('cancelled');
+        const terminalAlert = spectator.getByRole('alert').filter({ hasText: 'This tournament match was cancelled.' });
+        await expect(terminalAlert, 'The spectator must present the terminal game from its recovery GET').toBeVisible();
+        await expect(spectator.getByRole('button', { name: /^Submit Plan/ })).toHaveCount(0);
+        expect(spectator.url()).toBe(spectatorUrl);
         await expectTerminalSceneSettles(players[0]);
         await expectTerminalSceneSettles(players[1]);
         await expect(ownerCanvas).toHaveAttribute('data-scene-first-person-rig', 'true');

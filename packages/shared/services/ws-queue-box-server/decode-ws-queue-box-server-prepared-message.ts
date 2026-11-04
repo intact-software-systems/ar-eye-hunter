@@ -11,6 +11,7 @@ import {
     validateALSessionInvalidationMessage
 } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { decodeALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
+import { hasServerRoomSnapshotTopic } from '../../api/views/server-room-snapshot.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
@@ -43,6 +44,9 @@ export function decodeWsQueueBoxServerPreparedMessage(
     msg: ALMessage,
     referenceKey: Key
 ): WsQueueBoxServerPreparedMessage {
+    if (hasServerRoomSnapshotTopic(msg)) {
+        throw new TypeError('Server room snapshots require live-only delivery');
+    }
     const prepared = decodeALAdmissionRecord(value, ['kind', 'message'], PREPARED_OPTIONAL_KEYS);
     if (prepared.kind === 'account-view') {
         return decodeAccountViewPrepared(value, msg);

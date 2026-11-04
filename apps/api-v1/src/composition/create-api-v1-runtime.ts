@@ -92,7 +92,8 @@ import {
     type ApiRtcTopologyRuntime
 } from '../runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 import {
-    createApiStateSnapshotReadSelectors
+    createApiStateSnapshotReadSelectors,
+    type ApiStateSnapshotReadSelectors
 } from '../services/create-api-state-snapshot-read-selectors.ts';
 import {
     filterEligibleDurableWsSessionIds,
@@ -171,6 +172,7 @@ interface StartMutationInfrastructureInput {
 }
 
 interface CreateSharedMiddlewareInput {
+    readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly mutation: ApiV1MutationRuntime;
     readonly appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined;
     readonly rtcTopology: ApiRtcTopologyRuntime;
@@ -213,6 +215,7 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     startMutationInfrastructure({ runtime: input, mutation, startupGeneration });
     const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
     const runtime = createSharedMiddleware({
+        backgroundTasks: input.backgroundTasks,
         mutation,
         appInboxCompletionNotices,
         rtcTopology,
@@ -241,12 +244,7 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
         viewWatches,
         authSessionRepository: mutation.authSessionRepository,
         passwordDerivationAdmission: mutation.passwordDerivationAdmission,
-        ...createApiStateSnapshotReadSelectors({
-            clientDurable: mutation.clientsRepository,
-            clientCache: mutation.clientSnapshotCache,
-            groupDurable: mutation.groupCurrentSnapshotCache,
-            groupCache: mutation.groupSnapshotCache
-        }, input.timing),
+        ...createRuntimeStateQueries(mutation, input.timing),
         groupFormationMetrics: mutation.groupFormationMetrics,
         almReceiptDiagnostics,
         readAlmDeliveredMarkers: () => inboundStores.admissionStore.readDeliveredMarkerCount(input.nowEpochMs()),
@@ -254,6 +252,18 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
     });
+}
+
+function createRuntimeStateQueries(
+    mutation: ApiV1MutationRuntime,
+    timing: CreateApiV1RuntimeInput['timing']
+): ApiStateSnapshotReadSelectors {
+    return createApiStateSnapshotReadSelectors({
+        clientDurable: mutation.clientsRepository,
+        clientCache: mutation.clientSnapshotCache,
+        groupDurable: mutation.groupCurrentSnapshotCache,
+        groupCache: mutation.groupSnapshotCache
+    }, timing);
 }
 
 function requireRuntimeAppInboxDeadline(input: CreateApiV1RuntimeInput): void {
@@ -591,14 +601,16 @@ function createApiV1LiveWsNoticeSubscriber(
     if (input.databasePubSubMode === 'disabled') {
         return undefined;
     }
+    const transport = createApiV1LiveWsNoticeTransport({
+        mode: input.databasePubSubMode,
+        publisherId: input.queuePubSubPublisherId,
+        notification: input.databaseNotification,
+        localBus: input.queuePubSubLocalBus,
+        nowMs: input.nowEpochMs
+    });
+    input.backgroundTasks.register(() => transport.stop());
     return {
-        transport: createApiV1LiveWsNoticeTransport({
-            mode: input.databasePubSubMode,
-            publisherId: input.queuePubSubPublisherId,
-            notification: input.databaseNotification,
-            localBus: input.queuePubSubLocalBus,
-            nowMs: input.nowEpochMs
-        }),
+        transport,
         channel: API_V1_LIVE_WS_NOTICE_CHANNEL,
         publisherId: input.queuePubSubPublisherId,
         nowMs: input.nowEpochMs,

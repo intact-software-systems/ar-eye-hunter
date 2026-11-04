@@ -5,6 +5,7 @@ import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-me
 import { AppTopics } from '../../api/api-config.ts';
 import { hasGroupMoveChangedTopic } from '../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../api/state-types.ts';
+import { hasServerRoomSnapshotTopic } from '../../api/views/server-room-snapshot.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
@@ -108,7 +109,11 @@ export class WsQueueBoxServerLiveDelivery {
             return noRecipientResult(message);
         }
 
-        return this.writeLiveRecipients(input, recipients, expiresAtMs);
+        const result = this.writeLiveRecipients(input, recipients, expiresAtMs);
+        if (input.roomSessionGenerations !== undefined) {
+            this.#recipientSelection.closeFailedRoomSnapshotConnections(result.failures, input.roomSessionGenerations);
+        }
+        return result;
     }
 
     private writeLiveRecipients(
@@ -183,7 +188,8 @@ export class WsQueueBoxServerLiveDelivery {
     sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
         const { peerId, message, encoded, inboundScope } = input;
         if (
-            hasGroupMoveChangedTopic(message) || message.route.topicId === AppTopics.viewInvalidated ||
+            hasServerRoomSnapshotTopic(message) || hasGroupMoveChangedTopic(message) ||
+            message.route.topicId === AppTopics.viewInvalidated ||
             message.payload.typeId === AppTopics.viewInvalidated
         ) {
             return 0;

@@ -40,6 +40,12 @@ Deploy the server before publishing the two push-only browser builds. Because Cl
 
 The public Move claim remains `{source, moveId}`. The server now resolves eligible sessions at delivery rather than persisting the original sessions in a new notice. Rollback also needs a drained deployment boundary: do not start an older server with new executable delivery or terminal-retention work. No database rewrite is part of either cutover.
 
+## Tournament snapshot cutover
+
+Publish the API socket receivers and AR Eye tournament server together, before publishing the browser builds. Every socket receiver must recognize the reserved server snapshot topic, enforce room presence for the **current connection generation**, and reassemble large PostgreSQL notices. The game server must return the committed attempt revision alongside the checkpoint on the canonical HTTP read and send it in each native frame. Deploying only some receivers can leave connected players without live updates.
+
+Coordinate Cloudflare publication before merging. Have active tournament participants reload for the new mandatory snapshot shape; the old exact decoder cannot consume it. Verify a player and spectator on different nodes see a live match and that a disconnected spectator recovers without a page reload. If reverting, coordinate both server and browser versions and follow the Move drain above. No data conversion or compatibility reader is needed.
+
 ## Cloudflare branch controls
 
 The `cloudflare-branch-controls` job in **Deploy Web + API** is disabled

@@ -1,5 +1,5 @@
 import { subscribeViewInvalidations } from '@shared-web/browser/api/subscribe-view-invalidations.ts';
-import type { RallarMessage, RallarMessageTransport } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessageTransport } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { subscribeRoomMoveChanges, type SubscribeRoomMoveChanges } from '@shared-web/browser/rooms/move/subscribe-room-move-changes.ts';
 import {
@@ -8,9 +8,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
-import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import {
     describe,
     expect,
@@ -18,6 +16,7 @@ import {
     vi,
     type Mock
 } from 'vitest';
+import { ViewPushBrowser } from './view-push-browser.ts';
 
 const scope = { applicationId: 'game', workspaceId: 'default' };
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'session', accessToken: 'test', expiresAtEpochMs: 9999999999999 };
@@ -32,19 +31,10 @@ interface InvalidationFixture {
 
 function fixture(resource: ViewInvalidation['resource'] | 'moves' = 'party'): InvalidationFixture {
     let session: AuthSession | undefined = alice;
-    const messages = new SynchronousNotifications<RallarMessage<ApiJsonValue>>((error) => {
-        throw error;
-    });
-    const lifecycle = new SynchronousNotifications<RallarWsLifecycleEvent>((error) => {
-        throw error;
-    });
+    const browser = new ViewPushBrowser(() => session);
     const changed = vi.fn();
     const input = {
-        browser: {
-            session: () => session,
-            messages: { ws: { onMessage: (_selector, handler) => messages.subscribe(handler).unsubscribe } },
-            ws: { onLifecycle: (listener) => lifecycle.subscribe(listener).unsubscribe }
-        },
+        browser,
         scope,
         changed
     } satisfies SubscribeRoomMoveChanges.Input;
@@ -55,35 +45,8 @@ function fixture(resource: ViewInvalidation['resource'] | 'moves' = 'party'): In
         login: (next: AuthSession | undefined) => {
             session = next;
         },
-        deliver: (raw: ALMessage, transport: RallarMessageTransport = 'ws') =>
-            messages.publishLatest({
-                raw,
-                transport,
-                payload: JSON.parse(raw.payload.resource),
-                senderId: raw.id.senderId,
-                typeId: raw.payload.typeId,
-                topicId: raw.route.topicId,
-                contextId: raw.route.contextId,
-                resourceId: raw.route.resourceId,
-                traceId: raw.id.traceId,
-                receivedAtEpochMs: 1,
-                reply: () => Promise.reject(new Error('Invalidation has no reply'))
-            }),
-        reopen: (kind: RallarWsLifecycleEvent['kind'] = 'open') =>
-            lifecycle.publishLatest({
-                kind,
-                atEpochMs: 2,
-                status: {
-                    connectState: 'connected',
-                    readyState: 'open',
-                    isOpen: true,
-                    reconnecting: false,
-                    reconnectEnabled: true,
-                    reconnectAttempts: 0,
-                    maxReconnectAttempts: 10,
-                    reconnectExhausted: false
-                }
-            })
+        deliver: (raw, transport) => browser.deliver(raw, transport),
+        reopen: (kind) => browser.reopen(kind)
     };
 }
 

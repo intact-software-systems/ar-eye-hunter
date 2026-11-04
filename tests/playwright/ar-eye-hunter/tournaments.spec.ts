@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test';
 
+import { decodeArenaTournamentSnapshot } from '../../../packages/ar-eye-hunter/arena-tournament-snapshot.ts';
 import { createTournamentArena, type TournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
 import { installAnimationFrameGate } from '../../../packages/shared-test/install-animation-frame-gate.ts';
 import { toError } from '../../../packages/shared/resilience/to-error.ts';
 
 import { localStartInput } from '../local-start-input.ts';
-import { openArenaOperations } from '../room-player-journey.ts';
+import { openArenaOperations, toGroupId } from '../room-player-journey.ts';
+import { RoomSocketInterruption } from '../room-socket-interruption.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
     cancelPlayingTournament,
@@ -14,6 +16,7 @@ import {
     startTournamentMatch,
     tournamentMatch
 } from '../tournament-journey.ts';
+import { TournamentFrameObserver } from './tournament-frame-observer.ts';
 import { observeArenaScore, playArenaTournament, tapVisibleTarget } from './tournament-native-play.ts';
 
 tournamentBrowserTest.use({ hasTouch: true });
@@ -26,6 +29,8 @@ tournamentBrowserTest(
             'Requires the native game server and built SPA.'
         );
         tournamentBrowserTest.setTimeout(600000);
+        const spectatorConnection = await RoomSocketInterruption.install(players[2]);
+        const observers = new Map(players.map((player) => [player, new TournamentFrameObserver(player)]));
         const title = await registerTournament(players, 'arena');
         const entrants = await page.getByRole('region', { name: 'Tournaments', exact: true })
             .locator('ol li').allTextContents();
@@ -50,8 +55,23 @@ tournamentBrowserTest(
                     'data-arena-match-id',
                     /.+/
                 );
+                const roomId = toGroupId(await winner.getByLabel('Room link', { exact: true }).inputValue());
+                await spectatorConnection.disconnect();
+                const read = watcher.waitForResponse((response) =>
+                    response.request().method() === 'GET' &&
+                    new URL(response.url()).pathname === `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament` &&
+                    response.ok()
+                );
+                await spectatorConnection.reconnect();
+                const snapshot = decodeArenaTournamentSnapshot(await (await read).json());
+                expect(snapshot.binding.roomRef.groupId).toBe(roomId);
+                const frames = observers.get(watcher);
+                if (!frames) {
+                    throw new Error('Expected to observe the spectator connection');
+                }
+                await frames.playing(roomId);
             }
-            await playArenaTournament(winner, opponent);
+            await playArenaTournament(winner, opponent, observers);
             if (slot === 'semifinal-1') {
                 const results = players[2].getByRole('dialog', { name: 'Match results', exact: true });
                 await expect(results).toBeVisible();
@@ -275,8 +295,11 @@ test('native aiming chooses the nearest clear canvas target instead of storage o
             });
         });
         const initial = createTournamentArena({
-            gameId: 'native-aim-selection', principalIds: ['alice', 'bob'], seed: 7,
-            startedAtEpochMs: 1000, durationMs: 60000
+            gameId: 'native-aim-selection',
+            principalIds: ['alice', 'bob'],
+            seed: 7,
+            startedAtEpochMs: 1000,
+            durationMs: 60000
         });
         const state: TournamentArena = {
             ...initial,

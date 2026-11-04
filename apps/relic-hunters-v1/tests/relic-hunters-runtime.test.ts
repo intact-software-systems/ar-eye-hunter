@@ -34,6 +34,31 @@ import {
 } from './relic-runtime-backend.ts';
 
 describe('RelicHuntersRuntime', () => {
+    it('re-reads the unchanged expedition after socket recovery and discards late reads after logout', async () => {
+        const backend = new RelicRuntimeBackend();
+        const runtime = createRuntime(backend);
+        await runtime.start();
+        const held = Promise.withResolvers<ReturnType<typeof relicSnapshot>>();
+        const beforeRecovery = [...backend.reads];
+        const reading = Promise.withResolvers<void>();
+        vi.spyOn(backend, 'fetchSnapshot').mockImplementationOnce(() => {
+            reading.resolve();
+            return held.promise;
+        });
+        backend.recovery.publishLatest();
+        backend.recovery.publishLatest();
+        backend.recovery.publishLatest();
+        const dispatch = backend.timers.advance(0);
+        await reading.promise;
+        backend.signOut();
+        held.resolve(relicSnapshot('room-1', 50));
+        await dispatch;
+        await backend.timers.advance(2000);
+        expect(runtime.getState().snapshot).toBeUndefined();
+        expect(backend.reads).toEqual(beforeRecovery);
+        runtime.stop();
+    });
+
     it('restores the same tournament hunter after signing in with a new session', async () => {
         const backend = new RelicRuntimeBackend();
         const peerSnapshots = vi.spyOn(backend, 'publishRtcSnapshot');

@@ -1,18 +1,27 @@
-import { expect, type Page } from '@playwright/test';
-import { distance3 } from '../../../packages/ar-eye-hunter/arena-math.ts';
+import { expect, type Page, type Request } from '@playwright/test';
 import { blocksShot } from '../../../packages/ar-eye-hunter/arena-layout.ts';
-import { decodeArenaTournamentSnapshot } from '../../../packages/ar-eye-hunter/arena-tournament-snapshot.ts';
+import { distance3 } from '../../../packages/ar-eye-hunter/arena-math.ts';
 import type { TournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
 import { SingleFlight } from '../../../packages/shared/resilience/single-flight.ts';
 import { toError } from '../../../packages/shared/resilience/to-error.ts';
 import { toGroupId } from '../room-player-journey.ts';
+import type { TournamentFrameObserver } from './tournament-frame-observer.ts';
 
 /** Observe the public state, then aim and shoot exclusively with real canvas input. */
-export async function playArenaTournament(winner: Page, opponent: Page): Promise<void> {
+export async function playArenaTournament(
+    winner: Page,
+    opponent: Page,
+    observers: ReadonlyMap<Page, TournamentFrameObserver>
+): Promise<void> {
+    const frames = observers.get(winner);
+    const opponentFrames = observers.get(opponent);
+    if (!frames || !opponentFrames) {
+        throw new Error('Native gameplay needs an observer on both player pages');
+    }
     await winner.bringToFront();
     const canvas = winner.getByLabel('AR Eye Hunter gameplay canvas', { exact: true });
     const roomId = toGroupId(await winner.getByLabel('Room link', { exact: true }).inputValue());
-    const initial = await observeArena(winner, roomId);
+    const initial = await frames.playing(roomId);
     await expect(canvas).toHaveAttribute('data-arena-match-id', initial.gameId);
     await opponent.bringToFront();
     await expect(opponent.getByLabel('AR Eye Hunter gameplay canvas', { exact: true })).toHaveAttribute(
@@ -25,20 +34,13 @@ export async function playArenaTournament(winner: Page, opponent: Page): Promise
     }
     await winner.bringToFront();
 
-    await winner.keyboard.down('w');
-    let moved = initial;
-    try {
-        await expect.poll(async () => {
-            moved = await observeArena(winner, roomId);
-            return distance3(initial.players[0].simulation.position, moved.players[0].simulation.position);
-        }).toBeGreaterThan(0.1);
-    }
-    finally {
-        await winner.keyboard.up('w');
-    }
-    await scoreWithTouch(winner, roomId);
+    await moveWithKeyboard({ page: winner, roomId, frames, initial });
+    await scoreWithTouch(winner, roomId, frames);
     await winner.keyboard.press('Escape');
+    const previousConnection = opponentFrames.generation;
     await opponent.reload();
+    await expect.poll(() => opponentFrames.generation).toBeGreaterThan(previousConnection);
+    await opponentFrames.playing(roomId);
     for (const page of [winner, opponent]) {
         await expect(page.getByRole('dialog', { name: 'Match results', exact: true })).toBeVisible({ timeout: 75000 });
         await expect(page.locator('.match-result-row').first().locator('span').first()).toHaveText(/^[1-9]\d* pts$/);
@@ -52,13 +54,46 @@ export async function playArenaTournament(winner: Page, opponent: Page): Promise
     }
 }
 
-async function scoreWithTouch(page: Page, roomId: string): Promise<void> {
+interface NativeMovement {
+    readonly page: Page;
+    readonly roomId: string;
+    readonly frames: TournamentFrameObserver;
+    readonly initial: TournamentArena;
+}
+
+async function moveWithKeyboard({ page, roomId, frames, initial }: NativeMovement): Promise<void> {
+    const nativeReads: string[] = [];
+    const recordRead = (request: Request) => {
+        if (
+            request.method() === 'GET' &&
+            new URL(request.url()).pathname === `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament`
+        ) {
+            nativeReads.push(request.method());
+        }
+    };
+    page.on('request', recordRead);
+    await page.keyboard.down('w');
+    let moved = initial;
+    try {
+        await expect.poll(async () => {
+            moved = await frames.playing(roomId);
+            return distance3(initial.players[0].simulation.position, moved.players[0].simulation.position);
+        }).toBeGreaterThan(0.1);
+    }
+    finally {
+        await page.keyboard.up('w');
+        page.off('request', recordRead);
+    }
+    expect(nativeReads, 'Native movement must advance by server push without another snapshot GET').toEqual([]);
+}
+
+async function scoreWithTouch(page: Page, roomId: string, frames: TournamentFrameObserver): Promise<void> {
     const viewport = page.viewportSize();
     if (!viewport) {
         throw new Error('The gameplay journey needs a viewport for touch aiming.');
     }
     await observeArenaScore({
-        observe: () => observeArena(page, roomId),
+        observe: () => frames.playing(roomId),
         tap: (state, isActive) => tapVisibleTarget({ page, state, viewport, isActive })
     });
 }
@@ -141,17 +176,4 @@ export async function tapVisibleTarget(input: NativeTouchInput): Promise<void> {
             return;
         }
     }
-}
-
-async function observeArena(page: Page, roomId: string): Promise<TournamentArena> {
-    const path = `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament`;
-    const response = await page.waitForResponse((candidate) =>
-        candidate.request().method() === 'GET' && new URL(candidate.url()).pathname === path &&
-        candidate.status() === 200
-    );
-    const snapshot = decodeArenaTournamentSnapshot(await response.json());
-    if (!snapshot.state) {
-        return observeArena(page, roomId);
-    }
-    return snapshot.state;
 }

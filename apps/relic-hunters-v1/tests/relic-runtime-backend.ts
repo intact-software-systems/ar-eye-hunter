@@ -231,6 +231,10 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     public onAuthoritySnapshotMessage() {
         return () => undefined;
     }
+    public readonly recovery = new SynchronousNotifications<void>(reportListenerFailure);
+    public onSnapshotRecovery(listener: () => void) {
+        return this.recovery.subscribe(listener).unsubscribe;
+    }
     public onRoundTransitionMessage() {
         return () => undefined;
     }

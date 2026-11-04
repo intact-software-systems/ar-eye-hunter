@@ -31,6 +31,8 @@ const invalidIngressCases = [
     'topic',
     'payload-type',
     'page',
+    'room-frame-route',
+    'room-frame-type',
     'move-route',
     'move-type',
     AppTopics.viewInvalidated,
@@ -140,6 +142,10 @@ function invalidMessage(message: ALMessage, corruption: InvalidIngressCase): ALM
         };
     }
     switch (corruption) {
+        case 'room-frame-route':
+            return { ...message, route: { ...message.route, topicId: AppTopics.serverRoomSnapshot } };
+        case 'room-frame-type':
+            return { ...message, payload: { ...message.payload, typeId: AppTopics.serverRoomSnapshot } };
         case 'move-route':
             return { ...message, route: { ...message.route, topicId: AppTopics.groupMoveChanged } };
         case 'move-type':

@@ -3,6 +3,7 @@ import type { ALMessageRejection } from '@shared/al-contracts/al-message-persist
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { hasGroupMoveChangedTopic } from '@shared/api/mutation/group-move-changed.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
+import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -20,7 +21,7 @@ import { validateRtcSignalingMessage } from '../communication/decode-rtc-signali
 import { isInstanceLocalRtcSignal } from '../communication/is-instance-local-rtc-signal.ts';
 import { nowMs } from '../observability/timing.ts';
 import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
-import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
+import { installLiveWsNoticeSubscriber, sendReceivedLiveWsNotice } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
 import { createRelayedAckPublisher } from '../queue-pubsub/relayed-ack-notice.ts';
@@ -224,26 +225,14 @@ function installMiddlewareLiveWsNoticeSubscriber(
         inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
         resolveBroadRecipientSessionIds: (message) =>
             targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
-        sendToTargetsWithResult: ({ message, recipientSessionIds, notice, audience }) => {
-            wsQBoxServerService.sendToTargetsWithResult({
-                message,
-                sentPositions: null,
-                expiresAtMs: notice.expiresAtMs,
-                recipientSessionIds,
-                inboundScope: message.targets?.mode === 'unicast' ? notice.scope : undefined,
-                recipientScope: notice.scope,
-                recipientPrincipalId: audience.mode === 'principal'
-                    ? audience.principalRef.principalId
-                    : undefined,
-                requireAuthenticatedRecipient: true
-            });
-        }
+        sendToTargetsWithResult: (delivery) => sendReceivedLiveWsNotice(wsQBoxServerService, delivery)
     });
 }
 
 function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
     if (
-        hasGroupMoveChangedTopic(message) || message.route.topicId === AppTopics.viewInvalidated ||
+        hasServerRoomSnapshotTopic(message) || hasGroupMoveChangedTopic(message) ||
+        message.route.topicId === AppTopics.viewInvalidated ||
         message.payload.typeId === AppTopics.viewInvalidated ||
         message.route.topicId === AppTopics.viewResync || message.payload.typeId === AppTopics.viewResync
     ) {

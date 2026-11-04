@@ -16,6 +16,8 @@ import type { LiveWsNoticeTransport } from '../../queue-pubsub/live-ws-notice.ts
 import type { RoomPublicationAdmission } from '../room-publication/compute-room-publication-admission.ts';
 import type { WsGrantedTopicSet } from '../room-publication/ws-granted-topic-set.ts';
 
+import type { ServerRoomSnapshotProducer } from '@shared/api/views/server-room-snapshot.ts';
+
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
 
 export interface RallarServerWsPublishInputDto {
@@ -204,6 +206,8 @@ export interface RallarServerWsProxyRule<T extends RallarServerWsPayload> {
 }
 
 export interface RallarServerWsRouterOptions {
+    /** Only the application embedding this server may publish room snapshots under this producer and scope. */
+    readonly roomSnapshotProducer?: ServerRoomSnapshotProducer;
     readonly maxPayloadBytes?: number;
     readonly sendNacks?: boolean;
     readonly allowImplicitUserTopics?: boolean;

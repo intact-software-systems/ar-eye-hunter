@@ -11,7 +11,11 @@ import { requireApiAuthSession } from '@api-v1/src/services/request-auth-service
 import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { registerArenaTournamentRoutes } from './arena-tournament-routes.ts';
-import { ARENA_TOURNAMENT_GAME_PROFILE, createArenaTournamentServices } from './create-arena-tournament-services.ts';
+import {
+    ARENA_TOURNAMENT_GAME_PROFILE,
+    ARENA_TOURNAMENT_SNAPSHOT_PRODUCER,
+    createArenaTournamentServices
+} from './create-arena-tournament-services.ts';
 
 const configured = await readApiV1Configuration({
     environment: Deno.env,
@@ -40,12 +44,18 @@ const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     pgliteEvidence: configuration.blackBox.pgliteEvidence,
     statementCensus: undefined
 });
-const rallar = await createDefaultRallarServer({ configuration, databaseLifecycle });
+const rallar = await createDefaultRallarServer({
+    configuration,
+    databaseLifecycle,
+    ws: { roomSnapshotProducer: ARENA_TOURNAMENT_SNAPSHOT_PRODUCER }
+});
 const services = createArenaTournamentServices({
     database: databaseLifecycle.database,
     groups: rallar.runtime.groupsRepository,
     sessions: rallar.runtime.authSessionRepository,
     appInbox: rallar.appInbox,
+    ws: rallar.ws,
+    registerStop: (stop) => rallar.runtime.backgroundTasks.register(stop),
     outbox: rallar.runtime.outboxQueueReader,
     bindings: configuration.group.roomOwnedAppDataBindings,
     serviceId: myServerId,

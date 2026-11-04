@@ -280,6 +280,7 @@ function cancelledTournament(): NonNullable<BabylonArenaProps['tournament']> {
             },
             status: 'cancelled',
             state: null,
+            attemptRevision: 1,
             observedAtEpochMs: 1_000
         },
         sendControls: () => {}

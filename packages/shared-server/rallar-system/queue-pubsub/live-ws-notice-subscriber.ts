@@ -4,6 +4,7 @@ import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-adm
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     filterLiveWsRoomRecipientSessionIds,
     matchesLiveWsAudience,
@@ -155,4 +156,27 @@ function toRecoveredAudience(
     return isSameGroupScope(source.authenticatedScope, notice.scope)
         ? { mode: 'broad', targetMode: 'world' }
         : undefined;
+}
+
+/** A receiving API sends the decoded authority to its actual local sockets. It never re-resolves a captured room audience. */
+export function sendReceivedLiveWsNotice(
+    service: Pick<WsQueueBoxServerService, 'sendToTargetsWithResult'>,
+    { message, recipientSessionIds, notice, audience }: LiveWsNoticeSendInputDto
+): void {
+    service.sendToTargetsWithResult({
+        message,
+        sentPositions: null,
+        expiresAtMs: notice.expiresAtMs,
+        recipientSessionIds,
+        inboundScope: message.targets?.mode === 'unicast' ? notice.scope : undefined,
+        recipientScope: notice.scope,
+        recipientPrincipalId: audience.mode === 'principal'
+            ? audience.principalRef.principalId
+            : undefined,
+        roomSnapshotProducer: audience.mode === 'generation-room'
+            ? { producerId: audience.producerId, scope: audience.groupRef }
+            : undefined,
+        roomSessionGenerations: audience.mode === 'generation-room' ? audience.generations : undefined,
+        requireAuthenticatedRecipient: true
+    });
 }

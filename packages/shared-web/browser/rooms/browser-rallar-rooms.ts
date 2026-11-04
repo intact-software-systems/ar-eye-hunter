@@ -103,6 +103,7 @@ import { grantRoomTopic, revokeRoomTopic } from './topic-grants/room-topic-grant
 import { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } from './update-room.ts';
 
 export interface CreateBrowserRallarRoomsInput {
+    readonly changeRoom: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly stateStore: RallarRoomStateStorePort;
     readonly roomEvents: RallarRoomEventsPort;
     readonly messages: RallarMessagesOperations;
@@ -255,7 +256,7 @@ export function createBrowserRallarRooms(
             stateStore: input.stateStore,
             messages: input.messages,
             realtime: input.realtime,
-            leaveRoom: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
+            leaveRoom: (leaveInput) => input.changeRoom(() => leaveRoom({ ...input, input: leaveInput })),
             refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
             createFormation,
             readPrincipalId: () => input.readSession()?.clientId
@@ -326,27 +327,18 @@ function createRoomEntryOperations(
     | 'leave'
     | 'waitForPresence'
 > {
-    const join: BrowserRallarRooms['join'] = async (room, options = {}) =>
-        await joinRoom({
-            ...input.rooms,
-            room,
-            options,
-            createRoomSession: input.createSession
-        });
+    const { rooms } = input;
+    const join: BrowserRallarRooms['join'] = (room, options = {}) =>
+        rooms.changeRoom(() => joinRoom({ ...rooms, room, options, createRoomSession: input.createSession }));
     return {
-        create: async (room) => await createAndJoinRoom({ ...input.rooms, room }),
-        createAndSwitch: async (room) => await createAndSwitchRoom({ ...input.rooms, room, leaveRoom }),
+        create: (room) => rooms.changeRoom(() => createAndJoinRoom({ ...rooms, room })),
+        createAndSwitch: (room) => rooms.changeRoom(() => createAndSwitchRoom({ ...rooms, room, leaveRoom })),
         join,
         watch: (room, options = {}) => join(room, { ...options, participation: 'spectator' }),
-        activateMove: (move, options = {}) => activateGroupMove({ ...input.rooms, move, options }),
-        quickJoin: async (options = {}) => await quickJoinRoom({ ...input.rooms, options }),
-        enter: async (room, options = {}) =>
-            await enterRoom({
-                ...input.rooms,
-                room,
-                options,
-                createRoomSession: input.createSession
-            }),
+        activateMove: (move, options = {}) => rooms.changeRoom(() => activateGroupMove({ ...rooms, move, options })),
+        quickJoin: (options = {}) => rooms.changeRoom(() => quickJoinRoom({ ...rooms, options })),
+        enter: (room, options = {}) =>
+            rooms.changeRoom(() => enterRoom({ ...rooms, room, options, createRoomSession: input.createSession })),
         session: (room) =>
             input.createSession(
                 resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
@@ -355,7 +347,7 @@ function createRoomEntryOperations(
             input.createFormation(
                 resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
             ),
-        leave: async (leaveInput) => await leaveRoom({ ...input.rooms, input: leaveInput }),
+        leave: (leaveInput) => rooms.changeRoom(() => leaveRoom({ ...rooms, input: leaveInput })),
         waitForPresence: async (room, options = {}) =>
             await waitForRoomPresence({
                 room,

@@ -5,6 +5,7 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import { relicPlayerId } from '@relic-hunters/src/relic-tournament-participation.ts';
+import { subscribeViewRecovery } from '@shared-web/browser/api/subscribe-view-recovery.ts';
 import {
     rallar,
     type RallarJoinRoomOptions,
@@ -73,6 +74,7 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         onRoomsChange: (handler) => rallar.rooms.onChange(handler),
         onSnapshotMessage: subscribeToServerSnapshots,
         onAuthoritySnapshotMessage: (handler) => authority.start(handler),
+        onSnapshotRecovery: (changed) => subscribeViewRecovery({ browser: rallar, changed }),
         onRoundTransitionMessage: (roomId, subscription) =>
             subscribeRelicRoundTransitions(rallar, roomId, subscription),
         onHunterEventMessage: (roomId, subscription) => subscribeRelicHunterEvents(rallar, roomId, subscription),

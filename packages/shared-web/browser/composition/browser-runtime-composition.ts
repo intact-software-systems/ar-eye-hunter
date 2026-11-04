@@ -69,6 +69,7 @@ export interface BrowserRuntimeFoundation {
 export interface BrowserStateComposition {
     readonly stateStore: RallarStatePort;
     readonly roomStateStore: RallarRoomStateStorePort;
+    readonly selectedForRecovery: () => GroupRef | undefined;
     readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
     readonly readDefaults: () => RallarDefaults | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
@@ -175,6 +176,7 @@ export function createBrowserStateComposition(
     return {
         stateStore,
         roomStateStore,
+        selectedForRecovery: () => roomStateStore.selectedForRecovery(),
         roomLayoutSlots,
         readDefaults,
         resolveDefaultRoomRef,

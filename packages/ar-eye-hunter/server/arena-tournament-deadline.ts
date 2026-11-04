@@ -7,6 +7,7 @@ import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts'
 import type { TournamentArena } from '../tournament-arena.ts';
 import { decodeArenaTournamentCommand, type ArenaTournamentMutation } from './arena-tournament-mutation.ts';
 
+export const ARENA_TOURNAMENT_FINISH_TOPIC = 'app:ar-eye:tournament-finished';
 const DEADLINE_TYPE = 'app:ar-eye:tournament-clock';
 const RECOVERY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 

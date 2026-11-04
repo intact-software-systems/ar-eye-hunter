@@ -4,6 +4,7 @@ import type { ALMessageRejection } from '../../al-contracts/al-message-persisten
 import type { ALAccountViewAuthority } from '../../alm/outbound/admission/al-account-view-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { StateScope } from '../../api/state-types.ts';
+import type { ServerRoomSnapshotProducer } from '../../api/views/server-room-snapshot.ts';
 import type { ConnectionContext } from '../../websocket/json-web-socket-server.ts';
 
 export interface WsServerInboundConnectionScopeProof {
@@ -54,6 +55,8 @@ export interface WsServerLiveSendInputDto {
     /** A cluster notice's already resolved deadline; ordinary live sends derive one from the message. */
     readonly expiresAtMs?: number;
     readonly recipientSessionIds?: readonly string[];
+    readonly roomSnapshotProducer?: ServerRoomSnapshotProducer;
+    readonly roomSessionGenerations?: Readonly<Record<string, string>>;
     readonly admittedPeerIds?: readonly string[];
     /** The scope a producer proved for a unicast that names no group; a unicast naming a group takes its groupRef's. */
     readonly inboundScope?: StateScope | null;

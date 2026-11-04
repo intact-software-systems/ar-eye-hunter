@@ -161,6 +161,10 @@ export class JsonWebSocketClient {
         socket.addEventListener('message', (event: MessageEvent) => this.dispatchMessage(socket, event));
         socket.addEventListener('error', (event: Event) => this.notifyError(event));
         socket.addEventListener('close', (event: CloseEvent) => {
+            // A delayed close from the previous socket must not invalidate its live replacement.
+            if (this.ws && this.ws !== socket) {
+                return;
+            }
             this.notifyClose(event);
             if (this.ws === socket) {
                 this.ws = undefined;

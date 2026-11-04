@@ -111,6 +111,7 @@ export class RallarServerWsRouter {
     private readonly allowImplicitUserTopics: boolean;
     private readonly defaultFanout: RallarServerWsFanout;
     private readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
+    private readonly roomSnapshotProducer: RallarServerWsRouterOptions['roomSnapshotProducer'];
     private readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
     private readonly livePublication: RallarServerWsRouterOptions['livePublication'];
@@ -133,6 +134,7 @@ export class RallarServerWsRouter {
         this.allowImplicitUserTopics = options.allowImplicitUserTopics ?? true;
         this.defaultFanout = options.defaultFanout ?? 'live-only';
         this.authorizeRoomMessage = options.authorizeRoomMessage;
+        this.roomSnapshotProducer = options.roomSnapshotProducer;
         this.readServerPublishAudience = options.readServerPublishAudience;
         this.wakeOutbox = options.wakeOutbox;
         this.livePublication = options.livePublication;
@@ -428,6 +430,7 @@ export class RallarServerWsRouter {
             admittedPeerIds: audience?.admittedPeerIds,
             inboundScope,
             nowEpochMs: this.nowEpochMs(),
+            roomSnapshotProducer: this.roomSnapshotProducer,
             wakeOutbox: this.wakeOutbox,
             livePublication: this.livePublication,
             readServerPublishAudience: this.readServerPublishAudience,

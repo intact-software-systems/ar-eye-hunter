@@ -39,6 +39,7 @@ export default {
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retirement-owned-data.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/retention/group-retirement-stale-writers.test.ts',
             'packages/tests/shared-server/app-data/room-owned-app-data.test.ts',
+            'packages/tests/ar-eye-hunter/server/tournament-mutation.test.ts',
             'packages/tests/shared-server/rallar-server/rallar-server-app-inbox.test.ts',
             'packages/tests/shared-server/rallar-server/server-counter-example.test.ts',
             'packages/tests/relic-hunters/relic-game-authorization.test.ts',

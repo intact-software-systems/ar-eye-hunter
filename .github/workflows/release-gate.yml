@@ -339,6 +339,13 @@ jobs:
       - name: Run Postgres shared-server integration tests
         run: npm run test:postgres:integration
 
+      - name: Verify native tournament fanout through two PostgreSQL listeners
+        working-directory: apps/ar-eye-hunter-server-v1
+        env:
+          RALLAR_POSTGRES_INTEGRATION: '1'
+          DENO_NO_PACKAGE_JSON: '1'
+        run: deno test --allow-env --allow-read --allow-write --allow-net test/arena-tournament-cluster.test.ts
+
       - name: Run native API PostgreSQL query planning test
         working-directory: apps/api-v1
         env:

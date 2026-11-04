@@ -11,9 +11,10 @@ import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied, GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
 import { isRallarGameSnapshotRequest } from '@shared/rallar-game/snapshot-request.ts';
-import type { Either } from '@shared/resilience/Either.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type { GroupPublicationAuthority } from '../group-state/group-state-service-contracts.ts';
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
@@ -86,12 +87,27 @@ export function computeServerRoomPublicationAudience(
     ) {
         return undefined;
     }
-    return computeRoomPublicationAdmission({
+    const admission = computeRoomPublicationAdmission({
         ...authority,
         topic: { ...input.topic, topicId: message.route.topicId },
         publisher: { kind: 'server-producer', producerId: input.producerId },
         message: { ...message, targets: message.targets },
         nowEpochMs
+    });
+    if (!hasServerRoomSnapshotTopic(message) || admission.left !== undefined) {
+        return admission;
+    }
+    const audience = admission.right!;
+    const sessions = audience.sessions.filter(({ sessionId, connectionGenerationId }) =>
+        Object.hasOwn(authority.liveSessionGenerations, sessionId) &&
+        authority.liveSessionGenerations[sessionId].includes(connectionGenerationId)
+    );
+    return Either.ofRight({
+        ...audience,
+        sessions,
+        recipientConnectionGenerationIds: Object.fromEntries(
+            sessions.map((session) => [session.sessionId, session.connectionGenerationId])
+        )
     });
 }
 

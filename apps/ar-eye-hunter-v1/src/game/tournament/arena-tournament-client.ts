@@ -6,7 +6,9 @@ import {
 import type { TournamentArenaInput } from '@ar-eye-hunter/tournament-arena.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
+import { readApiView } from '@shared-web/browser/api/read-api-view.ts';
 import { sendApiHttpRequest } from '@shared-web/browser/api/send-api-http-request.ts';
+import type { SubscribeViewRecovery } from '@shared-web/browser/api/subscribe-view-recovery.ts';
 import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import { BrowserActivity } from '@shared-web/browser/browser-activity.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
@@ -20,12 +22,17 @@ import {
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { wrapRallarMotionAngle } from '@shared/rallar-motion/math.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { ARENA_ROOM_SCOPE } from '../arena-runtime/arena-room-entry.ts';
 
+import { ArenaTournamentFrames } from './arena-tournament-frames.ts';
+
 export namespace ArenaTournamentClient {
+    export interface Dependencies extends AuthenticatedResource.Dependencies {
+        readonly browser: SubscribeViewRecovery.Browser;
+    }
     export interface View {
         readonly tournament: ArenaTournamentSnapshot | null;
     }
@@ -46,6 +53,7 @@ export namespace ArenaTournamentClient {
 /** Browser controls are proposals; every displayed score and position comes from the native game owner. */
 export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournamentClient.View, TournamentArenaInput> {
     private readonly controlsDependencies: AuthenticatedResource.Dependencies;
+    private readonly frames: ArenaTournamentFrames;
     private sequence = 0;
     private lastSentAtEpochMs = 0;
     private pendingShot: ArenaTournamentClient.PendingShot | null = null;
@@ -53,7 +61,8 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
     private cancelPendingShot: (() => void) | null = null;
 
     static createBrowser(roomId: string): ArenaTournamentClient {
-        const dependencies: AuthenticatedResource.Dependencies = {
+        const dependencies: ArenaTournamentClient.Dependencies = {
+            browser: rallar,
             auth: {
                 session: () => rallar.session(),
                 onChange: (listener, options) => rallar.auth.onChange(listener, options)
@@ -65,32 +74,26 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
         return new ArenaTournamentClient(dependencies, roomId);
     }
 
-    constructor(dependencies: AuthenticatedResource.Dependencies, roomId: string) {
+    constructor(dependencies: ArenaTournamentClient.Dependencies, roomId: string) {
         const ref = { ...ARENA_ROOM_SCOPE, groupId: roomId };
         const path = `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament`;
-        let casualRoom = false;
         super(dependencies, {
             scope: ARENA_ROOM_SCOPE,
-            subscribeRefresh: (run) =>
-                startRepeating({ timers: dependencies.timers, intervalMs: 200, firstRun: 'after-interval', run })
+            changeResult: 'stream',
+            subscribeRefresh: (run) => this.frames.subscribe(dependencies.browser, run)
         }, {
             async read({ session, signal }) {
-                if (casualRoom) {
-                    return { tournament: null };
+                const value = await readApiView({ baseUrl: readApiBaseUrl(), path, session, signal, timeoutMs: 5000 });
+                try {
+                    const tournament = value === null ? null : decodeArenaTournamentSnapshot(value);
+                    if (tournament && !isSameGroupRef(tournament.binding.roomRef, ref)) {
+                        throw new TypeError('Arena response belongs to another room');
+                    }
+                    return { tournament };
                 }
-                const value = await sendApiHttpRequest({
-                    baseUrl: readApiBaseUrl(),
-                    path,
-                    method: 'GET',
-                    body: undefined,
-                    options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) }
-                });
-                const tournament = value === null ? null : decodeArenaTournamentSnapshot(value);
-                if (tournament && !isSameGroupRef(tournament.binding.roomRef, ref)) {
-                    throw new TypeError('Arena response belongs to another room');
+                catch (cause) {
+                    throw new Error('Invalid canonical arena snapshot', { cause });
                 }
-                casualRoom = tournament === null;
-                return { tournament };
             },
             async change({ session, signal, request, requestId }) {
                 return await new Command(async (attemptSignal) => {
@@ -105,6 +108,13 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
                 }, { signal, timeoutMs: 5000, maxAttempts: 2, errorOnNull: false }).run();
             }
         });
+        this.frames = new ArenaTournamentFrames(ref, {
+            attempt: () => this.attempt(),
+            current: (attempt) => this.current(attempt),
+            isActive: () => dependencies.activity.isActive(),
+            snapshot: () => this.getState().view?.tournament,
+            publish: (attempt, tournament) => this.publishStreamView(attempt, { tournament })
+        });
         this.controlsDependencies = dependencies;
     }
 
@@ -113,13 +123,19 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
             this.controlsSubscriptions = new SubscriptionScope();
             this.controlsSubscriptions.add(this.onChange(() => this.progressPendingShot()));
             this.controlsSubscriptions.add(
-                this.controlsDependencies.activity.onChange(() => this.progressPendingShot())
+                this.controlsDependencies.activity.onChange(() => {
+                    if (!this.controlsDependencies.activity.isActive()) {
+                        this.frames.discard();
+                    }
+                    this.progressPendingShot();
+                })
             );
         }
         return super.start();
     }
 
     override stop(): void {
+        this.frames.discard();
         this.clearPendingShot();
         const subscriptions = this.controlsSubscriptions;
         this.controlsSubscriptions = null;
@@ -129,6 +145,20 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
         finally {
             super.stop();
         }
+    }
+
+    protected override resolveReadView(
+        view: ArenaTournamentClient.View,
+        attempt: AuthenticatedResource.ReadInput
+    ): ArenaTournamentClient.View {
+        this.frames.authorize(attempt);
+        const current = this.getState().view;
+        const previous = current?.tournament;
+        const incoming = view.tournament;
+        return current && previous && incoming && jsonEquals(previous.binding, incoming.binding) &&
+                previous.attemptRevision > incoming.attemptRevision
+            ? current
+            : view;
     }
 
     sendControls(input: ArenaTournamentClient.Controls): void {

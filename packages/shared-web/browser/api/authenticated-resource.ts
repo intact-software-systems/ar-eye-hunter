@@ -10,6 +10,7 @@ import type { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { ApiHttpError } from './http-error.ts';
 import { isDefinitiveApiMutationFailure } from './is-definitive-api-mutation-failure.ts';
+import { isRetryableApiViewFailure } from './read-api-view.ts';
 
 export namespace AuthenticatedResource {
     export interface State<View> {
@@ -44,6 +45,8 @@ export namespace AuthenticatedResource {
     }
     export interface Config {
         readonly scope: StateScope;
+        /** A live resource receives the committed result on its subscribed stream. */
+        readonly changeResult?: 'stream';
         subscribeRefresh(listener: () => Promise<void>): () => void;
     }
 }
@@ -128,7 +131,7 @@ export class AuthenticatedResource<View, Request> {
                 timers: this.dependencies.timers,
                 write: async () => {
                     const current = this.attempt();
-                    if (current !== null) {
+                    if (current !== null && this.dependencies.activity.isActive()) {
                         await this.readCurrent(current, revision);
                     }
                 }
@@ -175,21 +178,38 @@ export class AuthenticatedResource<View, Request> {
             this.authKey() === toAuthSessionKey(attempt.session);
     }
 
+    protected resolveReadView(view: View, _attempt: AuthenticatedResource.ReadInput): View {
+        return view;
+    }
+
+    protected publishStreamView(attempt: AuthenticatedResource.ReadInput, view: View): void {
+        if (this.current(attempt) && this.dependencies.activity.isActive()) {
+            this.publish({ ...this.state, view });
+        }
+    }
+
     private async readCurrent(attempt: AuthenticatedResource.ReadInput, revision: number): Promise<void> {
         if (!this.current(attempt) || revision !== this.revision) {
             return;
         }
+        const previousView = this.state.view;
         try {
             const view = await this.api.read(attempt);
             if (this.current(attempt) && revision === this.revision) {
-                this.publish({ ...this.state, view, error: this.pending === null ? null : this.state.error });
+                this.publish({
+                    ...this.state,
+                    view: this.resolveReadView(view, attempt),
+                    error: this.pending === null ? null : this.state.error
+                });
             }
         }
         catch (error) {
             if (this.current(attempt) && revision === this.revision) {
                 const failure = toError(error);
                 this.invalidateLostAuthority(failure);
-                this.publish({ ...this.state, view: null, error: failure.message });
+                const superseded = this.config.changeResult === 'stream' && previousView !== this.state.view &&
+                    isRetryableApiViewFailure(failure);
+                this.publish({ ...this.state, view: superseded ? this.state.view : null, error: failure.message });
             }
         }
     }
@@ -200,7 +220,9 @@ export class AuthenticatedResource<View, Request> {
             return;
         }
         this.pending = pending;
-        this.revision++;
+        if (this.config.changeResult !== 'stream') {
+            this.revision++;
+        }
         this.publish({ ...this.state, busy: true, retryPending: false, error: null });
         if (!this.current(attempt)) {
             return;
@@ -211,8 +233,10 @@ export class AuthenticatedResource<View, Request> {
                 return;
             }
             this.pending = null;
-            this.revision++;
-            await this.refresh();
+            if (this.config.changeResult !== 'stream') {
+                this.revision++;
+                await this.refresh();
+            }
             if (this.current(attempt) && refusal !== null) {
                 this.setError(refusal);
             }
@@ -271,7 +295,7 @@ export class AuthenticatedResource<View, Request> {
         return session === undefined ? null : toAuthSessionKey(session);
     }
 
-    private attempt(): AuthenticatedResource.ReadInput | null {
+    protected attempt(): AuthenticatedResource.ReadInput | null {
         const session = this.dependencies.auth.session();
         return this.subscriptions === null || session === undefined
             ? null

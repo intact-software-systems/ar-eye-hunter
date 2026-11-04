@@ -7,12 +7,19 @@ import {
     hasGroupMoveChangedTopic,
     matchesGroupMoveChangedRecipient
 } from '../../../api/mutation/group-move-changed.ts';
+import { hasServerRoomSnapshotTopic, isServerRoomSnapshotMessage } from '../../../api/views/server-room-snapshot.ts';
 import { decodeViewInvalidationMessage } from '../../../api/views/view-invalidation.ts';
 import type { WsServerLiveSendInputDto } from '../ws-queue-box-server-contracts.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
 
 export function validateLiveSendAuthority(input: WsServerLiveSendInputDto): readonly string[] {
     const issues: string[] = [];
+    if (
+        hasServerRoomSnapshotTopic(input.message) || input.roomSessionGenerations !== undefined ||
+        input.roomSnapshotProducer !== undefined
+    ) {
+        return validateRoomSnapshotAuthority(input);
+    }
     if (input.accountView !== undefined) {
         const mixed = input.recipientScope !== undefined || input.inboundScope !== undefined ||
             input.recipientPrincipalId !== undefined || input.sessionInvalidation !== undefined ||
@@ -61,4 +68,18 @@ export function validateLiveSendAuthority(input: WsServerLiveSendInputDto): read
         issues.push('Principal audience requires its scope');
     }
     return issues;
+}
+
+function validateRoomSnapshotAuthority(input: WsServerLiveSendInputDto): readonly string[] {
+    const target = input.message.targets;
+    return isServerRoomSnapshotMessage(input.message, input.roomSnapshotProducer) && target?.mode === 'broadcast' &&
+            target.groupRef !== undefined && input.recipientScope !== undefined &&
+            target.groupRef.applicationId === input.recipientScope.applicationId &&
+            target.groupRef.workspaceId === input.recipientScope.workspaceId &&
+            input.requireAuthenticatedRecipient === true && input.recipientSessionIds !== undefined &&
+            input.roomSessionGenerations !== undefined && input.sessionInvalidation === undefined &&
+            input.accountView === undefined && input.recipientPrincipalId === undefined &&
+            input.admittedPeerIds === undefined
+        ? []
+        : ['Server room snapshots require a scoped, generation-fenced room audience'];
 }

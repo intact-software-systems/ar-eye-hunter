@@ -35,6 +35,7 @@ import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import {
@@ -104,6 +105,7 @@ export namespace RelicHuntersRuntime {
         onRoomsChange(handler: (state: RallarRoomState) => void): RallarUnsubscribe;
         onSnapshotMessage(handler: (event: RelicServerEvent) => void): RallarUnsubscribe;
         onAuthoritySnapshotMessage(handler: (event: RelicServerEvent) => void): RallarUnsubscribe;
+        onSnapshotRecovery(listener: () => void): RallarUnsubscribe;
         onRoundTransitionMessage(roomId: string, subscription: RelicRoundTransitionSubscription): RallarUnsubscribe;
         onHunterEventMessage(roomId: string, subscription: RelicHunterEventSubscription): RallarUnsubscribe;
         authorityStatus(): RallarGameAuthorityClientStatus | undefined;
@@ -636,13 +638,24 @@ export class RelicHuntersRuntime {
         }
         const listeners = this.deps.subscriptions();
         this.roomListeners = listeners;
-        listeners.add(this.deps.onRoundTransitionMessage(attempt.roomId, {
-            onTransition: (event) => this.acceptRoundTransition(attempt, event),
-            onResyncRequired: () => {
-                if (this.current(attempt, true)) {
-                    void this.hydrateRoom('resync-recovery');
+        const recovery = new ThrottledFlush({
+            timers: this.deps.timers,
+            write: async () => {
+                if (this.roomListeners === listeners && this.current(attempt, true)) {
+                    await this.hydrateRoom('resync-recovery');
                 }
             }
+        }, { minIntervalMs: 0, firstMarkDelayMs: 0 });
+        const changed = () => {
+            void recovery.mark(true);
+        };
+        listeners.add(() => {
+            void recovery.stop();
+        });
+        listeners.add(this.deps.onSnapshotRecovery(changed));
+        listeners.add(this.deps.onRoundTransitionMessage(attempt.roomId, {
+            onTransition: (event) => this.acceptRoundTransition(attempt, event),
+            onResyncRequired: changed
         }));
         if (!this.current(attempt, true)) {
             return;

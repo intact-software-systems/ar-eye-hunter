@@ -1,5 +1,6 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
 
 import type { GroupPublicationAuthority } from '../group-state/group-state-service-contracts.ts';
 import { toMembersTopicPublicationAuthority } from './room-publication/compute-room-publication-admission.ts';
@@ -40,7 +41,7 @@ async function readServerPublishAuthority(
     groupRef: GroupRef,
     input: RallarServerWsPublishAudienceInputDto
 ): Promise<GroupPublicationAuthority | undefined> {
-    if (input.topic.participation === 'granted') {
+    if (input.topic.participation === 'granted' || hasServerRoomSnapshotTopic(input.message)) {
         return await dependencies.readPublicationAuthority(groupRef, input.message.route.topicId);
     }
     const snapshot = await dependencies.readGroupSnapshot(groupRef);

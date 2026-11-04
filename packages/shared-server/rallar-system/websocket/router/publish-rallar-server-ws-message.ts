@@ -2,6 +2,7 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import { toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { hasServerRoomSnapshotTopic, isServerRoomSnapshotMessage } from '@shared/api/views/server-room-snapshot.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { resolveWsQueueBoxServerProvenScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -30,6 +31,7 @@ import type {
 import { validateRallarServerWsPublishScope } from './validate-rallar-server-ws-publish-scope.ts';
 
 export interface PublishRallarServerWsMessageInput {
+    readonly roomSnapshotProducer?: RallarServerWsRouterOptions['roomSnapshotProducer'];
     readonly service: WsQueueBoxServerService;
     readonly message: ALMessage;
     readonly fanout: RallarServerWsFanout;
@@ -67,6 +69,13 @@ export function assertRallarServerWsPublishInput(input: RallarServerWsPublishInp
 export async function publishRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
+    if (
+        hasServerRoomSnapshotTopic(input.message) &&
+        (!isServerRoomSnapshotMessage(input.message, input.roomSnapshotProducer) || input.origin !== 'server' ||
+            input.producerId !== input.roomSnapshotProducer?.producerId || input.fanout !== 'live-only')
+    ) {
+        return toFailedPublishResult(input, 'Room snapshots require the server live-only room carrier.');
+    }
     if (input.audience !== undefined) {
         return await publishAuthorizedRallarServerWsMessage(input);
     }
@@ -177,6 +186,13 @@ async function publishRallarServerWsFanout(
                     nowEpochMs: input.nowEpochMs
                 }),
                 admittedPeerIds: input.admittedPeerIds,
+                roomSessionGenerations: hasServerRoomSnapshotTopic(input.message)
+                    ? input.audience?.recipientConnectionGenerationIds
+                    : undefined,
+                roomSnapshotProducer: hasServerRoomSnapshotTopic(input.message)
+                    ? input.roomSnapshotProducer
+                    : undefined,
+                requireAuthenticatedRecipient: hasServerRoomSnapshotTopic(input.message) || undefined,
                 inboundScope: input.inboundScope,
                 recipientScope: input.audience && groupRef
                     ? { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId }

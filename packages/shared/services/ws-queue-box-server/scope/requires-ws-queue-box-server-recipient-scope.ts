@@ -14,6 +14,7 @@ import {
     matchesGroupMoveChangedRecipient
 } from '../../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../../api/state-types.ts';
+import { hasServerRoomSnapshotTopic } from '../../../api/views/server-room-snapshot.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
 import { validateViewInvalidationAuthority } from './validate-view-invalidation-authority.ts';
 
@@ -67,6 +68,9 @@ export function validateWsQueueBoxServerRecipientAuthority(
     >,
     referenceKey: Key | undefined
 ): readonly string[] {
+    if (hasServerRoomSnapshotTopic(message)) {
+        return ['Server room snapshots require live-only delivery'];
+    }
     if (
         (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) &&
         authority.accountView === undefined &&

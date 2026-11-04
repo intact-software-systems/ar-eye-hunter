@@ -11,6 +11,7 @@ export default {
             '@shared': `${repoRoot}/packages/shared`,
             '@shared-graph': `${repoRoot}/packages/shared-graph`,
             '@shared-test': `${repoRoot}/packages/shared-test`,
+            '@ar-eye-hunter': `${repoRoot}/packages/ar-eye-hunter`,
             '@relic-hunters': `${repoRoot}/packages/relic-hunters`
         }
     },

@@ -13,6 +13,7 @@ import type { RallarSessionController } from '@shared-web/browser/session/rallar
 import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { SelectedRoomRecovery } from '../rooms/entry/selected-room-recovery.ts';
 
 import type { RallarTargetedChannelDefinition } from '../rallar-facade-contract.ts';
 import type {
@@ -72,7 +73,16 @@ export interface CreateBrowserDirectorCompositionInput {
 export function createBrowserRoomsComposition(
     input: CreateBrowserRoomsCompositionInput
 ): BrowserRoomsComposition {
+    const recovery = new SelectedRoomRecovery({
+        selected: input.state.selectedForRecovery,
+        requireSession: input.session.requireSession,
+        connect: input.session.acquireConnection,
+        readPublicationKey: input.session.readPublicationKey,
+        acceptSnapshots: (snapshots) => input.state.stateStore.acceptSnapshots(snapshots)
+    });
+    input.realtime.wsController.facade.onLifecycle((event) => recovery.onSocket(event.kind), { emitCurrent: false });
     const rooms = createBrowserRallarRooms({
+        changeRoom: (operation) => recovery.changeRoom(operation),
         stateStore: input.state.roomStateStore,
         roomEvents: input.stateEvents.roomEvents,
         roomLayoutSlots: input.state.roomLayoutSlots,

@@ -2,6 +2,7 @@ import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { hasGroupMoveChangedTopic } from '@shared/api/mutation/group-move-changed.ts';
+import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { validateWsOutboxProvenanceTarget } from './validate-ws-outbox-provenance-target.ts';
@@ -64,6 +65,9 @@ export function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation):
 
 /** Reserved view and Move Together envelopes each require their own producer and exact audience. */
 function validateViewProducer(message: ALMessage, proof: WsOutboxProvenance): readonly string[] {
+    if (hasServerRoomSnapshotTopic(message)) {
+        return ['Server room snapshots use only the live server room carrier'];
+    }
     if (hasGroupMoveChangedTopic(message) || proof.producerKind === 'group-move') {
         return hasGroupMoveChangedTopic(message) && proof.producerKind === 'group-move' &&
                 proof.target.kind === 'scoped-account-view'
