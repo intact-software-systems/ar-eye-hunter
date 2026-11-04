@@ -53,15 +53,13 @@ export function computeALOutboundReceiptAdmission(
     }
     const expected = read.receipt.expectedRecipientPeerIds;
     const acked = new Set([...current.ackedPeerIds, ...read.receipt.confirmedRecipientPeerIds]);
-    const outside = new Set([...current.outsideAudiencePeerIds, ...read.receipt.outsideAudienceRecipientPeerIds]);
     return {
         read,
         write: {
             value: {
                 ...current,
                 expectedPeerIds: expected,
-                ackedPeerIds: expected.filter((peerId) => acked.has(peerId)),
-                outsideAudiencePeerIds: expected.filter((peerId) => outside.has(peerId))
+                ackedPeerIds: expected.filter((peerId) => acked.has(peerId))
             },
             expireAtTimestamp: computeALReceiptRetentionExpiryMs(current.deadlineAtMs)
         }
@@ -157,8 +155,7 @@ function toMissingReceiptRejection(read: ALOutboundReceiptAdmissionRead): ALMess
 
 function hasSameReceipt(pending: ALOutboundPendingAckSnapshot, next: ALOutboundPendingAckSnapshot): boolean {
     return hasSamePeers(pending.expectedPeerIds, next.expectedPeerIds) &&
-        hasSamePeers(pending.ackedPeerIds, next.ackedPeerIds) &&
-        hasSamePeers(pending.outsideAudiencePeerIds, next.outsideAudiencePeerIds);
+        hasSamePeers(pending.ackedPeerIds, next.ackedPeerIds);
 }
 
 function hasSamePeers(left: readonly string[], right: readonly string[]): boolean {

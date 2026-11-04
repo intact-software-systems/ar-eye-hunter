@@ -60,22 +60,12 @@ function assessReceiptRolesEntry(entry: AlmReceiptRolesEntry, input: AlmReceiptR
     return (['confirmed', 'unconfirmed', 'outsideAudience', 'expected'] as const).flatMap((list) => {
         const peerIds = value[`${list}RecipientPeerIds`];
         const named = isStringList(peerIds) ? toNamedRoles(peerIds, sessionRoles) : undefined;
+        const label = list === 'outsideAudience' ? 'outside-audience' : list;
         return named !== undefined && isSameRoleSet(named, expected[list])
             ? []
-            : [
-                `${entry.handleId}: the ${RECEIPT_LIST_LABELS[list]} recipients do not name the sessions of ${
-                    toRoleText(expected[list])
-                }.`
-            ];
+            : [`${entry.handleId}: the ${label} recipients do not name the sessions of ${toRoleText(expected[list])}.`];
     });
 }
-
-const RECEIPT_LIST_LABELS = {
-    confirmed: 'confirmed',
-    unconfirmed: 'unconfirmed',
-    outsideAudience: 'outside-audience',
-    expected: 'expected'
-} as const;
 
 function toSessionRoles(recipients: readonly RecordedAlmConformanceParticipant[]): ReadonlyMap<string, string> {
     return new Map(

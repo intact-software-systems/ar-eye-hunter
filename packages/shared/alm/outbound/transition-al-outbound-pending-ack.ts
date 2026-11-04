@@ -162,21 +162,21 @@ export function toALOutboundCompletedHopPeerIds(acks: readonly ALAckPayload[]): 
  */
 export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgementFactInput): ALOutboundSettlementFact {
     const { receipt, hops } = input;
-    const { unconfirmedPeerIds: unconfirmed, outsideAudiencePeerIds } = toALOutboundReceiptClasses(receipt);
+    const classes = toALOutboundReceiptClasses(receipt);
     const receiverHops = isALLogicalReceiptMode(receipt.mode);
     return {
         kind: 'acknowledgement',
         msgId: receipt.msgId,
         traceId: input.traceId,
         mode: receipt.mode,
-        confirmedHopPeerIds: receiverHops ? hops.completedHopPeerIds : receipt.ackedPeerIds,
+        confirmedHopPeerIds: receiverHops ? hops.completedHopPeerIds : classes.confirmedPeerIds,
         unconfirmedHopPeerIds: receiverHops
             ? hops.nextHopPeerIds.filter((peerId) => !hops.completedHopPeerIds.includes(peerId))
-            : unconfirmed,
+            : classes.unconfirmedPeerIds,
         expectedRecipientPeerIds: receipt.expectedPeerIds,
-        confirmedRecipientPeerIds: receipt.ackedPeerIds,
-        unconfirmedRecipientPeerIds: unconfirmed,
-        outsideAudienceRecipientPeerIds: outsideAudiencePeerIds,
+        confirmedRecipientPeerIds: classes.confirmedPeerIds,
+        unconfirmedRecipientPeerIds: classes.unconfirmedPeerIds,
+        outsideAudienceRecipientPeerIds: classes.outsideAudiencePeerIds,
         complete: input.complete
     };
 }
@@ -188,8 +188,9 @@ export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgeme
 export function isALOutboundReceiptComplete(
     pending: ALOutboundPendingAckSnapshot
 ): boolean {
+    const classes = toALOutboundReceiptClasses(pending);
     return pending.expectedPeerIds.length === 0 ||
-        (pending.ackedPeerIds.length > 0 && toALOutboundReceiptClasses(pending).unconfirmedPeerIds.length === 0);
+        (classes.confirmedPeerIds.length > 0 && classes.unconfirmedPeerIds.length === 0);
 }
 
 /**

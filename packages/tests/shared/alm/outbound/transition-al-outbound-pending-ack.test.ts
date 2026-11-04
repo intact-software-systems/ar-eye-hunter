@@ -91,6 +91,20 @@ describe('a receipt with recipients outside the audience', () => {
         });
     });
 
+    // A stray ACK from a peer the receipt never expected confirms nobody it counts.
+    it('confirms nobody from an acked peer outside the expected set, whatever the row lists', () => {
+        const row = receiverRow({ ackedPeerIds: ['stray'], outsideAudiencePeerIds: ['r1', 'r2'] });
+        const fact = toALOutboundAcknowledgementFact({
+            receipt: { ...row, mode: 'hop' },
+            hops: { nextHopPeerIds: ['r1', 'r2'], completedHopPeerIds: [] },
+            complete: false,
+            traceId: 'trace'
+        });
+
+        expect(isALOutboundReceiptComplete(row)).toBe(false);
+        expect(fact).toMatchObject({ confirmedHopPeerIds: [], confirmedRecipientPeerIds: [] });
+    });
+
     it('completes a receipt that expected nobody', () => {
         expect(isALOutboundReceiptComplete(receiverRow({ expectedPeerIds: [] }))).toBe(true);
     });
