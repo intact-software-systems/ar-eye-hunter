@@ -309,7 +309,6 @@ export class ALOutboundControlAdmission<TPrepared> {
                 toALOutboundMessageOwnerKey(this.namespace, targetMsgId),
                 decodeALAdmissionString
             );
-            const history = await this.readControlHistory(session, parsed, targetMsgId);
             return {
                 parsed,
                 source,
@@ -320,10 +319,7 @@ export class ALOutboundControlAdmission<TPrepared> {
                 owner,
                 ...await this.readOwnedControlSurface(session, owner, targetMsgId),
                 sent: await this.reads.readStoredMessage(session, targetMsgId),
-                history,
-                acknowledgements: history.kind === 'acks'
-                    ? history.values
-                    : await this.reads.readAcks(session, targetMsgId)
+                ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
     }
@@ -343,21 +339,28 @@ export class ALOutboundControlAdmission<TPrepared> {
         };
     }
 
-    private async readControlHistory(
+    /** The control's own history, and the ACK history the hop view reads whatever kind of control this is. */
+    private async readControlHistories(
         session: ALAdmissionReadSession,
         parsed: ALPeerControlMessage,
         msgId: string
-    ) {
+    ): Promise<Pick<ALControlAdmissionRead, 'history' | 'acknowledgements'>> {
+        const acknowledgements = await this.reads.readAcks(session, msgId);
         switch (parsed.type) {
             case 'ack':
-                return await this.reads.readControlHistory(session, 'acks', msgId) ??
-                    { kind: 'acks' as const, values: [] };
+                return { history: { kind: 'acks', values: acknowledgements }, acknowledgements };
             case 'nack':
-                return await this.reads.readControlHistory(session, 'nacks', msgId) ??
-                    { kind: 'nacks' as const, values: [] };
+                return {
+                    history: await this.reads.readControlHistory(session, 'nacks', msgId) ??
+                        { kind: 'nacks', values: [] },
+                    acknowledgements
+                };
             case 'repair':
-                return await this.reads.readControlHistory(session, 'repairs', msgId) ??
-                    { kind: 'repairs' as const, values: [] };
+                return {
+                    history: await this.reads.readControlHistory(session, 'repairs', msgId) ??
+                        { kind: 'repairs', values: [] },
+                    acknowledgements
+                };
         }
     }
 
