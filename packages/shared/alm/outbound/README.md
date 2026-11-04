@@ -1256,7 +1256,7 @@ every recipient is outside stays open to its deadline and ends `receipt-exhauste
 
 An RTC origin resends a stored granted publication only while its cached snapshot still grants it `publish` (S3-R8):
 the RTC carrier applies
-[`computeRtcRepairAuthorization`](../../multicast/publication/compute-rtc-repair-authorization.ts) before every
+[`computeRtcRepairRefusal`](../../multicast/publication/compute-rtc-repair-refusal.ts) before every
 repair, re-plan and dequeue of a signed message, and a re-plan it refuses `no-publish-grant` ends the message
 ([`resolveALOutboundReplanRefusalSettlement`](./control/resolve-al-outbound-replan-refusal-settlement.ts)): the
 ack-timeout retry deletes the pending receipt under the version its decision read, the dequeue and the retransmit end

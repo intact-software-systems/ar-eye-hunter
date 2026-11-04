@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { computeRtcRepairAuthorization } from '@shared/multicast/publication/compute-rtc-repair-authorization.ts';
+import { computeRtcRepairRefusal } from '@shared/multicast/publication/compute-rtc-repair-refusal.ts';
 
 import {
     createPublicationRoomSnapshot,
@@ -12,23 +12,21 @@ import {
 
 const NOW_MS = Date.now();
 
-describe('computeRtcRepairAuthorization', () => {
-    it('authorizes the origin of a stored signed send while its principal still holds publish', () => {
-        expect(computeRtcRepairAuthorization(toInput(createRoom({ a: PUBLISH_ONLY }))).right).toBe('authorized');
-    });
-
+describe('computeRtcRepairRefusal', () => {
+    // M1: a pass carries no value; only the refusal is read.
     it.each<[string, GroupSnapshot | null]>([
-        ['no readable snapshot', null],
-        ['an expired room', toExpiredRoom(createRoom({ a: SUBSCRIBE_ONLY }))]
-    ])('leaves %s to the room-authority planning: only a readable revoke is terminal', (_name, snapshot) => {
-        expect(computeRtcRepairAuthorization(toInput(snapshot)).right).toBe('room-authority-decides');
+        ['its principal still holds publish', createRoom({ a: PUBLISH_ONLY })],
+        ['no snapshot is readable, which the room-authority planning decides', null],
+        ['its room expired, which the room-authority planning decides', toExpiredRoom(createRoom({ a: SUBSCRIBE_ONLY }))]
+    ])('lets the origin re-send a stored signed send when %s', (_name, snapshot) => {
+        expect(computeRtcRepairRefusal(toInput(snapshot))).toBeUndefined();
     });
 
     it.each<[string, GroupSnapshot]>([
         ['publish revoked after the freeze, subscribe kept', createRoom({ a: SUBSCRIBE_ONLY })],
         ['no grant row any more', createRoom({ b: SUBSCRIBE_ONLY })]
     ])('refuses no-publish-grant with %s', (_name, snapshot) => {
-        expect(computeRtcRepairAuthorization(toInput(snapshot)).left).toEqual({ kind: 'no-publish-grant' });
+        expect(computeRtcRepairRefusal(toInput(snapshot))).toEqual({ kind: 'no-publish-grant' });
     });
 });
 

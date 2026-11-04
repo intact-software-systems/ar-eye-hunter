@@ -24,7 +24,7 @@ import {
     RTC_GRANTED_PUBLICATION_REFUSALS
 } from './compute-rtc-granted-publication-refusal.ts';
 import { computeRtcPublicationAdmission } from './compute-rtc-publication-admission.ts';
-import { computeRtcRepairAuthorization, type RtcRepairRefusal } from './compute-rtc-repair-authorization.ts';
+import { computeRtcRepairRefusal, type RtcRepairRefusal } from './compute-rtc-repair-refusal.ts';
 import { computeRtcRepairTargetAdmission } from './compute-rtc-repair-target-admission.ts';
 import type { RtcGrantedTopicReader } from './rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
@@ -162,15 +162,13 @@ export class RtcGrantedPublicationCarrier {
         if (msg.id.senderId !== selfSessionId || !this.isGrantedPublication(msg)) {
             return Either.ofRight(msg);
         }
-        return computeRtcRepairAuthorization({
+        const refusal = computeRtcRepairRefusal({
             snapshot: this.readRoomSnapshot(msg),
             selfPrincipalId,
             topicId: msg.route.topicId,
             nowEpochMs: clock.nowMs()
-        }).fold(
-            (refusal) => Either.ofLeft(toRtcRepairRefusalPlan(msg, refusal)),
-            () => Either.ofRight(msg)
-        );
+        });
+        return refusal === undefined ? Either.ofRight(msg) : Either.ofLeft(toRtcRepairRefusalPlan(msg, refusal));
     }
 
     private isRepairTargetAdmitted(input: RtcRepairTargetInput): boolean {
