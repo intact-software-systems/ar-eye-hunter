@@ -1,5 +1,5 @@
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
-import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
 import { jsonEquals } from '../../../repository/state-utils.ts';
 import {
     decodeALAdmissionString,

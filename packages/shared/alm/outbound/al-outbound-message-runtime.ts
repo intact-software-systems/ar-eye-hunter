@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput,
@@ -10,10 +10,10 @@ import {
     type ALQosInputProvider,
     type ALReceiptMode,
     type ALRepairAlgo,
+    type ALStoreDurability,
     type ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
-import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
 import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';

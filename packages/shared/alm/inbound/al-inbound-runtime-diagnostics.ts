@@ -1,9 +1,9 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '../../al-contracts/al-control-type-ids.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
-import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-policy.ts';
 import {
     toALMessageTrace,
     toALMessageTraceOrNull,

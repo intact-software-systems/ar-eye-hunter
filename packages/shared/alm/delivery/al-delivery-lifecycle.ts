@@ -1,7 +1,11 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
-import type { ALAckAlgo, ALDurabilityAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
-import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
+import type {
+    ALAckAlgo,
+    ALDurabilityAlgo,
+    ALReceiptMode,
+    ALStoreDurability
+} from '../../al-contracts/al-policy.ts';
 import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';

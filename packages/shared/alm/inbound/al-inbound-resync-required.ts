@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 
 /** Where a receiver's ordering track stands, and what arrived, when it can no longer order the sender's messages. */

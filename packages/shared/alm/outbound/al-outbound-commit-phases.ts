@@ -1,4 +1,4 @@
-import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-policy.ts';
 import type { ALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type {
     ALOutboundCommitBundleOutcome,

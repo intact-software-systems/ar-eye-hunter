@@ -5,8 +5,8 @@ import type {
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessageRow } from '../../../al-contracts/al-message-persistence-validation.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import type { ALReadyable, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
-import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';

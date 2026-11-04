@@ -19,7 +19,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import type {
     ALDurabilityAlgo,
     ALOwnershipAlgo,

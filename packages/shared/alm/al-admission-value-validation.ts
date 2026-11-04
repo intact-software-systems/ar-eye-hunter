@@ -3,13 +3,13 @@ import {
     decodeALDeliveryCarrier,
     decodeALNackPayload,
     decodeALPendingAckSnapshot,
-    decodeALRepairPayload
+    decodeALRepairPayload,
+    type ALDeliveryCarrier
 } from '../al-contracts/al-control-value-codec.ts';
 import {
     type ALControlPayload,
     type ALControlPersistenceValue
 } from '../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../al-contracts/al-delivery-carrier.ts';
 import {
     requirePersistedALFields,
     type PersistedALRecord

@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';

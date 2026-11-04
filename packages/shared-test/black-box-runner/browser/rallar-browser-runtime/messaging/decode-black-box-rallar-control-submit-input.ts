@@ -1,4 +1,4 @@
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { BlackBoxRallarControlSubmitInput } from '../black-box-rallar-operation-contracts.ts';

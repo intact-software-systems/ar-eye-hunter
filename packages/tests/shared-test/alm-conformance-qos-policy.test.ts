@@ -8,7 +8,7 @@ import {
     toALCarrierQosInputProvider
 } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALOutboundAckRefusal } from '@shared/alm/outbound/admission/compute-al-outbound-ack-refusal.ts';

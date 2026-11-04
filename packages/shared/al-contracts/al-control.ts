@@ -15,9 +15,9 @@ import {
     decodeALNackWirePayload,
     decodeALReceiptPayload,
     decodeALReceiptWirePayload,
-    decodeALRepairPayload
+    decodeALRepairPayload,
+    type ALDeliveryCarrier
 } from './al-control-value-codec.ts';
-import type { ALDeliveryCarrier } from './al-delivery-carrier.ts';
 import {
     decodeALMessageValue,
     type ALMessageRejection

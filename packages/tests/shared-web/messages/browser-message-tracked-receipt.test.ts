@@ -24,13 +24,13 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALNackControlMessage,
     newALReceiptControlMessage,
     type ALNackReason,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { isALDeliveryTerminal, type ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';

@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '../../../al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '../../../al-contracts/publication/al-publication-policy.ts';
 import type {

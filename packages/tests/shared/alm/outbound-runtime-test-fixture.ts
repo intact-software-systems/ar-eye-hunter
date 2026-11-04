@@ -5,8 +5,8 @@ import {
     vi
 } from 'vitest';
 
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';

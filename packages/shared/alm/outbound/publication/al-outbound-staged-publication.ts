@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '../../../al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 
 /** A live value held by its lane until an opportunity selects it; its identity and deadline are the built message's. */
 export interface ALOutboundStagedPublication<TContext> {

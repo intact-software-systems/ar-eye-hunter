@@ -1,7 +1,7 @@
 import '../../../setup-browser-indexeddb.ts';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';

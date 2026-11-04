@@ -1,5 +1,5 @@
-import type { ALDeliveryCarrier } from '../../../../shared/al-contracts/al-delivery-carrier.ts';
-import type { ALStoreDurability } from '../../../../shared/al-contracts/al-store-durability.ts';
+import type { ALDeliveryCarrier } from '../../../../shared/al-contracts/al-control-value-codec.ts';
+import type { ALStoreDurability } from '../../../../shared/al-contracts/al-policy.ts';
 import type { ALCongestionCounters } from '../../../../shared/alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALVolatileSessionPoolUsage,

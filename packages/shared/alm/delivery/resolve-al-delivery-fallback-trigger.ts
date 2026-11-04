@@ -1,4 +1,4 @@
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,

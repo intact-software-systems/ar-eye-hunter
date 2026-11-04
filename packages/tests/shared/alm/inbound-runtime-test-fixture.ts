@@ -3,7 +3,7 @@ import { onTestFinished, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     planALMessageHandling,

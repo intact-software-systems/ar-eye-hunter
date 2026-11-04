@@ -6,7 +6,7 @@ import {
     requirePersistedALSafeInteger,
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
-import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';

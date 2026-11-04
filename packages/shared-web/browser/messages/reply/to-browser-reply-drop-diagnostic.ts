@@ -1,6 +1,6 @@
 import type { BrowserMessageReplySlot } from '@shared-web/browser/messages/reply/browser-message-reply-slot.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 

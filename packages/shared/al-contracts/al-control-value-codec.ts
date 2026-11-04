@@ -8,7 +8,6 @@ import type {
     ALRepairPayload,
     ALRepairReason
 } from './al-control.ts';
-import type { ALDeliveryCarrier } from './al-delivery-carrier.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 import { decodeALSeqRanges } from './al-seq-range.ts';
@@ -317,6 +316,9 @@ export function decodeALDeliveryCarrier(value: unknown, label: string): ALDelive
     }
     return value;
 }
+
+/** The carrier one copy of a message travels: the RTC overlay or the WS server. */
+export type ALDeliveryCarrier = 'rtc' | 'ws';
 
 /** The one enumeration of `ALDeliveryCarrier` values, for a decoder that must find the matching one. */
 export const AL_DELIVERY_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];

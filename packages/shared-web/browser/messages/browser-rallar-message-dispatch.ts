@@ -4,7 +4,7 @@ import {
 } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';

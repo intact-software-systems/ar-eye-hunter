@@ -1,11 +1,10 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALInboundNackPlanReason } from '../../al-contracts/al-control-value-codec.ts';
+import type { ALDeliveryCarrier, ALInboundNackPlanReason } from '../../al-contracts/al-control-value-codec.ts';
 import type {
     ALAckStatus,
     ALNackReason,
     ALRepairReason
 } from '../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';

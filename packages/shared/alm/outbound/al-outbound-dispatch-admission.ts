@@ -8,7 +8,7 @@ import {
     decodePersistedALMessageRow,
     toChangedALMessageRow
 } from '../../al-contracts/al-message-persistence-validation.ts';
-import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-policy.ts';
 import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';

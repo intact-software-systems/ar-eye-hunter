@@ -1,10 +1,10 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';

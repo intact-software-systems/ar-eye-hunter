@@ -7,7 +7,7 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type {

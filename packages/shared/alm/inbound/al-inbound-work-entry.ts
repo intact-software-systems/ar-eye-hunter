@@ -1,12 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
-import { AL_DELIVERY_CARRIERS } from '../../al-contracts/al-control-value-codec.ts';
+import { AL_DELIVERY_CARRIERS, type ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { decodeALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALInboundPendingAdmissionId, toALInboundPendingControlId } from './al-inbound-pending-admission.ts';
 import { decodeALInboundSource } from './al-inbound-source-validation.ts';
 
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import {
     decodePersistedALMessageValue,
     type ALMessageRejection

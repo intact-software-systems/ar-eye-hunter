@@ -1,6 +1,6 @@
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodeALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
     newALReceiptControlMessage
 } from '@shared/al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { normalizeALQosPolicy, type ALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';

@@ -1,12 +1,15 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALAckPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
-import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
+import type {
+    ALMessageHandlingPlan,
+    ALMessagePlanningObservations,
+    ALStoreDurability
+} from '../../al-contracts/al-policy.ts';
 import type {
     ALOrderingTrackSnapshot,
     ALReadyable
 } from '../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
-import type { ALStoreDurability } from '../../al-contracts/al-store-durability.ts';
 import {
     PersistenceWriteExpiredError,
     requireLivePersistenceWrite

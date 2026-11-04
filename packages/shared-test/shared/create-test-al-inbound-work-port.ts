@@ -1,4 +1,4 @@
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AL_INBOUND_WORK_LEASE_MS, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';

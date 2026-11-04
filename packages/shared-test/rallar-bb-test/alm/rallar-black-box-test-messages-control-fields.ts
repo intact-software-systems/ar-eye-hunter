@@ -1,4 +1,4 @@
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 
 /**
  * A harness capability, not a product path: the raw ACK envelope of `ackedMsgId` to `toPeerId`, its sender, submitted

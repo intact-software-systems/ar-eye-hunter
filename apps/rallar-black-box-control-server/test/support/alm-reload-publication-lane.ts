@@ -2,7 +2,7 @@ import { assert } from '@std/assert';
 
 import type { RallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     AL_MESSAGE_RESOURCE_LIMITS,
     computeALMessageEnvelopeBytes

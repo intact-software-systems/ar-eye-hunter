@@ -16,8 +16,8 @@ import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-s
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import type { ALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundCongestionDiagnostic,

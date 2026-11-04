@@ -1,5 +1,6 @@
 import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -7,7 +8,6 @@ import {
     type ALAckPayload,
     type ALPendingAckSnapshot
 } from '@shared/al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import {
     createInMemoryALAdmissionState,

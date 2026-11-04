@@ -1,10 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import {
     decodeALPeerControlMessage,
     type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../../al-contracts/al-delivery-carrier.ts';
-import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {

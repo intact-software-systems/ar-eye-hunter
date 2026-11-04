@@ -6,7 +6,7 @@ import { BrowserPublicationStages } from '@shared-web/browser/messages/publicati
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/al-contracts/al-delivery-carrier.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,

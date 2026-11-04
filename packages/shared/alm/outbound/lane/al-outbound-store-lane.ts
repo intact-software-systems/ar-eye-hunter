@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '../../../al-contracts/al-control-type-ids.ts';
-import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import type { Unsubscribe } from '../../../cache/RepositoryInterfaces.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';

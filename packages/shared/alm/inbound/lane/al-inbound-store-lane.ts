@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
-import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { Either } from '../../../resilience/Either.ts';

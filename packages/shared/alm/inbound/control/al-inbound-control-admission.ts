@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import type { ALAckPayload, ALControlAcceptance, ALNackPayload } from '../../../al-contracts/al-control.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../../al-contracts/al-delivery-carrier.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';

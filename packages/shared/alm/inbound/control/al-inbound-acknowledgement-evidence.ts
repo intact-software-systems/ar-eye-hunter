@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import { decodeALControlMessage, type ALAckPayload } from '../../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../../al-contracts/al-delivery-carrier.ts';
-import type { ALStoreDurability } from '../../../al-contracts/al-store-durability.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
 import type { ALWorkBatchObservations } from '../../work/al-work-batch-observations.ts';
 import type { ALWorkObservationDeferral } from '../../work/al-work-handler.ts';

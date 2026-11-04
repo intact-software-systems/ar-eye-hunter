@@ -1,4 +1,5 @@
 import type { ALTargets } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import {
     isALHopCompletionAck,
     type ALAckPayload,
@@ -7,7 +8,6 @@ import {
     type ALNackPayload,
     type ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
-import type { ALDeliveryCarrier } from '../../al-contracts/al-delivery-carrier.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
