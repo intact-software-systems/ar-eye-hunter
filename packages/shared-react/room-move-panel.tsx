@@ -1,6 +1,10 @@
 import type { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import type { PartyRosterView } from '@shared/api/parties/party-view.ts';
-import { useEffect, useId, useState } from 'react';
+import {
+    useEffect,
+    useId,
+    useState
+} from 'react';
 
 import type { RallarPeopleOperations, RallarPerson } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
@@ -226,7 +230,10 @@ function MoveConsent({ owner, move, participant, busy, blocked }: MoveConsentPro
                 type="button"
                 disabled={busy || blocked}
                 onClick={() => {
-                    void owner.act(confirmed ? 'withdraw' : 'confirm', move, confirmed ? null : code.trim() || null);
+                    void owner.act(confirmed ? 'withdraw' : 'confirm', move, {
+                        joinCode: confirmed ? null : code.trim() || null,
+                        inviteToken: null
+                    });
                     setCode('');
                 }}
             >

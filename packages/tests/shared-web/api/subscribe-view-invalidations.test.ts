@@ -1,12 +1,23 @@
 import { subscribeViewInvalidations } from '@shared-web/browser/api/subscribe-view-invalidations.ts';
 import type { RallarMessage, RallarMessageTransport } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { subscribeRoomMoveChanges, type SubscribeRoomMoveChanges } from '@shared-web/browser/rooms/move/subscribe-room-move-changes.ts';
+import {
+    newALBroadcastMessage,
+    newALRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { describe, expect, it, vi, type Mock } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi,
+    type Mock
+} from 'vitest';
 
 const scope = { applicationId: 'game', workspaceId: 'default' };
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'session', accessToken: 'test', expiresAtEpochMs: 9999999999999 };
@@ -19,7 +30,7 @@ interface InvalidationFixture {
     reopen(kind?: RallarWsLifecycleEvent['kind']): void;
 }
 
-function fixture(resource: ViewInvalidation['resource'] = 'party'): InvalidationFixture {
+function fixture(resource: ViewInvalidation['resource'] | 'moves' = 'party'): InvalidationFixture {
     let session: AuthSession | undefined = alice;
     const messages = new SynchronousNotifications<RallarMessage<ApiJsonValue>>((error) => {
         throw error;
@@ -28,16 +39,16 @@ function fixture(resource: ViewInvalidation['resource'] = 'party'): Invalidation
         throw error;
     });
     const changed = vi.fn();
-    const stop = subscribeViewInvalidations({
+    const input = {
         browser: {
             session: () => session,
             messages: { ws: { onMessage: (_selector, handler) => messages.subscribe(handler).unsubscribe } },
             ws: { onLifecycle: (listener) => lifecycle.subscribe(listener).unsubscribe }
         },
         scope,
-        resource,
         changed
-    });
+    } satisfies SubscribeRoomMoveChanges.Input;
+    const stop = resource === 'moves' ? subscribeRoomMoveChanges(input) : subscribeViewInvalidations({ ...input, resource });
     return {
         changed,
         stop,
@@ -192,4 +203,38 @@ it('refreshes public catalog readers only while authenticated in the exact game 
     test.deliver(message);
     expect(test.changed).toHaveBeenCalledTimes(1);
     test.stop();
+});
+
+it('recovers account-owned moves from validated notices, reconnect and subscriber resync', () => {
+    const test = fixture('moves');
+    const source = { ...scope, groupId: 'source' };
+    const initial = newALBroadcastMessage(
+        'api',
+        newALRoute(AppTopics.groupMoveChanged, 'app=game:ws=default:group=source', 'change'),
+        'all',
+        AppTopics.groupMoveChanged,
+        { source, moveId: 'move' }
+    );
+    const move: ALMessage = { ...initial, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId: 'alice' } } };
+    test.deliver(move);
+    expect(test.changed).toHaveBeenCalledTimes(1);
+    test.deliver(move, 'rtc');
+    test.deliver({ ...move, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId: 'bob' } } });
+    test.deliver({ ...move, route: { ...move.route, contextId: 'wrong' } });
+    test.deliver({ ...move, payload: { ...move.payload, resource: JSON.stringify({ source: { ...source, workspaceId: 'other' }, moveId: 'move' }) } });
+    expect(test.changed).toHaveBeenCalledTimes(1);
+    test.reopen();
+    const resync = newALBroadcastMessage('api', newALRoute(AppTopics.viewResync, 'resync', 'all'), 'all', AppTopics.viewResync, { version: 1 });
+    test.deliver(resync);
+    expect(test.changed).toHaveBeenCalledTimes(3);
+    test.login(undefined);
+    test.deliver(move);
+    test.reopen();
+    test.deliver(resync);
+    expect(test.changed).toHaveBeenCalledTimes(3);
+    test.stop();
+    test.login(alice);
+    test.deliver(move);
+    test.reopen();
+    expect(test.changed).toHaveBeenCalledTimes(3);
 });

@@ -1,9 +1,17 @@
 import { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
+import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupMove, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+    type Mock
+} from 'vitest';
 
 const source = { applicationId: 'game', workspaceId: 'default', groupId: 'source' };
 const destination = { ...source, groupId: 'destination' };
@@ -52,20 +60,51 @@ interface RoomMoveBrowser {
     changeAuth(next: AuthSession | undefined): void;
     block(reason: string | null): void;
     notify(): void;
+    active(value: boolean): void;
+}
+
+function moveAuthentication() {
+    let current: AuthSession | undefined = session;
+    const events = new SynchronousNotifications<RallarAuthState>((error) => {
+        throw error;
+    });
+    const unsubscribe = vi.fn(() => {});
+    const auth: RallarRoomMove.Auth = {
+        session: () => current,
+        onChange(listener) {
+            const subscription = events.subscribe(listener);
+            return () => {
+                subscription.unsubscribe();
+                unsubscribe();
+            };
+        }
+    };
+    return {
+        auth,
+        unsubscribe,
+        change(next: AuthSession | undefined) {
+            current = next;
+            events.publishLatest({ authenticated: next !== undefined, session: next, reason: next ? 'login' : 'logout' });
+        }
+    };
 }
 
 function browser(): RoomMoveBrowser {
-    let auth: AuthSession | undefined = session;
     let current = { ...source, displayName: 'Source room' };
     let blocker: string | null = null;
+    let active = true;
+    const activity = new SynchronousNotifications<void>((error) => {
+        throw error;
+    });
     const changed = new SynchronousNotifications<void>((error) => {
         throw error;
     });
+    const authentication = moveAuthentication();
     const api = createMoveApi();
-    const unsubscribeAuth = vi.fn(() => {});
     const refreshRooms = vi.fn(async () => {});
     const owner = new RallarRoomMove({
-        auth: { session: () => auth, onChange: () => unsubscribeAuth },
+        auth: authentication.auth,
+        activity: { isActive: () => active, onChange: (listener) => activity.subscribe(listener).unsubscribe },
         currentRoom: () => current,
         activate: async () => {
             current = { ...destination, displayName: 'Destination room' };
@@ -80,7 +119,7 @@ function browser(): RoomMoveBrowser {
             return await run();
         },
         timers: createDefaultTimers()
-    }, { scope: source, refreshIntervalMs: 30000 });
+    }, { scope: source });
     cleanups.push(() => {
         owner.stop();
     });
@@ -88,18 +127,20 @@ function browser(): RoomMoveBrowser {
         owner,
         api,
         refreshRooms,
-        unsubscribeAuth,
+        unsubscribeAuth: authentication.unsubscribe,
         currentRoom: () => current,
         selectRoom: (groupId: string) => {
             current = { ...current, groupId };
         },
-        changeAuth: (next: AuthSession | undefined) => {
-            auth = next;
-        },
+        changeAuth: authentication.change,
         block: (reason: string | null) => {
             blocker = reason;
         },
-        notify: () => changed.publishLatest(undefined)
+        notify: () => changed.publishLatest(undefined),
+        active(value) {
+            active = value;
+            activity.publishLatest();
+        }
     };
 }
 
@@ -124,6 +165,32 @@ function createMoveApi(): MoveApi {
 }
 
 describe('Move together browser lifecycle', () => {
+    it('keeps idle and hidden views quiet and recovers the latest move on foreground return', async () => {
+        vi.useFakeTimers();
+        cleanups.push(() => vi.useRealTimers());
+        const b = browser();
+        b.api.setMoves([]);
+        await b.owner.start();
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(b.api.list).toHaveBeenCalledTimes(1);
+        b.active(false);
+        b.api.setMoves([{ ...committed, status: 'cancelled', reason: 'organizer-cancelled' }]);
+        b.notify();
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(b.api.list).toHaveBeenCalledTimes(1);
+        expect(b.owner.getState().moves).toEqual([]);
+        b.active(true);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(b.owner.getState().moves[0]?.status).toBe('cancelled');
+        expect(b.api.list).toHaveBeenCalledTimes(2);
+        b.owner.stop();
+        b.notify();
+        b.active(false);
+        b.active(true);
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(b.api.list).toHaveBeenCalledTimes(2);
+    });
+
     it('binds party selection through proposal, consent and arrival without changing game eligibility', async () => {
         const b = browser();
         b.api.setMoves([]);
@@ -170,15 +237,69 @@ describe('Move together browser lifecycle', () => {
         expect(b.owner.getState().moves[0].participants[0].arrivedAtEpochMs).toBe(130);
     });
 
-    it('does not enter or publish a stale result when authentication changes during recovery', async () => {
+    it('defers hidden reads and fences the previous account across foreground recovery', async () => {
+        vi.useFakeTimers();
+        cleanups.push(() => vi.useRealTimers());
         const b = browser();
-        b.api.list.mockImplementationOnce(async () => {
-            b.changeAuth({ ...session, sessionId: 'replacement' });
-            return [committed];
-        });
+        b.active(false);
         await b.owner.start();
+        expect(b.api.list).not.toHaveBeenCalled();
+        const old = Promise.withResolvers<readonly GroupMove[]>();
+        const started = Promise.withResolvers<void>();
+        b.api.list.mockImplementationOnce(() => {
+            started.resolve();
+            return old.promise;
+        });
+        b.active(true);
+        await started.promise;
+        b.active(false);
+        const bob = { ...session, clientId: 'bob', sessionId: 'bob-session' };
+        b.changeAuth(bob);
+        expect(b.owner.getState().moves).toEqual([]);
+        b.api.setMoves([]);
+        old.resolve([committed]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(b.api.list).not.toHaveBeenCalledWith(expect.anything(), bob, expect.anything());
+        b.active(true);
+        await vi.waitFor(() => expect(b.api.list).toHaveBeenCalledWith(expect.anything(), bob, expect.anything()));
         expect(b.currentRoom().groupId).toBe(source.groupId);
         expect(b.owner.getState().moves).toEqual([]);
+    });
+
+    it('defers a queued push read if the page hides before the read starts', async () => {
+        const b = browser();
+        b.api.setMoves([]);
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<readonly GroupMove[]>();
+        b.api.list.mockImplementationOnce(() => {
+            started.resolve();
+            return held.promise;
+        });
+        const starting = b.owner.start();
+        await started.promise;
+        b.notify();
+        b.active(false);
+        b.api.setMoves([{ ...committed, status: 'cancelled', reason: 'organizer-cancelled' }]);
+        held.resolve([]);
+        await starting;
+        expect(b.owner.getState().moves).toEqual([]);
+        b.active(true);
+        await vi.waitFor(() => expect(b.owner.getState().moves[0]?.status).toBe('cancelled'));
+    });
+
+    it('clears a recovered list error while retaining an actionable entry failure', async () => {
+        const b = browser();
+        b.api.list.mockRejectedValueOnce(new Error('Move history unavailable'));
+        await b.owner.start();
+        expect(b.owner.getState().error).toBe('Move history unavailable');
+        b.api.setMoves([]);
+        await b.owner.refresh();
+        expect(b.owner.getState().error).toBeNull();
+        b.block('Leave expedition first');
+        b.api.setMoves([committed]);
+        await b.owner.refresh();
+        await b.owner.refresh();
+        expect(b.owner.getState().error).toBe('Leave expedition first');
     });
 
     it('sends only the scoped room identity from a richer current-room snapshot', async () => {

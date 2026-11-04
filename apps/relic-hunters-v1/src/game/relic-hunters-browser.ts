@@ -5,7 +5,11 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import { relicPlayerId } from '@relic-hunters/src/relic-tournament-participation.ts';
-import { rallar, type RallarJoinRoomOptions, type RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
+import {
+    rallar,
+    type RallarJoinRoomOptions,
+    type RallarUnsubscribe
+} from '@shared-web/browser/rallar.ts';
 import { RallarRoomDirectory } from '@shared-web/browser/rooms/directory/rallar-room-directory.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { RallarRoomMove } from '@shared-web/browser/rooms/move/rallar-room-move.ts';
@@ -14,7 +18,11 @@ import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import { readActiveGroupSessionRole } from '@shared/api/group-spectating.ts';
-import type { GroupJoinMode, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupJoinMode,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import { createRallarAiRoomNameSeed } from '@shared/rallar-ai/rallar-ai-room-names.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
@@ -222,7 +230,7 @@ function createRelicRoomCapabilities(
         roomMove: RallarRoomMove.createBrowser(
             rallar,
             (destination, run) => changeRelicRoom(expeditionParticipation, run, destination.groupId),
-            { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 15000 }
+            { scope: RELIC_ROOM_SCOPE }
         ),
         directory: RallarRoomDirectory.createBrowser(rallar, {
             scope: RELIC_ROOM_SCOPE,

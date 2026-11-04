@@ -1,6 +1,12 @@
 import { expect, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './view-push-observation.ts';
 
-import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
+import {
+    openArenaOperations,
+    playTogetherInRoom,
+    signInRoomPlayer,
+    toGroupId
+} from './room-player-journey.ts';
 
 interface MoveRoomReferences {
     readonly source: string;
@@ -87,7 +93,6 @@ async function commitMoveWithNetworkRecovery({ host, guest, source, destination 
     await expect(host.getByText(`Entered ${destination}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     expect(faults.lostCommitResponses()).toBeGreaterThan(0);
     await guest.context().setOffline(false);
-    await guestMove.getByRole('button', { name: 'Refresh move', exact: true }).click();
     // Network restoration can precede the replacement socket opening. Exercise the visible retry
     // until entry reaches the injected HTTP denial; a connection error alone does not prove that fault.
     const retryEntry = guestMove.getByRole('button', { name: 'Retry destination entry', exact: true });
@@ -134,8 +139,6 @@ async function returnThroughRetainedMembership(
     await guest.getByLabel('Room reference', { exact: true }).fill(source);
     await guest.getByRole('button', { name: 'Enter room', exact: true }).click();
     await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
-    await guestMove.getByRole('button', { name: 'Refresh move', exact: true }).click();
-    await expect(guest.getByText(`Entered ${source}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(guest.getByRole('region', { name: `Members of ${source}`, exact: true })).toContainText(
         '1 present · 1 away'
     );
@@ -149,6 +152,8 @@ export async function moveConsentRecoveryJourney(host: Page, guest: Page, game: 
     const hostMove = host.getByRole('region', { name: 'Move together', exact: true });
     const guestMove = guest.getByRole('region', { name: 'Move together', exact: true });
     await expect(host.getByRole('region', { name: `Members of ${source}`, exact: true })).toContainText('2 present');
+    await expect(guestMove.getByRole('button', { name: 'Refresh move', exact: true })).toBeEnabled();
+    await assertIdleViewReads(guest, 'moves');
     await hostMove.getByLabel('Destination room reference', { exact: true }).fill(destination);
     await hostMove.getByRole('button', { name: 'Propose move', exact: true }).click();
     await hostMove.getByRole('button', { name: 'Confirm move', exact: true }).click();

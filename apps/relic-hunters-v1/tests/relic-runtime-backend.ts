@@ -13,6 +13,7 @@ import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-sett
 import { createRallarDataFacade, type RallarDataFacade } from '@shared-web/browser/rallar-data.ts';
 import type {
     RallarAuthChangeListener,
+    RallarAuthState,
     RallarRoomPresenceWaitOptions,
     RallarRoomPresenceWaitResult,
     RallarRoomState,
@@ -29,6 +30,7 @@ import type {
 } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { BoundedConcurrencyAdmission } from '@shared/resilience/bounded-concurrency-admission.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 
@@ -39,6 +41,12 @@ import type { RelicCommandRequest } from '../src/game/api.ts';
 import { RelicHuntersRuntime } from '../src/game/relic-hunters-runtime.ts';
 import type { RelicWsCommandDelivery } from '../src/game/send-relic-ws-command.ts';
 import type { RelicHunterEventSubscription } from '../src/game/subscribe-relic-hunter-events.ts';
+
+function reportListenerFailure(error: Error): void {
+    onTestFinished(() => {
+        throw error;
+    });
+}
 
 export function createRuntime(backend: RelicRuntimeBackend): RelicHuntersRuntime {
     const runtime = new RelicHuntersRuntime(backend);
@@ -79,13 +87,15 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
     public wsDelivery: RelicWsCommandDelivery | undefined;
     public rejectPreviousLeave = false;
     private state = stateFor('room-1');
-    private readonly authListeners = new Set<RallarAuthChangeListener>();
-    private readonly roomListeners = new Set<(state: RallarRoomState) => void>();
-    private readonly hunterListeners = new Set<RelicHunterEventSubscription>();
-    private readonly snapshotListeners = new Set<(event: RelicServerEvent) => void>();
+    private readonly activity = { isActive: () => true, onChange: () => () => undefined };
+    private readonly authListeners = new SynchronousNotifications<RallarAuthState>(reportListenerFailure);
+    private readonly roomListeners = new SynchronousNotifications<RallarRoomState>(reportListenerFailure);
+    private readonly hunterListeners = new SynchronousNotifications<RelicHunterEvent>(reportListenerFailure);
+    private readonly snapshotListeners = new SynchronousNotifications<RelicServerEvent>(reportListenerFailure);
     public readonly roomMove = new RallarRoomMove({
         auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
         currentRoom: () => this.state.currentRoomRef,
+        activity: this.activity,
         refreshRooms: async () => {},
         activate: async () => {
             throw new Error('Move activation is not configured in this runtime fixture');
@@ -99,7 +109,7 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
         onChanged: () => () => {},
         withEligibility: async (_destination, run) => await run(),
         timers: this.timers
-    }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' }, refreshIntervalMs: 15000 });
+    }, { scope: { applicationId: 'rallar-server', workspaceId: 'default' } });
     public readonly roomEntry: RallarRoomEntry;
     public readonly recentRooms: RallarRecentRooms;
     public readonly directory: RallarRoomDirectory;
@@ -110,7 +120,7 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
             auth: { session: () => this.session, onChange: (listener) => this.onAuthChange(listener) },
             rooms: { directory: (request) => this.listDirectory(request) },
             timers: this.timers,
-            activity: { isActive: () => true, onChange: () => () => undefined }
+            activity: this.activity
         }, {
             scope: { applicationId: 'rallar-server', workspaceId: 'default' },
             request: { kind: 'room', q: 'relic hunters', limit: 50, includeEmpty: false, order: 'online-members' },
@@ -173,24 +183,19 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
         this.signOut();
     }
     public onAuthChange(listener: RallarAuthChangeListener) {
-        this.authListeners.add(listener);
-        return () => {
-            this.authListeners.delete(listener);
-        };
+        return this.authListeners.subscribe(listener).unsubscribe;
     }
     public roomState() {
         return this.state;
     }
     public setRooms(state: RallarRoomState): void {
         this.state = state;
-        for (const listener of this.roomListeners) {
-            listener(state);
-        }
+        this.roomListeners.publishLatest(state);
     }
     public async refreshRooms() {
         return this.state;
     }
-    public async listDirectory(_request: GroupDirectoryRequest): Promise<GroupDirectoryPage> {
+    public async listDirectory(_request?: GroupDirectoryRequest): Promise<GroupDirectoryPage> {
         return { entries: [], nextCursor: null };
     }
     public async waitForPresence(
@@ -218,16 +223,10 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
         });
     }
     public onRoomsChange(listener: (state: RallarRoomState) => void) {
-        this.roomListeners.add(listener);
-        return () => {
-            this.roomListeners.delete(listener);
-        };
+        return this.roomListeners.subscribe(listener).unsubscribe;
     }
     public onSnapshotMessage(listener: (event: RelicServerEvent) => void) {
-        this.snapshotListeners.add(listener);
-        return () => {
-            this.snapshotListeners.delete(listener);
-        };
+        return this.snapshotListeners.subscribe(listener).unsubscribe;
     }
     public onAuthoritySnapshotMessage() {
         return () => undefined;
@@ -236,15 +235,10 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
         return () => undefined;
     }
     public onHunterEventMessage(_roomId: string, subscription: RelicHunterEventSubscription) {
-        this.hunterListeners.add(subscription);
-        return () => {
-            this.hunterListeners.delete(subscription);
-        };
+        return this.hunterListeners.subscribe((event) => subscription.onEvent(event)).unsubscribe;
     }
     public deliverHunterEvent(event: RelicHunterEvent): void {
-        for (const subscription of this.hunterListeners) {
-            subscription.onEvent(event);
-        }
+        this.hunterListeners.publishLatest(event);
     }
     public authorityStatus() {
         return undefined;
@@ -300,23 +294,21 @@ export class RelicRuntimeBackend implements RelicHuntersRuntime.Dependencies {
 
     public deliverSnapshot(snapshot: RelicPublicSnapshot): void {
         this.snapshots.set(snapshot.roomId, snapshot);
-        for (const listener of this.snapshotListeners) {
-            listener({ protocolVersion: RELIC_PROTOCOL_VERSION, gameId: snapshot.gameId, snapshot });
-        }
+        this.snapshotListeners.publishLatest({
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: snapshot.gameId,
+            snapshot
+        });
     }
 
     public signOut(): void {
         this.session = undefined;
-        for (const listener of this.authListeners) {
-            void listener({ authenticated: false, reason: 'unauthorized', session: undefined });
-        }
+        this.authListeners.publishLatest({ authenticated: false, reason: 'unauthorized', session: undefined });
     }
 
     public signIn(session: AuthSession): void {
         this.session = session;
-        for (const listener of this.authListeners) {
-            void listener({ authenticated: true, reason: 'login', session });
-        }
+        this.authListeners.publishLatest({ authenticated: true, reason: 'login', session });
     }
 
     private admit(roomId: string, joinMode: GroupJoinMode = 'open', displayName = roomId): GroupSnapshot {
@@ -349,7 +341,8 @@ export function stateFor(roomId: string): RallarRoomState {
             status: 'active',
             isOwner: true,
             isOnline: true,
-            sessionIds: ['alice-session']
+            sessionIds: ['alice-session'],
+            topicGrants: {}
         }]
     };
 }

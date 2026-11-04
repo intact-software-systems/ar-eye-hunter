@@ -5,6 +5,7 @@ import type { GroupMove, GroupMoveRequest } from '@shared/api/mutation/group-mov
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { readApiBaseUrl } from '../../api-client-config.ts';
+import { readApiView } from '../../api/read-api-view.ts';
 import { sendApiHttpRequest, type ApiMutationRequestOptions } from '../../api/send-api-http-request.ts';
 import { toStateScopeHttpPath } from '../../api/state-http-path.ts';
 
@@ -13,12 +14,12 @@ export async function listMoves(
     session: AuthSession,
     signal: AbortSignal
 ): Promise<readonly GroupMove[]> {
-    const value = await sendApiHttpRequest({
+    const value = await readApiView({
         baseUrl: readApiBaseUrl(),
         path: `${toStateScopeHttpPath(scope)}/group-moves`,
-        method: 'GET',
-        body: undefined,
-        options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) }
+        session,
+        signal,
+        timeoutMs: 10000
     });
     if (!Array.isArray(value)) {
         throw new TypeError('Room move list must be an array');
