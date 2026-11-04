@@ -171,6 +171,12 @@ describe('the RTC origin of a granted publication', () => {
             director: undefined,
             grants: { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY },
             verdict: { kind: 'refused', reason: 'no-leader' }
+        },
+        {
+            name: 'its own sender as the leader, which holds no subscribe, refused no-leader as any room send is',
+            director: 'a',
+            grants: { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY },
+            verdict: { kind: 'refused', reason: 'no-leader' }
         }
     ])('carries a granted group-leader leg to $name', async ({ director, grants, verdict }) => {
         const crypto = await createAvailablePublicationCryptoFixture();
