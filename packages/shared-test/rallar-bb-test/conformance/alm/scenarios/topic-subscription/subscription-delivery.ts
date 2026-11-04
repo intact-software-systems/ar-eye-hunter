@@ -14,7 +14,6 @@ import {
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
-    computeUnelectedOutsideCount,
     toConfirmedCueWait,
     toCueListenCommands,
     toPublicationWait,
@@ -92,4 +91,13 @@ function toReceivedPublicationCommands(subscriber: AlmConformanceStepInput): rea
         toConfirmedCueWait(subscriber, 'publication-c'),
         ...toUnsubscribeCommands(subscriber, subscriber.role)
     ];
+}
+
+/**
+ * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
+ * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
+ * `unelected` ones among them answer `not-subscribed` and end outside its audience.
+ */
+function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
+    return step.input.carrier === 'ws' ? 0 : unelected;
 }

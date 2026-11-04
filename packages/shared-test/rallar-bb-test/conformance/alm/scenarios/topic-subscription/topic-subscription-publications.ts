@@ -38,7 +38,7 @@ export interface TopicPublicationInput {
     readonly confirmations: number;
     /**
      * How many more the copy's receipt must expect and record outside its audience: granted sessions that answered
-     * `not-subscribed` because they hold no election. {@link computeUnelectedOutsideCount} counts them per carrier.
+     * `not-subscribed` because they hold no election, which only a send that starts on RTC freezes in.
      */
     readonly outsideAudience: number;
     /** A probe's payload names the probe, so no publication wait or absence matches it. */
@@ -50,15 +50,6 @@ interface PayloadWaitInput {
     readonly name: string;
     readonly payload: Readonly<Record<string, string>>;
     readonly absent: boolean;
-}
-
-/**
- * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
- * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
- * `unelected` ones among them answer `not-subscribed` and end outside its audience.
- */
-export function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
-    return step.input.carrier === 'ws' ? 0 : unelected;
 }
 
 /**

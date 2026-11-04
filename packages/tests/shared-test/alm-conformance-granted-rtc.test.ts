@@ -29,8 +29,8 @@ const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 
 interface GrantedSend {
     readonly kind: 'messages.send' | 'rtc.send';
-    readonly ack: unknown;
-    readonly reliability: unknown;
+    readonly ack: string | undefined;
+    readonly reliability: string | undefined;
 }
 
 function toGrantedRtcScenarioOver(scenarioId: string, carrier: AlmConformanceCarrier): AlmConformanceScenario {
@@ -61,13 +61,15 @@ function toGrantedSends(recipe: RallarBlackBoxTestRecipe | undefined): readonly 
         }
         const envelope = command.kind === 'rtc.send' ? command.send : undefined;
         return isJsonRecordValue(envelope) && envelope.topicId === GRANTED_TOPIC_ID
-            ? [{ kind: 'rtc.send', ack: envelope.ack, reliability: envelope.reliability }]
+            ? [{ kind: 'rtc.send', ack: String(envelope.ack), reliability: String(envelope.reliability) }]
             : [];
     });
 }
 
 /** The receipt counts a publish loop holds every attempt to: each recipient list's length, by its list. */
-function toReceiptCounts(recipe: RallarBlackBoxTestRecipe | undefined): Readonly<Record<string, unknown>> {
+function toReceiptCounts(
+    recipe: RallarBlackBoxTestRecipe | undefined
+): Readonly<Record<string, RallarBlackBoxTestAssertCommand['expected']>> {
     return Object.fromEntries(
         toFlatCommands(recipe).flatMap((command) => {
             const list = command.kind === 'assert' ? command.source.match(/\.(\w+)RecipientPeerIds$/)?.[1] : undefined;
