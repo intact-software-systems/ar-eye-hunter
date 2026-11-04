@@ -142,7 +142,7 @@ roomBrowserTest(
         const other = await host.context().newPage();
         await other.addInitScript(observeBrowserWebGlContexts);
         await other.goto(link);
-        await waitForExpeditionScene(other);
+        await waitForExpeditionScene(other, 'shared-context');
         // interaction: direct room recovery allocates only the destination renderer, not a discarded opening context.
         await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
         const committed = Promise.withResolvers<void>();
@@ -173,7 +173,7 @@ roomBrowserTest(
             expect((await membershipRemoval).status()).toBe(403);
             // Re-enter from the room link to verify persisted withdrawal independently of either tab's cache.
             await other.goto(link);
-            await waitForExpeditionScene(other);
+            await waitForExpeditionScene(other, 'shared-context');
             await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
             await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
             await expect(other.locator('.lobby-party-row')).toHaveCount(0);
@@ -195,7 +195,7 @@ roomBrowserTest(
         const link = await host.getByLabel('Room link', { exact: true }).inputValue();
         const other = await host.context().newPage();
         await other.goto(link);
-        await waitForExpeditionScene(other);
+        await waitForExpeditionScene(other, 'shared-context');
         const requested = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         await host.route('**/commands/requests/*', async (route) => {
