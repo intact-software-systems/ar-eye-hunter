@@ -143,13 +143,16 @@ export class RtcGrantedPublicationCarrier {
 
     /** A granted publication is repaired only toward a recipient its origin froze that may still subscribe. */
     isRepairTargetAdmitted(msg: ALMessage, targetPeerId: string): boolean {
-        return !this.isGrantedPublication(msg) || computeRtcRepairTargetAdmission({
-                    snapshot: this.readRoomSnapshot(msg),
-                    frozenRecipientPeerIds: resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds ?? [],
-                    targetPeerId,
-                    topicId: msg.route.topicId,
-                    nowEpochMs: this.#dependencies.clock.nowMs()
-                }).right !== undefined;
+        if (!this.isGrantedPublication(msg)) {
+            return true;
+        }
+        return computeRtcRepairTargetAdmission({
+            snapshot: this.readRoomSnapshot(msg),
+            frozenRecipientPeerIds: resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds ?? [],
+            targetPeerId,
+            topicId: msg.route.topicId,
+            nowEpochMs: this.#dependencies.clock.nowMs()
+        }).fold(() => false, () => true);
     }
 
     /**

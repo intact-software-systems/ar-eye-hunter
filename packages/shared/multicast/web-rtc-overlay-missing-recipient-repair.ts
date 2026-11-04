@@ -83,8 +83,8 @@ export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepa
 
 /**
  * The retry for the peers a receipt failed. The origin of a frozen `receiver` multicast retries only the
- * missing recipients, through the tree over the current room; every other retry re-plans around the
- * failed hops through an alternate parent.
+ * missing recipients it still admits as repair targets, through the tree over the current room; every other
+ * retry re-plans around the failed hops through an alternate parent.
  */
 export function planRtcFailedPeerRepair(
     input: PlanRtcFailedPeerRepairInput
