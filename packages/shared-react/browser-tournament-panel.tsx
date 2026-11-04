@@ -1,4 +1,4 @@
-import type { SubscribeViewInvalidations } from '@shared-web/browser/api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '@shared-web/browser/api/subscribe-view-recovery.ts';
 import type { RallarConnectionOperations } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { RallarTournamentCatalog } from '@shared-web/browser/tournaments/rallar-tournament-catalog.ts';
@@ -8,7 +8,7 @@ import { TournamentPanel } from './tournament-panel.tsx';
 
 export interface BrowserTournamentPanelProps {
     readonly browser:
-        & SubscribeViewInvalidations.Browser
+        & SubscribeViewRecovery.Browser
         & Pick<RallarRoomEntry.Browser, 'auth'>
         & Pick<RallarConnectionOperations, 'connect'>;
     readonly entry: RallarRoomEntry;

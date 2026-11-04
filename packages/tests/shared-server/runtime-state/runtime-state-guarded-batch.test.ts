@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import type {
     PSqlParameter,
@@ -522,20 +526,20 @@ describe('runtime-state guarded batches', () => {
     });
 });
 
-function createInsertGuard(): RuntimeStateGuardedBatch['guard'] {
+function createInsertGuard() {
     return {
         operation: 'insert',
         namespace: 'guard',
         key: 'root',
         value: 'root',
         expireAtTimestamp: FUTURE_MS
-    };
+    } satisfies RuntimeStateGuardedBatch['guard'];
 }
 
 function createInsertEffect(
     effectId: string,
     key: string
-): RuntimeStateGuardedBatch['effects'][number] {
+) {
     return {
         effectId,
         operation: 'insert',
@@ -543,7 +547,7 @@ function createInsertEffect(
         key,
         value: key,
         expireAtTimestamp: FUTURE_MS
-    };
+    } satisfies RuntimeStateGuardedBatch['effects'][number];
 }
 
 function createBatch(): RuntimeStateGuardedBatch {

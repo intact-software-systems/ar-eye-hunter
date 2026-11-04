@@ -15,7 +15,7 @@ import {
 } from './runtime-state-guarded-batch.ts';
 
 export function validateRuntimeStateGuardedBatch(
-    input: unknown
+    input: RuntimeStateGuardedBatch | JsonWireValue
 ): RuntimeStateGuardedBatch {
     const batch = requireRecord(
         input,
@@ -226,7 +226,7 @@ function requireNumber(value: JsonWireValue | undefined, label: string): number 
 }
 
 function requireRecord(
-    value: unknown,
+    value: RuntimeStateGuardedBatch | JsonWireValue | undefined,
     label: string
 ): JsonWireObject {
     if (!isJsonWireObject(value)) {
