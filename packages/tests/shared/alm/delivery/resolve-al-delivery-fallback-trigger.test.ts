@@ -85,6 +85,25 @@ describe('the declared retryable outcomes (D56)', () => {
         expect(AL_DELIVERY_FALLBACK_REFUSAL_REASONS).toEqual(['unsupported', 'congested']);
     });
 
+    it('keeps a revoked publisher\'s refused RTC re-plan out of the hand-over: the revoke ends the message (S3-R8)', () => {
+        const refusal: ALDeliveryAdmissionVerdict = { kind: 'refused', reason: 'no-publish-grant', detail: 'Revoked.' };
+
+        expect(isALDeliveryAdmissionFallbackVerdict(refusal)).toBe(false);
+        expect(resolveALDeliveryFallbackTrigger({
+            settlement: {
+                kind: 'admission',
+                msgId: MSG_ID,
+                carrier: 'rtc',
+                atMs: 1,
+                verdict: refusal,
+                trackedReceiptAlgo: 'none',
+                traceId: 'trace-resolve-al-delivery-fallback-trigger'
+            },
+            leg: 'rtc',
+            notReadyRun: 2
+        })).toEqual({ kind: 'continue', notReadyRun: 2 });
+    });
+
     it('keeps a claim held by another session out of the hand-over: the server decided, the carrier did not fail', () => {
         expect(resolveALDeliveryFallbackTrigger({
             settlement: {

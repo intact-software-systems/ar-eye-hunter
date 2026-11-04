@@ -22,6 +22,7 @@ import type {
     ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
+import { resolveALOutboundReplanRefusalSettlement } from '../resolve-al-outbound-replan-refusal-settlement.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { readALOutboundDequeueWait } from './read-al-outbound-dequeue-wait.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
@@ -379,6 +380,10 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         const computed = commit.value;
         member.evidence?.recordAdmission(computed.verdict.kind);
         recordALOutboundClaimAdmissionVerdict(member.observation, computed.verdict);
+        const refusal = resolveALOutboundReplanRefusalSettlement(admission.dispatch.msg, computed.verdict);
+        if (refusal !== undefined) {
+            this.dependencies.settlements(refusal);
+        }
         if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
             return { status: 'retry' };
         }

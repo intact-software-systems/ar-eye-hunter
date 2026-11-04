@@ -163,6 +163,7 @@ export type ALOutboundDropReasonCode =
     | 'capacity'
     | 'congested'
     | 'no-leader'
+    | 'no-publish-grant'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'

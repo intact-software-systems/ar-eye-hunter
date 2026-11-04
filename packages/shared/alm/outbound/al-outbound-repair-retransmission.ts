@@ -17,6 +17,7 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
+import { resolveALOutboundReplanRefusalSettlement } from './resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
@@ -48,7 +49,10 @@ export namespace ALOutboundRepairRetransmission {
             | undefined;
         /** The composition's fixed hops, the sender's own beside a plan's tracked next hops; undefined for none. */
         readonly hopPeerIds: readonly string[] | undefined;
-        /** The lane's guarded emitter: where a spent repair budget states that its message is skipped. */
+        /**
+         * The lane's guarded emitter: where a spent repair budget states that its message is skipped, and a retransmit
+         * refused for a revoked publisher states that refusal.
+         */
         readonly settlements: ALOutboundSettlementEmitter;
     }
 }
@@ -114,7 +118,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return;
         }
 
-        await this.dependencies.dispatchAdmission.commit({
+        const { computed } = await this.dependencies.dispatchAdmission.commit({
             msg: sent.msg,
             planner: this.dependencies.planOutgoingMessage,
             intent: 'repair',
@@ -124,6 +128,10 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 attemptIdentity: options.attemptIdentity
             }
         });
+        const refusal = resolveALOutboundReplanRefusalSettlement(sent.msg, computed.verdict);
+        if (refusal !== undefined) {
+            this.dependencies.settlements(refusal);
+        }
     }
 
     private async repairByMsgId(

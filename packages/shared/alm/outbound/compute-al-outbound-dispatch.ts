@@ -281,7 +281,7 @@ function toDuplicateDispatchResult<TPrepared>(
 }
 
 /** Keyed on the planner's drop code, never the human-readable `dropReason` string. */
-function toALOutboundAdmissionVerdict<TPrepared>(
+export function toALOutboundAdmissionVerdict<TPrepared>(
     plan: Pick<ALOutboundDispatchPlan<TPrepared>, 'dropReason' | 'dropReasonCode' | 'capacityLimit'>
 ): ALDeliveryAdmissionVerdict {
     const detail = plan.dropReason ?? '';
@@ -289,6 +289,7 @@ function toALOutboundAdmissionVerdict<TPrepared>(
         case 'unauthorized':
         case 'unsupported':
         case 'no-leader':
+        case 'no-publish-grant':
         case 'congested':
             return { kind: 'refused', reason: plan.dropReasonCode, detail };
         case 'capacity':
