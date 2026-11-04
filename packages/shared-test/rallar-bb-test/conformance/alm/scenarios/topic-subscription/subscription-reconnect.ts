@@ -30,14 +30,13 @@ import {
     toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
 
-/** Covers the sibling's close, which follows the probe loop's cue at once, its reopen and its re-assertion. */
-const RECONNECT_MARGIN_MS = 2_000;
-
 /**
  * A same-session socket reconnect re-asserts the subscription under the new connection generation, but the server
  * closed the session's room presence with the old socket and nothing reopens it. The sibling's product socket drops
- * and reopens; its one row moves to the new generation and its token stays `active`, yet `publication`, published once
- * the server expects the receiver alone, reaches the receiver and not the reopened sibling.
+ * and reopens; its one row moves to the new generation and its token stays `active`, yet `publication` reaches the
+ * receiver and not the reopened sibling. A probe publishes first until the receiver alone is expected: the WS server
+ * stops expecting the sibling with its socket, an RTC sender once its snapshot drops the closed presence, which
+ * until then freezes the sibling in with its active token.
  */
 export const subscriptionReconnect: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-reconnect',
@@ -110,9 +109,22 @@ function toPublisherCommands(sender: AlmConformanceStepInput): readonly RallarBl
             step: sender,
             name: 'probe-two-subscribers',
             confirmations: 2,
+            outsideAudience: 0,
             kind: 'probe'
         }),
-        toPauseCommand(sender, 'reconnect-margin', RECONNECT_MARGIN_MS),
-        ...toPublishUntilConfirmedCommands({ step: sender, name: 'publication', confirmations: 1, kind: 'publication' })
+        ...toPublishUntilConfirmedCommands({
+            step: sender,
+            name: 'probe-receiver-alone',
+            confirmations: 1,
+            outsideAudience: 0,
+            kind: 'probe'
+        }),
+        ...toPublishUntilConfirmedCommands({
+            step: sender,
+            name: 'publication',
+            confirmations: 1,
+            outsideAudience: 0,
+            kind: 'publication'
+        })
     ];
 }

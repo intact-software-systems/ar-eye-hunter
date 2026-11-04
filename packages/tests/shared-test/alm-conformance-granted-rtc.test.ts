@@ -4,30 +4,46 @@ import {
     it
 } from 'vitest';
 
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    type AlmConformanceCarrier
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { ALM_CONFORMANCE_ROLES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import {
     createAlmConformanceRecipes,
+    toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestHttpRequestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 
-function toGrantedRtcScenario(scenarioId: string): AlmConformanceScenario {
-    const scenario = createAlmConformanceRecipes(toConformanceInput('rtc'))
+interface GrantedSend {
+    readonly kind: 'messages.send' | 'rtc.send';
+    readonly ack: unknown;
+    readonly reliability: unknown;
+}
+
+function toGrantedRtcScenarioOver(scenarioId: string, carrier: AlmConformanceCarrier): AlmConformanceScenario {
+    const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
         .find((candidate) => candidate.scenarioId === scenarioId);
     if (scenario === undefined) {
-        throw new Error(`${scenarioId} is not planned over rtc.`);
+        throw new Error(`${scenarioId} is not planned over ${carrier}.`);
     }
     return scenario;
+}
+
+function toGrantedRtcScenario(scenarioId: string): AlmConformanceScenario {
+    return toGrantedRtcScenarioOver(scenarioId, 'rtc');
 }
 
 /** Every command a recipe runs, the children of each poll included. */
@@ -37,9 +53,60 @@ function toFlatCommands(recipe: RallarBlackBoxTestRecipe | undefined): readonly 
     return flatten(recipe?.commands ?? []);
 }
 
-function toGrantedSends(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCommand[] {
-    return toFlatCommands(recipe).filter((command) =>
-        command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.topicId === GRANTED_TOPIC_ID
+/** A granted send through a typed channel, or one through the `messages.rtc` lane entry, whose envelope names the topic. */
+function toGrantedSends(recipe: RallarBlackBoxTestRecipe | undefined): readonly GrantedSend[] {
+    return toFlatCommands(recipe).flatMap((command): readonly GrantedSend[] => {
+        if (command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.topicId === GRANTED_TOPIC_ID) {
+            return [{ kind: command.kind, ack: command.ack, reliability: command.reliability }];
+        }
+        const envelope = command.kind === 'rtc.send' ? command.send : undefined;
+        return isJsonRecordValue(envelope) && envelope.topicId === GRANTED_TOPIC_ID
+            ? [{ kind: 'rtc.send', ack: envelope.ack, reliability: envelope.reliability }]
+            : [];
+    });
+}
+
+/** The receipt counts a publish loop holds every attempt to: each recipient list's length, by its list. */
+function toReceiptCounts(recipe: RallarBlackBoxTestRecipe | undefined): Readonly<Record<string, unknown>> {
+    return Object.fromEntries(
+        toFlatCommands(recipe).flatMap((command) => {
+            const list = command.kind === 'assert' ? command.source.match(/\.(\w+)RecipientPeerIds$/)?.[1] : undefined;
+            return command.kind === 'assert' && list !== undefined ? [[list, command.expected]] : [];
+        })
+    );
+}
+
+function toObservedStates(recipe: RallarBlackBoxTestRecipe | undefined): readonly (readonly string[])[] {
+    return toFlatCommands(recipe).flatMap((command) =>
+        command.kind === 'messages.observe' && command.commandId?.includes('publication') === true &&
+            command.commandId.includes('-cue-') === false
+            ? [command.state]
+            : []
+    );
+}
+
+/** The index of the first command whose id ends with `suffix`, so a test can pin the order of two steps. */
+function toStepIndex(recipe: RallarBlackBoxTestRecipe | undefined, suffix: string): number {
+    const index = toFlatCommands(recipe).findIndex((command) => command.commandId?.endsWith(suffix) === true);
+    if (index < 0) {
+        throw new Error(`${recipe?.recipeId} runs no command ending ${suffix}.`);
+    }
+    return index;
+}
+
+function toRequests(recipe: RallarBlackBoxTestRecipe | undefined): readonly RallarBlackBoxTestHttpRequestCommand[] {
+    return toFlatCommands(recipe).filter((command): command is RallarBlackBoxTestHttpRequestCommand => command.kind === 'http.request');
+}
+
+function toLocalDisabledWaits(recipe: RallarBlackBoxTestRecipe | undefined): readonly RallarBlackBoxTestCommand[] {
+    return toFlatCommands(recipe).filter((command) => command.kind === 'wait' && command.match.payloadFields?.['data.disposition'] === 'local-disabled');
+}
+
+function toPublicationAbsences(recipe: RallarBlackBoxTestRecipe | undefined): readonly string[] {
+    return toFlatCommands(recipe).flatMap((command) =>
+        command.kind === 'wait' && command.absent === true && command.match.kind === 'message' && isJsonRecordValue(command.match.equals)
+            ? [String(command.match.equals.publication)]
+            : []
     );
 }
 
@@ -58,33 +125,39 @@ function toOutcomeWaits(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     );
 }
 
-/** The `[field, expected]` of each assertion a refusal poll makes on the observed handle. */
+/** The `[field, expected]` of each assertion a refusal poll makes on the rejected handle its lane send returned. */
 function toVerdictFacts(
     recipe: RallarBlackBoxTestRecipe
 ): readonly (readonly [string, RallarBlackBoxTestAssertCommand['expected']])[] {
     return toFlatCommands(recipe).flatMap((command) =>
-        command.kind === 'assert' && command.source.includes('-refusal-observe.value.')
-            ? [[command.source.split('.value.')[1]!, command.expected] as const]
+        command.kind === 'assert' && command.source.includes('-refusal-send.value.message.')
+            ? [[command.source.split('.value.message.')[1]!, command.expected] as const]
             : []
     );
 }
 
 describe('the granted rtc cells', () => {
-    it('plans the granted family over rtc alone, every cell full-only and the forged sender on three agents', () => {
+    it('plans the granted family over rtc, the revoked publisher over the fallback carrier too, every cell full-only and the relay-only cell last', () => {
+        const families = {
+            ws: [],
+            rtc: [
+                ['granted-rtc-delivered', 'two-agent'],
+                ['granted-rtc-missing-proof', 'two-agent'],
+                ['granted-rtc-publish-refused', 'two-agent'],
+                ['granted-rtc-receipted-delivered', 'two-agent'],
+                ['granted-rtc-revoked-publisher', 'two-agent'],
+                ['granted-rtc-forged-sender', 'three-agent'],
+                ['granted-rtc-not-subscribed', 'three-agent'],
+                ['granted-rtc-relay-only', 'three-agent']
+            ],
+            'rtc-with-ws-fallback': [['granted-rtc-revoked-publisher', 'two-agent']]
+        } as const;
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const granted = createAlmConformanceRecipes(toConformanceInput(carrier))
                 .filter(({ scenarioId }) => scenarioId.startsWith('granted-rtc-'));
-            expect(granted.map(({ scenarioKey, laneFamily }) => [scenarioKey, laneFamily]), carrier).toEqual(
-                carrier === 'rtc'
-                    ? [
-                        ['granted-rtc-delivered', 'two-agent'],
-                        ['granted-rtc-missing-proof', 'two-agent'],
-                        ['granted-rtc-publish-refused', 'two-agent'],
-                        ['granted-rtc-forged-sender', 'three-agent']
-                    ]
-                    : []
-            );
+            expect(granted.map(({ scenarioKey, laneFamily }) => [scenarioKey, laneFamily]), carrier).toEqual(families[carrier]);
             expect(granted.every(({ tags }) => tags.length === 1 && tags[0] === 'full')).toBe(true);
+            expect(granted.map(({ scenarioKey }) => scenarioKey)).not.toContain('granted-rtc-receipted-unsupported');
         }
     });
 
@@ -105,7 +178,14 @@ describe('the granted rtc cells', () => {
         expect(pair.filter(namesPrincipal).map(({ scenarioKey }) => scenarioKey)).toEqual([
             'granted-rtc-delivered',
             'granted-rtc-missing-proof',
-            'granted-rtc-publish-refused'
+            'granted-rtc-publish-refused',
+            'granted-rtc-receipted-delivered',
+            'granted-rtc-revoked-publisher',
+            // The topic subscription cells that grant only the sender's principal and the receiver's.
+            'subscription-token-count',
+            'subscription-revoke-disconnected',
+            'subscription-reconnect',
+            'subscription-successor'
         ]);
     });
 
@@ -129,23 +209,28 @@ describe('the granted rtc cells', () => {
         }
     });
 
-    it('states ack: none on every granted send', () => {
-        const acks = [
-            'granted-rtc-delivered',
-            'granted-rtc-forged-sender',
-            'granted-rtc-missing-proof',
-            'granted-rtc-publish-refused'
-        ].map((scenarioId) => {
-            const scenario = toGrantedRtcScenario(scenarioId);
-            const sends = [...toGrantedSends(scenario.sender), ...toGrantedSends(scenario.receiver)];
-            return [scenarioId, [...new Set(sends.map((send) => send.kind === 'messages.send' && 'ack' in send ? send.ack : 'unstated'))]];
-        });
+    it('states its receipt and reliability on every granted send, through the typed channel or the lane entry', () => {
+        const unreceipted = 'none/best-effort';
+        const receipted = 'all-logical-recipients/at-least-once';
+        const deliveries = createAlmConformanceRecipes(toConformanceInput('rtc'))
+            .filter(({ scenarioId }) => scenarioId.startsWith('granted-rtc-'))
+            .map((scenario) => {
+                const sends = scenario.roles.flatMap((role) => toGrantedSends(toAlmConformanceRoleRecipe(scenario, role)));
+                return [
+                    scenario.scenarioKey,
+                    [...new Set(sends.map(({ kind, ack, reliability }) => `${kind} ${String(ack)}/${String(reliability)}`))]
+                ];
+            });
 
-        expect(acks).toEqual([
-            ['granted-rtc-delivered', ['none']],
-            ['granted-rtc-forged-sender', ['none']],
-            ['granted-rtc-missing-proof', ['none']],
-            ['granted-rtc-publish-refused', ['none']]
+        expect(deliveries).toEqual([
+            ['granted-rtc-delivered', [`messages.send ${unreceipted}`]],
+            ['granted-rtc-missing-proof', [`messages.send ${unreceipted}`]],
+            ['granted-rtc-publish-refused', [`rtc.send ${unreceipted}`]],
+            ['granted-rtc-receipted-delivered', [`messages.send ${receipted}`]],
+            ['granted-rtc-revoked-publisher', [`messages.send ${receipted}`]],
+            ['granted-rtc-forged-sender', [`messages.send ${unreceipted}`]],
+            ['granted-rtc-not-subscribed', [`messages.send ${receipted}`]],
+            ['granted-rtc-relay-only', [`messages.send ${unreceipted}`]]
         ]);
     });
 
@@ -205,10 +290,13 @@ describe('the granted rtc cells', () => {
         ]);
     });
 
-    it('refuses the subscribe-only receiver\'s rtc publication no-publish-grant before any attempt', () => {
+    it('refuses the subscribe-only receiver\'s publication through the messages.rtc lane entry no-publish-grant before any attempt', () => {
         const publishRefused = toGrantedRtcScenario('granted-rtc-publish-refused');
+        const laneSends = toFlatCommands(publishRefused.receiver).filter((command) => command.kind === 'rtc.send');
 
         expect(toGrantedSends(publishRefused.sender)).toEqual([]);
+        expect(toFlatCommands(publishRefused.receiver).map((command) => command.kind)).not.toContain('messages.send');
+        expect(laneSends).toEqual([expect.objectContaining({ transport: 'messages.rtc', observe: 'rejected' })]);
         expect(toVerdictFacts(publishRefused.receiver)).toEqual([
             ['failure.kind', 'refused'],
             ['failure.reason', 'no-publish-grant'],
@@ -217,5 +305,88 @@ describe('the granted rtc cells', () => {
         // The cell's receiver opens no granted channel: only the snapshot's grant makes its send a granted one.
         expect(toFlatCommands(publishRefused.receiver).find((command) => command.kind === 'rtc.connect'))
             .not.toHaveProperty('rallar.messageSelector');
+    });
+
+    it('confirms a receipted granted publication over rtc to the one subscribed receiver, nobody outside it', () => {
+        const { sender, receiver } = toGrantedRtcScenario('granted-rtc-receipted-delivered');
+
+        expect(toReceiptCounts(sender)).toEqual({ expected: 1, confirmed: 1, outsideAudience: 0 });
+        expect(toObservedStates(sender)).toEqual([['acknowledged']]);
+        expect(toFlatCommands(receiver).some((command) => command.kind === 'wait' && command.match.payloadFields?.['data.transport'] === 'rtc')).toBe(true);
+        expect(toFlatCommands(receiver).map((command) => command.kind)).toContain('messages.subscribe');
+    });
+
+    it('counts recipient-b, granted subscribe without an election, outside the receipt while the receiver confirms', () => {
+        const { sender, receiver, recipientB } = toGrantedRtcScenario('granted-rtc-not-subscribed');
+        const grants = toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/grant/'));
+
+        expect(toReceiptCounts(sender)).toEqual({ expected: 2, confirmed: 1, outsideAudience: 1 });
+        expect(toObservedStates(sender)).toEqual([['acknowledged']]);
+        expect(grants.map(({ request }) => request.body)).toEqual([
+            { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
+        ]);
+        expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
+        expect(toLocalDisabledWaits(recipientB)).toEqual([
+            expect.objectContaining({
+                match: expect.objectContaining({
+                    topic: INBOUND_DIAGNOSTICS_TOPIC,
+                    payloadFields: {
+                        'data.kind': 'dispatch-decision',
+                        'data.typeId': 'alm.conformance.rtc.granted-rtc-not-subscribed',
+                        'data.carrier': 'rtc',
+                        'data.disposition': 'local-disabled'
+                    }
+                })
+            })
+        ]);
+        expect(toPublicationAbsences(recipientB)).toEqual(['publication']);
+        expect(toFlatCommands(receiver).map((command) => command.kind)).toContain('messages.subscribe');
+    });
+
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+        'revokes the sender\'s publish after its first publication was confirmed, so the next one settles rejected no-publish-grant over %s',
+        (carrier) => {
+            const { sender, receiver } = toGrantedRtcScenarioOver('granted-rtc-revoked-publisher', carrier);
+            const revoke = toRequests(receiver).find(({ request }) => request.path?.includes('/publication-grants/principal-alice/revoke/'));
+            const refusal = toFlatCommands(sender).filter((command) => command.kind === 'assert' && command.source.includes('-publication-2-observe.value.'));
+
+            expect(revoke?.request.body).toEqual({ topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false });
+            expect(toStepIndex(receiver, '-received-publication-1')).toBeLessThan(toStepIndex(receiver, '-revoke-sender-p'));
+            expect(toStepIndex(receiver, '-revoke-sender-p')).toBeLessThan(toStepIndex(receiver, '-cue-revoked'));
+            expect(toReceiptCounts(sender)).toEqual({ expected: 1, confirmed: 1, outsideAudience: 0 });
+            expect(toStepIndex(sender, '-cue-revoked-received')).toBeLessThan(toStepIndex(sender, '-publication-2-send'));
+            expect(toObservedStates(sender)).toEqual([['acknowledged'], ['rejected']]);
+            expect(refusal).toEqual([
+                expect.objectContaining({ source: expect.stringMatching(/\.failure\.reason$/), expected: 'no-publish-grant' })
+            ]);
+            expect(toPublicationAbsences(receiver)).toEqual(['publication-2']);
+        }
+    );
+
+    it('reshapes the room into a path before the sender publishes, and proves the publisher-only member never delivers', () => {
+        const { sender, receiver, recipientB } = toGrantedRtcScenario('granted-rtc-relay-only');
+        const topology = toRequests(receiver).filter(({ request }) => request.path?.includes('/topology/config/requests/'));
+        const recipientBGrants = toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'));
+
+        expect(topology.map(({ request }) => [request.method, request.body])).toEqual([
+            ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } }],
+            ['DELETE', undefined]
+        ]);
+        expect(toStepIndex(receiver, '-topology-tree')).toBeLessThan(toStepIndex(receiver, '-grant-receiver-s-request'));
+        expect(toStepIndex(receiver, '-cue-recorded-received')).toBeLessThan(toStepIndex(receiver, '-topology-reset'));
+        expect(recipientBGrants.map(({ request }) => request.body)).toEqual([
+            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }
+        ]);
+        expect(toFlatCommands(sender).find((command) => command.kind === 'rtc.connect'))
+            .toMatchObject({ readiness: { minReadyPeers: 1 } });
+        expect(toStepIndex(sender, '-cue-tree-received')).toBeLessThan(toStepIndex(sender, '-publish'));
+        expect(toFlatCommands(receiver).some((command) => command.kind === 'wait' && command.match.payloadFields?.['data.transport'] === 'rtc')).toBe(true);
+        expect(toLocalDisabledWaits(recipientB)).toHaveLength(1);
+        expect(toPublicationAbsences(recipientB)).toEqual(['publication']);
+        expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
+        for (const recipe of [sender, receiver, recipientB]) {
+            expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)
+                .toEqual([expect.objectContaining({ commandId: `${recipe!.recipeId}-overlay-next-hops` })]);
+        }
     });
 });

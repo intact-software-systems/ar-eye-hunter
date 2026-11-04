@@ -19,10 +19,10 @@ import { openSuccessorPage, runRecipeTrioOnSameContext } from '../../../tests/pl
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 describe('same-context ALM run', () => {
-    it('selects durable-takeover on every carrier, flush-on-hide over ws and rtc and the subscription successor where a granted topic runs', () => {
+    it('selects durable-takeover and the subscription successor on every carrier and flush-on-hide over ws and rtc', () => {
         const expectedKeys = {
             ws: ['durable-takeover', 'flush-on-hide', 'subscription-successor'],
-            rtc: ['durable-takeover', 'flush-on-hide'],
+            rtc: ['durable-takeover', 'flush-on-hide', 'subscription-successor'],
             'rtc-with-ws-fallback': ['durable-takeover', 'subscription-successor']
         };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {

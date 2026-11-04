@@ -59,7 +59,11 @@ import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts'
 import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-delivered.ts';
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
 import { grantedRtcMissingProof } from './scenarios/granted-rtc/granted-rtc-missing-proof.ts';
+import { grantedRtcNotSubscribed } from './scenarios/granted-rtc/granted-rtc-not-subscribed.ts';
 import { grantedRtcPublishRefused } from './scenarios/granted-rtc/granted-rtc-publish-refused.ts';
+import { grantedRtcReceiptedDelivered } from './scenarios/granted-rtc/granted-rtc-receipted-delivered.ts';
+import { grantedRtcRelayOnly } from './scenarios/granted-rtc/granted-rtc-relay-only.ts';
+import { grantedRtcRevokedPublisher } from './scenarios/granted-rtc/granted-rtc-revoked-publisher.ts';
 import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from './scenarios/leader-ack/no-leader-refused.ts';
@@ -197,6 +201,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcDelivered,
     grantedRtcMissingProof,
     grantedRtcPublishRefused,
+    grantedRtcReceiptedDelivered,
+    grantedRtcRevokedPublisher,
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,
@@ -224,7 +230,10 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     subscriptionRevokeDisconnected,
     subscriptionReconnect,
     subscriptionSuccessor,
-    grantedRtcForgedSender
+    grantedRtcForgedSender,
+    grantedRtcNotSubscribed,
+    // The room's three-agent cells share it, and this one reshapes its topology until its own last step.
+    grantedRtcRelayOnly
 ];
 
 export function createAlmConformanceRecipes(
@@ -283,7 +292,8 @@ function toAlmConformanceScenario(
             scenarioKey: definition.scenarioKey,
             role,
             roles: definition.roles,
-            messageSelector: definition.messageSelector
+            messageSelector: definition.messageSelector,
+            connect: definition.connect
         };
         const commands = role === 'sender' || role === 'successor' || role === 'publisher-b'
             ? definition.toSenderCommands(step)

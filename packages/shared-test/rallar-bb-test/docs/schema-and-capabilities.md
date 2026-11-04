@@ -495,9 +495,13 @@ the reply cells, so they stay as recorded.
 The `topic-subscription` conformance scenarios (`scenarios/topic-subscription/`) prove the
 granted topic's elections: a session receives `room.alm-conformance-granted`, which the lane's API
 profile installs, only while it holds `subscribe` and an election its current connection
-generation asserted. They run in the full scope over `ws` and `rtc-with-ws-fallback`: a granted
-topic rides RTC only as a signed `ack: 'none'` room multicast with a verified publisher proof,
-delivered to `subscribe(handler)`, and every other granted send goes over WS. Four of them form the `four-role` family: the receiver owns the room
+generation asserted. They run in the full scope over every carrier. Over `ws` the server's
+intersection of grants and elections decides who receives, so a receipt expects only the elected
+sessions. Over `rtc` and `rtc-with-ws-fallback` a receipted granted send starts on RTC as a signed
+room multicast frozen to the live sessions whose principal holds `subscribe`: a frozen session
+without an election forwards, delivers nothing to `subscribe(handler)` and answers
+`not-subscribed`, so the receipt records it outside the audience and expects the confirmed
+recipients plus the outside ones. Four of them form the `four-role` family: the receiver owns the room
 and grants, the sender and `sibling` are two sessions of user A, and `publisher-b` is user C, a
 second producer. The owner's grants name each grantee as `{principal:<role>}`, which recipe
 creation substitutes from `principalIdsByRole` (the lane passes its opened agents' client ids;
@@ -511,12 +515,14 @@ the result events of `messages.subscriptions` and of the subscription rows read,
 
 - `subscription-delivery`: the receiver and the sibling elect to receive; the sender's and
   `publisher-b`'s publications reach both, and neither producer, granted but not subscribed,
-  receives the other's.
+  receives the other's. Over the RTC carriers each copy freezes the other producer in, which
+  ends outside its audience.
 - `subscription-token-count`: the receiver's two tokens hold one election and one row; releasing
   the first lapses it alone, a publication still arrives, and releasing the last deletes the row,
   so the next publication reaches the subscribed sibling and not the receiver.
 - `subscription-revoke-disconnected`: revoke while disconnected. The sibling's product socket
-  drops, a publication leaves while it is down, and the receiver then revokes the principal's
+  drops, a probe publishes until the receiver alone is expected, a publication leaves while the
+  socket is down, and the receiver then revokes the principal's
   `subscribe`. The reopened socket's re-assertion is refused and a second publication follows.
   The receiver receives both, the sibling neither, and the lane fails a receipt that confirms the
   sibling. A clean close removes the sibling's live generation at once, so no dispatch is held
@@ -525,9 +531,10 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   dequeue skips the revoked session at the awaited hold"; "a held row for a session whose
   generation changed is not sent when its socket opens").
 - `subscription-reconnect`: the sibling's socket drops and reopens under a new generation; its
-  token re-asserts `active` and the session's row names the new generation (S2ii-R5). A
-  publication reaches the receiver and not the reopened sibling, whose room presence closed with
-  the old socket.
+  token re-asserts `active` and the session's row names the new generation (S2ii-R5). A probe
+  publishes until the receiver alone is expected, since an RTC sender freezes the sibling in with
+  its active election until its snapshot drops the presence that closed with the old socket; the
+  publication then reaches the receiver and not the reopened sibling.
 
 `subscription-successor` runs in the `same-context` family: the successor page opens while the
 owner page still runs, once the owner read its own generation, and its connect replaces the
@@ -1131,6 +1138,12 @@ while asserting nothing. The `RallarBlackBoxTestRtcSendCommand.expect`
 TypeScript field exists only for the in-process black-box-runner adapter,
 which calls `runtime.execute` directly and records runner-side expectations.
 Distributed delivery expectations belong in `wait` and `assert` commands.
+
+A typed `messages.rtc` send fails its `rtc.send` on a handle that ends `rejected`, `failed`, `expired`, `cancelled`
+or `superseded`. `observe: 'rejected'` reverses that for a send a recipe expects to be refused: a rejected handle is
+the command's value, its `message` carrying the handle's `failure` and `attempts`, and any other end of the send
+fails the command with `RALLAR_BB_RTC_SEND_NOT_REJECTED`. The command schema, the control validator and the page
+read `observe` through one decoder, and `rejected` is its only value.
 
 A `{resultCache.<commandId>.<path>}` token in an `http.request` body stands for the string or
 number an earlier command returned, as in a wait's `contains`; a token naming none fails the

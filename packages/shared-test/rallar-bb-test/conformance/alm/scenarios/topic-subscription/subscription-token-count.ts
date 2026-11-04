@@ -102,6 +102,7 @@ function toPublisherCommands(sender: AlmConformanceStepInput): readonly RallarBl
             step: sender,
             name: 'probe-two-subscribers',
             confirmations: 2,
+            outsideAudience: 0,
             kind: 'probe'
         }),
         ...toPublishCommands(sender, 'publication-1'),

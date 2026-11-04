@@ -60,8 +60,12 @@ export type AlmConformanceScenarioId =
     | 'flush-on-hide'
     | 'granted-rtc-delivered'
     | 'granted-rtc-forged-sender'
-    | 'granted-rtc-publish-refused'
     | 'granted-rtc-missing-proof'
+    | 'granted-rtc-not-subscribed'
+    | 'granted-rtc-publish-refused'
+    | 'granted-rtc-receipted-delivered'
+    | 'granted-rtc-relay-only'
+    | 'granted-rtc-revoked-publisher'
     | 'leader-confirms'
     | 'leader-outside-list'
     | 'no-fallback-after-deadline'
@@ -110,6 +114,11 @@ export interface AlmConformanceMessageSelector {
     readonly access?: 'granted';
 }
 
+/** How a scenario's waiting connect judges readiness: the count of its ready RTC peers that settles the connect. */
+export interface AlmConformanceConnect {
+    readonly minReadyPeers: number;
+}
+
 export interface AlmConformanceStepInput {
     readonly input: CreateAlmConformanceRecipesInput;
     readonly scenarioId: AlmConformanceScenarioId;
@@ -119,6 +128,8 @@ export interface AlmConformanceStepInput {
     readonly roles: readonly AlmConformanceRole[];
     /** The definition's selector, which every connect of the scenario carries; undefined subscribes its own channel. */
     readonly messageSelector: AlmConformanceMessageSelector | undefined;
+    /** The definition's connect readiness; undefined waits for every other peer. */
+    readonly connect: AlmConformanceConnect | undefined;
 }
 
 export interface AlmConformanceMessageStepInput extends AlmConformanceStepInput {
@@ -164,6 +175,11 @@ export interface AlmConformanceScenarioDefinition {
      * this selector instead, so its pages hear the server's own publications on that topic.
      */
     readonly messageSelector?: AlmConformanceMessageSelector;
+    /**
+     * Absent, a connect that waits for ready peers waits for every other peer of the scenario. A scenario whose overlay
+     * gives a connect fewer next hops, such as a path whose leaf has one, names the count instead.
+     */
+    readonly connect?: AlmConformanceConnect;
     /**
      * Absent when no step names a principal. Otherwise every role a step names as `{principal:<role>}`: creation makes
      * the scenario only when `principalIdsByRole` resolves each of them.

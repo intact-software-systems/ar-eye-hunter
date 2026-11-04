@@ -153,3 +153,28 @@ export function toAdmissionOutcomeWait(
         timeoutMs: outcome.timeoutMs
     };
 }
+
+/**
+ * The page admitted an RTC frame of the scenario's type and its plan delivered nothing to the application: the
+ * `dispatch-decision` a forward-only or not-subscribed copy ends with.
+ */
+export function toLocalDisabledDispatchWait(
+    step: AlmConformanceStepInput,
+    timeoutMs: number
+): RallarBlackBoxTestWaitCommand {
+    return {
+        kind: 'wait',
+        commandId: toCommandId(step, 'local-disabled-dispatch'),
+        match: {
+            kind: 'diagnostic',
+            topic: INBOUND_DIAGNOSTICS_TOPIC,
+            payloadFields: {
+                'data.kind': 'dispatch-decision',
+                'data.typeId': toScenarioTypeId(step),
+                'data.carrier': 'rtc',
+                'data.disposition': 'local-disabled'
+            }
+        },
+        timeoutMs
+    };
+}
