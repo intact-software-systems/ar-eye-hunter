@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestFaultRewrite } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { AlmFaultRewrite } from '@shared-test/rallar-bb-test/alm/decode-alm-fault-rewrite.ts';
 import type {
     RallarMessagePayload,
     RallarMessageReplyOutcome,
@@ -522,7 +522,7 @@ export interface BlackBoxRallarRewriteFault {
     readonly faultId: string;
     readonly carrier: 'rtc';
     readonly match: TransportFaultMatch;
-    readonly rewrite: RallarBlackBoxTestFaultRewrite;
+    readonly rewrite: AlmFaultRewrite;
     readonly remaining: ScriptedTransportFault['remaining'];
 }
 

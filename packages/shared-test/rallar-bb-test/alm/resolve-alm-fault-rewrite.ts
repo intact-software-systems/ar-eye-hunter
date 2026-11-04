@@ -1,13 +1,13 @@
-import type { RallarBlackBoxTestFaultRewrite } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isLiveRoomSession } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/resolve-black-box-rallar-message-peer.ts';
 import { resolvePublicationKey } from '@shared/api/group-presence/resolve-publication-key.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { TransportFaultRewrite } from '@shared/transport-faults/transport-fault-port.ts';
 
-import { isLiveRoomSession } from './resolve-black-box-rallar-message-peer.ts';
+import type { AlmFaultRewrite } from './decode-alm-fault-rewrite.ts';
 
-export interface ResolveBlackBoxRallarFaultRewriteInput {
-    readonly rewrite: RallarBlackBoxTestFaultRewrite;
+export interface ResolveAlmFaultRewriteInput {
+    readonly rewrite: AlmFaultRewrite;
     /** Undefined while the page holds no snapshot of the room. */
     readonly snapshot: GroupSnapshot | undefined;
     readonly nowMs: number;
@@ -17,8 +17,8 @@ export interface ResolveBlackBoxRallarFaultRewriteInput {
  * A forged sender is a real member: the principal's one live session in the page's room snapshot, and the key that
  * session registered, so a receiver finds the key and refuses the frame only for its signature.
  */
-export function resolveBlackBoxRallarFaultRewrite(
-    input: ResolveBlackBoxRallarFaultRewriteInput
+export function resolveAlmFaultRewrite(
+    input: ResolveAlmFaultRewriteInput
 ): Either<string, TransportFaultRewrite> {
     const { rewrite, snapshot } = input;
     if (rewrite === 'strip-proof') {

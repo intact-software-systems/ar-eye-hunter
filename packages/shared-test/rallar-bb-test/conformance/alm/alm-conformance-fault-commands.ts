@@ -1,6 +1,6 @@
+import type { AlmFaultRewrite } from '../../alm/decode-alm-fault-rewrite.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestFaultRewrite,
     RallarBlackBoxTestStorageFaultInjectCommand,
     RallarBlackBoxTestTransportFaultInjectCommand
 } from '../../rallar-black-box-test-contracts.ts';
@@ -28,7 +28,7 @@ interface AlmConformanceFaultCommandInput {
 
 interface AlmConformanceRewriteFaultInput {
     readonly name: string;
-    readonly rewrite: RallarBlackBoxTestFaultRewrite;
+    readonly rewrite: AlmFaultRewrite;
     readonly remaining: 'until-cleared' | 0;
 }
 

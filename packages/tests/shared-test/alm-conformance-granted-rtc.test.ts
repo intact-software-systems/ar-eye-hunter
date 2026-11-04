@@ -10,6 +10,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
+    RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -57,7 +58,9 @@ function toOutcomeWaits(recipe: RallarBlackBoxTestRecipe): readonly string[] {
 }
 
 /** The `[field, expected]` of each assertion a refusal poll makes on the observed handle. */
-function toVerdictFacts(recipe: RallarBlackBoxTestRecipe): readonly (readonly [string, unknown])[] {
+function toVerdictFacts(
+    recipe: RallarBlackBoxTestRecipe
+): readonly (readonly [string, RallarBlackBoxTestAssertCommand['expected']])[] {
     return toFlatCommands(recipe).flatMap((command) =>
         command.kind === 'assert' && command.source.includes('-refusal-observe.value.')
             ? [[command.source.split('.value.')[1]!, command.expected] as const]

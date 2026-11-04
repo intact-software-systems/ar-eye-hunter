@@ -1,6 +1,6 @@
+import type { AlmFaultRewrite } from '../../../../alm/decode-alm-fault-rewrite.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestFaultRewrite,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
@@ -103,7 +103,7 @@ export function toRtcArrivalWait(receiver: AlmConformanceStepInput): RallarBlack
 /** The publisher signs; this page rewrites each signed frame it writes until the cue, then releases the hold. */
 export function toRewritingPublisherCommands(
     sender: AlmConformanceStepInput,
-    rewrite: RallarBlackBoxTestFaultRewrite
+    rewrite: AlmFaultRewrite
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(sender),

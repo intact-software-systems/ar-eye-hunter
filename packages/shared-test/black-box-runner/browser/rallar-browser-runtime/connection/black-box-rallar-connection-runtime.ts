@@ -1,3 +1,4 @@
+import { resolveAlmFaultRewrite } from '@shared-test/rallar-bb-test/alm/resolve-alm-fault-rewrite.ts';
 import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -68,7 +69,6 @@ import {
     decodeBlackBoxRallarTopicSubscriptionsInput,
     decodeBlackBoxRallarTopicUnsubscribeInput
 } from '../messaging/decode-black-box-rallar-topic-subscription-input.ts';
-import { resolveBlackBoxRallarFaultRewrite } from '../messaging/resolve-black-box-rallar-fault-rewrite.ts';
 import { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import { BlackBoxRallarCloseOperation } from './black-box-rallar-close-operation.ts';
 import { BlackBoxRallarConnectOperation } from './black-box-rallar-connect-operation.ts';
@@ -313,7 +313,7 @@ export class BlackBoxRallarConnectionRuntime {
     #resolveRewriteFault({ rewrite, ...fault }: BlackBoxRallarRewriteFault): ScriptedTransportFault {
         const roomRef = blackBoxRallarRoomRefOf(requireConnectionConfig(this.#foundation.connectionState));
         const snapshot = roomRef === undefined ? undefined : this.#foundation.rallar.peers.getRoomSnapshot(roomRef);
-        return resolveBlackBoxRallarFaultRewrite({ rewrite, snapshot, nowMs: this.#clock.now() }).fold(
+        return resolveAlmFaultRewrite({ rewrite, snapshot, nowMs: this.#clock.now() }).fold(
             (detail) => {
                 throw new TypeError(`fault.inject ${fault.faultId} names no forged sender: ${detail}.`);
             },

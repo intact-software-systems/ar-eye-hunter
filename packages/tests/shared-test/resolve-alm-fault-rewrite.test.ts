@@ -4,11 +4,11 @@ import {
     it
 } from 'vitest';
 
-import { resolveBlackBoxRallarFaultRewrite } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/resolve-black-box-rallar-fault-rewrite.ts';
+import { resolveAlmFaultRewrite } from '@shared-test/rallar-bb-test/alm/resolve-alm-fault-rewrite.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { toRoomRosterSession } from './browser-runtime-facade-test-double.ts';
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { toRoomRosterSession } from './rallar-browser-runtime/browser-runtime-facade-test-double.ts';
 
 const CHARLIE_KEY = {
     keyId: 'charlie-key-id',
@@ -35,12 +35,12 @@ describe('the forged sender a rewrite fault names', () => {
             toRoomRosterSession('charlie-lapsed', { principalId: 'principal-charlie', expiresAtEpochMs: nowMs })
         ]);
 
-        expect(resolveBlackBoxRallarFaultRewrite({ rewrite: forgeCharlie, snapshot, nowMs }).right).toEqual({
+        expect(resolveAlmFaultRewrite({ rewrite: forgeCharlie, snapshot, nowMs }).right).toEqual({
             kind: 'forge-sender',
             senderId: 'charlie-session',
             keyId: 'charlie-key-id'
         });
-        expect(resolveBlackBoxRallarFaultRewrite({ rewrite: 'strip-proof', snapshot: undefined, nowMs }).right)
+        expect(resolveAlmFaultRewrite({ rewrite: 'strip-proof', snapshot: undefined, nowMs }).right)
             .toEqual({ kind: 'strip-proof' });
     });
 
@@ -51,13 +51,13 @@ describe('the forged sender a rewrite fault names', () => {
         ]);
         const keyless = toSnapshot([toRoomRosterSession('charlie-session', { principalId: 'principal-charlie' })]);
 
-        expect(resolveBlackBoxRallarFaultRewrite({ rewrite: forgeCharlie, snapshot: undefined, nowMs }).left)
+        expect(resolveAlmFaultRewrite({ rewrite: forgeCharlie, snapshot: undefined, nowMs }).left)
             .toBe('the page holds no snapshot of the room');
-        expect(resolveBlackBoxRallarFaultRewrite({ rewrite: forgeCharlie, snapshot: twoSessions, nowMs }).left)
+        expect(resolveAlmFaultRewrite({ rewrite: forgeCharlie, snapshot: twoSessions, nowMs }).left)
             .toBe('the room holds 2 live sessions of principal-charlie, not exactly one');
-        expect(resolveBlackBoxRallarFaultRewrite({ rewrite: forgeCharlie, snapshot: toSnapshot([]), nowMs }).left)
+        expect(resolveAlmFaultRewrite({ rewrite: forgeCharlie, snapshot: toSnapshot([]), nowMs }).left)
             .toBe('the room holds 0 live sessions of principal-charlie, not exactly one');
-        expect(resolveBlackBoxRallarFaultRewrite({ rewrite: forgeCharlie, snapshot: keyless, nowMs }).left)
+        expect(resolveAlmFaultRewrite({ rewrite: forgeCharlie, snapshot: keyless, nowMs }).left)
             .toBe('session charlie-session of principal-charlie registered no publication key');
     });
 });

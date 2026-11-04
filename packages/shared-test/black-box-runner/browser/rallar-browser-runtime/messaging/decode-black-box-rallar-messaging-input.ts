@@ -1,6 +1,6 @@
 import {
     decodeAlmFaultRewrite,
-    isAlmFaultRewriteAction
+    type AlmFaultRewrite
 } from '@shared-test/rallar-bb-test/alm/decode-alm-fault-rewrite.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
@@ -97,22 +97,22 @@ export function decodeBlackBoxRallarFaultInput(
             return decodeStorageFault(value);
         case 'product-socket':
             return decodeProductSocketFault(value);
-        default:
-            return isAlmFaultRewriteAction(value.action)
-                ? decodeRewriteFault(value, value.action)
-                : decodeTransportFault(value);
+        default: {
+            const rewrite = decodeAlmFaultRewrite(value);
+            return rewrite === undefined ? decodeTransportFault(value) : decodeRewriteFault(value, rewrite);
+        }
     }
 }
 
 function decodeRewriteFault(
     value: BlackBoxRallarCommandRecord,
-    action: Readonly<Record<'rewrite', unknown>>
+    decoded: Either<string, AlmFaultRewrite>
 ): Either<BlackBoxRallarInputIssue, BlackBoxRallarRewriteFault> {
     const faultId = decodeBlackBoxCommandString(value.faultId);
     if (faultId === undefined) {
         return toInputIssue('fault.inject.faultId is required.');
     }
-    return decodeAlmFaultRewrite(value.carrier, action).fold(
+    return decoded.fold(
         (message) => toInputIssue(message),
         (rewrite) =>
             decodeFaultMatch(value.match).flatMap(
