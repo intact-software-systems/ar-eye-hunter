@@ -7,6 +7,7 @@ import {
 
 import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
+import { roomRotationReturnJourney, roomSharingCacheRecoveryJourney } from '../room-sharing-recovery-journey.ts';
 
 test(
     'diagnoses a mismatched WebSocket host at login and recovers after configuration repair',
@@ -555,3 +556,13 @@ async function setSpectatingArenaCapacity(page: Page, created: Response, maxMemb
     );
     expect(response.ok(), await response.text()).toBe(true);
 }
+
+test('preserves the share code through a room-cache gap', async ({ page }) => {
+    test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires local full-stack services.');
+    await roomSharingCacheRecoveryJourney(page, 'arena');
+});
+
+test('recovers rotation controls after leaving and returning before a response arrives', async ({ page }) => {
+    test.skip(process.env.RALLAR_ARENA_FULL_STACK !== '1', 'Requires local full-stack services.');
+    await roomRotationReturnJourney(page, 'arena');
+});

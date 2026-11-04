@@ -342,81 +342,22 @@ describe('API-v1 three-server recipe semantics', () => {
         expect(new Set(finalReads.map((step) => step.connection))).toEqual(
             new Set(['apiPrimary', 'apiTertiary'])
         );
-        const latestObservation = (recipe.steps as readonly ApiJsonObject[]).find(
-            (step) => step.name === 'deriveLatestChurnObservation'
-        );
-        expect(latestObservation).toMatchObject({
-            type: 'set',
-            output: 'latestChurnObservation',
-            transform: {
-                value: {
-                    groupRevision: { max: expect.any(Array) },
-                    presenceRevision: { max: expect.any(Array) },
-                    onlineMemberCount: {
-                        if: {
-                            condition: { equals: expect.any(Array) },
-                            then: { path: 'outputs.primaryChurnOnlineMemberCount' },
-                            else: {
-                                if: {
-                                    condition: { equals: expect.any(Array) },
-                                    then: { path: 'outputs.secondaryChurnOnlineMemberCount' },
-                                    else: { path: 'outputs.tertiaryChurnOnlineMemberCount' }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        const floor = (recipe.steps as readonly ApiJsonObject[]).find(
-            (step) => step.name === 'deriveChurnReadFloor'
-        );
-        expect(floor).toMatchObject({
-            type: 'set',
-            output: 'churnReadFloor',
-            transform: {
-                value: {
-                    groupRevision: {
-                        path: 'outputs.latestChurnObservation.groupRevision'
-                    },
-                    presenceRevision: {
-                        if: {
-                            condition: {
-                                equals: [{ path: 'outputs.latestChurnObservation.onlineMemberCount' }, 13]
-                            },
-                            then: { path: 'outputs.latestChurnObservation.presenceRevision' },
-                            else: {
-                                add: [{ path: 'outputs.latestChurnObservation.presenceRevision' }, 1]
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        const churnRead = (recipe.steps as readonly ApiJsonObject[]).find(
-            (step) => step.name === 'readChurnGroupThroughPrimary'
-        );
-        expect(churnRead).toMatchObject({
-            connection: 'apiPrimary',
-            request: {
-                path: expect.stringContaining(
-                    'minGroupRevision={churnReadFloor.groupRevision}&minPresenceRevision={churnReadFloor.presenceRevision}'
-                ),
-                retry: {
-                    maxAttempts: 6,
-                    backoffMs: 250,
-                    backoffMultiplier: 2,
-                    onStatus: [409],
-                    onException: false
-                }
-            },
-            expect: {
-                status: 200,
-                body: {
-                    onlineMemberCount: 13
-                }
-            }
-        });
+        for (
+            const [name, connection, observation] of [
+                ['readChurnGroupThroughPrimary', 'apiPrimary', 'latestChurnObservation'],
+                ['readSharedGroupThroughTertiary', 'apiTertiary', 'latestSharedObservation']
+            ]
+        ) {
+            expect((recipe.steps as readonly ApiJsonObject[]).find((step) => step.name === name)).toMatchObject({
+                type: 'http.poll-until',
+                connection,
+                request: {
+                    path: expect.stringContaining(`minGroupRevision={${observation}.groupRevision}&minPresenceRevision={${observation}.presenceRevision}`),
+                    poll: { maxAttempts: 6, maxDurationMs: 15000, backoffMs: 250, backoffMultiplier: 2 }
+                },
+                expect: { status: 200, body: { memberCount: 13, onlineMemberCount: 13 } }
+            });
+        }
         const allSteps = toFlatApiV1RecipeSteps(recipe.steps as readonly ApiJsonObject[]);
         for (
             const [connectStepName, outputPrefix] of [
@@ -432,88 +373,11 @@ describe('API-v1 three-server recipe semantics', () => {
                 request: {
                     outputs: {
                         [`${outputPrefix}GroupRevision`]: 'body.causalRevision.groupRevision',
-                        [`${outputPrefix}PresenceRevision`]: 'body.causalRevision.presenceRevision',
-                        [`${outputPrefix}OnlineMemberCount`]: 'body.onlineMemberCount'
+                        [`${outputPrefix}PresenceRevision`]: 'body.causalRevision.presenceRevision'
                     }
                 }
             });
         }
-        const latestSharedObservation = (recipe.steps as readonly ApiJsonObject[]).find(
-            (step) => step.name === 'deriveLatestSharedObservation'
-        );
-        expect(latestSharedObservation).toMatchObject({
-            type: 'set',
-            output: 'latestSharedObservation',
-            transform: {
-                value: {
-                    groupRevision: { max: expect.any(Array) },
-                    presenceRevision: { max: expect.any(Array) },
-                    onlineMemberCount: {
-                        if: {
-                            condition: { equals: expect.any(Array) },
-                            then: { path: 'outputs.primarySharedOnlineMemberCount' },
-                            else: {
-                                if: {
-                                    condition: { equals: expect.any(Array) },
-                                    then: { path: 'outputs.secondarySharedOnlineMemberCount' },
-                                    else: { path: 'outputs.tertiarySharedOnlineMemberCount' }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        const sharedFloor = (recipe.steps as readonly ApiJsonObject[]).find(
-            (step) => step.name === 'deriveSharedReadFloor'
-        );
-        expect(sharedFloor).toMatchObject({
-            type: 'set',
-            output: 'sharedReadFloor',
-            transform: {
-                value: {
-                    groupRevision: {
-                        path: 'outputs.latestSharedObservation.groupRevision'
-                    },
-                    presenceRevision: {
-                        if: {
-                            condition: {
-                                equals: [{ path: 'outputs.latestSharedObservation.onlineMemberCount' }, 13]
-                            },
-                            then: { path: 'outputs.latestSharedObservation.presenceRevision' },
-                            else: {
-                                add: [{ path: 'outputs.latestSharedObservation.presenceRevision' }, 1]
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        const sharedRead = (recipe.steps as readonly ApiJsonObject[]).find(
-            (step) => step.name === 'readSharedGroupThroughTertiary'
-        );
-        expect(sharedRead).toMatchObject({
-            connection: 'apiTertiary',
-            request: {
-                path: expect.stringContaining(
-                    'minGroupRevision={sharedReadFloor.groupRevision}&minPresenceRevision={sharedReadFloor.presenceRevision}'
-                ),
-                retry: {
-                    maxAttempts: 6,
-                    backoffMs: 250,
-                    backoffMultiplier: 2,
-                    onStatus: [409],
-                    onException: false
-                }
-            },
-            expect: {
-                status: 200,
-                body: {
-                    memberCount: 13,
-                    onlineMemberCount: 13
-                }
-            }
-        });
         expect(JSON.stringify(recipe)).toContain('disconnect');
         expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
     });

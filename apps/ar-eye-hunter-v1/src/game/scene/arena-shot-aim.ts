@@ -2,7 +2,8 @@ import { add3, distance3, dot3, scale3, sub3 } from '@ar-eye-hunter/arena-math.t
 import { CreatePickingRay } from '@babylonjs/core/Culling/ray.core.js';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
-import type { Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
+import type { ArenaSimulationState, Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
+import type { TournamentArena } from '@ar-eye-hunter/tournament-arena.ts';
 import { blocksShot } from '@ar-eye-hunter/arena-layout.ts';
 import type { RemotePlayer } from '../arena-contracts.ts';
 import {
@@ -72,6 +73,7 @@ export function findPredictedPlayerHit(
 
 interface ResolveTouchShotDirectionInput {
     readonly runtime: ArenaSceneRuntime;
+    readonly tournamentState: TournamentArena | null | undefined;
     readonly event: PointerEvent;
     readonly remotePlayers: ReadonlyMap<string, RemotePlayer>;
     readonly localSessionId: string;
@@ -83,7 +85,7 @@ interface TouchShotDirection {
 }
 
 export function resolveTouchShotDirection(
-    { runtime, event, remotePlayers, localSessionId }: ResolveTouchShotDirectionInput
+    { runtime, tournamentState, event, remotePlayers, localSessionId }: ResolveTouchShotDirectionInput
 ): TouchShotDirection {
     const canvas = runtime.engine.getRenderingCanvas();
     if (!canvas) {
@@ -91,11 +93,15 @@ export function resolveTouchShotDirection(
     }
     const rect = canvas.getBoundingClientRect();
     const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    const origin = runtime.localPlayer.position;
+    // Native snapshots may advance while graphics are delayed. Input uses accepted state immediately.
+    const arenaState = tournamentState?.arena ?? runtime.arenaState;
+    const origin = tournamentState?.players.find((player) => player.principalId === localSessionId)?.simulation.position
+        ?? runtime.localPlayer.position;
     const candidate = chooseTouchAimCandidate({
         point,
         candidates: computeTouchAimCandidates({
-            runtime: runtime,
+            runtime,
+            arenaState,
             remotePlayers: remotePlayers,
             localSessionId: localSessionId,
             origin: origin,
@@ -122,6 +128,7 @@ export function resolveTouchShotDirection(
 }
 
 interface ComputeTouchAimCandidatesInput {
+    readonly arenaState: ArenaSimulationState;
     readonly viewport: Pick<DOMRect, 'width' | 'height'>;
     readonly runtime: ArenaSceneRuntime;
     readonly remotePlayers: ReadonlyMap<string, RemotePlayer>;
@@ -130,10 +137,10 @@ interface ComputeTouchAimCandidatesInput {
 }
 
 function computeTouchAimCandidates(
-    { runtime, remotePlayers, localSessionId, origin, viewport }: ComputeTouchAimCandidatesInput
+    { runtime, arenaState, remotePlayers, localSessionId, origin, viewport }: ComputeTouchAimCandidatesInput
 ): readonly TouchAimCandidate[] {
     const candidates: TouchAimCandidate[] = [];
-    for (const target of runtime.arenaState.targets) {
+    for (const target of arenaState.targets) {
         const world = target.position;
         const screen = projectWorldToScreen(runtime, world, viewport);
         if (!screen) {
@@ -145,7 +152,7 @@ function computeTouchAimCandidates(
             screen,
             world,
             distance: distance3(origin, world),
-            blocked: blocksShot(runtime.arenaState.layout, origin, world)
+            blocked: blocksShot(arenaState.layout, origin, world)
         });
     }
 
@@ -164,7 +171,7 @@ function computeTouchAimCandidates(
             screen,
             world,
             distance: distance3(origin, world),
-            blocked: blocksShot(runtime.arenaState.layout, origin, world)
+            blocked: blocksShot(arenaState.layout, origin, world)
         });
     }
     return candidates;

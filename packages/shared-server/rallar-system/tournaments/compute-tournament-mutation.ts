@@ -16,6 +16,7 @@ import {
 } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
 import type { TournamentGameProfile } from './tournament-game-profile.ts';
+import { computeTournamentPublication } from './tournament-publication.ts';
 import type { TournamentRepository } from './tournament-repository.ts';
 import { computeTournamentStorage } from './tournament-repository.ts';
 import type { TournamentService } from './tournament-service.ts';
@@ -42,6 +43,10 @@ export function computeTournamentMutation(read: TournamentService.Read): Tournam
     }
     if (before.tournament.rulesId !== profile.rulesId) {
         return refused(read, 'unsupported-rules');
+    }
+    if (command.request.type === 'publish' || command.request.type === 'unlist') {
+        const publication = computeTournamentPublication(read, authorizedStorage(read, before));
+        return { result: result(read, publication.refusal), storage: publication.storage, admissions: [], outbox: [] };
     }
     const decision = computeTournament({
         state: before.tournament,
@@ -104,7 +109,7 @@ function computeTournamentCreation(
 
 function toDomainCommand(command: TournamentService.Command): TournamentCommand {
     const request = command.request;
-    if (request.type === 'create') {
+    if (request.type === 'create' || request.type === 'publish' || request.type === 'unlist') {
         throw new TypeError('Tournament creation is not an existing-bracket command');
     }
     if (request.type === 'schedule') {

@@ -5443,6 +5443,51 @@ moved or changed test.
         "requiredConstraint": "A failure after engine allocation but before Scene construction must invoke disposal exactly once while preserving the original construction failure.",
         "failureRationale": "No usable runtime is returned on this path, so a returned-state assertion cannot observe the allocated graphics resource; its release port directly witnesses whether failed construction leaks that resource or releases it twice."
       }
+    },
+    {
+      "id": "tournament-catalog-coalesced-refresh",
+      "domain": "Tournament catalogue browser request lifetime",
+      "owner": "Rallar browser maintainers",
+      "summary": "Concurrent refreshes share one read per loaded page.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#replaces the loaded range atomically and coalesces overlapping refreshes",
+      "coverageRelation": "The catalogue runs against its owned API port and manual timers; assertions observe outbound reads alongside public catalogue state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarTournamentCatalog.Api.read",
+        "observableEffect": "Each API read issues authenticated catalogue storage work.",
+        "requiredConstraint": "Two loaded pages and two simultaneous refresh requests produce four total reads: two initial reads and one fresh two-page range.",
+        "failureRationale": "Duplicate refresh requests waste authenticated network and database work even when they ultimately display identical cards."
+      }
+    },
+    {
+      "id": "tournament-catalog-stop-cancels-polling",
+      "domain": "Tournament catalogue browser request lifetime",
+      "owner": "Rallar browser maintainers",
+      "summary": "Stopping the catalogue aborts the pending read and prevents subsequent automatic reads.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#aborts reads on stop and ignores a late completion",
+      "coverageRelation": "The catalogue runs against its owned API port and manual timers; assertions observe outbound reads alongside public catalogue state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarTournamentCatalog.Api.read",
+        "observableEffect": "Each API read issues authenticated catalogue storage work.",
+        "requiredConstraint": "Only the initial pending request reaches the API; advancing two refresh intervals after stop creates no additional reads.",
+        "failureRationale": "A stopped component can discard responses while still generating unwanted network traffic, so empty displayed state alone does not prove cleanup."
+      }
+    },
+    {
+      "id": "tournament-catalog-activity-cadence",
+      "domain": "Tournament catalogue browser request lifetime",
+      "owner": "Rallar browser maintainers",
+      "summary": "An inactive catalogue makes no polling requests; resuming refreshes once and waits the configured completion-based interval.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes immediately on return with cadence after completion",
+      "coverageRelation": "The catalogue runs against its owned API port and manual timers; assertions observe outbound reads alongside public catalogue state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarTournamentCatalog.Api.read",
+        "observableEffect": "Each API read issues authenticated catalogue storage work.",
+        "requiredConstraint": "The API has one initial read through sixty seconds inactive, and two reads after resumption through the first 29999 milliseconds of the 30000 millisecond refresh interval.",
+        "failureRationale": "Identical cards can conceal background polling or an early timer; outbound request counts prove the required suppression and cadence."
+      }
     }
   ],
   "entries": [
@@ -11495,6 +11540,50 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "The one-disposal assertion observes cleanup of the one engine already allocated before construction fails; it protects the graphics resource lifetime rather than the order of internal helper calls.",
       "semanticCoverage": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts#disposes the allocated engine if early scaling fails before Scene construction"
+    },
+    {
+      "id": "test-structure-coupling-81109f825b91efe4",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-catalog-coalesced-refresh",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The read count proves overlapping refresh requests do not fetch the same loaded range twice.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#replaces the loaded range atomically and coalesces overlapping refreshes"
+    },
+    {
+      "id": "test-structure-coupling-0a5699c3def02aeb",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-catalog-stop-cancels-polling",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The read count after advancing timers proves disposal cancels automatic network work.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#aborts reads on stop and ignores a late completion"
+    },
+    {
+      "id": "test-structure-coupling-b490a3bb35d28527",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-catalog-activity-cadence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The unchanged API read count proves hidden or offline time produces no polling requests.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes immediately on return with cadence after completion"
+    },
+    {
+      "id": "test-structure-coupling-96b03aed87b0f988",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-catalog-activity-cadence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The count before the next interval proves resumption does not leave an extra immediate or early poll.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes immediately on return with cadence after completion"
     }
   ]
 }

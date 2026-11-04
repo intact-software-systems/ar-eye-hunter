@@ -21,6 +21,7 @@ import type { GroupSessionPage } from '@shared/api/group-sessions/group-session-
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import type { PartyView } from '@shared/api/parties/party-view.ts';
+import type { TournamentCatalogPage } from '@shared/api/tournaments/tournament-catalog.ts';
 import {
     createRallarAiJsonResult,
     createRallarAiMockProvider,
@@ -222,12 +223,32 @@ class RelicBrowserBackend {
                 } satisfies PartyView
             });
         }
+        else if (
+            path === '/api/tournaments/apps/rallar-server/workspaces/default/catalog' &&
+            route.request().method() === 'GET'
+        ) {
+            await this.respondTournamentCatalog(route);
+        }
         else if (path.startsWith('/api/state/')) {
             await this.respondPlatformState(route, path);
         }
         else {
             await this.respondAuthentication(route, path);
         }
+    }
+
+    private async respondTournamentCatalog(route: Route): Promise<void> {
+        const url = new URL(route.request().url());
+        await route.fulfill({
+            json: {
+                scope: { applicationId: 'rallar-server', workspaceId: 'default' },
+                principalId: session.clientId,
+                view: url.searchParams.get('view') === 'mine' ? 'mine' : 'public',
+                observedAtEpochMs: Date.now(),
+                entries: [],
+                nextCursor: null
+            } satisfies TournamentCatalogPage
+        });
     }
 
     private async respondExpedition(route: Route, path: string): Promise<void> {

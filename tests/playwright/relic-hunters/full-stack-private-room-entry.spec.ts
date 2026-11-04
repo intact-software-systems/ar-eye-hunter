@@ -6,6 +6,7 @@ import {
 
 import { renewRoomAfterDelayedCallbacks } from '../delayed-room-heartbeat.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
+import { roomRotationReturnJourney, roomSharingCacheRecoveryJourney } from '../room-sharing-recovery-journey.ts';
 import { readSceneCanvasMetrics } from './relic-scene-observations.ts';
 
 // Includes review animation, automatic continuation, and delivery of the next authoritative state.
@@ -83,32 +84,6 @@ test(
         await page.screenshot({ path: testInfo.outputPath('delayed-heartbeat-expedition.png'), fullPage: true });
     }
 );
-
-test('preserves a created code link across a missing room-cache observation and refresh', async ({ page }) => {
-    test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the paired Relic server.');
-    await page.goto('/');
-    await registerPrivateHunter(page, 'code-cache');
-    await page.getByRole('button', { name: 'New code room', exact: true }).click();
-    const roomLink = page.getByLabel('Room link', { exact: true });
-    await expect(roomLink).toHaveValue(/joinCode=/);
-    const createdLink = await roomLink.inputValue();
-    const groupsPath = '/api/state/apps/rallar-server/workspaces/default/groups';
-    const collection = (url: URL) => url.pathname === groupsPath;
-    await page.route(collection, async (route) => {
-        if (route.request().method() === 'GET') {
-            await route.fulfill({ json: [] });
-        }
-        else {
-            await route.continue();
-        }
-    });
-    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(roomLink).toHaveCount(0);
-    await page.unroute(collection);
-    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(roomLink).toHaveValue(createdLink);
-    await expect(page.getByRole('button', { name: 'Copy room link', exact: true })).toBeEnabled();
-});
 
 test(
     'finishes sharing a code room when cached presence expires during previous-room cleanup',
@@ -707,3 +682,13 @@ async function submitBothPlans(host: Page, guest: Page): Promise<void> {
     await expect(guest.locator('.turn-plan-counters')).toContainText('1 locked');
     await guest.getByRole('button', { name: 'Submit Plan' }).click();
 }
+
+test('preserves the share code through a room-cache gap', async ({ page }) => {
+    test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires local full-stack services.');
+    await roomSharingCacheRecoveryJourney(page, 'relic');
+});
+
+test('recovers rotation controls after leaving and returning before a response arrives', async ({ page }) => {
+    test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires local full-stack services.');
+    await roomRotationReturnJourney(page, 'relic');
+});

@@ -18,9 +18,11 @@ describe('tournament public response boundaries', () => {
         }
     });
     it('accepts an absent tournament but rejects private consent fields in public snapshots', () => {
-        const snapshot = { ref, principalId: 'alice', observedAtEpochMs: 1000, tournament: null };
+        const snapshot = { ref, principalId: 'alice', observedAtEpochMs: 1000, tournament: null, listing: 'unlisted' };
         expect(decodeTournamentSnapshot(snapshot)).toEqual(snapshot);
         expect(() => decodeTournamentSnapshot({ ...snapshot, checkIns: [] })).toThrow();
         expect(() => decodeTournamentSnapshot({ ...snapshot, principalId: '' })).toThrow();
+        expect(() => decodeTournamentSnapshot({ ...snapshot, listing: undefined })).toThrow();
+        expect(() => decodeTournamentSnapshot({ ...snapshot, listing: 'secret' })).toThrow();
     });
 });
