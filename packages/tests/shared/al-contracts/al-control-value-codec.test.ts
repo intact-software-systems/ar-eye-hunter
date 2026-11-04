@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALPendingAckSnapshot } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     decodeALControlMessage,
     newALNackControlMessage,
@@ -99,5 +100,20 @@ describe('AL control value codec', () => {
         );
 
         expect(decodeALControlMessage(message).left).toMatchObject({ code: 'malformed' });
+    });
+
+    it('reads a relay row stored before it recorded recipients outside the audience as recording none', () => {
+        const row = {
+            toPeerId: 'origin',
+            status: 'subtree-complete',
+            localReady: true,
+            expectedFromPeerIds: ['child'],
+            ackedFromPeerIds: [],
+            carrier: 'rtc'
+        };
+
+        expect(decodeALPendingAckSnapshot(row).outsideAudiencePeerIds).toEqual([]);
+        expect(decodeALPendingAckSnapshot({ ...row, outsideAudiencePeerIds: ['child'] }).outsideAudiencePeerIds).toEqual(['child']);
+        expect(() => decodeALPendingAckSnapshot({ ...row, outsideAudiencePeerIds: [''] })).toThrow(TypeError);
     });
 });

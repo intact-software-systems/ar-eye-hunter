@@ -17,6 +17,7 @@ import {
     createTestALOutboundWorkPort
 } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALPendingAckSnapshot } from '@shared/al-contracts/al-control.ts';
 import type {
     ALInboundAdmissionRead,
     ALInboundAdmissionStore,
@@ -147,9 +148,13 @@ describe('PostgreSQL inbound admission', () => {
         expect(await repository.findEntry(namespace, `${namespace}:version:peer-1`)).toBeUndefined();
     });
 
-    it('records inbound receipt progress while retaining message provenance', async () => {
+    // A row written before the relay recorded recipients outside the audience has no such list; it still decodes.
+    it.each<[string, Partial<ALPendingAckSnapshot>]>([
+        ['a current relay row', { outsideAudiencePeerIds: [] }],
+        ['a relay row written before the outside-audience list', {}]
+    ])('records inbound receipt progress on %s while retaining message provenance', async (shape, outside) => {
         const { sql, repository } = storage;
-        const namespace = 'psql-test:inbound:receipt-progress';
+        const namespace = `psql-test:inbound:receipt-progress:${shape.length}`;
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace, nowMs: Date.now });
         const store = createALInboundAdmissionStore({
             nowMs: Date.now,
@@ -189,9 +194,9 @@ describe('PostgreSQL inbound admission', () => {
                             localReady: false,
                             expectedFromPeerIds: ['peer-2'],
                             ackedFromPeerIds: [],
-                            outsideAudiencePeerIds: [],
+                            ...outside,
                             carrier: 'ws'
-                        }
+                        } as ALPendingAckSnapshot
                     },
                     expireAtTimestamp
                 },

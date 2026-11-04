@@ -133,10 +133,9 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
             'localReady',
             'expectedFromPeerIds',
             'ackedFromPeerIds',
-            'outsideAudiencePeerIds',
             'carrier'
         ],
-        ['expireAtTimestamp', 'upwardAudiencePeerIds']
+        ['expireAtTimestamp', 'upwardAudiencePeerIds', 'outsideAudiencePeerIds']
     );
     if (typeof record.localReady !== 'boolean') {
         throw new TypeError('Pending ACK readiness is invalid');
@@ -162,10 +161,13 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
                 )
             }
             : {}),
-        outsideAudiencePeerIds: decodeControlIdentifierArray(
-            record.outsideAudiencePeerIds,
-            'pending ACK outside-audience recipient identity'
-        ),
+        // A row the WS server stored before the list existed records nobody outside the audience.
+        outsideAudiencePeerIds: Object.hasOwn(record, 'outsideAudiencePeerIds')
+            ? decodeControlIdentifierArray(
+                record.outsideAudiencePeerIds,
+                'pending ACK outside-audience recipient identity'
+            )
+            : [],
         carrier: decodeALDeliveryCarrier(record.carrier, 'pending ACK carrier')
     };
 }
