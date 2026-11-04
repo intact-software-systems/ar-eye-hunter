@@ -358,7 +358,7 @@ function toScenarioGate(
 
 /**
  * The sender's later steps run on the connection its first recipe opened, so the recipe carries no prologue; its own
- * stats read closes it.
+ * stats read ends the recipe.
  */
 function toContinuation(
     input: CreateAlmConformanceRecipesInput,
