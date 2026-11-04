@@ -21,6 +21,7 @@ import {
     toALInboundAckEffect,
     toALInboundBufferedReleaseEffects,
     toALInboundForwardingEffects,
+    toALInboundHopCompletionStatus,
     toALInboundLocalDeliveryEffects,
     toALInboundNegativeControlEffects,
     toALInboundUpwardAcks,
@@ -245,27 +246,21 @@ export function computeALInboundBufferedRelease(
     return { ...bundle, localDelivery };
 }
 
-/**
- * `ack.enabled` is this peer's own ACK. A relay row follows the forward, so a peer that never ACKs for itself still
- * passes the ACKs of the recipients below it upward.
- */
 function computeIncomingAcknowledgements(
     read: ALInboundMessageReadDto,
     shouldForward: boolean
 ): InboundAcknowledgementChanges {
     const plan = read.plan;
-    const ack = plan.ack.algo === 'none' ? undefined : toInboundOwnAck(read.msg, plan, read.source);
+    const ack = plan.ack.enabled ? toInboundOwnAck(read.msg, plan, read.source) : undefined;
     if (ack === undefined) {
         return NO_INBOUND_ACKNOWLEDGEMENTS;
     }
     if (!plan.ack.deferred || !shouldForward) {
-        return plan.ack.enabled
-            ? {
-                mutations: [],
-                completedEffects: [],
-                immediateEffects: [toALInboundAckEffect({ ...ack, status: toImmediateAckStatus(plan, shouldForward) })]
-            }
-            : NO_INBOUND_ACKNOWLEDGEMENTS;
+        return {
+            mutations: [],
+            completedEffects: [],
+            immediateEffects: [toALInboundAckEffect({ ...ack, status: toImmediateAckStatus(plan, shouldForward) })]
+        };
     }
     return {
         ...computeRelayAcknowledgements(read, ack),
@@ -279,8 +274,7 @@ function computeIncomingAcknowledgements(
  * A relay's row waits on its next hops and ends its hop with its terminal ACK once they completed. A logical
  * recipient that delivered confirms itself at once with `accepted` beside that row: its confirmation never
  * waits on the subtree below it, and `accepted` completes no hop, so its parent still waits on its terminal ACK.
- * The row of a peer that never ACKs for itself is never ready, so it sends no terminal ACK naming itself: its
- * `not-subscribed` NACK ends its hop at its parent instead.
+ * The row of a recipient that answered `not-subscribed` ends its hop with a terminal ACK that confirms nothing.
  */
 function computeRelayAcknowledgements(
     read: ALInboundMessageReadDto,
@@ -292,7 +286,8 @@ function computeRelayAcknowledgements(
         current: read.pendingAck,
         toPeerId: ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
-        localReady: plan.ack.enabled && !plan.localDelivery.deferred,
+        status: toALInboundHopCompletionStatus(plan),
+        localReady: !plan.localDelivery.deferred,
         expireAtTimestamp: ack.expireAtTimestamp,
         carrier: ack.carrier,
         upwardAudiencePeerIds: resolveALUpwardAudiencePeerIds(plan.ack.algo, read.msg.targets)
@@ -307,12 +302,14 @@ function computeRelayAcknowledgements(
     };
 }
 
-/** A peer that delivers nothing, being outside the frozen audience, ends its own empty subtree instead. */
+/** A peer that delivers nothing, being outside the frozen audience or not subscribed, ends its own empty subtree. */
 function toImmediateAckStatus(plan: ALMessageHandlingPlan, shouldForward: boolean): ALAckStatus {
     if (shouldForward) {
         return 'forwarded';
     }
-    return plan.localDelivery.enabled || plan.localDelivery.deferred ? 'delivered' : 'subtree-complete';
+    return plan.localDelivery.enabled || plan.localDelivery.deferred
+        ? 'delivered'
+        : toALInboundHopCompletionStatus(plan);
 }
 
 function toControlOwnerMutation(

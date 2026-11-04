@@ -117,33 +117,49 @@ const SELF_NOT_SUBSCRIBED = {
     })
 };
 
+/** The hop completion of a peer that delivered nothing: it ends its hop and confirms no recipient. */
+const SELF_HOP_COMPLETED = {
+    type: 'ack',
+    payload: expect.objectContaining({
+        fromPeerId: INBOUND_TEST_SELF_PEER_ID,
+        toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+        logicalRecipientPeerId: INBOUND_TEST_SELF_PEER_ID,
+        status: 'subtree-complete-not-subscribed'
+    })
+};
+
 describe('a frozen recipient that is not subscribed', () => {
-    it('answers its hop not-subscribed for itself as a leaf, delivering nothing and sending no ACK', async () => {
+    it('answers its hop not-subscribed as a leaf and ends its hop with an ACK that confirms nothing, delivering nothing', async () => {
         const [first] = await computeArrivals(createFrozenReceiptedMessage('leaf'), NOT_SUBSCRIBED_LEAF);
 
-        expect(toControls(first!)).toEqual([SELF_NOT_SUBSCRIBED]);
-        expect(first!.durableEffects.map((effect) => effect.payload.kind)).toEqual(['send-control']);
+        expect(toControls(first!)).toEqual([SELF_NOT_SUBSCRIBED, SELF_HOP_COMPLETED]);
+        expect(first!.durableEffects.map((effect) => effect.payload.kind)).toEqual(['send-control', 'send-control']);
     });
 
-    it('answers not-subscribed as a relay and forwards, keeping a row that never readies, so it never ACKs for itself', async () => {
+    it('answers not-subscribed as a relay and forwards, keeping a row whose terminal ACK confirms nothing', async () => {
         const [first] = await computeArrivals(createFrozenReceiptedMessage('relay'), NOT_SUBSCRIBED_RELAY);
         const row = first!.mutations.find((mutation) => mutation.kind === 'set-control-pending');
 
         expect(toControls(first!)).toEqual([SELF_NOT_SUBSCRIBED]);
         expect(first!.durableEffects.map((effect) => effect.payload.kind)).toEqual(['send-control', 'forward-message']);
         expect(row?.kind === 'set-control-pending' && row.value.value).toMatchObject({
-            localReady: false,
+            status: 'subtree-complete-not-subscribed',
+            localReady: true,
             expectedFromPeerIds: DOWNSTREAM_PEER_IDS,
             outsideAudiencePeerIds: []
         });
     });
 
-    it.each([['leaf', NOT_SUBSCRIBED_LEAF], ['relay', NOT_SUBSCRIBED_RELAY]] as const)(
-        'answers a retried copy as a %s not-subscribed again, never with an ACK naming itself',
-        async (_shape, peer) => {
-            const [, retried] = await computeArrivals(createFrozenReceiptedMessage('retried'), peer);
+    it('answers a retried copy as a leaf not-subscribed again and ends its hop again, never confirming itself', async () => {
+        const [, retried] = await computeArrivals(createFrozenReceiptedMessage('retried-leaf'), NOT_SUBSCRIBED_LEAF);
 
-            expect(toControls(retried!)).toEqual([SELF_NOT_SUBSCRIBED]);
-        }
-    );
+        expect(toControls(retried!)).toEqual([SELF_NOT_SUBSCRIBED, SELF_HOP_COMPLETED]);
+    });
+
+    it('answers a retried copy as a relay still waiting on its children not-subscribed again and forwards it on', async () => {
+        const [, retried] = await computeArrivals(createFrozenReceiptedMessage('retried-relay'), NOT_SUBSCRIBED_RELAY);
+
+        expect(toControls(retried!)).toEqual([SELF_NOT_SUBSCRIBED]);
+        expect(retried!.durableEffects.map((effect) => effect.payload.kind)).toEqual(['send-control', 'forward-message']);
+    });
 });

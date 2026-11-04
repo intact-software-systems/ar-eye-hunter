@@ -99,6 +99,7 @@ describe('inbound pending ACK transition', () => {
             msgId: 'message',
             current: undefined,
             toPeerId: 'origin',
+            status: 'subtree-complete',
             expectedFromPeerIds: [],
             localReady: false,
             expireAtTimestamp: undefined,

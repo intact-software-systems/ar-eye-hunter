@@ -27,7 +27,16 @@ import {
 } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 
-export type ALAckStatus = 'accepted' | 'delivered' | 'forwarded' | 'subtree-complete';
+/**
+ * `subtree-complete-not-subscribed` ends the hop of a frozen recipient that delivered nothing, having answered
+ * `not-subscribed`: it completes that hop and confirms no recipient, so no hop relays or counts it as a confirmation.
+ */
+export type ALAckStatus =
+    | 'accepted'
+    | 'delivered'
+    | 'forwarded'
+    | 'subtree-complete'
+    | 'subtree-complete-not-subscribed';
 export type ALNackReason =
     | 'duplicate'
     | 'gap'
@@ -121,12 +130,18 @@ export type ALPeerControlMessage = Exclude<ALParsedControlMessage, Readonly<{ ty
 
 /**
  * The completion of a hop itself: the delivered ACK of a leaf, or the terminal ACK of a relay whose
- * subtree completed.
+ * subtree completed, a not-subscribed recipient's included.
  * A relay that passes on an ACK for a recipient below it speaks for that recipient, not for its hop.
  */
 export function isALHopCompletionAck(ack: ALAckPayload): boolean {
     return ack.fromPeerId === ack.logicalRecipientPeerId &&
-        (ack.status === 'delivered' || ack.status === 'subtree-complete');
+        (ack.status === 'delivered' || ack.status === 'subtree-complete' ||
+            ack.status === 'subtree-complete-not-subscribed');
+}
+
+/** Whether an ACK speaks for a recipient's delivery: every ACK but the hop completion of one that delivered nothing. */
+export function isALRecipientConfirmationAck(ack: ALAckPayload): boolean {
+    return ack.status !== 'subtree-complete-not-subscribed';
 }
 
 export interface ALCompletedPendingAck {
@@ -160,8 +175,8 @@ export interface ALPendingAckSnapshot {
      */
     readonly upwardAudiencePeerIds?: readonly string[];
     /**
-     * The recipients a `not-subscribed` NACK named, each relayed upward once: recipients that delivered nothing, for
-     * whom no ACK is admitted after it.
+     * The recipients a `not-subscribed` NACK named, each relayed upward once and again on a retried copy: recipients
+     * that delivered nothing, for whom no confirming ACK is admitted after it; a row stored before it reads none.
      */
     readonly outsideAudiencePeerIds: readonly string[];
     readonly expireAtTimestamp?: number;

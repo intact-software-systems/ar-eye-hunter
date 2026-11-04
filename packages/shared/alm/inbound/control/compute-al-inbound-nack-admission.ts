@@ -11,12 +11,11 @@ import type {
     ALInboundControlOwnerIndex,
     ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
-import { toALInboundUpwardAcks } from '../al-inbound-effect-intent.ts';
 import type { ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import { acceptALPendingNotSubscribedNack } from '../transition-al-pending-ack.ts';
 import type { PendingControlValue } from './al-inbound-control-rows.ts';
 import { toALInboundControlObservations } from './compute-al-inbound-control-admission.ts';
-import { toALInboundUpwardControlWork, type ALInboundUpwardControl } from './to-al-inbound-upward-control-work.ts';
+import { toALInboundUpwardControlWork } from './to-al-inbound-upward-control-work.ts';
 
 export interface ALInboundNackAdmissionRead {
     readonly namespace: string;
@@ -34,7 +33,7 @@ export interface ALInboundNackAdmissionRead {
 export interface ALInboundNackAdmissionCandidate {
     readonly read: ALInboundNackAdmissionRead;
     readonly pending: PendingControlValue | undefined;
-    /** The NACK this relay re-originates toward the origin, then its terminal ACK if the NACK completed its row. */
+    /** The NACK this relay re-originates toward the origin. */
     readonly upwardEffects: readonly ALInboundDurableEffectWrite[];
     readonly acceptance: ALControlAcceptance;
     readonly pendingExpireAtTimestamp: number;
@@ -45,15 +44,7 @@ export function computeALInboundNackAdmission(
     read: ALInboundNackAdmissionRead,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
-    const transition = read.pending === undefined
-        ? undefined
-        : acceptALPendingNotSubscribedNack(read.pending, read.nack);
-    const pending = transition?.pending;
-    const completed = transition?.completed;
-    const upward: readonly ALInboundUpwardControl[] = transition === undefined ? [] : [
-        { kind: 'nack', logicalRecipientPeerId: read.nack.logicalRecipientPeerId },
-        ...toALInboundUpwardAcks(transition).map((ack) => ({ kind: 'ack' as const, ack }))
-    ];
+    const pending = read.pending === undefined ? undefined : acceptALPendingNotSubscribedNack(read.pending, read.nack);
     return {
         read,
         pending: pending === undefined ? undefined : { kind: 'pending', value: pending },
@@ -68,10 +59,10 @@ export function computeALInboundNackAdmission(
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
             },
-            upward,
+            [{ kind: 'nack', logicalRecipientPeerId: read.nack.logicalRecipientPeerId }],
             retention
         ),
-        acceptance: { handled: true, completedPendingAcks: completed === undefined ? [] : [completed] },
+        acceptance: { handled: true, completedPendingAcks: [] },
         pendingExpireAtTimestamp: resolveExpireAtTimestampWithFallback(
             pending?.expireAtTimestamp,
             retention.controlPendingTtlMs,

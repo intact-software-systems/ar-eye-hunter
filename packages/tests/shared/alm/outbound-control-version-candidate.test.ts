@@ -65,7 +65,8 @@ describe('outbound control version candidate', () => {
             owner: 'self',
             ownerVersion: Object.freeze({ senderId: 'self', version: 7 }),
             sent: Object.freeze(sent),
-            history: { kind: 'nacks', values: [] }
+            history: { kind: 'nacks', values: [] },
+            acknowledgements: []
         });
         const retention = normalizeALRuntimeStoreRetention();
         const candidate = computeALOutboundControlAdmission(read, retention);
@@ -127,7 +128,8 @@ describe('outbound control version candidate', () => {
                 attempts: 3,
                 deadlineAtMs: nowMs - 1
             },
-            history: { kind: 'acks', values: [] }
+            history: { kind: 'acks', values: [] },
+            acknowledgements: []
         });
         const retention = normalizeALRuntimeStoreRetention();
         const deadlineMs = sent.reference.expiresAtMs;

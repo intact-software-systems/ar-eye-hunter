@@ -257,6 +257,7 @@ function toResyncRequiredNackEffect(
             kind: 'send-nack',
             toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,
             msgId: msg.id.msgId,
+            logicalRecipient: { kind: 'self' },
             reason: 'resync-required',
             ordering
         }

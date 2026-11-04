@@ -768,15 +768,58 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
         });
     });
 
-    it('ends the hop of a child that answers for itself, so the row completes and sends its terminal ACK beside the NACK', async () => {
+    function createChildAck(logicalRecipientPeerId: string, status: ALAckPayload['status']): ALMessage {
+        return newALAckControlMessage(
+            { v: 4, msgId: `ack-${logicalRecipientPeerId}-${status}`, ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
+            {
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId,
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                status,
+                observedAtEpochMs: 1,
+                carrier: 'rtc'
+            }
+        );
+    }
+
+    it('keeps the hop of a child that answers for itself open: only its hop-completion ACK ends it', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        const nacked = await control.admit(createNotSubscribedNack('receiver'), WS_ARRIVAL);
+        const rowAfterNack = (await readAcknowledgements(backend, admissionStore)).pendingAck;
+        const completed = await control.admit(createChildAck('receiver', 'subtree-complete-not-subscribed'), WS_ARRIVAL);
+
+        expect(nacked.kind === 'committed' && nacked.acceptance.completedPendingAcks).toEqual([]);
+        expect(rowAfterNack).toMatchObject({ ackedFromPeerIds: [], outsideAudiencePeerIds: ['receiver'] });
+        expect(completed.kind === 'committed' && completed.acceptance.completedPendingAcks).toHaveLength(1);
+        expect((await readUpwardControls(admissionStore, workQueue)).map((upward) => [upward.type, upward.payload.fromPeerId]).toSorted())
+            .toEqual([['ack', 'self'], ['nack', 'self']]);
+    });
+
+    it('ends the hop on a hop-completion ACK that arrives before the NACK, relaying no confirmation for it', async () => {
         const { admissionStore, workQueue, control } = createFixture();
         await seedRelayRow(admissionStore, SEEDED);
 
-        const result = await control.admit(createNotSubscribedNack('receiver'), WS_ARRIVAL);
+        expect((await control.admit(createChildAck('receiver', 'subtree-complete-not-subscribed'), WS_ARRIVAL)).kind).toBe('committed');
+        expect((await control.admit(createNotSubscribedNack('receiver'), WS_ARRIVAL)).kind).toBe('committed');
 
-        expect(result.kind === 'committed' && result.acceptance.completedPendingAcks).toHaveLength(1);
-        expect((await readUpwardControls(admissionStore, workQueue)).map((upward) => [upward.type, upward.payload.fromPeerId]).toSorted())
-            .toEqual([['ack', 'self'], ['nack', 'self']]);
+        const upward = await readUpwardControls(admissionStore, workQueue);
+        expect(upward.map((control) => [control.type, control.payload.logicalRecipientPeerId]).toSorted())
+            .toEqual([['ack', 'self'], ['nack', 'receiver']]);
+    });
+
+    it('refuses a NACK for a recipient whose confirmation it already relayed', async () => {
+        const { admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+        await control.admit(createChildAck('below', 'forwarded'), WS_ARRIVAL);
+
+        expect(await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound NACK names a recipient whose confirmation was already relayed'
+        });
     });
 
     it.each<[string, Partial<ALPendingAckSnapshot>, string]>([

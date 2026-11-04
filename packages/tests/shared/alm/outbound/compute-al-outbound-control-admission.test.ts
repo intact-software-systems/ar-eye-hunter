@@ -7,7 +7,7 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundSettlementFact
@@ -35,7 +35,10 @@ interface OriginFixture {
     accept(control: ALMessage): Promise<string>;
 }
 
-async function createOriginFixture(id: string): Promise<OriginFixture> {
+async function createOriginFixture(
+    id: string,
+    tracking: ALOutboundAckTrackingPlan = RECEIVER_TRACKING
+): Promise<OriginFixture> {
     const facts: ALOutboundSettlementFact[] = [];
     const runtime = createDefaultOutboundTestRuntime({
         settlements: (fact) => facts.push(fact),
@@ -45,7 +48,7 @@ async function createOriginFixture(id: string): Promise<OriginFixture> {
             dropReasonCode: undefined,
             lane: 'volatile',
             preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-            ackTracking: RECEIVER_TRACKING
+            ackTracking: tracking
         })
     });
     const msg = createOutboundMessage(id);
@@ -63,12 +66,12 @@ async function createOriginFixture(id: string): Promise<OriginFixture> {
 }
 
 /** The relay re-originates a recipient's `not-subscribed` NACK from itself (PL9, PL16). */
-function toRelayedNack(msg: ALMessage, logicalRecipientPeerId: string): ALMessage {
+function toRelayedNack(msg: ALMessage, logicalRecipientPeerId: string, fromPeerId = 'relay'): ALMessage {
     return newALNackControlMessage(
-        { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-outside' },
+        { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
         {
             msgId: msg.id.msgId,
-            fromPeerId: 'relay',
+            fromPeerId,
             toPeerId: 'self',
             logicalRecipientPeerId,
             reason: 'not-subscribed',
@@ -77,17 +80,24 @@ function toRelayedNack(msg: ALMessage, logicalRecipientPeerId: string): ALMessag
     );
 }
 
-function toRelayedAck(msg: ALMessage, logicalRecipientPeerId: string): ALMessage {
+interface OwnAck {
+    readonly fromPeerId: string;
+    readonly status: ALAckStatus;
+}
+
+/** A relay's `forwarded` ACK for a recipient below it, or a direct hop's own ACK naming itself. */
+function toRelayedAck(msg: ALMessage, logicalRecipientPeerId: string, own?: OwnAck): ALMessage {
+    const fromPeerId = own?.fromPeerId ?? 'relay';
     return newALAckControlMessage(
-        { v: 4, msgId: `ack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-outside' },
+        { v: 4, msgId: `ack-${logicalRecipientPeerId}-${own?.status ?? 'forwarded'}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
         {
             ackedMsgId: msg.id.msgId,
-            fromPeerId: 'relay',
+            fromPeerId,
             toPeerId: 'self',
             originPeerId: 'self',
             logicalRecipientPeerId,
             carrier: 'rtc',
-            status: 'forwarded',
+            status: own?.status ?? 'forwarded',
             observedAtEpochMs: Date.now()
         }
     );
@@ -100,6 +110,7 @@ function toAcknowledgements(facts: readonly ALOutboundSettlementFact[]) {
                 confirmed: fact.confirmedRecipientPeerIds,
                 unconfirmed: fact.unconfirmedRecipientPeerIds,
                 outside: fact.outsideAudienceRecipientPeerIds,
+                confirmedHops: fact.confirmedHopPeerIds,
                 complete: fact.complete
             }]
             : []
@@ -116,7 +127,7 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
 
         expect(await origin.accept(toRelayedNack(origin.msg, 'r2'))).toBe('committed');
 
-        expect(toAcknowledgements(origin.facts)).toEqual([{ confirmed: [], unconfirmed: ['r1'], outside: ['r2'], complete: false }]);
+        expect(toAcknowledgements(origin.facts)).toEqual([{ confirmed: [], unconfirmed: ['r1'], outside: ['r2'], confirmedHops: [], complete: false }]);
         expect(origin.facts.map((fact) => fact.kind)).toEqual(['acknowledgement']);
     });
 
@@ -126,7 +137,7 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
         await origin.accept(toRelayedNack(origin.msg, 'r2'));
         expect(await origin.accept(toRelayedAck(origin.msg, 'r1'))).toBe('committed');
 
-        expect(toAcknowledgements(origin.facts).at(-1)).toEqual({ confirmed: ['r1'], unconfirmed: [], outside: ['r2'], complete: true });
+        expect(toAcknowledgements(origin.facts).at(-1)).toEqual({ confirmed: ['r1'], unconfirmed: [], outside: ['r2'], confirmedHops: [], complete: true });
         expect(origin.facts.map((fact) => fact.kind)).toEqual(['acknowledgement', 'acknowledgement']);
     });
 
@@ -160,7 +171,7 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
 
         await origin.accept(toRelayedNack(origin.msg, 'r1'));
         await origin.accept(toRelayedNack(origin.msg, 'r2'));
-        expect(toAcknowledgements(origin.facts).at(-1)).toEqual({ confirmed: [], unconfirmed: [], outside: ['r1', 'r2'], complete: false });
+        expect(toAcknowledgements(origin.facts).at(-1)).toEqual({ confirmed: [], unconfirmed: [], outside: ['r1', 'r2'], confirmedHops: [], complete: false });
 
         await vi.advanceTimersByTimeAsync(102);
 
@@ -170,6 +181,41 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
             unconfirmedPeerIds: [],
             outsideAudiencePeerIds: ['r1', 'r2'],
             cause: 'budget'
+        });
+    });
+
+    describe('beside the hop view', () => {
+        const DIRECT_HOPS: ALOutboundAckTrackingPlan = { ...RECEIVER_TRACKING, nextHopPeerIds: ['r1', 'r2'] };
+
+        it('admits a not-subscribed hop\'s completion ACK as the end of that hop, confirming nobody', async () => {
+            const origin = await createOriginFixture('outside-hop-completed', DIRECT_HOPS);
+
+            await origin.accept(toRelayedNack(origin.msg, 'r2', 'r2'));
+            expect(await origin.accept(toRelayedAck(origin.msg, 'r2', { fromPeerId: 'r2', status: 'subtree-complete-not-subscribed' })))
+                .toBe('committed');
+
+            expect(toAcknowledgements(origin.facts).at(-1)).toEqual({
+                confirmed: [],
+                unconfirmed: ['r1'],
+                outside: ['r2'],
+                confirmedHops: ['r2'],
+                complete: false
+            });
+        });
+
+        it('states the hops the ACKs completed when a NACK completes the receipt after them', async () => {
+            const origin = await createOriginFixture('outside-after-ack', DIRECT_HOPS);
+
+            await origin.accept(toRelayedAck(origin.msg, 'r1', { fromPeerId: 'r1', status: 'delivered' }));
+            expect(await origin.accept(toRelayedNack(origin.msg, 'r2', 'r2'))).toBe('committed');
+
+            expect(toAcknowledgements(origin.facts).at(-1)).toEqual({
+                confirmed: ['r1'],
+                unconfirmed: [],
+                outside: ['r2'],
+                confirmedHops: ['r1'],
+                complete: true
+            });
         });
     });
 });

@@ -57,6 +57,8 @@ export interface ALControlAdmissionRead {
     readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
     readonly history: ALControlHistory;
+    /** The ACKs admitted before this control, which the hop view reads whatever kind of control it is. */
+    readonly acknowledgements: readonly ALAckPayload[];
 }
 
 export type ALPendingAckWrite =
@@ -142,7 +144,9 @@ export function toALOutboundControlSettlements(
         receipt: snapshot,
         hops: {
             nextHopPeerIds: read.sent?.policy.ackTracking?.nextHopPeerIds ?? [],
-            completedHopPeerIds: toALOutboundCompletedHopPeerIds(history.kind === 'acks' ? history.values : [])
+            completedHopPeerIds: toALOutboundCompletedHopPeerIds(
+                history.kind === 'acks' ? history.values : read.acknowledgements
+            )
         },
         complete: isALOutboundReceiptComplete(snapshot),
         traceId

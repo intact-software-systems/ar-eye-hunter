@@ -1,4 +1,8 @@
-import { isALHopCompletionAck, type ALAckPayload } from '../../al-contracts/al-control.ts';
+import {
+    isALHopCompletionAck,
+    isALRecipientConfirmationAck,
+    type ALAckPayload
+} from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
@@ -145,7 +149,8 @@ export function acceptALOutboundNotSubscribedNack(
 
 /**
  * The peer an ACK confirms in a receipt of this mode: the logical recipient it speaks for under
- * `receiver` and `leader`, and the hop that sent it otherwise. A hop ACK names the hop itself, so it never stands in
+ * `receiver` and `leader`, unless it is the hop completion of a recipient that delivered nothing, and the hop that
+ * sent it otherwise. A hop ACK names the hop itself, so it never stands in
  * for a logical recipient it did not name. Under `subtree` only the completion ACK of the hop itself
  * confirms it, never an ACK it relays for a recipient below it.
  */
@@ -153,7 +158,7 @@ export function toALOutboundAckedPeerId(mode: ALReceiptMode, ack: ALAckPayload):
     switch (mode) {
         case 'receiver':
         case 'leader':
-            return ack.logicalRecipientPeerId;
+            return isALRecipientConfirmationAck(ack) ? ack.logicalRecipientPeerId : undefined;
         case 'subtree':
             return isALHopCompletionAck(ack) ? ack.fromPeerId : undefined;
         case 'hop':

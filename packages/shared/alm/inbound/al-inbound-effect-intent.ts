@@ -15,8 +15,8 @@ import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import type { ALPendingAckTransition } from './transition-al-pending-ack.ts';
 
 /**
- * Whom an ACK speaks for: this peer itself, whose ACK ends its own hop and names it whether or not it delivered,
- * or a recipient a child ACK named, which a relay passes upward as that ACK arrives (D40).
+ * Whom an ACK or a NACK speaks for: this peer itself, whose ACK ends its own hop and names it whether or not it
+ * delivered, or a recipient a child control named, which a relay passes upward as that control arrives (D40).
  */
 export type ALInboundAckRecipient =
     | Readonly<{ kind: 'self'; }>
@@ -40,6 +40,7 @@ export interface ALInboundEffectIntent {
             readonly kind: 'send-nack';
             readonly toPeerId: string;
             readonly msgId: string;
+            readonly logicalRecipient: ALInboundAckRecipient;
             readonly reason: ALNackReason;
             readonly ordering: ALOrderingObservation | undefined;
         }
@@ -159,6 +160,7 @@ export function toALInboundNegativeControlEffects(
             kind: 'send-nack',
             toPeerId,
             msgId: input.msg.id.msgId,
+            logicalRecipient: { kind: 'self' },
             reason,
             ordering: authorityRefusal ? undefined : input.plan.orderingRuntime
         }
@@ -175,9 +177,41 @@ function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
         reason === 'not-subscribed';
 }
 
-/** A frozen recipient that delivers nothing answers `not-subscribed` for itself and never ACKs for itself. */
+/** A frozen recipient that delivers nothing answers `not-subscribed` for itself and never confirms itself. */
 export function isALInboundNotSubscribedPlan(plan: ALMessageHandlingPlan): boolean {
     return plan.nack.enabled && plan.nack.reason === 'not-subscribed';
+}
+
+/** A relay's `not-subscribed` NACK again for a recipient below it, answering a retried copy as it answers ACKs. */
+export function toALInboundRelayedNotSubscribedEffect(
+    input: ALInboundControlEffectInput,
+    relayed: Readonly<{ toPeerId: string; peerId: string; }>
+): ALInboundEffectIntent {
+    return {
+        effectId: toEffectId([
+            'nack',
+            input.msg.id.senderId,
+            input.msg.id.msgId,
+            relayed.toPeerId,
+            'not-subscribed',
+            relayed.peerId
+        ]),
+        expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
+        carrier: input.carrier,
+        payload: {
+            kind: 'send-nack',
+            toPeerId: relayed.toPeerId,
+            msgId: input.msg.id.msgId,
+            logicalRecipient: { kind: 'relayed', peerId: relayed.peerId },
+            reason: 'not-subscribed',
+            ordering: undefined
+        }
+    };
+}
+
+/** How this peer ends its hop when it delivered nothing: a not-subscribed recipient's ending confirms nobody. */
+export function toALInboundHopCompletionStatus(plan: ALMessageHandlingPlan): ALAckStatus {
+    return isALInboundNotSubscribedPlan(plan) ? 'subtree-complete-not-subscribed' : 'subtree-complete';
 }
 
 function toRepairEffects(

@@ -444,7 +444,7 @@ describe('a granted publication\'s admission on its room plan', () => {
         );
         const notSubscribed = Either.ofRight<RtcPublicationRefusal, RtcPublicationAdmitted>({ delivery: 'forward-not-subscribed' });
 
-        it('forwards, delivers nothing, answers its hop not-subscribed, and keeps the relay row but no ACK of its own', () => {
+        it('forwards, delivers nothing, answers its hop not-subscribed, and keeps its ACK, which ends its hop', () => {
             const answered = toRtcPublicationHandlingPlan(receipted, notSubscribed, 'origin');
 
             expect(receipted.ack).toMatchObject({ enabled: true, algo: 'receiver', deferred: true, toPeerId: 'origin' });
@@ -452,7 +452,7 @@ describe('a granted publication\'s admission on its room plan', () => {
                 dropReason: undefined,
                 localDelivery: { enabled: false, deferred: false },
                 forwarding: { enabled: true, nextHopPeerIds: ['downstream'] },
-                ack: { enabled: false, algo: 'receiver', deferred: true, toPeerId: 'origin' },
+                ack: { enabled: true, algo: 'receiver', deferred: true, toPeerId: 'origin' },
                 nack: { enabled: true, toPeerId: 'origin', reason: 'not-subscribed', missingRanges: [] }
             });
         });

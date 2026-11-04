@@ -143,10 +143,9 @@ function toRtcPublicationDeliveryPlan(
 }
 
 /**
- * A frozen recipient that delivers nothing tells its hop so, toward the origin that counts it, and never speaks for
- * itself in an ACK: `ack.enabled` is off while the relay row its forward needs stays, so the ACKs of the recipients
- * below it still pass upward. Only a receipt that counts recipients asks; a plan that drops with a NACK of its own
- * keeps that NACK.
+ * A frozen recipient that delivers nothing tells its hop so, toward the origin that counts it; its hop still ends
+ * with an ACK, one that confirms no recipient. Only a receipt that counts recipients asks; a plan that drops with a
+ * NACK of its own keeps that NACK.
  */
 function toNotSubscribedHandlingPlan(
     plan: ALMessageHandlingPlan,
@@ -158,7 +157,6 @@ function toNotSubscribedHandlingPlan(
     }
     return {
         ...forwardOnly,
-        ack: { ...plan.ack, enabled: false },
         nack: plan.nack.enabled
             ? plan.nack
             : { enabled: true, toPeerId: fromPeerId, reason: 'not-subscribed', missingRanges: [] }

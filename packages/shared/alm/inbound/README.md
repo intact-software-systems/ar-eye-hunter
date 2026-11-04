@@ -279,14 +279,16 @@ off, or a session outside the frozen audience, which may forward but never
 delivers locally or counts as a recipient -- ends its subtree with
 `subtree-complete`, never `delivered` (R-S2c-ii-4). A frozen recipient of a granted RTC publication that may
 not subscribe or holds no active token (the publication admission's `forward-not-subscribed`) is the one peer
-that says why: under `receiver` and `leader` it sends its hop a `not-subscribed` NACK naming itself and no ACK
-naming itself, on a retried copy too. Its plan turns `ack.enabled` off and keeps the relay row its forward
-needs, which never becomes ready, so it relays its children's ACKs and NACKs but sends no terminal ACK; its
-NACK ends its hop at its parent instead (PL11). A relay admits a child's `not-subscribed` NACK -- the one NACK
-inbound control admission handles; every other NACK stays its outbound owner's -- from a child hop its row
-waits on and for a recipient of the frozen audience, records that recipient in the row's
-`outsideAudiencePeerIds`, and re-originates it to its parent from itself naming the same recipient, once per
-recipient; it admits no ACK for that recipient after it (PL9, PL16). The row stays until it
+that says why: under `receiver` and `leader` it sends its hop a `not-subscribed` NACK naming itself, and never
+confirms itself -- no `accepted`, no `delivered`, on a retried copy neither. Its hop still ends as any hop does,
+with a terminal ACK once its subtree answered (a leaf at once), but of status `subtree-complete-not-subscribed`,
+which completes the hop and confirms no recipient: no relay passes it upward and the origin counts nobody for it
+(PL11). A relay admits a child's `not-subscribed` NACK -- the one NACK inbound control admission handles; every
+other NACK stays its outbound owner's -- from a child hop its row waits on and for a recipient of the frozen
+audience whose confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`,
+and re-originates it to its parent from itself naming the same recipient, once per recipient and again in its
+answer to a retried copy; the NACK completes no hop, and no confirming ACK for that recipient is admitted after
+it (PL9, PL16). A row stored before `outsideAudiencePeerIds` existed reads none. The row stays until it
 expires, so a child ACK that arrives after completion is still relayed, and a
 retried copy of the message is answered from it
 ([`computeALInboundDuplicateChanges`](./admission/compute-al-inbound-duplicate-changes.ts)):

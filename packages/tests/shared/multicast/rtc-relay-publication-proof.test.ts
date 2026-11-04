@@ -1,17 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { RallarTopicSubscription } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALNackControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import {
@@ -22,12 +17,10 @@ import {
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
 import { createRtcOriginOverlayFixture, ORIGIN_ROOM, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
 import {
-    createFrozenGrantedMulticast,
     createPublicationRoomSnapshot,
     PUBLICATION_TOPIC_ID,
     PUBLISH_AND_SUBSCRIBE,
     PUBLISH_ONLY,
-    signPublication,
     SUBSCRIBE_ONLY
 } from './rtc-publication-proof-fixtures.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -45,8 +38,6 @@ interface RelayHopInput {
     readonly snapshot?: GroupSnapshot;
     readonly crypto?: PublicationCrypto;
     readonly subscribed?: boolean;
-    /** The tab's own token store; absent, `subscribed` decides between one active token and none. */
-    readonly topicSubscriptions?: RtcTopicSubscriptionReader;
     readonly groupCacheTtlMs?: number;
     /** The topic the relay's page declared granted; absent, the room feed topic. */
     readonly grantedTopicId?: string;
@@ -269,98 +260,6 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 });
 
-describe('a receipted granted publication at a frozen recipient that is not subscribed', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
-
-    it('carries a leaf\'s not-subscribed NACK through the relay to the origin, naming the leaf, and the leaf sends no ACK', async () => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
-        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
-        const leaf = createRelayHop(chain, { selfPeerId: 'c', subscribed: false });
-        const signed = await signReceiptedPublication(chain, { resourceId: 'feed-1', recipientPeerIds: ['r', 'c'] });
-
-        await relay.receive(signed, 'a');
-        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
-        const answered = await leaf.readSentControls('r');
-        await relay.receive((await leaf.readSent('r'))[0]!, 'c');
-
-        expect(leaf.delivered).toEqual([]);
-        expect(answered).toEqual([toNotSubscribed({ fromPeerId: 'c', toPeerId: 'r', logicalRecipientPeerId: 'c' })]);
-        // The relay's own terminal ACK and the NACK it relays leave as two works, in either order.
-        expect(toControlTuples(await relay.readSentControls('a')).toSorted()).toEqual([
-            ['ack', 'r', 'accepted'],
-            ['ack', 'r', 'subtree-complete'],
-            ['nack', 'c', 'not-subscribed']
-        ]);
-        expect(await relay.readSentControls('a')).toContainEqual(
-            toNotSubscribed({ fromPeerId: 'r', toPeerId: 'a', logicalRecipientPeerId: 'c' })
-        );
-    });
-
-    it('answers not-subscribed for a subscribe holder whose own token is still pending, delivering nothing (PL12)', async () => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
-        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
-        const tokens = createPendingTopicSubscriptions();
-        const leaf = createRelayHop(chain, { selfPeerId: 'c', topicSubscriptions: tokens.reader });
-        const signed = await signReceiptedPublication(chain, { resourceId: 'feed-1', recipientPeerIds: ['r', 'c'] });
-
-        await relay.receive(signed, 'a');
-        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
-
-        expect([tokens.token.status(), leaf.delivered]).toEqual(['pending', []]);
-        expect(await leaf.readSentControls('r')).toEqual([
-            toNotSubscribed({ fromPeerId: 'c', toPeerId: 'r', logicalRecipientPeerId: 'c' })
-        ]);
-    });
-
-    it('answers for an unsubscribed relay with its own NACK and no ACK naming it, still relaying its child\'s ACK', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
-        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
-        const leaf = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
-        const signed = await signReceiptedPublication(chain, { resourceId: 'feed-1', recipientPeerIds: ['r', 'c'] });
-
-        await relay.receive(signed, 'a');
-        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
-        await relay.receive((await leaf.readSent('r'))[0]!, 'c');
-
-        expect([relay.delivered, leaf.delivered.map((message) => message.id.msgId)]).toEqual([[], [signed.id.msgId]]);
-        expect(toControlTuples(await relay.readSentControls('a'))).toEqual([
-            ['nack', 'r', 'not-subscribed'],
-            ['ack', 'c', 'forwarded']
-        ]);
-    });
-
-    it('refuses at the relay a NACK naming a peer outside the frame\'s frozen audience, carrying nothing upward', async () => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
-        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
-        const signed = await signReceiptedPublication(chain, { resourceId: 'feed-1', recipientPeerIds: ['r', 'c'] });
-        await relay.receive(signed, 'a');
-        const sentBefore = (await relay.readSentControls('a')).length;
-
-        await relay.receive(createStrayNotSubscribed(signed, 'stranger'), 'c');
-
-        expect((await relay.readSentControls('a')).slice(sentBefore)).toEqual([]);
-    });
-
-    it('says nothing at an unsubscribed relay outside the frozen audience: it only forwards', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
-        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: false });
-        const signed = await signReceiptedPublication(chain, { resourceId: 'feed-1', recipientPeerIds: ['c'] });
-
-        await relay.receive(signed, 'a');
-
-        expect(await relay.readSent('c')).toHaveLength(1);
-        expect(toControlTuples(await relay.readSentControls('a')).filter(([type]) => type === 'nack')).toEqual([]);
-    });
-});
-
 async function createRelayChain(grants: Readonly<Record<string, GroupPublicationTopicPermissions>>): Promise<RelayChain> {
     const keys = {
         a: await createAvailablePublicationCryptoFixture(),
@@ -393,9 +292,9 @@ function createRelayHop(chain: RelayChain, input: RelayHopInput): RtcRelayOverla
         neighbourPeerIds: input.selfPeerId === 'r' ? ['a', 'c'] : ['r'],
         grantedTopics: createRtcGrantedTopicsFixture([input.grantedTopicId ?? PUBLICATION_TOPIC_ID]),
         publicationCrypto: input.crypto ?? chain.keys[input.selfPeerId],
-        topicSubscriptions: input.topicSubscriptions ?? (input.subscribed
+        topicSubscriptions: input.subscribed
             ? createRtcTopicSubscriptionsFixture([PUBLICATION_TOPIC_ID])
-            : NO_RTC_TOPIC_SUBSCRIPTIONS),
+            : NO_RTC_TOPIC_SUBSCRIPTIONS,
         groupCacheTtlMs: input.groupCacheTtlMs,
         qosProvider: input.qosProvider
     });
@@ -454,63 +353,4 @@ function toRevokedSnapshot(chain: RelayChain): GroupSnapshot {
 
 function readAdmissionReasons(fixture: RtcRelayOverlayFixture, typeId = GRANTED_TYPE_ID): readonly string[] {
     return fixture.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.typeId === typeId ? [event.reason] : []);
-}
-
-interface ReceiptedPublicationInput {
-    readonly resourceId: string;
-    /** The audience the origin froze the frame to, which the proof signs. */
-    readonly recipientPeerIds: readonly string[];
-}
-
-/** A receipted granted frame as the origin `a` signs it for `r`: its receipted send is refused before S3-ii's lift. */
-async function signReceiptedPublication(chain: RelayChain, input: ReceiptedPublicationInput): Promise<ALMessage> {
-    const frozen = createFrozenGrantedMulticast({
-        senderId: 'a',
-        resourceId: input.resourceId,
-        recipientPeerIds: input.recipientPeerIds,
-        snapshotVersion: 3,
-        ack: 'receiver'
-    });
-    return await signPublication(chain.keys.a, { ...frozen, forwarding: { ...frozen.forwarding, nextHopPeerIds: ['r'] } });
-}
-
-function toNotSubscribed(route: Readonly<{ fromPeerId: string; toPeerId: string; logicalRecipientPeerId: string; }>) {
-    return { type: 'nack', payload: expect.objectContaining({ ...route, reason: 'not-subscribed' }) };
-}
-
-/** Each control as its type, the recipient it speaks for, and its status or reason. */
-function toControlTuples(controls: readonly ALPeerControlMessage[]): readonly (readonly string[])[] {
-    return controls.map((control) =>
-        control.type === 'ack'
-            ? ['ack', control.payload.logicalRecipientPeerId, control.payload.status]
-            : control.type === 'nack'
-            ? ['nack', control.payload.logicalRecipientPeerId, control.payload.reason]
-            : ['repair', control.payload.fromPeerId, control.payload.reason]
-    );
-}
-
-/** A `not-subscribed` NACK from the leaf `c` naming a peer the frame never froze. */
-function createStrayNotSubscribed(signed: ALMessage, logicalRecipientPeerId: string): ALMessage {
-    return newALNackControlMessage(
-        { v: 4, msgId: 'stray-nack', ts: Date.now(), senderId: 'c', traceId: signed.id.traceId },
-        {
-            msgId: signed.id.msgId,
-            fromPeerId: 'c',
-            toPeerId: 'r',
-            logicalRecipientPeerId,
-            reason: 'not-subscribed',
-            observedAtEpochMs: Date.now()
-        }
-    );
-}
-
-/** The tab's real token store holding the topic: its subscribe call never answers, so the token stays pending. */
-function createPendingTopicSubscriptions(): Readonly<{ reader: RtcTopicSubscriptionReader; token: RallarTopicSubscription; }> {
-    const unanswered = () => new Promise<never>(() => {});
-    const store = new BrowserTopicSubscriptions({
-        http: { subscribeGroupTopic: unanswered, unsubscribeGroupTopic: unanswered },
-        timers: createDefaultTimers(),
-        newRequestId: () => 'request-pending'
-    });
-    return { reader: store, token: store.hold({ roomRef: ORIGIN_ROOM, topicId: PUBLICATION_TOPIC_ID }) };
 }

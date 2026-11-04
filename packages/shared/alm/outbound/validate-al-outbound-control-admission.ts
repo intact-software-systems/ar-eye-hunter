@@ -66,12 +66,16 @@ export function validateALOutboundControlAdmission(
 /**
  * An ACK must move its receipt: confirm a peer the receipt expects and has not counted yet. One that
  * would move nothing is refused rather than committed, so it costs no write and no version bump. The
- * exception is the terminal ACK of a recipient relay whose `accepted` ACK the receipt already counted:
- * it completes that next hop, which the hop view records, so a retry never resends into its subtree.
+ * exception is the terminal ACK of a next hop whose recipient the receipt already counted, or which confirms
+ * nobody, having answered `not-subscribed`: it completes that hop, which the hop view records, so a retry never
+ * resends into its subtree.
  */
 function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPayload): readonly ALMessageRejection[] {
     const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
+    if (pending && countedPeerId === undefined && isOpenNextHopCompletion(read, ack)) {
+        return [];
+    }
     if (
         !pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId) ||
         pending.outsideAudiencePeerIds.includes(countedPeerId)

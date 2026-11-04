@@ -1,3 +1,4 @@
+import { isALRecipientConfirmationAck } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALInboundNackAdmissionCandidate } from './compute-al-inbound-nack-admission.ts';
@@ -9,7 +10,7 @@ import type { ALInboundNackAdmissionCandidate } from './compute-al-inbound-nack-
 export function validateALInboundNackAdmission(
     candidate: ALInboundNackAdmissionCandidate
 ): readonly ALMessageRejection[] {
-    const { nack, pending } = candidate.read;
+    const { nack, pending, acks } = candidate.read;
     if (!pending) {
         return [rejectInboundNack('Inbound NACK sender has no pending obligation')];
     }
@@ -22,6 +23,13 @@ export function validateALInboundNackAdmission(
     }
     if (pending.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId)) {
         issues.push(rejectInboundNack('Inbound NACK names a recipient already relayed outside the audience'));
+    }
+    if (
+        acks.some((ack) =>
+            ack.logicalRecipientPeerId === nack.logicalRecipientPeerId && isALRecipientConfirmationAck(ack)
+        )
+    ) {
+        issues.push(rejectInboundNack('Inbound NACK names a recipient whose confirmation was already relayed'));
     }
     if (
         pending.outsideAudiencePeerIds.length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||

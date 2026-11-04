@@ -309,6 +309,7 @@ export class ALOutboundControlAdmission<TPrepared> {
                 toALOutboundMessageOwnerKey(this.namespace, targetMsgId),
                 decodeALAdmissionString
             );
+            const history = await this.readControlHistory(session, parsed, targetMsgId);
             return {
                 parsed,
                 source,
@@ -319,7 +320,10 @@ export class ALOutboundControlAdmission<TPrepared> {
                 owner,
                 ...await this.readOwnedControlSurface(session, owner, targetMsgId),
                 sent: await this.reads.readStoredMessage(session, targetMsgId),
-                history: await this.readControlHistory(session, parsed, targetMsgId)
+                history,
+                acknowledgements: history.kind === 'acks'
+                    ? history.values
+                    : await this.reads.readAcks(session, targetMsgId)
             };
         });
     }

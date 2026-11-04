@@ -299,7 +299,10 @@ function readControlArrayEntries(value: unknown, limit: number, label: string): 
 }
 
 function decodeAckStatus(value: unknown): ALAckStatus {
-    if (value !== 'accepted' && value !== 'delivered' && value !== 'forwarded' && value !== 'subtree-complete') {
+    if (
+        value !== 'accepted' && value !== 'delivered' && value !== 'forwarded' && value !== 'subtree-complete' &&
+        value !== 'subtree-complete-not-subscribed'
+    ) {
         throw new TypeError('Control ACK status is invalid');
     }
     return value;
