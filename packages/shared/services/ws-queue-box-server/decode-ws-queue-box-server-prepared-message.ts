@@ -16,7 +16,7 @@ import {
 import { decodeALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import { AppTopics } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
-import { decodeViewInvalidationMessage } from '../../api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '../../api/views/view-invalidation.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,

@@ -27,7 +27,7 @@ import { writeFriendsMutation } from '@shared-server/rallar-system/friends/write
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { decodeViewInvalidationMessage, type ViewInvalidation } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidationMessage, type ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { expect, it } from 'vitest';

@@ -194,7 +194,8 @@
     "test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all": "npm run test:rallar:full-stack:postgres:live-rtc-3:all",
     "test:e2e:rallar-black-box:exhaustive:real": "npm run test:rallar:exhaustive:postgres",
     "test:integration:rallar:real": "npm run test:integration:rallar:postgres",
-    "test:integration:rallar:real:live": "npm run test:integration:rallar:live"
+    "test:integration:rallar:real:live": "npm run test:integration:rallar:live",
+    "test:api-v1:black-box:postgres:view-push": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:view-push --"
   },
   "devDependencies": {
     "@babel/parser": "^8.0.4",

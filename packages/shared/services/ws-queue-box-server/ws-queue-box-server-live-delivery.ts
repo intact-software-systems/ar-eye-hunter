@@ -7,7 +7,7 @@ import { validateALSessionInvalidationMessage } from '../../alm/outbound/admissi
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { AppTopics } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
-import { decodeViewInvalidationMessage } from '../../api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '../../api/views/view-invalidation.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';

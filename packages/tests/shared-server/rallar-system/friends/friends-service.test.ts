@@ -6,7 +6,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import { writeRuntimeStateGuardedBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { decodeViewInvalidationMessage } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import {
     describe,
     expect,

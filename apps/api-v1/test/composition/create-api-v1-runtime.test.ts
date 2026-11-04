@@ -8,7 +8,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { decodeViewInvalidationMessage } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 import assert from 'node:assert/strict';

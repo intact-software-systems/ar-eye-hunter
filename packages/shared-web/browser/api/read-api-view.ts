@@ -1,4 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { TryWithExhaustedError, TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 import { ApiHttpError } from './http-error.ts';
@@ -12,7 +13,7 @@ export interface ReadApiViewInput {
 }
 
 /** A lost invalidation read gets bounded transport recovery; domain decoding stays with its view owner. */
-export async function readApiView(input: ReadApiViewInput): Promise<unknown> {
+export async function readApiView(input: ReadApiViewInput): Promise<ApiJsonValue> {
     try {
         return await new Command(async (signal) => {
             return await TryWithPolicy.defaults().label('canonical view read')
@@ -26,7 +27,7 @@ export async function readApiView(input: ReadApiViewInput): Promise<unknown> {
                 )
                 .run(async () => {
                     signal?.throwIfAborted();
-                    return await sendApiHttpRequest({
+                    return await sendApiHttpRequest<never, ApiJsonValue>({
                         baseUrl: input.baseUrl,
                         path: input.path,
                         method: 'GET',

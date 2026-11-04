@@ -4,7 +4,7 @@ import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admis
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 
-import { decodeViewInvalidationMessage } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 
 import type { WsOutboxProvenance } from './ws-outbox-provenance.ts';
 

@@ -371,6 +371,24 @@ jobs:
           path: .artifacts/api-v1-black-box/topology-replay
           if-no-files-found: error
 
+      - name: Run private view push and subscriber recovery proof
+        id: view_push
+        env:
+          DENO_NO_PACKAGE_JSON: '1'
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/view-push
+          git rev-parse HEAD > .artifacts/api-v1-black-box/view-push/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/view-push/validated-tree.txt
+          npm run test:api-v1:black-box:postgres:view-push -- --artifact-dir=../../.artifacts/api-v1-black-box/view-push --run-id=${{ github.run_id }}-${{ github.run_attempt }}-view-push
+
+      - name: Upload view push recovery artifacts
+        if: ${{ !cancelled() && steps.view_push.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-view-push-${{ github.sha }}
+          path: .artifacts/api-v1-black-box/view-push
+          if-no-files-found: error
+
       - name: Run Postgres full-stack smoke tests
         run: |
           npm run test:rallar:full-stack:postgres:rest

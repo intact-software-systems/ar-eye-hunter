@@ -5,7 +5,7 @@ import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket
 import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { decodeViewInvalidation, decodeViewInvalidationMessage, decodeViewResync } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidation, decodeViewInvalidationMessage, decodeViewResync } from '@shared/api/views/view-invalidation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';

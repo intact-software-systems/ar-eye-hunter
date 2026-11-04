@@ -10,7 +10,7 @@ import {
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { AppTopics } from '../../../api/api-config.ts';
 import type { StateScope } from '../../../api/state-types.ts';
-import { decodeViewInvalidationMessage } from '../../../api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '../../../api/views/view-invalidation.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
 
 /** A unicast that names no group needs the scope its producer proved; a fully decoded AL control envelope is exempt. */

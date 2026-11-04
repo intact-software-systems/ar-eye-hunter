@@ -1,12 +1,12 @@
-import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { AppTopics } from './api-config.ts';
-import { requireExactKeys, requireOneOf, requireRecord, requireString } from './exact-object-decoding.ts';
-import { decodeStateScope, type StateScope } from './state-types.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { AppTopics } from '../api-config.ts';
+import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
+import { decodeStateScope, type StateScope } from '../state-types.ts';
 
 export namespace ViewInvalidation {
     export interface ScopedAccount {
         readonly version: 1;
-        readonly resource: 'party' | 'matchmaking' | 'friends';
+        readonly resource: 'party' | 'matchmaking' | 'friends' | 'sessions';
         readonly scope: StateScope;
         readonly principalId: string;
         readonly changeId: string;
@@ -45,7 +45,7 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
     }
     return {
         version: 1,
-        resource: requireOneOf(record.resource, ['party', 'matchmaking', 'friends'], 'View resource'),
+        resource: requireOneOf(record.resource, ['party', 'matchmaking', 'friends', 'sessions'], 'View resource'),
         scope: decodeStateScope(record.scope),
         principalId: record.principalId,
         changeId: record.changeId

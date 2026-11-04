@@ -26,7 +26,7 @@ import { PartyReader } from '@shared-server/rallar-system/parties/party-reader.t
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { decodeViewInvalidation, type ViewInvalidation } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidation, type ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import {

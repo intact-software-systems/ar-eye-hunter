@@ -14,7 +14,7 @@ import {
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { FriendsRequest } from '@shared/api/friends/friends-request.ts';
-import { decodeViewInvalidationMessage } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { createGroupSnapshot } from '../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 

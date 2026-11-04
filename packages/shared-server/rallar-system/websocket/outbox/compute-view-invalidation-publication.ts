@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
-import { decodeViewInvalidation, type ViewInvalidation } from '@shared/api/view-invalidation.ts';
+import { decodeViewInvalidation, type ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';

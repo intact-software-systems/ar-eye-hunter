@@ -1,11 +1,12 @@
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
     decodeViewInvalidationMessage,
     decodeViewResync,
     type ViewInvalidation
-} from '@shared/api/view-invalidation.ts';
+} from '@shared/api/views/view-invalidation.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import type { RallarMessageHandler } from '../messages/rallar-message-contracts.ts';
 import type { RallarMessageSelectorInput } from '../messages/rallar-message-selectors.ts';
@@ -15,7 +16,10 @@ export namespace SubscribeViewInvalidations {
     export interface Browser {
         readonly messages: {
             readonly ws: {
-                onMessage(selector: RallarMessageSelectorInput, handler: RallarMessageHandler<unknown>): () => void;
+                onMessage(
+                    selector: RallarMessageSelectorInput,
+                    handler: RallarMessageHandler<ApiJsonValue>
+                ): () => void;
             };
         };
         readonly ws: Pick<RallarWsFacade, 'onLifecycle'>;

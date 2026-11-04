@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import { decodeViewInvalidationMessage } from '../../../api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '../../../api/views/view-invalidation.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 
 /** Committed account-view authority; it never carries a scope or a captured socket audience. */

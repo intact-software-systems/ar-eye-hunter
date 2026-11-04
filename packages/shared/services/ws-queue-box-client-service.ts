@@ -58,7 +58,7 @@ import {
 } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALDurableWorkOwnership } from '../alm/work/al-durable-work-ownership.ts';
 import { AppTopics, EnqueuedType } from '../api/api-config.ts';
-import { decodeViewInvalidationMessage } from '../api/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '../api/views/view-invalidation.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';

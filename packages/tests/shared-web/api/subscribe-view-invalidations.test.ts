@@ -1,18 +1,27 @@
 import { subscribeViewInvalidations } from '@shared-web/browser/api/subscribe-view-invalidations.ts';
-import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageTransport } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
-import type { ViewInvalidation } from '@shared/api/view-invalidation.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import type { ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 
 const scope = { applicationId: 'game', workspaceId: 'default' };
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'session', accessToken: 'test', expiresAtEpochMs: 9999999999999 };
 
-function fixture(resource: ViewInvalidation['resource'] = 'party') {
+interface InvalidationFixture {
+    readonly changed: Mock<() => void>;
+    stop(): void;
+    login(next: AuthSession | undefined): void;
+    deliver(raw: ALMessage, transport?: RallarMessageTransport): void;
+    reopen(kind?: RallarWsLifecycleEvent['kind']): void;
+}
+
+function fixture(resource: ViewInvalidation['resource'] = 'party'): InvalidationFixture {
     let session: AuthSession | undefined = alice;
-    const messages = new SynchronousNotifications<RallarMessage<unknown>>((error) => {
+    const messages = new SynchronousNotifications<RallarMessage<ApiJsonValue>>((error) => {
         throw error;
     });
     const lifecycle = new SynchronousNotifications<RallarWsLifecycleEvent>((error) => {
@@ -35,7 +44,7 @@ function fixture(resource: ViewInvalidation['resource'] = 'party') {
         login: (next: AuthSession | undefined) => {
             session = next;
         },
-        deliver: (raw: ALMessage, transport: RallarMessage<unknown>['transport'] = 'ws') =>
+        deliver: (raw: ALMessage, transport: RallarMessageTransport = 'ws') =>
             messages.publishLatest({
                 raw,
                 transport,
@@ -47,9 +56,7 @@ function fixture(resource: ViewInvalidation['resource'] = 'party') {
                 resourceId: raw.route.resourceId,
                 traceId: raw.id.traceId,
                 receivedAtEpochMs: 1,
-                reply: async () => {
-                    throw new Error('Invalidation has no reply');
-                }
+                reply: () => Promise.reject(new Error('Invalidation has no reply'))
             }),
         reopen: (kind: RallarWsLifecycleEvent['kind'] = 'open') =>
             lifecycle.publishLatest({
