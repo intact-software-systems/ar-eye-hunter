@@ -197,7 +197,10 @@ export function toGrantedRefusalPollCommand(
     ]);
 }
 
-/** The page's ready RTC peers, its accepted overlay's next hops, recorded for the cell's evidence and asserted nowhere. */
+/**
+ * The page's health, whose formation summary names its accepted overlay, topology and `nextHopSessionIds`: recorded for
+ * the cell's evidence and asserted nowhere. Its RTC lane status lists every open connection, not the overlay's hops.
+ */
 export function toOverlayNextHopsCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     return {
         kind: 'health',
