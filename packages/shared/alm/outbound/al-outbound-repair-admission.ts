@@ -32,11 +32,12 @@ import type {
     ALOutboundControlAdmissionResult,
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
-import { isALOutboundReceiptComplete, toALOutboundUnconfirmedPeerIds } from './transition-al-outbound-pending-ack.ts';
+import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
 export namespace ALOutboundRepairAdmission {
     export interface Dependencies<TPrepared> {
@@ -288,7 +289,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         retry: ALOutboundRepairAdmission.AckTimeoutRetry
     ): ALOutboundCommitBundle<TPrepared> {
         const { msg, pending, messageExpiresAtMs } = receipt;
-        const failedPeerIds = toALOutboundUnconfirmedPeerIds(pending);
+        const failedPeerIds = toALOutboundReceiptClasses(pending).unconfirmedPeerIds;
         const repairHint: ALOutboundDurableEffectWrite<TPrepared> = {
             effectId: toALOutboundEffectId([
                 'repair-hint',

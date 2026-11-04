@@ -38,7 +38,7 @@ const receipt: ALReceiptPayload = {
 };
 
 /** A control whose payload resource was written by a peer that did not go through the strict builder. */
-function withResource(message: ALMessage, resource: Record<string, unknown>): ALMessage {
+function withResource(message: ALMessage, resource: object): ALMessage {
     return { ...message, payload: { ...message.payload, resource: JSON.stringify(resource) } };
 }
 

@@ -1,10 +1,7 @@
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import type { ALDeliveryReceiptExhaustion } from '../../delivery/al-delivery-failure.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
-import {
-    toALOutboundOutsideAudiencePeerIds,
-    toALOutboundUnconfirmedPeerIds
-} from '../transition-al-outbound-pending-ack.ts';
+import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts';
 
 export interface ToALOutboundReceiptExhaustedFactInput {
     readonly receipt: Pick<
@@ -27,9 +24,7 @@ export function toALOutboundReceiptExhaustedFact(
         msgId: receipt.msgId,
         traceId: input.traceId,
         mode: receipt.mode,
-        confirmedPeerIds: receipt.expectedPeerIds.filter((peerId) => receipt.ackedPeerIds.includes(peerId)),
-        unconfirmedPeerIds: toALOutboundUnconfirmedPeerIds(receipt),
-        outsideAudiencePeerIds: toALOutboundOutsideAudiencePeerIds(receipt),
+        ...toALOutboundReceiptClasses(receipt),
         ...exhaustion,
         detail
     };

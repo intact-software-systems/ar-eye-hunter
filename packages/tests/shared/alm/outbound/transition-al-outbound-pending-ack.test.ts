@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { isALHopCompletionAck, type ALAckPayload, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundAckedPeerId,
     toALOutboundAcknowledgementFact,
     toALOutboundCompletedHopPeerIds,
-    toALOutboundUnconfirmedPeerIds,
     trackALOutboundPendingAckSnapshot
 } from '@shared/alm/outbound/transition-al-outbound-pending-ack.ts';
 
@@ -73,9 +73,23 @@ describe('a receipt with recipients outside the audience', () => {
             const row = receiverRow({ ackedPeerIds: acked, outsideAudiencePeerIds: outside });
 
             expect(isALOutboundReceiptComplete(row)).toBe(complete);
-            expect(toALOutboundUnconfirmedPeerIds(row)).toEqual(unconfirmed);
+            expect(toALOutboundReceiptClasses(row)).toEqual({
+                confirmedPeerIds: acked,
+                unconfirmedPeerIds: unconfirmed,
+                outsideAudiencePeerIds: outside
+            });
         }
     );
+
+    it('counts a recipient that confirmed and later answered outside the audience as confirmed', () => {
+        const row = receiverRow({ ackedPeerIds: ['r1', 'r2'], outsideAudiencePeerIds: ['r2'] });
+
+        expect(toALOutboundReceiptClasses(row)).toEqual({
+            confirmedPeerIds: ['r1', 'r2'],
+            unconfirmedPeerIds: [],
+            outsideAudiencePeerIds: []
+        });
+    });
 
     it('completes a receipt that expected nobody', () => {
         expect(isALOutboundReceiptComplete(receiverRow({ expectedPeerIds: [] }))).toBe(true);

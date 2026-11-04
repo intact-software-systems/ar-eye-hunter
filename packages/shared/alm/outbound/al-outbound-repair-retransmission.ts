@@ -15,12 +15,12 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
-    toALOutboundCompletedHopPeerIds,
-    toALOutboundUnconfirmedPeerIds
+    toALOutboundCompletedHopPeerIds
 } from './transition-al-outbound-pending-ack.ts';
 
 interface ALOutboundRetransmitOptions {
@@ -275,7 +275,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 admittedAudience: plan.admittedAudience,
                 admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds,
                 referenceKey: read.storedMessage?.reference.key,
-                failedPeerIds: toALOutboundUnconfirmedPeerIds(pending),
+                failedPeerIds: toALOutboundReceiptClasses(pending).unconfirmedPeerIds,
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
             })
@@ -335,7 +335,7 @@ function isOwnHopRetry<TPrepared>(
     if (pending === undefined) {
         return false;
     }
-    const failedPeerIds = toALOutboundUnconfirmedPeerIds(pending);
+    const failedPeerIds = toALOutboundReceiptClasses(pending).unconfirmedPeerIds;
     return failedPeerIds.length > 0 &&
         failedPeerIds.every((peerId) => isALOutboundOwnHopPeer(plan, hopPeerIds, peerId));
 }

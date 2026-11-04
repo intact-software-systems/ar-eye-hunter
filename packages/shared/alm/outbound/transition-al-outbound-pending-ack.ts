@@ -8,6 +8,7 @@ import type {
     ALOutboundDispatchPlan,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 
 /**
  * What one peer knows of the relay tree: its own next hops, and those whose subtree completed (a leaf
@@ -161,7 +162,7 @@ export function toALOutboundCompletedHopPeerIds(acks: readonly ALAckPayload[]): 
  */
 export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgementFactInput): ALOutboundSettlementFact {
     const { receipt, hops } = input;
-    const unconfirmed = toALOutboundUnconfirmedPeerIds(receipt);
+    const { unconfirmedPeerIds: unconfirmed, outsideAudiencePeerIds } = toALOutboundReceiptClasses(receipt);
     const receiverHops = isALLogicalReceiptMode(receipt.mode);
     return {
         kind: 'acknowledgement',
@@ -175,7 +176,7 @@ export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgeme
         expectedRecipientPeerIds: receipt.expectedPeerIds,
         confirmedRecipientPeerIds: receipt.ackedPeerIds,
         unconfirmedRecipientPeerIds: unconfirmed,
-        outsideAudienceRecipientPeerIds: toALOutboundOutsideAudiencePeerIds(receipt),
+        outsideAudienceRecipientPeerIds: outsideAudiencePeerIds,
         complete: input.complete
     };
 }
@@ -188,25 +189,7 @@ export function isALOutboundReceiptComplete(
     pending: ALOutboundPendingAckSnapshot
 ): boolean {
     return pending.expectedPeerIds.length === 0 ||
-        (pending.ackedPeerIds.length > 0 && toALOutboundUnconfirmedPeerIds(pending).length === 0);
-}
-
-/** The expected peers outside the audience that never confirmed: a confirmation outranks a later outside answer. */
-export function toALOutboundOutsideAudiencePeerIds(
-    receipt: Pick<ALOutboundPendingAckSnapshot, 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'>
-): readonly string[] {
-    return receipt.expectedPeerIds.filter((peerId) =>
-        receipt.outsideAudiencePeerIds.includes(peerId) && !receipt.ackedPeerIds.includes(peerId)
-    );
-}
-
-/** The expected peers a receipt still owes: neither acked nor outside the audience, and so the ones a retry targets. */
-export function toALOutboundUnconfirmedPeerIds(
-    receipt: Pick<ALOutboundPendingAckSnapshot, 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'>
-): readonly string[] {
-    return receipt.expectedPeerIds.filter((peerId) =>
-        !receipt.ackedPeerIds.includes(peerId) && !receipt.outsideAudiencePeerIds.includes(peerId)
-    );
+        (pending.ackedPeerIds.length > 0 && toALOutboundReceiptClasses(pending).unconfirmedPeerIds.length === 0);
 }
 
 /**
