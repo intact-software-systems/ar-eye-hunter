@@ -4,13 +4,19 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../../alm/al-admission-value-validation.ts';
+import {
+    decodeALAccountViewAuthority,
+    validateALAccountViewMessage
+} from '../../alm/outbound/admission/al-account-view-authority.ts';
 import { decodeALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     decodeALSessionInvalidationAuthority,
     validateALSessionInvalidationMessage
 } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { decodeALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
+import { AppTopics } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
+import { decodeViewInvalidationMessage } from '../../api/view-invalidation.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
@@ -26,7 +32,8 @@ const PREPARED_OPTIONAL_KEYS: readonly string[] = [
     'generationId',
     'recipientScope',
     'principalTargetId',
-    'sessionInvalidation'
+    'sessionInvalidation',
+    'accountView'
 ];
 
 const SCOPED_RECIPIENT_KEYS: readonly string[] = [
@@ -44,6 +51,9 @@ export function decodeWsQueueBoxServerPreparedMessage(
     referenceKey: Key
 ): WsQueueBoxServerPreparedMessage {
     const prepared = decodeALAdmissionRecord(value, ['kind', 'message'], PREPARED_OPTIONAL_KEYS);
+    if (prepared.kind === 'account-view') {
+        return decodeAccountViewPrepared(value, msg);
+    }
     if (prepared.kind === 'invalidated-session') {
         return decodeInvalidatedSessionPrepared(value, msg);
     }
@@ -162,6 +172,13 @@ interface ScopedRecipientTargetInput {
 function validateScopedRecipientTarget(input: ScopedRecipientTargetInput): readonly string[] {
     const { message, referenceKey, scope, principalTargetId } = input;
     const addressesItsConnection = input.peerId === input.connectionId;
+    if (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) {
+        const notice = decodeViewInvalidationMessage(message);
+        return notice.scope !== null && principalTargetId === notice.principalId && addressesItsConnection &&
+                scope.applicationId === notice.scope.applicationId && scope.workspaceId === notice.scope.workspaceId
+            ? []
+            : ['Scoped prepared view differs from its exact principal and scope'];
+    }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
         const targetScope = readWsQueueBoxServerScopedTargetScope(message);
         return !targetScope || scope.applicationId !== targetScope.applicationId ||
@@ -218,4 +235,13 @@ function decodeInvalidatedSessionPrepared(value: unknown, message: ALMessage): W
         sessionInvalidation,
         message: decodeALOutboundTransportMessage(prepared.message, message)
     };
+}
+
+function decodeAccountViewPrepared(value: unknown, message: ALMessage): WsQueueBoxServerPreparedMessage {
+    const prepared = decodeALAdmissionRecord(value, ['kind', 'message', 'accountView']);
+    const accountView = decodeALAccountViewAuthority(prepared.accountView);
+    if (validateALAccountViewMessage(message, accountView).length > 0) {
+        throw new TypeError('Prepared account view differs from its exact account target');
+    }
+    return { kind: 'account-view', accountView, message: decodeALOutboundTransportMessage(prepared.message, message) };
 }

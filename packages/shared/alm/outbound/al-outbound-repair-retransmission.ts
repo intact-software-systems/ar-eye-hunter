@@ -248,6 +248,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             recipientScope: plan.recipientScope,
             principalTargetId: plan.principalTargetId,
             sessionInvalidation: plan.sessionInvalidation,
+            accountView: plan.accountView,
             admittedAudience: plan.admittedAudience,
             admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds,
             referenceKey: read.storedMessage?.reference.key
@@ -277,6 +278,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 recipientScope: plan.recipientScope,
                 principalTargetId: plan.principalTargetId,
                 sessionInvalidation: plan.sessionInvalidation,
+                accountView: plan.accountView,
                 admittedAudience: plan.admittedAudience,
                 admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds,
                 referenceKey: read.storedMessage?.reference.key,

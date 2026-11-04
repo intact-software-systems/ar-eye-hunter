@@ -28,6 +28,7 @@ export function computeALOutboundDispatchPlan<TPrepared>(
             recipientScope: authority.recipientScope,
             principalTargetId: authority.principalTargetId,
             sessionInvalidation: authority.sessionInvalidation,
+            accountView: authority.accountView,
             referenceKey: stored ? stored.reference.key : outgoing.observedCanonicalEntry?.key
         }
     );

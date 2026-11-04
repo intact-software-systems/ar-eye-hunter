@@ -549,7 +549,7 @@ async function sendToCapturedLocalTargets(
 ): Promise<WsServerLiveSendResult> {
     const { message, entry, policy } = input;
     if (
-        policy?.principalTargetId !== undefined &&
+        (policy?.principalTargetId !== undefined || policy?.accountView !== undefined) &&
         validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0
     ) {
         throw new ALAdmissionCorruptionError(

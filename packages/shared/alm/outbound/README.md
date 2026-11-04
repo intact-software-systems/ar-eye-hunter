@@ -760,12 +760,22 @@ audience verbatim, so a session that left since reads unconfirmed (D73), and a r
 (`subtree-complete-not-subscribed`) is recorded in the receipt's `outsideAudienceRecipientPeerIds`, never confirmed.
 
 The wire `targets.groupRef` scopes every row that names a group (D101): its captured policy stores no
-`recipientScope`, `principalTargetId` or `sessionInvalidation`
+`recipientScope`, `principalTargetId`, `sessionInvalidation` or `accountView`
 ([`resolveALOutboundScopeAuthority`](./admission/al-outbound-scope-authority.ts)), a row that stores one is corrupt,
 and a room unicast's or a direct room row's send checks the recipient's connection against the group's scope. A
 stored recipient scope remains only on rows that name no group: a unicast whose producer proved a scope, a principal
 target, a principal or world broadcast. A raw `WS_OUTBOX` row without producer provenance fails closed, and a
 unicast `router.publish` that names no group and carries no scope returns `failed` (D103).
+
+The reserved account-wide view notice uses a separate
+[`accountView`](./admission/al-account-view-authority.ts) authority: version and
+principal ID, mutually exclusive with scoped/session authority and frozen
+recipients. Its unicast account target and exact payload must agree with the
+committed proof. Capture, dequeue and repair preserve that authority. The
+standalone prepared effect and each cluster subscriber resolve current local
+authenticated account sockets across scopes at execution; they never persist
+that transient recipient set. Scoped account-view notices retain their exact
+application/workspace authority.
 
 A client's broadcast audience is bound to the scope its connection authenticated (D158). A `world`
 broadcast names no group, so its row keeps that scope as `recipientScope` and the send-time

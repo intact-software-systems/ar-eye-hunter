@@ -21,6 +21,9 @@ export function toWsQueueBoxServerCapturedSendInput(
     input: ToWsQueueBoxServerCapturedSendInput
 ): WsServerLiveSendInputDto {
     const { message, key, policy } = input;
+    if (policy?.accountView !== undefined) {
+        return { message, accountView: policy.accountView };
+    }
     if (policy?.sessionInvalidation !== undefined) {
         return { message, sessionInvalidation: policy.sessionInvalidation, sentPositions: null };
     }

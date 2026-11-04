@@ -362,6 +362,7 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         admittedConnectionGenerationIds: pending.policy.admittedConnectionGenerationIds,
         recipientScope: pending.policy.recipientScope,
         principalTargetId: pending.policy.principalTargetId,
-        sessionInvalidation: pending.policy.sessionInvalidation
+        sessionInvalidation: pending.policy.sessionInvalidation,
+        accountView: pending.policy.accountView
     };
 }

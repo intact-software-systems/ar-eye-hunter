@@ -10,9 +10,14 @@ import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/a
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { computeWsOutboxProvenanceRecord } from './ws-outbox-provenance.ts';
 
-export interface ViewInvalidationPublicationInput {
-    readonly resource: ViewInvalidation['resource'];
-    readonly scope: ViewInvalidation['scope'];
+export type ViewInvalidationPublicationInput =
+    & ViewInvalidationPublicationFacts
+    & (
+        | Pick<ViewInvalidation.ScopedAccount, 'resource' | 'scope'>
+        | Pick<ViewInvalidation.Account, 'resource' | 'scope'>
+    );
+
+interface ViewInvalidationPublicationFacts {
     readonly principalIds: readonly string[];
     readonly changeId: string;
     readonly createdAtEpochMs: number;
@@ -51,7 +56,9 @@ export function computeViewInvalidationPublication(
             entry,
             message,
             expiresAtMs: input.createdAtEpochMs + input.retentionMs,
-            target: { kind: 'scoped-account-view', principalRef: { ...input.scope, principalId } }
+            target: notice.scope === null
+                ? { kind: 'account-view', accountView: { version: 1, principalId } }
+                : { kind: 'scoped-account-view', principalRef: { ...notice.scope, principalId } }
         });
         provenance.push({ effectId: `view:${entry.key.resourceId}`, operation: 'insert', ...record });
         outbox.push(computeAppOutboxInsert(entry));
@@ -75,7 +82,7 @@ function toViewInvalidationMessage(input: ViewInvalidationPublicationInput, noti
             traceId: input.traceId
         },
         route,
-        targets: {
+        targets: notice.scope === null ? { mode: 'unicast', toPeerId: notice.principalId } : {
             mode: 'broadcast',
             scope: 'principal',
             principalRef: { ...input.scope, principalId: notice.principalId }

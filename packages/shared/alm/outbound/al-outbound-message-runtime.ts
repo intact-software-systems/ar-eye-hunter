@@ -38,6 +38,7 @@ import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatil
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALWorkObservationDeferral } from '../work/al-work-handler.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
+import type { ALAccountViewAuthority } from './admission/al-account-view-authority.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPlanner,
@@ -72,6 +73,7 @@ export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 /** Carrier-owned first-dequeue authority; a later stored admission always wins over this read. */
 export interface ALOutboundDequeueAuthority {
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+    readonly accountView?: ALAccountViewAuthority;
     readonly admittedAudience: readonly string[] | undefined;
     readonly recipientScope: StateScope | undefined;
     readonly principalTargetId?: string;
@@ -148,6 +150,7 @@ export interface ALOutboundRepairRequest {
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+    readonly accountView?: ALAccountViewAuthority;
     readonly trigger: ALOutboundRepairTrigger;
     readonly repair: ALOutboundRepairTrackingPlan;
     readonly requestedByPeerId?: string;
@@ -218,6 +221,7 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+    readonly accountView?: ALAccountViewAuthority;
 }
 
 export interface ALOutboundRuntimeStores<TPrepared> {

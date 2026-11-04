@@ -480,6 +480,7 @@ export class WsQueueBoxServerService {
             recipientScope: authority?.recipientScope,
             principalTargetId: authority?.principalTargetId,
             sessionInvalidation: authority?.sessionInvalidation,
+            accountView: authority?.accountView,
             referenceKey: authority?.referenceKey
         });
     }
@@ -955,6 +956,9 @@ export class WsQueueBoxServerService {
         prepared: WsQueueBoxServerPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
+        if (prepared.kind === 'account-view') {
+            return this.sendPreparedAccountView(prepared, lifecycle);
+        }
         if (
             prepared.kind !== 'recipient' && prepared.kind !== 'scoped-recipient' &&
             prepared.kind !== 'room-recipient' && prepared.kind !== 'invalidated-session'
@@ -962,6 +966,30 @@ export class WsQueueBoxServerService {
             return await this.clusterPublication.writePreparedMessage(prepared, lifecycle);
         }
         return await this.sendPreparedRecipient(prepared, lifecycle);
+    }
+
+    private sendPreparedAccountView(
+        prepared: Extract<WsQueueBoxServerPreparedMessage, { kind: 'account-view'; }>,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
+    ): ALOutboundSettledSendResult {
+        if (lifecycle.signal.aborted) {
+            return { status: 'cancelled', submissionAttempted: false };
+        }
+        if (this.clock.nowMs() >= (lifecycle.expiresAtMs ?? 0)) {
+            return { status: 'expired', submissionAttempted: false };
+        }
+        const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
+        const result = this.liveDelivery.sendToTargetsWithResult({
+            message,
+            accountView: prepared.accountView,
+            expiresAtMs: lifecycle.expiresAtMs
+        });
+        if (result.failedCount > 0) {
+            throw new Error(result.failures.map((failure) => failure.reason).join('; '));
+        }
+        return result.sentCount > 0
+            ? { status: 'sent', submissionAttempted: true }
+            : { status: 'no-targets', submissionAttempted: false };
     }
 
     private async sendPreparedRecipient(

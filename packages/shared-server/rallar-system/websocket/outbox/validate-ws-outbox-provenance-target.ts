@@ -1,4 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { validateALAccountViewMessage } from '@shared/alm/outbound/admission/al-account-view-authority.ts';
 import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
@@ -11,6 +12,9 @@ export function validateWsOutboxProvenanceTarget(
     message: ALMessage,
     target: WsOutboxProvenance['target']
 ): readonly string[] {
+    if (target.kind === 'account-view') {
+        return validateALAccountViewMessage(message, target.accountView);
+    }
     if (target.kind === 'exact-invalidated-session') {
         return validateALSessionInvalidationMessage(message, target.sessionInvalidation);
     }
@@ -63,7 +67,7 @@ function validateAccountViewTarget(
 ): readonly string[] {
     try {
         const notice = decodeViewInvalidationMessage(message);
-        return notice.principalId === target.principalRef.principalId &&
+        return notice.scope !== null && notice.principalId === target.principalRef.principalId &&
                 notice.scope.applicationId === target.principalRef.applicationId &&
                 notice.scope.workspaceId === target.principalRef.workspaceId
             ? []

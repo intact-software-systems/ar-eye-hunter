@@ -2,6 +2,7 @@ import { readALTargetGroupRef, type ALMessage } from '../../../al-contracts/al-c
 import type { GroupRef } from '../../../api/group-types.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { Either } from '../../../resilience/Either.ts';
+import type { ALAccountViewAuthority } from './al-account-view-authority.ts';
 import { validateALOutboundRecipientScope } from './al-outbound-admission-validation.ts';
 import type { ALSessionInvalidationAuthority } from './al-session-invalidation-authority.ts';
 
@@ -10,6 +11,7 @@ export interface ALOutboundRecipientAuthorityFields {
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+    readonly accountView?: ALAccountViewAuthority;
 }
 
 /** The one fact that scopes a WS row's recipients. A row whose targets name a group stores no scope of its own. */
@@ -21,13 +23,20 @@ export type ALOutboundScopeAuthority =
         principalTargetId: string | undefined;
     }>
     | Readonly<{ kind: 'session-invalidation'; sessionInvalidation: ALSessionInvalidationAuthority; }>
+    | Readonly<{ kind: 'account-view'; accountView: ALAccountViewAuthority; }>
     | Readonly<{ kind: 'none'; }>;
 
 export function resolveALOutboundScopeAuthority(
     message: ALMessage,
     fields: ALOutboundRecipientAuthorityFields
 ): Either<readonly string[], ALOutboundScopeAuthority> {
-    const { recipientScope, principalTargetId, sessionInvalidation } = fields;
+    const { recipientScope, principalTargetId, sessionInvalidation, accountView } = fields;
+    if (accountView !== undefined) {
+        return recipientScope === undefined && principalTargetId === undefined && sessionInvalidation === undefined &&
+                readALTargetGroupRef(message) === undefined
+            ? Either.ofRight({ kind: 'account-view', accountView })
+            : Either.ofLeft(['Account-view authority cannot carry another recipient authority']);
+    }
     const groupRef = readALTargetGroupRef(message);
     if (groupRef !== undefined) {
         return recipientScope === undefined && principalTargetId === undefined &&

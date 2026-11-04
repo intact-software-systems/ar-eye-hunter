@@ -28,6 +28,12 @@ export function toWsQueueBoxServerRecipientPreparedMessages(
 ): readonly WsQueueBoxServerPreparedMessage[] {
     const { message, authority } = input;
     switch (authority.kind) {
+        case 'account-view':
+            return [{
+                kind: 'account-view',
+                accountView: authority.accountView,
+                message: toALOutboundTransportMessage(message)
+            }];
         case 'session-invalidation':
             return toGenerationBoundPreparedMessages(input, (recipient, generationId) => ({
                 kind: 'invalidated-session',
