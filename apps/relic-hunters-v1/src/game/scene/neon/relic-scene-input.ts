@@ -4,6 +4,7 @@ import { type Observer } from '@babylonjs/core/Misc/observable.js';
 import { sceneMoveActionForPickedRoom } from '../movement.ts';
 import { directionBetweenRooms } from '../prompts.ts';
 import { blackHumourSignForRoom } from '../relic-scene-model.ts';
+import { decodeRelicScenePick } from './decode-relic-scene-pick.ts';
 import { changeRuntimeCameraMode, cycleRuntimeCameraMode, isAvatarCameraMode } from './relic-camera.ts';
 import { updateRoomHighlights } from './relic-facility.ts';
 import { type RelicSceneRuntime } from './relic-scene-runtime.ts';
@@ -152,22 +153,19 @@ export class RelicSceneInput {
         if (event.event.type !== 'pointerdown' || runtime.terminal || !runtime.inputEnabled.value) {
             return;
         }
-        const metadata: unknown = event.pickInfo?.pickedMesh?.metadata;
-        if (!metadata || typeof metadata !== 'object') {
+        const target = decodeRelicScenePick(event.pickInfo?.pickedMesh?.metadata);
+        if (target === null) {
             return;
         }
-        if ('relicId' in metadata && typeof metadata.relicId === 'string') {
-            runtime.onPickupRelic.value(metadata.relicId);
+        if (target.kind === 'pickup') {
+            runtime.onPickupRelic.value(target.relicId);
             return;
         }
-        if ('primeAction' in metadata && metadata.primeAction === 'search') {
+        if (target.kind === 'search') {
             runtime.onPrimeAction.value({ kind: 'search' });
             return;
         }
-        if (!('roomId' in metadata) || typeof metadata.roomId !== 'string') {
-            return;
-        }
-        const roomId = metadata.roomId;
+        const roomId = target.roomId;
         const move = sceneMoveActionForPickedRoom({
             snapshot: runtime.snapshot.value,
             localPlayerId: runtime.localPlayerId.value,

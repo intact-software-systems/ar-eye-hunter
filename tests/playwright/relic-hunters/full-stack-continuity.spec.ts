@@ -130,7 +130,7 @@ roomBrowserTest(
 );
 
 roomBrowserTest(
-    'hydrates a different expedition without allocating an opening renderer after room entry',
+    'allocates only native expedition graphics across room hydration',
     async ({ page: host, guest }) => {
         await host.addInitScript(observeBrowserWebGlContexts);
         await registerRelicHunter(guest, 'hydration-owner');
@@ -148,8 +148,8 @@ roomBrowserTest(
         await host.getByRole('button', { name: /Join as/ }).click();
         await host.getByRole('button', { name: 'Leave expedition', exact: true }).click();
         await expect(host.getByRole('button', { name: /Join as/ })).toBeEnabled();
-        // interaction: the initial opening and source expedition own the two existing contexts.
-        await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '2');
+        // interaction: only the source expedition has allocated a graphics context.
+        await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
 
         await guest.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         const destinationLink = guest.getByLabel('Room link', { exact: true });
@@ -180,13 +180,12 @@ roomBrowserTest(
             await hydrationRequested.promise;
             const entry = host.getByRole('region', { name: 'Shared room entry', exact: true });
             await expect(entry.getByText(`Entered ${destinationId}.`, { exact: true })).toBeVisible();
-            // interaction: room admission must not allocate a decorative context while game hydration is pending.
-            await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '2');
-            await expect(host.getByLabel('Relic Hunters opening scene', { exact: true })).toHaveCount(0);
+            // interaction: admission must not allocate another native context before its snapshot hydrates.
+            await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
             releaseHydration.resolve();
             await waitForExpeditionScene(host);
             // interaction: completing hydration adds only the destination expedition's graphics context.
-            await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '3');
+            await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '2');
             await expect(entry.getByRole('alert')).toHaveCount(0);
             await host.getByRole('button', { name: /Join as/ }).click();
             await expect(host.getByRole('button', { name: 'Leave expedition', exact: true })).toBeEnabled();
@@ -202,8 +201,8 @@ roomBrowserTest(
     async ({ page: host }) => {
         await host.addInitScript(observeBrowserWebGlContexts);
         await registerRelicHunter(host, 'shared-session');
-        // interaction: signing in keeps an already visible opening renderer alive.
-        await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
+        // interaction: signing in does not allocate graphics for decorative opening artwork.
+        expect(await host.locator('html').getAttribute('data-test-webgl-contexts')).toBeNull();
         await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         await waitForExpeditionScene(host);
         const link = await host.getByLabel('Room link', { exact: true }).inputValue();

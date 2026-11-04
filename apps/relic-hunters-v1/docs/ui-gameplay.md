@@ -9,8 +9,8 @@ The intended playable loop is:
 1. Sign in or register.
 2. Create or join a Relic Hunters room.
 3. Pick a character and join the expedition.
-4. The Keeper/admin starts the expedition from the lobby after connected room
-   members have joined the expedition.
+4. The Keeper/admin starts the expedition from the lobby with the joined hunters;
+   room presence does not add a player or block the joined roster.
 5. Each active hunter chooses one plan for the round.
 6. The server resolves all submitted plans together.
 7. The app enters a review phase where every client watches the revealed moves,
@@ -38,7 +38,7 @@ The intended playable loop is:
   independently; mobile retains page scrolling. Sticky section buttons navigate
   Rooms, Party/Plan, Map, and Intel.
 - `relic-scene.tsx` renders the accepted snapshot as a procedural neon facility.
-  `opening-relic-scene.tsx` renders when no snapshot is available. Avatar, Visor,
+  `src/app.tsx` shows decoded static gate artwork when no snapshot is available; only an expedition allocates a Babylon renderer. Avatar, Visor,
   Overview, and Flyover controls affect presentation only.
 - The AI Companion is advisory. A validated local suggestion can prime a draft;
   it cannot submit. Proposals are shared only with the hunter's own sessions.

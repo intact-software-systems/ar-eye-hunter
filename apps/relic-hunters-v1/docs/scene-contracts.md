@@ -4,8 +4,7 @@ Last reviewed: 2026-10-23.
 
 The active gameplay renderer is `src/game/relic-scene.tsx`. It consumes public
 Relic snapshots and uses the procedural facility/camera model in
-`src/game/scene/relic-scene-model.ts`. `opening-relic-scene.tsx` renders while the
-app has no game snapshot. Historical castle scene baselines are not evidence for
+`src/game/scene/relic-scene-model.ts`. `src/app.tsx` displays `public/relic-opening.png` while the app has no game snapshot; this decorative image allocates no Babylon engine or render loop. Historical castle scene baselines are not evidence for
 the current renderer.
 
 ## Authority and input
@@ -62,8 +61,7 @@ changes and nonterminal state resume the same owned loop when the scene remains
 mounted. Input, pointer capture, motion history and frame timing reset at that
 transition; room, bracket and React subscriptions stay live.
 
-`scene/start-capped-render-loop.ts` is the single Babylon driver adapter for both
-gameplay and the opening scene. The framework-independent mechanism lives in
+`scene/start-capped-render-loop.ts` is the Babylon driver adapter for gameplay. The opening is a static project-rendered image with no graphics lifetime. The framework-independent mechanism lives in
 `packages/shared/resilience/timing/capped-frame-loop.ts`; it never imports Babylon
 or React. `read-relic-frame-readiness.ts` checks the active visible mesh materials,
 applicable glow passes/composition, camera and pending data before and after drawing.
@@ -111,7 +109,7 @@ unrelated gameplay behavior to private helper names or mesh construction order.
 
 ## Browser acceptance
 
-A renderer change needs nonblank opening/gameplay canvases, readable rooms and
+A presentation change needs decoded, visible opening artwork and a nonblank gameplay canvas, readable rooms and
 avatars, reachable planning/camera controls, and usable desktop/mobile layouts.
 Room-entry tests additionally prove actual expedition participation and return,
 not merely a successful HTTP admission. Capture fresh screenshots when changing

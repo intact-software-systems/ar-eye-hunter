@@ -18,7 +18,7 @@ and `use-relic-hunters.ts` binds its immutable snapshots to React.
 | Command transport and repair                     | Runtime with `send-relic-ws-command.ts` and `to-relic-command-phase.ts`                                                                 |
 | Map, intel, timeline, score, overlays            | Named files under `hud/`                                                                                                                |
 | Advisory AI and proposal validation              | `ai/`                                                                                                                                   |
-| Active scene and cosmetic motion                 | `relic-scene.tsx` with `scene/`; `opening-relic-scene.tsx` before a snapshot                                                            |
+| Active scene and cosmetic motion                 | `relic-scene.tsx` with `scene/`; `app.tsx` displays static opening artwork before a snapshot                                            |
 
 Direct game files own runtime or gameplay behavior. Rendering and HUD already
 have separate owners; adding folders around the runtime's private state would

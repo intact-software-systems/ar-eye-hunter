@@ -363,11 +363,12 @@ jobs:
             tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery \
             --grep 'director canvas shot|canvas touch aim'
 
-      - name: Run Relic feedback, planning companion, discovery and turn lifecycle click regressions
+      - name: Run Relic opening, feedback, planning, discovery and turn lifecycle regressions
         if: ${{ matrix.lane == 'relic' }}
         run: |
           npx playwright test --config apps/relic-hunters-v1/playwright.config.ts \
             tests/playwright/relic-hunters/private-feedback.spec.ts \
+            tests/playwright/relic-hunters/opening-scene.spec.ts \
             tests/playwright/relic-hunters/ai-planning-reply.spec.ts \
             tests/playwright/relic-hunters/directory-freshness.spec.ts \
             tests/playwright/relic-hunters/turn-reset.spec.ts --trace=retain-on-failure --workers=1

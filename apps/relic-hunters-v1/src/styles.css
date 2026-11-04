@@ -111,7 +111,8 @@ label {
     opacity: 0.52;
 }
 
-.relic-scene {
+.relic-scene,
+.relic-opening {
     position: absolute;
     inset: 0;
     z-index: 0;
@@ -121,6 +122,10 @@ label {
     outline: none;
     background:
         radial-gradient(circle at 50% 44%, rgba(10, 38, 58, 0.92), #07111f 58%, #040915);
+}
+
+.relic-opening {
+    object-fit: cover;
 }
 
 .relic-scene-next {
