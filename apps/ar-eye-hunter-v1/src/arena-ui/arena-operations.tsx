@@ -86,7 +86,7 @@ function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     );
     return (
         <>
-            {arena.session && (
+            {arena.session && arena.tournament.enabled && (
                 <BrowserTournamentPanel
                     browser={rallar}
                     entry={arenaRoomEntry}

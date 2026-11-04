@@ -121,15 +121,23 @@ test.describe('live RTC lifecycle acceptance', () => {
             await connectPresence(scenario, reopened);
             await settleSurvivors(scenario, reopened);
             await formationOperations.readiness(agentInput(scenario, reopened));
-            const samples = await formationOperations.readFormationDiagnostics({
-                ...agentInput(scenario, reopened),
-                topic: 'rallar.browser.formation.room-status',
-                sinceEpochMs: reopenedAt
-            });
-            const evidencePath = testInfo.outputPath('reopening-readiness.json');
-            await writeFile(evidencePath, JSON.stringify({ reopenedAt, samples }, null, 2));
-            await testInfo.attach('reopening-readiness', { path: evidencePath, contentType: 'application/json' });
-            expect(validateProgressSeries(samples, 'successive-revisions')).toEqual([]);
+            let samples: readonly FormationDiagnosticEvent[] = [];
+            try {
+                // Diagnostics reach the control server independently of the readiness command result.
+                await expect.poll(async () => {
+                    samples = await formationOperations.readFormationDiagnostics({
+                        ...agentInput(scenario, reopened),
+                        topic: 'rallar.browser.formation.room-status',
+                        sinceEpochMs: reopenedAt
+                    });
+                    return validateProgressSeries(samples, 'successive-revisions');
+                }, { timeout: 15000, intervals: [250] }).toEqual([]);
+            }
+            finally {
+                const evidencePath = testInfo.outputPath('reopening-readiness.json');
+                await writeFile(evidencePath, JSON.stringify({ reopenedAt, samples }, null, 2));
+                await testInfo.attach('reopening-readiness', { path: evidencePath, contentType: 'application/json' });
+            }
         }
         finally {
             await retire(scenario);
