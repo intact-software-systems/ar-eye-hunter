@@ -98,6 +98,30 @@ jobs:
             echo "reuse=false" >> "$GITHUB_OUTPUT"
           fi
 
+  game-changes:
+    name: Detect game changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run_games: ${{ steps.detect.outputs.run_games }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Detect game or shared-package changes
+        id: detect
+        run: |
+          # Games depend on shared packages, so they run unless every changed path is exclusively
+          # platform (API-v1, black-box, scripts, workflows, docs). Anything else runs them.
+          if git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" |
+            grep -vE '^(apps/(api-v1|rallar-black-box|rallar-black-box-control-server|rallar-black-box-headless)/|scripts/|\.github/|docs/)' |
+            grep -q .; then
+            echo "run_games=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_games=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release-gate:
     name: Release Gate
     needs:
@@ -111,6 +135,45 @@ jobs:
       # changed-range checks cannot pass on that one commit. The label passes an empty base,
       # which is the same configuration the main-push deploy path already uses.
       changed_repo_style_base: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changed-gates') && '' || github.event.pull_request.base.sha }}
+
+  games-release-gate:
+    name: Games Release Gate
+    needs:
+      - governance-gate
+      - validation-evidence
+      - game-changes
+    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' && needs.game-changes.outputs.run_games == 'true' }}
+    uses: ./.github/workflows/games-release-gate.yml
+    with:
+      candidate_ref: ${{ github.event.pull_request.head.sha }}
+
+  games-release-result:
+    name: Games Release Gate result
+    needs:
+      - governance-gate
+      - validation-evidence
+      - game-changes
+      - games-release-gate
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      result: ${{ steps.resolve.outputs.result }}
+    steps:
+      - name: Resolve games gate outcome
+        id: resolve
+        run: |
+          if [[ "${{ needs.governance-gate.result }}" != "success" || "${{ needs.game-changes.result }}" != "success" ]]; then
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ needs.validation-evidence.outputs.mode }}" != "broad" ]]; then
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ needs.game-changes.outputs.run_games }}" == "false" ]]; then
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ needs.games-release-gate.result }}" == "success" ]]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+          fi
 
   # Observation beside the gate: nothing below waits for it, so it never lengthens the required result.
   alm-conformance-observation:
@@ -130,7 +193,8 @@ jobs:
       - governance-gate
       - validation-evidence
       - release-gate
-    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+      - games-release-result
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.games-release-result.outputs.result != 'failure' && needs.validation-evidence.outputs.mode == 'broad' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -230,6 +294,7 @@ jobs:
       - governance-gate
       - validation-evidence
       - release-gate
+      - games-release-result
       - publish-validation-evidence
       - rtc-observation-integrity
     if: ${{ always() }}
@@ -252,3 +317,4 @@ jobs:
           --release-result "${{ needs.release-gate.result }}"
           --publication-result "${{ needs.publish-validation-evidence.result }}"
           --rtc-observation-result "${{ needs.rtc-observation-integrity.result }}"
+          --games-result "${{ needs.games-release-result.outputs.result }}"

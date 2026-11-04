@@ -75,7 +75,9 @@ describe('validation evidence command', () => {
             '--publication-result',
             'success',
             '--rtc-observation-result',
-            'skipped'
+            'skipped',
+            '--games-result',
+            'success'
         ]);
 
         expect(result.status).toBe(0);

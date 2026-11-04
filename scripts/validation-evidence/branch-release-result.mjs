@@ -38,7 +38,8 @@ function validateModeConclusion(input) {
         if (
             input.releaseResult !== 'skipped' ||
             input.publicationResult !== 'skipped' ||
-            input.rtcObservationResult !== 'skipped'
+            input.rtcObservationResult !== 'skipped' ||
+            input.gamesResult !== 'skipped'
         ) {
             issues.push('reused evidence requires broad validation and publication to be skipped');
         }
@@ -48,7 +49,11 @@ function validateModeConclusion(input) {
         if (input.reuse !== 'false') {
             issues.push('RTC observation mode requires validation-evidence reuse to be false');
         }
-        if (input.releaseResult !== 'skipped' || input.publicationResult !== 'skipped') {
+        if (
+            input.releaseResult !== 'skipped' ||
+            input.publicationResult !== 'skipped' ||
+            input.gamesResult !== 'skipped'
+        ) {
             issues.push('RTC observation mode requires broad validation and publication to be skipped');
         }
         if (input.rtcObservationResult !== 'success') {
@@ -69,6 +74,9 @@ function validateModeConclusion(input) {
     }
     if (input.releaseResult !== 'success') {
         issues.push('broad Release Gate did not succeed');
+    }
+    if (input.gamesResult !== 'success' && input.gamesResult !== 'skipped') {
+        issues.push('broad Games Release Gate did not succeed');
     }
     if (input.publicationResult !== 'success') {
         issues.push('fresh validation evidence was not published');

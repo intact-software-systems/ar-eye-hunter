@@ -132,7 +132,8 @@ function runConclusion(options) {
         reuse: requiredOption(options, '--reuse'),
         releaseResult: requiredOption(options, '--release-result'),
         publicationResult: requiredOption(options, '--publication-result'),
-        rtcObservationResult: requiredOption(options, '--rtc-observation-result')
+        rtcObservationResult: requiredOption(options, '--rtc-observation-result'),
+        gamesResult: requiredOption(options, '--games-result')
     });
     if (issues.length > 0) {
         throw new Error(issues.join('; '));

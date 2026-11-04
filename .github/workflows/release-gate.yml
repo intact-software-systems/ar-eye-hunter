@@ -72,16 +72,12 @@ jobs:
 
       - name: Build deployable apps
         run: |
-          npm run build:ar-eye-hunter-v1
-          npm run build:relic-hunters-v1
           npm run build:rallar
 
       - name: Check Deno apps
         run: |
           npm --workspace @ar-eye-hunter/shared-test run check:deno
           (cd apps/api-v1 && deno task check)
-          (cd apps/relic-hunter-server-v1 && deno task check)
-          (cd apps/ar-eye-hunter-server-v1 && deno task check)
           (cd apps/rallar-black-box-control-server && deno task check)
 
   unit:
@@ -156,7 +152,7 @@ jobs:
           save-deno-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.candidate_ref == github.sha }}
 
       - name: Run Deno tests
-        run: npm run test:deno
+        run: npm run test:deno:platform
 
   e2e-app:
     name: Browser tests (app)
@@ -196,191 +192,6 @@ jobs:
         with:
           name: reopening-readiness
           path: apps/rallar-black-box/test-results
-          if-no-files-found: warn
-          retention-days: 7
-
-  e2e-game-rooms:
-    name: Browser tests (game rooms ${{ matrix.lane }})
-    runs-on: ubuntu-latest
-    # Keep independent journeys inside the 30-minute budget; combined Relic full-stack tests took 26 minutes.
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        lane: ['ar-eye', 'relic', 'relic-continuity', 'move-together', 'matchmaking', 'ar-eye-tournaments', 'relic-tournaments']
-    env:
-      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
-      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
-          fetch-depth: 0
-
-      - name: Set up the lane
-        uses: ./.github/actions/release-gate-setup
-        with:
-          deno: 'true'
-          playwright: 'true'
-
-      - name: Record room journey source
-        run: echo "RALLAR_ROOM_JOURNEY_REVISION=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-
-      - name: Run AR Eye room entry browser tests
-        if: ${{ matrix.lane == 'ar-eye' }}
-        env:
-          RALLAR_ARENA_FULL_STACK: '1'
-          RALLAR_BROWSER_TIMING: '1'
-        run: |
-          mkdir -p tmp/perf/ar-eye-browser
-          (
-            while true; do
-              date -u +%s%3N
-              ps -eo pid,ppid,pcpu,rss,comm
-              head -1 /proc/stat
-              sleep 1
-            done
-          ) > tmp/perf/ar-eye-browser/runner-processes.log &
-          sampler_pid=$!
-          trap 'kill "$sampler_pid" 2>/dev/null || true; wait "$sampler_pid" 2>/dev/null || true' EXIT
-          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
-            tests/playwright/ar-eye-hunter/director-capability-delivery.spec.ts \
-            tests/playwright/ar-eye-hunter/open-arena-directory.spec.ts \
-            tests/playwright/ar-eye-hunter/private-room-entry.spec.ts \
-            tests/playwright/ar-eye-hunter/room-moderation.spec.ts \
-            tests/playwright/ar-eye-hunter/room-entry-recovery.spec.ts \
-            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery
-
-      - name: Upload AR Eye browser timing
-        if: ${{ always() && matrix.lane == 'ar-eye' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ar-eye-browser-timing
-          path: |
-            apps/ar-eye-hunter-v1/test-results/**/browser-timing-*.jsonl
-            apps/ar-eye-hunter-v1/test-results/**/trace.zip
-            tmp/perf/ar-eye-browser/runner-processes.log
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Run Relic room entry and spectating browser tests
-        if: ${{ matrix.lane == 'relic' }}
-        env:
-          RELIC_HUNTERS_FULL_STACK: '1'
-          RELIC_HUNTERS_BUILT_PREVIEW: '1'
-        run: |
-          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
-            tests/playwright/relic-hunters/full-stack-private-room-entry.spec.ts \
-            tests/playwright/relic-hunters/full-stack-room-moderation.spec.ts \
-            tests/playwright/relic-hunters/full-stack-room-entry-recovery.spec.ts \
-            tests/playwright/relic-hunters/full-stack-http.spec.ts \
-            tests/playwright/relic-hunters/full-stack-spectating.spec.ts --trace=retain-on-failure
-
-      - name: Run Relic continuity browser tests
-        if: ${{ matrix.lane == 'relic-continuity' }}
-        env:
-          RELIC_HUNTERS_FULL_STACK: '1'
-          RELIC_HUNTERS_BUILT_PREVIEW: '1'
-        run: |
-          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
-            tests/playwright/relic-hunters/full-stack-continuity.spec.ts --trace=retain-on-failure
-
-      - name: Run Move together, scheduling and friends browser tests in both games
-        if: ${{ matrix.lane == 'move-together' }}
-        env:
-          RALLAR_ARENA_FULL_STACK: '1'
-          RELIC_HUNTERS_FULL_STACK: '1'
-          RELIC_HUNTERS_BUILT_PREVIEW: '1'
-        run: |
-          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
-            tests/playwright/ar-eye-hunter/move-together.spec.ts \
-            tests/playwright/ar-eye-hunter/scheduled-sessions.spec.ts \
-            tests/playwright/ar-eye-hunter/friends.spec.ts --project=desktop-delivery
-          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
-            tests/playwright/relic-hunters/full-stack-move-together.spec.ts \
-            tests/playwright/relic-hunters/full-stack-scheduled-sessions.spec.ts \
-            tests/playwright/relic-hunters/full-stack-friends.spec.ts --trace=retain-on-failure
-
-      - name: Run matchmaking browser tests in both games
-        if: ${{ matrix.lane == 'matchmaking' }}
-        env:
-          RALLAR_ARENA_FULL_STACK: '1'
-          RELIC_HUNTERS_FULL_STACK: '1'
-          RELIC_HUNTERS_BUILT_PREVIEW: '1'
-        run: |
-          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
-            tests/playwright/ar-eye-hunter/matchmaking.spec.ts --project=desktop-delivery
-          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
-            tests/playwright/relic-hunters/full-stack-matchmaking.spec.ts --trace=retain-on-failure
-
-      - name: Run native AR Eye tournament browser tests
-        if: ${{ matrix.lane == 'ar-eye-tournaments' }}
-        env:
-          RALLAR_ARENA_FULL_STACK: '1'
-          RALLAR_BROWSER_TIMING: '1'
-        run: |
-          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
-            tests/playwright/ar-eye-hunter/tournaments.spec.ts --project=desktop-delivery --trace=retain-on-failure
-
-      - name: Run native Relic tournament browser tests
-        if: ${{ matrix.lane == 'relic-tournaments' }}
-        env:
-          RELIC_HUNTERS_FULL_STACK: '1'
-          RALLAR_BROWSER_TIMING: '1'
-          RELIC_HUNTERS_BUILT_PREVIEW: '1'
-        run: |
-          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
-            tests/playwright/relic-hunters/full-stack-tournaments.spec.ts --trace=retain-on-failure
-
-      - name: Upload tournament browser timing
-        if: ${{ always() && (matrix.lane == 'ar-eye-tournaments' || matrix.lane == 'relic-tournaments') }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: tournament-browser-timing-${{ matrix.lane }}
-          path: |
-            apps/ar-eye-hunter-v1/test-results/**/browser-timing-*.jsonl
-            apps/relic-hunters-v1/test-results/**/browser-timing-*.jsonl
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Upload room journey observations
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: game-room-journeys-${{ matrix.lane }}
-          path: |
-            apps/ar-eye-hunter-v1/test-results/room-journeys.json
-            apps/relic-hunters-v1/test-results/room-journeys.json
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Run AR Eye real-canvas reconciliation regression
-        if: ${{ matrix.lane == 'ar-eye' }}
-        run: |
-          npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts \
-            tests/playwright/ar-eye-hunter/quick-join.spec.ts --project=desktop-delivery \
-            --grep 'director canvas shot|canvas touch aim'
-
-      - name: Run Relic opening, feedback, planning, discovery and turn lifecycle regressions
-        if: ${{ matrix.lane == 'relic' }}
-        run: |
-          npx playwright test --config apps/relic-hunters-v1/playwright.config.ts \
-            tests/playwright/relic-hunters/private-feedback.spec.ts \
-            tests/playwright/relic-hunters/opening-scene.spec.ts \
-            tests/playwright/relic-hunters/ai-planning-reply.spec.ts \
-            tests/playwright/relic-hunters/directory-freshness.spec.ts \
-            tests/playwright/relic-hunters/turn-reset.spec.ts --trace=retain-on-failure --workers=1
-
-      - name: Upload game room failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: game-room-browser-failures-${{ matrix.lane }}
-          path: |
-            apps/ar-eye-hunter-v1/test-results
-            apps/relic-hunters-v1/test-results
           if-no-files-found: warn
           retention-days: 7
 
