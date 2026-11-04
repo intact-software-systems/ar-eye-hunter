@@ -1755,7 +1755,8 @@ S3-i, the authenticated original publisher for granted room multicasts without a
 `not-subscribed` receipt class, receipted granted sends, repair and fallback under role churn, and the relay-only
 and four-role families over `rtc`. S3-ii's planning rulings PL1–PL28 are listed in its pull request; PL9–PL25,
 PL27 and PL28 are provisional for the maintainer. The proposal is deleted with S3-ii's close: it is in git history
-at `105f5392b` (#776).
+at `105f5392b` (#776), and its last tracked version, `5eeea2ea6`, corrects S3-R3's sketch first: `payload.resource`
+is signed directly, not through a SHA-256 of its bytes (D514).
 
 - **The signature and its key (D512–D514, PL27, PL28).** A detached ECDSA P-256 signature over the domain-tagged,
   positional canonical JSON of the envelope's signed fields, `proof` an optional v4 section, signed once at RTC
