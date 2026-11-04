@@ -11,6 +11,23 @@ import {
 
 describe('distributed validation risk classification', () => {
     it.each([
+        'packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts',
+        'packages/shared-server/rallar-system/websocket/outbox/compute-view-invalidation-publication.ts',
+        'packages/shared-server/rallar-system/view-watch/view-watch-service.ts',
+        'packages/shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts',
+        'packages/shared/services/ws-queue-box-client-service.ts',
+        'packages/shared/api/views/view-invalidation.ts',
+        'packages/shared-web/browser/api/subscribe-view-invalidations.ts'
+    ])('requires distributed validation when only WS view delivery changes: %s', (changedPath) => {
+        const result = classifyDistributedValidationRisk({
+            eventName: 'push',
+            changedPathRecords: [{ status: 'M', paths: [changedPath] }]
+        });
+        expect(result.selected).toBe(true);
+        expect(result.riskFamilies).toContain('realtime-routing-topology');
+    });
+
+    it.each([
         {
             family: 'distributed-protocol-controller-headless',
             path: 'apps/rallar-black-box-control-server/src/control-service.ts'

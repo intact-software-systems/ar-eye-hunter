@@ -215,6 +215,13 @@ function isRealtimeRoutingTopologyPath(changedPath) {
             'packages/shared/rtc',
             'packages/shared/webrtc',
             'packages/shared/multicast',
+            'packages/shared/api/views',
+            'packages/shared/services/ws-queue-box-server',
+            'packages/shared/services/ws-queue-box-client-service.ts',
+            'packages/shared-web/browser/api/subscribe-view-invalidations.ts',
+            'packages/shared-server/rallar-system/queue-pubsub',
+            'packages/shared-server/rallar-system/websocket/outbox',
+            'packages/shared-server/rallar-system/view-watch',
             'packages/shared-server/rallar-system/topology',
             'packages/shared-server/postgres/rtc-topology',
             'apps/api-v1/src/runtime/rtc-topology'

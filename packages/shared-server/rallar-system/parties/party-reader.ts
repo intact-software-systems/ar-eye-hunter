@@ -1,7 +1,7 @@
 import { decodePartyView, type PartyView } from '@shared/api/parties/party-view.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
-import { isPartyMemberPresent } from './party-member-presence.ts';
+import { isPartyMemberPresent } from './is-party-member-present.ts';
 import type { PartyRepository } from './persistence/party-repository.ts';
 
 export namespace PartyReader {

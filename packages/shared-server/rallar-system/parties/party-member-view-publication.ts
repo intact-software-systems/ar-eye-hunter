@@ -8,7 +8,7 @@ import { computeClientPresenceTransition } from '../client-state/mutation/client
 import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { computeViewInvalidationPublication } from '../websocket/outbox/compute-view-invalidation-publication.ts';
 import type { GuardedViewPublication } from '../websocket/outbox/guarded-view-publication.ts';
-import { isPartyMemberPresent } from './party-member-presence.ts';
+import { isPartyMemberPresent } from './is-party-member-present.ts';
 import { decodePartyRecord } from './persistence/decode-party-record.ts';
 import {
     PARTY_ACCOUNTS_NAMESPACE,

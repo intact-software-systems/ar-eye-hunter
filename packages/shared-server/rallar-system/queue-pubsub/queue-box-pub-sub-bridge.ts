@@ -11,7 +11,6 @@ import {
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundReceiptFacts } from '@shared/alm/outbound/lane/al-outbound-receipt-observation.ts';
 import type { ALWorkObservationDeferral } from '@shared/alm/work/al-work-handler.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
@@ -48,6 +47,7 @@ import {
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
 import {
     decodeQueueBoxPubSubMessage,
+    toPubSubMessage,
     type QueueBoxPubSubBridge,
     type QueueBoxPubSubMessage,
     type QueueBoxPubSubMessageKey
@@ -596,40 +596,6 @@ async function readCapturedEligibleSessionIds(
         provenScope: policy?.recipientScope,
         filterEligibleCapturedSessionIds: filter
     });
-}
-
-export interface ToPubSubMessageInput {
-    readonly channel: string;
-    readonly publisherId: string;
-    readonly entry: ResourceEntry;
-}
-
-export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMessage {
-    const { channel, publisherId, entry } = input;
-    if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
-        throw new TypeError('QueueBox cluster notifications require admitted WS outbox work');
-    }
-
-    const message = decodePersistedALMessageRow(entry);
-    const expiresAtMs = resolveALMessageExpireAtMs(message);
-    if (
-        expiresAtMs === undefined || !Number.isSafeInteger(expiresAtMs) ||
-        expiresAtMs > entry.audit.expiryTs.epochMilliseconds
-    ) {
-        throw new TypeError('Cluster notification requires a canonical logical deadline');
-    }
-    const notice: QueueBoxPubSubMessage = {
-        key: entry.key,
-        channel,
-        publisherId,
-        typeId: entry.typeId,
-        delivery: 'key',
-        expiresAtMs
-    };
-    if (!decodeQueueBoxPubSubMessage(notice, channel)) {
-        throw new TypeError('QueueBox notification exceeds physical key or wire bounds');
-    }
-    return notice;
 }
 
 async function resolveResourceEntryFromPubSubMessage(
