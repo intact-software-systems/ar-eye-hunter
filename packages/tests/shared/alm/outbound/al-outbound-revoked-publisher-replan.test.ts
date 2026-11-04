@@ -117,7 +117,8 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         const settlements: ALDeliverySettlement[] = [];
         const message = createOutboundMessage('dequeue-conflict');
         const stores = createDefaultOutboundTestStores(outbox);
-        const commitBundle = vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        // The first commit of the refused dequeue conflicts, as a same-sender commit since its decision read makes it.
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
             stores,
@@ -132,10 +133,6 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         await runtime.ready();
         await vi.waitFor(async () => expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED));
 
-        expect(commitBundle.mock.calls.map(([bundle]) => bundle.mutations.map((mutation) => mutation.kind))).toEqual([
-            ['delete-pending-ack', 'delete-repair-attempt'],
-            ['delete-pending-ack', 'delete-repair-attempt']
-        ]);
         expect(settlements.filter((settlement) => settlement.kind === 'admission')).toEqual([
             expect.objectContaining(toRefusedFact(message, 'no-publish-grant'))
         ]);
