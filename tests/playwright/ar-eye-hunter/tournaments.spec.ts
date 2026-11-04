@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
 
+import { createTournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
+import { installAnimationFrameGate } from '../../../packages/shared-test/install-animation-frame-gate.ts';
 import { toError } from '../../../packages/shared/resilience/to-error.ts';
 
-import { installAnimationFrameGate } from '../../../packages/shared-test/install-animation-frame-gate.ts';
-
 import { localStartInput } from '../local-start-input.ts';
-import { openArenaOperations, toGroupId } from '../room-player-journey.ts';
+import { openArenaOperations } from '../room-player-journey.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
     cancelPlayingTournament,
@@ -13,12 +13,7 @@ import {
     startTournamentMatch,
     tournamentMatch
 } from '../tournament-journey.ts';
-import { NativeTapCompletionGate } from './native-tap-completion-gate.ts';
-import {
-    observeArena,
-    playArenaTournament,
-    scoreWithTouch
-} from './tournament-native-play.ts';
+import { observeArenaScore, playArenaTournament } from './tournament-native-play.ts';
 
 tournamentBrowserTest.use({ hasTouch: true });
 
@@ -138,66 +133,88 @@ tournamentBrowserTest(
 );
 
 for (const completion of ['resolved', 'rejected'] as const) {
-    tournamentBrowserTest(
-        `observes a native score while tap completion is ${completion}`,
-        async ({ page, players }) => {
-            tournamentBrowserTest.skip(
-                process.env.RALLAR_ARENA_FULL_STACK !== '1',
-                'Requires native game server and SPA.'
-            );
-            tournamentBrowserTest.setTimeout(180000);
-            await registerTournament(players, 'arena');
-            await startTournamentMatch(page, [players[0], players[1]], 'semifinal-1');
-            await page.bringToFront();
-            const canvas = page.getByLabel('AR Eye Hunter gameplay canvas', { exact: true });
-            await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
-            const closeOperations = page.getByRole('button', { name: 'Close Ops', exact: true });
-            if (await closeOperations.isVisible()) {
-                await closeOperations.click();
+    test(`arena score helper observes during pending input and drains ${completion} completion`, async () => {
+        const initial = createTournamentArena({
+            gameId: 'score-helper',
+            principalIds: ['alice', 'bob'],
+            seed: 7,
+            startedAtEpochMs: 1000,
+            durationMs: 60000
+        });
+        // Controlled readback proves helper ordering only; real native scoring stays in the four journeys.
+        const positive = {
+            ...initial,
+            players: initial.players.map((player) => ({
+                ...player,
+                simulation: { ...player.simulation, combat: { ...player.simulation.combat, score: 1 } }
+            })),
+            arena: {
+                ...initial.arena,
+                players: initial.arena.players.map((player) => ({
+                    ...player,
+                    combat: { ...player.combat, score: 1 }
+                }))
             }
-            const roomId = toGroupId(await page.getByLabel('Room link', { exact: true }).inputValue());
-            const gate = new NativeTapCompletionGate(page, roomId);
-            const completionFailure = new Error('Real tap completion failed after native score');
-            const scoring = scoreWithTouch(page, roomId);
-            const result = scoring.then(() => null, toError);
-            // Hold input completion beyond the unchanged score budget; this is the ordering under test.
-            const release = setTimeout(() => {
-                if (completion === 'rejected') {
-                    gate.release.reject(completionFailure);
+        };
+        let published = initial;
+        let zeroReadsWhilePending = 0;
+        let inputPending = false;
+        let tapCount = 0;
+        let completed = false;
+        const started = Promise.withResolvers<() => boolean>();
+        const observedPositive = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const completionFailure = new Error('Scoring input completion failed');
+        const result = observeArenaScore({
+            observe: async () => {
+                if (inputPending && published.players[0].simulation.combat.score === 0) {
+                    zeroReadsWhilePending++;
                 }
-                else {
-                    gate.release.resolve();
+                if (published.players[0].simulation.combat.score === 1) {
+                    observedPositive.resolve();
                 }
-            }, 16000);
-            try {
-                expect(
-                    await Promise.race([
-                        gate.held.promise,
-                        result.then((outcome) => {
-                            throw outcome ?? new Error('Score helper returned before its real tap was held.');
-                        })
-                    ])
-                ).toBeGreaterThan(0);
-                const outcome = await result;
-                expect(outcome).toBe(completion === 'resolved' ? null : completionFailure);
-                expect(gate.maxConcurrent).toBe(1);
-                const count = gate.tapCount;
-                const observed = await observeArena(page, roomId);
-                await expect.poll(async () => (await observeArena(page, roomId)).simulatedAtEpochMs)
-                    .toBeGreaterThan(observed.simulatedAtEpochMs + 600);
-                expect(gate.tapCount).toBe(count);
+                return published;
+            },
+            tap: async (_state, isActive) => {
+                tapCount++;
+                inputPending = true;
+                started.resolve(isActive);
+                try {
+                    await release.promise;
+                }
+                finally {
+                    inputPending = false;
+                }
             }
-            finally {
-                clearTimeout(release);
-                gate.restore();
-                await result;
-                await openArenaOperations(page);
-                const bracket = page.getByRole('region', { name: 'Tournaments', exact: true });
-                await bracket.getByRole('button', { name: 'Cancel tournament', exact: true }).click();
-                await bracket.getByRole('button', { name: 'Confirm cancel tournament', exact: true }).click();
+        }).then(() => null, toError).then((outcome) => {
+            completed = true;
+            return outcome;
+        });
+        try {
+            const isActive = await started.promise;
+            await expect.poll(() => zeroReadsWhilePending).toBeGreaterThanOrEqual(2);
+            expect(tapCount).toBe(1);
+            published = positive;
+            await observedPositive.promise;
+            await expect.poll(isActive).toBe(false);
+            expect(inputPending).toBe(true);
+            expect(completed).toBe(false);
+            if (completion === 'rejected') {
+                release.reject(completionFailure);
             }
+            else {
+                release.resolve();
+            }
+            expect(await result).toBe(completion === 'resolved' ? null : completionFailure);
+            expect(tapCount).toBe(1);
+            expect(inputPending).toBe(false);
         }
-    );
+        finally {
+            published = positive;
+            release.resolve();
+            await result;
+        }
+    });
 }
 
 /** The native input normalizes zero seconds; the shared journey must supply that canonical value. */

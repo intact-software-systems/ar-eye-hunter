@@ -51,21 +51,34 @@ export async function playArenaTournament(winner: Page, opponent: Page): Promise
     }
 }
 
-export async function scoreWithTouch(page: Page, roomId: string): Promise<void> {
+async function scoreWithTouch(page: Page, roomId: string): Promise<void> {
     const viewport = page.viewportSize();
     if (!viewport) {
         throw new Error('The gameplay journey needs a viewport for touch aiming.');
     }
+    await observeArenaScore({
+        observe: () => observeArena(page, roomId),
+        tap: (state, isActive) => tapVisibleTarget({ page, state, viewport, isActive })
+    });
+}
+
+export interface ArenaScoreInput {
+    readonly observe: () => Promise<TournamentArena>;
+    readonly tap: (state: TournamentArena, isActive: () => boolean) => Promise<void>;
+}
+
+/** Observe score independently of input completion, then close and drain the issued input. */
+export async function observeArenaScore(input: ArenaScoreInput): Promise<void> {
     let observing = true;
     const taps = new SingleFlight<'tap', void>();
     let inputFailure: Error | undefined;
     let observationFailure: Error | undefined;
     try {
         await expect.poll(async () => {
-            const state = await observeArena(page, roomId);
+            const state = await input.observe();
             const score = state.players[0].simulation.combat.score;
             if (observing && score === 0 && !taps.isInFlight('tap') && inputFailure === undefined) {
-                void taps.run('tap', () => tapVisibleTarget({ page, state, viewport, isActive: () => observing }))
+                void taps.run('tap', () => input.tap(state, () => observing))
                     .catch((cause) => {
                         inputFailure = toError(cause);
                     });
@@ -125,7 +138,7 @@ async function tapVisibleTarget(input: NativeTouchInput): Promise<void> {
     }
 }
 
-export async function observeArena(page: Page, roomId: string): Promise<TournamentArena> {
+async function observeArena(page: Page, roomId: string): Promise<TournamentArena> {
     const path = `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament`;
     const response = await page.waitForResponse((candidate) =>
         candidate.request().method() === 'GET' && new URL(candidate.url()).pathname === path &&
