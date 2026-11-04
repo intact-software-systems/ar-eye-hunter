@@ -1159,6 +1159,36 @@ it('reports a typed RTC rejection as a failed recipe command with its reason', a
     expect(result.error).toMatchObject({ code: 'RALLAR_BB_RTC_SEND_FAILED', message: expect.stringContaining('Payload exceeds 8 bytes.') });
 });
 
+it.each([
+    { verdict: { kind: 'refused', reason: 'no-publish-grant', detail: 'No publish grant.' } as const, ok: true, state: 'rejected' },
+    { verdict: admittedVerdict, ok: false, state: 'queued' }
+])('makes a $state typed RTC handle the value of an rtc.send that observes rejected only when it is rejected', async ({ verdict, ok, state }) => {
+    const { runtime, native } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
+    const running = runtime.execute({ kind: 'rtc.send', commandId: 'observed-rtc', transport: 'messages.rtc', observe: 'rejected', send: { payload: true } });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    admission.resolve(verdict);
+    const result = await running;
+    expect(result.ok).toBe(ok);
+    expect(result.value).toMatchObject({ message: { state }, sendObservation: { status: state, ok } });
+    if (ok) {
+        expect(result.value).toMatchObject({ message: { failure: { kind: 'refused', reason: 'no-publish-grant' }, attempts: 0 } });
+    }
+    else {
+        expect(result.error).toMatchObject({ code: 'RALLAR_BB_RTC_SEND_NOT_REJECTED', message: `RTC send observed ${state}, not rejected.` });
+    }
+});
+
 it('keeps the authored bounded-rejection cancellation probe aligned with a real terminal handle', async () => {
     const native = await loadDeliveryRuntime();
     sendThroughProductionSender(8);

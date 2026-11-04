@@ -73,7 +73,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'scope',
             'roomRef',
             'minSnapshotVersion',
-            'transport'
+            'transport',
+            'observe'
         ]
     },
     'rtc.stream': {
@@ -310,6 +311,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     waitMatchSeverity: ['debug', 'info', 'warning', 'error'],
     rtcConnectTransport: ['realtime', 'messages.rtc', 'messages.ws'],
     rtcSendTransport: ['realtime', 'messages.rtc'],
+    rtcSendObserve: ['rejected'],
     loopUntil: ['first-success'],
     formationCommand: ['plan', 'connect', 'activate', 'reconfigure', 'pause', 'resume', 'reset', 'start'],
     httpResponseBody: ['none', 'text', 'json'],

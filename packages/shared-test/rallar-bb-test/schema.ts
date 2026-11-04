@@ -147,6 +147,7 @@ const configSchema: JsonSchema = {
 };
 
 const rtcTransportSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.rtcSendTransport };
+const rtcSendObserveSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.rtcSendObserve };
 const rtcConnectTransportSchema: JsonSchema = {
     type: 'string',
     enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.rtcConnectTransport
@@ -667,7 +668,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         scope: recordSchema,
         roomRef: recordSchema,
         minSnapshotVersion: numberSchema,
-        transport: rtcTransportSchema
+        transport: rtcTransportSchema,
+        observe: rtcSendObserveSchema
     }),
     'rtc.stream': {
         ...strictCommandSchema('rtc.stream', {

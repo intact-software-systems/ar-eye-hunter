@@ -7,6 +7,7 @@ import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSendObservation
 } from '../rallar-black-box-test-contracts.ts';
+import type { RtcSendExpectation } from '../schema/decode-rtc-send-observe.ts';
 
 import type { CommandWithId } from './browser-command-contracts.ts';
 
@@ -108,6 +109,21 @@ export function toRtcSendFailure(result: RtcSendResult): RallarBlackBoxTestError
         code: 'RALLAR_BB_RTC_PEER_SEND_FAILED',
         message: `RTC send failed for ${failedResults.length} peer(s).`,
         details: { diagnostics: result.diagnostics, failedResults }
+    };
+}
+
+/** Under `rejected` only a rejected typed handle is the send's value; any other end of the send fails it. */
+export function toExpectedRtcSendFailure(
+    result: RtcSendResult,
+    expectation: RtcSendExpectation
+): RallarBlackBoxTestError | undefined {
+    if (expectation === 'not-failed') {
+        return toRtcSendFailure(result);
+    }
+    return result.kind === 'delivery' && result.state === 'rejected' ? undefined : {
+        code: 'RALLAR_BB_RTC_SEND_NOT_REJECTED',
+        message: `RTC send observed ${toRtcSendStatus(result)}, not rejected.`,
+        details: result.diagnostics
     };
 }
 

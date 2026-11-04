@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
+import { decodeRtcSendObserve } from '../schema/decode-rtc-send-observe.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
@@ -32,6 +33,7 @@ export function validateRtcControlCommand(
         ...validateNumberField(command, 'minSnapshotVersion', 'rtc'),
         ...validateRtcTransport(command, kind),
         ...(kind === 'rtc.connect' ? validateRtcConnectReadiness(command) : []),
+        ...(kind === 'rtc.send' ? validateRtcSendObserve(command) : []),
         ...validateObjectField(command, 'rallar', 'rtc')
     ];
     return kind === 'rtc.stream' ? [...rtcIssues, ...validateRtcStreamFields(command)] : rtcIssues;
@@ -47,6 +49,13 @@ function validateRtcTransport(
     return command.transport === undefined || transports.includes(String(command.transport))
         ? []
         : [toControlCommandIssue(`rtc.transport must be ${transports.join(' or ')}.`)];
+}
+
+function validateRtcSendObserve(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    return decodeRtcSendObserve(command.observe).fold(
+        (issue) => [toControlCommandIssue(issue)],
+        () => []
+    );
 }
 
 function validateRtcConnectReadiness(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
