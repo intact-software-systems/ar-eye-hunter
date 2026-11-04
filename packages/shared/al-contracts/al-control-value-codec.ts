@@ -185,7 +185,7 @@ function decodeControlRecord(
     required: readonly string[],
     optional: readonly string[] = []
 ): ControlRecord {
-    if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
+    if (!isControlRecord(value)) {
         throw new TypeError('Control value must be a plain record');
     }
     const allowed = [...required, ...optional];
