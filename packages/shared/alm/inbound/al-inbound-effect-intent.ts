@@ -11,6 +11,7 @@ import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
+import { toALInboundEffectId } from './to-al-inbound-effect-id.ts';
 import type { ALPendingAckTransition } from './transition-al-pending-ack.ts';
 
 /**
@@ -275,11 +276,6 @@ export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundE
             status: input.status
         }
     };
-}
-
-/** The work identity of an inbound effect: its parts, each URI-encoded, joined by `:`. */
-export function toALInboundEffectId(parts: readonly (number | string)[]): string {
-    return parts.map((part) => encodeURIComponent(String(part))).join(':');
 }
 
 function toNackReason(reason: ALInboundNackPlanReason): ALNackReason {

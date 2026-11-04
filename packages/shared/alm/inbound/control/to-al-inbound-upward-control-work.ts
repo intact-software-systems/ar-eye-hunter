@@ -7,9 +7,10 @@ import {
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import type { ALInboundMessageOwner } from '../al-inbound-admission-store.ts';
-import { toALInboundEffectId, type ALInboundUpwardAck } from '../al-inbound-effect-intent.ts';
+import type { ALInboundUpwardAck } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
+import { toALInboundEffectId } from '../to-al-inbound-effect-id.ts';
 
 /** The relay a child's control reached, and the message it is about: whom its upward controls name. */
 export interface ALInboundUpwardControlContext {
