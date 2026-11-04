@@ -109,6 +109,26 @@ describe('inbound control addressing', () => {
         expect(relayObservations).toEqual([]);
     });
 
+    // I1: a WS session never relays, so a `not-subscribed` NACK it sends can only remove itself from an audience.
+    it.each(['server', 'origin'])('refuses a WS session NACK to %s that speaks for another recipient', (toPeerId) => {
+        const forged = newALNackControlMessage(
+            { v: 4, msgId: 'nack-forged', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
+            {
+                msgId: 'message-1',
+                fromPeerId: 'recipient',
+                logicalRecipientPeerId: 'another-recipient',
+                toPeerId,
+                reason: 'not-subscribed',
+                observedAtEpochMs: 1
+            }
+        );
+
+        expect(readALInboundMessageAuthorization(forged, toWsClientSource('recipient'), SERVER).left).toEqual({
+            code: 'unauthorized',
+            message: 'AL NACK from a WS session speaks for another recipient than its sender'
+        });
+    });
+
     it('refuses a nonlocal NACK and an ACK without relay authority', () => {
         const nack = newALNackControlMessage(
             { v: 4, msgId: 'nack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },

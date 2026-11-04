@@ -28,7 +28,7 @@ const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     mode: 'receiver'
 };
 
-/** A relay re-originates the `not-subscribed` NACK of each recipient below it. */
+/** Each recipient, a direct hop of the send, answers `not-subscribed` for itself. */
 async function answerNotSubscribed(
     runtime: ReturnType<typeof createDefaultOutboundTestRuntime>,
     msg: ALMessage,
@@ -36,10 +36,16 @@ async function answerNotSubscribed(
 ): Promise<void> {
     for (const logicalRecipientPeerId of outsideAudiencePeerIds) {
         const nack = newALNackControlMessage(
-            { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-outside-retry' },
+            {
+                v: 4,
+                msgId: `nack-${logicalRecipientPeerId}`,
+                ts: Date.now(),
+                senderId: logicalRecipientPeerId,
+                traceId: 'trace-outside-retry'
+            },
             {
                 msgId: msg.id.msgId,
-                fromPeerId: 'relay',
+                fromPeerId: logicalRecipientPeerId,
                 toPeerId: 'self',
                 logicalRecipientPeerId,
                 reason: 'not-subscribed',

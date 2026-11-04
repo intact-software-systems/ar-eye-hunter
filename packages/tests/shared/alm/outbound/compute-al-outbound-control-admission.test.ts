@@ -165,6 +165,21 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
         expect(origin.facts).toEqual([]);
     });
 
+    // I1: a relayed NACK comes from a next hop of this message or from a peer the receipt expects, never a bystander.
+    it('refuses a NACK from a peer that is neither a hop of the message nor a recipient the receipt expects', async () => {
+        const origin = await createOriginFixture('outside-bystander');
+
+        expect(await origin.accept(toRelayedNack(origin.msg, 'r2', 'bystander')))
+            .toBe('AL not-subscribed NACK comes from no hop or recipient of this message');
+        expect(origin.facts).toEqual([]);
+    });
+
+    it('admits a recipient\'s own NACK beside the relay\'s', async () => {
+        const origin = await createOriginFixture('outside-own');
+
+        expect(await origin.accept(toRelayedNack(origin.msg, 'r2', 'r2'))).toBe('committed');
+    });
+
     it('keeps a receipt whose every recipient is outside open, and states receipt-exhausted at its deadline', async () => {
         vi.useFakeTimers();
         const origin = await createOriginFixture('all-outside');
