@@ -12,7 +12,6 @@ import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts'
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
 import {
-    isALInboundNotSubscribedPlan,
     toALInboundAckEffect,
     toALInboundRelayedNotSubscribedEffect,
     type ALInboundAckRecipient,
@@ -20,6 +19,7 @@ import {
 } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
+import { isALInboundNotSubscribedPlan } from './al-inbound-not-subscribed-plan.ts';
 
 export interface ALInboundDuplicateChanges {
     readonly mutations: readonly ALInboundAdmissionMutation[];

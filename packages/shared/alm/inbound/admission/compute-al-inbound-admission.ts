@@ -17,11 +17,9 @@ import type {
     ALInboundMessageReadDto
 } from '../al-inbound-admission-store.ts';
 import {
-    isALInboundNotSubscribedPlan,
     toALInboundAckEffect,
     toALInboundBufferedReleaseEffects,
     toALInboundForwardingEffects,
-    toALInboundHopCompletionStatus,
     toALInboundLocalDeliveryEffects,
     toALInboundNegativeControlEffects,
     toALInboundUpwardAcks,
@@ -51,6 +49,7 @@ import {
     toALInboundDeliveryMutations,
     toALInboundSupersedenceMutations
 } from './al-inbound-delivery-mutations.ts';
+import { isALInboundNotSubscribedPlan, toALInboundHopCompletionStatus } from './al-inbound-not-subscribed-plan.ts';
 import { computeALInboundDuplicateChanges } from './compute-al-inbound-duplicate-changes.ts';
 
 interface ALInboundAdmissionChanges {
