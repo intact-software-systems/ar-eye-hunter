@@ -1241,10 +1241,15 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   `not-yet-in-sync-exhausted`. It ends nothing on its own -- the receipt budget still ends the message --
   and is one of the declared retryable outcomes below.
 
-A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop re-originated it: it moves a
-recipient the receipt still owes into the row's `outsideAudiencePeerIds` and is refused for any other peer, a
-repeat or a confirmed one, and no ACK confirms a recipient after it. The recipient's own
-`subtree-complete-not-subscribed` ACK, from a next hop, is admitted as that hop's completion and confirms nobody.
+A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop re-originated it: it comes from a
+next hop of the message or from a peer a repair may come from (a recipient the receipt expects, a unicast's addressee,
+a hop every frame passes), and a WS session's NACK speaks only for itself; it moves a recipient the receipt still owes
+into the row's `outsideAudiencePeerIds` and is refused for any other peer, a repeat or a confirmed one, and no ACK
+confirms a recipient after it. A dishonest client can thus remove itself, or a recipient it relays for, and nobody
+else. The recipient's own `subtree-complete-not-subscribed` ACK, from a next hop, is admitted as that hop's
+completion and confirms nobody; while the receipt still owes that recipient it also stands for the NACK, so a lost
+NACK records the recipient outside at once, as every relay reads it
+([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)).
 The acknowledgement a NACK states reads its hop view from the ACK history. It ends no receipt and hands nothing over:
 the row completes once every expected recipient is confirmed or outside and one is confirmed, and a receipt whose
 every recipient is outside stays open to its deadline and ends `receipt-exhausted` (PL10, PL16).
