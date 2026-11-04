@@ -23,8 +23,8 @@ import type {
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import {
-    resolveALOutboundReplanRefusalBundle,
-    resolveALOutboundReplanRefusalSettlement
+    resolveALOutboundReplanRefusalSettlement,
+    toALOutboundReplanRefusalComputed
 } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
 import {
     toALOutboundDispatchCompletionReceipt,
@@ -251,7 +251,9 @@ function toEarlyDispatchResult<TPrepared>(
         return toALOutboundComputedResult({ kind: 'expired', detail }, detail);
     }
     if (read.plan.dropReason) {
-        return toALOutboundDropComputed(input, read.plan.dropReason);
+        const verdict = toALOutboundAdmissionVerdict(read.plan);
+        const computed = toALOutboundComputedResult<TPrepared>(verdict, read.plan.dropReason);
+        return toALOutboundReplanRefusalComputed({ computed, read, intent: input.intent });
     }
     if (input.intent === 'repair' && read.plan.preparedMessages.length === 0) {
         const detail = 'Repair has no prepared recipient attempt';
@@ -265,17 +267,6 @@ function toEarlyDispatchResult<TPrepared>(
         return toALOutboundComputedResult({ kind: 'superseded', detail }, detail);
     }
     return undefined;
-}
-
-/** A dropped plan's verdict; a re-plan refused for a revoked publisher also commits the end of its receipt. */
-function toALOutboundDropComputed<TPrepared>(
-    input: ComputeALOutboundDispatchInput<TPrepared>,
-    dropReason: string
-): ALOutboundComputedDto<TPrepared> {
-    const verdict = toALOutboundAdmissionVerdict(input.read.plan);
-    const bundle = resolveALOutboundReplanRefusalBundle<TPrepared>({ read: input.read, verdict, intent: input.intent });
-    const computed = toALOutboundComputedResult<TPrepared>(verdict, dropReason);
-    return bundle === undefined ? computed : { ...computed, msg: input.read.msg, bundle };
 }
 
 function toDuplicateDispatchResult<TPrepared>(
