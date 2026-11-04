@@ -15,9 +15,9 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
+import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
-import { resolveALOutboundReplanRefusalSettlement } from './resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
