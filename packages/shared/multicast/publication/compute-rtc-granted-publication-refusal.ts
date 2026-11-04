@@ -8,6 +8,7 @@ import { Either } from '../../resilience/Either.ts';
 export const RTC_GRANTED_PUBLICATION_REFUSALS = {
     notMulticast: 'RTC carries a granted publication only as a room multicast.',
     unsigned: 'RTC carries a granted publication only signed by its origin.',
+    revokedPublisher: 'RTC re-sends a stored granted publication only while its origin holds publish.',
     leaderNotSubscribed:
         'RTC carries a granted group-leader publication only to a leader that holds subscribe on its topic.'
 } as const;

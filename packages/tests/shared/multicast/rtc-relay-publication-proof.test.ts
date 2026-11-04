@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BROWSER_STATE_CACHE_TTL_MS } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_CONTROL_REPAIR_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -50,9 +53,15 @@ const APP_TOPIC_ID = 'app.granted-feed';
 
 const GRANTS_WITH_UNSUBSCRIBED_RELAY = { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY } as const;
 
+/** The relay is a frozen recipient too, so its receipt obligation lets it ask the origin for a repair. */
+const GRANTS_WITH_SUBSCRIBED_RELAY = { ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY } as const;
+
 const GRANTED_TYPE_ID = 'room.granted-feed.v1';
 
 const MEMBERS_TYPE_ID = 'room.chat.v1';
+
+/** The receipt window of an `at-least-once` send, after which its origin retries what is unconfirmed. */
+const ACK_TIMEOUT_MS = 2_000;
 
 describe('a granted RTC publication at its relays and receivers', () => {
     beforeEach(() => {
@@ -247,6 +256,99 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(readAdmissionReasons(relay)).toEqual(['admitted', 'unauthorized: no-authority']);
     });
 
+    it.each(['replan', 'dequeue'] as const)(
+        'plans no re-send at %s of a frame its origin signed before its publish was revoked: a drop no-publish-grant',
+        async (stage) => {
+            const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+            const admitted = await admitAtOrigin(chain, 'feed-1', 'none');
+
+            chain.origin.groups.accept('room', toRevokedSnapshot(chain));
+            // The stage planner is the manager's own; element access reaches it without widening its type.
+            const plan = chain.origin.manager['planOutgoingMessage'](admitted.message, stage);
+
+            expect(plan).toMatchObject({ dropReasonCode: 'no-publish-grant', preparedMessages: [] });
+        }
+    );
+
+    it.each<[string, (chain: RelayChain) => GroupSnapshot, 'committed' | 'not-handled', number]>([
+        ['while both still hold their grants', (chain) => chain.snapshot, 'committed', 1],
+        ['after the origin\'s publish was revoked', toRevokedSnapshot, 'not-handled', 0],
+        ['after the requester\'s subscribe was revoked', (chain) => toSubscribeRevokedSnapshot(chain, 'r'), 'not-handled', 0]
+    ])('answers a frozen recipient\'s repair control for a signed frame %s with the outcome and copies named', async (_name, toSnapshot, kind, copies) => {
+        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const admitted = await admitAtOrigin(chain, 'feed-1', 'receiver');
+        const sentBefore = chain.origin.channels.r!.sent.length;
+
+        chain.origin.groups.accept('room', toSnapshot(chain));
+        const result = await chain.origin.manager.acceptControlMessage(toRepairControl(admitted.message, 'r'));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(result.kind).toBe(kind);
+        expect(chain.origin.channels.r!.sent.slice(sentBefore).map((sent) => sent.proof)).toEqual(
+            Array.from({ length: copies }, () => admitted.message.proof)
+        );
+    });
+
+    it('retries an unconfirmed receipt only toward the frozen recipients the origin\'s snapshot still lets subscribe', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const origin = createLeafOrigin(chain);
+        const admitted = await admitAt(origin, 'feed-1', 'receiver');
+
+        origin.groups.accept('room', toSubscribeRevokedSnapshot(chain, 'c'));
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(admitted.message.targets).toMatchObject({ recipientPeerIds: ['r', 'c'] });
+        expect([origin.channels.r!.sent.length, origin.channels.c!.sent.length]).toEqual([2, 1]);
+    });
+
+    it('ends the receipt of a revoked origin\'s signed frame rejected no-publish-grant at its next retry, re-sending nothing', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const origin = createLeafOrigin(chain);
+        const admitted = await admitAt(origin, 'feed-1', 'receiver');
+
+        origin.groups.accept('room', toRevokedSnapshot(chain));
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect([origin.channels.r!.sent.length, origin.channels.c!.sent.length]).toEqual([1, 1]);
+        // The admission's own verdict is the enqueue result, which the browser dispatch states; the runtime states the end.
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'admission').map(({ verdict }) => verdict)).toEqual([
+            expect.objectContaining({ kind: 'refused', reason: 'no-publish-grant' })
+        ]);
+        expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: admitted.message.id.msgId }))
+            .toBeUndefined();
+    });
+
+    it('refuses an expired stored copy of a signed frame at the native send: no submission after the signed deadline', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const admitted = await admitAtOrigin(chain, 'feed-1', 'none');
+        const copy = chain.origin.channels.r!.sent[0]!;
+        const expiresAtMs = admitted.message.constraints!.expiresAtMs!;
+
+        vi.setSystemTime(expiresAtMs);
+        // The native send is the manager's own; element access reaches it without widening its type.
+        const sent = await chain.origin.manager['sendPreparedMessage'](
+            copy,
+            { canonicalMessage: admitted.message, signal: new AbortController().signal, expiresAtMs, leaseUntilMs: undefined },
+            null
+        );
+
+        expect(sent).toMatchObject({ status: 'expired', submissionAttempted: false });
+        expect(chain.origin.channels.r!.sent).toEqual([copy]);
+    });
+
+    it('refuses a repair control that arrives on another peer\'s channel than its sender\'s: unauthorized, nothing served', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
+        const signed = await publishFromOrigin(chain, 'feed-1', 'receiver');
+        await relay.receive(signed, 'a');
+
+        // `c` names itself as the sender, but the frame arrives on the channel of `a`, the relay's other neighbour.
+        await relay.receive(toRepairControl(signed, 'c', 'r'), 'a');
+
+        expect(await relay.readSent('c')).toHaveLength(1);
+        expect(readAdmissionReasons(relay, AL_CONTROL_REPAIR_TYPE_ID)).toEqual(['unauthorized']);
+    });
+
     it('emits no inbound diagnostic that carries the payload resource', async () => {
         const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
@@ -301,22 +403,51 @@ function createRelayHop(chain: RelayChain, input: RelayHopInput): RtcRelayOverla
 }
 
 /** The transport copy the signing origin sends `r` for one granted room multicast. */
-async function publishFromOrigin(chain: RelayChain, resourceId: string): Promise<ALMessage> {
+async function publishFromOrigin(chain: RelayChain, resourceId: string, ack: 'none' | 'receiver' = 'none'): Promise<ALMessage> {
     const sentBefore = chain.origin.channels.r!.sent.length;
-    const admitted = await chain.origin.manager.enqueueLegIfAbsent(
+    await admitAtOrigin(chain, resourceId, ack);
+    return chain.origin.channels.r!.sent[sentBefore]!;
+}
+
+/** The signing origin's admission of one granted room multicast, its stored signed message included. */
+async function admitAtOrigin(chain: RelayChain, resourceId: string, ack: 'none' | 'receiver'): Promise<ALOutboundEnqueueResult> {
+    return await admitAt(chain.origin, resourceId, ack);
+}
+
+/** The chain's origin `a` with both `r` and `c` as its direct next hops, each a leaf of its accepted layout. */
+function createLeafOrigin(chain: RelayChain): RtcOriginOverlayFixture {
+    return createRtcOriginOverlayFixture({
+        snapshot: chain.snapshot,
+        nextHopPeerIds: ['r', 'c'],
+        nextHopsBySessionId: { a: ['r', 'c'], r: ['a'], c: ['a'] },
+        grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
+        publicationCrypto: chain.keys.a
+    });
+}
+
+async function admitAt(origin: RtcOriginOverlayFixture, resourceId: string, ack: 'none' | 'receiver'): Promise<ALOutboundEnqueueResult> {
+    const admitted = await origin.manager.enqueueLegIfAbsent(
         newALMulticastMessage(
             'a',
             { topicId: PUBLICATION_TOPIC_ID, resourceId, contextId: ORIGIN_ROOM.groupId },
             ORIGIN_ROOM,
             GRANTED_TYPE_ID,
             { text: `feed ${resourceId}` },
-            { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-${resourceId}` }
+            { ack, reliability: ack === 'none' ? 'best-effort' : 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
         ),
         'hold'
     );
     await vi.advanceTimersByTimeAsync(0);
     expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
-    return chain.origin.channels.r!.sent[sentBefore]!;
+    return admitted;
+}
+
+/** A recipient's request that `toPeerId`, the hop it received `message` from, send its copy again. */
+function toRepairControl(message: ALMessage, fromPeerId: string, toPeerId = 'a'): ALMessage {
+    return newALRepairControlMessage(
+        { v: 4, msgId: `repair-${fromPeerId}`, senderId: fromPeerId, ts: Date.now(), traceId: `trace-repair-${fromPeerId}` },
+        { msgId: message.id.msgId, fromPeerId, toPeerId, reason: 'retransmit', observedAtEpochMs: Date.now() }
+    );
 }
 
 /** A members-topic room multicast as the origin's transport copy to `r`. */
@@ -347,6 +478,17 @@ function toRevokedSnapshot(chain: RelayChain): GroupSnapshot {
         group: { ...chain.snapshot.group, snapshotVersion: 4 },
         publicationGrants: chain.snapshot.publicationGrants.map((grant) =>
             grant.principalId === 'a' ? { ...grant, topics: { [PUBLICATION_TOPIC_ID]: SUBSCRIBE_ONLY } } : grant
+        )
+    };
+}
+
+/** The relay's next snapshot no longer lets `principalId` subscribe: it may still publish. */
+function toSubscribeRevokedSnapshot(chain: RelayChain, principalId: string): GroupSnapshot {
+    return {
+        ...chain.snapshot,
+        group: { ...chain.snapshot.group, snapshotVersion: 4 },
+        publicationGrants: chain.snapshot.publicationGrants.map((grant) =>
+            grant.principalId === principalId ? { ...grant, topics: { [PUBLICATION_TOPIC_ID]: PUBLISH_ONLY } } : grant
         )
     };
 }

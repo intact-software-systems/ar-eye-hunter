@@ -42,6 +42,8 @@ export interface PlanRtcFailedPeerRepairInput {
     /** Absent when the origin holds no accepted layout to route by. */
     readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
     readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
+    /** Whether a missing recipient may still get a copy: a recipient refused here is skipped, never replaced. */
+    readonly isRepairTargetAdmitted: (peerId: string) => boolean;
 }
 
 export interface ToRtcTargetedRepairCopyInput {
@@ -57,6 +59,7 @@ interface RtcMissingRecipientRepairInput {
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
     readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
+    readonly isRepairTargetAdmitted: (peerId: string) => boolean;
 }
 
 /**
@@ -98,7 +101,8 @@ export function planRtcFailedPeerRepair(
             ackTracking: outgoing.ackTracking,
             request: input.request,
             frozen,
-            adjacency: input.adjacency
+            adjacency: input.adjacency,
+            isRepairTargetAdmitted: input.isRepairTargetAdmitted
         })
         : planRtcAlternateParentRepair(input);
 }
@@ -153,7 +157,7 @@ function toMissingRecipientRepairPlan(
     if (outgoing.dropReason) {
         return outgoing;
     }
-    const failed = new Set(request.failedPeerIds);
+    const failed = new Set(request.failedPeerIds.filter(input.isRepairTargetAdmitted));
     const repair = computeMissingRecipientRepair({
         frozen: frozen.recipientPeerIds,
         confirmed: frozen.recipientPeerIds.filter((peerId) => !failed.has(peerId)),
