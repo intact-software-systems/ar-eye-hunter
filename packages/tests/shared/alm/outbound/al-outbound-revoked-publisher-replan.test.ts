@@ -14,6 +14,7 @@ import { ALOutboundRepairRetransmission } from '@shared/alm/outbound/al-outbound
 import { EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
@@ -95,6 +96,51 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         expect(await readReceipt(stores, message) === undefined).toBe(stated);
     });
 
+    it('states no refusal over a receipt a same-sender commit completed after the retry read it: the conflict retries afresh', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        const stores = createDefaultOutboundTestStores();
+        const message = createOutboundMessage('ack-timeout-completed');
+        await admitDurably(stores, message, true);
+        const facts: ALOutboundSettlementFact[] = [];
+        completeReceiptAfterNextRead(stores, message);
+        const repair = createRepairAdmission(stores, facts, toRefusingPlanner('no-publish-grant'));
+
+        await expect(repair.retryPendingAck(message.id.msgId)).rejects.toBeInstanceOf(RetryableConflictError);
+        await repair.retryPendingAck(message.id.msgId);
+
+        expect(facts).toEqual([]);
+    });
+
+    it('states a dequeue\'s refusal once in its own commit, a conflicting commit leaving the retried dequeue to state it', async () => {
+        const outbox = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
+        const settlements: ALDeliverySettlement[] = [];
+        const message = createOutboundMessage('dequeue-conflict');
+        const stores = createDefaultOutboundTestStores(outbox);
+        const commitBundle = vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            stores,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage: toRefusingPlanner('no-publish-grant'),
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
+        await outbox.enqueueIfAbsent(queued);
+
+        await runtime.ready();
+        await vi.waitFor(async () => expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED));
+
+        expect(commitBundle.mock.calls.map(([bundle]) => bundle.mutations.map((mutation) => mutation.kind))).toEqual([
+            ['delete-pending-ack', 'delete-repair-attempt'],
+            ['delete-pending-ack', 'delete-repair-attempt']
+        ]);
+        expect(settlements.filter((settlement) => settlement.kind === 'admission')).toEqual([
+            expect.objectContaining(toRefusedFact(message, 'no-publish-grant'))
+        ]);
+    });
+
     it.each(REFUSAL_CASES)('a dequeue refused %s completes its row and states that refusal: %s', async (code, stated) => {
         const outbox = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
         const settlements: ALDeliverySettlement[] = [];
@@ -117,6 +163,21 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         );
     });
 });
+
+/** A same-sender commit, as a completing ACK writes, lands between the retry's read and its own commit. */
+function completeReceiptAfterNextRead(stores: OutboundTestStores, message: ReturnType<typeof createOutboundMessage>): void {
+    const readRepairMessage = stores.admissionStore.readRepairMessage.bind(stores.admissionStore);
+    vi.spyOn(stores.admissionStore, 'readRepairMessage').mockImplementationOnce(async (msgId, planner) => {
+        const read = await readRepairMessage(msgId, planner);
+        await stores.admissionStore.commitBundle({
+            senderId: message.id.senderId,
+            expectedVersion: read.clientRecord?.version,
+            mutations: [{ kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId }],
+            durableEffects: []
+        });
+        return read;
+    });
+}
 
 async function readReceipt(stores: OutboundTestStores, message: ReturnType<typeof createOutboundMessage>) {
     return await stores.admissionStore.readPendingAck({ originPeerId: message.id.senderId, msgId: message.id.msgId });

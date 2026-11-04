@@ -20,7 +20,8 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
     ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundSettlementEmitter
+    ALOutboundSettlementEmitter,
+    ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import {
     controlTargetMsgId,
@@ -38,7 +39,6 @@ import { toALOutboundEndReceiptBundle } from './control/to-al-outbound-end-recei
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
-import { writeALOutboundReplanRefusal } from './control/write-al-outbound-replan-refusal.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
@@ -235,12 +235,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const refusal = read.plan &&
             resolveALOutboundReplanRefusalSettlement(msg, toALOutboundAdmissionVerdict(read.plan));
         if (refusal) {
-            await writeALOutboundReplanRefusal({
-                admissionStore: this.admissionStore,
-                settlements: this.dependencies.settlements,
-                senderId: msg.id.senderId,
-                refusal
-            });
+            await this.commitRefusedReceipt(msg, refusal, read.clientRecord?.version);
             return;
         }
         if (pending.attempts >= pending.maxAttempts) {
@@ -269,6 +264,26 @@ export class ALOutboundRepairAdmission<TPrepared> {
         );
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound ack timeout commit conflict');
+        }
+    }
+
+    /**
+     * A re-plan refused for good ends the receipt under the version its decision read: a same-sender commit since, such
+     * as a completing ACK, conflicts and the retry decides again; the commit's success states the refusal once.
+     */
+    private async commitRefusedReceipt(
+        msg: ALMessage,
+        refusal: ALOutboundSettlementFact,
+        expectedVersion: number | undefined
+    ): Promise<void> {
+        const status = await this.admissionStore.commitBundle(
+            toALOutboundEndReceiptBundle(msg.id.senderId, msg.id.msgId, expectedVersion)
+        );
+        if (status === 'conflict') {
+            throw new RetryableConflictError('Outbound receipt refusal commit conflict');
+        }
+        if (status === 'committed') {
+            this.dependencies.settlements(refusal);
         }
     }
 

@@ -15,9 +15,7 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
-import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
-import { writeALOutboundReplanRefusal } from './control/write-al-outbound-replan-refusal.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
@@ -50,10 +48,7 @@ export namespace ALOutboundRepairRetransmission {
             | undefined;
         /** The composition's fixed hops, the sender's own beside a plan's tracked next hops; undefined for none. */
         readonly hopPeerIds: readonly string[] | undefined;
-        /**
-         * The lane's guarded emitter: where a spent repair budget states that its message is skipped, and a retransmit
-         * refused for a revoked publisher ends its receipt and states that refusal.
-         */
+        /** The lane's guarded emitter: where a spent repair budget states that its message is skipped. */
         readonly settlements: ALOutboundSettlementEmitter;
     }
 }
@@ -119,7 +114,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return;
         }
 
-        const { computed } = await this.dependencies.dispatchAdmission.commit({
+        await this.dependencies.dispatchAdmission.commit({
             msg: sent.msg,
             planner: this.dependencies.planOutgoingMessage,
             intent: 'repair',
@@ -129,15 +124,6 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 attemptIdentity: options.attemptIdentity
             }
         });
-        const refusal = resolveALOutboundReplanRefusalSettlement(sent.msg, computed.verdict);
-        if (refusal !== undefined) {
-            await writeALOutboundReplanRefusal({
-                admissionStore: this.dependencies.admissionStore,
-                settlements: this.dependencies.settlements,
-                senderId: sent.msg.id.senderId,
-                refusal
-            });
-        }
     }
 
     private async repairByMsgId(

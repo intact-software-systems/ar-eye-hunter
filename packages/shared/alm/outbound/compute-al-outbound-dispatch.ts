@@ -23,6 +23,10 @@ import type {
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import {
+    resolveALOutboundReplanRefusalBundle,
+    resolveALOutboundReplanRefusalSettlement
+} from './control/resolve-al-outbound-replan-refusal-settlement.ts';
+import {
     toALOutboundDispatchCompletionReceipt,
     type ALOutboundDispatchCompletionRead
 } from './control/to-al-outbound-dispatch-completion-receipt.ts';
@@ -247,7 +251,7 @@ function toEarlyDispatchResult<TPrepared>(
         return toALOutboundComputedResult({ kind: 'expired', detail }, detail);
     }
     if (read.plan.dropReason) {
-        return toALOutboundComputedResult(toALOutboundAdmissionVerdict(read.plan), read.plan.dropReason);
+        return toALOutboundDropComputed(input, read.plan.dropReason);
     }
     if (input.intent === 'repair' && read.plan.preparedMessages.length === 0) {
         const detail = 'Repair has no prepared recipient attempt';
@@ -261,6 +265,17 @@ function toEarlyDispatchResult<TPrepared>(
         return toALOutboundComputedResult({ kind: 'superseded', detail }, detail);
     }
     return undefined;
+}
+
+/** A dropped plan's verdict; a re-plan refused for a revoked publisher also commits the end of its receipt. */
+function toALOutboundDropComputed<TPrepared>(
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    dropReason: string
+): ALOutboundComputedDto<TPrepared> {
+    const verdict = toALOutboundAdmissionVerdict(input.read.plan);
+    const bundle = resolveALOutboundReplanRefusalBundle<TPrepared>({ read: input.read, verdict, intent: input.intent });
+    const computed = toALOutboundComputedResult<TPrepared>(verdict, dropReason);
+    return bundle === undefined ? computed : { ...computed, msg: input.read.msg, bundle };
 }
 
 function toDuplicateDispatchResult<TPrepared>(
@@ -390,7 +405,8 @@ export function toALOutboundCommitSettlements<TPrepared>(
     const completion = deletesReceipt
         ? toALOutboundDispatchCompletionReceipt(input.read)
         : undefined;
-    return [...superseded, emptyAudience, completion].filter((fact) => fact !== undefined);
+    const refusal = resolveALOutboundReplanRefusalSettlement(input.msg, toALOutboundAdmissionVerdict(input.read.plan));
+    return [...superseded, emptyAudience, completion, refusal].filter((fact) => fact !== undefined);
 }
 
 /**
