@@ -1,4 +1,4 @@
-import type { GroupMove, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
+import { GROUP_MOVE_PROPOSAL_TTL_MS, type GroupMove, type GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { PartyRepository } from '../../parties/persistence/party-repository.ts';
@@ -10,10 +10,14 @@ import type {
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { AppInboxCommandAttempt } from '../../app-inbox/app-inbox-contracts.ts';
-import { writeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { writeAppOutboxInserts, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { AuthSessionPersistence } from '../../auth/persistence/auth-session-persistence.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
+import {
+    writeGuardedViewPublication,
+    type GuardedViewPublication
+} from '../../websocket/outbox/guarded-view-publication.ts';
 import {
     createGroupMutationAuthorityProof,
     GroupMutationAuthorizationError,
@@ -37,7 +41,7 @@ import {
     type GroupMoveCommand,
     type GroupMoveIngress
 } from './group-move-command.ts';
-import type { GroupMoveDeadline } from './group-move-outbox.ts';
+import type { GroupMoveDeadline } from './group-move-deadline.ts';
 import { GroupMoveRepository, writeGroupMoveStorage } from './group-move-repository.ts';
 
 export namespace GroupMoveService {
@@ -74,9 +78,15 @@ export namespace GroupMoveService {
         readonly nowEpochMs: number;
         readonly storage: GroupMoveRepository.Read | null;
     }
-    export interface ExpiryComputed {
-        readonly result: GroupMove | null;
-        readonly mutation: Computed | null;
+    export type ExpiryComputed =
+        | { readonly kind: 'proposal-expiry'; readonly result: GroupMove | null; readonly mutation: Computed | null; }
+        | { readonly kind: 'terminal-retention'; readonly result: null; readonly publication: GuardedViewPublication; };
+    export interface AdmissionInput {
+        readonly command: GroupMoveCommand;
+        readonly previous: GroupMoveRecord | null;
+        readonly participantAuthorityLive: boolean;
+        readonly attempt: AppInboxCommandAttempt;
+        readonly nowEpochMs: number;
     }
     export interface EffectsInput {
         readonly read: Read;
@@ -178,13 +188,13 @@ export class GroupMoveService {
             pending ? selected : [],
             nowEpochMs
         );
-        const admissions = await this.readAdmissions(
+        const admissions = await this.readAdmissions({
             command,
-            previous?.value ?? null,
+            previous: previous?.value ?? null,
             participantAuthorityLive,
             attempt,
             nowEpochMs
-        );
+        });
         return {
             ingress,
             serviceId: this.config.serviceId,
@@ -246,7 +256,7 @@ export class GroupMoveService {
         actor: RuntimeStateEntryValue<PersistedAuthSession>,
         selected: readonly Pick<GroupMove['participants'][number], 'principalId' | 'sessionId'>[],
         nowEpochMs: number
-    ) {
+    ): Promise<Pick<GroupMoveService.Read, 'sessions' | 'participantAuthorityLive'>> {
         const sessions = [actor];
         let participantAuthorityLive = true;
         for (const participant of selected) {
@@ -267,42 +277,38 @@ export class GroupMoveService {
     }
 
     private async readAdmissions(
-        command: GroupMoveCommand,
-        previous: GroupMoveRecord | null,
-        participantAuthorityLive: boolean,
-        attempt: AppInboxCommandAttempt,
-        nowEpochMs: number
+        { command, previous, participantAuthorityLive, attempt, nowEpochMs }: GroupMoveService.AdmissionInput
     ): Promise<GroupCohortAdmissionParticipant[]> {
-        const admissions: GroupCohortAdmissionParticipant[] = [];
         if (
-            command.action === 'commit' && previous?.move.status === 'proposed' && participantAuthorityLive &&
-            nowEpochMs < previous.move.expiresAtEpochMs &&
-            previous.move.participants.every((participant) => participant.confirmedAtEpochMs !== null)
+            command.action !== 'commit' || previous?.move.status !== 'proposed' || !participantAuthorityLive ||
+            nowEpochMs >= previous.move.expiresAtEpochMs ||
+            previous.move.participants.some((participant) => participant.confirmedAtEpochMs === null)
         ) {
-            for (const participant of previous.move.participants) {
-                const evidence = previous.credentials.find((credential) =>
-                    credential.sessionId === participant.sessionId
-                )?.admission;
-                if (!evidence || evidence.command.operation !== 'joinGroup') {
-                    throw new TypeError('Confirmed participant admission evidence is missing');
-                }
-                const facts = toGroupMutationAttemptFacts({
-                    ingressFacts: evidence.facts,
-                    attemptCount: attempt.attemptCount,
-                    laneNowEpochMs: nowEpochMs,
-                    traceId: attempt.traceId
-                });
-                const read = await this.dependencies.mutations.read({ ...evidence, facts });
-                const targetAdmission = await this.dependencies.groups.findPresenceAdmissionEntry({
-                    ...command.destination,
-                    principalId: participant.principalId
-                });
-                admissions.push({
-                    command: evidence.command,
-                    facts,
-                    read: { ...read, targetAdmission: targetAdmission ?? null }
-                });
+            return [];
+        }
+        const admissions: GroupCohortAdmissionParticipant[] = [];
+        for (const participant of previous.move.participants) {
+            const evidence = previous.credentials.find((credential) => credential.sessionId === participant.sessionId)
+                ?.admission;
+            if (!evidence || evidence.command.operation !== 'joinGroup') {
+                throw new TypeError('Confirmed participant admission evidence is missing');
             }
+            const facts = toGroupMutationAttemptFacts({
+                ingressFacts: evidence.facts,
+                attemptCount: attempt.attemptCount,
+                laneNowEpochMs: nowEpochMs,
+                traceId: attempt.traceId
+            });
+            const read = await this.dependencies.mutations.read({ ...evidence, facts });
+            const targetAdmission = await this.dependencies.groups.findPresenceAdmissionEntry({
+                ...command.destination,
+                principalId: participant.principalId
+            });
+            admissions.push({
+                command: evidence.command,
+                facts,
+                read: { ...read, targetAdmission: targetAdmission ?? null }
+            });
         }
         return admissions;
     }
@@ -320,25 +326,28 @@ export class GroupMoveService {
         for (const admission of computed.admissions) {
             await writeGroupMutation(transaction, admission);
         }
-        for (const outbox of computed.outbox) {
-            await writeAppOutboxInsert(transaction, outbox);
-        }
+        await writeAppOutboxInserts(transaction, computed.outbox);
     }
 
     async readExpiry(command: GroupMoveDeadline, traceId: string): Promise<GroupMoveService.ExpiryRead> {
-        const previous = await this.dependencies.moves.find(command);
+        const previous = 'expiresAtEpochMs' in command ? await this.dependencies.moves.find(command) : null;
+        const matches = previous !== null && 'expiresAtEpochMs' in command &&
+            previous.value.move.createdAtEpochMs === command.expiresAtEpochMs - GROUP_MOVE_PROPOSAL_TTL_MS;
         return {
             command,
             serviceId: this.config.serviceId,
             finishedRetentionMs: this.config.finishedRetentionMs,
             traceId,
             nowEpochMs: this.config.now(),
-            storage: previous === null ? null : await this.dependencies.moves.read(previous.value.move)
+            storage: matches ? await this.dependencies.moves.read(previous.value.move) : null
         };
     }
 
     async writeExpiry(transaction: PSqlSql, computed: GroupMoveService.ExpiryComputed): Promise<void> {
-        if (computed.mutation !== null) {
+        if (computed.kind === 'terminal-retention') {
+            await writeGuardedViewPublication(transaction, computed.publication);
+        }
+        else if (computed.mutation !== null) {
             await this.write(transaction, computed.mutation);
         }
     }

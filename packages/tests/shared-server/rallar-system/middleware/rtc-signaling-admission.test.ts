@@ -31,6 +31,8 @@ const invalidIngressCases = [
     'topic',
     'payload-type',
     'page',
+    'move-route',
+    'move-type',
     AppTopics.viewInvalidated,
     AppTopics.viewResync,
     AppTopics.overlayTopology,
@@ -138,6 +140,10 @@ function invalidMessage(message: ALMessage, corruption: InvalidIngressCase): ALM
         };
     }
     switch (corruption) {
+        case 'move-route':
+            return { ...message, route: { ...message.route, topicId: AppTopics.groupMoveChanged } };
+        case 'move-type':
+            return { ...message, payload: { ...message.payload, typeId: AppTopics.groupMoveChanged } };
         case 'topic':
             return { ...message, route: { ...message.route, topicId: 'app.other' } };
         case 'payload-type':

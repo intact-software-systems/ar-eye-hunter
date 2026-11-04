@@ -18,6 +18,8 @@ export default {
             adminPrunePageTest,
             'packages/tests/shared-server/runtime-state/runtime-state-exact-predecessor.test.ts',
             'packages/tests/shared-server/rallar-system/view-watch/tournament-view-watch.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/move/group-move-service.test.ts',
+            'packages/tests/shared-server/rallar-system/group-state/move/group-move-storage.test.ts',
             'packages/tests/shared-server/rallar-system/view-watch/view-watch-authority-incarnation.test.ts',
             'packages/tests/shared-server/rallar-system/view-watch/view-watch-registration.test.ts',
             'packages/tests/shared-server/rallar-system/tournaments/tournament-service.test.ts',

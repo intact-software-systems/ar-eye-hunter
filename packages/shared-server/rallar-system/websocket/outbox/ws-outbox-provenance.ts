@@ -1,6 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
     decodeALAdmissionNumber,
@@ -17,24 +16,18 @@ import {
     decodeALSessionInvalidationAuthority,
     type ALSessionInvalidationAuthority
 } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
-import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import {
-    isKeysEqual,
-    type Key,
-    type ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
+import { type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import type { WsOutboxProducerAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
-
 import { readRuntimeStateKeyEntries } from '../../../runtime-state/read-batch/read-runtime-state-key-entries.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
-import { validateWsOutboxProvenanceTarget } from './validate-ws-outbox-provenance-target.ts';
+import { validateWsOutboxProvenance } from './validate-ws-outbox-provenance.ts';
 
 export const WS_OUTBOX_PROVENANCE_NAMESPACE = 'ws-outbox-provenance';
 
@@ -42,6 +35,7 @@ export interface WsOutboxProvenance {
     readonly version: 1;
     readonly producerKind:
         | 'view-invalidation'
+        | 'group-move'
         | 'state-sync'
         | 'auth-session-invalidation'
         | 'crdt'
@@ -145,13 +139,6 @@ export interface WsOutboxScopedPrincipalUnicastTarget {
 export interface WsOutboxScopedWorldBroadcastTarget {
     readonly kind: 'scoped-world-broadcast';
     readonly scope: StateScope;
-}
-
-interface WsOutboxProvenanceValidation {
-    readonly message: ALMessage;
-    readonly entry: ResourceEntry;
-    readonly proof: WsOutboxProvenance;
-    readonly nowMs: number;
 }
 
 export namespace WsOutboxProvenanceReader {
@@ -316,7 +303,8 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
     ]);
     if (
         proof.version !== 1 ||
-        (proof.producerKind !== 'view-invalidation' && proof.producerKind !== 'state-sync' &&
+        (proof.producerKind !== 'view-invalidation' && proof.producerKind !== 'group-move' &&
+            proof.producerKind !== 'state-sync' &&
             proof.producerKind !== 'auth-session-invalidation' &&
             proof.producerKind !== 'crdt' && proof.producerKind !== 'rtc-topology' &&
             proof.producerKind !== 'room-application')
@@ -449,73 +437,4 @@ function decodePrincipalRef(value: unknown): ClientPrincipalRef {
         workspaceId: decodeALAdmissionString(principalRef.workspaceId),
         principalId: decodeALAdmissionString(principalRef.principalId)
     };
-}
-
-function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readonly string[] {
-    const { message, entry, proof, nowMs } = input;
-    const issues: string[] = [];
-    const expiresAtMs = resolveALMessageExpireAtMs(message);
-    issues.push(...validateViewProducer(message, proof));
-    if (proof.producerKind === 'rtc-topology' || proof.producerKind === 'room-application') {
-        const principalPublication = proof.producerKind === 'room-application' &&
-            proof.target.kind === 'scoped-principal-broadcast';
-        // Principal envelopes carry no recipient list. Their committed proof freezes the audience,
-        // just as it does for client state-sync; validation below binds the exact scoped principal.
-        if (
-            !principalPublication && (
-                proof.target.kind !== 'scoped-room-broadcast' || message.targets?.mode !== 'broadcast' ||
-                !jsonEquals(message.targets.recipientPeerIds, proof.target.admittedAudience)
-            )
-        ) {
-            issues.push('Room publication provenance differs from its frozen audience');
-        }
-    }
-    if ((proof.producerKind === 'auth-session-invalidation') !== (proof.target.kind === 'exact-invalidated-session')) {
-        issues.push('WS producer kind differs from authority variant');
-    }
-    if (
-        (proof.target.kind === 'scoped-world-broadcast' || proof.target.kind === 'scoped-principal-unicast') &&
-        proof.producerKind !== 'crdt' &&
-        !(proof.target.kind === 'scoped-world-broadcast' && proof.producerKind === 'view-invalidation')
-    ) {
-        issues.push('CRDT publication variant has another producer');
-    }
-    if (
-        !isKeysEqual(proof.queueKey, entry.key) || proof.typeId !== entry.typeId ||
-        entry.typeId !== EnqueuedType.WS_OUTBOX || entry.key.topicId === 'AL_OUTBOUND_MESSAGE'
-    ) {
-        issues.push('WS provenance row identity differs');
-    }
-    if (proof.messageId !== message.id.msgId || proof.senderId !== message.id.senderId) {
-        issues.push('WS provenance message identity differs');
-    }
-    if (
-        proof.expiresAtMs !== entry.audit.expiryTs.epochMilliseconds || proof.expiresAtMs <= nowMs ||
-        expiresAtMs === undefined || expiresAtMs <= nowMs || expiresAtMs > proof.expiresAtMs
-    ) {
-        issues.push('WS provenance is expired or has an inconsistent deadline');
-    }
-    issues.push(...validateWsOutboxProvenanceTarget(message, proof.target));
-    return issues;
-}
-
-/** A reserved view envelope can only use the view publisher's exact account or public catalog authority. */
-function validateViewProducer(message: ALMessage, proof: WsOutboxProvenance): readonly string[] {
-    const issues: string[] = [];
-    if (
-        (proof.producerKind === 'view-invalidation') !==
-            (proof.target.kind === 'scoped-account-view' || proof.target.kind === 'account-view' ||
-                (proof.target.kind === 'scoped-world-broadcast' &&
-                    message.route.topicId === AppTopics.viewInvalidated &&
-                    message.payload.typeId === AppTopics.viewInvalidated))
-    ) {
-        issues.push('View invalidation producer differs from its account or public catalog authority');
-    }
-    if (
-        (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) &&
-        proof.producerKind !== 'view-invalidation'
-    ) {
-        issues.push('Reserved view topics require their committed view publisher');
-    }
-    return issues;
 }

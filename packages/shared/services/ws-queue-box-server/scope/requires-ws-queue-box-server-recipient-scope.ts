@@ -9,9 +9,13 @@ import {
 } from '../../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { AppTopics } from '../../../api/api-config.ts';
+import {
+    hasGroupMoveChangedTopic,
+    matchesGroupMoveChangedRecipient
+} from '../../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../../api/state-types.ts';
-import { decodeViewInvalidationMessage } from '../../../api/views/view-invalidation.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
+import { validateViewInvalidationAuthority } from './validate-view-invalidation-authority.ts';
 
 /** A unicast that names no group needs the scope its producer proved; a fully decoded AL control envelope is exempt. */
 export function requiresWsQueueBoxServerRecipientScope(message: ALMessage): boolean {
@@ -75,6 +79,13 @@ export function validateWsQueueBoxServerRecipientAuthority(
         return resolved.left;
     }
     const scope = resolved.right!;
+    if (hasGroupMoveChangedTopic(message)) {
+        return scope.kind === 'recipient-scope' && referenceKey?.topicId === AppTopics.groupMoveChanged &&
+                authority.admittedAudience !== undefined &&
+                matchesGroupMoveChangedRecipient(message, scope.recipientScope, scope.principalTargetId)
+            ? []
+            : ['Move Together requires its exact scoped account authority and committed queue row'];
+    }
     switch (scope.kind) {
         case 'account-view':
             return authority.admittedAudience === undefined
@@ -161,30 +172,4 @@ function validateWsQueueBoxServerDirectPrincipalBroadcastAuthority(
             principalRef.workspaceId === scope.recipientScope.workspaceId
         ? []
         : ['Direct broadcast row scope differs from captured authority'];
-}
-
-function validateViewInvalidationAuthority(
-    message: ALMessage,
-    scope: Extract<ALOutboundScopeAuthority, { kind: 'recipient-scope'; }>,
-    admittedAudience: readonly string[] | undefined
-): readonly string[] {
-    try {
-        const notice = decodeViewInvalidationMessage(message);
-        if (notice.principalId === null) {
-            return admittedAudience === undefined && scope.principalTargetId === undefined &&
-                    scope.recipientScope.applicationId === notice.scope.applicationId &&
-                    scope.recipientScope.workspaceId === notice.scope.workspaceId
-                ? []
-                : ['Public catalog requires its exact scope and live subscriber audience'];
-        }
-        return notice.scope !== null && admittedAudience !== undefined &&
-                scope.principalTargetId === notice.principalId &&
-                scope.recipientScope.applicationId === notice.scope.applicationId &&
-                scope.recipientScope.workspaceId === notice.scope.workspaceId
-            ? []
-            : ['Account view requires its exact scoped principal authority'];
-    }
-    catch {
-        return ['Account view envelope is malformed'];
-    }
 }

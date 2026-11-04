@@ -7,8 +7,7 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
-import { decodeGroupMoveClaim, type GroupMoveClaim } from '@shared/api/mutation/decode-group-move.ts';
+import type { GroupMoveClaim } from '@shared/api/mutation/decode-group-move.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
@@ -16,18 +15,24 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import { computeWsOutboxProvenanceRecord } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
-export interface GroupMoveDeadline extends GroupMoveClaim {
-    readonly expiresAtEpochMs: number;
-}
+import {
+    groupMoveDeadlineDueAt,
+    toGroupMoveDeadline,
+    type GroupMoveDeadline,
+    type GroupMoveHistoryDeadline
+} from './group-move-deadline.ts';
 
-export interface GroupMovePublicationInput {
-    readonly move: GroupMove;
-    readonly revision: number;
+interface GroupMovePublicationFacts {
     readonly createdAtEpochMs: number;
     readonly retentionMs: number;
     readonly serviceId: string;
     readonly traceId: string;
-    readonly scheduleDeadline: boolean;
+}
+
+export interface GroupMovePublicationInput extends GroupMovePublicationFacts {
+    readonly move: GroupMove;
+    readonly revision: number;
+    readonly previousStatus: GroupMove['status'] | null;
 }
 
 export interface GroupMovePublication {
@@ -35,36 +40,59 @@ export interface GroupMovePublication {
     readonly provenance: readonly RuntimeStateGuardedBatchEffect[];
 }
 
-export function decodeGroupMoveDeadline(value: unknown): GroupMoveDeadline {
-    const deadline = requireRecord(value, 'Group move deadline');
-    requireExactKeys(deadline, ['source', 'moveId', 'expiresAtEpochMs'], 'Group move deadline');
-    if (
-        typeof deadline.expiresAtEpochMs !== 'number' || !Number.isSafeInteger(deadline.expiresAtEpochMs) ||
-        deadline.expiresAtEpochMs <= 0
-    ) {
-        throw new TypeError('Group move deadline is invalid');
-    }
-    return {
-        ...decodeGroupMoveClaim({ source: deadline.source, moveId: deadline.moveId }),
-        expiresAtEpochMs: deadline.expiresAtEpochMs
-    };
+interface GroupMoveChangeInput extends GroupMovePublicationFacts {
+    readonly claim: GroupMoveClaim;
+    readonly principalIds: readonly string[];
+    readonly changeId: string;
 }
 
 export function computeGroupMovePublication(input: GroupMovePublicationInput): GroupMovePublication {
     const { move } = input;
-    const claim: GroupMoveClaim = { source: move.source, moveId: move.moveId };
+    const claim = { source: move.source, moveId: move.moveId };
+    const changes = computeGroupMoveChanges({
+        ...input,
+        claim,
+        principalIds: [...new Set(move.participants.map((participant) => participant.principalId))].sort(),
+        changeId: computeSha256CanonicalJson({
+            kind: 'transition',
+            claim,
+            moveCreatedAtEpochMs: move.createdAtEpochMs,
+            revision: input.revision
+        })
+    });
+    const deadline = toGroupMoveDeadline(move, input.previousStatus, input.retentionMs);
+    return deadline === null
+        ? changes
+        : { ...changes, outbox: [...changes.outbox, computeMoveDeadline(input, deadline)] };
+}
+
+export function computeGroupMoveHistoryPublication(
+    command: GroupMoveHistoryDeadline,
+    facts: GroupMovePublicationFacts
+): GroupMovePublication {
+    // The retained command, not a possibly reused move ID, owns this historical audience.
+    return computeGroupMoveChanges({
+        ...facts,
+        claim: { source: command.source, moveId: command.moveId },
+        principalIds: command.principalIds,
+        changeId: computeSha256CanonicalJson(command)
+    });
+}
+
+function computeGroupMoveChanges(input: GroupMoveChangeInput): GroupMovePublication {
+    const { claim } = input;
     const expiresAtMs = input.createdAtEpochMs + input.retentionMs;
     const outbox: AppOutboxInsert[] = [];
     const provenance: RuntimeStateGuardedBatchEffect[] = [];
-    for (const principalId of [...new Set(move.participants.map((participant) => participant.principalId))].sort()) {
+    for (const principalId of input.principalIds) {
         const principalRef = {
-            applicationId: move.source.applicationId,
-            workspaceId: move.source.workspaceId,
+            applicationId: claim.source.applicationId,
+            workspaceId: claim.source.workspaceId,
             principalId
         };
         const message = moveMessage(input, {
             topicId: AppTopics.groupMoveChanged,
-            identity: { claim, revision: input.revision, principalId },
+            identity: { changeId: input.changeId, principalId },
             expiresAtMs,
             targets: { mode: 'broadcast', scope: 'principal', principalRef },
             payload: claim
@@ -75,26 +103,14 @@ export function computeGroupMovePublication(input: GroupMovePublicationInput): G
             Temporal.Instant.fromEpochMilliseconds(input.createdAtEpochMs)
         );
         const record = computeWsOutboxProvenanceRecord({
-            producerKind: 'state-sync',
+            producerKind: 'group-move',
             entry,
             message,
             expiresAtMs,
-            target: {
-                kind: 'scoped-principal-broadcast',
-                principalRef,
-                admittedAudience: move.participants.filter((participant) => participant.principalId === principalId)
-                    .map((participant) => participant.sessionId).sort()
-            }
+            target: { kind: 'scoped-account-view', principalRef }
         });
-        provenance.push({
-            effectId: `move-publication:${entry.key.resourceId}`,
-            operation: 'insert',
-            ...record
-        });
+        provenance.push({ effectId: `move-publication:${entry.key.resourceId}`, operation: 'insert', ...record });
         outbox.push(computeAppOutboxInsert(entry));
-    }
-    if (input.scheduleDeadline) {
-        outbox.push(computeMoveDeadline(input, claim));
     }
     return { outbox, provenance };
 }
@@ -107,11 +123,11 @@ interface MoveMessageInput {
     readonly payload: GroupMoveClaim | GroupMoveDeadline;
 }
 
-function moveMessage(input: GroupMovePublicationInput, message: MoveMessageInput): ALMessage {
+function moveMessage(input: GroupMovePublicationFacts, message: MoveMessageInput): ALMessage {
     const route = toAppQueueKey({
         topicId: message.topicId,
         resourceId: `gm-${computeSha256CanonicalJson(message.identity).slice(7, 37)}`,
-        contextId: groupStateGroupStorageKey(input.move.source)
+        contextId: groupStateGroupStorageKey(message.payload.source)
     });
     return decodePersistedALMessageValue({
         id: {
@@ -138,13 +154,11 @@ function moveMessage(input: GroupMovePublicationInput, message: MoveMessageInput
     });
 }
 
-function computeMoveDeadline(input: GroupMovePublicationInput, claim: GroupMoveClaim): AppOutboxInsert {
-    const { move } = input;
-    const deadline: GroupMoveDeadline = { ...claim, expiresAtEpochMs: move.expiresAtEpochMs };
+function computeMoveDeadline(input: GroupMovePublicationFacts, deadline: GroupMoveDeadline): AppOutboxInsert {
     const message = moveMessage(input, {
         topicId: 'group-move.deadline',
         identity: deadline,
-        expiresAtMs: move.expiresAtEpochMs + input.retentionMs,
+        expiresAtMs: groupMoveDeadlineDueAt(deadline) + input.retentionMs,
         targets: undefined,
         payload: deadline
     });
@@ -154,7 +168,7 @@ function computeMoveDeadline(input: GroupMovePublicationInput, claim: GroupMoveC
             EnqueuedType.APP_OUTBOX,
             Temporal.Instant.fromEpochMilliseconds(input.createdAtEpochMs)
         ),
-        dequeueAudit: { attempts: 0, nextTs: Temporal.Instant.fromEpochMilliseconds(move.expiresAtEpochMs) }
+        dequeueAudit: { attempts: 0, nextTs: Temporal.Instant.fromEpochMilliseconds(groupMoveDeadlineDueAt(deadline)) }
     };
     return computeAppOutboxInsert(entry);
 }

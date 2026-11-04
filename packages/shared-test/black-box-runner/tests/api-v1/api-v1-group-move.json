@@ -30,7 +30,11 @@
     },
     "sourceId": "move-source-{runId}",
     "fullId": "move-full-{runId}",
-    "targetId": "move-target-{runId}"
+    "targetId": "move-target-{runId}",
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    }
   },
   "execution": {
     "correlation": {
@@ -46,6 +50,18 @@
         "Content-Type": "application/json"
       },
       "timeoutMs": 10000
+    },
+    "bobObserverSocket": {
+      "type": "ws",
+      "timeoutMs": 20000
+    },
+    "bobOtherScopeSocket": {
+      "type": "ws",
+      "timeoutMs": 20000
+    },
+    "spectatorSocket": {
+      "type": "ws",
+      "timeoutMs": 20000
     }
   },
   "postRunAssertions": [
@@ -151,8 +167,9 @@
           "displayName": "Move source",
           "kind": "room",
           "joinMode": "open",
-          "maxMembers": 2,
-          "createdByPrincipalId": "{aliceClientId}"
+          "maxMembers": 3,
+          "createdByPrincipalId": "{aliceClientId}",
+          "maxSpectators": 1
         }
       },
       "expect": {
@@ -244,6 +261,108 @@
             "activeMemberCount": 2
           }
         }
+      }
+    },
+    {
+      "name": "registerSpectator",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bb-move-register-spectator-{runId}",
+        "body": {
+          "username": "bb-move-spectator-{runId}",
+          "password": "{bobPassword}",
+          "displayName": "Spectator"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "loginspectator",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-group-move-spectator-{runId}",
+        "body": {
+          "username": "bb-move-spectator-{runId}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "spectatorClientId": "body.clientId",
+          "spectatorSessionId": "body.sessionId",
+          "spectatorAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivespectatorAuth",
+      "type": "set",
+      "output": "spectatorAuthHeader",
+      "secret": true,
+      "redactAs": "spectatorAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.spectatorAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinSpectatorSource",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sourceId}/join/requests/move-spectator-source-{runId}",
+        "headers": {
+          "Authorization": "{spectatorAuthHeader}",
+          "x-client-id": "{spectatorClientId}"
+        },
+        "body": {
+          "participation": "spectator"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activeMemberCount": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "connectSpectator",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sourceId}/sessions/{spectatorSessionId}/requests/move-connect-spectator-{runId}",
+        "headers": {
+          "Authorization": "{spectatorAuthHeader}",
+          "x-client-id": "{spectatorClientId}"
+        },
+        "body": {
+          "principalId": "{spectatorClientId}",
+          "generationId": "move-spectator-generation-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "move-spectator-connection-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200
       }
     },
     {
@@ -485,6 +604,322 @@
       }
     },
     {
+      "name": "loginbobObserver",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-group-move-bobObserver-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobObserverClientId": "body.clientId",
+          "bobObserverSessionId": "body.sessionId",
+          "bobObserverAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivebobObserverAuth",
+      "type": "set",
+      "output": "bobObserverAuthHeader",
+      "secret": true,
+      "redactAs": "bobObserverAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobObserverAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ticketbobObserver",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-move-ticket-bobObserver-{runId}",
+        "headers": {
+          "Authorization": "{bobObserverAuthHeader}",
+          "x-client-id": "{bobObserverClientId}"
+        },
+        "outputs": {
+          "bobObserverTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "urlbobObserver",
+      "type": "set",
+      "output": "bobObserverUrl",
+      "secret": true,
+      "redactAs": "bobObserverUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobObserverSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobObserverTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openbobObserver",
+      "type": "ws.open",
+      "connection": "bobObserverSocket",
+      "request": {
+        "url": "{bobObserverUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        },
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "loginbobOtherScope",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-group-move-bobOtherScope-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobOtherScopeClientId": "body.clientId",
+          "bobOtherScopeSessionId": "body.sessionId",
+          "bobOtherScopeAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivebobOtherScopeAuth",
+      "type": "set",
+      "output": "bobOtherScopeAuthHeader",
+      "secret": true,
+      "redactAs": "bobOtherScopeAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobOtherScopeAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ticketbobOtherScope",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-move-ticket-bobOtherScope-{runId}",
+        "headers": {
+          "Authorization": "{bobOtherScopeAuthHeader}",
+          "x-client-id": "{bobOtherScopeClientId}"
+        },
+        "outputs": {
+          "bobOtherScopeTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "urlbobOtherScope",
+      "type": "set",
+      "output": "bobOtherScopeUrl",
+      "secret": true,
+      "redactAs": "bobOtherScopeUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobOtherScopeSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobOtherScopeTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}-other"
+        ]
+      }
+    },
+    {
+      "name": "openbobOtherScope",
+      "type": "ws.open",
+      "connection": "bobOtherScopeSocket",
+      "request": {
+        "url": "{bobOtherScopeUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}-other"
+        },
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "ticketspectator",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-move-ticket-spectator-{runId}",
+        "headers": {
+          "Authorization": "{spectatorAuthHeader}",
+          "x-client-id": "{spectatorClientId}"
+        },
+        "outputs": {
+          "spectatorTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "urlspectator",
+      "type": "set",
+      "output": "spectatorUrl",
+      "secret": true,
+      "redactAs": "spectatorUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.spectatorSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.spectatorTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openspectator",
+      "type": "ws.open",
+      "connection": "spectatorSocket",
+      "request": {
+        "url": "{spectatorUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        },
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "replacementSeesPendingHistory",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves",
+        "headers": {
+          "Authorization": "{bobObserverAuthHeader}",
+          "x-client-id": "{bobObserverClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "moveId": "target-move-{runId}",
+            "status": "proposed"
+          },
+          {
+            "moveId": "full-move-{runId}",
+            "status": "denied"
+          }
+        ]
+      }
+    },
+    {
+      "name": "replacementCannotConfirmForParticipant",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetBobConfirm-{runId}-replacement",
+        "headers": {
+          "Authorization": "{bobObserverAuthHeader}",
+          "x-client-id": "{bobObserverClientId}"
+        },
+        "body": {
+          "moveId": "target-move-{runId}",
+          "source": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{sourceId}"
+          },
+          "destination": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{targetId}"
+          },
+          "action": "confirm",
+          "joinCode": null,
+          "inviteToken": null
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
       "name": "moveTargetAliceConfirm",
       "type": "http",
       "connection": "primary",
@@ -610,7 +1045,8 @@
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-moves/requests/moveTargetCommit-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
+          "x-client-id": "{aliceClientId}",
+          "x-request-id": "bb-move-commit-change-{runId}"
         },
         "body": {
           "moveId": "target-move-{runId}",
@@ -633,6 +1069,109 @@
         "status": 200,
         "body": {
           "status": "committed"
+        }
+      }
+    },
+    {
+      "name": "replacementReceivesCommittedMove",
+      "type": "ws.wait",
+      "connection": "bobObserverSocket",
+      "expect": {
+        "connection": "bobObserverSocket",
+        "withinMs": 10000,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "id": {
+            "traceId": "bb-move-commit-change-{runId}"
+          },
+          "route": {
+            "topicId": "group-move.changed"
+          },
+          "payload": {
+            "typeId": "group-move.changed",
+            "resource": {
+              "source": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "{sourceId}"
+              },
+              "moveId": "target-move-{runId}"
+            }
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "principalId": "{bobObserverClientId}"
+            }
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "otherScopeNeverReceivesMoveClaim",
+      "type": "ws.wait",
+      "connection": "bobOtherScopeSocket",
+      "expect": {
+        "connection": "bobOtherScopeSocket",
+        "withinMs": 1500,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "absent": {
+          "id": {
+            "traceId": "bb-move-commit-change-{runId}"
+          },
+          "route": {
+            "topicId": "group-move.changed"
+          },
+          "payload": {
+            "typeId": "group-move.changed",
+            "resource": {
+              "source": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "{sourceId}"
+              },
+              "moveId": "target-move-{runId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "coMemberNeverReceivesMoveClaim",
+      "type": "ws.wait",
+      "connection": "spectatorSocket",
+      "expect": {
+        "connection": "spectatorSocket",
+        "withinMs": 1500,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "absent": {
+          "id": {
+            "traceId": "bb-move-commit-change-{runId}"
+          },
+          "route": {
+            "topicId": "group-move.changed"
+          },
+          "payload": {
+            "typeId": "group-move.changed",
+            "resource": {
+              "source": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}",
+                "groupId": "{sourceId}"
+              },
+              "moveId": "target-move-{runId}"
+            }
+          }
         }
       }
     },
@@ -673,7 +1212,7 @@
         "status": 200,
         "body": {
           "group": {
-            "activeMemberCount": 2
+            "activeMemberCount": 3
           }
         }
       }
@@ -813,6 +1352,33 @@
       },
       "expect": {
         "status": 403
+      }
+    },
+    {
+      "name": "closebobObserver",
+      "type": "ws.close",
+      "connection": "bobObserverSocket",
+      "request": {
+        "code": 1000,
+        "reason": "move-history-proof-complete"
+      }
+    },
+    {
+      "name": "closebobOtherScope",
+      "type": "ws.close",
+      "connection": "bobOtherScopeSocket",
+      "request": {
+        "code": 1000,
+        "reason": "move-history-proof-complete"
+      }
+    },
+    {
+      "name": "closespectator",
+      "type": "ws.close",
+      "connection": "spectatorSocket",
+      "request": {
+        "code": 1000,
+        "reason": "move-history-proof-complete"
       }
     }
   ]

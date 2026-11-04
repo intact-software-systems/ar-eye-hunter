@@ -1,27 +1,26 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { type GroupMoveClaim } from '@shared/api/mutation/decode-group-move.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { GroupMoveRejection } from './compute-group-move.ts';
-
-import { type GroupMoveClaim } from '@shared/api/mutation/decode-group-move.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
-import type {
-    RuntimeStateGuardedBatchEffect,
-    RuntimeStateGuardedBatchWrite
-} from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatch } from '../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import { writeRuntimeStateGuardedBatch } from '../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 import { type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { groupStateChildStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+import type { GroupMoveRejection } from './compute-group-move.ts';
 import {
-    groupStateChildStorageKey,
-    groupStateGroupStorageKey,
-    groupStateScopeStorageKey
-} from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+    computeGroupMoveClaimEffects,
+    GROUP_MOVE_PARTICIPANT_LOOKUP_NAMESPACE,
+    groupMoveClaimSlots,
+    groupMoveLookupKey,
+    groupMovePrincipalKey
+} from './group-move-claims.ts';
 import {
     decodeGroupMoveRecord,
     decodeStoredGroupMoveClaim,
@@ -30,10 +29,6 @@ import {
 } from './group-move-codec.ts';
 
 export const GROUP_MOVES_NAMESPACE = 'group_moves';
-const SOURCE_CLAIMS_NAMESPACE = 'group_move_source_claims';
-const PARTICIPANT_CLAIMS_NAMESPACE = 'group_move_participant_claims';
-const PARTICIPANT_LOOKUP_NAMESPACE = 'group_move_participant_lookup';
-
 export namespace GroupMoveRepository {
     export interface ClaimRead {
         readonly kind: 'source' | 'participant' | 'lookup';
@@ -77,7 +72,7 @@ export class GroupMoveRepository {
             & Readonly<{ participants: readonly Pick<GroupMove['participants'][number], 'principalId'>[]; }>
     ): Promise<GroupMoveRepository.Read> {
         const identity = { source: move.source, moveId: move.moveId };
-        const claims = moveClaims(identity, move.participants);
+        const claims = groupMoveClaimSlots(identity, move.participants);
         const selectors = [
             { selectorId: 'move', kind: 'key' as const, namespace: GROUP_MOVES_NAMESPACE, key: moveKey(identity) },
             ...claims.map((claim, index) => ({
@@ -117,11 +112,11 @@ export class GroupMoveRepository {
         scope: Pick<GroupRef, 'applicationId' | 'workspaceId'>,
         principalId: string
     ): Promise<readonly GroupMove[]> {
-        const prefix = `${participantKey(scope, principalId)}:`;
+        const prefix = `${groupMovePrincipalKey(scope, principalId)}:`;
         const [selection] = await this.repository.readRuntimeStateBatch([{
             selectorId: 'principal',
             kind: 'prefix',
-            namespace: PARTICIPANT_LOOKUP_NAMESPACE,
+            namespace: GROUP_MOVE_PARTICIPANT_LOOKUP_NAMESPACE,
             keyPrefix: prefix
         }]);
         const nowEpochMs = this.now();
@@ -129,14 +124,14 @@ export class GroupMoveRepository {
         const moves = await Promise.all(lookups.map(async (stored) => {
             const claim = decodeStoredGroupMoveClaim(JSON.parse(stored.value));
             if (
-                stored.key !== lookupKey(claim, principalId) || claim.principalId !== principalId ||
+                stored.key !== groupMoveLookupKey(claim, principalId) || claim.principalId !== principalId ||
                 claim.source.applicationId !== scope.applicationId || claim.source.workspaceId !== scope.workspaceId
             ) {
                 throw new TypeError('Stored group move participant lookup identity differs');
             }
             const record = await this.find(claim);
-            if (!record) {
-                return null; // The shared retention deadline may pass between these reads.
+            if (!record || stored.expireAtTimestamp <= this.now()) {
+                return null; // The lookup can expire and its move ID can be reused between these reads.
             }
             if (!record.value.move.participants.some((participant) => participant.principalId === principalId)) {
                 throw new TypeError('Stored group move lookup points to a nonparticipant');
@@ -177,7 +172,7 @@ export function computeGroupMoveStorage(
     if (!previous && move.status !== 'proposed') {
         throw new TypeError('A terminal group move requires a preceding proposal');
     }
-    const claims = computeClaimEffects(input.read, move, expireAtTimestamp);
+    const claims = computeGroupMoveClaimEffects(input.read, move, expireAtTimestamp);
     return claims.mapRight((effects) =>
         computeRuntimeStateGuardedBatchWrite(validateRuntimeStateGuardedBatch({
             guard: {
@@ -186,79 +181,16 @@ export function computeGroupMoveStorage(
                 value: JSON.stringify(record),
                 expireAtTimestamp,
                 ...(previous
-                    ? { operation: 'update', expectedRevision: previous.entry.revision }
+                    ? {
+                        operation: 'update-exact',
+                        expectedRevision: previous.entry.revision,
+                        expectedValue: previous.entry.value
+                    }
                     : { operation: 'insert' })
             },
             effects
         }))
     );
-}
-
-function selectedClaims(
-    read: GroupMoveRepository.Read,
-    participants: GroupMove['participants']
-): readonly GroupMoveRepository.ClaimRead[] {
-    return moveClaims(read.identity, participants).map((expected) => {
-        const matching = read.claims.filter((claim) =>
-            claim.kind === expected.kind && claim.namespace === expected.namespace && claim.key === expected.key &&
-            claim.principalId === expected.principalId
-        );
-        if (matching.length !== 1) {
-            throw new TypeError('Group move read does not contain every selected claim exactly once');
-        }
-        return matching[0];
-    });
-}
-
-function computeClaimEffects(
-    read: GroupMoveRepository.Read,
-    move: GroupMove,
-    expireAtTimestamp: number
-): Either<GroupMoveRejection, readonly RuntimeStateGuardedBatchEffect[]> {
-    const previous = read.record;
-    const effects: RuntimeStateGuardedBatchEffect[] = [];
-    const claims = selectedClaims(read, move.participants);
-    for (const claim of claims) {
-        const current = claim.current;
-        const claimIdentity = { ...read.identity, principalId: claim.principalId };
-        const owned = current !== null && jsonEquals(current.value, claimIdentity);
-        if (previous?.value.move.status === 'proposed' && !owned) {
-            throw new TypeError('Pending group move has lost a required claim');
-        }
-        if (!previous && owned) {
-            throw new TypeError('Group move claim has no preceding proposal');
-        }
-        if (claim.kind !== 'lookup' && current && !owned) {
-            if (previous?.value.move.status !== 'proposed' && move.status !== 'proposed') {
-                continue;
-            }
-            return Either.ofLeft({
-                code: 'group-move-rejected',
-                message: 'A source room or participant already has a pending move.'
-            });
-        }
-        if (claim.kind !== 'lookup' && move.status !== 'proposed') {
-            if (current && owned) {
-                effects.push({
-                    effectId: claim.key,
-                    operation: 'delete',
-                    namespace: claim.namespace,
-                    key: claim.key,
-                    expectedRevision: current.entry.revision
-                });
-            }
-            continue;
-        }
-        effects.push({
-            effectId: `${claim.kind}:${claim.key}`,
-            namespace: claim.namespace,
-            key: claim.key,
-            value: JSON.stringify(claimIdentity),
-            expireAtTimestamp: claim.kind === 'lookup' ? expireAtTimestamp : NEVER_EXPIRE_AT_TIMESTAMP,
-            ...(current ? { operation: 'update', expectedRevision: current.entry.revision } : { operation: 'insert' })
-        });
-    }
-    return Either.ofRight(effects);
 }
 
 export async function writeGroupMoveStorage(
@@ -283,45 +215,8 @@ function decodeStoredMove(entry: RuntimeStateEntry, identity: GroupMoveClaim): R
     return { entry, value };
 }
 
-function moveClaims(
-    identity: GroupMoveClaim,
-    participants: readonly Pick<GroupMove['participants'][number], 'principalId'>[]
-): Omit<GroupMoveRepository.ClaimRead, 'current'>[] {
-    const principals = [...new Set(participants.map((participant) => participant.principalId))].sort();
-    return [
-        {
-            kind: 'source',
-            principalId: null,
-            namespace: SOURCE_CLAIMS_NAMESPACE,
-            key: groupStateGroupStorageKey(identity.source)
-        },
-        ...principals.map((principalId) => ({
-            kind: 'participant' as const,
-            principalId,
-            namespace: PARTICIPANT_CLAIMS_NAMESPACE,
-            key: participantKey(identity.source, principalId)
-        })),
-        ...principals.map((principalId) => ({
-            kind: 'lookup' as const,
-            principalId,
-            namespace: PARTICIPANT_LOOKUP_NAMESPACE,
-            key: lookupKey(identity, principalId)
-        }))
-    ];
-}
-
 function moveKey(identity: GroupMoveClaim): string {
     return groupStateChildStorageKey(identity.source, 'move', identity.moveId);
-}
-
-function participantKey(scope: Pick<GroupRef, 'applicationId' | 'workspaceId'>, principalId: string): string {
-    return `${groupStateScopeStorageKey(scope)}:principal=${encodeURIComponent(principalId)}`;
-}
-
-function lookupKey(identity: GroupMoveClaim, principalId: string): string {
-    return `${participantKey(identity.source, principalId)}:source=${
-        encodeURIComponent(identity.source.groupId)
-    }:move=${encodeURIComponent(identity.moveId)}`;
 }
 
 function moveIdentity(move: GroupMove): object {

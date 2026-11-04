@@ -1,10 +1,15 @@
-import type { GroupMove } from '@shared/api/mutation/group-move.ts';
+import { GROUP_MOVE_PROPOSAL_TTL_MS, type GroupMove } from '@shared/api/mutation/group-move.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../../auth/persistence/auth-storage-keys.ts';
-import { validateComputedEitherProjection, validateComputedProjection } from '../../computed-data-validation.ts';
+import {
+    validateComputedEitherProjection,
+    validateComputedProjection,
+    type ComputedDataValidationIssue
+} from '../../computed-data-validation.ts';
 import { PARTY_RECORDS_NAMESPACE } from '../../parties/persistence/party-account.ts';
+import { computeGuardedViewPublication } from '../../websocket/outbox/guarded-view-publication.ts';
 import type { GroupCohortAdmissionParticipant } from '../mutation/membership/compute-group-cohort-admission.ts';
 import { groupStateUpdateGroupDescriptor } from '../persistence/aggregate/group-aggregate-write-descriptors.ts';
 import {
@@ -14,7 +19,8 @@ import {
 import { computeGroupMoveAdmission, type GroupMoveAdmissionResult } from './compute-group-move-admission.ts';
 import { computeGroupMove, type GroupMoveRejection } from './compute-group-move.ts';
 import { decodeGroupMoveRecord, type GroupMoveRecord } from './group-move-codec.ts';
-import { computeGroupMovePublication } from './group-move-outbox.ts';
+import type { GroupMoveHistoryDeadline } from './group-move-deadline.ts';
+import { computeGroupMoveHistoryPublication, computeGroupMovePublication } from './group-move-outbox.ts';
 import { computeGroupMoveStorage } from './group-move-repository.ts';
 import type { GroupMoveService } from './group-move-service.ts';
 
@@ -87,7 +93,7 @@ function computeEffects(input: GroupMoveService.EffectsInput): GroupMoveService.
         retentionMs: read.finishedRetentionMs,
         serviceId: read.serviceId,
         traceId: read.traceId,
-        scheduleDeadline: read.storage.record === null
+        previousStatus: read.storage.record?.value.move.status ?? null
     });
     const storage = computeRuntimeStateGuardedBatchWrite({
         ...prepared,
@@ -141,17 +147,23 @@ function computeEffects(input: GroupMoveService.EffectsInput): GroupMoveService.
 export function validateGroupMoveMutation(
     read: GroupMoveService.Read,
     computed: Either<GroupMoveRejection, GroupMoveService.Computed>
-) {
+): readonly ComputedDataValidationIssue[] {
     return validateComputedEitherProjection(computeGroupMoveMutation(read), computed, 'group move');
 }
 
 export function computeGroupMoveExpiry(read: GroupMoveService.ExpiryRead): GroupMoveService.ExpiryComputed {
+    if ('kind' in read.command) {
+        return computeHistoryExpiry(read, read.command);
+    }
     const previous = read.storage?.record?.value;
     if (
-        !previous || previous.move.status !== 'proposed' ||
+        !previous || previous.move.createdAtEpochMs !== read.command.expiresAtEpochMs - GROUP_MOVE_PROPOSAL_TTL_MS ||
         previous.move.expiresAtEpochMs !== read.command.expiresAtEpochMs
     ) {
-        return { result: previous?.move ?? null, mutation: null };
+        return { kind: 'proposal-expiry', result: null, mutation: null };
+    }
+    if (previous.move.status !== 'proposed') {
+        return { kind: 'proposal-expiry', result: previous.move, mutation: null };
     }
     if (read.nowEpochMs < previous.move.expiresAtEpochMs) {
         throw new Error('Group move deadline is not due; retry after the deadline');
@@ -177,9 +189,10 @@ export function computeGroupMoveExpiry(read: GroupMoveService.ExpiryRead): Group
         retentionMs: read.finishedRetentionMs,
         serviceId: read.serviceId,
         traceId: read.traceId,
-        scheduleDeadline: false
+        previousStatus: previous.move.status
     });
     return {
+        kind: 'proposal-expiry',
         result,
         mutation: {
             result,
@@ -194,7 +207,41 @@ export function computeGroupMoveExpiry(read: GroupMoveService.ExpiryRead): Group
     };
 }
 
-export function validateGroupMoveExpiry(read: GroupMoveService.ExpiryRead, computed: GroupMoveService.ExpiryComputed) {
+function computeHistoryExpiry(
+    read: GroupMoveService.ExpiryRead,
+    command: GroupMoveHistoryDeadline
+): GroupMoveService.ExpiryComputed {
+    if (read.nowEpochMs < command.dueAtEpochMs) {
+        throw new Error('Group move history removal is not due');
+    }
+    const publication = computeGroupMoveHistoryPublication(command, {
+        createdAtEpochMs: read.nowEpochMs,
+        retentionMs: read.finishedRetentionMs,
+        serviceId: read.serviceId,
+        traceId: read.traceId
+    });
+    const [first, ...effects] = publication.provenance;
+    if (first?.operation !== 'insert') {
+        throw new TypeError('Move history notification lacks its first provenance insert');
+    }
+    const guard = {
+        operation: first.operation,
+        namespace: first.namespace,
+        key: first.key,
+        value: first.value,
+        expireAtTimestamp: first.expireAtTimestamp
+    };
+    return {
+        kind: 'terminal-retention',
+        result: null,
+        publication: computeGuardedViewPublication({ guard, effects }, publication.outbox)
+    };
+}
+
+export function validateGroupMoveExpiry(
+    read: GroupMoveService.ExpiryRead,
+    computed: GroupMoveService.ExpiryComputed
+): readonly ComputedDataValidationIssue[] {
     return validateComputedProjection(computeGroupMoveExpiry(read), computed, 'group move expiry');
 }
 

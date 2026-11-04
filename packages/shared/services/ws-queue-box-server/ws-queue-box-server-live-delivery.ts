@@ -1,13 +1,10 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
-import { validateALAccountViewMessage } from '../../alm/outbound/admission/al-account-view-authority.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
-import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { AppTopics } from '../../api/api-config.ts';
+import { hasGroupMoveChangedTopic } from '../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../api/state-types.ts';
-import { decodeViewInvalidationMessage } from '../../api/views/view-invalidation.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
@@ -16,6 +13,7 @@ import {
     toWsQueueBoxServerRecipientCopies,
     type WsQueueBoxServerRecipientCopies
 } from './scope/to-ws-queue-box-server-recipient-copies.ts';
+import { validateLiveSendAuthority } from './scope/validate-live-send-authority.ts';
 import type {
     WsServerInboundConnectionScopeReader,
     WsServerLiveSendFailure,
@@ -185,7 +183,8 @@ export class WsQueueBoxServerLiveDelivery {
     sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
         const { peerId, message, encoded, inboundScope } = input;
         if (
-            message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated
+            hasGroupMoveChangedTopic(message) || message.route.topicId === AppTopics.viewInvalidated ||
+            message.payload.typeId === AppTopics.viewInvalidated
         ) {
             return 0;
         }
@@ -295,52 +294,6 @@ export class WsQueueBoxServerLiveDelivery {
             connection?.isOpen === true &&
             connection.generationId === input.generations.get(recipient.connectionId);
     }
-}
-
-function validateLiveSendAuthority(input: WsServerLiveSendInputDto): readonly string[] {
-    const issues: string[] = [];
-    if (input.accountView !== undefined) {
-        const mixed = input.recipientScope !== undefined || input.inboundScope !== undefined ||
-            input.recipientPrincipalId !== undefined || input.sessionInvalidation !== undefined ||
-            input.recipientSessionIds !== undefined || input.admittedPeerIds !== undefined;
-        return mixed
-            ? ['Account view cannot carry another audience authority']
-            : validateALAccountViewMessage(input.message, input.accountView);
-    }
-    if (
-        input.message.route.topicId === AppTopics.viewInvalidated ||
-        input.message.payload.typeId === AppTopics.viewInvalidated
-    ) {
-        try {
-            const notice = decodeViewInvalidationMessage(input.message);
-            if (
-                notice.scope === null || (notice.principalId ?? undefined) !== input.recipientPrincipalId ||
-                notice.scope.applicationId !== input.recipientScope?.applicationId ||
-                notice.scope.workspaceId !== input.recipientScope.workspaceId
-            ) {
-                return ['Account view requires its exact authority'];
-            }
-        }
-        catch {
-            return ['Account view requires a valid envelope and authority'];
-        }
-    }
-    if (input.sessionInvalidation !== undefined) {
-        issues.push(...validateALSessionInvalidationMessage(input.message, input.sessionInvalidation));
-        if (input.recipientScope !== undefined || input.inboundScope !== undefined) {
-            issues.push('Session-global authority cannot carry a scoped authority');
-        }
-    }
-    else if (requiresWsQueueBoxServerRecipientScope(input.message)) {
-        issues.push(...validateALOutboundRecipientScope(input.inboundScope));
-    }
-    else if (isALWorldBroadcast(input.message)) {
-        issues.push(...validateALOutboundRecipientScope(input.recipientScope ?? input.inboundScope));
-    }
-    if (input.recipientPrincipalId !== undefined && input.recipientScope === undefined) {
-        issues.push('Principal audience requires its scope');
-    }
-    return issues;
 }
 
 function noRecipientResult(message: ALMessage): WsServerLiveSendResult {
