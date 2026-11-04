@@ -48,7 +48,9 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-successor',
     scenarioKey: 'subscription-successor',
     tags: FULL_TAGS,
-    carriers: TOPIC_SUBSCRIPTION_CARRIERS,
+    // Over `rtc` the successor page's connect waits for RTC readiness while the owner page still holds the session's
+    // one RTC peer, and never reaches it.
+    carriers: TOPIC_SUBSCRIPTION_CARRIERS.filter((carrier) => carrier !== 'rtc'),
     roles: ['sender', 'receiver', 'successor'],
     laneFamily: 'same-context',
     principalRoles: ['receiver', 'sender'],

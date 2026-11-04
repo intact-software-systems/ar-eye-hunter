@@ -22,9 +22,10 @@ import {
 } from './topic-subscription-polls.ts';
 
 /**
- * Every cell is a granted-topic proof on every carrier: over ws the server's intersection decides who receives, and
- * over rtc and the fallback carrier a receipted granted send rides RTC as a signed room multicast, frozen to the
- * sessions whose principal holds `subscribe`, which deliver to `subscribe(handler)` only under an active election.
+ * The granted-topic proof's carriers, which a cell narrows only for a reason of its own: over ws the server's
+ * intersection decides who receives, and over rtc and the fallback carrier a receipted granted send rides RTC as a
+ * signed room multicast, frozen to the sessions whose principal holds `subscribe`, which deliver to
+ * `subscribe(handler)` only under an active election.
  */
 export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 

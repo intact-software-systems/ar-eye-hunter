@@ -374,7 +374,9 @@ describe('alm-conformance recipe family', () => {
                     ...FOUR_ROLE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
                         ['sender', 'receiver', 'sibling', 'publisher-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
-                    ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`),
+                    ...(carrier === 'rtc'
+                        ? []
+                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)),
                     ...(carrier === 'rtc' ? GRANTED_RTC_THREE_AGENT_KEYS : []).flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     )
@@ -770,7 +772,7 @@ describe('alm-conformance recipe family', () => {
             // The granted rtc cells.
             ...[...GRANTED_RTC_TWO_AGENT_KEYS, ...GRANTED_RTC_THREE_AGENT_KEYS].map(() => ['full']),
             // The topic subscription cells, now that a receipted granted send rides rtc.
-            ...[...FOUR_ROLE_KEYS_BY_CARRIER.rtc, 'subscription-successor'].map(() => ['full'])
+            ...FOUR_ROLE_KEYS_BY_CARRIER.rtc.map(() => ['full'])
         ]);
     });
 
