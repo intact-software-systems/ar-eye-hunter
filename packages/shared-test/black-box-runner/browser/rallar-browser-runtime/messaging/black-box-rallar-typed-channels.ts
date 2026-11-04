@@ -203,7 +203,7 @@ export class BlackBoxRallarTypedChannels {
 
     /**
      * A combined recipe keeps its authored topic selector on WS; RTC subscribes once per type it must hear, and not at
-     * all on a granted topic, which never rides RTC.
+     * all on a granted topic, whose RTC copies only an election hears (`toElectionHandler`).
      */
     #subscribeSelector(config: BlackBoxRallarConnectionConfig, connectSelector: BlackBoxRallarMessageSelector): void {
         const selector = toRallarMessageSelector(connectSelector);
