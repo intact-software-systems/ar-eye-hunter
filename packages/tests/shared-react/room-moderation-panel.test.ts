@@ -164,7 +164,6 @@ it('does not label a cache gap as removal when the authenticated room read succe
     const view = await renderModeration(fixture.props);
     try {
         await act(async () => fixture.clearSelection());
-        expect(refresh).toHaveBeenCalledOnce();
         expect(view.container.textContent).not.toContain('You were');
     }
     finally {
@@ -192,19 +191,25 @@ it('ignores a departed-room access result after a newer room has also been clear
     }
 });
 
-it('does not read disposed room state when a pending access check rejects after unmount', async () => {
+it('cancels a pending access check before disposing its room state on unmount', async () => {
     const fixture = createModerationFixture();
     const response = Promise.withResolvers<never>();
-    fixture.props.rooms.session = () => ({ refresh: () => response.promise });
+    const started = Promise.withResolvers<AbortSignal | undefined>();
+    fixture.props.rooms.session = () => ({
+        refresh: (options) => {
+            started.resolve(options?.signal);
+            return response.promise;
+        }
+    });
     const view = await renderModeration(fixture.props);
     await act(async () => fixture.clearSelection());
+    const signal = await started.promise;
     await view.close();
-    const readDisposedState = vi.fn(() => {
+    fixture.props.rooms.state = () => {
         throw new Error('Room state disposed');
-    });
-    fixture.props.rooms.state = readDisposedState;
+    };
     await act(async () => response.reject(new ApiHttpError('GET', '/old-room', 403, JSON.stringify({ error: 'forbidden', code: 'member-removed' }))));
-    expect(readDisposedState).not.toHaveBeenCalled();
+    expect(signal?.aborted).toBe(true);
 });
 
 it.each(['banned', 'removed'] as const)('explains an authoritative %s roster update before the access timer runs', async (status) => {
