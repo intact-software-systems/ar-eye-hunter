@@ -68,7 +68,8 @@ export function useArenaWorldActions(
         ]
     );
     const publishArenaSnapshot = useCallback(
-        (snapshot: ArenaSnapshot) => publishCurrentArenaSnapshot(input, snapshot),
+        (snapshot: ArenaSnapshot, expected: ArenaSnapshot | undefined) =>
+            publishCurrentArenaSnapshot(input, snapshot, expected),
         [
             input.isNetworkEnabled,
             input.isCurrentNetworkGeneration,
@@ -188,18 +189,25 @@ async function sendArenaRematchCommand(input: ArenaWorldActionsInput, draft: Are
     }
 }
 
-function publishCurrentArenaSnapshot(input: ArenaWorldActionsInput, snapshot: ArenaSnapshot): void {
+function publishCurrentArenaSnapshot(
+    input: ArenaWorldActionsInput,
+    snapshot: ArenaSnapshot,
+    expected: ArenaSnapshot | undefined
+): boolean {
     const director = input.directorStatusRef.current;
     if (!input.isNetworkEnabled() || isCurrentArenaSpectator() || !director.isDirector || !director.isFresh) {
-        return;
+        return false;
     }
     const generation = input.networkGenerationRef.current;
     const previous = input.arenaSnapshotRef.current;
-    if (previous && snapshot.revision < previous.revision) {
-        return;
+    if (
+        previous !== expected || snapshot.roomId !== input.roomIdRef.current ||
+        previous && snapshot.revision < previous.revision
+    ) {
+        return false;
     }
     input.setArenaSnapshot((current) =>
-        input.isCurrentNetworkGeneration(generation) && (!current || snapshot.revision >= current.revision)
+        input.isCurrentNetworkGeneration(generation) && current === expected
             ? snapshot
             : current
     );
@@ -208,6 +216,7 @@ function publishCurrentArenaSnapshot(input: ArenaWorldActionsInput, snapshot: Ar
         input.scheduleReliableArenaSnapshot(snapshot, generation);
         publishArenaMatchEnd(input, toArenaMatchEndedMessage(previous, snapshot), generation);
     }
+    return true;
 }
 
 function publishArenaMatchEnd(

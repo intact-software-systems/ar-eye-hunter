@@ -420,7 +420,7 @@ describe('arena match lifecycle delivery', () => {
         const match = createMatchFixture(Date.now());
         const delivery = await renderDirector(arena, match.active);
 
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
 
         expect(mockMatch.publishEvent).toHaveBeenCalledWith(
             { protocol: 'ar-eye-hunter.v1', kind: 'director-match-ended', accepted: match.endedAccepted },
@@ -448,7 +448,7 @@ describe('arena match lifecycle delivery', () => {
     it('keeps a late joiner out of the expected set the receipt froze at admission', async () => {
         const match = createMatchFixture(Date.now());
         const delivery = await renderDirector(arena, match.active);
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
             currentRoomId: 'arena-1',
@@ -487,7 +487,7 @@ describe('arena match lifecycle delivery', () => {
         });
         const publication = Promise.withResolvers<Awaited<ReturnType<typeof mockMatch.publishEvent>>>();
         mockMatch.publishEvent.mockReturnValueOnce(publication.promise);
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
 
         await arena.unmount();
         await act(async () => {
@@ -501,8 +501,8 @@ describe('arena match lifecycle delivery', () => {
     it('publishes the match end once per completed match', async () => {
         const match = createMatchFixture(Date.now());
         await renderDirector(arena, match.active);
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
-        await act(async () => arena.current?.publishArenaSnapshot({ ...match.ended, revision: match.ended.revision + 1 }));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
+        await act(async () => void arena.current?.publishArenaSnapshot({ ...match.ended, revision: match.ended.revision + 1 }, arena.current?.arenaSnapshot));
         expect(mockMatch.publishEvent).toHaveBeenCalledTimes(1);
     });
 
@@ -519,8 +519,8 @@ describe('arena match lifecycle delivery', () => {
         });
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
-        await act(async () => arena.current?.publishArenaSnapshot(match.active));
-        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.active, arena.current?.arenaSnapshot));
+        await act(async () => void arena.current?.publishArenaSnapshot(match.ended, arena.current?.arenaSnapshot));
         expect(mockMatch.publishEvent).not.toHaveBeenCalled();
         expect(arena.current?.matchDelivery).toBeUndefined();
     });
@@ -710,7 +710,7 @@ async function renderDirector(arena: ArenaRuntimeTestHarness, initial: ArenaSnap
     });
     await arena.render();
     await waitForState(() => arena.current?.connectionState === 'connected');
-    await act(async () => arena.current?.publishArenaSnapshot(initial));
+    await act(async () => void arena.current?.publishArenaSnapshot(initial, arena.current?.arenaSnapshot));
     mockMatch.publishEvent.mockClear();
     return delivery;
 }

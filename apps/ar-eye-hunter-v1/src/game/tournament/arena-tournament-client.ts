@@ -7,13 +7,20 @@ import type { TournamentArenaInput } from '@ar-eye-hunter/tournament-arena.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { AuthenticatedResource } from '@shared-web/browser/api/authenticated-resource.ts';
 import { sendApiHttpRequest } from '@shared-web/browser/api/send-api-http-request.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import { BrowserActivity } from '@shared-web/browser/browser-activity.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { requireEpoch, requireExactKeys, requireOneOf, requireRecord } from '@shared/api/exact-object-decoding.ts';
+import {
+    requireEpoch,
+    requireExactKeys,
+    requireOneOf,
+    requireRecord
+} from '@shared/api/exact-object-decoding.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { wrapRallarMotionAngle } from '@shared/rallar-motion/math.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { ARENA_ROOM_SCOPE } from '../arena-runtime/arena-room-entry.ts';
 
@@ -26,6 +33,13 @@ export namespace ArenaTournamentClient {
         readonly yaw: number;
         readonly pitch: number;
     }
+    export interface PendingShot extends Controls {
+        readonly sessionKey: string;
+    }
+    export interface Authority {
+        readonly sessionKey: string;
+        readonly inputSequence: number;
+    }
 }
 
 /** Browser controls are proposals; every displayed score and position comes from the native game owner. */
@@ -33,7 +47,9 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
     private readonly controlsDependencies: AuthenticatedResource.Dependencies;
     private sequence = 0;
     private lastSentAtEpochMs = 0;
-    private pendingShot: { readonly principalId: string; readonly yaw: number; readonly pitch: number; } | null = null;
+    private pendingShot: ArenaTournamentClient.PendingShot | null = null;
+    private controlsSubscriptions: SubscriptionScope | null = null;
+    private cancelPendingShot: (() => void) | null = null;
 
     static createBrowser(roomId: string): ArenaTournamentClient {
         const dependencies: AuthenticatedResource.Dependencies = {
@@ -87,43 +103,120 @@ export class ArenaTournamentClient extends AuthenticatedResource<ArenaTournament
         this.controlsDependencies = dependencies;
     }
 
+    override start(): Promise<void> {
+        if (this.controlsSubscriptions === null) {
+            this.controlsSubscriptions = new SubscriptionScope();
+            this.controlsSubscriptions.add(this.onChange(() => this.progressPendingShot()));
+            this.controlsSubscriptions.add(
+                this.controlsDependencies.activity.onChange(() => this.progressPendingShot())
+            );
+        }
+        return super.start();
+    }
+
+    override stop(): void {
+        this.clearPendingShot();
+        const subscriptions = this.controlsSubscriptions;
+        this.controlsSubscriptions = null;
+        try {
+            subscriptions?.unsubscribe();
+        }
+        finally {
+            super.stop();
+        }
+    }
+
     sendControls(input: ArenaTournamentClient.Controls): void {
-        const view = this.getState();
-        const tournament = view.view?.tournament;
-        const principalId = this.controlsDependencies.auth.session()?.clientId;
-        const player = tournament?.state?.players.find((candidate) => candidate.principalId === principalId);
-        if (
-            !player || tournament?.status !== 'playing' || tournament.state?.arena.match?.status !== 'active' ||
-            !this.controlsDependencies.activity.isActive()
-        ) {
+        const authority = this.resolveControlsAuthority();
+        if (authority === null) {
+            this.clearPendingShot();
             return;
         }
-        if (this.pendingShot?.principalId !== principalId) {
-            this.pendingShot = null;
+        if (this.pendingShot?.sessionKey !== authority.sessionKey) {
+            this.clearPendingShot();
         }
         if (input.controls.fire) {
-            this.pendingShot = { principalId: player.principalId, yaw: input.yaw, pitch: input.pitch };
+            this.pendingShot = { ...input, controls: { ...input.controls }, sessionKey: authority.sessionKey };
         }
+        else if (this.pendingShot !== null) {
+            this.pendingShot = { ...this.pendingShot, controls: { ...input.controls } };
+        }
+        const view = this.getState();
         const now = this.controlsDependencies.timers.nowMs();
         if (view.busy || now - this.lastSentAtEpochMs < 50) {
+            this.progressPendingShot();
             return;
         }
         this.lastSentAtEpochMs = now;
         if (view.retryPending) {
+            this.clearPendingShot();
             void this.retry();
             return;
         }
-        this.sequence = Math.max(this.sequence, player.input.sequence) + 1;
+        this.sequence = Math.max(this.sequence, authority.inputSequence) + 1;
         const shot = this.pendingShot;
-        const controls = { ...input.controls, fire: shot !== null };
-        this.pendingShot = null;
+        this.clearPendingShot();
         void this.act({
-            ...input,
             yaw: wrapRallarMotionAngle(shot?.yaw ?? input.yaw, Math.PI * 2),
             pitch: shot?.pitch ?? input.pitch,
-            controls,
+            controls: { ...input.controls, fire: shot !== null },
             sequence: this.sequence
         });
+    }
+
+    private resolveControlsAuthority(): ArenaTournamentClient.Authority | null {
+        const tournament = this.getState().view?.tournament;
+        const session = this.controlsDependencies.auth.session();
+        const player = tournament?.state?.players.find((candidate) => candidate.principalId === session?.clientId);
+        return this.controlsSubscriptions !== null && session && player && tournament?.status === 'playing' &&
+                tournament.state?.arena.match?.status === 'active' && this.controlsDependencies.activity.isActive()
+            ? { sessionKey: toAuthSessionKey(session), inputSequence: player.input.sequence }
+            : null;
+    }
+
+    private progressPendingShot(): void {
+        this.cancelPendingShot?.();
+        this.cancelPendingShot = null;
+        const shot = this.pendingShot;
+        if (shot === null) {
+            return;
+        }
+        const authority = this.resolveControlsAuthority();
+        const view = this.getState();
+        if (
+            authority === null || shot.sessionKey !== authority.sessionKey || view.error !== null || view.retryPending
+        ) {
+            this.pendingShot = null;
+            return;
+        }
+        if (view.busy) {
+            return;
+        }
+        const delayMs = Math.max(0, 50 - (this.controlsDependencies.timers.nowMs() - this.lastSentAtEpochMs));
+        this.cancelPendingShot = this.controlsDependencies.timers.schedule(() => this.writePendingShot(), delayMs);
+    }
+
+    private writePendingShot(): void {
+        this.cancelPendingShot = null;
+        const shot = this.pendingShot;
+        const authority = this.resolveControlsAuthority();
+        const view = this.getState();
+        if (
+            shot === null || authority === null || shot.sessionKey !== authority.sessionKey || view.error !== null ||
+            view.retryPending
+        ) {
+            this.clearPendingShot();
+            return;
+        }
+        if (!view.busy) {
+            this.sendControls({ controls: { ...shot.controls, fire: false }, yaw: shot.yaw, pitch: shot.pitch });
+        }
+    }
+
+    private clearPendingShot(): void {
+        this.cancelPendingShot?.();
+        this.cancelPendingShot = null;
+        this.pendingShot = null;
     }
 }
 

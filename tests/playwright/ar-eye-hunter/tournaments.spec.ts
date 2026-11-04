@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
+
+import { installAnimationFrameGate } from '../../../packages/shared-test/install-animation-frame-gate.ts';
+
 import { localStartInput } from '../local-start-input.ts';
+import { openArenaOperations } from '../room-player-journey.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
     cancelPlayingTournament,
@@ -48,6 +52,81 @@ tournamentBrowserTest(
         );
         tournamentBrowserTest.setTimeout(180000);
         await cancelPlayingTournament(players, 'arena');
+    }
+);
+
+tournamentBrowserTest(
+    'a queued native canvas shot progresses while animation frames remain paused',
+    async ({ page, players }) => {
+        tournamentBrowserTest.skip(
+            process.env.RALLAR_ARENA_FULL_STACK !== '1',
+            'Requires the native game server and built SPA.'
+        );
+        tournamentBrowserTest.setTimeout(180000);
+        await page.addInitScript(installAnimationFrameGate);
+        await registerTournament(players, 'arena');
+        await startTournamentMatch(page, [players[0], players[1]], 'semifinal-1');
+        await page.bringToFront();
+        const canvas = page.getByLabel('AR Eye Hunter gameplay canvas', { exact: true });
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await expect(canvas).toHaveAttribute('data-arena-match-id', /.+/);
+        const closeOperations = page.getByRole('button', { name: 'Close Ops', exact: true });
+        if (await closeOperations.isVisible()) {
+            await closeOperations.click();
+        }
+        const bounds = await canvas.boundingBox();
+        if (!bounds) {
+            throw new Error('The visible native gameplay canvas must have a bounding box.');
+        }
+        const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+        expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, point)).toBe('CANVAS');
+        const heldInput = Promise.withResolvers<number>();
+        const release = Promise.withResolvers<void>();
+        let holding = false;
+        const inputRoute = '**/api/ar-eye/rooms/*/tournament/inputs/requests/*';
+        await page.route(inputRoute, async (route) => {
+            const request = route.request();
+            const input = request.postDataJSON();
+            if (holding || request.method() !== 'POST' || input?.controls?.fire !== false) {
+                await route.continue();
+                return;
+            }
+            holding = true;
+            const response = await route.fetch();
+            expect(response.status()).toBe(200);
+            heldInput.resolve(input.sequence);
+            await release.promise;
+            await route.fulfill({ response });
+        });
+        try {
+            const previousSequence = await heldInput.promise;
+            const fired = page.waitForResponse((response) =>
+                response.request().method() === 'POST' &&
+                /\/tournament\/inputs\/requests\//.test(response.url()) &&
+                response.request().postDataJSON()?.controls?.fire === true
+            );
+            await page.evaluate(() => window.dispatchEvent(new Event('test-pause-animation-frames')));
+            await page.touchscreen.tap(point.x, point.y);
+            release.resolve();
+            const response = await fired;
+            expect(response.status()).toBe(200);
+            expect(response.request().postDataJSON().sequence).toBeGreaterThan(previousSequence);
+            expect(await response.json()).toMatchObject({ status: 'applied' });
+        }
+        finally {
+            release.resolve();
+            await page.evaluate(() => window.dispatchEvent(new Event('test-resume-animation-frames')));
+            await page.unroute(inputRoute);
+            await openArenaOperations(page);
+            const bracket = page.getByRole('region', { name: 'Tournaments', exact: true });
+            await bracket.getByRole('button', { name: 'Cancel tournament', exact: true }).click();
+            await bracket.getByRole('button', { name: 'Confirm cancel tournament', exact: true }).click();
+            for (const player of [players[0], players[1]]) {
+                const notice = player.getByRole('dialog', { name: 'Tournament match cancelled', exact: true });
+                await expect(notice).toBeVisible();
+                await notice.getByRole('button', { name: 'Return to tournament bracket', exact: true }).click();
+            }
+        }
     }
 );
 

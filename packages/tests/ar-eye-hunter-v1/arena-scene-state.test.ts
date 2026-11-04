@@ -81,7 +81,7 @@ describe('scene authority and prediction', () => {
         expect(scene.getSimulation().revision).toBe(snapshot.revision);
         expect(scene.getSimulation().pickups).toHaveLength(1);
         const published = toArenaSnapshot(scene.getSimulation(), 'arena', 4_000);
-        scene.setPublishedSnapshot(published);
+        scene.publishSnapshot(published, () => true);
         const scheduled = scene.getSimulation().nextPickupAtEpochMs;
         scene.reconcile(observation(published, director));
         expect(scene.getSimulation().nextPickupAtEpochMs).toBe(scheduled);

@@ -115,15 +115,14 @@ function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
 function useArenaTransport(state: ReturnType<typeof useArenaRuntimeState>) {
     const transport = useArenaNetworkTransportSupport({
         nowMs: Date.now,
+        arenaSnapshotRef: state.arenaSnapshotRef,
         arenaMatchRef: state.arenaMatchRef,
-        clearPendingReliableArenaSnapshot: state.clearPendingReliableArenaSnapshot,
         directorStatusRef: state.directorStatusRef,
         isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
         networkGenerationRef: state.networkGenerationRef,
         reliableSnapshotLastSentAtRef: state.reliableSnapshotLastSentAtRef,
         reliableSnapshotLastSentRevisionRef: state.reliableSnapshotLastSentRevisionRef,
-        reliableSnapshotPendingRef: state.reliableSnapshotPendingRef,
-        reliableSnapshotTimerRef: state.reliableSnapshotTimerRef,
+        reliableSnapshotTimer: state.reliableSnapshotTimer,
         roomIdRef: state.roomIdRef,
         setTransportDiagnostics: state.setTransportDiagnostics
     });

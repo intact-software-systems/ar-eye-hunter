@@ -1,5 +1,11 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type {
+    Dispatch,
+    RefObject,
+    SetStateAction
+} from 'react';
 import { useCallback } from 'react';
+
+import type { LatestValueTimer } from '@shared/resilience/timing/latest-value-timer.ts';
 
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
@@ -12,14 +18,13 @@ const ARENA_RELIABLE_SNAPSHOT_MIN_INTERVAL_MS = 1_000;
 interface ArenaNetworkTransportSupportInput {
     readonly nowMs: () => number;
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
-    readonly clearPendingReliableArenaSnapshot: () => void;
+    readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
     readonly directorStatusRef: RefObject<RallarDirectorStatus>;
     readonly isCurrentNetworkGeneration: (generation: number) => boolean;
     readonly networkGenerationRef: RefObject<number>;
     readonly reliableSnapshotLastSentAtRef: RefObject<number | undefined>;
     readonly reliableSnapshotLastSentRevisionRef: RefObject<number | undefined>;
-    readonly reliableSnapshotPendingRef: RefObject<ArenaSnapshot | undefined>;
-    readonly reliableSnapshotTimerRef: RefObject<number | undefined>;
+    readonly reliableSnapshotTimer: LatestValueTimer<ArenaSnapshot>;
     readonly roomIdRef: RefObject<string | undefined>;
     readonly setTransportDiagnostics: Dispatch<SetStateAction<ArenaTransportDiagnostics>>;
 }
@@ -113,7 +118,7 @@ function useSendReliableArenaSnapshot(
 ): (snapshot: ArenaSnapshot, generation: number) => void {
     return useCallback(
         (snapshot: ArenaSnapshot, generation: number) => {
-            if (!input.isCurrentNetworkGeneration(generation)) {
+            if (!input.isCurrentNetworkGeneration(generation) || input.arenaSnapshotRef.current !== snapshot) {
                 return;
             }
             const currentRoomId = input.roomIdRef.current;
@@ -164,7 +169,7 @@ function useScheduleReliableArenaSnapshot(
             ) {
                 return;
             }
-            const pendingSnapshot = input.reliableSnapshotPendingRef.current;
+            const pendingSnapshot = input.reliableSnapshotTimer.getPending();
             if (pendingSnapshot && snapshot.revision <= pendingSnapshot.revision) {
                 return;
             }
@@ -175,31 +180,17 @@ function useScheduleReliableArenaSnapshot(
                 lastSentAt === undefined ||
                 now - lastSentAt >= ARENA_RELIABLE_SNAPSHOT_MIN_INTERVAL_MS
             ) {
-                input.clearPendingReliableArenaSnapshot();
+                input.reliableSnapshotTimer.cancel();
                 sendReliableArenaSnapshot(snapshot, generation);
                 return;
             }
 
-            input.reliableSnapshotPendingRef.current = snapshot;
-            if (input.reliableSnapshotTimerRef.current !== undefined) {
-                return;
-            }
-
-            input.reliableSnapshotTimerRef.current = window.setTimeout(
-                () => {
-                    input.reliableSnapshotTimerRef.current = undefined;
-                    const pending = input.reliableSnapshotPendingRef.current;
-                    input.reliableSnapshotPendingRef.current = undefined;
-                    if (pending) {
-                        sendReliableArenaSnapshot(pending, generation);
-                    }
-                },
-                Math.max(
-                    0,
-                    ARENA_RELIABLE_SNAPSHOT_MIN_INTERVAL_MS - (now - lastSentAt)
-                )
+            input.reliableSnapshotTimer.schedule(
+                snapshot,
+                Math.max(0, ARENA_RELIABLE_SNAPSHOT_MIN_INTERVAL_MS - (now - lastSentAt)),
+                (pending) => sendReliableArenaSnapshot(pending, generation)
             );
         },
-        [input.clearPendingReliableArenaSnapshot, sendReliableArenaSnapshot]
+        [input.reliableSnapshotTimer, sendReliableArenaSnapshot]
     );
 }

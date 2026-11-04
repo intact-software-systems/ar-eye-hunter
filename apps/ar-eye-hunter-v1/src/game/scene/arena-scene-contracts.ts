@@ -17,7 +17,11 @@ import type {
     ShotIntent,
     Vec3Tuple
 } from '@ar-eye-hunter/arena-contracts.ts';
-import type { PlayerPose, RemotePlayer, RemoteShot } from '../arena-contracts.ts';
+import type {
+    PlayerPose,
+    RemotePlayer,
+    RemoteShot
+} from '../arena-contracts.ts';
 import type { ArenaLinkState, ArenaPresenceNotice } from '../squad-link.ts';
 import type { ArenaSceneState } from './arena-scene-state.ts';
 
@@ -51,7 +55,7 @@ export interface BabylonArenaProps {
     readonly onPickupIntent: (intent: PickupIntent) => void;
     readonly onLocalCombatChange: (combat: PlayerCombatState) => void;
     readonly onLocalPlayerChange: (player: Pick<PlayerArenaState, 'vitals' | 'loadout'>) => void;
-    readonly onArenaSnapshot: (snapshot: ArenaSnapshot) => void;
+    readonly onArenaSnapshot: ArenaSceneState.PublishSnapshot;
 }
 
 export interface RemoteAvatar {

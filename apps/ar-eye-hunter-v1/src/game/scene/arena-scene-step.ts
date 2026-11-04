@@ -12,9 +12,17 @@ import type {
     Vec3Tuple,
     WeaponKind
 } from '@ar-eye-hunter/arena-contracts.ts';
-import { clamp, forwardFromAngles, round3 } from '@ar-eye-hunter/arena-math.ts';
+import {
+    clamp,
+    forwardFromAngles,
+    round3
+} from '@ar-eye-hunter/arena-math.ts';
 import { stepLocalPlayer } from '@ar-eye-hunter/arena-player-state.ts';
-import { resolveShot, stepArenaTargets, type ShotResolution } from '@ar-eye-hunter/arena-targets.ts';
+import {
+    resolveShot,
+    stepArenaTargets,
+    type ShotResolution
+} from '@ar-eye-hunter/arena-targets.ts';
 import { getWeaponStats } from '@ar-eye-hunter/arena-weapons.ts';
 import {
     applyPlayerHitAccepted,
@@ -80,17 +88,21 @@ export function runFrame(input: ArenaSceneStepInput): void {
     if (input.networkEnabled) {
         maybeFireHeldShot(input, now);
         detectLocalPickup(input);
-        publishLocalPose(input, now);
     }
     input.onLocalPlayerChange({ vitals: runtime.localPlayer.vitals, loadout: runtime.localPlayer.loadout });
     if (
         input.networkEnabled && runtime.simulation.canPublish(now) &&
         runtime.lastSnapshotRevision !== runtime.arenaState.revision
     ) {
-        runtime.lastSnapshotRevision = runtime.arenaState.revision;
         const snapshot = toArenaSnapshot(runtime.arenaState, input.roomId, now);
-        runtime.simulation.setPublishedSnapshot(snapshot);
-        input.onArenaSnapshot(snapshot);
+        if (runtime.simulation.publishSnapshot(snapshot, input.onArenaSnapshot)) {
+            runtime.lastSnapshotRevision = snapshot.revision;
+        }
+    }
+    if (input.networkEnabled) {
+        // Local-director pose delivery synchronously changes accepted state. Publish the frame first
+        // so its exact predecessor still applies and the pose projects from that committed result.
+        publishLocalPose(input, now);
     }
 }
 /** Tournament state is rendered directly; the browser never resolves a hit or publishes a score. */
@@ -272,8 +284,7 @@ export function fireLocalShot(input: ArenaLocalShotInput): void {
 
     if (runtime.simulation.canPublish(now)) {
         const snapshot = toArenaSnapshot(runtime.arenaState, roomId, now);
-        runtime.simulation.setPublishedSnapshot(snapshot);
-        input.onArenaSnapshot(snapshot);
+        runtime.simulation.publishSnapshot(snapshot, input.onArenaSnapshot);
     }
 }
 function createLocalShot(input: ArenaLocalShotInput, now: number): ArenaLocalShot {

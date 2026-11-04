@@ -16,6 +16,7 @@ import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { ArenaSceneState } from '../scene/arena-scene-state.ts';
 import type { useArenaTournament } from '../tournament/use-arena-tournament.ts';
 
 import type {
@@ -199,5 +200,5 @@ export interface ArenaConnection {
     startRematch(): Promise<void>;
     setRematchDuration(durationMs: ArenaMatchDurationMs): Promise<void>;
     startArenaMatch(durationMs: ArenaMatchDurationMs): Promise<void>;
-    publishArenaSnapshot(snapshot: ArenaSnapshot): void;
+    readonly publishArenaSnapshot: ArenaSceneState.PublishSnapshot;
 }

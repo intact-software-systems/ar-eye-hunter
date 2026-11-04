@@ -223,7 +223,7 @@ describe('useRallarArena auth lifecycle', () => {
                     acceptedAtEpochMs: 5_000
                 }
             );
-            connectedConnection?.publishArenaSnapshot(arenaSnapshot(99));
+            connectedConnection?.publishArenaSnapshot(arenaSnapshot(99), connectedConnection?.arenaSnapshot);
         });
 
         expect(mockMatch.publishEvent).not.toHaveBeenCalled();
@@ -418,7 +418,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         const signedOutConnection = arena.current;
         await act(async () => {
-            signedOutConnection?.publishArenaSnapshot(arenaSnapshot(99));
+            signedOutConnection?.publishArenaSnapshot(arenaSnapshot(99), signedOutConnection?.arenaSnapshot);
         });
 
         expect(arena.current?.connectionState).toBe('signed-out');

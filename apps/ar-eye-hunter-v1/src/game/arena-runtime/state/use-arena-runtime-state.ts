@@ -18,10 +18,22 @@ import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupDirectoryEntry, GroupDirectoryOrder } from '@shared/api/group-directory/group-directory-types.ts';
 
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { LatestValueTimer } from '@shared/resilience/timing/latest-value-timer.ts';
+
 import { isArenaSpectator } from '../arena-participation.ts';
 
-import type { ArenaEvent, ArenaSnapshot, PickupAccepted, PlayerHitAccepted } from '@ar-eye-hunter/arena-contracts.ts';
-import type { RemotePlayer, RemoteShot, RtcLaneStatus } from '../../arena-contracts.ts';
+import type {
+    ArenaEvent,
+    ArenaSnapshot,
+    PickupAccepted,
+    PlayerHitAccepted
+} from '@ar-eye-hunter/arena-contracts.ts';
+import type {
+    RemotePlayer,
+    RemoteShot,
+    RtcLaneStatus
+} from '../../arena-contracts.ts';
 import type { AvatarProfile } from '../../avatarProfile.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type {
@@ -319,32 +331,22 @@ function useArenaPresenceState() {
 }
 
 function useArenaSnapshotSchedulerState() {
-    const reliableSnapshotTimerRef = useRef<number | undefined>(undefined);
-    const reliableSnapshotPendingRef = useRef<ArenaSnapshot | undefined>(undefined);
+    const [reliableSnapshotTimer] = useState(() => new LatestValueTimer<ArenaSnapshot>(createDefaultTimers()));
     const reliableSnapshotLastSentAtRef = useRef<number | undefined>(undefined);
     const reliableSnapshotLastSentRevisionRef = useRef<number | undefined>(undefined);
     const snapshotLaneReadySyncKeyRef = useRef<string | undefined>(undefined);
-    const clearPendingReliableArenaSnapshot = useCallback(() => {
-        if (reliableSnapshotTimerRef.current !== undefined) {
-            window.clearTimeout(reliableSnapshotTimerRef.current);
-            reliableSnapshotTimerRef.current = undefined;
-        }
-        reliableSnapshotPendingRef.current = undefined;
-    }, []);
     const resetReliableArenaSnapshotScheduler = useCallback(() => {
-        clearPendingReliableArenaSnapshot();
+        reliableSnapshotTimer.cancel();
         reliableSnapshotLastSentAtRef.current = undefined;
         reliableSnapshotLastSentRevisionRef.current = undefined;
         snapshotLaneReadySyncKeyRef.current = undefined;
-    }, [clearPendingReliableArenaSnapshot]);
-    useEffect(() => () => clearPendingReliableArenaSnapshot(), [clearPendingReliableArenaSnapshot]);
+    }, [reliableSnapshotTimer]);
+    useEffect(() => () => reliableSnapshotTimer.cancel(), [reliableSnapshotTimer]);
     return {
-        reliableSnapshotTimerRef,
-        reliableSnapshotPendingRef,
+        reliableSnapshotTimer,
         reliableSnapshotLastSentAtRef,
         reliableSnapshotLastSentRevisionRef,
         snapshotLaneReadySyncKeyRef,
-        clearPendingReliableArenaSnapshot,
         resetReliableArenaSnapshotScheduler
     };
 }

@@ -76,5 +76,8 @@ function useArenaCanvasRuntime(props: BabylonArenaProps): ArenaCanvasView {
             clock: { nowEpochMs: Date.now, nowMonotonicMs: () => performance.now() }
         });
     }, [props.localColor, props.localSessionId, props.localUsername, props.roomId, props.spectating]);
+    useEffect(() => {
+        runtimeRef.current?.refreshPresentation();
+    }, [props]);
     return { canvasRef, runtimeRef, controls };
 }

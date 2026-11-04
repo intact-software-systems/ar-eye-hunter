@@ -10,7 +10,10 @@ import {
 import { createRoot } from 'react-dom/client';
 
 import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
+import { finishArenaMatchIfDue } from '@ar-eye-hunter/arena-match.ts';
+import type { ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
 import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
+import { AR_EYE_TOURNAMENT_RULES_ID, createTournamentArena } from '@ar-eye-hunter/tournament-arena.ts';
 import { BabylonArena } from '../../../apps/ar-eye-hunter-v1/src/game/babylon-arena.tsx';
 import type { BabylonArenaProps } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-scene-contracts.ts';
 
@@ -32,7 +35,6 @@ function ShotRegressionScene() {
     const [hit, setHit] = useState(false);
     const [shotDirection, setShotDirection] = useState<readonly number[]>([]);
     const [sessionId, setSessionId] = useState<string | undefined>('host');
-    const [mounted, setMounted] = useState(true);
     const props = createFixtureSceneProps({
         snapshot,
         sessionId,
@@ -43,6 +45,7 @@ function ShotRegressionScene() {
         onSnapshot: (next) => {
             setPublished(next);
             setSnapshot(next);
+            return true;
         }
     });
     return (
@@ -66,14 +69,60 @@ function ShotRegressionScene() {
             >
                 Play without session
             </button>
-            <button onClick={() => setMounted(false)}>Unmount arena</button>
-            <RendererInspection />
             <output data-testid="accepted-match">{snapshot.match?.matchId ?? 'none'}</output>
             <output data-testid="published-match">{published?.match?.matchId ?? 'none'}</output>
             <output data-testid="published-room">{published?.roomId ?? 'none'}</output>
             <output data-testid="shot-hit">{String(hit)}</output>
             <output data-testid="shot-direction">{JSON.stringify(shotDirection)}</output>
-            {mounted && <BabylonArena {...props} />}
+            <NativeTournamentScene {...props} />
+        </>
+    );
+}
+
+function NativeTournamentScene(props: BabylonArenaProps) {
+    const [mounted, setMounted] = useState(true);
+    const [tournament, setTournament] = useState<ArenaTournamentSnapshot>();
+    const [spectating, setSpectating] = useState(false);
+    const [nativeControls, setNativeControls] = useState('');
+    return (
+        <>
+            <button onClick={() => setMounted(false)}>Unmount arena</button>
+            <button onClick={() => setMounted(true)}>Mount arena</button>
+            <button onClick={() => setTournament(createFixtureTournament('native-match-1'))}>Enter native match</button>
+            <button onClick={() => setTournament(createFixtureTournament('native-match-2'))}>Enter next native match</button>
+            <button onClick={() => setTournament(undefined)}>Return to casual play</button>
+            <button onClick={() => setSpectating((current) => !current)}>Toggle spectator</button>
+            <button onClick={() => setTournament(finishFixtureTournament)}>Finish native match</button>
+            <button onClick={() => setTournament((current) => current && { ...current, status: 'cancelled', state: null })}>
+                Cancel native match without state
+            </button>
+            <button onClick={() => setTournament((current) => current && { ...current, status: 'scheduled', state: null })}>
+                Schedule native match
+            </button>
+            <button onClick={() => setTournament((current) => current && { ...structuredClone(current), observedAtEpochMs: Date.now() })}>
+                Poll unchanged native match
+            </button>
+            <button onClick={() => setTournament(reviseFixtureTournament)}>Update terminal revision</button>
+            <button
+                onClick={() => {
+                    const next = finishFixtureTournament(createFixtureTournament('another-terminal-match'));
+                    setTournament(next);
+                }}
+            >
+                Show another terminal game
+            </button>
+            <RendererInspection />
+            <output data-testid="native-controls">{nativeControls}</output>
+            {mounted && (
+                <BabylonArena
+                    {...props}
+                    spectating={spectating}
+                    tournament={tournament && {
+                        snapshot: tournament,
+                        sendControls: (controls) => setNativeControls(JSON.stringify(controls))
+                    }}
+                />
+            )}
         </>
     );
 }
@@ -81,8 +130,10 @@ function ShotRegressionScene() {
 function RendererInspection() {
     const initial = useRef<InitialRenderer | undefined>(undefined);
     const [inspection, setInspection] = useState('');
+    const [frameInspection, setFrameInspection] = useState('');
     return (
         <>
+            <button onClick={resizeFixtureArena}>Resize arena</button>
             {[1, 2].map((scale) => (
                 <button key={scale} onClick={() => EngineStore.Instances[0].setHardwareScalingLevel(scale)}>
                     Render scale {scale}
@@ -96,6 +147,13 @@ function RendererInspection() {
                     if (!initial.current && engine && scene && floorEffect) {
                         initial.current = { engine, scene, floorEffect };
                     }
+                    setFrameInspection(JSON.stringify({
+                        frame: scene?.getFrameId() ?? 0,
+                        width: engine?.getRenderWidth() ?? 0,
+                        height: engine?.getRenderHeight() ?? 0,
+                        loops: engine?.activeRenderLoops.length ?? 0,
+                        ready: scene?.isReady() ?? false
+                    }));
                     setInspection(JSON.stringify({
                         sameEngine: engine !== undefined && engine === initial.current?.engine,
                         originalEngineDisposed: initial.current?.engine.isDisposed,
@@ -112,8 +170,19 @@ function RendererInspection() {
                 Inspect renderer
             </button>
             <output data-testid="renderer-inspection">{inspection}</output>
+            <output data-testid="renderer-frame-inspection">{frameInspection}</output>
         </>
     );
+}
+
+function resizeFixtureArena(): void {
+    const canvas = document.querySelector('canvas');
+    if (!canvas) {
+        throw new Error('The fixture requires a mounted arena canvas.');
+    }
+    canvas.style.width = '720px';
+    canvas.style.height = '400px';
+    window.dispatchEvent(new Event('resize'));
 }
 
 function createFixtureSnapshot(roomId: string): ArenaSnapshot {
@@ -175,6 +244,46 @@ function startFixtureMatch(previous: ArenaSnapshot): ArenaSnapshot {
             baseline: {}
         }
     };
+}
+
+function createFixtureTournament(gameId: string): ArenaTournamentSnapshot {
+    const now = Date.now();
+    return {
+        binding: {
+            tournamentRef: { applicationId: 'arena-app', workspaceId: 'arena-workspace', tournamentId: 'fixture-cup' },
+            slot: 'semifinal-1',
+            attemptId: gameId,
+            roomRef: { applicationId: 'arena-app', workspaceId: 'arena-workspace', groupId: 'shot-arena' },
+            gameId,
+            rulesId: AR_EYE_TOURNAMENT_RULES_ID,
+            principalIds: ['host', 'opponent']
+        },
+        status: 'playing',
+        observedAtEpochMs: now,
+        state: createTournamentArena({ gameId, principalIds: ['host', 'opponent'], seed: 44, startedAtEpochMs: now, durationMs: 60_000 })
+    };
+}
+
+function finishFixtureTournament(current: ArenaTournamentSnapshot | undefined): ArenaTournamentSnapshot {
+    if (!current?.state) {
+        throw new Error('Finish requires an existing native game.');
+    }
+    return {
+        ...current,
+        status: 'finished',
+        state: {
+            ...current.state,
+            simulatedAtEpochMs: current.state.endsAtEpochMs,
+            arena: { ...finishArenaMatchIfDue(current.state.arena, current.state.endsAtEpochMs), revision: 40 }
+        }
+    };
+}
+
+function reviseFixtureTournament(current: ArenaTournamentSnapshot | undefined): ArenaTournamentSnapshot {
+    if (!current?.state) {
+        throw new Error('Revision requires an existing terminal game.');
+    }
+    return { ...current, state: { ...current.state, arena: { ...current.state.arena, revision: 41 } } };
 }
 
 const root = document.getElementById('root');

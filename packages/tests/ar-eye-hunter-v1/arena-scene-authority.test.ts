@@ -33,7 +33,7 @@ describe('accepted arena state and local prediction', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         const accepted = activeSnapshot(10, 50_000);
         await receiveSnapshot(accepted);
-        await act(async () => arena.current?.publishArenaSnapshot(arenaSnapshot(100)));
+        await act(async () => void arena.current?.publishArenaSnapshot(arenaSnapshot(100), arena.current?.arenaSnapshot));
         expect(arena.current?.arenaSnapshot?.match?.matchId).toBe('match-1');
         expect(arena.current?.arenaSnapshot?.revision).toBe(10);
     });
@@ -44,7 +44,7 @@ describe('accepted arena state and local prediction', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         const accepted = activeSnapshot(10, 50_000);
         await receiveSnapshot(accepted);
-        await act(async () => arena.current?.publishArenaSnapshot(arenaSnapshot(100)));
+        await act(async () => void arena.current?.publishArenaSnapshot(arenaSnapshot(100), arena.current?.arenaSnapshot));
         expect(arena.current?.arenaSnapshot?.match?.matchId).toBe('match-1');
     });
 

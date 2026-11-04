@@ -63,8 +63,9 @@ function RelicGameScene({ game, turn, playback }: RelicGameSceneProps) {
         // Entry can finish before the runtime adopts its room and hydrates the expedition.
         const preparingExpedition = game.connectionState === 'connecting' ||
             game.connectionState === 'joining-room' ||
-            (game.connectionState === 'connected' && (game.roomId !== undefined || entry.status === 'entered')) ||
-            (game.session !== undefined && (entry.status === 'pending' || entry.status === 'joining'));
+            game.roomId !== undefined ||
+            (game.session !== undefined &&
+                (entry.status === 'pending' || entry.status === 'joining' || entry.status === 'entered'));
         return <RelicOpeningPresentation preparingExpedition={preparingExpedition} />;
     }
     const pickup = async (relicId: string) => {
