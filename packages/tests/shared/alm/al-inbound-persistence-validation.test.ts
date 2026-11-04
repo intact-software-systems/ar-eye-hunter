@@ -244,7 +244,7 @@ describe('inbound admission persisted values', () => {
         });
     });
 
-    it.each<[string, unknown, boolean | 'corrupt']>([
+    it.each<[string, boolean | string | undefined, boolean | 'corrupt']>([
         ['written before the field existed, as delivered', undefined, true],
         ['that delivered nothing', false, false],
         ['whose local delivery is no boolean', 'no', 'corrupt']
