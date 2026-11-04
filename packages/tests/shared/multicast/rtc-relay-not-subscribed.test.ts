@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RallarTopicSubscription } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALNackControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
+import { decodeALControlMessage, newALNackControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
@@ -84,6 +84,30 @@ describe('a receipted granted publication at a frozen recipient that is not subs
             ['nack', 'c', 'not-subscribed']
         ]);
         // The relay's own terminal ACK and the NACK it relays leave as two works, in either order.
+        expect(toControlTuples(await relay.readSentControls('a')).toSorted()).toEqual([
+            ['ack', 'r', 'accepted'],
+            ['ack', 'r', 'subtree-complete'],
+            ['nack', 'c', 'not-subscribed']
+        ]);
+        expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: ['r'], outside: ['c'], complete: true });
+    });
+
+    it.each<[string, (controls: readonly ALMessage[]) => readonly ALMessage[]]>([
+        ['its NACK lost on the way', (controls) => controls.filter((control) => decodeALControlMessage(control).right?.type === 'ack')],
+        ['its NACK first', (controls) => toSortedByControlType(controls, ['nack', 'ack'])],
+        ['its hop-completion ACK first', (controls) => toSortedByControlType(controls, ['ack', 'nack'])]
+    ])('records a not-subscribed leaf outside at the origin once, with %s', async (_shape, toArrivals) => {
+        const chain = await createRelayChain(['a', 'r', 'c'], { a: PUBLISH_AND_SUBSCRIBE, r: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY });
+        const relay = createChainHop(chain, { selfPeerId: 'r', neighbourPeerIds: ['a', 'c'], topicSubscriptions: ACTIVE_TOKEN });
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['r'] });
+        const signed = await signReceiptedPublication(chain, { resourceId: 'feed-1', recipientPeerIds: ['r', 'c'], nextHopPeerId: 'r' });
+        const origin = await createOriginReceipt(signed, { expectedPeerIds: ['r', 'c'], nextHopPeerIds: ['r'] });
+
+        await relay.receive(signed, 'a');
+        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
+        await deliverEach(toArrivals(await leaf.readSent('r')), relay, 'c');
+        await origin.accept(await relay.readSent('a'));
+
         expect(toControlTuples(await relay.readSentControls('a')).toSorted()).toEqual([
             ['ack', 'r', 'accepted'],
             ['ack', 'r', 'subtree-complete'],
@@ -273,6 +297,14 @@ async function createOriginReceipt(
             }
         }
     };
+}
+
+function toSortedByControlType(
+    controls: readonly ALMessage[],
+    order: readonly ('ack' | 'nack')[]
+): readonly ALMessage[] {
+    const rank = (control: ALMessage) => order.indexOf(decodeALControlMessage(control).right?.type as 'ack' | 'nack');
+    return controls.toSorted((left, right) => rank(left) - rank(right));
 }
 
 async function deliverEach(messages: readonly ALMessage[], to: RtcRelayOverlayFixture, fromPeerId: string): Promise<void> {

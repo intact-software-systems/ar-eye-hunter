@@ -251,7 +251,12 @@ function readPendingRow(bundle: ALInboundCommitBundle): ALPendingAckSnapshot {
 
 /** Each child ends its own empty subtree: none of them is in the audience. */
 function acceptChildCompletions(pending: ALPendingAckSnapshot, childPeerIds: readonly string[]): ALPendingAckTransition {
-    let transition: ALPendingAckTransition = { pending, completed: undefined, relayedRecipientPeerIds: [] };
+    let transition: ALPendingAckTransition = {
+        pending,
+        completed: undefined,
+        relayedRecipientPeerIds: [],
+        relayedOutsidePeerIds: []
+    };
     for (const childPeerId of childPeerIds) {
         transition = acceptALPendingAckPayload({
             current: transition.pending,

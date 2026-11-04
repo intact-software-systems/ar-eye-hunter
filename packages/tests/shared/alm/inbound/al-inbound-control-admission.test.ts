@@ -799,12 +799,38 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
             .toEqual([['ack', 'self'], ['nack', 'self']]);
     });
 
-    it('ends the hop on a hop-completion ACK that arrives before the NACK, relaying no confirmation for it', async () => {
-        const { admissionStore, workQueue, control } = createFixture();
+    it('reads a hop-completion ACK that arrives without its NACK as implying it, relaying that NACK and no confirmation', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
         await seedRelayRow(admissionStore, SEEDED);
 
         expect((await control.admit(createChildAck('receiver', 'subtree-complete-not-subscribed'), WS_ARRIVAL)).kind).toBe('committed');
-        expect((await control.admit(createNotSubscribedNack('receiver'), WS_ARRIVAL)).kind).toBe('committed');
+
+        expect((await readAcknowledgements(backend, admissionStore)).pendingAck).toMatchObject({
+            ackedFromPeerIds: ['receiver'],
+            outsideAudiencePeerIds: ['receiver']
+        });
+        const upward = await readUpwardControls(admissionStore, workQueue);
+        expect(upward.map((control) => [control.type, control.payload.logicalRecipientPeerId]).toSorted())
+            .toEqual([['ack', 'self'], ['nack', 'receiver']]);
+    });
+
+    it.each(
+        [
+            ['the NACK first', ['nack', 'ack']],
+            ['the hop-completion ACK first', ['ack', 'nack']]
+        ] as const
+    )('relays one NACK for the recipient whichever arrives first: %s', async (_order, arrivals) => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        for (const arrival of arrivals) {
+            await control.admit(
+                arrival === 'nack'
+                    ? createNotSubscribedNack('receiver')
+                    : createChildAck('receiver', 'subtree-complete-not-subscribed'),
+                WS_ARRIVAL
+            );
+        }
 
         const upward = await readUpwardControls(admissionStore, workQueue);
         expect(upward.map((control) => [control.type, control.payload.logicalRecipientPeerId]).toSorted())

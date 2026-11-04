@@ -125,8 +125,8 @@ export function toALInboundControlObservations(
 }
 
 /**
- * The relay sends one ACK per recipient its row relays upward, then its own terminal ACK once its row
- * completed (D40).
+ * The relay sends the `not-subscribed` NACK a hop completion implied, one ACK per recipient its row relays upward,
+ * then its own terminal ACK once its row completed (D40).
  */
 function computeUpwardAcknowledgementWork(
     read: ALInboundControlAdmissionRead,
@@ -148,7 +148,13 @@ function computeUpwardAcknowledgementWork(
             controlMsgId: read.controlMsgId,
             traceId: read.traceId
         },
-        toALInboundUpwardAcks(transition).map((ack) => ({ kind: 'ack', ack })),
+        [
+            ...transition.relayedOutsidePeerIds.map((peerId) => ({
+                kind: 'nack' as const,
+                logicalRecipientPeerId: peerId
+            })),
+            ...toALInboundUpwardAcks(transition).map((ack) => ({ kind: 'ack' as const, ack }))
+        ],
         retention
     );
 }
