@@ -2,6 +2,8 @@ import { expect, type Page } from '@playwright/test';
 import { blocksShot } from '../../../packages/ar-eye-hunter/arena-layout.ts';
 import { decodeArenaTournamentSnapshot } from '../../../packages/ar-eye-hunter/arena-tournament-snapshot.ts';
 import type { TournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
+import { SingleFlight } from '../../../packages/shared/resilience/single-flight.ts';
+import { toError } from '../../../packages/shared/resilience/to-error.ts';
 import { toGroupId } from '../room-player-journey.ts';
 
 /** Observe the public state, then aim and shoot exclusively with real canvas input. */
@@ -49,42 +51,81 @@ export async function playArenaTournament(winner: Page, opponent: Page): Promise
     }
 }
 
-async function scoreWithTouch(page: Page, roomId: string): Promise<void> {
+export async function scoreWithTouch(page: Page, roomId: string): Promise<void> {
     const viewport = page.viewportSize();
     if (!viewport) {
         throw new Error('The gameplay journey needs a viewport for touch aiming.');
     }
-    await expect.poll(async () => {
-        const state = await observeArena(page, roomId);
-        const player = state.players[0];
-        if (player.simulation.combat.score > 0) {
-            return player.simulation.combat.score;
-        }
-        // The fresh camera faces +Z. Project public targets into its 0.94-radian vertical field of view.
-        const origin = player.simulation.position;
-        const focalLength = viewport.height / (2 * Math.tan(0.94 / 2));
-        for (const target of state.arena.targets) {
-            const [x, y, z] = target.position.map((value, index) => value - origin[index]);
-            const screenX = viewport.width / 2 + x * focalLength / z;
-            const screenY = viewport.height / 2 - y * focalLength / z;
-            if (
-                z > 0 && screenX > 30 && screenX < viewport.width - 30 &&
-                screenY > 160 && screenY < viewport.height - 120 &&
-                !blocksShot(state.arena.layout, origin, target.position) &&
-                await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', {
-                    x: screenX,
-                    y: screenY
-                })
-            ) {
-                await page.touchscreen.tap(screenX, screenY);
-                return 0;
+    let observing = true;
+    const taps = new SingleFlight<'tap', void>();
+    let inputFailure: Error | undefined;
+    let observationFailure: Error | undefined;
+    try {
+        await expect.poll(async () => {
+            const state = await observeArena(page, roomId);
+            const score = state.players[0].simulation.combat.score;
+            if (observing && score === 0 && !taps.isInFlight('tap') && inputFailure === undefined) {
+                void taps.run('tap', () => tapVisibleTarget({ page, state, viewport, isActive: () => observing }))
+                    .catch((cause) => {
+                        inputFailure = toError(cause);
+                    });
             }
-        }
-        throw new Error('No visible native target can be tapped outside the HUD.');
-    }, { timeout: 15000, intervals: [500] }).toBeGreaterThan(0);
+            return score;
+        }, { timeout: 15000, intervals: [500] }).toBeGreaterThan(0);
+    }
+    catch (cause) {
+        observationFailure = toError(cause);
+    }
+    finally {
+        observing = false;
+        await Promise.all(taps.completions());
+    }
+    const failures = [observationFailure, inputFailure].filter((failure): failure is Error => failure !== undefined);
+    if (failures.length === 1) {
+        throw failures[0];
+    }
+    if (failures.length > 1) {
+        throw new AggregateError(failures, 'Native score observation and canvas input failed.');
+    }
 }
 
-async function observeArena(page: Page, roomId: string): Promise<TournamentArena> {
+interface NativeTouchInput {
+    readonly page: Page;
+    readonly state: TournamentArena;
+    readonly viewport: NonNullable<ReturnType<Page['viewportSize']>>;
+    readonly isActive: () => boolean;
+}
+
+async function tapVisibleTarget(input: NativeTouchInput): Promise<void> {
+    const { page, state, viewport } = input;
+    // The fresh camera faces +Z. Project public targets into its 0.94-radian vertical field of view.
+    const origin = state.players[0].simulation.position;
+    const focalLength = viewport.height / (2 * Math.tan(0.94 / 2));
+    for (const target of state.arena.targets) {
+        if (!input.isActive()) {
+            return;
+        }
+        const [x, y, z] = target.position.map((value, index) => value - origin[index]);
+        const screenX = viewport.width / 2 + x * focalLength / z;
+        const screenY = viewport.height / 2 - y * focalLength / z;
+        if (
+            z > 0 && screenX > 30 && screenX < viewport.width - 30 &&
+            screenY > 160 && screenY < viewport.height - 120 &&
+            !blocksShot(state.arena.layout, origin, target.position) &&
+            await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', {
+                x: screenX,
+                y: screenY
+            })
+        ) {
+            if (input.isActive()) {
+                await page.touchscreen.tap(screenX, screenY);
+            }
+            return;
+        }
+    }
+}
+
+export async function observeArena(page: Page, roomId: string): Promise<TournamentArena> {
     const path = `/api/ar-eye/rooms/${encodeURIComponent(roomId)}/tournament`;
     const response = await page.waitForResponse((candidate) =>
         candidate.request().method() === 'GET' && new URL(candidate.url()).pathname === path &&
