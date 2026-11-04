@@ -51,7 +51,7 @@ export async function registerTournament(
             await withdrawAndRegisterAgain(page, title);
         }
     }
-    await recoverTournamentFromHistory(host, game, title);
+    await recoverTournamentFromHistory({ page: host, game, title, completedMatch: false });
     await expect(panel(host).locator('ol li')).toHaveCount(4);
     await panel(host).getByRole('button', { name: 'Unlist tournament', exact: true }).click();
     await expect(panel(host).getByText('Unlisted · available through its share link', { exact: true })).toBeVisible();
@@ -99,8 +99,22 @@ async function withdrawAndRegisterAgain(page: Page, title: string): Promise<void
     await panel(page).getByRole('button', { name: 'Discover', exact: true }).click();
 }
 
-export async function recoverTournamentFromHistory(page: Page, game: 'arena' | 'relic', title: string): Promise<void> {
+export interface TournamentHistoryRecoveryInput {
+    readonly page: Page;
+    readonly game: 'arena' | 'relic';
+    readonly title: string;
+    readonly completedMatch: boolean;
+}
+
+export async function recoverTournamentFromHistory(input: TournamentHistoryRecoveryInput): Promise<void> {
+    const { page, game, title } = input;
     await page.reload();
+    if (game === 'arena' && input.completedMatch) {
+        const results = page.getByRole('dialog', { name: 'Match results', exact: true });
+        await expect(results).toBeVisible();
+        await results.getByRole('button', { name: 'Return to tournament bracket', exact: true }).click();
+        await expect(results).toHaveCount(0);
+    }
     if (game === 'arena') {
         await openArenaOperations(page);
     }
@@ -151,7 +165,11 @@ export function tournamentMatch(page: Page, slot: TournamentMatch['slot']) {
 
 async function registerHunter(page: Page, game: 'arena' | 'relic', index: number): Promise<void> {
     page.setDefaultTimeout(20000);
-    await page.goto(game === 'arena' ? 'http://127.0.0.1:5186' : 'http://127.0.0.1:5175');
+    const baseURL = test.info().project.use.baseURL;
+    if (!baseURL) {
+        throw new Error('Tournament journeys require the configured game base URL');
+    }
+    await page.goto(baseURL);
     if (game === 'arena') {
         await openArenaOperations(page);
     }

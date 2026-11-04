@@ -59,7 +59,7 @@ tournamentBrowserTest(
             });
         }
         await expect(page.getByRole('status').filter({ hasText: `Champion: ${champion}` })).toBeVisible();
-        await recoverTournamentFromHistory(page, 'relic', title);
+        await recoverTournamentFromHistory({ page, game: 'relic', title, completedMatch: true });
         await expect(page.getByRole('status').filter({ hasText: `Champion: ${champion}` })).toBeVisible();
     }
 );
