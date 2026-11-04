@@ -1247,8 +1247,9 @@ A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop 
 next hop of the message or from a peer a repair may come from (a recipient the receipt expects, a unicast's addressee,
 a hop every frame passes), and a WS session's NACK speaks only for itself; it moves a recipient the receipt still owes
 into the row's `outsideAudiencePeerIds` and is refused for any other peer, a repeat or a confirmed one, and no ACK
-confirms a recipient after it. A dishonest client can thus remove itself, or a recipient it relays for, and nobody
-else. The recipient's own `subtree-complete-not-subscribed` ACK, from a next hop, is admitted as that hop's
+confirms a recipient after it. A dishonest client can thus remove itself or, as a next hop, a recipient it claims to
+relay for, since the origin does not know a hop's subtree. The recipient's own `subtree-complete-not-subscribed` ACK,
+from a next hop, is admitted as that hop's
 completion and confirms nobody; while the receipt still owes that recipient it also stands for the NACK, so a lost
 NACK records the recipient outside at once, as every relay reads it
 ([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)).
