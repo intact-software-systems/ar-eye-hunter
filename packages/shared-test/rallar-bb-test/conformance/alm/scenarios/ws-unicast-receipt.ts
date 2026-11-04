@@ -10,7 +10,11 @@ import {
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
 
-const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver'], unconfirmed: [] };
+const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver'],
+    unconfirmed: [],
+    outsideAudience: []
+};
 
 /**
  * On every carrier: a `command` addressed to the receiver by its lane role ends `acknowledged` on the addressee's

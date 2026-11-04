@@ -26,10 +26,14 @@ import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName, toScenarioTypeId } from './alm-conformance-step-identities.ts';
 
-/** The recipient roles the receipt of a send confirms and leaves unconfirmed once its scenario has run. */
+/**
+ * The recipient roles the receipt of a send confirms, leaves unconfirmed and records outside the audience once its
+ * scenario has run; together they are its expected recipients.
+ */
 export interface AlmConformanceReceiptRoles {
     readonly confirmed: readonly AlmConformanceRole[];
     readonly unconfirmed: readonly AlmConformanceRole[];
+    readonly outsideAudience: readonly AlmConformanceRole[];
 }
 
 /** The state the handle has reached when the origin reads its receipt: complete, or past its deadline. */
@@ -152,9 +156,10 @@ export function toReceiptReadCommands(
     { roles, ending, mode }: AlmConformanceReceiptWindow
 ): readonly RallarBlackBoxTestCommand[] {
     const lists = [
-        ['expectedRecipientPeerIds', roles.confirmed.length + roles.unconfirmed.length],
+        ['expectedRecipientPeerIds', roles.confirmed.length + roles.unconfirmed.length + roles.outsideAudience.length],
         ['confirmedRecipientPeerIds', roles.confirmed.length],
-        ['unconfirmedRecipientPeerIds', roles.unconfirmed.length]
+        ['unconfirmedRecipientPeerIds', roles.unconfirmed.length],
+        ['outsideAudienceRecipientPeerIds', roles.outsideAudience.length]
     ] as const;
     return [
         toReceiptsCommand({ ...origin, index: 1 }),

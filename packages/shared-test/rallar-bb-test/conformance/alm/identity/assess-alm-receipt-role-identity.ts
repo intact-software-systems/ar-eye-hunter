@@ -9,11 +9,12 @@ export interface AlmReceiptRoleIdentityInput {
     readonly recipients: readonly RecordedAlmConformanceParticipant[];
 }
 
-/** One pinned receipt: the recipient roles the receipt of `handleId` confirms and leaves unconfirmed. */
+/** One pinned receipt: the recipient roles the receipt of `handleId` confirms, leaves unconfirmed and holds outside. */
 interface AlmReceiptRolesEntry {
     readonly handleId: string;
     readonly confirmed: readonly AlmConformanceRole[];
     readonly unconfirmed: readonly AlmConformanceRole[];
+    readonly outsideAudience: readonly AlmConformanceRole[];
 }
 
 /** The sender recipe names every receipt it pins in `metadata.almReceiptRoles`, one entry per send. */
@@ -43,7 +44,7 @@ function validateAlmReceiptRolesMetadata(recipe: RallarBlackBoxTestRecipe): read
     const malformed = Array.isArray(entries) ? entries.filter((entry) => !isAlmReceiptRolesEntry(entry)).length : 1;
     return malformed === 0
         ? []
-        : [`${recipe.recipeId}: ${malformed} receipt role pin(s) do not name a handle and two role lists.`];
+        : [`${recipe.recipeId}: ${malformed} receipt role pin(s) do not name a handle and three role lists.`];
 }
 
 function assessReceiptRolesEntry(entry: AlmReceiptRolesEntry, input: AlmReceiptRoleIdentityInput): readonly string[] {
@@ -55,15 +56,26 @@ function assessReceiptRolesEntry(entry: AlmReceiptRolesEntry, input: AlmReceiptR
         return [`${entry.handleId}: sender receipts are missing.`];
     }
     const sessionRoles = toSessionRoles(input.recipients);
-    const expected = { ...entry, expected: [...entry.confirmed, ...entry.unconfirmed] };
-    return (['confirmed', 'unconfirmed', 'expected'] as const).flatMap((list) => {
+    const expected = { ...entry, expected: [...entry.confirmed, ...entry.unconfirmed, ...entry.outsideAudience] };
+    return (['confirmed', 'unconfirmed', 'outsideAudience', 'expected'] as const).flatMap((list) => {
         const peerIds = value[`${list}RecipientPeerIds`];
         const named = isStringList(peerIds) ? toNamedRoles(peerIds, sessionRoles) : undefined;
         return named !== undefined && isSameRoleSet(named, expected[list])
             ? []
-            : [`${entry.handleId}: the ${list} recipients do not name the sessions of ${toRoleText(expected[list])}.`];
+            : [
+                `${entry.handleId}: the ${RECEIPT_LIST_LABELS[list]} recipients do not name the sessions of ${
+                    toRoleText(expected[list])
+                }.`
+            ];
     });
 }
+
+const RECEIPT_LIST_LABELS = {
+    confirmed: 'confirmed',
+    unconfirmed: 'unconfirmed',
+    outsideAudience: 'outside-audience',
+    expected: 'expected'
+} as const;
 
 function toSessionRoles(recipients: readonly RecordedAlmConformanceParticipant[]): ReadonlyMap<string, string> {
     return new Map(
@@ -92,7 +104,7 @@ function toRoleText(roles: readonly AlmConformanceRole[]): string {
 
 function isAlmReceiptRolesEntry(value: unknown): value is AlmReceiptRolesEntry {
     return isJsonRecordValue(value) && typeof value.handleId === 'string' && isRoleList(value.confirmed) &&
-        isRoleList(value.unconfirmed);
+        isRoleList(value.unconfirmed) && isRoleList(value.outsideAudience);
 }
 
 function isRoleList(value: unknown): value is readonly AlmConformanceRole[] {

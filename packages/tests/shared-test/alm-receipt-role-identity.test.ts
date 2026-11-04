@@ -10,6 +10,7 @@ interface ReceiptLists {
     readonly confirmedRecipientPeerIds: readonly string[];
     readonly unconfirmedRecipientPeerIds: readonly string[];
     readonly expectedRecipientPeerIds: readonly string[];
+    readonly outsideAudienceRecipientPeerIds: readonly string[];
 }
 
 function toRetryScenario(carrier: AlmConformanceCarrier) {
@@ -65,16 +66,27 @@ function assessRetry(carrier: AlmConformanceCarrier, lists: ReceiptLists): reado
 const WS_TIMED_OUT = {
     expectedRecipientPeerIds: ['recipient-b-session', 'receiver-session'],
     confirmedRecipientPeerIds: ['receiver-session'],
-    unconfirmedRecipientPeerIds: ['recipient-b-session']
+    unconfirmedRecipientPeerIds: ['recipient-b-session'],
+    outsideAudienceRecipientPeerIds: []
 };
 
 describe('ALM receipt role identity', () => {
     it('pins the retry receipt per carrier: over ws recipient-b stays unconfirmed, over rtc both recipients confirm', () => {
         expect(toRetryScenario('ws').sender.metadata?.almReceiptRoles).toEqual([
-            { handleId: 'alm-ws-missing-recipient-retry-send-1', confirmed: ['receiver'], unconfirmed: ['recipient-b'] }
+            {
+                handleId: 'alm-ws-missing-recipient-retry-send-1',
+                confirmed: ['receiver'],
+                unconfirmed: ['recipient-b'],
+                outsideAudience: []
+            }
         ]);
         expect(toRetryScenario('rtc').sender.metadata?.almReceiptRoles).toEqual([
-            { handleId: 'alm-rtc-missing-recipient-retry-send-1', confirmed: ['receiver', 'recipient-b'], unconfirmed: [] }
+            {
+                handleId: 'alm-rtc-missing-recipient-retry-send-1',
+                confirmed: ['receiver', 'recipient-b'],
+                unconfirmed: [],
+                outsideAudience: []
+            }
         ]);
         expect(toRetryScenario('rtc').receiver.metadata?.almReceiptRoles).toBeUndefined();
     });
@@ -84,7 +96,8 @@ describe('ALM receipt role identity', () => {
         expect(assessRetry('rtc', {
             expectedRecipientPeerIds: ['receiver-session', 'recipient-b-session'],
             confirmedRecipientPeerIds: ['recipient-b-session', 'receiver-session'],
-            unconfirmedRecipientPeerIds: []
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: []
         })).toEqual([]);
     });
 
@@ -117,6 +130,40 @@ describe('ALM receipt role identity', () => {
         expect(assessAlmReceiptRoleIdentity({
             sender: toRecorded('sender', sender, WS_TIMED_OUT),
             recipients: [toRecorded('receiver', scenario.receiver, WS_TIMED_OUT), toRecorded('recipient-b', scenario.recipientB, WS_TIMED_OUT)]
-        })).toEqual(['alm-ws-missing-recipient-retry-sender: 1 receipt role pin(s) do not name a handle and two role lists.']);
+        })).toEqual(['alm-ws-missing-recipient-retry-sender: 1 receipt role pin(s) do not name a handle and three role lists.']);
+    });
+
+    it('expects the recipients outside the audience beside the confirmed and unconfirmed ones', () => {
+        const scenario = toRetryScenario('rtc');
+        const sender = {
+            ...scenario.sender,
+            metadata: {
+                ...scenario.sender.metadata,
+                almReceiptRoles: [{
+                    handleId: 'alm-rtc-missing-recipient-retry-send-1',
+                    confirmed: ['receiver'],
+                    unconfirmed: [],
+                    outsideAudience: ['recipient-b']
+                }]
+            }
+        };
+        const assess = (lists: ReceiptLists) =>
+            assessAlmReceiptRoleIdentity({
+                sender: toRecorded('sender', sender, lists),
+                recipients: [toRecorded('receiver', scenario.receiver, lists), toRecorded('recipient-b', scenario.recipientB, lists)]
+            });
+        const outside = {
+            expectedRecipientPeerIds: ['receiver-session', 'recipient-b-session'],
+            confirmedRecipientPeerIds: ['receiver-session'],
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['recipient-b-session']
+        };
+
+        expect(assess(outside)).toEqual([]);
+        expect(assess({ ...outside, outsideAudienceRecipientPeerIds: [], unconfirmedRecipientPeerIds: ['recipient-b-session'] }))
+            .toEqual([
+                'alm-rtc-missing-recipient-retry-send-1: the unconfirmed recipients do not name the sessions of no recipient.',
+                'alm-rtc-missing-recipient-retry-send-1: the outside-audience recipients do not name the sessions of recipient-b.'
+            ]);
     });
 });

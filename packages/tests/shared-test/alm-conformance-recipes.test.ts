@@ -945,25 +945,34 @@ describe('alm-conformance recipe family', () => {
                 : command.kind;
 
         it('reads every receipt only after the scenario window, pinning its mode and the length of each recipient list', () => {
+            // expected = confirmed + unconfirmed + outside the audience
             const tails = {
-                'aggregated-receipt': ['acknowledged', 2, 2, 0],
-                'unknown-ack-version': ['acknowledged', 2, 2, 0],
-                'frozen-audience-membership': ['expired', 2, 1, 1]
+                'aggregated-receipt': ['acknowledged', 2, 2, 0, 0],
+                'unknown-ack-version': ['acknowledged', 2, 2, 0, 0],
+                'frozen-audience-membership': ['expired', 2, 1, 1, 0]
             } as const;
-            for (const [key, [ending, expected, confirmed, unconfirmed]] of Object.entries(tails)) {
-                const tail = receiptedOf('rtc', key).sender.commands.slice(-8, -1);
-                expect(tail.map(shapeOf), key)
-                    .toEqual(['received:1:absent', 'messages.receipts', 'assert', 'assert', 'assert', 'assert', 'assert']);
+            for (const [key, [ending, expected, confirmed, unconfirmed, outside]] of Object.entries(tails)) {
+                const tail = receiptedOf('rtc', key).sender.commands.slice(-9, -1);
+                expect(tail.map(shapeOf), key).toEqual([
+                    'received:1:absent',
+                    'messages.receipts',
+                    'assert',
+                    'assert',
+                    'assert',
+                    'assert',
+                    'assert',
+                    'assert'
+                ]);
                 expect(tail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []), key)
-                    .toEqual([ending, 'receiver', expected, confirmed, unconfirmed]);
+                    .toEqual([ending, 'receiver', expected, confirmed, unconfirmed, outside]);
             }
             const retryCounts = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
                 receiptedOf(carrier, 'missing-recipient-retry').sender.commands.flatMap((command) =>
                     command.kind === 'assert' && command.source.includes('RecipientPeerIds') ? [command.expected] : []
                 );
-            expect(retryCounts('ws')).toEqual([2, 1, 1]);
-            expect(retryCounts('rtc')).toEqual([2, 2, 0]);
-            expect(retryCounts('rtc-with-ws-fallback')).toEqual([2, 2, 0]);
+            expect(retryCounts('ws')).toEqual([2, 1, 1, 0]);
+            expect(retryCounts('rtc')).toEqual([2, 2, 0, 0]);
+            expect(retryCounts('rtc-with-ws-fallback')).toEqual([2, 2, 0, 0]);
         });
 
         it.each(
@@ -989,7 +998,8 @@ describe('alm-conformance recipe family', () => {
                                     receiptMode: 'receiver',
                                     expectedRecipientPeerIds: lists.expected,
                                     confirmedRecipientPeerIds: lists.confirmed,
-                                    unconfirmedRecipientPeerIds: lists.unconfirmed
+                                    unconfirmedRecipientPeerIds: lists.unconfirmed,
+                                    outsideAudienceRecipientPeerIds: []
                                 }
                             }
                             : undefined

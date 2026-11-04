@@ -10,7 +10,7 @@ import { toReceivedCommand, toSingleArrivalReceiverCommands } from '../../alm-co
 import { ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES } from '../../alm-conformance-roles.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 
-const SIBLING_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['sibling'], unconfirmed: [] };
+const SIBLING_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['sibling'], unconfirmed: [], outsideAudience: [] };
 
 /**
  * The sender addresses its own principal in the room. The principal's other live session, the sibling, receives the

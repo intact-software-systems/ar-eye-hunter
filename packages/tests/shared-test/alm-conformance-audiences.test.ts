@@ -25,7 +25,8 @@ const RECEIPT_WINDOW = [
     'assert-receipt-receiptMode-1',
     'assert-receipt-expectedRecipientPeerIds-count-1',
     'assert-receipt-confirmedRecipientPeerIds-count-1',
-    'assert-receipt-unconfirmedRecipientPeerIds-count-1'
+    'assert-receipt-unconfirmedRecipientPeerIds-count-1',
+    'assert-receipt-outsideAudienceRecipientPeerIds-count-1'
 ] as const;
 
 type AudienceScenarioId = (typeof AUDIENCE_SCENARIO_IDS)[number];
@@ -139,7 +140,7 @@ describe('principal-delivery', () => {
         });
         expect(findCommand(scenario.sender, 'send-1')).not.toHaveProperty('recipientPeer');
         expect(readAlmReceiptRolesEntries(scenario.sender)).toEqual([
-            { handleId: `alm-${carrier}-principal-delivery-send-1`, confirmed: ['sibling'], unconfirmed: [] }
+            { handleId: `alm-${carrier}-principal-delivery-send-1`, confirmed: ['sibling'], unconfirmed: [], outsideAudience: [] }
         ]);
         expect(findCommand(scenario.sender, 'assert-receipt-expectedRecipientPeerIds-count-1'))
             .toMatchObject({ kind: 'assert', expected: 1 });
@@ -185,7 +186,7 @@ describe('fixed-list-delivery', () => {
         });
         expect(findCommand(scenario.sender, 'send-1')).not.toHaveProperty('scope');
         expect(readAlmReceiptRolesEntries(scenario.sender)).toEqual([
-            { handleId: `alm-${carrier}-fixed-list-delivery-send-1`, confirmed: ['receiver'], unconfirmed: [] }
+            { handleId: `alm-${carrier}-fixed-list-delivery-send-1`, confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] }
         ]);
         expect(toCommandNames(scenario.receiver)).toEqual([...PROLOGUE, 'received-1', 'received-2', 'stats']);
         expect(toCommandNames(requireSibling(scenario))).toEqual([...PROLOGUE, 'received-1', 'stats']);

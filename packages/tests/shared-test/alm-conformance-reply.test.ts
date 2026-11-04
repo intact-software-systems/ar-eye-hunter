@@ -29,7 +29,8 @@ const RECEIPT_READ = [
     'assert-receipt-receiptMode-1',
     'assert-receipt-expectedRecipientPeerIds-count-1',
     'assert-receipt-confirmedRecipientPeerIds-count-1',
-    'assert-receipt-unconfirmedRecipientPeerIds-count-1'
+    'assert-receipt-unconfirmedRecipientPeerIds-count-1',
+    'assert-receipt-outsideAudienceRecipientPeerIds-count-1'
 ] as const;
 const REPLIED_FACTS = ['await-reply-1', 'assert-reply-replied-1', 'assert-reply-type-1', 'reply-correlation-1', 'reply-identity-1'];
 const RESPONDER = ['received-1', 'reply-1', 'observe-reply-acknowledged-1', 'assert-reply-acknowledged-1'] as const;
@@ -252,7 +253,7 @@ describe('reply-correlated', () => {
                 }
             });
             expect(readAlmReceiptRolesEntries(scenario.sender)).toEqual([
-                { handleId: `alm-${carrier}-reply-correlated-send-1`, confirmed: ['receiver'], unconfirmed: [] }
+                { handleId: `alm-${carrier}-reply-correlated-send-1`, confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] }
             ]);
             expect(toCommandNames(scenario.receiver)).toEqual([...PROLOGUE, ...RESPONDER, 'stats']);
             expect(findCommand(scenario.receiver, 'reply-1')).toEqual({
@@ -417,7 +418,7 @@ describe('reply-first-wins', () => {
             }
         });
         expect(readAlmReceiptRolesEntries(scenario.sender)).toEqual([
-            { handleId: 'alm-ws-reply-first-wins-send-1', confirmed: ['receiver', 'recipient-b'], unconfirmed: [] }
+            { handleId: 'alm-ws-reply-first-wins-send-1', confirmed: ['receiver', 'recipient-b'], unconfirmed: [], outsideAudience: [] }
         ]);
         for (const recipient of [scenario.receiver, scenario.recipientB]) {
             expect(recipient && toCommandNames(recipient)).toEqual([...PROLOGUE, ...RESPONDER, 'received-2', 'stats']);

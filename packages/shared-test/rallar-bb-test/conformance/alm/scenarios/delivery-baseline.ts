@@ -25,7 +25,7 @@ export const deliveryBaseline: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     toSenderCommands: toDeliveryBaselineSenderCommands,
     toRecipientCommands: toDeliveryBaselineReceiverCommands,
-    toReceiptRoles: () => ({ confirmed: ['receiver'], unconfirmed: [] })
+    toReceiptRoles: () => ({ confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] })
 };
 
 function toDeliveryBaselineSenderCommands(
@@ -41,7 +41,7 @@ function toDeliveryBaselineSenderCommands(
         ...toAdmissionCommands({ ...sender, index: 1 }),
         toObserveCommand({ ...sender, index: 1, state: 'acknowledged' }),
         ...toReceiptReadCommands(sender, {
-            roles: { confirmed: ['receiver'], unconfirmed: [] },
+            roles: { confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] },
             ending: 'acknowledged',
             mode: 'receiver'
         }),

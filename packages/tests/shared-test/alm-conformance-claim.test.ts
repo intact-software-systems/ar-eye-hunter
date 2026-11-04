@@ -23,7 +23,8 @@ const RECEIPT_READ = [
     'assert-receipt-receiptMode-1',
     'assert-receipt-expectedRecipientPeerIds-count-1',
     'assert-receipt-confirmedRecipientPeerIds-count-1',
-    'assert-receipt-unconfirmedRecipientPeerIds-count-1'
+    'assert-receipt-unconfirmedRecipientPeerIds-count-1',
+    'assert-receipt-outsideAudienceRecipientPeerIds-count-1'
 ] as const;
 
 type ClaimScenarioId = (typeof CLAIM_SCENARIO_IDS)[number];
@@ -106,7 +107,8 @@ function toReceiptChanges(expectedRecipientPeerIds: readonly string[]): readonly
         { receiptMode: 'leader' },
         { expectedRecipientPeerIds: [first] },
         { confirmedRecipientPeerIds: [first] },
-        { unconfirmedRecipientPeerIds: [first] }
+        { unconfirmedRecipientPeerIds: [first] },
+        { outsideAudienceRecipientPeerIds: [first] }
     ];
 }
 
@@ -152,6 +154,7 @@ describe('claim-first-wins', () => {
         expectedRecipientPeerIds: ['receiver-session', 'recipient-b-session'],
         confirmedRecipientPeerIds: ['receiver-session', 'recipient-b-session'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         attempts: 1,
         attemptCarriers: ['ws'],
         carrierFallback: undefined
@@ -199,7 +202,8 @@ describe('claim-first-wins', () => {
                 {
                     handleId: `alm-${carrier}-claim-first-wins-send-1`,
                     confirmed: ['receiver', 'recipient-b'],
-                    unconfirmed: []
+                    unconfirmed: [],
+                    outsideAudience: []
                 }
             ]);
             expect(await readTail(scenario.sender, 'receipts-1', receipt)).toBe(true);
@@ -211,7 +215,7 @@ describe('claim-first-wins', () => {
                     changes: toReceiptChanges(receipt.expectedRecipientPeerIds)
                 })
             )
-                .toEqual([false, false, false, false, false]);
+                .toEqual([false, false, false, false, false, false]);
             expect(await readTail(scenario.sender, 'observe-acknowledged-1', receipt)).toBe(true);
             expect(
                 await readTailForEachChange({
@@ -373,7 +377,8 @@ describe('claim-expires-reclaims', () => {
             receiptMode: 'receiver',
             expectedRecipientPeerIds: ['sender-session', 'receiver-session'],
             confirmedRecipientPeerIds: ['sender-session', 'receiver-session'],
-            unconfirmedRecipientPeerIds: []
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: []
         };
         expect(await readTail(recipientB, 'receipts-1', receipt)).toBe(true);
         expect(
@@ -384,7 +389,7 @@ describe('claim-expires-reclaims', () => {
                 changes: toReceiptChanges(receipt.expectedRecipientPeerIds)
             })
         )
-            .toEqual([false, false, false, false, false]);
+            .toEqual([false, false, false, false, false, false]);
     });
 
     it('has the receiver receive both claims and no third copy', () => {

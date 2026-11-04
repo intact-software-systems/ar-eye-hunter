@@ -54,42 +54,48 @@
               "confirmed": [
                 "receiver"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-ws-ws-unicast-receipt-send-1",
               "confirmed": [
                 "receiver"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-delivery-baseline-send-1",
               "confirmed": [
                 "receiver"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-ws-unicast-receipt-send-1",
               "confirmed": [
                 "receiver"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-with-ws-fallback-delivery-baseline-send-1",
               "confirmed": [
                 "receiver"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-with-ws-fallback-ws-unicast-receipt-send-1",
               "confirmed": [
                 "receiver"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             }
           ]
         },
@@ -1523,6 +1529,14 @@
             "kind": "assert",
             "commandId": "alm-ws-delivery-baseline-sender-assert-receipt-unconfirmedRecipientPeerIds-count-1",
             "source": "resultCache.alm-ws-delivery-baseline-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-baseline-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-ws-delivery-baseline-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
             "operator": "equals",
             "expected": 0,
             "timeoutMs": 2000
@@ -4147,6 +4161,14 @@
             "kind": "assert",
             "commandId": "alm-rtc-delivery-baseline-sender-assert-receipt-unconfirmedRecipientPeerIds-count-1",
             "source": "resultCache.alm-rtc-delivery-baseline-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-baseline-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-delivery-baseline-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
             "operator": "equals",
             "expected": 0,
             "timeoutMs": 2000
@@ -7097,6 +7119,14 @@
             "kind": "assert",
             "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-assert-receipt-unconfirmedRecipientPeerIds-count-1",
             "source": "resultCache.alm-rtc-with-ws-fallback-delivery-baseline-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-baseline-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
             "operator": "equals",
             "expected": 0,
             "timeoutMs": 2000

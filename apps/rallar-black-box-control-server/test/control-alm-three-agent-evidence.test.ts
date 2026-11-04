@@ -23,6 +23,7 @@ interface ReceiptPin {
     readonly handleId: string;
     readonly confirmed: readonly string[];
     readonly unconfirmed: readonly string[];
+    readonly outsideAudience: readonly string[];
 }
 
 Deno.test('the generated 3-agent ALM manifest passes when every receipt names the sessions of its pinned roles', () => {
@@ -71,7 +72,8 @@ function toReceiptPins(sender: RallarBlackBoxTestRecipe): readonly ReceiptPin[] 
     return pins.filter(isJsonRecordValue).map((pin) => ({
         handleId: String(pin.handleId),
         confirmed: pin.confirmed as readonly string[],
-        unconfirmed: pin.unconfirmed as readonly string[]
+        unconfirmed: pin.unconfirmed as readonly string[],
+        outsideAudience: pin.outsideAudience as readonly string[]
     }));
 }
 
@@ -110,9 +112,10 @@ function toCommandEvidence(command: RallarBlackBoxTestCommand, evidence: RecipeE
     const unconfirmed = evidence.swapRecipients ? pin.confirmed : pin.unconfirmed;
     const sessions = (roles: readonly string[]) => roles.map((role) => `${role}-session`);
     return {
-        expectedRecipientPeerIds: sessions([...pin.confirmed, ...pin.unconfirmed]),
+        expectedRecipientPeerIds: sessions([...pin.confirmed, ...pin.unconfirmed, ...pin.outsideAudience]),
         confirmedRecipientPeerIds: sessions(confirmed),
-        unconfirmedRecipientPeerIds: sessions(unconfirmed)
+        unconfirmedRecipientPeerIds: sessions(unconfirmed),
+        outsideAudienceRecipientPeerIds: sessions(pin.outsideAudience)
     };
 }
 

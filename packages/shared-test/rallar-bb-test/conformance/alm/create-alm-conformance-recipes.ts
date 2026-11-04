@@ -372,7 +372,8 @@ function toReceiptRolesMetadata(
     return {
         handleId: toSendHandleId({ ...step, index: 1 }),
         confirmed: roles.confirmed,
-        unconfirmed: roles.unconfirmed
+        unconfirmed: roles.unconfirmed,
+        outsideAudience: roles.outsideAudience
     };
 }
 
