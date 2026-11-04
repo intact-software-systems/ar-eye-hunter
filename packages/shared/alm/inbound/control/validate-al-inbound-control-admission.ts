@@ -1,10 +1,10 @@
 import {
     isALHopCompletionAck,
-    isALRecipientConfirmationAck,
     type ALAckPayload
 } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-control-admission.ts';
 
 /** Every reason this acknowledgement may not be admitted; an absent obligation makes the rest moot. */

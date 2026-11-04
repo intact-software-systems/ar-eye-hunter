@@ -1,6 +1,6 @@
-import { isALRecipientConfirmationAck } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundNackAdmissionCandidate } from './compute-al-inbound-nack-admission.ts';
 
 /**

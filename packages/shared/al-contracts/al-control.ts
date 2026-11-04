@@ -139,11 +139,6 @@ export function isALHopCompletionAck(ack: ALAckPayload): boolean {
             ack.status === 'subtree-complete-not-subscribed');
 }
 
-/** Whether an ACK speaks for a recipient's delivery: every ACK but the hop completion of one that delivered nothing. */
-export function isALRecipientConfirmationAck(ack: ALAckPayload): boolean {
-    return ack.status !== 'subtree-complete-not-subscribed';
-}
-
 export interface ALCompletedPendingAck {
     readonly msgId: string;
     readonly toPeerId: string;

@@ -1,7 +1,6 @@
 import type { ALTargets } from '../../al-contracts/al-contract.ts';
 import {
     isALHopCompletionAck,
-    isALRecipientConfirmationAck,
     type ALAckPayload,
     type ALAckStatus,
     type ALCompletedPendingAck,
@@ -12,6 +11,7 @@ import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-m
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 
 export interface TrackALPendingAckSnapshotInput {
     readonly msgId: string;

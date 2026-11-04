@@ -1,12 +1,12 @@
 import {
     isALHopCompletionAck,
-    isALRecipientConfirmationAck,
     type ALAckPayload
 } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
+import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,

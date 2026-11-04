@@ -1,6 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import {
-    isALRecipientConfirmationAck,
     type ALAckStatus,
     type ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
@@ -9,6 +8,7 @@ import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../../al-contracts/is-al-unicast-addressed-to.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
+import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
 import {
