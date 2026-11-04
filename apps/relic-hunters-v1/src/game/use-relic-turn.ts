@@ -59,7 +59,7 @@ export function useRelicTurn(
     const selection = useRelicTurnSelection(game);
     const viewModel = computeRelicGameViewModel({
         snapshot: game.snapshot,
-        localPlayerId: game.participation === 'player' ? game.session?.sessionId : undefined,
+        localPlayerId: game.participation === 'player' ? game.playerId : undefined,
         draft: selection.draft,
         lang: preferences.lang,
         revealedEvents
@@ -80,11 +80,12 @@ export function useRelicTurn(
         timeRemainingMs,
         sceneObjective: deriveSceneObjective({
             snapshot: game.snapshot,
-            localPlayerId: game.participation === 'player' ? game.session?.sessionId : undefined,
+            localPlayerId: game.participation === 'player' ? game.playerId : undefined,
             primedAction: selection.primedAction
         }),
-        planning: game.snapshot?.phase === 'planning' && !!player && !player.escaped && !player.defeated,
-        reviewing: game.snapshot?.phase === 'review'
+        planning: game.snapshot?.tournament?.status !== 'cancelled' && game.snapshot?.phase === 'planning' &&
+            !!player && !player.escaped && !player.defeated,
+        reviewing: game.snapshot?.tournament?.status !== 'cancelled' && game.snapshot?.phase === 'review'
     };
 }
 
@@ -92,13 +93,13 @@ function useRelicTurnSelection(game: RelicHuntersRuntime.Connection): RelicTurnS
     const [draft, setDraft] = useState<ActionDraft>({ kind: 'search' });
     const [primedAction, setPrimedAction] = useState<RelicActionInput | undefined>();
     const [roomId, setRoomId] = useState<string | undefined>();
-    const currentRoomId = game.snapshot?.players.find((player) => player.playerId === game.session?.sessionId)?.roomId;
+    const currentRoomId = game.snapshot?.players.find((player) => player.playerId === game.playerId)?.roomId;
     useEffect(() => {
         setPrimedAction(undefined);
     }, [currentRoomId, game.snapshot?.phase, game.snapshot?.round]);
     const identityKey = JSON.stringify([
         game.roomId,
-        game.session?.sessionId,
+        game.playerId,
         game.participation,
         game.snapshot?.createdAtEpochMs
     ]);
@@ -133,7 +134,7 @@ function useRelicTurnActions({ game, selection, viewModel, enableAmbient }: Reli
     const continueReview = useRelicReviewContinuation(game, viewModel.isAdmin);
     useEffect(() => {
         setLockedAction(undefined);
-    }, [game.roomId, game.session?.sessionId, game.snapshot?.createdAtEpochMs, game.snapshot?.round]);
+    }, [game.roomId, game.playerId, game.snapshot?.createdAtEpochMs, game.snapshot?.round]);
     const submit = async () => {
         const action = toSelectedRelicAction(selection.draft, selection.roomId, viewModel);
         setLockedAction(action);

@@ -9,8 +9,8 @@ import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import type { ArenaMatchState } from '../game/arena-contracts.ts';
-import type { ArenaRematch } from '../game/arena-rematch.ts';
+import type { ArenaMatchState } from '@ar-eye-hunter/arena-contracts.ts';
+import type { ArenaRematch } from '@ar-eye-hunter/arena-rematch.ts';
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import type { ArenaRematchDraft } from '../game/arena-runtime/game-actions/use-arena-world-actions.ts';
 

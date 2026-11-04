@@ -1,7 +1,8 @@
 import { resolveRallarGameTypeIds } from '@shared-web/game/match.ts';
 import { describe, expect, it } from 'vitest';
 
-import type { GameRealtimeMessage, PlayerPose, ShotIntent } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import type { ShotIntent } from '@ar-eye-hunter/arena-contracts.ts';
+import type { GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { GAME_AI_TOPIC_ID, GAME_DIRECTOR_TOPIC_ID } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import {
     ARENA_RALLAR_GAME_DATA_CHANNEL_LANES,

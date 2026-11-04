@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { finishArenaMatchIfDue, startArenaMatch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-match.ts';
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
-import { applyArenaRematchCommand, createArenaRematch } from '../../../apps/ar-eye-hunter-v1/src/game/arena-rematch.ts';
-import { createInitialLoadoutState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-weapons.ts';
+import { finishArenaMatchIfDue, startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
+import { createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
+import { applyArenaRematchCommand, createArenaRematch } from '@ar-eye-hunter/arena-rematch.ts';
+import { createInitialLoadoutState } from '@ar-eye-hunter/arena-weapons.ts';
 import {
     createInitialArenaState,
     upsertPlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
+import { describe, expect, it } from 'vitest';
 
 function completedMatch() {
     let state = createInitialArenaState(12, 1_000);

@@ -15,6 +15,9 @@
     },
     {
       "path": "packages/relic-hunters"
+    },
+    {
+      "path": "packages/ar-eye-hunter"
     }
   ],
   "compilerOptions": {
@@ -26,15 +29,36 @@
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
     "types": [],
-    "lib": ["ES2024", "DOM", "WebWorker"],
+    "lib": [
+      "ES2024",
+      "DOM",
+      "WebWorker"
+    ],
     "paths": {
-      "@shared-react/*": ["./packages/shared-react/*"],
-      "@shared-web/*": ["./packages/shared-web/*"],
-      "@shared-server/*": ["./packages/shared-server/*"],
-      "@shared-graph/*": ["./packages/shared-graph/*"],
-      "@shared-test/*": ["./packages/shared-test/*"],
-      "@shared/*": ["./packages/shared/*"],
-      "@relic-hunters/*": ["./packages/relic-hunters/*"]
+      "@shared-react/*": [
+        "./packages/shared-react/*"
+      ],
+      "@shared-web/*": [
+        "./packages/shared-web/*"
+      ],
+      "@shared-server/*": [
+        "./packages/shared-server/*"
+      ],
+      "@shared-graph/*": [
+        "./packages/shared-graph/*"
+      ],
+      "@shared-test/*": [
+        "./packages/shared-test/*"
+      ],
+      "@shared/*": [
+        "./packages/shared/*"
+      ],
+      "@relic-hunters/*": [
+        "./packages/relic-hunters/*"
+      ],
+      "@ar-eye-hunter/*": [
+        "./packages/ar-eye-hunter/*"
+      ]
     }
   }
 }

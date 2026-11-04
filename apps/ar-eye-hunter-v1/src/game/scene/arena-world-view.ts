@@ -1,3 +1,4 @@
+import type { ArenaLayoutProp, ArenaLayoutSpec, Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
 import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
@@ -8,11 +9,6 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import type { Scene } from '@babylonjs/core/scene.js';
-import type {
-    ArenaLayoutProp,
-    ArenaLayoutSpec,
-    Vec3Tuple
-} from '../arena-contracts.ts';
 import { ARENA_SCENE_THEME } from './arena-scene-theme.ts';
 
 const MATRIX_SIGNS = [

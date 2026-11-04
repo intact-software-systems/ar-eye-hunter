@@ -6,5 +6,6 @@ export function hasUnfinishedRelicParticipation(
     playerId: string | undefined
 ): boolean {
     return snapshot !== undefined && snapshot.phase !== 'finished' &&
+        (snapshot.tournament === null || snapshot.tournament.status === 'playing') &&
         snapshot.players.some((player) => player.playerId === playerId && player.withdrawnAtEpochMs === undefined);
 }

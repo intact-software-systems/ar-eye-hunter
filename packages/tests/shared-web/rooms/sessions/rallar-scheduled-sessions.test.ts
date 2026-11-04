@@ -43,8 +43,13 @@ function browser() {
         create: vi.fn<RallarScheduledSessions.Api['create']>(async () => ref),
         change: vi.fn<RallarScheduledSessions.Api['change']>(async () => {})
     };
-    const enter = vi.fn((destination: RallarRoomEntry.Destination) => {
-        entryState = { status: 'pending', destination, principalId: null, failure: null };
+    const enter = vi.fn((destination: RallarRoomEntry.DestinationInput) => {
+        entryState = {
+            status: 'pending',
+            destination: { ...destination, preserveCurrentMembership: destination.preserveCurrentMembership ?? false },
+            principalId: null,
+            failure: null
+        };
         entryChanges.publishLatest(entryState);
         return entryState;
     });

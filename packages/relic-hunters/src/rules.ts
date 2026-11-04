@@ -198,7 +198,7 @@ function withdrawHunter(state: RelicGameState, evaluation: RelicCommandEvaluatio
     }, evaluation.now);
     const active = activePlayers(next);
     if (next.phase !== 'lobby' && active.length === 0) {
-        return { state: advanceReviewedRound(next, evaluation.now), resolvedRound: false };
+        return { state: continueRelicRoundReview(next, evaluation.now), resolvedRound: false };
     }
     const resolvedRound = next.phase === 'planning' &&
         active.every((hunter) => next.pendingActions.some((pending) => pending.playerId === hunter.playerId));
@@ -334,10 +334,10 @@ function validateRoundCommand({ state, player, command, now }: RelicRoundCommand
 function applyRoundCommand({ state, player, command, now }: RelicRoundCommandInput): RelicApplyCommandResult {
     switch (command.kind) {
         case 'continue-review':
-            return { state: advanceReviewedRound(state, now), resolvedRound: false };
+            return { state: continueRelicRoundReview(state, now), resolvedRound: false };
         case 'force-resolve-round':
             return {
-                state: resolveRound(forceRoundResolutionState(state, activePlayers(state), now), now),
+                state: resolveExpiredRelicRound(state, now),
                 resolvedRound: true
             };
         case 'pickup-relic':
@@ -378,6 +378,14 @@ function submitAction({ state, player, command, now }: RelicActionSubmission): R
 function roundTimerExpired(state: RelicGameState, now: number): boolean {
     return state.roundStartedAtEpochMs !== undefined &&
         now >= state.roundStartedAtEpochMs + state.roundTimeLimitMs;
+}
+
+/** The authoritative clock and player timeout command share the native missing-plan rule. */
+export function resolveExpiredRelicRound(state: RelicGameState, now: number): RelicGameState {
+    if (state.phase !== 'planning' || !roundTimerExpired(state, now)) {
+        return state;
+    }
+    return resolveRound(forceRoundResolutionState(state, activePlayers(state), now), now);
 }
 
 function forceRoundResolutionState(
@@ -457,7 +465,7 @@ function resolveRound(state: RelicGameState, now: number): RelicGameState {
     return scoreAllPlayers(reviewState);
 }
 
-function advanceReviewedRound(state: RelicGameState, now: number): RelicGameState {
+export function continueRelicRoundReview(state: RelicGameState, now: number): RelicGameState {
     const nextRound = state.round + 1;
     const finished = nextRound > state.maxRounds || activePlayers(state).length === 0;
     const advanced = touch({
@@ -867,6 +875,9 @@ function validateAction(
         action.kind === 'move' && action.targetRoomId && !legalMoveTargets(state, player).includes(action.targetRoomId)
     ) {
         issues.push({ code: 'move-not-adjacent', message: 'Move target is not adjacent.' });
+    }
+    if (action.kind === 'steal' && action.targetPlayerId === player.playerId) {
+        issues.push({ code: 'steal-self-forbidden', message: 'Steal requires a different hunter.' });
     }
     if (action.kind === 'steal' && !action.targetPlayerId) {
         issues.push({ code: 'steal-target-required', message: 'Steal requires a target hunter.' });

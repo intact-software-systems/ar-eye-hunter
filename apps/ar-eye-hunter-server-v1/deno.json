@@ -1,0 +1,23 @@
+{
+  "name": "ar-eye-hunter-server-v1",
+  "version": "0.1.0",
+  "exports": {},
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@api-v1/": "../api-v1/",
+    "@ar-eye-hunter/": "../../packages/ar-eye-hunter/",
+    "@shared-server/": "../../packages/shared-server/",
+    "@shared-graph/": "../../packages/shared-graph/",
+    "@shared/": "../../packages/shared/",
+    "@js-temporal/polyfill": "npm:@js-temporal/polyfill@^0.5.1",
+    "@electric-sql/pglite": "npm:@electric-sql/pglite@0.4.1",
+    "postgres": "npm:postgres@^3.4.9",
+    "graphology": "npm:graphology@0.26.0"
+  },
+  "tasks": {
+    "start": "DENO_NO_PACKAGE_JSON=1 deno run --allow-net --allow-env --allow-read src/main.ts",
+    "check": "DENO_NO_PACKAGE_JSON=1 deno check src/main.ts test/",
+    "test": "DENO_NO_PACKAGE_JSON=1 deno test --allow-env --allow-read --allow-write test/"
+  },
+  "compilerOptions": { "erasableSyntaxOnly": true, "strict": true, "lib": ["deno.ns", "dom"] }
+}

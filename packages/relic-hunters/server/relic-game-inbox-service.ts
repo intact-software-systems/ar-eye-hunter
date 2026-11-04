@@ -89,6 +89,14 @@ export class RelicGameInboxService {
         return admitted.fold(throwRelicInboxFailure, (admission) => admission);
     }
 
+    async enqueueTournamentClock(command: RelicGameMutationService.ClockCommand, traceId: string): Promise<void> {
+        const admitted = await this.operation.enqueue({
+            command: { command, initial: null, capturedAtEpochMs: 0, serverPeerId: this.config.serverPeerId },
+            traceId
+        });
+        admitted.fold(throwRelicInboxFailure, () => undefined);
+    }
+
     async wait(
         admission: RallarServerAppInbox.Admission<RelicGameMutationService.Result>
     ): Promise<RelicGameMutationService.Result> {
@@ -115,8 +123,8 @@ export class RelicGameInboxService {
             requestId: command.requestId,
             traceId: context.message.id.traceId,
             ...toRelicRoomGroupRef(command.gameId),
-            principalId: command.actor.clientId,
-            sessionId: command.actor.sessionId,
+            principalId: command.actor?.clientId,
+            sessionId: command.actor?.sessionId,
             details: { attempt: context.entry.dequeueAudit.attempts }
         };
         const read = await timeRallarAsync(
@@ -164,7 +172,9 @@ export class RelicGameInboxFailureError extends Error {
 function decodeRelicEnvelope(envelope: RallarServerAppInbox.Envelope): RelicGameMutationService.Ingress {
     const command = decodeRelicGameCommand(envelope.data);
     const ingress = decodeRelicGameIngress(envelope.authority);
-    if (!jsonEquals(command, ingress.command) || envelope.senderId !== command.actor.sessionId) {
+    if (
+        !jsonEquals(command, ingress.command) || envelope.senderId !== (command.actor?.sessionId ?? 'tournament-clock')
+    ) {
         throw new TypeError('Relic envelope differs from its canonical ingress');
     }
     return ingress;
@@ -173,7 +183,7 @@ function decodeRelicEnvelope(envelope: RallarServerAppInbox.Envelope): RelicGame
 function encodeRelicEnvelope(ingress: RelicGameMutationService.Ingress): RallarServerAppInbox.Envelope {
     return {
         data: encodeJsonWireValue(ingress.command, 'Relic mutation command'),
-        senderId: ingress.command.actor.sessionId,
+        senderId: ingress.command.actor?.sessionId ?? 'tournament-clock',
         authority: encodeJsonWireValue({
             ...ingress,
             initial: ingress.initial === null ? null : encodeRelicGameStateAppData(ingress.initial)

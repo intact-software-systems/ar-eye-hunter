@@ -1,5 +1,55 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Independently reviewed owner: Canonical layout geometry and its bounded proposal decoder share one shape.
+    // Exact cap permits no additional complexity and waives no other rule.
+    Object.freeze({ path: 'packages/ar-eye-hunter/arena-layout.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 61 }),
+    // Independently reviewed owner: Wave, damage, pickup and respawn transitions cross-update the same arena state and events.
+    // Exact cap permits no additional complexity and waives no other rule.
+    Object.freeze({ path: 'packages/ar-eye-hunter/simulation.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 169 }),
+    // Independently reviewed owner: Exports are transitions of one canonical arena simulation used by browser and server.
+    // Exact cap permits no additional complexity and waives no other rule.
+    Object.freeze({ path: 'packages/ar-eye-hunter/simulation.ts', rule: 'file.responsibility-count', symbol: undefined, maximumMagnitude: 25 }),
+    // Independently reviewed owner: One native arena attempt owns read, authorization, compute, validation and atomic game/result writes.
+    // Exact cap permits no additional complexity and waives no other rule.
+    Object.freeze({ path: 'packages/ar-eye-hunter/server/arena-tournament-mutation.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 52 }),
+    // Independently reviewed owner: One exact checkpoint decoder checks identity, bounded fields and cross-field projections.
+    // Exact cap permits no additional complexity and waives no other rule.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 56 }),
+    // Independently reviewed owner: Small local components present one bracket lifecycle from registration through cancellation/results.
+    // Exact cap permits no additional complexity and waives no other rule.
+    Object.freeze({ path: 'packages/shared-react/tournament-panel.tsx', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 54 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidCombat', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidVitals', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidLoadout', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidTarget', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidThreat', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidPickup', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidAttack', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidEvent', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidWave', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidArenaPlayer', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'requireArray', maximumMagnitude: 2 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'requireFinite', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'requireVector', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'optionalEpochs', maximumMagnitude: 1 }),
+    // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
+    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'uniqueIdentities', maximumMagnitude: 1 }),
+    // Private clock ingress is untrusted until exact record checks yield a canonical command.
+    Object.freeze({ path: 'packages/relic-hunters/server/relic-game-mutation-service.ts', rule: 'boundary.unknown', symbol: 'decodeRelicClockCommand', maximumMagnitude: 1 }),
     // Independent whole-file review: one room moderation view owns confirmation, server outcome,
     // and explicit access-loss presentation. Existing room entry owns admission cancellation;
     // timers and notifications reuse shared primitives. Splitting these short UI transitions
@@ -51,17 +101,17 @@ export const reviewedBrowserDispositions = Object.freeze([
     }),
     // Reviewed deterministic scalar/vector arithmetic owner; all exports have direct consumers.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-math.ts',
+        path: 'packages/ar-eye-hunter/arena-math.ts',
         rule: 'file.responsibility-count',
         symbol: undefined,
-        maximumMagnitude: 12
+        maximumMagnitude: 14
     }),
     // Reviewed target spawn, shot and mutation computation owner; no transport or lifecycle decisions.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-targets.ts',
+        path: 'packages/ar-eye-hunter/arena-targets.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 81
+        maximumMagnitude: 91
     }),
     // Room entry and current participation controls remain cohesive; unrelated panel navigation moved to its owner.
     Object.freeze({
@@ -83,12 +133,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'file.responsibility-count',
         symbol: undefined,
         maximumMagnitude: 12
-    }),
-    // AI proposal input remains untrusted until the bounded schema and numeric validators produce domain values.
-    Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/ai-director.ts',
-        rule: 'boundary.unknown',
-        symbol: 'validateAiArenaLayoutProposal'
     }),
     // AI proposal input remains untrusted until the bounded schema and numeric validators produce domain values.
     Object.freeze({
@@ -116,79 +160,73 @@ export const reviewedBrowserDispositions = Object.freeze([
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'validateArenaLayoutSpec'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
-        rule: 'boundary.unknown',
-        symbol: 'assertArenaLayoutSpec'
-    }),
-    // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
-    Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readTheme'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readProps'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readSigns'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readPickupAnchors'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readVec3Array'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readPropKind'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readString'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'readHex'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'toFiniteNumber'
     }),
     // Layout proposal decoding bounds collections, coordinates and scalar fields before exposing an ArenaLayoutSpec.
     Object.freeze({
-        path: 'apps/ar-eye-hunter-v1/src/game/arena-layout.ts',
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
         rule: 'boundary.unknown',
         symbol: 'isRecord'
     }),

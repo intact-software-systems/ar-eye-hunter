@@ -29,12 +29,12 @@ export function RelicRoundPlan({ game, turn, lang }: RelicRoundPlanProps) {
     }
     return (
         <section className="action-command-panel" aria-label="Round plan">
-            <TurnPlanStatusCard snapshot={game.snapshot} localPlayerId={game.session.sessionId} />
+            <TurnPlanStatusCard snapshot={game.snapshot} localPlayerId={game.playerId} />
             {turn.viewModel.turnStatus.isLocked && (
                 <LockedPlanCard
                     action={turn.actions.lockedAction}
                     snapshot={game.snapshot}
-                    localPlayerId={game.session.sessionId}
+                    localPlayerId={game.playerId}
                 />
             )}
             <RelicActionPicker turn={turn} />

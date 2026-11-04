@@ -194,6 +194,41 @@ mutation retry classifier distinguishes definitive outcomes from transport ambig
 in `packages/shared-react` supplies both games' visible consent controls. Explicit matched-room entry
 uses `RallarRoomEntry`; game participation and director/Keeper authority stay with their existing owners.
 
+## Trusted individual tournaments
+
+`TournamentService` registers authenticated intent and private reconciliation with AppInbox. Its
+repository reads the scoped bracket, entrant interests, exact private attempts and immutable
+results; computation and validation prepare conditional writes before the transaction. Start reuses
+cohort room admission so both memberships, the private attempt, game-start outbox and durable
+result commit together. Deadline and result signals trigger fresh reconciliation through AppInbox.
+Cancellation and replacement of a playing attempt commit a game-owned lifecycle signal with the
+private attempt revocation. Relic publishes a terminal snapshot under that exact cancelled-attempt
+fence without changing its save or accepted scores. Conflicts return to QueueBox; neither the service nor its repository retries inside a delivery.
+
+`TournamentResultRepository` binds every result to the tournament, slot, attempt, scoped room,
+game instance, rules and two account identities. A game owner commits its final save, attempt CAS
+and immutable result atomically. Cancellation fences an old finalizer; replay cannot overwrite a
+result or advance a newer attempt. Browser commands never supply authoritative scores or winners.
+The generic platform knows rule identifiers and delivery topics, not AR Eye or Relic game rules.
+
+`packages/ar-eye-hunter` owns the one canonical arena simulation consumed by browser presentation
+and the native tournament server. The server accepts bounded controls and advances movement,
+targets, shots and scoring on its clock; client poses and scores are not authoritative. The new
+`apps/ar-eye-hunter-server-v1` composes this owner through the public application AppInbox.
+Relic uses its existing game mutation owner, with account-bound tournament hunters and durable
+round deadlines. Both game owners compare observed group, session and presence authority before
+writing. Room-owned saves share retention fencing; immutable result evidence is stored separately.
+
+AppOutbox claims only explicitly registered topics. Generic API processes cannot consume native
+game clocks or lifecycle signals. Each deployment must run its game owner and configure the same complete
+room-owned AppData catalog on every process sharing the database; registrations happen before
+workers start. Restart resumes durable work without a separate polling scheduler or migration.
+
+`RallarTournament` composes `AuthenticatedResource` for account-fenced reads, exact retry and
+notifications. `TournamentPanel` in `packages/shared-react` supplies both games' bracket controls.
+Entry reuses `RallarRoomEntry` and preserves old memberships while replacing active presence.
+Game adapters keep casual participation rules and consume only their server's native snapshots.
+
 ## Durable scoped parties
 
 `PartyService` registers `app:rallar-parties:mutate` with the server AppInbox. Each attempt reads

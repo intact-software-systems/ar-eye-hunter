@@ -40,11 +40,11 @@ export function useRelicPlayback(game: RelicHuntersRuntime.Connection, lang: Lan
     );
     const state = useSyncExternalStore(playback.subscribe, playback.getState);
     useEffect(() => {
-        playback.receive(game.snapshot, game.session?.sessionId);
-    }, [playback, game.snapshot, game.session?.sessionId]);
+        playback.receive(game.snapshot, game.playerId);
+    }, [playback, game.snapshot, game.playerId]);
     useEffect(() => () => playback.stop(), [playback]);
     const phaseBanner = useRelicPhaseBanner(game.roundTransition, lang);
-    const [roomFlash, clearRoomFlash] = useRelicRoomFlash(game.snapshot, game.session?.sessionId);
+    const [roomFlash, clearRoomFlash] = useRelicRoomFlash(game.snapshot, game.playerId);
     const lastEvent = state.events.at(-1);
     return {
         ...state,

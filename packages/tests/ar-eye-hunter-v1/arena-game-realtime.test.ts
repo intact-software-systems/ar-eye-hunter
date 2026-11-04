@@ -40,18 +40,17 @@ import type {
     ArenaEvent,
     ArenaPickupState,
     ArenaSnapshot,
-    GameRealtimeMessage,
-    PickupIntent,
-    PlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
-import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/arena-player-state.ts';
-import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
+    PickupIntent
+} from '@ar-eye-hunter/arena-contracts.ts';
+import { createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
 import {
     createInitialArenaState,
     spawnWeaponPickup,
     toArenaSnapshot,
     upsertPlayerPose
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
+import type { GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
+import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 
 interface PickupSnapshotFixture {
     readonly snapshot: ArenaSnapshot;
@@ -148,8 +147,8 @@ describe('arena game realtime acceptance and egress', () => {
         const snapshot = arenaSnapshot(10);
 
         await act(async () => {
-            arena.current?.publishArenaSnapshot(snapshot);
-            arena.current?.publishArenaSnapshot(snapshot);
+            arena.current?.publishArenaSnapshot(snapshot, arena.current?.arenaSnapshot);
+            arena.current?.publishArenaSnapshot(snapshot, snapshot);
         });
 
         expect(mockMatch.publishSnapshot).toHaveBeenCalledTimes(1);
@@ -167,9 +166,12 @@ describe('arena game realtime acceptance and egress', () => {
         mockMatch.publishSnapshot.mockClear();
 
         await act(async () => {
-            arena.current?.publishArenaSnapshot(arenaSnapshot(20));
-            arena.current?.publishArenaSnapshot(arenaSnapshot(21));
-            arena.current?.publishArenaSnapshot(arenaSnapshot(22));
+            let predecessor = arena.current?.arenaSnapshot;
+            for (const revision of [20, 21, 22]) {
+                const next = arenaSnapshot(revision);
+                arena.current?.publishArenaSnapshot(next, predecessor);
+                predecessor = next;
+            }
         });
 
         expect(mockMatch.publishSnapshot).toHaveBeenCalledTimes(1);
@@ -201,8 +203,12 @@ describe('arena game realtime acceptance and egress', () => {
         mockMatch.publishSnapshot.mockClear();
 
         await act(async () => {
-            arena.current?.publishArenaSnapshot(arenaSnapshot(30));
-            arena.current?.publishArenaSnapshot(arenaSnapshot(31));
+            let predecessor = arena.current?.arenaSnapshot;
+            for (const revision of [30, 31]) {
+                const next = arenaSnapshot(revision);
+                arena.current?.publishArenaSnapshot(next, predecessor);
+                predecessor = next;
+            }
         });
         expect(mockMatch.publishSnapshot).toHaveBeenCalledTimes(1);
 

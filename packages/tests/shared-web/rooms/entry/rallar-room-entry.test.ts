@@ -23,7 +23,8 @@ const DESTINATION: RallarRoomEntry.Destination = {
     intent: 'join',
     roomRef: { ...SCOPE, groupId: 'private-room' },
     joinCode: 'CODE +/&?',
-    participation: 'preserve'
+    participation: 'preserve',
+    preserveCurrentMembership: false
 };
 const FRAGMENT = '#rallar-room?applicationId=ar-eye-hunter&workspaceId=default&groupId=private-room';
 
@@ -47,6 +48,32 @@ describe('scheduled-session link entry', () => {
         expect(browser.requests).toHaveLength(1);
         expect(browser.requests[0].roomRef.groupId).toBe('scheduled');
         expect(restored.getState().status).toBe('entered');
+        restored.stop();
+    });
+});
+
+describe('membership-preserving entry', () => {
+    it('round-trips membership preservation without accepting ambiguous link options', () => {
+        const destination = { ...DESTINATION, preserveCurrentMembership: true };
+        const url = toRoomEntryUrl('https://game.example/', destination).right!;
+        expect(readRoomEntryDestination(url, SCOPE).right).toEqual(destination);
+        expect(readRoomEntryDestination(url.replace('preserveCurrentMembership=true', 'preserveCurrentMembership=maybe'), SCOPE).left)
+            .toMatchObject({ kind: 'invalid-destination' });
+    });
+
+    it('persists the explicit membership choice across reload and passes it to the room owner', async () => {
+        const browser = new EntryBrowser();
+        browser.authenticate();
+        const first = browser.createEntry();
+        first.start();
+        first.enter({ ...DESTINATION, joinCode: null, preserveCurrentMembership: true });
+        first.stop();
+        const restored = browser.createEntry();
+        restored.start();
+        await restored.resume();
+        expect(browser.requests).toHaveLength(1);
+        expect(browser.requests[0].options.preserveCurrentMembership).toBe(true);
+        expect(restored.getState()).toMatchObject({ status: 'entered', destination: { preserveCurrentMembership: true } });
         restored.stop();
     });
 });
@@ -642,7 +669,7 @@ describe('pending room entry lifecycle', () => {
     });
 });
 
-function shareLink(destination: RallarRoomEntry.Destination): string {
+function shareLink(destination: RallarRoomEntry.DestinationInput): string {
     return toRoomEntryUrl('https://game.example/', destination).fold((failure) => {
         throw new Error(failure.message);
     }, (url) => url);

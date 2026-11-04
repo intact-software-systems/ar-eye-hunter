@@ -1,0 +1,1063 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "applicationId": "black-box-tournaments",
+    "workspaceId": "default",
+    "clientPassword": {
+      "default": "tournament-test-password",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ],
+  "description": "Four-player tournament API: scoped registration, exact replay/conflict, forged authority/result refusal, durable no-show advancement through a complete bracket, and cancellation. Native game scoring is verified in game-owner and clickable SPA tests.",
+  "steps": [
+    {
+      "name": "registeralice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/tournaments-register-alice-{runId}",
+        "body": {
+          "username": "tournaments-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "loginalice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/tournaments-login-alice-{runId}",
+        "body": {
+          "username": "tournaments-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "aliceSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivealiceAuth",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerbob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/tournaments-register-bob-{runId}",
+        "body": {
+          "username": "tournaments-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "loginbob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/tournaments-login-bob-{runId}",
+        "body": {
+          "username": "tournaments-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "bobSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivebobAuth",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registercharlie",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/tournaments-register-charlie-{runId}",
+        "body": {
+          "username": "tournaments-charlie-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "charlie"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "logincharlie",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/tournaments-login-charlie-{runId}",
+        "body": {
+          "username": "tournaments-charlie-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "charlieClientId": "body.clientId",
+          "charlieAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "charlieSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivecharlieAuth",
+      "type": "set",
+      "output": "charlieAuthHeader",
+      "secret": true,
+      "redactAs": "charlieAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.charlieAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerdana",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/tournaments-register-dana-{runId}",
+        "body": {
+          "username": "tournaments-dana-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "dana"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "logindana",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/tournaments-login-dana-{runId}",
+        "body": {
+          "username": "tournaments-dana-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "danaClientId": "body.clientId",
+          "danaAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "danaSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivedanaAuth",
+      "type": "set",
+      "output": "danaAuthHeader",
+      "secret": true,
+      "redactAs": "danaAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.danaAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "anonymous",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "empty",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tournament": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "create",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-create-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "create",
+          "title": "Black-box cup"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "replay",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-create-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "create",
+          "title": "Black-box cup"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "changedRequest",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-create-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "create",
+          "title": "Changed cup"
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
+      "name": "forgedResult",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-forgedResult-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "result",
+          "scores": [
+            100,
+            0
+          ]
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "forgedActor",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-forgedActor-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "register",
+          "principalId": "admin"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "privateReconcile",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-privateReconcile-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "reconcile"
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    },
+    {
+      "name": "registeralice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-registeralice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "register"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "registerbob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-registerbob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "type": "register"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "registercharlie",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-registercharlie-{runId}",
+        "headers": {
+          "Authorization": "{charlieAuthHeader}",
+          "x-client-id": "{charlieClientId}"
+        },
+        "body": {
+          "type": "register"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "registerdana",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-registerdana-{runId}",
+        "headers": {
+          "Authorization": "{danaAuthHeader}",
+          "x-client-id": "{danaClientId}"
+        },
+        "body": {
+          "type": "register"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "nonOwnerLaunch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-nonOwnerLaunch-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "type": "launch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "refused",
+          "code": "organizer-required"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "launch",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-launch-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "launch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match0time",
+      "type": "set",
+      "output": "match0time",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          2000
+        ]
+      }
+    },
+    {
+      "name": "match0schedule",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-match0schedule-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "schedule",
+          "slot": "semifinal-1",
+          "scheduledAtEpochMs": "{match0time}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match0read",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "match0attempt": "body.tournament.matches.0.attempt.binding.attemptId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "match0checkin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-match0checkin-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "check-in",
+          "slot": "semifinal-1",
+          "attemptId": "{match0attempt}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match0deadline",
+      "type": "set",
+      "output": "match0waited",
+      "value": true,
+      "request": {
+        "delayMs": 4000
+      }
+    },
+    {
+      "name": "match0resolved",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "match0winner": "body.tournament.matches.0.resolution.winnerPrincipalId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tournament": {
+            "status": "active"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match0winnerAssertion",
+      "type": "assert",
+      "actual": {
+        "winner": "{match0winner}"
+      },
+      "expect": {
+        "body": {
+          "winner": "{aliceClientId}"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match1time",
+      "type": "set",
+      "output": "match1time",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          2000
+        ]
+      }
+    },
+    {
+      "name": "match1schedule",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-match1schedule-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "schedule",
+          "slot": "semifinal-2",
+          "scheduledAtEpochMs": "{match1time}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match1read",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "match1attempt": "body.tournament.matches.1.attempt.binding.attemptId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "match1checkin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-match1checkin-{runId}",
+        "headers": {
+          "Authorization": "{charlieAuthHeader}",
+          "x-client-id": "{charlieClientId}"
+        },
+        "body": {
+          "type": "check-in",
+          "slot": "semifinal-2",
+          "attemptId": "{match1attempt}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match1deadline",
+      "type": "set",
+      "output": "match1waited",
+      "value": true,
+      "request": {
+        "delayMs": 4000
+      }
+    },
+    {
+      "name": "match1resolved",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "match1winner": "body.tournament.matches.1.resolution.winnerPrincipalId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tournament": {
+            "status": "active"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match1winnerAssertion",
+      "type": "assert",
+      "actual": {
+        "winner": "{match1winner}"
+      },
+      "expect": {
+        "body": {
+          "winner": "{charlieClientId}"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match2time",
+      "type": "set",
+      "output": "match2time",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          2000
+        ]
+      }
+    },
+    {
+      "name": "match2schedule",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-match2schedule-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "schedule",
+          "slot": "final",
+          "scheduledAtEpochMs": "{match2time}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match2read",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "match2attempt": "body.tournament.matches.2.attempt.binding.attemptId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "match2checkin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}/requests/tournament-match2checkin-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "check-in",
+          "slot": "final",
+          "attemptId": "{match2attempt}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match2deadline",
+      "type": "set",
+      "output": "match2waited",
+      "value": true,
+      "request": {
+        "delayMs": 4000
+      }
+    },
+    {
+      "name": "match2resolved",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "match2winner": "body.tournament.matches.2.resolution.winnerPrincipalId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tournament": {
+            "status": "complete"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "match2winnerAssertion",
+      "type": "assert",
+      "actual": {
+        "winner": "{match2winner}"
+      },
+      "expect": {
+        "body": {
+          "winner": "{aliceClientId}"
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "champion",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tournament": {
+            "status": "complete",
+            "championPrincipalId": "{aliceClientId}"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "createCancel",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}-cancel/requests/tournament-createCancel-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "create",
+          "title": "Cancelled cup"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "cancel",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}-cancel/requests/tournament-cancel-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "type": "cancel"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "code": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "cancelled",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/cup-{runId}-cancel",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tournament": {
+            "status": "cancelled"
+          }
+        },
+        "comparison": "compatible-complete"
+      }
+    }
+  ]
+}

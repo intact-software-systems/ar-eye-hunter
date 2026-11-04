@@ -9,12 +9,8 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import {
-    GAME_PROTOCOL,
-    type GameRealtimeMessage,
-    type RemotePlayer,
-    type RemoteShot
-} from '../../arena-contracts.ts';
+import { GAME_PROTOCOL } from '@ar-eye-hunter/arena-contracts.ts';
+import { type GameRealtimeMessage, type RemotePlayer, type RemoteShot } from '../../arena-contracts.ts';
 import { isCurrentArenaPlayerSession } from '../arena-participation.ts';
 import { toValidatedPlayerPose } from '../state/to-validated-player-pose.ts';
 import { acceptArenaDirectorShot } from './arena-director-peer-message.ts';

@@ -50,8 +50,10 @@ roomBrowserTest(
         await expect(watcher.getByLabel('Participation', { exact: true }).locator('option[value="spectator"]'))
             .toHaveJSProperty('disabled', true);
         await watcher.getByRole('button', { name: 'Leave room', exact: true }).click();
-        await expect(watcher.getByLabel('Relic Hunters opening scene', { exact: true }))
-            .toHaveAttribute('data-scene-ready', 'true', { timeout: 30_000 });
+        const opening = watcher.getByRole('img', { name: 'Relic Hunters opening scene', exact: true });
+        await expect(opening).toBeVisible({ timeout: 30_000 });
+        await expect(opening).toHaveJSProperty('complete', true);
+        await expect.poll(() => opening.evaluate(readImageWidth)).toBeGreaterThan(0);
         await expect(watcher.getByRole('button', { name: 'Leave room', exact: true })).toHaveCount(0);
     }
 );
@@ -85,3 +87,7 @@ roomBrowserTest(
         await expect(host.locator('.lobby-party-row')).toHaveCount(1);
     }
 );
+
+function readImageWidth(image: HTMLImageElement): number {
+    return image.naturalWidth;
+}

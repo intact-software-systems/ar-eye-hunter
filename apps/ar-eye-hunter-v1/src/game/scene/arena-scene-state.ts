@@ -1,12 +1,14 @@
-import type { ArenaEvent, ArenaSnapshot } from '../arena-contracts.ts';
-import { type ArenaSimulationState } from '../arena-contracts.ts';
+import type { ArenaEvent, ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
+import { type ArenaSimulationState } from '@ar-eye-hunter/arena-contracts.ts';
 import {
     applyArenaEvent,
     hydrateArenaSnapshot,
     stepArenaDirectorState
-} from '../simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
 
 export namespace ArenaSceneState {
+    /** Synchronously commits only against the exact current predecessor; false has no publication effects. */
+    export type PublishSnapshot = (snapshot: ArenaSnapshot, expected: ArenaSnapshot | undefined) => boolean;
     export interface Authority {
         readonly roomId: string | undefined;
         readonly sessionId: string | undefined;
@@ -43,9 +45,16 @@ export class ArenaSceneState {
         this.simulation = simulation;
     }
 
-    setPublishedSnapshot(snapshot: ArenaSnapshot): void {
+    publishSnapshot(snapshot: ArenaSnapshot, publish: ArenaSceneState.PublishSnapshot): boolean {
+        if (!publish(snapshot, this.getPublicationBase())) {
+            return false;
+        }
         this.published = snapshot;
-        this.observed = snapshot;
+        return true;
+    }
+
+    getPublicationBase(): ArenaSnapshot | undefined {
+        return this.published ?? this.observed;
     }
 
     canPublish(nowEpochMs: number): boolean {
@@ -55,16 +64,19 @@ export class ArenaSceneState {
 
     reconcile(observation: ArenaSceneState.Observation): boolean {
         const changed = !sameAuthority(this.authority, observation.authority);
-        const previous = this.observed;
         this.authority = observation.authority;
         const snapshot = observation.snapshot;
-        if (!changed && (snapshot === previous || snapshot === this.published)) {
+        if (!changed && snapshot === this.observed) {
             return false;
         }
         if (snapshot && snapshot.roomId !== observation.authority.roomId) {
             return false;
         }
         this.observed = snapshot;
+        if (!changed && snapshot === this.published) {
+            return false;
+        }
+        this.published = undefined;
         if (!snapshot) {
             if (changed) {
                 this.simulation = this.initial;
@@ -72,10 +84,7 @@ export class ArenaSceneState {
             }
             return changed;
         }
-        this.adoptSnapshot(snapshot, {
-            preserveSchedule: !changed && observation.authority.local && observation.authority.fresh,
-            previous
-        });
+        this.adoptSnapshot(snapshot, !changed && observation.authority.local && observation.authority.fresh);
         return true;
     }
 
@@ -94,13 +103,12 @@ export class ArenaSceneState {
 
     private adoptSnapshot(
         snapshot: ArenaSnapshot,
-        reconciliation: { readonly preserveSchedule: boolean; readonly previous: ArenaSnapshot | undefined; }
+        preserveSchedule: boolean
     ): void {
-        const sameRevision = reconciliation.previous?.revision === snapshot.revision;
         const hydrated = hydrateArenaSnapshot(snapshot);
-        this.simulation = reconciliation.preserveSchedule
+        this.simulation = preserveSchedule
             ? {
-                ...(sameRevision ? this.simulation : hydrated),
+                ...hydrated,
                 players: snapshot.players,
                 nextPickupSeq: this.simulation.nextPickupSeq,
                 nextPickupAtEpochMs: this.simulation.nextPickupAtEpochMs

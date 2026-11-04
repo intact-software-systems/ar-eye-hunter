@@ -22,7 +22,7 @@ interface RelicRoomEntryDraft {
 
 export function RelicRoomEntry({ game }: RelicRoomEntryProps) {
     const watchBlocked = game.participation === 'player' &&
-        hasUnfinishedRelicParticipation(game.snapshot, game.session?.sessionId);
+        hasUnfinishedRelicParticipation(game.snapshot, game.playerId);
     const owner = game.roomEntry;
     const [entry, setEntry] = useState(owner.getState());
     const [draft, setDraft] = useState<RelicRoomEntryDraft>({ reference: '', code: '', participation: 'preserve' });

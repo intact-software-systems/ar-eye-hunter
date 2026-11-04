@@ -1,3 +1,4 @@
+import { applyArenaRematchCommand, type ArenaRematchCommand } from '@ar-eye-hunter/arena-rematch.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { scheduledSessionHttpApi } from '@shared-web/browser/rooms/sessions/scheduled-session-http-api.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
@@ -12,7 +13,6 @@ import type {
     SetStateAction
 } from 'react';
 import { useMemo } from 'react';
-import { applyArenaRematchCommand, type ArenaRematchCommand } from '../../arena-rematch.ts';
 
 import {
     GAME_PROTOCOL,
@@ -23,9 +23,8 @@ import {
     type MatchStartIntent,
     type PickupAccepted,
     type PlayerHitAccepted
-} from '../../arena-contracts.ts';
-import { startArenaMatch } from '../../arena-match.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+} from '@ar-eye-hunter/arena-contracts.ts';
+import { startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
 import {
     applyEyeAttackAccepted,
     applyPickupAccepted,
@@ -33,7 +32,8 @@ import {
     createInitialArenaState,
     hydrateArenaSnapshot,
     toArenaSnapshot
-} from '../../simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';
 import { resolveArenaActiveEvent } from './resolve-arena-active-event.ts';
 

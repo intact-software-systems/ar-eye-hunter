@@ -10,10 +10,10 @@ import type {
     PlayerCombatState,
     PlayerLoadoutState,
     PlayerVitalsState
-} from '../game/arena-contracts.ts';
-import { createInitialCombatState, createInitialVitalsState } from '../game/arena-player-state.ts';
+} from '@ar-eye-hunter/arena-contracts.ts';
+import { createInitialCombatState, createInitialVitalsState } from '@ar-eye-hunter/arena-player-state.ts';
+import { createInitialLoadoutState, getWeaponStats } from '@ar-eye-hunter/arena-weapons.ts';
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { createInitialLoadoutState, getWeaponStats } from '../game/arena-weapons.ts';
 import { BabylonArena } from '../game/babylon-arena.tsx';
 import { colorForId } from '../game/color.ts';
 import { SquadLinkChip } from './squad-link-chip.tsx';
@@ -79,18 +79,26 @@ export function useArenaPresentation(arena: ArenaConnection, nowMs: () => number
 export function ArenaScene({ arena, presentation, diagnosticsAttributes }: ArenaSceneProps) {
     return (
         <BabylonArena
-            localSessionId={arena.session?.sessionId}
+            localSessionId={arena.tournament.mode === 'tournament' ? arena.session?.clientId : arena.session?.sessionId}
             localUsername={arena.session?.username ?? 'hunter'}
             localColor={presentation.localColor}
             roomId={arena.roomId}
-            roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
-            networkEnabled={arena.networkEnabled}
+            roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId) &&
+                arena.tournament.mode !== 'loading' &&
+                (arena.tournament.mode !== 'tournament' || arena.tournament.snapshot?.state != null)}
+            networkEnabled={arena.networkEnabled && arena.tournament.mode !== 'loading'}
+            tournament={arena.tournament.snapshot
+                ? {
+                    snapshot: arena.tournament.snapshot,
+                    sendControls: (input) => arena.tournament.owner?.sendControls(input)
+                }
+                : undefined}
             spectating={arena.spectating}
             authority={{
                 roomId: arena.roomId,
                 sessionId: arena.directorStatus.appointment?.sessionId,
                 epoch: arena.directorStatus.appointment?.epoch,
-                local: !arena.spectating && arena.directorStatus.isDirector,
+                local: arena.tournament.mode === 'casual' && !arena.spectating && arena.directorStatus.isDirector,
                 fresh: arena.directorStatus.isFresh && arena.networkEnabled,
                 freshUntilEpochMs: arena.directorStatus.appointment
                     ? (arena.directorStatus.lastHeartbeatAtEpochMs ??
@@ -202,7 +210,7 @@ function toHudRows(
     if (arena.spectating) {
         return [['Arena', 'Watching'], ['Wave', wave ? `${wave.number} ${wave.phase}` : 'waiting'], [
             'Match',
-            toMatchLabel(arena.arenaSnapshot?.match, matchRemainingMs)
+            toMatchLabel(arena.arenaSnapshot?.match, matchRemainingMs, arena.tournament.mode === 'tournament')
         ], ['Threats', String(hostileEyeCount)]];
     }
     return [
@@ -210,7 +218,7 @@ function toHudRows(
         ['Score', String(localCombat.score)],
         ['Health', localVitals.health <= 0 ? 'respawn' : `${Math.ceil(localVitals.health)}/${localVitals.maxHealth}`],
         ['Wave', wave ? `${wave.number} ${wave.phase}` : 'arming'],
-        ['Match', toMatchLabel(arena.arenaSnapshot?.match, matchRemainingMs)],
+        ['Match', toMatchLabel(arena.arenaSnapshot?.match, matchRemainingMs, arena.tournament.mode === 'tournament')],
         ['Threats', incomingAttack ? 'incoming' : String(hostileEyeCount)],
         ['Weapon', getWeaponStats(localLoadout.weaponKind).label],
         ['Combo', `x${localCombat.combo}`],

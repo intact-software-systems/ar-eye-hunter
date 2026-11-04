@@ -2,13 +2,14 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameEnvelope } from '@shared-web/game/mod.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
-import { GAME_PROTOCOL, type GameRealtimeMessage } from '../../../arena-contracts.ts';
-import { isArenaPoseIntentFromSender } from '../../../rallar-game-match-adapter.ts';
+import { GAME_PROTOCOL } from '@ar-eye-hunter/arena-contracts.ts';
 import {
     hydrateArenaSnapshot,
     toArenaSnapshot,
     upsertPlayerPose
-} from '../../../simulation.ts';
+} from '@ar-eye-hunter/simulation.ts';
+import { type GameRealtimeMessage } from '../../../arena-contracts.ts';
+import { isArenaPoseIntentFromSender } from '../../../rallar-game-match-adapter.ts';
 import { isCurrentArenaPlayerSession } from '../../arena-participation.ts';
 import { toValidatedPlayerPose } from '../../state/to-validated-player-pose.ts';
 import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';

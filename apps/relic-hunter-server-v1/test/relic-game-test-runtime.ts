@@ -1,4 +1,3 @@
-import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import assert from 'node:assert/strict';
 
 import { toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
@@ -17,10 +16,12 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toGroupMutationAttemptFacts } from '@shared-server/rallar-system/group-state/mutation/to-group-mutation-attempt-facts.ts';
 import { computeGroupPresenceSummary } from '@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { InMemoryQueueBox } from '@shared/mod.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import defaults from '@api-v1/resources/configuration/defaults-config.json' with { type: 'json' };
@@ -30,6 +31,7 @@ import {
     type ApiV1MutationRuntime
 } from '@api-v1/src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1TestQueueResilience } from '@api-v1/test/api-v1-test-queue-resilience.ts';
+
 import { createRelicGameServices, type RelicGameServices } from '../src/create-relic-game-services.ts';
 
 export const RELIC_TEST_GAME_ID = 'cold-expedition';
@@ -39,6 +41,19 @@ export interface RelicTestStack {
     readonly sessions: AuthSessionRepository;
     readonly services: RelicGameServices;
     readonly reader: InboxQueueReader;
+}
+
+export interface RelicTestQueueRuntime {
+    readonly inboxQueueReader: InboxQueueReader;
+    readonly qboxEngine: InboxOutboxEngine;
+    readonly outboxQueueReader: OutboxQueueReader;
+}
+
+interface RelicTestGroupMutation {
+    readonly mutation: ApiV1MutationRuntime;
+    readonly actor: IssuedAuthSession;
+    readonly now: number;
+    readonly descriptor: ReturnType<typeof mutationDescriptor>;
 }
 
 /** A passive producer over one seeded room the owner is live in: admission is open, the caller drains the inbox. */
@@ -57,6 +72,7 @@ export async function createRelicTestStack(database: PSqlSql): Promise<RelicTest
         serviceId: mutation.serviceId,
         roomOwnedAppDataBindings: [RELIC_ROOM_DATA_BINDING],
         appInbox,
+        outbox: runtime.outboxQueueReader,
         wakeQueue: () => {},
         wsRuntimeName: 'default-qbox-server',
         nowEpochMs: () => now,
@@ -113,11 +129,11 @@ export async function seedRelicTestRoom(mutation: ApiV1MutationRuntime, now: num
     };
     await new AuthSessionPersistence(mutation.runtimeStateRepository).putSession(owner);
     const ref = toRelicRoomGroupRef(RELIC_TEST_GAME_ID);
-    await writeRelicTestGroupMutation(
+    await writeRelicTestGroupMutation({
         mutation,
-        owner,
+        actor: owner,
         now,
-        mutationDescriptor({
+        descriptor: mutationDescriptor({
             operation: 'createGroup',
             scope: ref,
             groupId: ref.groupId,
@@ -132,18 +148,18 @@ export async function seedRelicTestRoom(mutation: ApiV1MutationRuntime, now: num
                 retention: { mode: 'temporary', reconnectGraceMs: 1000 }
             }
         })
-    );
+    });
     return owner;
 }
 
-export function createRelicTestQueueRuntime(mutation: ApiV1MutationRuntime): CreateApiV1AppInboxInput['runtime'] {
+export function createRelicTestQueueRuntime(mutation: ApiV1MutationRuntime): RelicTestQueueRuntime {
     const qboxEngine = new InboxOutboxEngine();
     const inboxQueueReader = new InboxQueueReader(mutation.queueBox, {
         ...mutation.appInboxDequeueOptions,
-        flightEntryListener: (settlement) =>
-            qboxEngine.retainSettlingWork(InboxQueueReader.INBOX_ENQUEUE_TYPE, settlement)
+        // Manual passes must settle their handlers before assertions or PGlite shutdown; no engine joins a standing flight.
+        newLaneHeldRows: undefined
     });
-    return { inboxQueueReader, qboxEngine };
+    return { inboxQueueReader, qboxEngine, outboxQueueReader: new OutboxQueueReader(mutation.queueBox) };
 }
 
 export function createRelicTestApplication(
@@ -203,11 +219,11 @@ async function connectRelicTestSession(
     now: number
 ): Promise<void> {
     const ref = toRelicRoomGroupRef(RELIC_TEST_GAME_ID);
-    await writeRelicTestGroupMutation(
+    await writeRelicTestGroupMutation({
         mutation,
-        owner,
+        actor: owner,
         now,
-        mutationDescriptor({
+        descriptor: mutationDescriptor({
             operation: 'connectPresence',
             scope: ref,
             groupId: ref.groupId,
@@ -224,7 +240,7 @@ async function connectRelicTestSession(
                 actorPrincipalId: owner.clientId
             }
         })
-    );
+    });
     const observed = await mutation.groupsRepository.readPresenceSummaryEntries(ref);
     if (observed.group === undefined || observed.current === undefined) {
         throw new Error('Expected the seeded room and its presence summary');
@@ -247,10 +263,7 @@ async function connectRelicTestSession(
 }
 
 async function writeRelicTestGroupMutation(
-    mutation: ApiV1MutationRuntime,
-    actor: IssuedAuthSession,
-    now: number,
-    descriptor: ReturnType<typeof mutationDescriptor>
+    { mutation, actor, now, descriptor }: RelicTestGroupMutation
 ): Promise<void> {
     const service = mutation.groupStateService;
     const ingress = await service.captureMutationIngress(descriptor, actor);

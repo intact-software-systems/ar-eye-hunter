@@ -5,7 +5,10 @@ import type { RelicCommandDraft } from './relic-command-draft.ts';
 import type { RelicExpeditionParticipation } from './relic-expedition-participation.ts';
 
 interface RelicCommandDelivery {
-    readonly dependencies: Pick<RelicHuntersRuntime.Dependencies, 'sendWsCommand' | 'sendRestCommand'>;
+    readonly dependencies: Pick<
+        RelicHuntersRuntime.Dependencies,
+        'sendWsCommand' | 'sendRestCommand' | 'resetGame' | 'createRequestId'
+    >;
     readonly participation: RelicExpeditionParticipation;
     readonly draft: RelicCommandDraft;
     readonly attempt: RelicHuntersRuntime.Attempt & { readonly roomId: string; };
@@ -15,6 +18,9 @@ interface RelicCommandDelivery {
 /** Owns command transport selection; a known WS outcome never starts a second REST write. */
 export async function deliverRelicCommand(input: RelicCommandDelivery): Promise<RelicCommandOutcome | undefined> {
     const { attempt, draft, dependencies } = input;
+    if (draft.kind === 'reset-expedition') {
+        return { transport: 'rest', operation: 'reset', snapshot: await dependencies.resetGame(attempt.roomId) };
+    }
     const command: RelicCommand = {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         gameId: attempt.roomId,
@@ -36,8 +42,8 @@ export async function deliverRelicCommand(input: RelicCommandDelivery): Promise<
         : await dependencies.sendRestCommand({
             gameId: attempt.roomId,
             command,
-            requestId: crypto.randomUUID(),
+            requestId: dependencies.createRequestId(),
             sessionId: attempt.session.sessionId
         });
-    return { transport: 'rest', snapshot };
+    return { transport: 'rest', operation: 'command', snapshot };
 }

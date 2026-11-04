@@ -63,7 +63,7 @@ export class ArenaTouchInput {
     readonly onMovePointerDown = (event: PointerEvent<HTMLDivElement>) => {
         event.preventDefault();
         const runtime = this.input.runtimeRef.current;
-        if (!runtime) {
+        if (!runtime || !runtime.beginInteraction()) {
             return;
         }
         unlockArenaAudio(runtime);
@@ -79,7 +79,7 @@ export class ArenaTouchInput {
 
     readonly onMovePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         const runtime = this.input.runtimeRef.current;
-        if (!runtime || runtime.touchState.movePointerId !== event.pointerId) {
+        if (!runtime || runtime.touchState.movePointerId !== event.pointerId || !runtime.beginInteraction()) {
             return;
         }
         event.preventDefault();
@@ -110,7 +110,7 @@ export class ArenaTouchInput {
     readonly onLookPointerDown = (event: PointerEvent<HTMLDivElement>) => {
         event.preventDefault();
         const runtime = this.input.runtimeRef.current;
-        if (!runtime) {
+        if (!runtime || !runtime.beginInteraction()) {
             return;
         }
         unlockArenaAudio(runtime);
@@ -127,7 +127,7 @@ export class ArenaTouchInput {
 
     readonly onLookPointerMove = (event: PointerEvent<HTMLDivElement>) => {
         const runtime = this.input.runtimeRef.current;
-        if (!runtime || runtime.touchState.lookPointerId !== event.pointerId) {
+        if (!runtime || runtime.touchState.lookPointerId !== event.pointerId || !runtime.beginInteraction()) {
             return;
         }
         const previous = runtime.touchState.lookLast;
@@ -153,11 +153,11 @@ export class ArenaTouchInput {
         event: PointerEvent<HTMLButtonElement>,
         action: MutableButtonAction,
         mode: 'hold' | 'pulse'
-    ) => {
+    ): boolean => {
         event.preventDefault();
         const runtime = this.input.runtimeRef.current;
-        if (!runtime) {
-            return;
+        if (!runtime || !runtime.beginInteraction()) {
+            return false;
         }
         unlockArenaAudio(runtime);
         if (mode === 'hold') {
@@ -168,9 +168,10 @@ export class ArenaTouchInput {
         triggerHaptic(runtime, 8);
         if (mode === 'pulse') {
             runtime.pulse(action, 120);
-            return;
+            return true;
         }
         runtime.input[action] = true;
+        return true;
     };
 
     readonly onActionUp = (
@@ -186,7 +187,9 @@ export class ArenaTouchInput {
     };
 
     readonly onScanDown = (event: PointerEvent<HTMLButtonElement>) => {
-        this.onActionDown(event, 'altFire', 'hold');
+        if (!this.onActionDown(event, 'altFire', 'hold')) {
+            return;
+        }
         const runtime = this.input.runtimeRef.current;
         if (runtime) {
             createScanPulse(runtime, runtime.localPlayer.position, this.input.localColor);
@@ -194,7 +197,7 @@ export class ArenaTouchInput {
     };
 }
 
-export function setInputKey(input: MutableInputState, code: string, pressed: boolean): void {
+export function setInputKey(input: MutableInputState, code: string, pressed: boolean): boolean {
     if (code === 'KeyW') {
         input.moveZ = pressed ? 1 : input.moveZ === 1 ? 0 : input.moveZ;
     }
@@ -225,6 +228,10 @@ export function setInputKey(input: MutableInputState, code: string, pressed: boo
     else if (code === 'Escape') {
         input.pause = pressed;
     }
+    else {
+        return false;
+    }
+    return true;
 }
 function safeSetPointerCapture(element: Element, pointerId: number): void {
     try {

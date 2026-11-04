@@ -27,6 +27,9 @@
       ],
       "@shared/*": [
         "../../packages/shared/*"
+      ],
+      "@ar-eye-hunter/*": [
+        "../../packages/ar-eye-hunter/*"
       ]
     }
   },

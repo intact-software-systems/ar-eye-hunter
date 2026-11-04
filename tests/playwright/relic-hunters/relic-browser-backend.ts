@@ -85,7 +85,6 @@ namespace RelicBrowserBackend {
     export interface Options {
         readonly wsUrls?: string[];
         readonly receivedFrames?: ALMessage[];
-        readonly httpCommands?: boolean;
         readonly commandRefusal?: string;
         readonly rooms?: readonly GroupSnapshot[];
         readonly relicSnapshot?: RelicPublicSnapshot;
@@ -311,7 +310,7 @@ class RelicBrowserBackend {
                     apiBaseUrl: 'http://127.0.0.1:5175',
                     wsBaseUrl: 'ws://127.0.0.1:5175',
                     endpoints: { createWs: '/api/ws/:id' },
-                    ...(this.options.httpCommands ? {} : { serverPeerId: 'default-qbox-server' })
+                    serverPeerId: 'default-qbox-server'
                 }
             });
         }

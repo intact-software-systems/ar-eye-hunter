@@ -5,7 +5,7 @@ import { installApiDocumentationRoutes } from '../../src/routes/swagger-routes.t
 
 interface OpenApiSchema {
     readonly $ref?: string;
-    readonly type?: string;
+    readonly type?: string | readonly string[];
     readonly items?: { readonly $ref?: string; };
     readonly enum?: readonly string[];
     readonly default?: string | number;
@@ -13,8 +13,6 @@ interface OpenApiSchema {
     readonly maximum?: number;
     readonly additionalProperties?: boolean;
     readonly oneOf?: readonly OpenApiSchema[];
-    readonly allOf?: readonly OpenApiSchema[];
-    readonly nullable?: boolean;
     readonly required?: readonly string[];
     readonly properties?: Readonly<Record<string, OpenApiSchema>>;
 }
@@ -324,7 +322,7 @@ Deno.test('presence connect and heartbeat require the nullable publication key t
         assert.ok(schemas[name].required?.includes('publicationKey'), name);
         assert.deepEqual(
             schemas[name].properties?.publicationKey,
-            { allOf: [{ $ref: publicationKeyReference }], nullable: true },
+            { oneOf: [{ $ref: publicationKeyReference }, { type: 'null' }] },
             name
         );
     }
@@ -349,8 +347,7 @@ Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable
     assert.equal(order?.default, 'online-members');
     const entry = document.components.schemas.GroupDirectoryEntry;
     assert.ok(entry.required?.includes('peerRttMs'));
-    assert.equal(entry.properties?.peerRttMs.type, 'number');
-    assert.equal(entry.properties?.peerRttMs.nullable, true);
+    assert.deepEqual(entry.properties?.peerRttMs.type, ['number', 'null']);
 });
 
 Deno.test('group creation documents closed retention intent and bounded temporary grace', async () => {

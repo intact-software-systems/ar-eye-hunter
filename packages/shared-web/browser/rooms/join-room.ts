@@ -1,5 +1,9 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import {
+    toRallarCommandOptions,
+    toRallarWorkflowPolicies,
+    type RallarOperationOptions
+} from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
@@ -9,12 +13,9 @@ import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join
 import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
-import { toRallarCommandOptions } from '../rallar-operation-options.ts';
+
 import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
-import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
-import { toDisconnectRoomPresenceGroupStateRequest } from './room-group-state-translation.ts';
-
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
 import { createRoomSwitchPartialFailureError } from './create-and-join-room.ts';
 import { leaveRoom, type LeaveRoomInput } from './leave-room.ts';
@@ -27,7 +28,12 @@ import type {
     RallarRoomSwitchOperation
 } from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
-import type { GroupRef, GroupSnapshot } from './room-group-state-translation.ts';
+import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
+import {
+    toDisconnectRoomPresenceGroupStateRequest,
+    type GroupRef,
+    type GroupSnapshot
+} from './room-group-state-translation.ts';
 import {
     createRoomJoinPartialFailureError,
     createStateGroupPresenceCommand,
@@ -74,11 +80,12 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     sessionFence.assertCurrent(context);
     const session = sessionFence.session;
     const currentRoomRef = input.stateStore.resolveCurrentRoomRef();
+    const generationId = crypto.randomUUID();
     const snapshot = await joinStateGroup({
         groupId: roomId,
         principalId: session.clientId,
         sessionId: session.sessionId,
-        generationId: crypto.randomUUID(),
+        generationId,
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
         publicationKey: await input.readPublicationKey(),
         scope,
@@ -91,28 +98,82 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
             participation: target.options.participation
         }
     });
+    const arrived = await readRoomSessionPresence({
+        snapshot,
+        sessionId: session.sessionId,
+        generationId,
+        present: true,
+        fence: sessionFence,
+        context,
+        options,
+        minPresenceRevision: 0
+    }).catch((cause) => {
+        throw createRoomJoinPartialFailureError(snapshot, toError(cause));
+    });
+    return await completeRoomJoin({
+        input,
+        context,
+        snapshot: arrived,
+        currentRoomRef,
+        fence: sessionFence,
+        options,
+        leaveCurrent: target.options.leaveCurrent ?? true,
+        preserveCurrentMembership: target.options.preserveCurrentMembership ?? false
+    });
+}
+
+interface RoomJoinCompletion {
+    readonly input: JoinRoomInput;
+    readonly context: ApiMiddleware;
+    readonly snapshot: GroupSnapshot;
+    readonly currentRoomRef: GroupRef | undefined;
+    readonly fence: RoomSessionFence;
+    readonly options: RallarOperationOptions;
+    readonly leaveCurrent: boolean;
+    readonly preserveCurrentMembership: boolean;
+}
+
+/** Admission is committed. Keep the source selected until a presence-only departure can be confirmed. */
+async function completeRoomJoin(completion: RoomJoinCompletion): Promise<GroupSnapshot> {
+    const { input, context, snapshot, currentRoomRef, fence, options, leaveCurrent, preserveCurrentMembership } =
+        completion;
     let adopted: GroupSnapshot;
     try {
-        adopted = await adoptJoinedRoom({
+        let departedRoom: GroupSnapshot | undefined;
+        if (
+            leaveCurrent && preserveCurrentMembership && currentRoomRef &&
+            !isSameGroupRef(currentRoomRef, snapshot.group)
+        ) {
+            departedRoom = await disconnectRoomSession({
+                input,
+                roomRef: currentRoomRef,
+                context,
+                fence,
+                options,
+                generationId: context.middleware.heartbeat.generationId
+            });
+        }
+        adopted = await adoptRoomAfterDeparture({
             dependencies: input,
             context,
             snapshot,
             options,
-            assertCurrent: sessionFence.assertCurrent
+            fence,
+            departedRoom
         });
     }
     catch (cause) {
         throw createRoomJoinPartialFailureError(snapshot, toError(cause));
     }
     await leavePreviousRoomAfterJoin({
-        input: { ...input, sessionFence },
+        input: { ...input, sessionFence: fence },
         joinedRoom: adopted,
         currentRoomRef,
         operation: 'join',
-        leaveCurrent: target.options.leaveCurrent,
+        leaveCurrent: preserveCurrentMembership ? false : leaveCurrent,
         operationOptions: options
     });
-    sessionFence.assertCurrent(context);
+    fence.assertCurrent(context);
     return adopted;
 }
 
@@ -124,38 +185,76 @@ export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'> {
 
 /** Membership was admitted atomically by the move; activation changes this session's presence only. */
 export async function activateGroupMove(input: ActivateGroupMoveInput): Promise<GroupSnapshot> {
-    return await input.runAuthAwareOperation(async () => {
-        const move = decodeGroupMove(input.move);
-        const options = input.resolveOperationOptions(input.options);
-        const fence = captureRoomSession(input.requireSession, options.signal);
-        if (
-            move.status !== 'committed' ||
-            !move.participants.some((participant) => participant.principalId === fence.session.clientId)
-        ) {
-            throw new Error('Only an admitted participant can enter a committed move.');
-        }
-        const current = input.stateStore.resolveCurrentRoomRef();
-        if (current && !isSameGroupRef(current, move.source) && !isSameGroupRef(current, move.destination)) {
-            throw new Error(`Return to source room ${move.source.groupId} before retrying this move.`);
-        }
-        const context = await input.connect(options);
-        fence.assertCurrent(context);
-        const activation = { input, move, context, fence, options };
-        const snapshot = await connectMovedSession(activation);
-        const source = await disconnectMovedSession(activation);
-        const adopted = await adoptJoinedRoom({
-            dependencies: input,
-            context,
-            snapshot,
-            options,
-            assertCurrent: fence.assertCurrent
-        });
-        if (source) {
-            await input.acceptSnapshots({ context, clients: [], groups: [source], scope: toStateScope(move.source) });
-            fence.assertCurrent(context);
-        }
-        return adopted;
+    return await input.runAuthAwareOperation(() => activateAuthenticatedGroupMove(input));
+}
+
+async function activateAuthenticatedGroupMove(input: ActivateGroupMoveInput): Promise<GroupSnapshot> {
+    const move = decodeGroupMove(input.move);
+    const options = input.resolveOperationOptions(input.options);
+    const fence = captureRoomSession(input.requireSession, options.signal);
+    if (
+        move.status !== 'committed' ||
+        !move.participants.some((participant) => participant.principalId === fence.session.clientId)
+    ) {
+        throw new Error('Only an admitted participant can enter a committed move.');
+    }
+    const current = input.stateStore.resolveCurrentRoomRef();
+    if (current && !isSameGroupRef(current, move.source) && !isSameGroupRef(current, move.destination)) {
+        throw new Error(`Return to source room ${move.source.groupId} before retrying this move.`);
+    }
+    const context = await input.connect(options);
+    fence.assertCurrent(context);
+    const snapshot = await connectMovedSession({ input, move, context, fence, options });
+    const departedRoom = await disconnectRoomSession({
+        input,
+        context,
+        fence,
+        options,
+        roomRef: move.source,
+        generationId: move.participants.find((participant) =>
+            participant.sessionId === fence.session.sessionId
+        )?.generationId ??
+            context.middleware.heartbeat.generationId
     });
+    return await adoptRoomAfterDeparture({
+        dependencies: input,
+        context,
+        snapshot,
+        options,
+        fence,
+        departedRoom
+    });
+}
+
+interface RoomPresenceHandoff {
+    readonly dependencies: Pick<LeaveRoomInput, 'stateStore' | 'acceptSnapshots'>;
+    readonly context: ApiMiddleware;
+    readonly snapshot: GroupSnapshot;
+    readonly departedRoom: GroupSnapshot | undefined;
+    readonly options: RallarOperationOptions;
+    readonly fence: RoomSessionFence;
+}
+
+/** Publish the destination before its departed source, avoiding an empty selection from this handoff. */
+async function adoptRoomAfterDeparture(handoff: RoomPresenceHandoff): Promise<GroupSnapshot> {
+    const adopted = await adoptJoinedRoom({
+        dependencies: handoff.dependencies,
+        context: handoff.context,
+        snapshot: handoff.snapshot,
+        options: handoff.options,
+        assertCurrent: handoff.fence.assertCurrent
+    });
+    if (handoff.departedRoom) {
+        await handoff.dependencies.acceptSnapshots({
+            context: handoff.context,
+            clients: [],
+            groups: [handoff.departedRoom],
+            scope: toStateScope(handoff.departedRoom.group),
+            assertCurrent: () => handoff.fence.assertCurrent(handoff.context)
+        });
+        handoff.fence.assertCurrent(handoff.context);
+    }
+    return adopted;
 }
 
 interface GroupMoveActivation {
@@ -186,11 +285,12 @@ async function connectMovedSession(
     if (!connected) {
         throw new Error('Destination presence did not produce a snapshot.');
     }
-    const snapshot = await readMovedSessionPresence({
+    const snapshot = await readRoomSessionPresence({
         snapshot: connected,
         sessionId: fence.session.sessionId,
         generationId,
         present: true,
+        minPresenceRevision: 0,
         fence,
         context,
         options
@@ -198,18 +298,25 @@ async function connectMovedSession(
     return snapshot;
 }
 
-async function disconnectMovedSession(
-    { input, move, context, fence, options }: GroupMoveActivation
+interface RoomPresenceDeparture {
+    readonly input: Pick<LeaveRoomInput, 'stateStore'>;
+    readonly roomRef: GroupRef;
+    readonly generationId: string;
+    readonly context: ApiMiddleware;
+    readonly fence: RoomSessionFence;
+    readonly options: RallarOperationOptions;
+}
+
+async function disconnectRoomSession(
+    { input, roomRef, generationId, context, fence, options }: RoomPresenceDeparture
 ): Promise<GroupSnapshot | undefined> {
-    const sourceBeforeDisconnect = input.stateStore.findGroupSnapshot(move.source);
+    const sourceBeforeDisconnect = input.stateStore.findGroupSnapshot(roomRef);
     const sourceSession = sourceBeforeDisconnect?.activeSessions.find((session) =>
         session.sessionId === fence.session.sessionId
     );
     const requestId = toApiMutationWorkflowRequestId();
     const request = toDisconnectRoomPresenceGroupStateRequest({
-        generationId: sourceSession?.generationId ?? move.participants.find((participant) =>
-            participant.sessionId === fence.session.sessionId
-        )?.generationId ?? context.middleware.heartbeat.generationId,
+        generationId: sourceSession?.generationId ?? generationId,
         principalId: fence.session.clientId,
         actorPrincipalId: fence.session.clientId,
         actorSessionId: fence.session.sessionId
@@ -218,11 +325,11 @@ async function disconnectMovedSession(
         fence.assertCurrent(context);
         try {
             return await roomGroupStateHttpApi.disconnectPresence({
-                groupId: move.source.groupId,
+                groupId: roomRef.groupId,
                 sessionId: fence.session.sessionId,
                 request,
                 options: { requestId, signal, authSession: fence.session },
-                scope: toStateScope(move.source)
+                scope: toStateScope(roomRef)
             });
         }
         catch (error) {
@@ -231,7 +338,7 @@ async function disconnectMovedSession(
     }, toRallarCommandOptions(options)).run();
     fence.assertCurrent(context);
     if (source) {
-        const disconnected = await readMovedSessionPresence({
+        return await readRoomSessionPresence({
             snapshot: source,
             sessionId: fence.session.sessionId,
             generationId: request.generationId,
@@ -239,16 +346,15 @@ async function disconnectMovedSession(
             fence,
             context,
             options,
-            minPresenceRevision: sourceSession
-                ? (sourceBeforeDisconnect?.causalRevision.presenceRevision ?? 0) + 1
+            minPresenceRevision: sourceBeforeDisconnect && sourceSession
+                ? sourceBeforeDisconnect.causalRevision.presenceRevision + 1
                 : 0
         });
-        return disconnected;
     }
     return undefined;
 }
 
-interface MovedSessionPresenceInput {
+interface RoomSessionPresenceInput {
     readonly snapshot: GroupSnapshot;
     readonly sessionId: string;
     readonly generationId: string;
@@ -256,13 +362,13 @@ interface MovedSessionPresenceInput {
     readonly fence: RoomSessionFence;
     readonly context: ApiMiddleware;
     readonly options: RallarOperationOptions;
-    readonly minPresenceRevision?: number;
+    readonly minPresenceRevision: number;
 }
 
 /** Presence writes commit before their summary. A successful response alone does not prove arrival. */
-async function readMovedSessionPresence(input: MovedSessionPresenceInput): Promise<GroupSnapshot> {
+async function readRoomSessionPresence(input: RoomSessionPresenceInput): Promise<GroupSnapshot> {
     const matches = (snapshot: GroupSnapshot) => {
-        if (snapshot.causalRevision.presenceRevision < (input.minPresenceRevision ?? 0)) {
+        if (snapshot.causalRevision.presenceRevision < input.minPresenceRevision) {
             return false;
         }
         const session = snapshot.activeSessions.find((candidate) => candidate.sessionId === input.sessionId);
@@ -274,10 +380,10 @@ async function readMovedSessionPresence(input: MovedSessionPresenceInput): Promi
         return input.snapshot;
     }
     return await new Command(async (signal) => {
-        return await TryWithPolicy.defaults().label('room move presence')
+        return await TryWithPolicy.defaults().label('room presence')
             .maxElapsedMsecs(input.options.timeoutMs ?? 15000)
             .retryIntervalMsecs(100).maxRetryIntervalMsecs(500)
-            .retryIf((error) => error instanceof MovePresencePendingError && !signal?.aborted)
+            .retryIf((error) => error instanceof RoomPresencePendingError && !signal?.aborted)
             .run(async () => {
                 signal?.throwIfAborted();
                 input.fence.assertCurrent(input.context);
@@ -292,14 +398,16 @@ async function readMovedSessionPresence(input: MovedSessionPresenceInput): Promi
                 );
                 input.fence.assertCurrent(input.context);
                 if (!matches(snapshot)) {
-                    throw new MovePresencePendingError('Room presence has not confirmed the move yet. Retry entering.');
+                    throw new RoomPresencePendingError(
+                        'Room presence has not confirmed the switch yet. Retry entering.'
+                    );
                 }
                 return snapshot;
             });
     }, { signal: input.options.signal, timeoutMs: input.options.timeoutMs ?? 15000 }).run();
 }
 
-class MovePresencePendingError extends Error {}
+class RoomPresencePendingError extends Error {}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;
@@ -379,11 +487,12 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         input.options.signal
     );
     input.assertCurrent();
+    const generationId = crypto.randomUUID();
     const snapshot = await createStateGroupPresenceCommand({
         groupId: input.joinedRoom.group.groupId,
         principalId: input.session.clientId,
         sessionId: input.session.sessionId,
-        generationId: crypto.randomUUID(),
+        generationId,
         connectionGenerationId,
         publicationKey: await input.dependencies.readPublicationKey(),
         scope,
@@ -394,10 +503,20 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
     if (!snapshot) {
         throw new Error('Quick Join presence did not produce a snapshot.');
     }
+    const arrived = await readRoomSessionPresence({
+        snapshot,
+        sessionId: input.session.sessionId,
+        generationId,
+        present: true,
+        fence: { session: input.session, assertCurrent: input.assertCurrent },
+        context: input.context,
+        options: input.options,
+        minPresenceRevision: 0
+    });
     return await adoptJoinedRoom({
         dependencies: input.dependencies,
         context: input.context,
-        snapshot,
+        snapshot: arrived,
         options: input.options,
         assertCurrent: input.assertCurrent
     });

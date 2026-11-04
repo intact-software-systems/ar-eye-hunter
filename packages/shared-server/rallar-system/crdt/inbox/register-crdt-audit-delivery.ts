@@ -1,7 +1,7 @@
 import type { RallarCrdtAuditSink } from '@shared/crdt/mod.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { CRDT_AUDIT_APP_OUTBOX_TYPE } from '../mutation/create-crdt-mutation-outbox.ts';
+import { CRDT_AUDIT_APP_OUTBOX_TOPIC, CRDT_AUDIT_APP_OUTBOX_TYPE } from '../mutation/create-crdt-mutation-outbox.ts';
 import { decodeCrdtAuditEvent } from '../mutation/decoding/decode-crdt-audit-event.ts';
 
 export interface RegisterCrdtAuditDeliveryInput {
@@ -17,5 +17,5 @@ export function registerCrdtAuditDelivery(input: RegisterCrdtAuditDeliveryInput)
             }
             await input.auditSink.record(decodeCrdtAuditEvent(JSON.parse(message.payload.resource)));
         }
-    });
+    }, [CRDT_AUDIT_APP_OUTBOX_TOPIC]);
 }

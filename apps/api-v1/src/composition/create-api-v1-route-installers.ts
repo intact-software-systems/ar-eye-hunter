@@ -1,5 +1,9 @@
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import {
+    registerTournamentRoutes,
+    type TournamentRouteDependencies
+} from '../tournaments/register-tournament-routes.ts';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
@@ -99,6 +103,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly crdtMutations: CrdtAdminMutations;
     readonly friends: Omit<FriendsRouteDependencies, 'requireSession'>;
     readonly matchmaking: Omit<MatchmakingRouteDependencies, 'requireSession'>;
+    readonly tournaments: Omit<TournamentRouteDependencies, 'requireSession'>;
     readonly parties: Omit<PartyRouteDependencies, 'requireSession'>;
     readonly authUserRepository: AuthUserRepository;
     readonly authentication: configRoutes.ConfigRouteDependencies['authentication'];
@@ -167,6 +172,7 @@ export function constructApiV1RouteInstallers<
         registerApiV1StateRoutes(app, construction);
         registerFriendsRoutes(app, { ...input.friends, requireSession: construction.requireSession });
         registerMatchmakingRoutes(app, { ...input.matchmaking, requireSession: construction.requireSession });
+        registerTournamentRoutes(app, { ...input.tournaments, requireSession: construction.requireSession });
         registerPartyRoutes(app, { ...input.parties, requireSession: construction.requireSession });
         registerApiV1AdministrationRoutes(app, construction);
     }

@@ -15,6 +15,7 @@ import { PSqlAdminExpiredDataPruner } from '@shared-server/rallar-system/admin-o
 import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import { AdminPrunePageWorker } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 
+import { ADMIN_PRUNE_APP_OUTBOX_TOPIC } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
@@ -83,7 +84,7 @@ export function createApiAdminInboxService(
     });
     input.outboxQueueReader.onOutboxMessageDo(AppInboxType.ADMIN_PRUNE_EXPIRED, {
         onMessage: async (_message, entry) => await pageWork.processReservedEntry(entry)
-    });
+    }, [ADMIN_PRUNE_APP_OUTBOX_TOPIC]);
     return new AppAdminInboxService(
         {
             inboxQueueReader: input.inboxQueueReader,

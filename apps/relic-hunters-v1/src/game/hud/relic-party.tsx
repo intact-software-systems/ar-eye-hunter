@@ -107,7 +107,7 @@ function RelicExpeditionAdmission(props: RelicExpeditionAdmissionProps) {
             {game.snapshot && (
                 <LobbyPartyPanel
                     snapshot={game.snapshot}
-                    localPlayerId={game.session?.sessionId}
+                    localPlayerId={game.playerId}
                     onlineMemberCount={game.onlinePlayerCount}
                     startBlocker={startBlocker}
                     lang={lang}
@@ -131,7 +131,7 @@ function RelicExpeditionAdmission(props: RelicExpeditionAdmissionProps) {
                             {lang === 'no' ? 'Bli med som' : 'Join as'} {findRelicCharacter(characterId).name}
                         </button>
                     )}
-                {currentPlayer && turn.viewModel.isAdmin && (
+                {currentPlayer && turn.viewModel.isAdmin && game.snapshot?.tournament == null && (
                     <RelicKeeperControls game={game} preferences={preferences} startBlocker={startBlocker} />
                 )}
                 {currentPlayer && !turn.viewModel.isAdmin && (

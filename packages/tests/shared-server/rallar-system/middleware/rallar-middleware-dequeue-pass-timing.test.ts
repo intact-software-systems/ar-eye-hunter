@@ -151,7 +151,7 @@ describe('Rallar middleware dequeue-pass timing', () => {
         );
         onTestFinished(() => infrastructure.wsQBoxServerService.dispose());
         const reader = infrastructure.outboxQueueReader;
-        reader.onOutboxMessageDo('test.outbox-pass', { onMessage: async () => undefined });
+        reader.onOutboxMessageDo('test.outbox-pass', { onMessage: async () => undefined }, ['app-outbox.test']);
         await reader.enqueueIfAbsent(newALUntargetedMessage(
             'api-v1',
             newALRoute('app-outbox.test', 'test-scope', 'claimed-outbox'),

@@ -1,14 +1,16 @@
+import { isArenaRematchCommand } from '@ar-eye-hunter/arena-rematch.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameEnvelope } from '@shared-web/game/mod.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { isArenaRematchCommand } from '../../../arena-rematch.ts';
 
+import { GAME_PROTOCOL, type PickupIntent, type PlayerHitIntent } from '@ar-eye-hunter/arena-contracts.ts';
 import {
-    GAME_PROTOCOL,
-    type GameRealtimeMessage,
-    type PickupIntent,
-    type PlayerHitIntent
-} from '../../../arena-contracts.ts';
+    hydrateArenaSnapshot,
+    resolvePickupIntent,
+    resolvePlayerHitIntent,
+    toArenaSnapshot
+} from '@ar-eye-hunter/simulation.ts';
+import { type GameRealtimeMessage } from '../../../arena-contracts.ts';
 import {
     isArenaAcceptedShotFromSender,
     isArenaMatchStartIntentFromSender,
@@ -17,12 +19,6 @@ import {
     isArenaShotIntentFromSender,
     type ArenaRallarGameMatchHandle
 } from '../../../rallar-game-match-adapter.ts';
-import {
-    hydrateArenaSnapshot,
-    resolvePickupIntent,
-    resolvePlayerHitIntent,
-    toArenaSnapshot
-} from '../../../simulation.ts';
 import { isCurrentArenaPlayerSession } from '../../arena-participation.ts';
 import type { ArenaMatchRuntimeInput } from '../create-arena-match-runtime.ts';
 

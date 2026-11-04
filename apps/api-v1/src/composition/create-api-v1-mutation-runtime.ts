@@ -80,6 +80,7 @@ import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/re
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxFactory } from '../crdt/create-api-crdt-inbox-factory.ts';
 import {
@@ -421,7 +422,7 @@ function createGroupStateInboxServiceFactory(
         });
         outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)
-        });
+        }, [GROUP_PRESENCE_SUMMARY_TOPIC]);
 
         const service = new GroupStateInboxService(
             {

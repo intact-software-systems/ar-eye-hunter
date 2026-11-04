@@ -2,12 +2,14 @@ import { FriendsPanel } from '@shared-react/friends-panel.tsx';
 import { MatchmakingPanel } from '@shared-react/matchmaking-panel.tsx';
 import { PartyPanel } from '@shared-react/party-panel.tsx';
 import { ScheduledSessionsPanel } from '@shared-react/scheduled-sessions-panel.tsx';
+import { TournamentPanel } from '@shared-react/tournament-panel.tsx';
 import { RallarFriends } from '@shared-web/browser/friends/rallar-friends.ts';
 import { RallarMatchmaking } from '@shared-web/browser/matchmaking/rallar-matchmaking.ts';
 import { RallarParty } from '@shared-web/browser/parties/rallar-party.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
-import { useEffect, useState } from 'react';
+import { RallarTournament } from '@shared-web/browser/tournaments/rallar-tournament.ts';
+import { useCallback, useEffect, useState } from 'react';
 import { RELIC_ROOM_SCOPE } from '../relic-hunters-browser.ts';
 import { RelicRoomMove } from './relic-room-move.tsx';
 
@@ -86,6 +88,15 @@ export function RelicSidePanel({ game, turn, preferences, playback }: RelicSideP
 }
 
 function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game' | 'preferences'>) {
+    const createTournament = useCallback(
+        (tournamentId: string) =>
+            RallarTournament.createBrowser(rallar, game.roomEntry, {
+                scope: RELIC_ROOM_SCOPE,
+                tournamentId,
+                refreshIntervalMs: 1000
+            }),
+        [game.roomEntry]
+    );
     const [scheduledSessions] = useState(() =>
         RallarScheduledSessions.createBrowser(rallar, game.roomEntry, {
             scope: RELIC_ROOM_SCOPE,
@@ -104,6 +115,7 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
     return (
         <>
             <RelicRoomEntry game={game} />
+            {game.session && <TournamentPanel scope={RELIC_ROOM_SCOPE} createOwner={createTournament} />}
             {game.session && <PartyPanel owner={party} friends={friends} />}
             {game.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find an expedition" />}
             {game.session && (
@@ -167,7 +179,7 @@ interface RelicExpeditionPanelProps {
 function RelicExpeditionPanel({ game, turn, preferences, reset }: RelicExpeditionPanelProps) {
     const planningAi = useRelicPlanningAi({
         snapshot: game.snapshot,
-        localPlayerId: game.participation === 'player' ? game.session?.sessionId : undefined,
+        localPlayerId: game.participation === 'player' ? game.playerId : undefined,
         localPrincipalId: game.session?.clientId,
         draft: turn.selection.draft,
         lang: preferences.lang,
@@ -180,7 +192,8 @@ function RelicExpeditionPanel({ game, turn, preferences, reset }: RelicExpeditio
             <div className="button-grid">
                 <button
                     type="button"
-                    disabled={game.participation !== 'player' || game.snapshot?.phase === 'finished'}
+                    disabled={game.participation !== 'player' || game.snapshot?.phase === 'finished' ||
+                        game.snapshot?.tournament != null}
                     onClick={() => void reset()}
                 >
                     {preferences.lang === 'no' ? 'Tilbakestill' : 'Reset'}
@@ -192,7 +205,7 @@ function RelicExpeditionPanel({ game, turn, preferences, reset }: RelicExpeditio
                 <RelicAiCompanionPanel
                     state={planningAi}
                     snapshot={game.snapshot}
-                    localPlayerId={game.session.sessionId}
+                    localPlayerId={game.playerId}
                     onAsk={planningAi.ask}
                     onPrime={turn.selection.prime}
                 />
@@ -214,16 +227,16 @@ function RelicExplorationPanels({ game, turn, playback }: RelicSidePanelProps) {
             />
         );
     }
-    const coordination = computePartyCoordination(snapshot, session.sessionId, turn.selection.draft.kind);
+    const coordination = computePartyCoordination(snapshot, game.playerId, turn.selection.draft.kind);
     return (
         <>
-            <EscapeDecisionPanel snapshot={snapshot} localPlayerId={session.sessionId} />
+            <EscapeDecisionPanel snapshot={snapshot} localPlayerId={game.playerId} />
             {coordination && (
-                <PartyCoordinationPanel snapshot={snapshot} localPlayerId={session.sessionId} summary={coordination} />
+                <PartyCoordinationPanel snapshot={snapshot} localPlayerId={game.playerId} summary={coordination} />
             )}
             <CastleMap
                 snapshot={snapshot}
-                localPlayerId={session.sessionId}
+                localPlayerId={game.playerId}
                 selectedRoomId={turn.selection.roomId}
                 lastEvent={playback.lastEvent}
                 onSelectRoom={turn.selection.setRoomId}
@@ -232,7 +245,7 @@ function RelicExplorationPanels({ game, turn, playback }: RelicSidePanelProps) {
                 <RoomDetailCard
                     snapshot={snapshot}
                     roomId={turn.selection.roomId}
-                    localPlayerId={session.sessionId}
+                    localPlayerId={game.playerId}
                     exitDistances={castleMapExitDistances(snapshot.map)}
                     onPrimeMove={turn.actions.selectMove}
                     onDismiss={() => turn.selection.setRoomId(undefined)}
@@ -259,7 +272,8 @@ function RelicPartyChange({ game, dismissed, dismiss, reset }: RelicPartyChangeP
     const snapshot = game.snapshot;
     const summary = game.rooms.find((room) => room.roomId === game.roomId);
     if (
-        game.participation !== 'player' || !snapshot || !summary || snapshot.phase === 'finished' ||
+        game.participation !== 'player' || !snapshot || !summary || snapshot.tournament !== null ||
+        snapshot.phase === 'finished' ||
         snapshot.players.length === 0 ||
         snapshot.players.length === game.onlinePlayerCount
     ) {

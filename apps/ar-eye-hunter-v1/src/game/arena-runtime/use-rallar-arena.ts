@@ -1,4 +1,6 @@
+import { toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import { readAuthSessionStorageKind } from '@shared/api/auth.ts';
+import { useArenaTournament } from '../tournament/use-arena-tournament.ts';
 
 import { useArenaDiagnosticActions } from './actions/use-arena-diagnostic-actions.ts';
 import { useArenaSessionActions } from './actions/use-arena-session-actions.ts';
@@ -21,6 +23,7 @@ import { useArenaNetworkTransportSupport } from './transport/use-arena-network-t
 import { useArenaRtcLifecycle } from './transport/use-arena-rtc-lifecycle.ts';
 
 interface ArenaConnectionViewInput {
+    readonly tournament: ReturnType<typeof useArenaTournament>;
     readonly state: ReturnType<typeof useArenaRuntimeState>;
     readonly matchDelivery: MatchDelivery | undefined;
     readonly presence: ReturnType<typeof useArenaPresence>;
@@ -39,6 +42,7 @@ export type {
 
 export function useRallarArena(): ArenaConnection {
     const state = useArenaRuntimeState();
+    const tournament = useArenaTournament(state.roomId, state.session);
     const presence = useArenaPresence(state);
     useArenaAvatarProfile({
         arenaSnapshotRef: state.arenaSnapshotRef,
@@ -46,7 +50,7 @@ export function useRallarArena(): ArenaConnection {
         localAvatarProfileRef: state.localAvatarProfileRef,
         networkGenerationRef: state.networkGenerationRef,
         spectating: state.spectating,
-        roomId: state.roomId,
+        roomId: tournament.mode === 'casual' ? state.roomId : undefined,
         session: state.session
     });
     const transport = useArenaTransport(state);
@@ -57,11 +61,12 @@ export function useRallarArena(): ArenaConnection {
     });
     const messages = useArenaMessageHandlers(state, publishMatchLifecycleOutput);
     const connect = useArenaConnectionLifecycle(state);
-    const attemptDirectorAppointment = useArenaMatchLifecycles(
+    const attemptDirectorAppointment = useArenaMatchLifecycles({
         state,
         messages,
-        transport
-    );
+        transport,
+        casual: tournament.mode === 'casual'
+    });
     useArenaAiDirectorLifecycle({
         nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
@@ -70,7 +75,7 @@ export function useRallarArena(): ArenaConnection {
         directorStatus: state.directorStatus,
         isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
         networkGenerationRef: state.networkGenerationRef,
-        roomId: state.roomId,
+        roomId: tournament.mode === 'casual' ? state.roomId : undefined,
         runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
         setActiveEvent: state.setActiveEvent,
         setAiError: state.setAiError,
@@ -84,7 +89,7 @@ export function useRallarArena(): ArenaConnection {
     );
     const gameActions = useArenaGameActions(state, transport, publishMatchLifecycleOutput);
 
-    return toArenaConnectionView({ state, matchDelivery, presence, connectionActions, gameActions });
+    return toArenaConnectionView({ state, matchDelivery, presence, connectionActions, gameActions, tournament });
 }
 
 function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
@@ -110,15 +115,14 @@ function useArenaPresence(state: ReturnType<typeof useArenaRuntimeState>) {
 function useArenaTransport(state: ReturnType<typeof useArenaRuntimeState>) {
     const transport = useArenaNetworkTransportSupport({
         nowMs: Date.now,
+        arenaSnapshotRef: state.arenaSnapshotRef,
         arenaMatchRef: state.arenaMatchRef,
-        clearPendingReliableArenaSnapshot: state.clearPendingReliableArenaSnapshot,
         directorStatusRef: state.directorStatusRef,
         isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
         networkGenerationRef: state.networkGenerationRef,
         reliableSnapshotLastSentAtRef: state.reliableSnapshotLastSentAtRef,
         reliableSnapshotLastSentRevisionRef: state.reliableSnapshotLastSentRevisionRef,
-        reliableSnapshotPendingRef: state.reliableSnapshotPendingRef,
-        reliableSnapshotTimerRef: state.reliableSnapshotTimerRef,
+        reliableSnapshotTimer: state.reliableSnapshotTimer,
         roomIdRef: state.roomIdRef,
         setTransportDiagnostics: state.setTransportDiagnostics
     });
@@ -204,11 +208,14 @@ function useArenaConnectionLifecycle(
     return connect;
 }
 
-function useArenaMatchLifecycles(
-    state: ReturnType<typeof useArenaRuntimeState>,
-    messages: ReturnType<typeof useArenaMessageHandlers>,
-    transport: ReturnType<typeof useArenaTransport>
-) {
+interface ArenaMatchLifecyclesInput {
+    readonly state: ReturnType<typeof useArenaRuntimeState>;
+    readonly messages: ReturnType<typeof useArenaMessageHandlers>;
+    readonly transport: ReturnType<typeof useArenaTransport>;
+    readonly casual: boolean;
+}
+
+function useArenaMatchLifecycles({ state, messages, transport, casual }: ArenaMatchLifecyclesInput) {
     const { attemptDirectorAppointment } = useArenaDirectorAppointment({
         nowMs: Date.now,
         currentNetworkSignal: state.currentNetworkSignal,
@@ -237,7 +244,7 @@ function useArenaMatchLifecycles(
             connectionState: state.connectionState,
             isCurrentNetworkGeneration: state.isCurrentNetworkGeneration,
             networkGenerationRef: state.networkGenerationRef,
-            roomId: state.roomId,
+            roomId: casual ? state.roomId : undefined,
             spectating: state.spectating,
             roomIdRef: state.roomIdRef,
             runBestEffortNetworkTask: transport.runBestEffortNetworkTask,
@@ -306,6 +313,7 @@ function useArenaGameActions(
     publishMatchLifecycleOutput: ArenaMatchDelivery['publishMatchLifecycleOutput']
 ) {
     const presenceActions = useArenaPresenceActions({
+        nowMs: Date.now,
         arenaMatchRef: state.arenaMatchRef,
         isNetworkEnabled: state.isNetworkEnabled,
         localAvatarProfileRef: state.localAvatarProfileRef,
@@ -345,11 +353,12 @@ function useArenaGameActions(
 }
 
 function toArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection {
-    const { state, matchDelivery, presence, connectionActions, gameActions } = input;
+    const { state, matchDelivery, presence, connectionActions, gameActions, tournament } = input;
     return {
+        tournament,
         session: state.session,
         connectionState: state.connectionState,
-        error: state.error,
+        error: tournament.error ?? state.error,
         roomId: state.roomId,
         rooms: state.rooms,
         openRooms: state.openRooms,
@@ -376,7 +385,11 @@ function toArenaConnectionView(input: ArenaConnectionViewInput): ArenaConnection
         aiStatus: state.aiStatus,
         aiError: state.aiError,
         activeEvent: state.activeEvent,
-        arenaSnapshot: state.arenaSnapshot,
+        arenaSnapshot: tournament.mode === 'casual'
+            ? state.arenaSnapshot
+            : tournament.snapshot?.state
+            ? toArenaSnapshot(tournament.snapshot.state.arena, state.roomId, tournament.snapshot.observedAtEpochMs)
+            : undefined,
         remoteEvents: state.remoteEvents,
         remotePlayers: state.remotePlayers,
         remoteShots: state.remoteShots,

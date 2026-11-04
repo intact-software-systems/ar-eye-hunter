@@ -6,6 +6,9 @@
     <style>
     canvas { width: 640px; height: 480px; display: block; }
     .mobile-fps-controls, .crosshair, .arena-audio-controls, .mobile-rotate-prompt { display: none; }
+    [data-preview-controls="true"] .mobile-fps-controls { display: block; }
+    [data-preview-controls="true"] .mobile-stick-zone,
+    [data-preview-controls="true"] .mobile-look-zone { width: 180px; height: 60px; background: #ddd; margin: 4px; touch-action: none; }
     </style>
   </head>
   <body>

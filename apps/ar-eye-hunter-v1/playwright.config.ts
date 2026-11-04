@@ -9,12 +9,18 @@ const fullStackEnabled = process.env.RALLAR_ARENA_FULL_STACK === '1';
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [{
-            command: 'cd ../api-v1 && deno task start:memory',
+            command: 'cd ../ar-eye-hunter-server-v1 && deno task start',
             env: {
                 PORT: '8080',
+                RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
                 CORS_ORIGINS: 'http://127.0.0.1:5186,http://localhost:5186',
                 RALLAR_API_BASE_URL: 'http://127.0.0.1:8080',
-                RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
+                RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: JSON.stringify([{
+                    applicationId: 'ar-eye-hunter',
+                    workspaceId: 'default',
+                    namespace: 'app:ar-eye',
+                    storeName: 'tournament-arenas'
+                }]),
                 RALLAR_WS_BASE_URL: 'ws://127.0.0.1:8080',
                 RALLAR_AUTH_CREDENTIAL_SECRET: randomUUID(),
                 RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: randomUUID(),
@@ -83,7 +89,8 @@ export default defineConfig({
                 '**/room-moderation.spec.ts',
                 '**/scheduled-sessions.spec.ts',
                 '**/friends.spec.ts',
-                '**/matchmaking.spec.ts'
+                '**/matchmaking.spec.ts',
+                '**/tournaments.spec.ts'
             ],
             use: {
                 ...devices['Desktop Chrome'],

@@ -130,12 +130,79 @@ roomBrowserTest(
 );
 
 roomBrowserTest(
+    'allocates only native expedition graphics across room hydration',
+    async ({ page: host, guest }) => {
+        await host.addInitScript(observeBrowserWebGlContexts);
+        await registerRelicHunter(guest, 'hydration-owner');
+        await guest.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        await waitForExpeditionScene(guest);
+        const sourceLink = await guest.getByLabel('Room link', { exact: true }).inputValue();
+        const sourceId = new URLSearchParams(new URL(sourceLink).hash.slice('#rallar-room?'.length)).get('groupId');
+        if (!sourceId) {
+            throw new Error('Expected the source expedition room reference');
+        }
+        await registerRelicHunter(host, 'hydration-hunter');
+        await host.getByLabel('Room reference', { exact: true }).fill(sourceId);
+        await host.getByRole('button', { name: 'Enter room', exact: true }).click();
+        await waitForExpeditionScene(host);
+        await host.getByRole('button', { name: /Join as/ }).click();
+        await host.getByRole('button', { name: 'Leave expedition', exact: true }).click();
+        await expect(host.getByRole('button', { name: /Join as/ })).toBeEnabled();
+        // interaction: only the source expedition has allocated a graphics context.
+        await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
+
+        await guest.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+        const destinationLink = guest.getByLabel('Room link', { exact: true });
+        await expect(destinationLink).not.toHaveValue(sourceLink);
+        const destinationId = new URLSearchParams(
+            new URL(await destinationLink.inputValue()).hash.slice('#rallar-room?'.length)
+        )
+            .get('groupId');
+        if (!destinationId) {
+            throw new Error('Expected the destination expedition room reference');
+        }
+        const hydrationRequested = Promise.withResolvers<void>();
+        const releaseHydration = Promise.withResolvers<void>();
+        await host.route(`**/api/relic/games/${destinationId}`, async (route) => {
+            if (route.request().method() !== 'GET') {
+                await route.continue();
+                return;
+            }
+            const response = await route.fetch();
+            expect(response.ok()).toBe(true);
+            hydrationRequested.resolve();
+            await releaseHydration.promise;
+            await route.fulfill({ response });
+        });
+        try {
+            await host.getByLabel('Room reference', { exact: true }).fill(destinationId);
+            await host.getByRole('button', { name: 'Enter room', exact: true }).click();
+            await hydrationRequested.promise;
+            const entry = host.getByRole('region', { name: 'Shared room entry', exact: true });
+            await expect(entry.getByText(`Entered ${destinationId}.`, { exact: true })).toBeVisible();
+            // interaction: admission must not allocate another native context before its snapshot hydrates.
+            await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
+            releaseHydration.resolve();
+            await waitForExpeditionScene(host);
+            // interaction: completing hydration adds only the destination expedition's graphics context.
+            await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '2');
+            await expect(entry.getByRole('alert')).toHaveCount(0);
+            await host.getByRole('button', { name: /Join as/ }).click();
+            await expect(host.getByRole('button', { name: 'Leave expedition', exact: true })).toBeEnabled();
+        }
+        finally {
+            releaseHydration.resolve();
+        }
+    }
+);
+
+roomBrowserTest(
     'withdraws across shared-session tabs and preserves withdrawal on room re-entry',
     async ({ page: host }) => {
         await host.addInitScript(observeBrowserWebGlContexts);
         await registerRelicHunter(host, 'shared-session');
-        // interaction: signing in keeps an already visible opening renderer alive.
-        await expect(host.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
+        // interaction: signing in does not allocate graphics for decorative opening artwork.
+        expect(await host.locator('html').getAttribute('data-test-webgl-contexts')).toBeNull();
         await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
         await waitForExpeditionScene(host);
         const link = await host.getByLabel('Room link', { exact: true }).inputValue();

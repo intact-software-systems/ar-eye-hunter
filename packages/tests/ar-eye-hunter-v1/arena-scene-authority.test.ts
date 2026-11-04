@@ -19,8 +19,8 @@ import {
 
 import { createRallarGameEnvelope } from '@shared-web/game/mod.ts';
 
+import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
 import { useArenaPresentation } from '../../../apps/ar-eye-hunter-v1/src/arena-ui/arena-presentation.tsx';
-import type { ArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/arena-contracts.ts';
 import { createArenaRallarGameMatch } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 
 const arena = new ArenaRuntimeTestHarness();
@@ -33,7 +33,7 @@ describe('accepted arena state and local prediction', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         const accepted = activeSnapshot(10, 50_000);
         await receiveSnapshot(accepted);
-        await act(async () => arena.current?.publishArenaSnapshot(arenaSnapshot(100)));
+        await act(async () => void arena.current?.publishArenaSnapshot(arenaSnapshot(100), arena.current?.arenaSnapshot));
         expect(arena.current?.arenaSnapshot?.match?.matchId).toBe('match-1');
         expect(arena.current?.arenaSnapshot?.revision).toBe(10);
     });
@@ -44,7 +44,7 @@ describe('accepted arena state and local prediction', () => {
         await waitForState(() => arena.current?.connectionState === 'connected');
         const accepted = activeSnapshot(10, 50_000);
         await receiveSnapshot(accepted);
-        await act(async () => arena.current?.publishArenaSnapshot(arenaSnapshot(100)));
+        await act(async () => void arena.current?.publishArenaSnapshot(arenaSnapshot(100), arena.current?.arenaSnapshot));
         expect(arena.current?.arenaSnapshot?.match?.matchId).toBe('match-1');
     });
 

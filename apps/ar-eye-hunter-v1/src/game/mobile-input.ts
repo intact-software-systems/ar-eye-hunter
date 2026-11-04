@@ -1,4 +1,5 @@
-import type { Vec3Tuple } from './arena-contracts.ts';
+import type { Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
+import { clamp, round2, round3 } from '@ar-eye-hunter/arena-math.ts';
 
 export type InputDeviceKind = 'keyboard-mouse' | 'touch' | 'gamepad' | 'gyro-touch';
 
@@ -280,18 +281,6 @@ export function createTouchControlDiagnostics(
         lookActive: state.lookActive,
         lastInputMode: state.lastInputMode
     };
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-}
-
-function round2(value: number): number {
-    return Math.round(value * 100) / 100;
-}
-
-function round3(value: number): number {
-    return Math.round(value * 1000) / 1000;
 }
 
 function round6(value: number): number {

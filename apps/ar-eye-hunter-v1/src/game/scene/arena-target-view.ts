@@ -1,10 +1,10 @@
+import type { ArenaPickupState, EyeTargetState } from '@ar-eye-hunter/arena-contracts.ts';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Color3 } from '@babylonjs/core/Maths/math.color.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import type { Scene } from '@babylonjs/core/scene.js';
-import type { ArenaPickupState, EyeTargetState } from '../arena-contracts.ts';
 import type { PickupAvatar, TargetAvatar } from './arena-scene-contracts.ts';
 import { createEyeBeamWindup } from './arena-scene-effects.ts';
 import { hashString, vector3 } from './arena-scene-geometry.ts';
@@ -22,7 +22,10 @@ const MATRIX_TARGET_LABELS = [
     'Productivity Gazer',
     'User Research Victim'
 ] as const;
-export function syncTargetAvatars(runtime: ArenaSceneRuntime, nowEpochMs: number): void {
+export function syncTargetAvatars(
+    runtime: Pick<ArenaSceneRuntime, 'scene' | 'targets' | 'arenaState'>,
+    nowEpochMs: number
+): void {
     const targetIds = new Set(runtime.arenaState.targets.map((target) => target.id));
     for (const target of runtime.arenaState.targets) {
         const avatar = getOrCreateTargetAvatar(runtime.scene, runtime.targets, target);
@@ -66,8 +69,8 @@ export function syncTargetAvatars(runtime: ArenaSceneRuntime, nowEpochMs: number
         if (targetIds.has(targetId)) {
             continue;
         }
-        avatar.root.dispose();
-        avatar.labelTexture.dispose();
+        // These meshes own their materials and label textures; release the entire avatar.
+        avatar.root.dispose(false, true);
         runtime.targets.delete(targetId);
     }
 }
@@ -89,7 +92,10 @@ export function syncEyeAttackCues(runtime: ArenaSceneRuntime, nowEpochMs: number
     }
 }
 
-export function syncPickupAvatars(runtime: ArenaSceneRuntime, nowEpochMs: number): void {
+export function syncPickupAvatars(
+    runtime: Pick<ArenaSceneRuntime, 'scene' | 'pickups' | 'arenaState' | 'sentPickupIds'>,
+    nowEpochMs: number
+): void {
     const visiblePickups = runtime.arenaState.pickups.filter((pickup) =>
         !pickup.pickedBySessionId && pickup.expiresAtEpochMs > nowEpochMs
     );
@@ -110,8 +116,8 @@ export function syncPickupAvatars(runtime: ArenaSceneRuntime, nowEpochMs: number
         if (visibleIds.has(pickupId)) {
             continue;
         }
-        avatar.root.dispose();
-        avatar.labelTexture.dispose();
+        // These meshes own their materials and label textures; release the entire avatar.
+        avatar.root.dispose(false, true);
         runtime.pickups.delete(pickupId);
         runtime.sentPickupIds.delete(pickupId);
     }

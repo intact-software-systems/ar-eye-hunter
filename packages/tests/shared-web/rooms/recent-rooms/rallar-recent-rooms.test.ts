@@ -1,6 +1,14 @@
 // @vitest-environment happy-dom
 import '../../../setup-browser-indexeddb.ts';
 
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createRallarDataFacade, type RallarDataStore } from '@shared-web/browser/rallar-data.ts';
 import type { RallarStateListener } from '@shared-web/browser/rallar-shared-contracts.ts';
 import { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
@@ -11,7 +19,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
 
@@ -150,7 +158,13 @@ describe('recent room navigation history', () => {
             failure: null,
             rooms: [{ roomRef, visitedAtEpochMs: browser.now }]
         });
-        expect(browser.entry.getState().destination).toEqual({ intent: 'join', roomRef, joinCode: null, participation: 'preserve' });
+        expect(browser.entry.getState().destination).toEqual({
+            intent: 'join',
+            roomRef,
+            joinCode: null,
+            participation: 'preserve',
+            preserveCurrentMembership: false
+        });
     });
 
     it('persists ten distinct visits newest first and rehydrates without credentials', async () => {

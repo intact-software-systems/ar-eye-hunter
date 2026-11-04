@@ -71,6 +71,7 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
         }
     },
     parties: { maxInvitations: 16, invitationLifetimeMs: 600000, rateLimit: { windowMs: 60000, requests: 60 } },
+    tournaments: { profiles: [], rateLimit: { windowMs: 60000, requests: 60 } },
     matchmaking: {
         defaultPolicy: { players: 2, searchTimeoutMs: 120000, confirmationTimeoutMs: 30000, maxSearching: 256 },
         policiesByApplication: {},

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "1f12b12d8244ec48a0dc92b91f7a9b4603e34de2",
+      "source": {
+        "path": "apps/relic-hunters-v1/src/game/RelicSceneNext.tsx",
+        "blob": "db91f744e1f08df30f580eb8194466f18586c37a"
+      },
+      "targets": [
+        "apps/relic-hunters-v1/src/game/relic-scene.tsx",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-avatars.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-camera.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-facility.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-materials.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-relics.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-review-effects.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-review.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-scene-diagnostics.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-scene-input.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-scene-lifecycle.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-scene-runtime.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/relic-scene-space.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/sync-relic-avatar-presentation.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/update-avatar-positions.ts",
+        "apps/relic-hunters-v1/src/game/scene/neon/use-relic-scene.ts"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,10 @@
 import { vi } from 'vitest';
 
+import type * as RoomGroupStateMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type * as RoomMembershipGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
+import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -16,11 +21,6 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
-
-type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
-type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
-type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
-type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 
 interface RoomSnapshotScopeFixture {
     readonly applicationId?: string;
@@ -42,22 +42,22 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         session: context.session,
         context,
         publicationCrypto,
-        createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(),
-        joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(),
-        leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(),
-        updateStateGroupDetails: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupDetails']>(),
-        updateStateGroupMetadata: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupMetadata']>(),
-        archiveStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['archiveStateGroup']>(),
-        deleteStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['deleteStateGroup']>(),
-        createStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['createStateGroupInvite']>(),
-        acceptStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['acceptStateGroupInvite']>(),
-        removeStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['removeStateGroupMember']>(),
-        banStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['banStateGroupMember']>(),
-        unbanStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['unbanStateGroupMember']>(),
-        setStateGroupMemberRole: vi.fn<RoomMembershipGroupStateWorkflowsModule['setStateGroupMemberRole']>(),
-        transferStateGroupOwnership: vi.fn<RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']>(),
-        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(),
-        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(),
+        createAndJoinStateGroup: vi.fn<(typeof RoomGroupStateWorkflowsModule)['createAndJoinStateGroup']>(),
+        joinStateGroup: vi.fn<(typeof RoomGroupStateWorkflowsModule)['joinStateGroup']>(),
+        leaveStateGroup: vi.fn<(typeof RoomGroupStateWorkflowsModule)['leaveStateGroup']>(),
+        updateStateGroupDetails: vi.fn<(typeof RoomGroupStateMutationWorkflowsModule)['updateStateGroupDetails']>(),
+        updateStateGroupMetadata: vi.fn<(typeof RoomGroupStateMutationWorkflowsModule)['updateStateGroupMetadata']>(),
+        archiveStateGroup: vi.fn<(typeof RoomGroupStateMutationWorkflowsModule)['archiveStateGroup']>(),
+        deleteStateGroup: vi.fn<(typeof RoomGroupStateMutationWorkflowsModule)['deleteStateGroup']>(),
+        createStateGroupInvite: vi.fn<(typeof RoomMembershipGroupStateWorkflowsModule)['createStateGroupInvite']>(),
+        acceptStateGroupInvite: vi.fn<(typeof RoomMembershipGroupStateWorkflowsModule)['acceptStateGroupInvite']>(),
+        removeStateGroupMember: vi.fn<(typeof RoomMembershipGroupStateWorkflowsModule)['removeStateGroupMember']>(),
+        banStateGroupMember: vi.fn<(typeof RoomMembershipGroupStateWorkflowsModule)['banStateGroupMember']>(),
+        unbanStateGroupMember: vi.fn<(typeof RoomMembershipGroupStateWorkflowsModule)['unbanStateGroupMember']>(),
+        setStateGroupMemberRole: vi.fn<(typeof RoomMembershipGroupStateWorkflowsModule)['setStateGroupMemberRole']>(),
+        transferStateGroupOwnership: vi.fn<(typeof RoomMembershipGroupStateWorkflowsModule)['transferStateGroupOwnership']>(),
+        hydrateStateCache: vi.fn<(typeof StateCacheLifecycleModule)['browserStateCacheLifecycle']['hydrate']>(),
+        onCacheChange: vi.fn<(typeof StateCacheLifecycleModule)['browserStateCacheLifecycle']['onChange']>(),
         readSession: vi.fn<() => AuthSession | undefined>(() => context.session)
     };
 });
@@ -217,7 +217,14 @@ export function rejectCreateWith(error: Error): void {
 export function mockRoomJoinSuccess(snapshot: GroupSnapshot): void {
     roomWorkflowMocks.joinStateGroup.mockImplementation(async (input) => {
         roomWorkflowMocks.operationLog.push(`join:${input.groupId}`);
-        return snapshot;
+        return {
+            ...snapshot,
+            activeSessions: snapshot.activeSessions.map((presence) =>
+                presence.sessionId === input.sessionId
+                    ? { ...presence, generationId: input.generationId, expiresAtEpochMs: Date.now() + 120_000 }
+                    : presence
+            )
+        };
     });
 }
 

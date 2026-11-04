@@ -4,10 +4,19 @@ import {
     type Page
 } from '@playwright/test';
 
+import { installAnimationFrameGate } from '../../../packages/shared-test/install-animation-frame-gate.ts';
 import { observeBrowserWebGlContexts } from '../../../packages/shared-test/observe-browser-web-gl-contexts.ts';
 import type { GroupSnapshot } from '../../../packages/shared/api/group-types.ts';
 
 import { roomBrowserTest } from '../room-browser-fixture.ts';
+
+interface RendererFrameInspection {
+    readonly frame: number;
+    readonly width: number;
+    readonly height: number;
+    readonly loops: number;
+    readonly ready: boolean;
+}
 
 roomBrowserTest(
     'Quick Join recovers from an unavailable API and enters a replacement arena',
@@ -24,12 +33,16 @@ roomBrowserTest(
             (route) => route.fulfill({ status: 404, contentType: 'text/plain', body: '404 Not Found' })
         );
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toContainText('404 Not Found');
+        await expect(bobOperations.getByRole('status').filter({ hasText: '404 Not Found' })).toBeVisible();
         await expect(bobOperations.getByRole('button', { name: 'Quick Join', exact: true })).toBeEnabled();
         await expect(bobOperations.locator('.room-row.active')).toHaveCount(0);
         await bob.unroute('**/groups/quick-join/requests/*');
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toHaveText('No available arena. Try again or create one.');
+        await expect(
+            bobOperations.getByRole('status').filter({
+                hasText: /^No available arena\. Try again or create one\.$/
+            })
+        ).toBeVisible();
         await expect(bobOperations.getByRole('button', { name: 'New Arena', exact: true })).toBeEnabled();
         await bob.screenshot({ path: testInfo.outputPath('quick-join-unavailable.png'), fullPage: true });
 
@@ -50,7 +63,7 @@ roomBrowserTest(
             status: 'joined',
             snapshot: { group: { groupId: snapshot.group.groupId } }
         });
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         await expect(bobOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
         // A human can start another arena while still owning the previous one. That cleanup
         // denial must not prevent the host or a Quick Joining guest from entering the new match.
@@ -66,7 +79,7 @@ roomBrowserTest(
             { exact: true }
         )).toBeVisible();
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         await expect(bobOperations.locator('.room-row.active')).toContainText(replacement.group.displayName);
         await bob.screenshot({ path: testInfo.outputPath('quick-join-replacement.png'), fullPage: true });
         // interaction: one WebGL acquisition per mounted canvas avoids repeating driver initialization on room changes.
@@ -99,7 +112,7 @@ roomBrowserTest(
         const snapshot: GroupSnapshot = await (await created).json();
         await expect(aliceOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
         await bobOperations.getByRole('button', { name: 'Quick Join', exact: true }).click();
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         await expect(bobOperations.locator('.room-row.active')).toContainText(snapshot.group.displayName);
         const appoint = aliceOperations.getByRole('button', { name: 'Appoint this SPA', exact: true });
         if (await appoint.isEnabled()) {
@@ -122,7 +135,7 @@ roomBrowserTest(
         await bob.getByRole('button', { name: 'Diag', exact: true }).click();
         await bob.getByRole('button', { name: 'Request sync', exact: true }).click();
         await assertRunningMatch(aliceOperations, bobOperations);
-        await expect(bobOperations.getByRole('status')).toHaveText('Joined arena.');
+        await expect(bobOperations.getByRole('status').filter({ hasText: /^Joined arena\.$/ })).toBeVisible();
         const aliceResults = alice.getByRole('dialog', { name: 'Match results' });
         const bobResults = bob.getByRole('dialog', { name: 'Match results' });
         await expect(aliceResults).toBeVisible({ timeout: 65_000 });
@@ -226,52 +239,6 @@ function installRematchClockFault(): void {
     }, { capture: true });
 }
 
-function installAnimationFrameGate(): void {
-    const request = window.requestAnimationFrame.bind(window);
-    const cancel = window.cancelAnimationFrame.bind(window);
-    const pending = new Map<number, FrameRequestCallback>();
-    const native = new Map<number, number>();
-    let paused = false;
-    let sequence = 0;
-    const schedule = (id: number, callback: FrameRequestCallback): void => {
-        native.set(
-            id,
-            request((timestamp) => {
-                native.delete(id);
-                if (paused) {
-                    pending.set(id, callback);
-                }
-                else {
-                    callback(timestamp);
-                }
-            })
-        );
-    };
-    window.requestAnimationFrame = (callback) => {
-        const id = ++sequence;
-        schedule(id, callback);
-        return id;
-    };
-    window.cancelAnimationFrame = (id) => {
-        pending.delete(id);
-        const handle = native.get(id);
-        if (handle !== undefined) {
-            cancel(handle);
-            native.delete(id);
-        }
-    };
-    window.addEventListener('test-pause-animation-frames', () => {
-        paused = true;
-    });
-    window.addEventListener('test-resume-animation-frames', () => {
-        paused = false;
-        for (const [id, callback] of pending) {
-            schedule(id, callback);
-        }
-        pending.clear();
-    });
-}
-
 roomBrowserTest(
     'director canvas shot fixture does not render the local player as a remote avatar without a session',
     async ({ page }) => {
@@ -353,3 +320,249 @@ roomBrowserTest('director canvas shots keep current room state and reuse shaders
         loops: 0
     });
 });
+
+roomBrowserTest.describe('touch aiming at different render resolutions', () => {
+    roomBrowserTest.use({ hasTouch: true });
+    for (const scale of [1, 2]) {
+        for (const offsetX of [32, 72, 160]) {
+            roomBrowserTest(
+                `canvas touch aim preserves CSS radius and ray at scale ${scale}, offset ${offsetX}`,
+                async ({ page }) => {
+                    roomBrowserTest.skip(
+                        process.env.RALLAR_ARENA_FULL_STACK === '1',
+                        'Component integration uses the Vite source server.'
+                    );
+                    await page.clock.setFixedTime(new Date('2030-01-02T12:00:00Z'));
+                    await page.addInitScript(installAnimationFrameGate);
+                    const fixturePath = new URL(
+                        '../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html',
+                        import.meta.url
+                    ).pathname;
+                    await page.goto(`/@fs${fixturePath}`);
+                    const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+                    await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+                    await page.getByRole('button', { name: `Render scale ${scale}`, exact: true }).click();
+                    await page.evaluate(() => window.dispatchEvent(new Event('test-pause-animation-frames')));
+                    const bounds = await canvas.boundingBox();
+                    if (!bounds) {
+                        throw new Error('The visible gameplay canvas must have a bounding box.');
+                    }
+                    await page.touchscreen.tap(bounds.x + bounds.width / 2 + offsetX, bounds.y + bounds.height / 2);
+                    await expect(page.getByTestId('shot-direction')).not.toHaveText('[]');
+                    const [x, y, z]: number[] = JSON.parse(await page.getByTestId('shot-direction').innerText());
+                    // The centered target assists only within 48 CSS pixels, independent of the render buffer.
+                    const horizontal = offsetX < 48 ? 0 : offsetX / (bounds.height / 2) * Math.tan(0.94 / 2);
+                    const length = Math.hypot(horizontal, 1);
+                    expect(x).toBeCloseTo(horizontal / length, 2);
+                    expect(y).toBeCloseTo(0, 2);
+                    expect(z).toBeCloseTo(1 / length, 2);
+                }
+            );
+        }
+    }
+});
+
+async function inspectRendererFrame(page: Page): Promise<RendererFrameInspection> {
+    await page.getByRole('button', { name: 'Inspect renderer', exact: true }).click();
+    return JSON.parse(await page.getByTestId('renderer-frame-inspection').innerText());
+}
+
+roomBrowserTest.describe('untouched mobile preview', () => {
+    roomBrowserTest.use({ hasTouch: true });
+    for (const action of ['Fire', 'Jump', 'Move and sprint', 'Look and aim', 'Gyro']) {
+        roomBrowserTest(`untouched preview wakes from real ${action} input`, async ({ page }) => {
+            roomBrowserTest.skip(
+                process.env.RALLAR_ARENA_FULL_STACK === '1',
+                'Component integration uses the Vite source server.'
+            );
+            const fixture =
+                new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url)
+                    .pathname;
+            await page.goto(`/@fs${fixture}`);
+            await page.getByRole('button', { name: 'Open untouched preview', exact: true }).click();
+            await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+            const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+            if (action === 'Gyro') {
+                await page.getByRole('button', { name: 'Tune', exact: true }).click();
+                await page.getByRole('button', { name: 'Enable gyro fine-aim', exact: true }).click();
+                expect((await inspectRendererFrame(page)).loops).toBe(0);
+                await page.evaluate(() => {
+                    window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 0, gamma: 0 }));
+                    window.dispatchEvent(new DeviceOrientationEvent('deviceorientation', { beta: 1, gamma: 1 }));
+                });
+                await expect(canvas).toHaveAttribute('data-arena-gyro-enabled', 'true');
+            }
+            else if (action === 'Fire' || action === 'Jump') {
+                const button = page.getByRole('button', { name: action, exact: true });
+                await button.scrollIntoViewIfNeeded();
+                if (action === 'Fire') {
+                    await button.hover();
+                    await page.mouse.down();
+                    try {
+                        await expect.poll(async () => Number(await canvas.getAttribute('data-arena-shot-sequence')))
+                            .toBeGreaterThan(0);
+                    }
+                    finally {
+                        await page.mouse.up();
+                    }
+                }
+                else {
+                    await button.click();
+                }
+            }
+            else {
+                await page.getByLabel(action, { exact: true }).click();
+                await expect(canvas).toHaveAttribute('data-arena-input-mode', 'touch');
+            }
+            await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+            const active = await inspectRendererFrame(page);
+            await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(active.frame);
+            await page.getByRole('button', { name: 'Unmount arena', exact: true }).click();
+            await expect(canvas).toHaveCount(0);
+            expect((await inspectRendererFrame(page)).loops).toBe(0);
+        });
+    }
+});
+
+roomBrowserTest(
+    'untouched preview idles while Ops typing and resize preserve interactive solo and room entry',
+    async ({ page }) => {
+        roomBrowserTest.skip(
+            process.env.RALLAR_ARENA_FULL_STACK === '1',
+            'Component integration uses the Vite source server.'
+        );
+        const fixture =
+            new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url)
+                .pathname;
+        await page.goto(`/@fs${fixture}`);
+        await page.getByRole('button', { name: 'Open untouched preview', exact: true }).click();
+        const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        const initial = await inspectRendererFrame(page);
+        expect(initial.ready).toBe(true);
+        await page.getByRole('textbox', { name: 'Ops note', exact: true }).pressSequentially('wasd');
+        await page.waitForTimeout(250);
+        expect(await inspectRendererFrame(page)).toEqual(initial);
+        await page.getByRole('button', { name: 'Resize arena', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBe(initial.frame + 1);
+        expect((await inspectRendererFrame(page)).loops).toBe(0);
+        await canvas.click({ position: { x: 320, y: 200 } });
+        await expect.poll(async () => Number(await canvas.getAttribute('data-arena-shot-sequence'))).toBeGreaterThan(0);
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => document.exitPointerLock());
+        await page.getByRole('button', { name: 'Join fixture room', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await page.getByRole('button', { name: 'Open untouched preview', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        await page.getByRole('button', { name: 'Toggle spectator', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        const watched = await inspectRendererFrame(page);
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(watched.frame);
+        await page.getByRole('button', { name: 'Unmount arena', exact: true }).click();
+        await expect(canvas).toHaveCount(0);
+        expect((await inspectRendererFrame(page)).loops).toBe(0);
+    }
+);
+
+roomBrowserTest(
+    'director canvas shots idle completed native games and resume without replacing graphics',
+    async ({ page }) => {
+        roomBrowserTest.skip(
+            process.env.RALLAR_ARENA_FULL_STACK === '1',
+            'Component integration uses the Vite source server.'
+        );
+        const fixturePath =
+            new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url)
+                .pathname;
+        await page.goto(`/@fs${fixturePath}`);
+        const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await page.getByRole('button', { name: 'Enter native match', exact: true }).click();
+        await expect(canvas).toHaveAttribute('data-arena-match-id', 'native-match-1');
+        await inspectRendererFrame(page);
+        await page.keyboard.down('w');
+        await page.getByRole('button', { name: 'Finish native match', exact: true }).click();
+        // interaction: a terminal view submits its final frame, then owns no ongoing graphics loop.
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        await expect(canvas).toHaveAttribute('data-arena-snapshot-revision', '40');
+        const terminal = await inspectRendererFrame(page);
+        expect(terminal.ready).toBe(true);
+        await page.getByRole('button', { name: 'Poll unchanged native match', exact: true }).click();
+        await page.getByRole('button', { name: 'Poll unchanged native match', exact: true }).click();
+        // The absence of frame submissions is the graphics lifecycle contract, across decoded poll objects.
+        await page.waitForTimeout(250);
+        expect(await inspectRendererFrame(page)).toEqual(terminal);
+        await page.getByRole('button', { name: 'Resize arena', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBe(terminal.frame + 1);
+        expect(await inspectRendererFrame(page)).toMatchObject({ loops: 0, width: 720, height: 400 });
+        await page.getByRole('button', { name: 'Update terminal revision', exact: true }).click();
+        await expect(canvas).toHaveAttribute('data-arena-snapshot-revision', '41');
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBe(terminal.frame + 2);
+        await page.getByRole('button', { name: 'Show another terminal game', exact: true }).click();
+        await expect(canvas).toHaveAttribute('data-arena-match-id', 'another-terminal-match');
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        await page.getByRole('button', { name: 'Enter next native match', exact: true }).click();
+        await expect(canvas).toHaveAttribute('data-arena-match-id', 'native-match-2');
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        await expect.poll(async () => JSON.parse(await page.getByTestId('native-controls').innerText()).controls.moveZ)
+            .toBe(0);
+        await page.keyboard.up('w');
+        const resumed = await inspectRendererFrame(page);
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(resumed.frame);
+        await page.getByRole('button', { name: 'Return to casual play', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(resumed.frame + 1);
+        await inspectRendererFrame(page);
+        expect(JSON.parse(await page.getByTestId('renderer-inspection').innerText())).toMatchObject({
+            sameEngine: true,
+            originalEngineDisposed: false,
+            originalSceneDisposed: false,
+            originalFloorEffectDisposed: false,
+            sameFloorEffect: true,
+            scenes: 1,
+            loops: 1
+        });
+    }
+);
+
+roomBrowserTest(
+    'director canvas shot cancelled native rooms idle on mount while scheduled spectators remain live',
+    async ({ page }) => {
+        roomBrowserTest.skip(
+            process.env.RALLAR_ARENA_FULL_STACK === '1',
+            'Component integration uses the Vite source server.'
+        );
+        const fixturePath =
+            new URL('../../../packages/tests/ar-eye-hunter-v1/arena-shot-browser-fixture.html', import.meta.url)
+                .pathname;
+        await page.goto(`/@fs${fixturePath}`);
+        const canvas = page.getByLabel('AR Eye Hunter gameplay canvas');
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await page.getByRole('button', { name: 'Enter native match', exact: true }).click();
+        await page.getByRole('button', { name: 'Toggle spectator', exact: true }).click();
+        const playing = await inspectRendererFrame(page);
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(playing.frame);
+        await page.getByRole('button', { name: 'Cancel native match without state', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        await page.getByRole('button', { name: 'Unmount arena', exact: true }).click();
+        await expect(canvas).toHaveCount(0);
+        await page.getByRole('button', { name: 'Poll unchanged native match', exact: true }).click();
+        expect((await inspectRendererFrame(page)).loops).toBe(0);
+        await page.getByRole('button', { name: 'Mount arena', exact: true }).click();
+        await expect(canvas).toHaveAttribute('data-arena-runtime-ready', 'true');
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(0);
+        const initial = await inspectRendererFrame(page);
+        expect(initial.ready).toBe(true);
+        await page.getByRole('button', { name: 'Poll unchanged native match', exact: true }).click();
+        await page.waitForTimeout(250);
+        expect(await inspectRendererFrame(page)).toEqual(initial);
+        await page.getByRole('button', { name: 'Schedule native match', exact: true }).click();
+        await expect.poll(async () => (await inspectRendererFrame(page)).loops).toBe(1);
+        await expect.poll(async () => (await inspectRendererFrame(page)).frame).toBeGreaterThan(initial.frame);
+        await page.getByRole('button', { name: 'Unmount arena', exact: true }).click();
+        await expect(canvas).toHaveCount(0);
+        expect((await inspectRendererFrame(page)).loops).toBe(0);
+    }
+);

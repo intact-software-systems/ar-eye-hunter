@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { RelicTournamentParticipation } from '../src/relic-tournament-participation.ts';
+import { relicMutationPlayerId } from './relic-tournament.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
@@ -49,6 +51,7 @@ export interface RelicGamePublicationProvenance {
 
 interface RelicGamePublicationInput {
     readonly read: RelicGameMutationService.Attempt;
+    readonly participation: RelicTournamentParticipation | null;
     readonly previous: RelicGameState | null;
     readonly next: RelicGameState | null;
     readonly refusal: string | null;
@@ -222,8 +225,10 @@ export async function writeRelicGameProvenance(
 
 function toNotifications(input: RelicGamePublicationInput): readonly RelicGameNotification[] {
     const { command } = input.read.ingress;
-    const sender = command.actor;
-    if (input.refusal !== null && command.move !== null) {
+    const sender = command.actor === null
+        ? null
+        : { clientId: command.actor.clientId, playerId: relicMutationPlayerId(input.read) };
+    if (input.refusal !== null && command.move !== null && sender !== null) {
         return [{
             effect: 'hunter',
             topicId: RELIC_TOPICS.hunter,
@@ -238,20 +243,14 @@ function toNotifications(input: RelicGamePublicationInput): readonly RelicGameNo
         return [];
     }
     const next = input.next;
-    const notifications: RelicGameNotification[] = [{
-        effect: 'snapshot',
-        topicId: RELIC_TOPICS.snapshot,
-        typeId: RELIC_TYPES.snapshot,
-        payload: { protocolVersion: next.protocolVersion, gameId: next.gameId, snapshot: toPublicRelicSnapshot(next) },
-        ttlMs: RELIC_SNAPSHOT_TTL_MS,
-        principalId: null,
-        ordering: null
-    }];
-    if (input.previous === null || command.move === null) {
+    const notifications: RelicGameNotification[] = [toSnapshotNotification(input, next)];
+    if (input.previous === null) {
         return notifications;
     }
-    const action = toRelicActionRecordedEvent(input.previous, toRelicCommand(command.move), sender);
-    if (action !== undefined) {
+    const action = command.move === null || sender === null
+        ? undefined
+        : toRelicActionRecordedEvent(input.previous, toRelicCommand(command.move), sender);
+    if (action !== undefined && sender !== null) {
         notifications.push({
             effect: 'hunter',
             topicId: RELIC_TOPICS.hunter,
@@ -279,4 +278,20 @@ function toNotifications(input: RelicGamePublicationInput): readonly RelicGameNo
         });
     }
     return notifications;
+}
+
+function toSnapshotNotification(input: RelicGamePublicationInput, next: RelicGameState): RelicGameNotification {
+    return {
+        effect: 'snapshot',
+        topicId: RELIC_TOPICS.snapshot,
+        typeId: RELIC_TYPES.snapshot,
+        payload: {
+            protocolVersion: next.protocolVersion,
+            gameId: next.gameId,
+            snapshot: toPublicRelicSnapshot(next, input.participation)
+        },
+        ttlMs: RELIC_SNAPSHOT_TTL_MS,
+        principalId: null,
+        ordering: null
+    };
 }

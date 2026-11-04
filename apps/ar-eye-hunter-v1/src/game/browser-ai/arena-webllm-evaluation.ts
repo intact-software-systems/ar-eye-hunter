@@ -9,12 +9,12 @@ import {
     type RallarAiLiveEvaluationRunResult
 } from '@shared/rallar-ai/mod.ts';
 
+import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import {
     createAiDirectorMockProvider,
     createAiDirectorRequest,
     validateAiDirectorProposalValue
 } from '../ai-director.ts';
-import { createInitialArenaState, toArenaSnapshot } from '../simulation.ts';
 import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from './arena-browser-ai-config.ts';
 import {
     ARENA_WEBLLM_LIVE_EVALUATION_GATE,

@@ -23,6 +23,7 @@ servers:
   - url: http://localhost:8090
 
 tags:
+  - name: Tournaments
   - name: Matchmaking
   - name: Parties
   - name: Config
@@ -4305,6 +4306,71 @@ paths:
             text/html:
               schema:
                 type: string
+  /api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/{tournamentId}:
+    get:
+      tags: [Tournaments]
+      summary: Read a four-player tournament bracket
+      description: Authenticated account-bound view. Opening a bracket does not register or enter a room.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/TournamentId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Bracket view, with a null tournament when the reference does not exist.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TournamentSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tournaments/apps/{applicationId}/workspaces/{workspaceId}/tournaments/{tournamentId}/requests/{requestId}:
+    post:
+      tags: [Tournaments]
+      summary: Submit an idempotent tournament intent
+      description: The server owns rules, room identities, admission and trusted results. Reuse the exact request ID and body after an uncertain response. Domain refusals are returned as a completed result; an altered body under the same identity conflicts.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/TournamentId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TournamentRequest'
+      responses:
+        '200':
+          description: Durable applied or refused outcome.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TournamentMutationResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '429':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '503':
+          $ref: '#/components/responses/ApiMutationFailure'
 components:
   securitySchemes:
     bearerAuth:
@@ -4324,6 +4390,13 @@ components:
       description: Short-lived one-time ticket returned from `/api/auth/ws-ticket`.
 
   parameters:
+    TournamentId:
+      name: tournamentId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
     XRequestId:
       name: x-request-id
       in: header
@@ -5160,16 +5233,19 @@ components:
           type: string
           minLength: 1
         issues:
-          type: array
-          nullable: true
+          type:
+            - array
+            - 'null'
           items:
             $ref: '#/components/schemas/ApiMutationFailureIssue'
         denial:
-          $ref: '#/components/schemas/ApiMutationFailureDenial'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/ApiMutationFailureDenial' }
+            - { type: 'null' }
         retry:
-          $ref: '#/components/schemas/ApiMutationFailureRetry'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/ApiMutationFailureRetry' }
+            - { type: 'null' }
 
     ApiMutationFailureIssue:
       type: object
@@ -5179,18 +5255,18 @@ components:
           type: string
           minLength: 1
         path:
-          type: array
-          nullable: true
+          type:
+            - array
+            - 'null'
           items:
-            oneOf:
-              - type: string
-              - type: integer
+            oneOf: [{ type: string }, { type: integer }]
         message:
           type: string
           minLength: 1
         details:
-          type: object
-          nullable: true
+          type:
+            - object
+            - 'null'
           additionalProperties: true
 
     ApiMutationFailureDenial:
@@ -5204,8 +5280,9 @@ components:
           type: string
           minLength: 1
         details:
-          type: object
-          nullable: true
+          type:
+            - object
+            - 'null'
           additionalProperties: true
 
     ApiMutationFailureRetry:
@@ -5216,23 +5293,28 @@ components:
           type: string
           enum: [rate-limited, unavailable, exhausted]
         retryAfterMs:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
           minimum: 0
         attempts:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           minimum: 0
         lane:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         queueAgeMs:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
           minimum: 0
         dueAgeMs:
-          type: number
-          nullable: true
+          type:
+            - number
+            - 'null'
           minimum: 0
 
     GroupPolicyReasonCode:
@@ -6041,8 +6123,8 @@ components:
         outboxId: { type: string, minLength: 1, maxLength: 256 }
         observedAtEpochMs: { type: integer, minimum: 0 }
         status: { type: string, enum: [unknown, pending, completed, failed] }
-        attempts: { type: integer, minimum: 0, nullable: true }
-        settledAtEpochMs: { type: integer, minimum: 0, nullable: true }
+        attempts: { type: [integer, 'null'], minimum: 0 }
+        settledAtEpochMs: { type: [integer, 'null'], minimum: 0 }
 
     AdminRoomDirectoryResponse:
       type: object
@@ -6058,7 +6140,7 @@ components:
             workspaceId: { type: string }
         observedAtEpochMs: { type: integer, minimum: 0 }
         completeness: { type: string, enum: [complete, partial] }
-        nextAfterGroupId: { type: string, nullable: true }
+        nextAfterGroupId: { type: [string, 'null'] }
         entries:
           type: array
           maxItems: 100
@@ -6096,8 +6178,8 @@ components:
           type: integer
           minimum: 1
           description: Durable membership count, not live presence or gameplay participation.
-        maxMembers: { type: integer, minimum: 1, nullable: true }
-        expiresAtEpochMs: { type: integer, minimum: 0, nullable: true }
+        maxMembers: { type: [integer, 'null'], minimum: 1 }
+        expiresAtEpochMs: { type: [integer, 'null'], minimum: 0 }
 
     AdminOperationsStateResponse:
       allOf:
@@ -6702,8 +6784,9 @@ components:
         username:
           type: string
         displayName:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         registeredAtEpochMs:
           type: integer
           format: int64
@@ -6832,14 +6915,17 @@ components:
         actor:
           $ref: '#/components/schemas/MutationActor'
         reason:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         traceId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         requestId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
 
     MutationActor:
       oneOf:
@@ -6913,19 +6999,19 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
-            disabled: { nullable: true, enum: [null] }
-            deleted: { nullable: true, enum: [null] }
+            disabled: { type: 'null' }
+            deleted: { type: 'null' }
         - properties:
             status: { type: string, enum: [disabled] }
             disabled:
               $ref: '#/components/schemas/AuditStamp'
-            deleted: { nullable: true, enum: [null] }
+            deleted: { type: 'null' }
         - properties:
             status: { type: string, enum: [deleted] }
             disabled:
-              allOf:
-                - $ref: '#/components/schemas/AuditStamp'
-              nullable: true
+              anyOf:
+                - { allOf: [{ $ref: '#/components/schemas/AuditStamp' }] }
+                - { type: 'null' }
             deleted:
               $ref: '#/components/schemas/AuditStamp'
       properties:
@@ -6938,20 +7024,24 @@ components:
         username:
           type: string
         displayName:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         avatarUrl:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         status:
           type: string
           enum: [active, disabled, deleted]
         authProvider:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         externalSubjectId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         roles:
           type: array
           items:
@@ -6973,15 +7063,18 @@ components:
         updated:
           $ref: '#/components/schemas/AuditStamp'
         disabled:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
         deleted:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
         lastSeenAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
 
     ClientInstance:
       type: object
@@ -7004,7 +7097,7 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
-            revoked: { nullable: true, enum: [null] }
+            revoked: { type: 'null' }
         - properties:
             status: { type: string, enum: [revoked] }
             revoked:
@@ -7029,14 +7122,17 @@ components:
           type: string
           enum: [web, ios, android, desktop, server, unknown]
         deviceLabel:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         appVersion:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         userAgent:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         capabilities:
           type: array
           items:
@@ -7046,8 +7142,9 @@ components:
         updated:
           $ref: '#/components/schemas/AuditStamp'
         revoked:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
 
     ClientSession:
       type: object
@@ -7074,8 +7171,8 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
-            disconnectedAtEpochMs: { nullable: true, enum: [null] }
-            disconnectReason: { nullable: true, enum: [null] }
+            disconnectedAtEpochMs: { type: 'null' }
+            disconnectReason: { type: 'null' }
         - properties:
             status: { type: string, enum: [disconnected] }
             disconnectedAtEpochMs:
@@ -7116,8 +7213,9 @@ components:
           type: string
           enum: [ws, http, rtc, unknown]
         connectionId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         authenticatedAtEpochMs:
           type: integer
           format: int64
@@ -7131,12 +7229,14 @@ components:
           type: integer
           format: int64
         disconnectedAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         disconnectReason:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
 
     ClientPresenceSnapshot:
       type: object
@@ -7169,9 +7269,10 @@ components:
           items:
             $ref: '#/components/schemas/ClientSession'
         lastSeenAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
 
     ClientSnapshot:
       type: object
@@ -7204,9 +7305,10 @@ components:
           type: integer
           format: int64
         lastSeenAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
 
     ClientEvent:
       type: object
@@ -7253,25 +7355,30 @@ components:
           type: integer
           format: int64
         clientInstanceId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         sessionId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         occurredAtEpochMs:
           type: integer
           format: int64
         actor:
           $ref: '#/components/schemas/MutationActor'
         reason:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         traceId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         requestId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         payload:
           type: object
           additionalProperties: true
@@ -7350,19 +7457,19 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
-            archived: { nullable: true, enum: [null] }
-            deleted: { nullable: true, enum: [null] }
+            archived: { type: 'null' }
+            deleted: { type: 'null' }
         - properties:
             status: { type: string, enum: [archived] }
             archived:
               $ref: '#/components/schemas/AuditStamp'
-            deleted: { nullable: true, enum: [null] }
+            deleted: { type: 'null' }
         - properties:
             status: { type: string, enum: [deleted] }
             archived:
-              allOf:
-                - $ref: '#/components/schemas/AuditStamp'
-              nullable: true
+              anyOf:
+                - { allOf: [{ $ref: '#/components/schemas/AuditStamp' }] }
+                - { type: 'null' }
             deleted:
               $ref: '#/components/schemas/AuditStamp'
       properties:
@@ -7373,13 +7480,15 @@ components:
         groupId:
           type: string
         slug:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         displayName:
           type: string
         description:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         kind:
           type: string
           enum: [party, room, team, custom]
@@ -7390,13 +7499,15 @@ components:
           type: string
           enum: [invite-only, code, open]
         maxMembers:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         maxSessionsPerMember:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         metadata:
           type: object
           additionalProperties: true
@@ -7423,23 +7534,28 @@ components:
         updated:
           $ref: '#/components/schemas/AuditStamp'
         archived:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
         deleted:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
         expiresAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         emptySinceEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         purgeAfterEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         lifecycleState:
           type: string
           enum: [dormant, forming, planned, connecting, active, reconfiguring, reconnecting]
@@ -7452,27 +7568,31 @@ components:
           format: int64
           minimum: 0
         lastFormationOutcome:
-          $ref: '#/components/schemas/GroupFormationOutcome'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupFormationOutcome' }
+            - { type: 'null' }
         establishmentStartedAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         formationElectorate:
           type: array
           items:
             type: string
         acceptedLayoutIdentity:
-          $ref: '#/components/schemas/GroupLayoutIdentity'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupLayoutIdentity' }
+            - { type: 'null' }
         transportState:
           type: string
           enum: [flowing, halted]
         memberPolicy:
           $ref: '#/components/schemas/GroupMemberPolicy'
         activationStatus:
-          $ref: '#/components/schemas/GroupActivationStatus'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupActivationStatus' }
+            - { type: 'null' }
 
     GroupActivationStatus:
       type: object
@@ -7502,20 +7622,18 @@ components:
           type: integer
           minimum: 0
         evidenceWatermark:
-          nullable: true
-          type: object
+          type:
+            - object
+            - 'null'
           description: >-
-            The newest RTT measurement this status was decided from; null when
-            the reading counted none. Orders two status writes within one
-            (formationEpoch, coverageBasisLayoutIdentity) series.
-          required: [version, createdAtEpochMs]
+            The newest RTT measurement this status was decided from; null when the reading counted none. Orders two
+            status writes within one (formationEpoch, coverageBasisLayoutIdentity) series.
+          required:
+            - version
+            - createdAtEpochMs
           properties:
-            version:
-              type: integer
-              minimum: 0
-            createdAtEpochMs:
-              type: integer
-              minimum: 0
+            version: { type: integer, minimum: 0 }
+            createdAtEpochMs: { type: integer, minimum: 0 }
         publishedAtEpochMs:
           type: integer
           minimum: 0
@@ -7589,15 +7707,14 @@ components:
         - coverageBasisLayoutIdentity
       properties:
         maxFormationAttempts:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
           minimum: 1
-          nullable: true
           description: >-
-            The attempt budget this series is spending (product decision 39);
-            the attempt that reaches it parks the group in DORMANT. Null when
-            the stored policy is unreadable, which is also when no manager
-            resolves.
+            The attempt budget this series is spending (product decision 39); the attempt that reaches it parks the
+            group in DORMANT. Null when the stored policy is unreadable, which is also when no manager resolves.
         condition:
           type: string
           enum: [failed, inactive, degraded, active, initialising]
@@ -7610,8 +7727,9 @@ components:
           enum: [none, replan-queued, awaiting-application]
           description: Whose move it is, naming only work the server performs.
         coverageBasisLayoutIdentity:
-          $ref: '#/components/schemas/GroupLayoutIdentity'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupLayoutIdentity' }
+            - { type: 'null' }
         layoutStale:
           type: boolean
           description: >-
@@ -7619,8 +7737,9 @@ components:
             topology inputs (product decision 11); false without an accepted
             layout.
         pending:
-          $ref: '#/components/schemas/PendingTopologyReplan'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/PendingTopologyReplan' }
+            - { type: 'null' }
         groupRef:
           $ref: '#/components/schemas/GroupRef'
         lifecycleState:
@@ -7635,12 +7754,14 @@ components:
           format: int64
           minimum: 0
         lastFormationOutcome:
-          $ref: '#/components/schemas/GroupFormationOutcome'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupFormationOutcome' }
+            - { type: 'null' }
         establishmentStartedAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         managerPrincipalIds:
           type: array
           items:
@@ -7699,46 +7820,52 @@ components:
         propertyName: status
       oneOf:
         - properties:
+            status: { type: string, enum: [pending] }
+            joined: { type: 'null' }
+            left: { type: 'null' }
+            removed: { type: 'null' }
+            banned: { type: 'null' }
+        - properties:
             status: { type: string, enum: [invited] }
-            joined: { nullable: true, enum: [null] }
-            left: { nullable: true, enum: [null] }
-            removed: { nullable: true, enum: [null] }
-            banned: { nullable: true, enum: [null] }
+            joined: { type: 'null' }
+            left: { type: 'null' }
+            removed: { type: 'null' }
+            banned: { type: 'null' }
         - properties:
             status: { type: string, enum: [active] }
             joined:
               $ref: '#/components/schemas/AuditStamp'
-            left: { nullable: true, enum: [null] }
-            removed: { nullable: true, enum: [null] }
-            banned: { nullable: true, enum: [null] }
+            left: { type: 'null' }
+            removed: { type: 'null' }
+            banned: { type: 'null' }
         - properties:
             status: { type: string, enum: [left] }
             joined:
-              allOf:
-                - $ref: '#/components/schemas/AuditStamp'
-              nullable: true
+              anyOf:
+                - { allOf: [{ $ref: '#/components/schemas/AuditStamp' }] }
+                - { type: 'null' }
             left:
               $ref: '#/components/schemas/AuditStamp'
-            removed: { nullable: true, enum: [null] }
-            banned: { nullable: true, enum: [null] }
+            removed: { type: 'null' }
+            banned: { type: 'null' }
         - properties:
             status: { type: string, enum: [removed] }
             joined:
-              allOf:
-                - $ref: '#/components/schemas/AuditStamp'
-              nullable: true
-            left: { nullable: true, enum: [null] }
+              anyOf:
+                - { allOf: [{ $ref: '#/components/schemas/AuditStamp' }] }
+                - { type: 'null' }
+            left: { type: 'null' }
             removed:
               $ref: '#/components/schemas/AuditStamp'
-            banned: { nullable: true, enum: [null] }
+            banned: { type: 'null' }
         - properties:
             status: { type: string, enum: [banned] }
             joined:
-              allOf:
-                - $ref: '#/components/schemas/AuditStamp'
-              nullable: true
-            left: { nullable: true, enum: [null] }
-            removed: { nullable: true, enum: [null] }
+              anyOf:
+                - { allOf: [{ $ref: '#/components/schemas/AuditStamp' }] }
+                - { type: 'null' }
+            left: { type: 'null' }
+            removed: { type: 'null' }
             banned:
               $ref: '#/components/schemas/AuditStamp'
       properties:
@@ -7757,27 +7884,32 @@ components:
           type: string
           enum: [invited, pending, active, left, removed, banned]
         joined:
-          allOf:
-            - $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { allOf: [{ $ref: '#/components/schemas/AuditStamp' }] }
+            - { type: 'null' }
         updated:
           $ref: '#/components/schemas/AuditStamp'
         left:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
         removed:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
         banned:
-          $ref: '#/components/schemas/AuditStamp'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/AuditStamp' }
+            - { type: 'null' }
         invitedByPrincipalId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         invitationExpiresAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
 
     EcdsaP256PublicJwk:
       type: object
@@ -7848,8 +7980,8 @@ components:
       oneOf:
         - properties:
             status: { type: string, enum: [active] }
-            disconnectedAtEpochMs: { nullable: true, enum: [null] }
-            disconnectReason: { nullable: true, enum: [null] }
+            disconnectedAtEpochMs: { type: 'null' }
+            disconnectReason: { type: 'null' }
         - properties:
             status: { type: string, enum: [disconnected] }
             disconnectedAtEpochMs:
@@ -7882,9 +8014,9 @@ components:
           minLength: 1
           description: WebSocket connection generation of the socket this presence belongs to.
         publicationKey:
-          allOf:
+          oneOf:
             - $ref: '#/components/schemas/GroupPresencePublicationKey'
-          nullable: true
+            - type: 'null'
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -7895,12 +8027,14 @@ components:
           type: integer
           format: int64
         disconnectedAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         disconnectReason:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
 
     GroupStateCausalRevision:
       type: object
@@ -8115,14 +8249,17 @@ components:
         actor:
           $ref: '#/components/schemas/MutationActor'
         reason:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         traceId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         requestId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         payload:
           type: object
           additionalProperties: true
@@ -8349,13 +8486,15 @@ components:
               type: string
               enum: [open, manager-approval, closed]
             untilEpochMs:
-              type: integer
+              type:
+                - integer
+                - 'null'
               format: int64
-              nullable: true
             untilMemberCount:
-              type: integer
+              type:
+                - integer
+                - 'null'
               format: int64
-              nullable: true
         data:
           type: object
           properties:
@@ -8423,9 +8562,10 @@ components:
           type: integer
           format: int64
         cancelledAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
     GroupSessionChange:
       type: object
       additionalProperties: false
@@ -8438,9 +8578,10 @@ components:
           type: integer
           minimum: 1
         startsAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
           description: Required future start for reschedule; null for every other action. The new lobby must open in the future.
     GroupSessionTiming:
       type: object
@@ -8505,9 +8646,9 @@ components:
         canEnter:
           type: boolean
         admissionDenial:
-          nullable: true
-          allOf:
-            - $ref: '#/components/schemas/GroupPolicyReasonCode'
+          anyOf:
+            - { allOf: [{ $ref: '#/components/schemas/GroupPolicyReasonCode' }] }
+            - { type: 'null' }
     GroupSessionPage:
       type: object
       additionalProperties: false
@@ -8519,8 +8660,9 @@ components:
           items:
             $ref: '#/components/schemas/GroupSessionPreview'
         nextKey:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
     CreateGroupRequest:
       type: object
       required: [groupId, displayName, kind]
@@ -8666,9 +8808,13 @@ components:
       additionalProperties: false
       properties:
         landing:
-          type: string
-          enum: [apply, hold]
-          nullable: true
+          type:
+            - string
+            - 'null'
+          enum:
+            - apply
+            - hold
+            - null
           description: Omission uses the configured reconfiguration landing.
         reason:
           type: string
@@ -8846,9 +8992,9 @@ components:
             WebSocket connection generation of the caller's socket, as its own session entry in the client
             snapshot names it. The socket's close cleans only presence rows that carry its generation.
         publicationKey:
-          allOf:
+          oneOf:
             - $ref: '#/components/schemas/GroupPresencePublicationKey'
-          nullable: true
+            - type: 'null'
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -8867,9 +9013,9 @@ components:
         generationId:
           type: string
         publicationKey:
-          allOf:
+          oneOf:
             - $ref: '#/components/schemas/GroupPresencePublicationKey'
-          nullable: true
+            - type: 'null'
         lastHeartbeatAtEpochMs:
           type: integer
           format: int64
@@ -9123,20 +9269,23 @@ components:
         maxSpectators:
           type: integer
         maxMembers:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         isFull:
           type: boolean
         lifecycleState:
           type: string
           enum: [dormant, forming, planned, connecting, active, reconfiguring, reconnecting]
         peerRttMs:
-          type: number
-          nullable: true
-          minimum: 0
-          exclusiveMinimum: true
-          description: Slowest recent direct peer RTT in milliseconds with complete live-session coverage; null when unknown or not requested.
+          type:
+            - number
+            - 'null'
+          exclusiveMinimum: 0
+          description: >-
+            Slowest recent direct peer RTT in milliseconds with complete live-session coverage; null when unknown or not
+            requested.
 
     GroupDirectoryPage:
       type: object
@@ -9147,8 +9296,9 @@ components:
           items:
             $ref: '#/components/schemas/GroupDirectoryEntry'
         nextCursor:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
 
     GraphInfo:
       type: object
@@ -9211,20 +9361,25 @@ components:
       type: object
       properties:
         topologyKind:
-          $ref: '#/components/schemas/GroupTopologyKindSetting'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupTopologyKindSetting' }
+            - { type: 'null' }
         degreeLimit:
-          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupTopologyPositiveInteger' }
+            - { type: 'null' }
         treeMinSize:
-          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupTopologyPositiveInteger' }
+            - { type: 'null' }
         meshMinSize:
-          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupTopologyPositiveInteger' }
+            - { type: 'null' }
         meshParamK:
-          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupTopologyPositiveInteger' }
+            - { type: 'null' }
 
     EffectiveGroupTopologyConfig:
       type: object
@@ -9258,14 +9413,17 @@ components:
         serverDefaults:
           $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
         durable:
-          $ref: '#/components/schemas/StoredGroupTopologyConfig'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/StoredGroupTopologyConfig' }
+            - { type: 'null' }
         temporary:
-          $ref: '#/components/schemas/StoredGroupTopologyOverride'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/StoredGroupTopologyOverride' }
+            - { type: 'null' }
         requestOptions:
-          $ref: '#/components/schemas/GroupTopologyConfigPatch'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/GroupTopologyConfigPatch' }
+            - { type: 'null' }
         effective:
           $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
 
@@ -9278,16 +9436,19 @@ components:
         overlayId:
           type: string
         snapshot:
-          $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/RallarOverlayTopologySnapshot' }
+            - { type: 'null' }
         acceptedSnapshot:
-          $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/RallarOverlayTopologySnapshot' }
+            - { type: 'null' }
         config:
           $ref: '#/components/schemas/GroupTopologyConfigView'
         pending:
-          $ref: '#/components/schemas/PendingTopologyReplan'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/PendingTopologyReplan' }
+            - { type: 'null' }
 
     PendingTopologyReplan:
       type: object
@@ -9297,16 +9458,16 @@ components:
         reconfigureQueued:
           type: boolean
         dueAtEpochMs:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
         generation:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int64
-          nullable: true
-          description: >-
-            Up by one for every change merged into the queued replan; null
-            when the queued row no longer decodes.
+          description: Up by one for every change merged into the queued replan; null when the queued row no longer decodes.
 
     RallarOverlayTopologySnapshot:
       type: object
@@ -9415,8 +9576,9 @@ components:
         updatedByPrincipalId:
           type: string
         requestId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
 
     StoredGroupTopologyOverride:
       allOf:
@@ -9481,8 +9643,9 @@ components:
         commandId:
           type: string
         requestId:
-          type: string
-          nullable: true
+          type:
+            - string
+            - 'null'
         commandHash:
           type: string
           pattern: '^sha256:[0-9a-f]{64}$'
@@ -9505,28 +9668,33 @@ components:
           type: integer
           format: int64
         acceptedStorageRevision:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           format: int64
         acceptedCreatedAtEpochMs:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           format: int64
         acceptedUpdatedAtEpochMs:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           format: int64
         acceptedExpiresAtEpochMs:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - 'null'
           format: int64
         acceptedConfig:
-          $ref: '#/components/schemas/EffectiveGroupTopologyConfig'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/EffectiveGroupTopologyConfig' }
+            - { type: 'null' }
         acceptedCausalRevision:
-          nullable: true
-          allOf:
-            - $ref: '#/components/schemas/GroupTopologyConfigAcceptedCausalRevision'
+          anyOf:
+            - { allOf: [{ $ref: '#/components/schemas/GroupTopologyConfigAcceptedCausalRevision' }] }
+            - { type: 'null' }
         eventId:
           type: 'null'
         outboxIds:
@@ -9583,8 +9751,9 @@ components:
         snapshot:
           $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
         previous:
-          $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
-          nullable: true
+          anyOf:
+            - { $ref: '#/components/schemas/RallarOverlayTopologySnapshot' }
+            - { type: 'null' }
         config:
           $ref: '#/components/schemas/GroupTopologyConfigView'
         published:
@@ -10505,3 +10674,144 @@ components:
           const: true
         result:
           $ref: '#/components/schemas/RallarCrdtEraseResult'
+
+    TournamentRef:
+      type: object
+      additionalProperties: false
+      required: [applicationId, workspaceId, tournamentId]
+      properties:
+        applicationId: { type: string }
+        workspaceId: { type: string }
+        tournamentId: { type: string }
+    TournamentRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, title]
+          properties:
+            type: { const: create }
+            title: { type: string, minLength: 1, maxLength: 120 }
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { enum: [register, withdraw, launch, cancel] }
+        - type: object
+          additionalProperties: false
+          required: [type, slot, attemptId]
+          properties:
+            type: { enum: [check-in, start] }
+            slot: { enum: [semifinal-1, semifinal-2, final] }
+            attemptId: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [type, slot, scheduledAtEpochMs]
+          properties:
+            type: { const: schedule }
+            slot: { enum: [semifinal-1, semifinal-2, final] }
+            scheduledAtEpochMs: { type: integer, minimum: 0 }
+    TournamentMutationResult:
+      type: object
+      additionalProperties: false
+      required: [ref, requestId, status, code]
+      properties:
+        ref: { $ref: '#/components/schemas/TournamentRef' }
+        requestId: { type: string }
+        status: { enum: [applied, refused] }
+        code: { type: [string, 'null'] }
+    TournamentSnapshot:
+      type: object
+      additionalProperties: false
+      required: [ref, principalId, observedAtEpochMs, tournament]
+      properties:
+        ref: { $ref: '#/components/schemas/TournamentRef' }
+        principalId: { type: string }
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        tournament:
+          oneOf:
+            - { $ref: '#/components/schemas/Tournament' }
+            - { type: 'null' }
+    Tournament:
+      type: object
+      additionalProperties: false
+      required: [ref, title, organizerPrincipalId, rulesId, createdAtEpochMs, noShowGraceMs, status, entrants, matches, championPrincipalId]
+      properties:
+        ref: { $ref: '#/components/schemas/TournamentRef' }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        organizerPrincipalId: { type: string }
+        rulesId: { type: string }
+        createdAtEpochMs: { type: integer, minimum: 0 }
+        noShowGraceMs: { type: integer, minimum: 1 }
+        status: { enum: [registration, active, complete, cancelled] }
+        entrants:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [principalId, registeredAtEpochMs, withdrawnAtEpochMs]
+            properties:
+              principalId: { type: string }
+              registeredAtEpochMs: { type: integer, minimum: 0 }
+              withdrawnAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+        matches:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/TournamentMatch' }
+        championPrincipalId: { type: [string, 'null'] }
+    TournamentMatch:
+      type: object
+      additionalProperties: false
+      required: [slot, principalIds, status, attempt, resolution]
+      properties:
+        slot: { enum: [semifinal-1, semifinal-2, final] }
+        principalIds:
+          oneOf:
+            - { type: array, minItems: 2, maxItems: 2, uniqueItems: true, items: { type: string } }
+            - { type: 'null' }
+        status: { enum: [waiting, ready, scheduled, playing, tied, unresolved, complete, cancelled] }
+        attempt:
+          oneOf:
+            - { $ref: '#/components/schemas/TournamentAttempt' }
+            - { type: 'null' }
+        resolution:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [reason, winnerPrincipalId, resolvedAtEpochMs, resultId]
+              properties:
+                reason: { enum: [score, withdrawal, no-show] }
+                winnerPrincipalId: { type: string }
+                resolvedAtEpochMs: { type: integer, minimum: 0 }
+                resultId: { type: [string, 'null'] }
+            - { type: 'null' }
+    TournamentAttempt:
+      type: object
+      additionalProperties: false
+      required: [binding, scheduledAtEpochMs, startedAtEpochMs, checkedInPrincipalIds]
+      properties:
+        binding: { $ref: '#/components/schemas/TournamentMatchBinding' }
+        scheduledAtEpochMs: { type: integer, minimum: 0 }
+        startedAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+        checkedInPrincipalIds:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string }
+    TournamentMatchBinding:
+      type: object
+      additionalProperties: false
+      required: [tournamentRef, slot, attemptId, roomRef, gameId, rulesId, principalIds]
+      properties:
+        tournamentRef: { $ref: '#/components/schemas/TournamentRef' }
+        slot: { enum: [semifinal-1, semifinal-2, final] }
+        attemptId: { type: string }
+        roomRef: { $ref: '#/components/schemas/GroupRef' }
+        gameId: { type: string }
+        rulesId: { type: string }
+        principalIds:
+          type: array
+          minItems: 2
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string }
