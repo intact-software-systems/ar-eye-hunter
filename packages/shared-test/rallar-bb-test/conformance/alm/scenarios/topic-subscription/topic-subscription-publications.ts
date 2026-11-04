@@ -28,7 +28,11 @@ export const SUBSCRIPTION_ABSENCE_MS = 5_000;
 /** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
 const CONFIRMATION_WAIT_MS = 3_000;
 
-/** A refusal settles the handle before a carrier, or once a re-plan or the WS admission meets the revoke. */
+/**
+ * A refusal settles the handle before a carrier, or once a re-plan or the WS admission meets the revoke. The S3-ii
+ * lanes ran the whole revoked-publisher sender recipe, this wait included, in 3.2–6.6 s over `rtc` and
+ * `rtc-with-ws-fallback`, so the budget keeps at least 4.5 times the longest.
+ */
 const REJECTION_WAIT_MS = 30_000;
 
 export interface TopicPublicationInput {

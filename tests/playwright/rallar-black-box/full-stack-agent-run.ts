@@ -88,7 +88,11 @@ export interface AgentRunOutcomes {
     readonly continuation: RecipeRunOutcome | undefined;
 }
 
-/** A gate's command may sit at the end of its role's recipe: the gate waits as long as that recipe may run. */
+/**
+ * A gate's command may sit at the end of its role's recipe: the gate waits as long as that recipe may run. In the S3-ii
+ * lanes the reconnect sibling, whose step gates the sender's continuation, ran 11.8 s over `ws` and 12.3–13.6 s over
+ * `rtc` and `rtc-with-ws-fallback`, and the longest four-role recipe 15.4 s, so the budget keeps over ten times that.
+ */
 const CONTINUATION_GATE_TIMEOUT_MS = 180_000;
 
 /**
