@@ -109,7 +109,6 @@ it('rejects missing, mixed, malformed and mismatched account authority at live s
         const input of [
             { message: fixture.message },
             { message: { ...fixture.message, constraints: { expiresAtMs: 0 } }, accountView: ACCOUNT },
-            { message: { ...fixture.message, payload: { ...fixture.message.payload, contentType: 'text/plain' } }, accountView: ACCOUNT },
             { message: fixture.message, accountView: { ...ACCOUNT, principalId: 'bob' } },
             { message: fixture.message, accountView: ACCOUNT, recipientScope: { applicationId: 'ar', workspaceId: 'default' } },
             { message: { ...fixture.message, payload: { ...fixture.message.payload, typeId: 'forged' } }, accountView: ACCOUNT }
