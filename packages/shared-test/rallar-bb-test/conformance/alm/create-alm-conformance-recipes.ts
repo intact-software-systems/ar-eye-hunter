@@ -330,9 +330,17 @@ function toAlmConformanceScenario(
         successorGate: undefined,
         continuation: undefined
     };
+    return { ...scenario, ...toHeldBackRecipes(input, definition, scenario) };
+}
+
+/** The recipes the lane holds back until a command of a role recipe passed: the successor, and a continuation. */
+function toHeldBackRecipes(
+    input: CreateAlmConformanceRecipesInput,
+    definition: AlmConformanceScenarioDefinition,
+    scenario: AlmConformanceScenario
+): Pick<AlmConformanceScenario, 'successorGate' | 'continuation'> {
     const toGate = (gate: AlmConformanceRecipeGate) => toScenarioGate({ input, definition, scenario, gate });
     return {
-        ...scenario,
         successorGate: definition.successorGate && toGate(definition.successorGate),
         continuation: definition.continuation && {
             gate: toGate(definition.continuation.gate),
