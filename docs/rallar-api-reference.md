@@ -599,9 +599,11 @@ Any other shape, a private `d` member included, is a `400` before enqueue. The
 session's row keeps what its latest connect or heartbeat sent, a heartbeat that
 changes the key is not a pure lease renewal, and
 `GroupSnapshot.activeSessions[].publicationKey` and the group-state delta carry
-it; the key leaves the snapshot with its session. The server checks the shape
-only: a receiver recomputes the key's thumbprint before it trusts `keyId`. The
-browser creates one key per page at startup and sends it itself.
+it; the key leaves the snapshot with its session. A change of keys alone advances
+`presenceRevision` and sends the delta but queues no RTC topology replan. The
+server checks the shape only: a receiver recomputes the key's thumbprint before it
+trusts `keyId`. The browser keeps one key per session, shared by the session's
+pages through IndexedDB, and sends it itself.
 
 Join-code rotation is currently exposed through lower-level API integration and
 workflow helpers. The plaintext code is returned only by the rotation response;

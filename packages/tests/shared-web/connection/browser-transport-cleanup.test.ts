@@ -33,6 +33,7 @@ import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-
 import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { InMemoryPublicationKeyStore } from '../../shared/signature/publication-key-store-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -164,7 +165,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
-            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
             publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
@@ -222,7 +223,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
-            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
             publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
@@ -278,7 +279,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
-            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
             publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
@@ -335,7 +336,7 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
-            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
             publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
@@ -486,7 +487,8 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
-            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            subtle: undefined,
+            publicationKeyStore: new InMemoryPublicationKeyStore(),
             publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
@@ -550,7 +552,8 @@ describe('Browser transport cleanup', () => {
             readPublicationStageLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
-            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            subtle: undefined,
+            publicationKeyStore: new InMemoryPublicationKeyStore(),
             publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
@@ -610,7 +613,7 @@ describe('the session limit seams', () => {
             readPublicationStageLimits,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
-            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
             publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,

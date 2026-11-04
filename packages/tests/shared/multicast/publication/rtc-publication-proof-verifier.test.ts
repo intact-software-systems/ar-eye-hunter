@@ -12,7 +12,6 @@ import {
 
 import {
     createAvailablePublicationCryptoFixture,
-    UNAVAILABLE_PUBLICATION_CRYPTO,
     type AvailablePublicationCrypto
 } from '../../signature/publication-crypto-fixtures.ts';
 import {
@@ -140,18 +139,18 @@ describe('RtcPublicationProofVerifier', () => {
         ]).toEqual([false, false]);
     });
 
-    it('takes the page\'s WebCrypto without its key pair, and a keyless page as keyless', async () => {
-        const crypto = await createAvailablePublicationCryptoFixture();
+    it('takes the page\'s WebCrypto, and a page without one as keyless', () => {
+        const subtle = globalThis.crypto.subtle;
 
-        expect(toPublicationVerificationCrypto(crypto)).toEqual({ kind: 'available', subtle: crypto.subtle });
-        expect(toPublicationVerificationCrypto(UNAVAILABLE_PUBLICATION_CRYPTO)).toEqual({ kind: 'unavailable' });
+        expect(toPublicationVerificationCrypto(subtle)).toEqual({ kind: 'available', subtle });
+        expect(toPublicationVerificationCrypto(undefined)).toEqual({ kind: 'unavailable' });
     });
 
     it('answers every frame unverified on a keyless page', async () => {
         const fixture = await createVerifierFixture();
         const signed = await signPublication(fixture.sender, createFeed('feed-1'));
         const keyless = new RtcPublicationProofVerifier({
-            crypto: toPublicationVerificationCrypto(UNAVAILABLE_PUBLICATION_CRYPTO),
+            crypto: toPublicationVerificationCrypto(undefined),
             findGroupSnapshot: () => fixture.groups.read('room'),
             nowEpochMs: Date.now
         });

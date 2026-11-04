@@ -17,6 +17,7 @@ import {
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
+import type { SessionPublicationCrypto } from '@shared-web/browser/session/session-publication-crypto.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
@@ -28,7 +29,6 @@ import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
-import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarSessionConnectionInput {
@@ -63,7 +63,8 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
-        readonly publicationCrypto: Promise<PublicationCrypto>;
+        /** Read for the session each connect connects, which awaits it beside its other per-session inputs. */
+        readonly publicationCrypto: Pick<SessionPublicationCrypto, 'read'>;
         readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
         readonly grantedTopics: RtcGrantedTopicReader;
         readonly topicSubscriptions: RtcTopicSubscriptionReader;
@@ -136,7 +137,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
             readPublicationStageLimits: this.input.readPublicationStageLimits,
             deliverySettlements: this.input.sessionDeliveries.observers,
-            publicationCrypto: this.input.publicationCrypto,
+            publicationCrypto: this.input.publicationCrypto.read(input.session.sessionId),
             publicationVerifier: this.input.publicationVerifier,
             grantedTopics: this.input.grantedTopics,
             topicSubscriptions: this.input.topicSubscriptions,
