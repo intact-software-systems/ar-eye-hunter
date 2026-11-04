@@ -27,7 +27,8 @@ Deno.test('tournament reads and writes bind scope and account to the authenticat
         ref: { applicationId: 'game', workspaceId: 'default', tournamentId: 'cup' },
         principalId: 'alice',
         observedAtEpochMs: 1000,
-        tournament: null
+        tournament: null,
+        listing: 'unlisted'
     });
     const response = await app.request(`${path}/requests/create-tournament-request`, {
         method: 'POST',
@@ -42,6 +43,29 @@ Deno.test('tournament reads and writes bind scope and account to the authenticat
         request: { type: 'create', title: 'Friday cup' },
         materialized: null
     }]);
+});
+
+Deno.test('tournament catalogue authenticates the personal account and bounds its query', async () => {
+    const app = createTracedApiTestApp();
+    registerTournamentRoutes(app, dependencies());
+    const catalog = '/api/tournaments/apps/game/workspaces/default/catalog';
+    const response = await app.request(`${catalog}?view=mine&principalId=bob`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'private, no-store');
+    assert.deepEqual(await response.json(), {
+        scope: { applicationId: 'game', workspaceId: 'default' },
+        principalId: 'alice',
+        view: 'mine',
+        observedAtEpochMs: 1000,
+        entries: [],
+        nextCursor: null
+    });
+    for (const query of ['limit=0', 'limit=51', 'limit=1.5', 'view=friends', 'cursor=']) {
+        assert.equal((await app.request(`${catalog}?${query}`)).status, 400);
+    }
+    const anonymous = createTracedApiTestApp();
+    registerTournamentRoutes(anonymous, { ...dependencies(), requireSession: () => Promise.reject(authenticationRequired('Sign in')) });
+    assert.equal((await anonymous.request(catalog)).status, 401);
 });
 
 Deno.test('tournaments reject anonymous access, fabricated results, authority and internal reconciliation', async () => {
@@ -90,7 +114,8 @@ function dependencies(): TournamentRouteDependencies {
             issuedAtEpochMs: 1,
             expiresAtEpochMs: 10000
         }),
-        reader: { read: async (account) => ({ ...account, observedAtEpochMs: 1000, tournament: null }) },
+        catalog: { read: async ({ scope, principalId, view }) => ({ scope, principalId, view, observedAtEpochMs: 1000, entries: [], nextCursor: null }) },
+        reader: { read: async (account) => ({ ...account, observedAtEpochMs: 1000, tournament: null, listing: 'unlisted' }) },
         mutation: { submit: async ({ command }) => Either.ofRight({ ref: command.ref, requestId: command.requestId, status: 'applied', code: null }) },
         mutationQuota: new RateLimiterPolicy(1000, 100)
     };

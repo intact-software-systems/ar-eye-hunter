@@ -18,6 +18,98 @@ import { createRetentionDatabaseFixture } from '../group-state/retention/group-r
 const REF = { applicationId: 'game', workspaceId: 'default', tournamentId: 'cup' };
 
 describe('tournament AppInbox mutations', () => {
+    it('keeps new tournaments unlisted and permits only the organizer to publish or unlist with exact replay', async () => {
+        const game = await fixture();
+        try {
+            await execute(game, input(game.owner, { type: 'create', title: 'Friday cup' }));
+            expect((await game.tournaments.readPublication(REF)).record).toBeNull();
+            expect(await execute(game, input(game.players[0], { type: 'publish' }))).toMatchObject({ status: 'refused', code: 'organizer-required' });
+            const command = input(game.owner, { type: 'publish' }, 'publish-cup');
+            expect((await execute(game, command)).status).toBe('applied');
+            const published = await game.tournaments.readPublication(REF);
+            expect(published.record).toEqual({ ref: REF, listing: 'listed' });
+            expect((await game.operation.submit({ command, traceId: 'replay-publish' })).right?.status).toBe('applied');
+            expect(await game.tournaments.readPublication(REF)).toEqual(published);
+            expect((await game.operation.enqueue({ command: { ...command, request: { type: 'unlist' } }, traceId: 'changed-publish' })).left?.status).toBe(409);
+            await execute(game, input(game.players[0], { type: 'register' }));
+            await execute(game, input(game.owner, { type: 'unlist' }));
+            expect((await game.tournaments.readPublication(REF)).record).toEqual({ ref: REF, listing: 'unlisted' });
+            expect((await game.tournaments.read(REF)).record!.tournament.entrants.map((entry) => entry.principalId)).toEqual(['alice']);
+        }
+        finally {
+            await game.storage.close();
+        }
+    });
+
+    it('rejects a stale publication after cancellation and recomputes the lifecycle refusal', async () => {
+        const game = await fixture();
+        try {
+            await execute(game, input(game.owner, { type: 'create', title: 'Friday cup' }));
+            const command = game.service.materialize(input(game.owner, { type: 'publish' }));
+            const read = await game.service.read(command, { attemptCount: 1, traceId: 'publish-race' });
+            const computed = game.service.compute(read);
+            expect(game.service.validate(read, computed)).toEqual([]);
+            await execute(game, input(game.owner, { type: 'cancel' }));
+            await expect(game.storage.sql.begin((transaction) => game.service.write(transaction, computed))).rejects.toBeInstanceOf(
+                RuntimeStateWriteConflictError
+            );
+            expect((await game.tournaments.readPublication(REF)).record).toBeNull();
+            const fresh = await game.service.read(command, { attemptCount: 2, traceId: 'publish-race' });
+            expect(game.service.compute(fresh).result).toMatchObject({ status: 'refused', code: 'tournament-finished' });
+        }
+        finally {
+            await game.storage.close();
+        }
+    });
+
+    it('fences concurrent publication changes and detects a tampered publication projection', async () => {
+        const game = await fixture();
+        try {
+            await execute(game, input(game.owner, { type: 'create', title: 'Friday cup' }));
+            await execute(game, input(game.owner, { type: 'publish' }));
+            const command = game.service.materialize(input(game.owner, { type: 'unlist' }));
+            const read = await game.service.read(command, { attemptCount: 1, traceId: 'unlist-race' });
+            const computed = game.service.compute(read);
+            expect(game.service.validate(read, { ...computed, storage: null })).not.toEqual([]);
+            await execute(game, input(game.owner, { type: 'publish' }));
+            const winner = await game.tournaments.readPublication(REF);
+            await expect(game.storage.sql.begin((transaction) => game.service.write(transaction, computed))).rejects.toBeInstanceOf(
+                RuntimeStateWriteConflictError
+            );
+            expect(await game.tournaments.readPublication(REF)).toEqual(winner);
+            const fresh = await game.service.read(command, { attemptCount: 2, traceId: 'unlist-race' });
+            const recomputed = game.service.compute(fresh);
+            expect(game.service.validate(fresh, recomputed)).toEqual([]);
+            await game.storage.sql.begin((transaction) => game.service.write(transaction, recomputed));
+            expect((await game.tournaments.readPublication(REF)).record?.listing).toBe('unlisted');
+        }
+        finally {
+            await game.storage.close();
+        }
+    });
+
+    it('rolls back publication and its bracket guard when the organizer session is revoked before commit', async () => {
+        const game = await fixture();
+        try {
+            await execute(game, input(game.owner, { type: 'create', title: 'Friday cup' }));
+            const before = await game.tournaments.read(REF);
+            const command = game.service.materialize(input(game.owner, { type: 'publish' }));
+            const read = await game.service.read(command, { attemptCount: 1, traceId: 'publication-revocation' });
+            const computed = game.service.compute(read);
+            await game.sessions.deleteSession(game.owner);
+            await expect(game.storage.sql.begin((transaction) => game.service.write(transaction, computed))).rejects.toBeInstanceOf(
+                RuntimeStateWriteConflictError
+            );
+            expect(await game.tournaments.read(REF)).toEqual(before);
+            expect((await game.tournaments.readPublication(REF)).record).toBeNull();
+            const fresh = await game.service.read(command, { attemptCount: 2, traceId: 'publication-revocation' });
+            expect(game.service.compute(fresh).result).toMatchObject({ status: 'refused', code: 'unauthorized' });
+        }
+        finally {
+            await game.storage.close();
+        }
+    });
+
     it('replays the exact acknowledgement without another write and rejects changed intent under the same request', async () => {
         const game = await fixture();
         try {

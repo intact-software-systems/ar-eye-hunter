@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { createTournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
+import { createTournamentArena, type TournamentArena } from '../../../packages/ar-eye-hunter/tournament-arena.ts';
 import { installAnimationFrameGate } from '../../../packages/shared-test/install-animation-frame-gate.ts';
 import { toError } from '../../../packages/shared/resilience/to-error.ts';
 
@@ -9,11 +9,12 @@ import { openArenaOperations } from '../room-player-journey.ts';
 import { tournamentBrowserTest } from '../tournament-browser-fixture.ts';
 import {
     cancelPlayingTournament,
+    recoverTournamentFromHistory,
     registerTournament,
     startTournamentMatch,
     tournamentMatch
 } from '../tournament-journey.ts';
-import { observeArenaScore, playArenaTournament } from './tournament-native-play.ts';
+import { observeArenaScore, playArenaTournament, tapVisibleTarget } from './tournament-native-play.ts';
 
 tournamentBrowserTest.use({ hasTouch: true });
 
@@ -25,7 +26,7 @@ tournamentBrowserTest(
             'Requires the native game server and built SPA.'
         );
         tournamentBrowserTest.setTimeout(600000);
-        await registerTournament(players, 'arena');
+        const title = await registerTournament(players, 'arena');
         const entrants = await page.getByRole('region', { name: 'Tournaments', exact: true })
             .locator('ol li').allTextContents();
         for (
@@ -36,11 +37,33 @@ tournamentBrowserTest(
             ] as const
         ) {
             await startTournamentMatch(page, [winner, opponent], slot);
+            if (slot === 'semifinal-1') {
+                const watcher = players[2];
+                await tournamentMatch(watcher, slot).getByRole('button', {
+                    name: 'Watch tournament match',
+                    exact: true
+                }).click();
+                await expect(
+                    watcher.getByRole('region', { name: 'Shared room entry', exact: true }).getByText(/^Entered /)
+                ).toBeVisible();
+                await expect(watcher.getByLabel('AR Eye Hunter gameplay canvas', { exact: true })).toHaveAttribute(
+                    'data-arena-match-id',
+                    /.+/
+                );
+            }
             await playArenaTournament(winner, opponent);
+            if (slot === 'semifinal-1') {
+                const results = players[2].getByRole('dialog', { name: 'Match results', exact: true });
+                await expect(results).toBeVisible();
+                await results.getByRole('button', { name: 'Return to tournament bracket', exact: true }).click();
+                await expect(results).toHaveCount(0);
+            }
             await expect(tournamentMatch(page, slot)).toContainText(`Winner: ${winnerId} · score`, {
                 timeout: 30000
             });
         }
+        await expect(page.getByRole('status').filter({ hasText: `Champion: ${entrants[0]}` })).toBeVisible();
+        await recoverTournamentFromHistory({ page, game: 'arena', title, completedMatch: true });
         await expect(page.getByRole('status').filter({ hasText: `Champion: ${entrants[0]}` })).toBeVisible();
     }
 );
@@ -229,6 +252,48 @@ test('tournament scheduling accepts whole-minute and second-precision browser-lo
             await page.getByLabel('Match start').fill(start.input);
             await expect(page.getByLabel('Match start')).toHaveValue(expected);
         }
+    }
+    finally {
+        await context.close();
+    }
+});
+
+// This controlled canvas checks target selection; the native bracket journey proves actual scoring.
+test('native aiming chooses the nearest clear canvas target instead of storage order', async ({ browser }) => {
+    const viewport = { width: 1280, height: 720 };
+    const context = await browser.newContext({ hasTouch: true, viewport });
+    try {
+        const page = await context.newPage();
+        await page.setContent(`
+            <canvas style="position:fixed;inset:0;width:100%;height:100%"></canvas>
+            <aside style="position:fixed;inset:0 auto 0 0;width:500px">Room controls</aside>
+            <output aria-label="Touch position"></output>
+        `);
+        await page.evaluate(() => {
+            document.querySelector('canvas')!.addEventListener('pointerdown', (event) => {
+                document.querySelector('output')!.textContent = String(event.clientX);
+            });
+        });
+        const initial = createTournamentArena({
+            gameId: 'native-aim-selection', principalIds: ['alice', 'bob'], seed: 7,
+            startedAtEpochMs: 1000, durationMs: 60000
+        });
+        const state: TournamentArena = {
+            ...initial,
+            arena: {
+                ...initial.arena,
+                layout: { ...initial.arena.layout, props: [] },
+                targets: [
+                    { ...initial.arena.targets[0], id: 'far-first', position: [-35, 1.72, 35] },
+                    { ...initial.arena.targets[0], id: 'near-clear', position: [-46, 1.72, -35] },
+                    { ...initial.arena.targets[0], id: 'near-covered', position: [-47, 1.72, -40] }
+                ]
+            }
+        };
+        await tapVisibleTarget({ page, state, viewport, isActive: () => true });
+        const x = Number(await page.getByLabel('Touch position').textContent());
+        expect(x).toBeGreaterThan(560);
+        expect(x).toBeLessThan(580);
     }
     finally {
         await context.close();

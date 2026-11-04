@@ -11,11 +11,18 @@ import type { RuntimeStateInsert } from '../../runtime-state/postgres/insert-run
 import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import {
-    groupStateGroupStorageKey,
-    groupStateScopeStorageKey
+    groupStateGroupStorageKey
 } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeJsonWireText } from '../protocol/json-wire-identity.ts';
 import { TOURNAMENT_ATTEMPTS_NAMESPACE, TournamentResultRepository } from './tournament-result-repository.ts';
+
+import {
+    decodeTournamentPublicationEntry,
+    TOURNAMENT_PUBLICATIONS_NAMESPACE,
+    type TournamentPublicationRead
+} from './tournament-publication.ts';
+
+import { toTournamentStorageKey } from './tournament-storage-key.ts';
 
 export const TOURNAMENTS_NAMESPACE = 'tournaments:brackets';
 
@@ -51,19 +58,20 @@ export class TournamentRepository {
         this.runtime = runtime;
         this.results = new TournamentResultRepository(runtime);
     }
+    async readPublication(value: TournamentRef): Promise<TournamentPublicationRead> {
+        const ref = decodeTournamentRef(value);
+        const entry = await this.runtime.findEntry(TOURNAMENT_PUBLICATIONS_NAMESPACE, toTournamentStorageKey(ref));
+        return entry === undefined
+            ? { entry: null, record: null }
+            : { entry, record: decodeTournamentPublicationEntry(entry, ref) };
+    }
     async readRecord(value: TournamentRef): Promise<Pick<TournamentRepository.Read, 'ref' | 'entry' | 'record'>> {
         const ref = decodeTournamentRef(value);
-        const entry = await this.runtime.findEntry(TOURNAMENTS_NAMESPACE, tournamentStorageKey(ref));
+        const entry = await this.runtime.findEntry(TOURNAMENTS_NAMESPACE, toTournamentStorageKey(ref));
         if (entry === undefined) {
             return { ref, entry: null, record: null };
         }
-        if (entry.key !== tournamentStorageKey(ref) || entry.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP) {
-            throw new TypeError('Tournament storage identity or lifetime differs');
-        }
-        const record = decodeTournamentRecord(decodeJsonWireText(entry.value));
-        if (!jsonEquals(record.tournament.ref, ref)) {
-            throw new TypeError('Tournament differs from its scoped storage key');
-        }
+        const record = decodeTournamentEntry(entry, ref);
         return { ref, entry, record };
     }
     async read(value: TournamentRef): Promise<TournamentRepository.Read> {
@@ -83,8 +91,15 @@ export class TournamentRepository {
     }
 }
 
-export function tournamentStorageKey(ref: TournamentRef): string {
-    return `${groupStateScopeStorageKey(ref)}:tournament=${encodeURIComponent(ref.tournamentId)}`;
+export function decodeTournamentEntry(entry: RuntimeStateEntry, ref: TournamentRef): TournamentRepository.Record {
+    if (entry.key !== toTournamentStorageKey(ref) || entry.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP) {
+        throw new TypeError('Tournament storage identity or lifetime differs');
+    }
+    const record = decodeTournamentRecord(decodeJsonWireText(entry.value));
+    if (!jsonEquals(record.tournament.ref, ref)) {
+        throw new TypeError('Tournament differs from its scoped storage key');
+    }
+    return record;
 }
 
 export function decodeTournamentActor(value: unknown): TournamentRepository.Actor {
@@ -139,7 +154,7 @@ export function computeTournamentStorage(
     if (!jsonEquals(record.tournament.ref, read.ref)) {
         throw new TypeError('Tournament write changes its scoped identity');
     }
-    const key = tournamentStorageKey(read.ref);
+    const key = toTournamentStorageKey(read.ref);
     const serialized = JSON.stringify(record);
     const expireAtIsoTimestamp = new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString();
     const changes = computeAttemptChanges(read, record.tournament);

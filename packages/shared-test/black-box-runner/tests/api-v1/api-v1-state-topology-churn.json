@@ -408,8 +408,7 @@
                     },
                     "outputs": {
                       "primarySharedGroupRevision": "body.causalRevision.groupRevision",
-                      "primarySharedPresenceRevision": "body.causalRevision.presenceRevision",
-                      "primarySharedOnlineMemberCount": "body.onlineMemberCount"
+                      "primarySharedPresenceRevision": "body.causalRevision.presenceRevision"
                     }
                   },
                   "expect": {
@@ -483,8 +482,7 @@
                     },
                     "outputs": {
                       "primaryChurnGroupRevision": "body.causalRevision.groupRevision",
-                      "primaryChurnPresenceRevision": "body.causalRevision.presenceRevision",
-                      "primaryChurnOnlineMemberCount": "body.onlineMemberCount"
+                      "primaryChurnPresenceRevision": "body.causalRevision.presenceRevision"
                     }
                   },
                   "expect": {
@@ -629,8 +627,7 @@
                     },
                     "outputs": {
                       "secondarySharedGroupRevision": "body.causalRevision.groupRevision",
-                      "secondarySharedPresenceRevision": "body.causalRevision.presenceRevision",
-                      "secondarySharedOnlineMemberCount": "body.onlineMemberCount"
+                      "secondarySharedPresenceRevision": "body.causalRevision.presenceRevision"
                     }
                   },
                   "expect": {
@@ -704,8 +701,7 @@
                     },
                     "outputs": {
                       "secondaryChurnGroupRevision": "body.causalRevision.groupRevision",
-                      "secondaryChurnPresenceRevision": "body.causalRevision.presenceRevision",
-                      "secondaryChurnOnlineMemberCount": "body.onlineMemberCount"
+                      "secondaryChurnPresenceRevision": "body.causalRevision.presenceRevision"
                     }
                   },
                   "expect": {
@@ -850,8 +846,7 @@
                     },
                     "outputs": {
                       "tertiarySharedGroupRevision": "body.causalRevision.groupRevision",
-                      "tertiarySharedPresenceRevision": "body.causalRevision.presenceRevision",
-                      "tertiarySharedOnlineMemberCount": "body.onlineMemberCount"
+                      "tertiarySharedPresenceRevision": "body.causalRevision.presenceRevision"
                     }
                   },
                   "expect": {
@@ -925,8 +920,7 @@
                     },
                     "outputs": {
                       "tertiaryChurnGroupRevision": "body.causalRevision.groupRevision",
-                      "tertiaryChurnPresenceRevision": "body.causalRevision.presenceRevision",
-                      "tertiaryChurnOnlineMemberCount": "body.onlineMemberCount"
+                      "tertiaryChurnPresenceRevision": "body.causalRevision.presenceRevision"
                     }
                   },
                   "expect": {
@@ -949,85 +943,29 @@
         "value": {
           "groupRevision": {
             "max": [
-              { "path": "outputs.primaryChurnGroupRevision" },
-              { "path": "outputs.secondaryChurnGroupRevision" },
-              { "path": "outputs.tertiaryChurnGroupRevision" }
+              {
+                "path": "outputs.primaryChurnGroupRevision"
+              },
+              {
+                "path": "outputs.secondaryChurnGroupRevision"
+              },
+              {
+                "path": "outputs.tertiaryChurnGroupRevision"
+              }
             ]
           },
           "presenceRevision": {
             "max": [
-              { "path": "outputs.primaryChurnPresenceRevision" },
-              { "path": "outputs.secondaryChurnPresenceRevision" },
-              { "path": "outputs.tertiaryChurnPresenceRevision" }
+              {
+                "path": "outputs.primaryChurnPresenceRevision"
+              },
+              {
+                "path": "outputs.secondaryChurnPresenceRevision"
+              },
+              {
+                "path": "outputs.tertiaryChurnPresenceRevision"
+              }
             ]
-          },
-          "onlineMemberCount": {
-            "if": {
-              "condition": {
-                "equals": [
-                  { "path": "outputs.primaryChurnPresenceRevision" },
-                  {
-                    "max": [
-                      { "path": "outputs.primaryChurnPresenceRevision" },
-                      { "path": "outputs.secondaryChurnPresenceRevision" },
-                      { "path": "outputs.tertiaryChurnPresenceRevision" }
-                    ]
-                  }
-                ]
-              },
-              "then": { "path": "outputs.primaryChurnOnlineMemberCount" },
-              "else": {
-                "if": {
-                  "condition": {
-                    "equals": [
-                      { "path": "outputs.secondaryChurnPresenceRevision" },
-                      {
-                        "max": [
-                          {
-                            "path": "outputs.primaryChurnPresenceRevision"
-                          },
-                          {
-                            "path": "outputs.secondaryChurnPresenceRevision"
-                          },
-                          {
-                            "path": "outputs.tertiaryChurnPresenceRevision"
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  "then": { "path": "outputs.secondaryChurnOnlineMemberCount" },
-                  "else": { "path": "outputs.tertiaryChurnOnlineMemberCount" }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "deriveChurnReadFloor",
-      "type": "set",
-      "output": "churnReadFloor",
-      "transform": {
-        "value": {
-          "groupRevision": { "path": "outputs.latestChurnObservation.groupRevision" },
-          "presenceRevision": {
-            "if": {
-              "condition": {
-                "equals": [
-                  { "path": "outputs.latestChurnObservation.onlineMemberCount" },
-                  13
-                ]
-              },
-              "then": { "path": "outputs.latestChurnObservation.presenceRevision" },
-              "else": {
-                "add": [
-                  { "path": "outputs.latestChurnObservation.presenceRevision" },
-                  1
-                ]
-              }
-            }
           }
         }
       }
@@ -1040,85 +978,29 @@
         "value": {
           "groupRevision": {
             "max": [
-              { "path": "outputs.primarySharedGroupRevision" },
-              { "path": "outputs.secondarySharedGroupRevision" },
-              { "path": "outputs.tertiarySharedGroupRevision" }
+              {
+                "path": "outputs.primarySharedGroupRevision"
+              },
+              {
+                "path": "outputs.secondarySharedGroupRevision"
+              },
+              {
+                "path": "outputs.tertiarySharedGroupRevision"
+              }
             ]
           },
           "presenceRevision": {
             "max": [
-              { "path": "outputs.primarySharedPresenceRevision" },
-              { "path": "outputs.secondarySharedPresenceRevision" },
-              { "path": "outputs.tertiarySharedPresenceRevision" }
+              {
+                "path": "outputs.primarySharedPresenceRevision"
+              },
+              {
+                "path": "outputs.secondarySharedPresenceRevision"
+              },
+              {
+                "path": "outputs.tertiarySharedPresenceRevision"
+              }
             ]
-          },
-          "onlineMemberCount": {
-            "if": {
-              "condition": {
-                "equals": [
-                  { "path": "outputs.primarySharedPresenceRevision" },
-                  {
-                    "max": [
-                      { "path": "outputs.primarySharedPresenceRevision" },
-                      { "path": "outputs.secondarySharedPresenceRevision" },
-                      { "path": "outputs.tertiarySharedPresenceRevision" }
-                    ]
-                  }
-                ]
-              },
-              "then": { "path": "outputs.primarySharedOnlineMemberCount" },
-              "else": {
-                "if": {
-                  "condition": {
-                    "equals": [
-                      { "path": "outputs.secondarySharedPresenceRevision" },
-                      {
-                        "max": [
-                          {
-                            "path": "outputs.primarySharedPresenceRevision"
-                          },
-                          {
-                            "path": "outputs.secondarySharedPresenceRevision"
-                          },
-                          {
-                            "path": "outputs.tertiarySharedPresenceRevision"
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  "then": { "path": "outputs.secondarySharedOnlineMemberCount" },
-                  "else": { "path": "outputs.tertiarySharedOnlineMemberCount" }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "deriveSharedReadFloor",
-      "type": "set",
-      "output": "sharedReadFloor",
-      "transform": {
-        "value": {
-          "groupRevision": { "path": "outputs.latestSharedObservation.groupRevision" },
-          "presenceRevision": {
-            "if": {
-              "condition": {
-                "equals": [
-                  { "path": "outputs.latestSharedObservation.onlineMemberCount" },
-                  13
-                ]
-              },
-              "then": { "path": "outputs.latestSharedObservation.presenceRevision" },
-              "else": {
-                "add": [
-                  { "path": "outputs.latestSharedObservation.presenceRevision" },
-                  1
-                ]
-              }
-            }
           }
         }
       }
@@ -1129,20 +1011,20 @@
       "connection": "apiTertiary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}?minGroupRevision={sharedReadFloor.groupRevision}&minPresenceRevision={sharedReadFloor.presenceRevision}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}?minGroupRevision={latestSharedObservation.groupRevision}&minPresenceRevision={latestSharedObservation.presenceRevision}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
-        "poll": {
-          "maxAttempts": 8,
-          "maxDurationMs": 15000,
-          "backoffMs": 100,
-          "backoffMultiplier": 2
-        },
         "outputs": {
           "sharedFinalGroupRevision": "body.causalRevision.groupRevision",
           "sharedFinalPresenceRevision": "body.causalRevision.presenceRevision"
+        },
+        "poll": {
+          "maxAttempts": 6,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
         }
       },
       "expect": {
@@ -1162,20 +1044,20 @@
       "connection": "apiPrimary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}?minGroupRevision={churnReadFloor.groupRevision}&minPresenceRevision={churnReadFloor.presenceRevision}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}?minGroupRevision={latestChurnObservation.groupRevision}&minPresenceRevision={latestChurnObservation.presenceRevision}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
-        "poll": {
-          "maxAttempts": 8,
-          "maxDurationMs": 15000,
-          "backoffMs": 100,
-          "backoffMultiplier": 2
-        },
         "outputs": {
           "churnFinalGroupRevision": "body.causalRevision.groupRevision",
           "churnFinalPresenceRevision": "body.causalRevision.presenceRevision"
+        },
+        "poll": {
+          "maxAttempts": 6,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
         }
       },
       "expect": {
