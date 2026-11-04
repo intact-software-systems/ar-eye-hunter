@@ -3,7 +3,6 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
-    toRtcRefusalFacts,
     toSendCommand,
     toVerdictCommands,
     type AlmConformanceVerdictFact
@@ -16,6 +15,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 
 /**
  * A strategy that allows WS sends a world send there at once: one WS attempt and no hand-over from an RTC leg. An

@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toRtcRefusalFacts } from '../../alm-conformance-message-commands.ts';
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,

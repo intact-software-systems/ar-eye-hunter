@@ -1,9 +1,5 @@
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
-import {
-    AL_DELIVERY_ADMITTED_STATES,
-    type ALDeliveryRefusalReason,
-    type ALDeliveryState
-} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
@@ -95,18 +91,6 @@ export type AlmConformanceVerdictFact = readonly [
     operator: 'exists' | 'equals' | 'length' | 'matches',
     expected: string | number | boolean
 ];
-
-/**
- * A send refused before its first carrier attempt for `reason`, so no carrier, WS included, carries it. The RTC carrier
- * refuses a send it cannot carry `unsupported` at admission, a carrier-unsupported rejection no carrier attempt follows.
- */
-export function toRtcRefusalFacts(reason: ALDeliveryRefusalReason): readonly AlmConformanceVerdictFact[] {
-    return [
-        ['refused', 'failure.kind', 'equals', 'refused'],
-        [reason, 'failure.reason', 'equals', reason],
-        ['no-attempt', 'attempts', 'equals', 0]
-    ];
-}
 
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;

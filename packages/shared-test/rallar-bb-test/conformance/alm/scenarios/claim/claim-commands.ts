@@ -3,13 +3,13 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import {
-    toRtcRefusalFacts,
     toVerdictCommands,
     type AlmConformanceVerdictFact
 } from '../../alm-conformance-message-commands.ts';
 import { toAudienceSendCommand, type AlmConformanceSendClaim } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import { WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
 
 /** Only the WS server arbitrates a claim; a strategy that allows WS routes an exclusive send there at once. */
