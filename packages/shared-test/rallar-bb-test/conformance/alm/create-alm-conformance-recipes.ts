@@ -315,7 +315,7 @@ function toAlmConformanceScenario(
             input.principalIdsByRole
         );
     };
-    return {
+    const scenario: AlmConformanceScenario = {
         scenarioId: definition.scenarioId,
         scenarioKey: definition.scenarioKey,
         roles: definition.roles,
@@ -327,8 +327,15 @@ function toAlmConformanceScenario(
         successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined,
         sibling: definition.roles.includes('sibling') ? toRoleRecipe('sibling') : undefined,
         publisherB: definition.roles.includes('publisher-b') ? toRoleRecipe('publisher-b') : undefined,
-        successorGate: definition.successorGate && toScenarioGate(input, definition, definition.successorGate),
-        continuation: definition.continuation && toContinuation(input, definition, definition.continuation)
+        successorGate: undefined,
+        continuation: undefined
+    };
+    const toGate = (gate: AlmConformanceRecipeGate) => toScenarioGate({ input, definition, scenario, gate });
+    return {
+        ...scenario,
+        successorGate: definition.successorGate && toGate(definition.successorGate),
+        continuation: definition.continuation &&
+            toContinuation(input, definition, definition.continuation, toGate(definition.continuation.gate))
     };
 }
 
@@ -348,12 +355,25 @@ function toStepInput(
     };
 }
 
-function toScenarioGate(
-    input: CreateAlmConformanceRecipesInput,
-    definition: AlmConformanceScenarioDefinition,
-    gate: AlmConformanceRecipeGate
-): AlmConformanceScenarioGate {
-    return { role: gate.role, commandId: toCommandId(toStepInput(input, definition, gate.role), gate.commandName) };
+interface ToScenarioGateInput {
+    readonly input: CreateAlmConformanceRecipesInput;
+    readonly definition: AlmConformanceScenarioDefinition;
+    /** The scenario's role recipes, one of which must hold the gate's command. */
+    readonly scenario: AlmConformanceScenario;
+    readonly gate: AlmConformanceRecipeGate;
+}
+
+/**
+ * A gate names a command of its role's recipe; one that names none would hold its recipe back to the lane's timeout.
+ */
+function toScenarioGate(gateInput: ToScenarioGateInput): AlmConformanceScenarioGate {
+    const { input, definition, scenario, gate } = gateInput;
+    const commandId = toCommandId(toStepInput(input, definition, gate.role), gate.commandName);
+    const recipe = toAlmConformanceRoleRecipe(scenario, gate.role);
+    if (!recipe?.commands.some((command) => command.commandId === commandId)) {
+        throw new Error(`${recipe?.recipeId ?? gate.role} names no ${commandId} command for its gate.`);
+    }
+    return { role: gate.role, commandId };
 }
 
 /**
@@ -363,7 +383,8 @@ function toScenarioGate(
 function toContinuation(
     input: CreateAlmConformanceRecipesInput,
     definition: AlmConformanceScenarioDefinition,
-    continuation: AlmConformanceContinuationDefinition
+    continuation: AlmConformanceContinuationDefinition,
+    gate: AlmConformanceScenarioGate
 ): AlmConformanceContinuation {
     const step = toStepInput(input, definition, 'sender');
     const recipe: RallarBlackBoxTestRecipe = {
@@ -380,7 +401,7 @@ function toContinuation(
         commands: [...continuation.toCommands(step), toStatsCommand(step, 'continuation-stats')]
     };
     return {
-        gate: toScenarioGate(input, definition, continuation.gate),
+        gate,
         recipe: resolveAlmConformancePrincipals(recipe, input.principalIdsByRole)
     };
 }
