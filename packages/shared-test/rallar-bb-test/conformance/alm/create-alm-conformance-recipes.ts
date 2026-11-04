@@ -56,6 +56,11 @@ import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.
 import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbound.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
+import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-delivered.ts';
+import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
+import { grantedRtcLaneRefused } from './scenarios/granted-rtc/granted-rtc-lane-refused.ts';
+import { grantedRtcMissingProof } from './scenarios/granted-rtc/granted-rtc-missing-proof.ts';
+import { grantedRtcReceiptedUnsupported } from './scenarios/granted-rtc/granted-rtc-receipted-unsupported.ts';
 import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from './scenarios/leader-ack/no-leader-refused.ts';
@@ -190,6 +195,10 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     pacedCancel,
     pacedIsolationResources,
     pacedIsolationLists,
+    grantedRtcDelivered,
+    grantedRtcMissingProof,
+    grantedRtcLaneRefused,
+    grantedRtcReceiptedUnsupported,
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,
@@ -216,7 +225,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     subscriptionTokenCount,
     subscriptionRevokeDisconnected,
     subscriptionReconnect,
-    subscriptionSuccessor
+    subscriptionSuccessor,
+    grantedRtcForgedSender
 ];
 
 export function createAlmConformanceRecipes(
@@ -230,7 +240,8 @@ export function createAlmConformanceRecipes(
 
     return ALM_CONFORMANCE_SCENARIOS
         .filter((definition) =>
-            definition.carriers.includes(input.carrier) && input.laneFamilies.includes(definition.laneFamily)
+            definition.carriers.includes(input.carrier) && input.laneFamilies.includes(definition.laneFamily) &&
+            (definition.principalRoles ?? []).every((role) => input.principalIdsByRole[role] !== undefined)
         )
         .map((definition) =>
             toAlmConformanceScenario(input, definition, { almDiagnostics: true, deliveryDiagnostics: false })

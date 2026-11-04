@@ -82,7 +82,7 @@ const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as c
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
 const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
-/** A granted topic is WS-only: the topic subscription cells run over ws and the fallback cell, on four roles. */
+/** The topic subscription cells run over ws and the fallback cell, on four roles. */
 const FOUR_ROLE_KEYS_BY_CARRIER = {
     ws: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect'],
     rtc: [],
@@ -93,6 +93,17 @@ const FOUR_ROLE_KEYS_BY_CARRIER = {
         'subscription-reconnect'
     ]
 } as const;
+
+/**
+ * A granted topic rides RTC as a signed `ack: 'none'` room multicast: its cells run over rtc alone, the two-agent ones
+ * before the congestion and fairness cells and the forged sender last, on three agents.
+ */
+const GRANTED_RTC_TWO_AGENT_KEYS = [
+    'granted-rtc-delivered',
+    'granted-rtc-missing-proof',
+    'granted-rtc-lane-refused',
+    'granted-rtc-receipted-unsupported'
+] as const;
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
 
@@ -142,11 +153,11 @@ function toAdmissionOutcomeTypeIds(contains: string | undefined): readonly strin
     return typeId === undefined || typeId.startsWith('al.control.') ? [] : [typeId];
 }
 
-/** A cell's topics: the world cell's own app topic, the topic subscription cells' granted one, or the members one. */
+/** A cell's topics: the world cell's own app topic, the granted one of the subscription and granted rtc cells, or the members one. */
 function toTopicCell(scenario: AlmConformanceScenario): 'world' | 'granted' | 'members' {
     return scenario.scenarioId === 'world-routing'
         ? 'world'
-        : scenario.scenarioId.startsWith('subscription-')
+        : scenario.scenarioId.startsWith('subscription-') || scenario.scenarioId.startsWith('granted-rtc-')
         ? 'granted'
         : 'members';
 }
@@ -247,6 +258,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'paced-cancel',
         'paced-isolation-resources',
         'paced-isolation-lists',
+        ...GRANTED_RTC_TWO_AGENT_KEYS,
         'backpressure-refused',
         'backpressure-deferred',
         'own-share-under-inbound',
@@ -355,7 +367,10 @@ describe('alm-conformance recipe family', () => {
                     ),
                     ...(carrier === 'rtc'
                         ? []
-                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`))
+                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)),
+                    ...(carrier === 'rtc'
+                        ? ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-granted-rtc-forged-sender-${role}`)
+                        : [])
                 ]);
         }
     });
@@ -373,7 +388,8 @@ describe('alm-conformance recipe family', () => {
             'claim-expires-reclaims',
             'claim-refused-on-rtc',
             'reply-first-wins',
-            'paced-isolation-lists'
+            'paced-isolation-lists',
+            'granted-rtc-forged-sender'
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -509,7 +525,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('routes every carrier over one room WS topic the product admits, the world cell over its own app topic and the topic subscription cells over the granted topic', () => {
+    it('routes every carrier over one room WS topic the product admits, the world cell over its own app topic and the granted cells over the granted topic', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
             const topicIdsOf = (cell: 'world' | 'granted' | 'members') =>
@@ -520,8 +536,7 @@ describe('alm-conformance recipe family', () => {
             expect(new Set(topicIdsOf('members'))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
             expect(new Set(topicIdsOf('world'))).toEqual(new Set([WORLD_TOPIC_ID]));
             // A cell's cues travel on the members topic, beside its granted publications.
-            expect(new Set(topicIdsOf('granted')))
-                .toEqual(carrier === 'rtc' ? new Set() : new Set([GRANTED_TOPIC_ID, CONFORMANCE_TOPIC_ID]));
+            expect(new Set(topicIdsOf('granted'))).toEqual(new Set([GRANTED_TOPIC_ID, CONFORMANCE_TOPIC_ID]));
         }
         for (const topicId of [CONFORMANCE_TOPIC_ID, WORLD_TOPIC_ID, GRANTED_TOPIC_ID]) {
             expect(validateRallarWsUserTopicId(topicId).errors).toEqual([]);
@@ -719,7 +734,9 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             ['full'],
-            ['full']
+            ['full'],
+            // The granted rtc cells.
+            ...[...GRANTED_RTC_TWO_AGENT_KEYS, 'granted-rtc-forged-sender'].map(() => ['full'])
         ]);
     });
 

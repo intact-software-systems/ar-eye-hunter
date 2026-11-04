@@ -1,5 +1,6 @@
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestFaultRewrite,
     RallarBlackBoxTestStorageFaultInjectCommand,
     RallarBlackBoxTestTransportFaultInjectCommand
 } from '../../rallar-black-box-test-contracts.ts';
@@ -21,7 +22,13 @@ interface AlmConformanceFaultCommandInput {
     readonly carrier: AlmConformanceFaultCarrier;
     /** The frames the fault meets: every frame of the scenario's type, or the one message a send returned. */
     readonly match: RallarBlackBoxTestTransportFaultInjectCommand['match'];
-    readonly action: 'drop' | 'not-ready' | 'backpressure';
+    readonly action: RallarBlackBoxTestTransportFaultInjectCommand['action'];
+    readonly remaining: 'until-cleared' | 0;
+}
+
+interface AlmConformanceRewriteFaultInput {
+    readonly name: string;
+    readonly rewrite: RallarBlackBoxTestFaultRewrite;
     readonly remaining: 'until-cleared' | 0;
 }
 
@@ -87,6 +94,26 @@ export function toRtcDropFaultCommand(
         carrier: 'rtc',
         match: { typeId: toScenarioTypeId(step) },
         action: 'drop',
+        remaining
+    });
+}
+
+/**
+ * Rewrites every RTC frame of the scenario's type this page writes, after its origin signed it, until the same id with
+ * `remaining: 0` releases it: a forged sender keeps the signature under another member's session and key, and a
+ * stripped frame carries no proof. Only such a sender-side rewrite makes either frame.
+ */
+export function toRtcRewriteFaultCommand(
+    step: AlmConformanceStepInput,
+    { name, rewrite, remaining }: AlmConformanceRewriteFaultInput
+): RallarBlackBoxTestTransportFaultInjectCommand {
+    return toFaultCommand({
+        step,
+        name,
+        faultName: 'rewrite-rtc',
+        carrier: 'rtc',
+        match: { typeId: toScenarioTypeId(step) },
+        action: { rewrite },
         remaining
     });
 }

@@ -218,7 +218,7 @@ function toGrantedSend(
     };
 }
 
-function toPublicationPayload(
+export function toPublicationPayload(
     step: AlmConformanceStepInput,
     name: string,
     kind: TopicPublicationInput['kind']

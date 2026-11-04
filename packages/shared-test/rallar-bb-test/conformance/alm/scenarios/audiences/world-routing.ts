@@ -1,3 +1,5 @@
+import type { ALDeliveryRefusalReason } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
@@ -16,15 +18,20 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 
+/** A send refused before its first carrier attempt for `reason`, so no carrier, WS included, carries it. */
+export function toRtcRefusalFacts(reason: ALDeliveryRefusalReason): readonly AlmConformanceVerdictFact[] {
+    return [
+        ['refused', 'failure.kind', 'equals', 'refused'],
+        [reason, 'failure.reason', 'equals', reason],
+        ['no-attempt', 'attempts', 'equals', 0]
+    ];
+}
+
 /**
  * RTC carries no world audience: the RTC carrier refuses the send at admission, a carrier-unsupported rejection that
  * no carrier attempt follows, so no WS leg carries it either.
  */
-export const RTC_REFUSAL_FACTS: readonly AlmConformanceVerdictFact[] = [
-    ['refused', 'failure.kind', 'equals', 'refused'],
-    ['unsupported', 'failure.reason', 'equals', 'unsupported'],
-    ['no-attempt', 'attempts', 'equals', 0]
-];
+export const RTC_REFUSAL_FACTS: readonly AlmConformanceVerdictFact[] = toRtcRefusalFacts('unsupported');
 
 /**
  * A strategy that allows WS sends a world send there at once: one WS attempt and no hand-over from an RTC leg. An

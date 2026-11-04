@@ -129,6 +129,12 @@ interface RtcQueuedPayload {
     readonly onSettled: RtcDataChannelSendOptions['onSettled'];
 }
 
+/** What a scripted transport fault leaves of a send: the drop's settled result, a rewritten frame, or the send as given. */
+type RtcFaultedSend =
+    | Readonly<{ kind: 'reject'; result: RtcDataChannelSendResult; }>
+    | Readonly<{ kind: 'send-rewritten'; data: string; }>
+    | Readonly<{ kind: 'pass'; }>;
+
 interface RtcSendRejection {
     readonly status: 'cancelled' | 'expired' | 'closed';
     readonly reason: string;
@@ -345,10 +351,11 @@ export class QRtcDataChannel {
             return this.recordSendResult('closed', 'Data channel not open', options.key);
         }
 
-        const faultedResult = this.rejectFaultedSend(data, options);
-        if (faultedResult) {
-            return faultedResult;
+        const faulted = this.rejectFaultedSend(data, options);
+        if (faulted.kind === 'reject') {
+            return faulted.result;
         }
+        const sent = faulted.kind === 'send-rewritten' ? faulted.data : data;
 
         this.flushQueuedSends();
 
@@ -368,10 +375,10 @@ export class QRtcDataChannel {
         }
 
         if (this.isBackPressured(dc)) {
-            return this.enqueueBackPressuredSend(data, options);
+            return this.enqueueBackPressuredSend(sent, options);
         }
 
-        return this.submitNativeSend(dc, data, options);
+        return this.submitNativeSend(dc, sent, options);
     }
 
     private submitNativeSend(
@@ -401,16 +408,13 @@ export class QRtcDataChannel {
     }
 
     /** A `delay` decision is not supported for RTC in F1 and is treated as `pass`. */
-    private rejectFaultedSend(
-        data: RtcDataChannelPayload,
-        options: RtcDataChannelSendOptions
-    ): RtcDataChannelSendResult | undefined {
-        if (typeof data !== 'string') {
-            return undefined;
+    private rejectFaultedSend(data: RtcDataChannelPayload, options: RtcDataChannelSendOptions): RtcFaultedSend {
+        const decision = typeof data === 'string' ? this.input.faultPort.decideSend('rtc', data) : undefined;
+        if (decision?.kind === 'rewrite') {
+            return { kind: 'send-rewritten', data: decision.serialized };
         }
-        const decision = this.input.faultPort.decideSend('rtc', data);
-        if (decision.kind !== 'drop') {
-            return undefined;
+        if (decision?.kind !== 'drop') {
+            return { kind: 'pass' };
         }
         const reason = `Transport fault ${decision.faultId}`;
         this.settleSend(options.onSettled, {
@@ -419,7 +423,7 @@ export class QRtcDataChannel {
             key: options.key,
             submissionAttempted: false
         });
-        return this.recordSendResult('dropped', reason, options.key);
+        return { kind: 'reject', result: this.recordSendResult('dropped', reason, options.key) };
     }
 
     onRawMessageDo(

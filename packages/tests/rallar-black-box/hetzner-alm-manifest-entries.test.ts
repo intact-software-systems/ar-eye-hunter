@@ -196,7 +196,14 @@ describe('ALM conformance hosted lane families', () => {
             'alm-ws-reply-timeout-late',
             'alm-ws-reply-undelivered',
             // The combined connect's one selector is the scenario topic's, so no hosted page hears a group-state delta.
-            'alm-ws-server-originated'
+            'alm-ws-server-originated',
+            // A granted cell's grants name principals, which a hosted manifest's agents are not known by (D505).
+            ...[
+                'granted-rtc-delivered',
+                'granted-rtc-missing-proof',
+                'granted-rtc-lane-refused',
+                'granted-rtc-receipted-unsupported'
+            ].map((key) => `alm-rtc-${key}`)
         ];
         const cells = toStartedCells(createAlmConformance2AgentEntry());
 

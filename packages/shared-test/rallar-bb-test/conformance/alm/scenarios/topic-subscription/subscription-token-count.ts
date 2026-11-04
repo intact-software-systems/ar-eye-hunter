@@ -40,6 +40,7 @@ export const subscriptionTokenCount: AlmConformanceScenarioDefinition = {
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
+    principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
     toSenderCommands: (producer) => producer.role === 'sender' ? toPublisherCommands(producer) : [],
     toRecipientCommands: (recipient) =>

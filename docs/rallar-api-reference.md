@@ -578,6 +578,20 @@ whatever `RALLAR_STATE_STRICT_READ_AUTH` says, and an unknown group lists none.
 Browser code subscribes through a granted channel's `subscribe(handler)` (see
 WS And RTC Messages), which sends, renews and releases these requests itself.
 
+A room session registers the key its page signs granted RTC publications with.
+The group presence connect and heartbeat bodies
+(`.../groups/{groupId}/sessions/{sessionId}/requests/{requestId}` and its
+`/heartbeat` twin) each require `publicationKey`: `{ keyId, publicJwk }`, where
+`publicJwk` is an ECDSA P-256 public JWK of exactly `kty`, `crv`, `x` and `y` and
+`keyId` is 43 characters of base64url, or `null` from a page without WebCrypto.
+Any other shape, a private `d` member included, is a `400` before enqueue. The
+session's row keeps what its latest connect or heartbeat sent, a heartbeat that
+changes the key is not a pure lease renewal, and
+`GroupSnapshot.activeSessions[].publicationKey` and the group-state delta carry
+it; the key leaves the snapshot with its session. The server checks the shape
+only: a receiver recomputes the key's thumbprint before it trusts `keyId`. The
+browser creates one key per page at startup and sends it itself.
+
 Join-code rotation is currently exposed through lower-level API integration and
 workflow helpers. The plaintext code is returned only by the rotation response;
 the group snapshot stores verifier metadata. Codes are reusable until expiry,
@@ -1058,12 +1072,29 @@ exactly `{ topicId, typeId?, fanout, serverProducerIds }` (see
 `docs/environment-variables.md`). A
 `room.message<T>('name')` binding fills `members`. Any other value is refused
 `$.access` `invalid-access`, and a granted channel without a `topicId`
-`$.topicId` `missing-topic-id`. A granted channel is WS-only: `ws-then-rtc` and
-`rtc-with-ws-fallback` sends go to WS at once and never open an RTC leg, a
-`sendRtc` or a `send` with `strategy: 'rtc'` ends `rejected` with
-`failure: { kind: 'refused', reason: 'unsupported' }`, and `onRtc` throws the
-`unsupported` issue at `$.access`. A granted send names its room; one that names
-none is refused `unsupported`. Before any carrier, the send reads the room's
+`$.topicId` `missing-topic-id`. A granted channel rides RTC only as a room
+multicast that asks no receipt (`ack: 'none'`), under `rtc` or
+`rtc-with-ws-fallback`: the sending page signs each frame with the publication key
+its room presence registered (see Group Policy And State Routes above), and every
+relay and receiver verifies that signature against its own cached room snapshot
+before it forwards or delivers the frame. A frame that names no room, reaches a
+hop without a current snapshot of it, carries no proof or an invalid signature,
+or comes from a publisher the snapshot grants no `publish` is dropped there,
+`unauthorized` and with no NACK; one signed with a key the snapshot does not name
+yet, or stamped with a newer authority than it, is dropped `not-yet-in-sync` and
+the hop refreshes its snapshot once. A frame is delivered only to a session
+holding `subscribe` and an active subscription; a relay needs only membership to
+forward it. The proof
+authenticates the publisher, never the payload's confidentiality: relays read the
+payload bytes. Every other granted RTC send (a receipted one, a unicast, a `world`
+or `principal` send, or one from a page whose key is absent or not yet in its
+snapshot) is refused `unsupported` before admission: `strategy: 'rtc'` and
+`sendRtc` end `rejected` with `failure: { kind: 'refused', reason: 'unsupported' }`,
+and `rtc-with-ws-fallback` sends it over WS. `ws-then-rtc` sends every granted
+message over WS. A lane `messages.rtc.send` on a topic the cached snapshot grants
+follows the same rules. `onRtc` throws the `unsupported` issue at `$.access`;
+`subscribe(handler)` hears both carriers. A granted send names its room; one that
+names none is refused `unsupported`. Before any carrier, the send reads the room's
 cached snapshot: when it grants this principal no effective `publish` (none for a
 spectator or a member that is not active), the send ends `rejected` with
 `failure: { kind: 'refused', reason: 'no-publish-grant' }`. With no snapshot

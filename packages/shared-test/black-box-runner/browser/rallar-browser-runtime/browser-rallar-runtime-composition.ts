@@ -63,7 +63,7 @@ import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
-import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     createCountingIndexedDbOperationObserver,
     type CountingIndexedDbOperationObserver
@@ -182,6 +182,8 @@ export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarD
 
 /** What the page reads to name a peer by its lane role: the WS server's id, its own session and the room's roster. */
 export interface BlackBoxBrowserPeersDependency extends Pick<RallarConnectionOperations, 'serverPeerId' | 'session'> {
+    /** Undefined while the page holds no snapshot of the room. */
+    getRoomSnapshot(roomRef: GroupRef): GroupSnapshot | undefined;
     /** Undefined while the page holds no snapshot of the room. */
     getRoomSessions(roomRef: GroupRef): readonly GroupPresenceSession[] | undefined;
     /** Undefined while the page holds no snapshot of the room, or the room has no active director. */
@@ -344,6 +346,7 @@ function toBlackBoxBrowserMessagingPorts(
         peers: {
             serverPeerId: () => session.connection.serverPeerId(),
             session: () => session.connection.session(),
+            getRoomSnapshot: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef),
             getRoomSessions: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)?.activeSessions,
             getRoomLeaderSessionId: (roomRef) => {
                 const snapshot = state.roomStateStore.findGroupSnapshot(roomRef);

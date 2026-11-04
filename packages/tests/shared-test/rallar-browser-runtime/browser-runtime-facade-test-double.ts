@@ -106,6 +106,8 @@ export interface BrowserRuntimeFacadeRecords {
     ]>;
     readonly typedWsHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
     readonly typedRtcHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
+    /** Each granted channel `subscribe(handler)`'s handler, which the product calls for either carrier's copy. */
+    readonly typedSubscribeHandlers: Array<RallarTypedPayloadHandler<RallarMessagePayload>>;
     typedUnsubscribeCount: number;
     readonly rtcDiagnosticsReads: Array<Parameters<BlackBoxBrowserRtcDependency['diagnostics']>>;
     readonly rtcRoomWaits: Array<Parameters<BlackBoxBrowserRtcDependency['waitForRoom']>>;
@@ -143,6 +145,7 @@ export const facadeRecords: BrowserRuntimeFacadeRecords = {
     typedSends: [],
     typedWsHandlers: [],
     typedRtcHandlers: [],
+    typedSubscribeHandlers: [],
     typedUnsubscribeCount: 0,
     rtcDiagnosticsReads: [],
     rtcRoomWaits: [],
@@ -234,6 +237,7 @@ export const facadeBehavior = {
     submitRawControl: vi.fn<BlackBoxBrowserDeliveriesDependency['submitRawControl']>(),
     resolveRoomSendFence: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomSendFence']>(),
     serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
+    getRoomSnapshot: vi.fn<BlackBoxBrowserPeersDependency['getRoomSnapshot']>(),
     getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>(),
     getRoomLeaderSessionId: vi.fn<BlackBoxBrowserPeersDependency['getRoomLeaderSessionId']>(),
     /** The status the server's first answer settles a new token to. */
@@ -408,6 +412,7 @@ const deliveries: BlackBoxBrowserDeliveriesDependency = {
 const peers: BlackBoxBrowserPeersDependency = {
     serverPeerId: () => facadeBehavior.serverPeerId(),
     session: () => facadeSession,
+    getRoomSnapshot: (roomRef) => facadeBehavior.getRoomSnapshot(roomRef),
     getRoomSessions: (roomRef) => facadeBehavior.getRoomSessions(roomRef),
     getRoomLeaderSessionId: (roomRef) => facadeBehavior.getRoomLeaderSessionId(roomRef)
 };
@@ -655,6 +660,7 @@ function clearRecords(): void {
             facadeRecords.typedSends,
             facadeRecords.typedWsHandlers,
             facadeRecords.typedRtcHandlers,
+            facadeRecords.typedSubscribeHandlers,
             facadeRecords.rtcDiagnosticsReads,
             facadeRecords.rtcRoomWaits,
             facadeRecords.crdtOpens,
@@ -705,7 +711,10 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
                 facadeRecords.typedUnsubscribeCount += 1;
             };
         },
-        subscribe: () => createTopicSubscriptionTestDouble(facadeBehavior.typedSubscribeAnswer())
+        subscribe: (handler) => {
+            facadeRecords.typedSubscribeHandlers.push(handler as RallarTypedPayloadHandler<RallarMessagePayload>);
+            return createTopicSubscriptionTestDouble(facadeBehavior.typedSubscribeAnswer());
+        }
     };
 }
 

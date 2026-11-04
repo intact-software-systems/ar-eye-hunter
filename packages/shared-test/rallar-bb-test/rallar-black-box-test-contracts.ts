@@ -15,7 +15,7 @@ import type {
     IndexedDbOperationOwner
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
-import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
+import type { ScriptedTransportFault, TransportFaultRewrite } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { RecipeEventHistorySelection } from './recipe/validate-recipe-event-history.ts';
 import type {
@@ -499,10 +499,23 @@ export type RallarBlackBoxTestTransportFaultInjectCommand =
         faultId: string;
         carrier: 'ws' | 'rtc';
         match: Readonly<{ controlType?: 'ack' | 'nack' | 'repair'; typeId?: string; msgId?: string; }>;
-        /** `backpressure` holds the carrier at its high watermark for each matching origination it plans. */
-        action: ScriptedTransportFault['action'];
+        /**
+         * `backpressure` holds the carrier at its high watermark for each matching origination it plans; `rewrite`, on
+         * `rtc` only, changes each matching frame the page writes.
+         */
+        action:
+            | Exclude<ScriptedTransportFault['action'], Readonly<{ rewrite: TransportFaultRewrite; }>>
+            | Readonly<{ rewrite: RallarBlackBoxTestFaultRewrite; }>;
         remaining: ScriptedTransportFault['remaining'];
     }>;
+
+/**
+ * `strip-proof` deletes the frame's publication proof. `forgeSender` names a principal by id: the page writes that
+ * principal's one live session as the frame's sender and its registered key id into the proof, keeping the signature.
+ */
+export type RallarBlackBoxTestFaultRewrite =
+    | Readonly<{ forgeSender: Readonly<{ principal: string; }>; }>
+    | 'strip-proof';
 
 /** An absent `match.kind` faults every operation of the owner; `quota` still fails only its writes. */
 export type RallarBlackBoxTestStorageFaultInjectCommand =

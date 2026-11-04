@@ -103,6 +103,11 @@ function toOtherLiveSessions(
     own: Readonly<{ ownSessionId: string | undefined; nowMs: number; }>
 ): readonly GroupPresenceSession[] {
     return roomSessions.filter((session) =>
-        session.status === 'active' && session.expiresAtEpochMs > own.nowMs && session.sessionId !== own.ownSessionId
+        isLiveRoomSession(session, own.nowMs) && session.sessionId !== own.ownSessionId
     );
+}
+
+/** A session the roster still lists as active whose lease has not lapsed by `nowMs`. */
+export function isLiveRoomSession(session: GroupPresenceSession, nowMs: number): boolean {
+    return session.status === 'active' && session.expiresAtEpochMs > nowMs;
 }

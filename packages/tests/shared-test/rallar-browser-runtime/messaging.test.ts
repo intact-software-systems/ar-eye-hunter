@@ -19,12 +19,14 @@ import {
     vi
 } from 'vitest';
 
+import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import {
     events,
     facade,
     loadRuntime,
     resetFacade
 } from './browser-rallar-runtime-test-harness.ts';
+import { toRoomRosterSession } from './browser-runtime-facade-test-double.ts';
 
 interface ChatMessagePayload {
     readonly text: string;
@@ -124,6 +126,44 @@ it('applies a command-injected hold through the configured readiness owner and r
     expect(facade.rallar.diagnostics.faults.getObservations()).toEqual([{ faultId: 'hold', carrier: 'ws', decision: 'not-ready' }]);
     await runtime.injectFault({ ...fault, remaining: 0 });
     expect(ports.submissionReadinessFaultPort.decideSubmissionReadiness(serialized)).toBe('ready');
+    await runtime.close();
+});
+
+it('forges a sender by the principal the page resolves in its room snapshot, and fails the step it cannot resolve', async () => {
+    const { runtime } = await loadConnectedMessageRuntime('messages.rtc');
+    const charlie = {
+        ...toRoomRosterSession('charlie-session', { principalId: 'principal-charlie' }),
+        publicationKey: { keyId: 'charlie-key-id', publicJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' } }
+    } as const;
+    facade.behavior.getRoomSnapshot.mockReturnValue({
+        ...createGroupSnapshotFixture({ ...roomRef, sessionIds: [] }),
+        activeSessions: [charlie]
+    });
+    const message = newALUnicastMessage('sender', { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' }, 'receiver', 'granted', {});
+    const frame = JSON.stringify({ ...message, proof: { alg: 'ES256', keyId: 'sender-key', signature: 'signature' } });
+    const fault = {
+        faultId: 'forge',
+        carrier: 'rtc',
+        match: { typeId: 'granted' },
+        action: { rewrite: { forgeSender: { principal: 'principal-charlie' } } },
+        remaining: 'until-cleared'
+    };
+
+    await runtime.injectFault(fault);
+
+    const decision = facade.rallar.diagnostics.faults.decideSend('rtc', frame);
+    expect(facade.behavior.getRoomSnapshot).toHaveBeenCalledWith(roomRef);
+    expect(decision.kind === 'rewrite' && JSON.parse(decision.serialized)).toMatchObject({
+        id: { senderId: 'charlie-session' },
+        proof: { keyId: 'charlie-key-id', signature: 'signature' }
+    });
+    await expect(runtime.injectFault({
+        ...fault,
+        faultId: 'forge-dana',
+        action: { rewrite: { forgeSender: { principal: 'principal-dana' } } }
+    })).rejects.toThrow(
+        'fault.inject forge-dana names no forged sender: the room holds 0 live sessions of principal-dana, not exactly one.'
+    );
     await runtime.close();
 });
 
