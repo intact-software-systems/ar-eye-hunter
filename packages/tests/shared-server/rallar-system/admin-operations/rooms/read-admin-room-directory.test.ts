@@ -19,7 +19,12 @@ function createDirectory(repository = new FakeRuntimeStateRepository()): ReadAdm
 }
 
 async function storeGroup(repository: FakeRuntimeStateRepository, group: Group): Promise<void> {
-    await repository.upsert('group-state:groups', groupStateGroupStorageKey(group), JSON.stringify(group), 20_000);
+    await repository.upsert({
+        namespace: 'group-state:groups',
+        key: groupStateGroupStorageKey(group),
+        value: JSON.stringify(group),
+        expireAtTimestamp: 20_000
+    });
 }
 
 describe('Operator room directory inspection', () => {
@@ -87,7 +92,7 @@ describe('Operator room directory inspection', () => {
         const repository = new FakeRuntimeStateRepository();
         const key = 'app=app-1:ws=workspace-1:group=a-invalid';
         const value = JSON.stringify({ ...createTestGroup(), applicationId: 'secret-foreign-app' });
-        await repository.upsert('group-state:groups', key, value, 20_000);
+        await repository.upsert({ namespace: 'group-state:groups', key, value, expireAtTimestamp: 20_000 });
         await storeGroup(repository, createTestGroup({ groupId: 'b-valid' }));
 
         const result = await createDirectory(repository).read({ scope, limit: 10, afterGroupId: null });
@@ -108,7 +113,7 @@ describe('Operator room directory inspection', () => {
         const repository = new FakeRuntimeStateRepository();
         const group = createTestGroup({ groupId: 'a-deleted' });
         await storeGroup(repository, { ...group, status: 'deleted', deleted: group.updated });
-        await repository.upsert('group-state:groups', 'app=app-1:ws=workspace-1:group=b-expired', '{}', 10_000);
+        await repository.upsert({ namespace: 'group-state:groups', key: 'app=app-1:ws=workspace-1:group=b-expired', value: '{}', expireAtTimestamp: 10_000 });
         await storeGroup(repository, createTestGroup({ groupId: 'c-current' }));
         const reader = createDirectory(repository);
         const first = await reader.read({ scope, limit: 2, afterGroupId: null });
@@ -121,7 +126,7 @@ describe('Operator room directory inspection', () => {
 
     it('fails the page when a storage identity is not trustworthy', async () => {
         const repository = new FakeRuntimeStateRepository();
-        await repository.upsert('group-state:groups', 'app=app-1:ws=workspace-1:group=%zz', '{}', 20_000);
+        await repository.upsert({ namespace: 'group-state:groups', key: 'app=app-1:ws=workspace-1:group=%zz', value: '{}', expireAtTimestamp: 20_000 });
         await expect(createDirectory(repository).read({ scope, limit: 10, afterGroupId: null }))
             .rejects.toThrow('Room directory storage identity is invalid');
     });

@@ -26,11 +26,11 @@ Deno.test('PGlite runtime-state transactions isolate nested savepoint rollback',
         const repository = new PSqlRuntimeStateRepository(sql);
 
         await repository.begin(async (outer) => {
-            await outer.upsert('nested-tx', 'outer', 'outer', FUTURE_MS);
+            await outer.upsert({ namespace: 'nested-tx', key: 'outer', value: 'outer', expireAtTimestamp: FUTURE_MS });
             await assert.rejects(
                 async () => {
                     await outer.begin(async (inner) => {
-                        await inner.upsert('nested-tx', 'rolled-back', 'rolled-back', FUTURE_MS);
+                        await inner.upsert({ namespace: 'nested-tx', key: 'rolled-back', value: 'rolled-back', expireAtTimestamp: FUTURE_MS });
                         throw new Error('rollback nested savepoint');
                     });
                 },
@@ -39,7 +39,7 @@ Deno.test('PGlite runtime-state transactions isolate nested savepoint rollback',
             assert.equal(await outer.findEntry('nested-tx', 'rolled-back'), undefined);
 
             await outer.begin(async (inner) => {
-                await inner.upsert('nested-tx', 'committed', 'committed', FUTURE_MS);
+                await inner.upsert({ namespace: 'nested-tx', key: 'committed', value: 'committed', expireAtTimestamp: FUTURE_MS });
             });
         });
 
@@ -56,22 +56,13 @@ Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally
         const wildcardCollisionPrefix = 'app=opsZZ2Fapp:ws=workspaceZZ3Ablue';
 
         await repository.upsert(
-            'runtime-prefix',
-            `${literalPrefix}:group=room-a`,
-            '{"room":"a"}',
-            FUTURE_MS
+            { namespace: 'runtime-prefix', key: `${literalPrefix}:group=room-a`, value: '{"room":"a"}', expireAtTimestamp: FUTURE_MS }
         );
         await repository.upsert(
-            'runtime-prefix',
-            `${literalPrefix}:group=room-b`,
-            '{"room":"b"}',
-            FUTURE_MS
+            { namespace: 'runtime-prefix', key: `${literalPrefix}:group=room-b`, value: '{"room":"b"}', expireAtTimestamp: FUTURE_MS }
         );
         await repository.upsert(
-            'runtime-prefix',
-            `${wildcardCollisionPrefix}:group=room-b`,
-            '{"room":"b"}',
-            FUTURE_MS
+            { namespace: 'runtime-prefix', key: `${wildcardCollisionPrefix}:group=room-b`, value: '{"room":"b"}', expireAtTimestamp: FUTURE_MS }
         );
 
         const entries = await repository.findEntriesByPrefix(

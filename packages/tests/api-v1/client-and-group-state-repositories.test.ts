@@ -7,7 +7,12 @@ import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-syste
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateWriteInput
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
@@ -54,10 +59,12 @@ describe('ClientStateRepository', () => {
             updated: { atEpochMs: 2, byServiceId: 'seed' }
         };
         await repository.upsert(
-            'client-state:principals',
-            'app=app-1:ws=workspace-1:principal=principal-1',
-            JSON.stringify(noncanonical),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'client-state:principals',
+                key: 'app=app-1:ws=workspace-1:principal=principal-1',
+                value: JSON.stringify(noncanonical),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(clientRepository.findPrincipal(canonical)).rejects.toBeInstanceOf(
@@ -70,10 +77,12 @@ describe('ClientStateRepository', () => {
         const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const expected = createClientPrincipal();
         await repository.upsert(
-            'client-state:principals',
-            'app=app-1:ws=workspace-1:principal=principal-1',
-            JSON.stringify(createClientPrincipal('principal-2')),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'client-state:principals',
+                key: 'app=app-1:ws=workspace-1:principal=principal-1',
+                value: JSON.stringify(createClientPrincipal('principal-2')),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(clientRepository.findPrincipal(expected)).rejects.toThrow(
@@ -564,25 +573,31 @@ describe('GroupStateRepository', () => {
             expiresAtEpochMs: 60_000
         };
         await repository.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(ref),
-            JSON.stringify(noncanonicalGroup),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify(noncanonicalGroup),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await repository.upsert(
-            'group-state:members',
-            groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
-            JSON.stringify(noncanonicalMember),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'group-state:members',
+                key: groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
+                value: JSON.stringify(noncanonicalMember),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await repository.upsert(
-            'group-state:sessions',
-            groupStatePresenceSessionStorageKey({
-                ...ref,
-                sessionId: 'session-1'
-            }),
-            JSON.stringify(noncanonicalSession),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'group-state:sessions',
+                key: groupStatePresenceSessionStorageKey({
+                    ...ref,
+                    sessionId: 'session-1'
+                }),
+                value: JSON.stringify(noncanonicalSession),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(groupRepository.findGroup(ref)).rejects.toThrow();
@@ -599,19 +614,23 @@ describe('GroupStateRepository', () => {
         const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const expected = createGroup('expected-group');
         await repository.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(expected),
-            JSON.stringify({ ...expected, workspaceId: null }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey(expected),
+                value: JSON.stringify({ ...expected, workspaceId: null }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(groupRepository.findGroup(expected)).rejects.toThrow(
             /workspaceId/
         );
         await repository.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(expected),
-            JSON.stringify(createGroup('wrong-group')),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey(expected),
+                value: JSON.stringify(createGroup('wrong-group')),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(groupRepository.findGroup(expected)).rejects.toThrow(
             /scope differs|identity differs/
@@ -1626,10 +1645,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     }
 
     async upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<void> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -1643,31 +1659,24 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     }
 
     async insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
             return { status: 'conflict' };
         }
-        await this.upsert(namespace, key, value, expireAtTimestamp);
+        await this.upsert({ namespace, key, value, expireAtTimestamp });
         return { status: 'applied', revision: 0 };
     }
 
     async upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         const current = this.data.get(this.toKey(namespace, key));
         if (!current || current.revision !== expectedRevision) {
             return { status: 'conflict' };
         }
-        await this.upsert(namespace, key, value, expireAtTimestamp);
+        await this.upsert({ namespace, key, value, expireAtTimestamp });
         return { status: 'applied', revision: expectedRevision + 1 };
     }
 

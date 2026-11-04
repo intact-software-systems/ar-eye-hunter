@@ -4,7 +4,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { seedGroup, seedPresenceSession, toGroupRef } from './group-presence-retry-test-runtime.ts';
@@ -91,21 +91,22 @@ describe('group presence expiry retry', () => {
     it('rebases expiry observations at different times without idempotency conflict', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'different-expiry-observations');
-        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-            SCOPE,
-            'different-expiry-observations',
-            'expiry-session',
-            {
-                principalId: 'alice',
-                generationId: 'expiry-generation',
-                publicationKey: null,
-                connectionGenerationId: 'expiry-ws-generation',
-                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
-                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
-                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
-                requestId: 'connect-expiry-observation'
-            }
-        );
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .connectPresenceSession(
+                SCOPE,
+                'different-expiry-observations',
+                'expiry-session',
+                {
+                    principalId: 'alice',
+                    generationId: 'expiry-generation',
+                    publicationKey: null,
+                    connectionGenerationId: 'expiry-ws-generation',
+                    connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
+                    requestId: 'connect-expiry-observation'
+                }
+            );
         runtime.armPresenceReadBarrier(2);
 
         const attempts = [
@@ -146,21 +147,22 @@ describe('group presence expiry retry', () => {
     it('rebases socket cleanup observations at different times without idempotency conflict', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'different-cleanup-observations');
-        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-            SCOPE,
-            'different-cleanup-observations',
-            'cleanup-session',
-            {
-                principalId: 'alice',
-                generationId: 'cleanup-generation',
-                publicationKey: null,
-                connectionGenerationId: 'cleanup-ws-generation',
-                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
-                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
-                expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
-                requestId: 'connect-cleanup-observation'
-            }
-        );
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .connectPresenceSession(
+                SCOPE,
+                'different-cleanup-observations',
+                'cleanup-session',
+                {
+                    principalId: 'alice',
+                    generationId: 'cleanup-generation',
+                    publicationKey: null,
+                    connectionGenerationId: 'cleanup-ws-generation',
+                    connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
+                    requestId: 'connect-cleanup-observation'
+                }
+            );
         runtime.armPresenceReadBarrier(2);
 
         const attempts = [
@@ -200,21 +202,22 @@ describe('group presence expiry retry', () => {
     it('replays exact duplicate expiry work with one terminal effect', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'duplicate-expiry-work');
-        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-            SCOPE,
-            'duplicate-expiry-work',
-            'duplicate-expiry-session',
-            {
-                principalId: 'alice',
-                generationId: 'duplicate-expiry-generation',
-                publicationKey: null,
-                connectionGenerationId: 'duplicate-expiry-ws-generation',
-                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
-                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
-                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
-                requestId: 'connect-duplicate-expiry'
-            }
-        );
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .connectPresenceSession(
+                SCOPE,
+                'duplicate-expiry-work',
+                'duplicate-expiry-session',
+                {
+                    principalId: 'alice',
+                    generationId: 'duplicate-expiry-generation',
+                    publicationKey: null,
+                    connectionGenerationId: 'duplicate-expiry-ws-generation',
+                    connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
+                    requestId: 'connect-duplicate-expiry'
+                }
+            );
         runtime.resetGuards();
         runtime.armPresenceReadBarrier(2);
         const atEpochMs = BASE_EPOCH_MS + 3_000;
@@ -258,21 +261,22 @@ describe('group presence expiry retry', () => {
         const runtime = new GroupBarrierRepository();
         const ref = groupRef('expiry-delete-exhaustion-room');
         await seedOpenGroup(runtime, ref.groupId);
-        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-            SCOPE,
-            ref.groupId,
-            'expiry-delete-exhaustion-session',
-            {
-                principalId: 'alice',
-                generationId: 'expiry-delete-exhaustion-generation',
-                publicationKey: null,
-                connectionGenerationId: 'expiry-delete-exhaustion-ws-generation',
-                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
-                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
-                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
-                requestId: 'connect-expiry-delete-exhaustion'
-            }
-        );
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .connectPresenceSession(
+                SCOPE,
+                ref.groupId,
+                'expiry-delete-exhaustion-session',
+                {
+                    principalId: 'alice',
+                    generationId: 'expiry-delete-exhaustion-generation',
+                    publicationKey: null,
+                    connectionGenerationId: 'expiry-delete-exhaustion-ws-generation',
+                    connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
+                    requestId: 'connect-expiry-delete-exhaustion'
+                }
+            );
         runtime.resetGuards();
         runtime.failNextPresenceDelete(3);
         for (const attemptCount of [1, 2, 3]) {
@@ -305,7 +309,13 @@ describe('group presence expiry retry', () => {
     it('fences heartbeat/disconnect and stale expiry across presence generations without a group write', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'presence-room');
-        const service = createService(runtime, BASE_EPOCH_MS + 2_000);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS + 2_000,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         await service.connectPresenceSession(SCOPE, 'presence-room', 'session-a', {
             principalId: 'alice',
             generationId: 'generation-1',
@@ -324,9 +334,7 @@ describe('group presence expiry retry', () => {
         const attempts = [
             (attemptCount: number) =>
                 createService(
-                    runtime,
-                    BASE_EPOCH_MS + 2_500,
-                    attemptCount
+                    { runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_500, attemptCount, injectedRandomId: undefined, timing: undefined }
                 ).heartbeatPresenceSession(
                     SCOPE,
                     'presence-room',
@@ -342,9 +350,7 @@ describe('group presence expiry retry', () => {
                 ),
             (attemptCount: number) =>
                 createService(
-                    runtime,
-                    BASE_EPOCH_MS + 2_501,
-                    attemptCount
+                    { runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_501, attemptCount, injectedRandomId: undefined, timing: undefined }
                 ).disconnectPresenceSession(
                     SCOPE,
                     'presence-room',
@@ -380,21 +386,22 @@ describe('group presence expiry retry', () => {
                 .revision
         ).toBe(groupRevision?.entry.revision);
 
-        await createService(runtime, BASE_EPOCH_MS + 3_001).connectPresenceSession(
-            SCOPE,
-            'presence-room',
-            'session-a',
-            {
-                principalId: 'alice',
-                generationId: 'generation-2',
-                publicationKey: null,
-                connectionGenerationId: 'ws-generation-2',
-                connectedAtEpochMs: BASE_EPOCH_MS + 3_001,
-                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 3_001,
-                expiresAtEpochMs: BASE_EPOCH_MS + 9_000,
-                requestId: 'connect-generation-2'
-            }
-        );
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 3_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .connectPresenceSession(
+                SCOPE,
+                'presence-room',
+                'session-a',
+                {
+                    principalId: 'alice',
+                    generationId: 'generation-2',
+                    publicationKey: null,
+                    connectionGenerationId: 'ws-generation-2',
+                    connectedAtEpochMs: BASE_EPOCH_MS + 3_001,
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 3_001,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 9_000,
+                    requestId: 'connect-generation-2'
+                }
+            );
         await createMaintenance(runtime, BASE_EPOCH_MS + 4_000).expireExpiredPresenceSessions(
             BASE_EPOCH_MS + 4_000
         );

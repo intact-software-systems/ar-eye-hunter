@@ -25,6 +25,7 @@ import type {
     GroupStageTrigger
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
@@ -246,14 +247,14 @@ interface StageTriggerHarness {
     readonly latches: GroupConnectTriggerLatchRepository;
 }
 
-async function createStageTriggerHarness(
-    input: Readonly<{
-        lifecycleState: GroupLifecycleState;
-        onlineMemberCount: number;
-        policy: GroupLifecyclePolicy | 'corrupt';
-        readonly awaitingLatchNotBeforeEpochMs: number | null;
-    }>
-): Promise<StageTriggerHarness> {
+interface StageTriggerHarnessInput {
+    readonly lifecycleState: GroupLifecycleState;
+    readonly onlineMemberCount: number;
+    readonly policy: GroupLifecyclePolicy | 'corrupt';
+    readonly awaitingLatchNotBeforeEpochMs: number | null;
+}
+
+async function createStageTriggerHarness(input: StageTriggerHarnessInput): Promise<StageTriggerHarness> {
     const snapshot = {
         ...base,
         group: { ...base.group, lifecycleState: input.lifecycleState, formationEpoch: 2 },
@@ -272,15 +273,17 @@ async function createStageTriggerHarness(
     };
     if (input.awaitingLatchNotBeforeEpochMs !== null) {
         await runtime.upsert(
-            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-            toGroupConnectTriggerStorageKey(identity),
-            JSON.stringify({
-                ...identity,
-                notBeforeEpochMs: input.awaitingLatchNotBeforeEpochMs,
-                supersedesLayoutIdentity: null,
-                state: 'awaiting-publication'
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+                key: toGroupConnectTriggerStorageKey(identity),
+                value: JSON.stringify({
+                    ...identity,
+                    notBeforeEpochMs: input.awaitingLatchNotBeforeEpochMs,
+                    supersedesLayoutIdentity: null,
+                    state: 'awaiting-publication'
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
     const submissions: GroupSystemCommandSubmission[] = [];
@@ -290,16 +293,7 @@ async function createStageTriggerHarness(
     return {
         submissions,
         latches,
-        authority: {
-            group: snapshot,
-            config: resolveGroupTopologyConfig({}),
-            kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
-            rttReportingDegreeLimit: 5,
-            rttMeasurements: [],
-            rttReplanMinimumLayoutAgeMs: 15_000,
-            replanning: 'auto',
-            nowEpochMs: 4_000
-        },
+        authority: stageTriggerAuthority(snapshot),
         dependencies: {
             formationCriterion: { readLifecyclePolicy: async () => policyRead },
             formationAutomation: {
@@ -446,3 +440,16 @@ describe('presence stage trigger petition', () => {
         expect(harness.submissions).toEqual([]);
     });
 });
+
+function stageTriggerAuthority(snapshot: GroupSnapshot): GroupTopologyPlanningAuthority {
+    return {
+        group: snapshot,
+        config: resolveGroupTopologyConfig({}),
+        kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+        rttReportingDegreeLimit: 5,
+        rttMeasurements: [],
+        rttReplanMinimumLayoutAgeMs: 15_000,
+        replanning: 'auto',
+        nowEpochMs: 4_000
+    };
+}

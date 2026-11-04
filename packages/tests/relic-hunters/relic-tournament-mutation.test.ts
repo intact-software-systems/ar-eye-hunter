@@ -180,10 +180,12 @@ describe('Relic tournament authority', () => {
         try {
             const saved = await game.data.read(game.ref);
             await game.runtime.upsert(
-                TOURNAMENT_ATTEMPTS_NAMESPACE,
-                groupStateGroupStorageKey(game.ref),
-                JSON.stringify({ binding: game.binding, status: 'cancelled', startedAtEpochMs: game.nowEpochMs }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                    key: groupStateGroupStorageKey(game.ref),
+                    value: JSON.stringify({ binding: game.binding, status: 'cancelled', startedAtEpochMs: game.nowEpochMs }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             const command: RelicGameMutationService.ClockCommand = {
                 operation: 'tournament-clock',
@@ -215,10 +217,12 @@ describe('Relic tournament authority', () => {
         try {
             const joining = await prepareMove(game, game.owner, { kind: 'join-expedition' });
             await game.runtime.upsert(
-                TOURNAMENT_ATTEMPTS_NAMESPACE,
-                groupStateGroupStorageKey(game.ref),
-                JSON.stringify({ binding: game.binding, status: 'cancelled', startedAtEpochMs: game.nowEpochMs }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                    key: groupStateGroupStorageKey(game.ref),
+                    value: JSON.stringify({ binding: game.binding, status: 'cancelled', startedAtEpochMs: game.nowEpochMs }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(game.storage.sql.begin((transaction) => game.service.write(transaction, joining.computed))).rejects.toBeInstanceOf(
                 RuntimeStateWriteConflictError

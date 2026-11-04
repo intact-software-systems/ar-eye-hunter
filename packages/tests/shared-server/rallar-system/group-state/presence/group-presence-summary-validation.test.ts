@@ -4,7 +4,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { convergeSummaryForTest, corruptFirstEntry, createService } from './group-presence-test-runtime.ts';
 
@@ -13,7 +13,13 @@ const BASE_EPOCH_MS = Date.now();
 describe('group presence summary validation', () => {
     it('filters a stale admitted generation through the latest inactive membership', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         await service.createGroup(SCOPE, {
             groupId: 'inactive-summary-filter',
             displayName: 'Inactive summary filter',
@@ -114,7 +120,13 @@ describe('group presence summary validation', () => {
         ] as const
     )('rejects %s before the summary CAS', async (_label, namespace, corrupt) => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         await service.createGroup(SCOPE, {
             groupId: `corrupt-summary-${namespace}`,
             displayName: 'Corrupt summary',

@@ -19,10 +19,10 @@ Deno.test('PGlite returns dense runtime-state key and prefix selections as one d
     const seed = new PSqlRuntimeStateRepository(sql);
 
     try {
-        await seed.upsert(namespace, 'prefix:b', 'prefix-b', FUTURE_MS);
-        await seed.upsert(namespace, 'exact', 'exact-value', FUTURE_MS);
-        await seed.upsert(namespace, 'prefix:a', 'prefix-a', FUTURE_MS);
-        await seed.upsert(`${namespace}:sibling`, 'prefix:a', 'sibling', FUTURE_MS);
+        await seed.upsert({ namespace, key: 'prefix:b', value: 'prefix-b', expireAtTimestamp: FUTURE_MS });
+        await seed.upsert({ namespace, key: 'exact', value: 'exact-value', expireAtTimestamp: FUTURE_MS });
+        await seed.upsert({ namespace, key: 'prefix:a', value: 'prefix-a', expireAtTimestamp: FUTURE_MS });
+        await seed.upsert({ namespace: `${namespace}:sibling`, key: 'prefix:a', value: 'sibling', expireAtTimestamp: FUTURE_MS });
         const driverRowCounts: number[] = [];
         const repository = new PSqlRuntimeStateRepository(
             observeDriverRowCounts(sql, driverRowCounts)
@@ -61,7 +61,7 @@ Deno.test('PGlite selects literal prefix-suffix matches in caller order and C ke
 
     try {
         for (const [index, entry] of fixture.entries.entries()) {
-            await repository.upsert(entry.namespace, entry.key, `value-${index}`, FUTURE_MS);
+            await repository.upsert({ namespace: entry.namespace, key: entry.key, value: `value-${index}`, expireAtTimestamp: FUTURE_MS });
         }
 
         const selections = await repository.readRuntimeStateBatch(fixture.selectors);
@@ -81,7 +81,7 @@ Deno.test('PGlite selects a dense workspace\'s prefix-suffix matches exactly as 
 
     try {
         for (const [index, entry] of fixture.entries.entries()) {
-            await repository.upsert(entry.namespace, entry.key, `value-${index}`, FUTURE_MS);
+            await repository.upsert({ namespace: entry.namespace, key: entry.key, value: `value-${index}`, expireAtTimestamp: FUTURE_MS });
         }
 
         const selections = await repository.readRuntimeStateBatch(fixture.selectors);
@@ -101,8 +101,8 @@ Deno.test('PGlite probes a version of exactly the rows a batch reads that every 
 
     try {
         assert.equal(await repository.readRuntimeStateBatchVersion(selectors), undefined);
-        await repository.upsert(namespace, 'prefix:a', 'prefix-a', FUTURE_MS);
-        await repository.upsert(namespace, 'exact', 'exact-value', FUTURE_MS);
+        await repository.upsert({ namespace, key: 'prefix:a', value: 'prefix-a', expireAtTimestamp: FUTURE_MS });
+        await repository.upsert({ namespace, key: 'exact', value: 'exact-value', expireAtTimestamp: FUTURE_MS });
         const initial = await repository.readRuntimeStateBatchVersion(selectors);
 
         assert.deepEqual(initial?.expireAtEpochMs, [FUTURE_MS]);
@@ -111,10 +111,10 @@ Deno.test('PGlite probes a version of exactly the rows a batch reads that every 
         assert.deepEqual(versioned.version, initial);
         assert.deepEqual(versioned.selections, await repository.readRuntimeStateBatch(selectors));
         assert.deepEqual(await repository.readRuntimeStateBatchVersion(selectors), initial);
-        await repository.upsert(`${namespace}:sibling`, 'prefix:a', 'sibling', FUTURE_MS);
+        await repository.upsert({ namespace: `${namespace}:sibling`, key: 'prefix:a', value: 'sibling', expireAtTimestamp: FUTURE_MS });
         assert.deepEqual(await repository.readRuntimeStateBatchVersion(selectors), initial);
 
-        await repository.upsert(namespace, 'prefix:a', 'prefix-a-updated', FUTURE_MS);
+        await repository.upsert({ namespace, key: 'prefix:a', value: 'prefix-a-updated', expireAtTimestamp: FUTURE_MS });
         const updated = await repository.readRuntimeStateBatchVersion(selectors);
         assert.notEqual(updated?.version, initial?.version);
 
@@ -140,9 +140,9 @@ Deno.test('PGlite probes every selector group in one statement, each group repor
 
     try {
         assert.deepEqual(await repository.readRuntimeStateBatchVersions(groups), [undefined, undefined, undefined]);
-        await repository.upsert(`${namespace}:first`, 'prefix:a', 'first-a', FUTURE_MS);
-        await repository.upsert(`${namespace}:third`, 'exact', 'third-exact', FUTURE_MS);
-        await repository.upsert(`${namespace}:third`, 'prefix:b', 'third-b', FUTURE_MS);
+        await repository.upsert({ namespace: `${namespace}:first`, key: 'prefix:a', value: 'first-a', expireAtTimestamp: FUTURE_MS });
+        await repository.upsert({ namespace: `${namespace}:third`, key: 'exact', value: 'third-exact', expireAtTimestamp: FUTURE_MS });
+        await repository.upsert({ namespace: `${namespace}:third`, key: 'prefix:b', value: 'third-b', expireAtTimestamp: FUTURE_MS });
         const statementsBefore = lifecycle.database.getExecutorCounters?.()?.statements ?? 0;
 
         const versions = await repository.readRuntimeStateBatchVersions(groups);
@@ -182,13 +182,28 @@ Deno.test('PGlite filters a prefix range by stored-value containment and an expi
 
     try {
         for (let index = 0; index < 40; index += 1) {
-            await seed.upsert(namespace, `principal=alice:session=closed-${index}`, '{"status":"disconnected","disconnectedAtEpochMs":2}', FUTURE_MS);
+            await seed.upsert({
+                namespace,
+                key: `principal=alice:session=closed-${index}`,
+                value: '{"status":"disconnected","disconnectedAtEpochMs":2}',
+                expireAtTimestamp: FUTURE_MS
+            });
         }
-        await seed.upsert(namespace, 'principal=alice:session=open', '{"status":"active","disconnectedAtEpochMs":null}', FUTURE_MS);
-        await seed.upsert(namespace, 'principal=alice:session=unset', '{"status":"active"}', FUTURE_MS);
-        await seed.upsert(namespace, 'principal=bob:session=open', '{"status":"active","disconnectedAtEpochMs":null}', FUTURE_MS);
-        await seed.upsert(namespace, 'presence:at-floor', '{}', FLOOR_MS);
-        await seed.upsert(namespace, 'presence:after-floor', '{}', FLOOR_MS + 1);
+        await seed.upsert({
+            namespace,
+            key: 'principal=alice:session=open',
+            value: '{"status":"active","disconnectedAtEpochMs":null}',
+            expireAtTimestamp: FUTURE_MS
+        });
+        await seed.upsert({ namespace, key: 'principal=alice:session=unset', value: '{"status":"active"}', expireAtTimestamp: FUTURE_MS });
+        await seed.upsert({
+            namespace,
+            key: 'principal=bob:session=open',
+            value: '{"status":"active","disconnectedAtEpochMs":null}',
+            expireAtTimestamp: FUTURE_MS
+        });
+        await seed.upsert({ namespace, key: 'presence:at-floor', value: '{}', expireAtTimestamp: FLOOR_MS });
+        await seed.upsert({ namespace, key: 'presence:after-floor', value: '{}', expireAtTimestamp: FLOOR_MS + 1 });
 
         const selections = await repository.readRuntimeStateBatch(selectors);
 

@@ -133,10 +133,12 @@ describe('Postgres outbound admission bundle', () => {
             const messages = (await writeProvedWsRows(lane, runId)).map(({ message }) => message);
             const [corrupt, ...others] = messages;
             await lane.repository.upsert(
-                lane.namespace,
-                `${lane.namespace}:msg-owner:${corrupt!.id.msgId}`,
-                JSON.stringify('intruder'),
-                Date.now() + 60_000
+                {
+                    namespace: lane.namespace,
+                    key: `${lane.namespace}:msg-owner:${corrupt!.id.msgId}`,
+                    value: JSON.stringify('intruder'),
+                    expireAtTimestamp: Date.now() + 60_000
+                }
             );
 
             try {
@@ -246,10 +248,12 @@ async function writeProvedWsRows(lane: WsDequeueLane, runId: string): Promise<Pr
         };
         const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
         await lane.repository.upsert(
-            WS_OUTBOX_PROVENANCE_NAMESPACE,
-            toWsOutboxProvenanceKey(entry.key),
-            JSON.stringify(proof),
-            proof.expiresAtMs
+            {
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            }
         );
         await lane.workQueue.enqueue(entry);
         rows.push({ message, entry });

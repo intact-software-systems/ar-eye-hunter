@@ -469,10 +469,12 @@ describe('Quick Join through AppInbox', () => {
         await createRoom(harness, 'a-corrupt', 'AR Eye Hunter');
         await createRoom(harness, 'z-fallback', 'AR Eye Hunter');
         await harness.runtimeRepository.upsert(
-            GROUP_LIFECYCLE_POLICIES_NAMESPACE,
-            groupStateGroupStorageKey({ ...SCOPE, groupId: 'a-corrupt' }),
-            '{}',
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: GROUP_LIFECYCLE_POLICIES_NAMESPACE,
+                key: groupStateGroupStorageKey({ ...SCOPE, groupId: 'a-corrupt' }),
+                value: '{}',
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
 
         await expect(quickJoin(harness, {

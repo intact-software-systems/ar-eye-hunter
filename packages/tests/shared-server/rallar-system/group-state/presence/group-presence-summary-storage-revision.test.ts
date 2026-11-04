@@ -24,7 +24,7 @@ import type {
 import { decodeCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, seedOpenGroup } from './group-presence-test-runtime.ts';
 
@@ -46,7 +46,13 @@ describe('group presence-summary causal identity', () => {
         const baseEpochMs = Date.now();
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'heartbeat-room', 200);
-        const service = createService(runtime, baseEpochMs + 2_000);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: baseEpochMs + 2_000,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         for (let index = 0; index < 100; index += 1) {
             const principalId = `member-${index}`;
             await service.upsertMember(SCOPE, 'heartbeat-room', principalId, {
@@ -66,39 +72,49 @@ describe('group presence-summary causal identity', () => {
         }
         runtime.resetGuards();
         await Promise.all(
-            Array.from({ length: 100 }, (_, index) =>
-                createService(runtime, baseEpochMs + 3_000 + index).heartbeatPresenceSessionReceipt(
-                    SCOPE,
-                    'heartbeat-room',
-                    `session-${index}`,
-                    {
-                        generationId: `generation-${index}`,
-                        publicationKey: null,
-                        actorPrincipalId: `member-${index}`,
-                        lastHeartbeatAtEpochMs: baseEpochMs + 3_000 + index,
-                        expiresAtEpochMs: baseEpochMs + 60_000 + index,
-                        requestId: `heartbeat-${index}`
-                    }
-                ))
+            Array.from(
+                { length: 100 },
+                (_, index) =>
+                    createService({
+                        runtimeRepository: runtime,
+                        nowEpochMs: baseEpochMs + 3_000 + index,
+                        attemptCount: 1,
+                        injectedRandomId: undefined,
+                        timing: undefined
+                    }).heartbeatPresenceSessionReceipt(
+                        SCOPE,
+                        'heartbeat-room',
+                        `session-${index}`,
+                        {
+                            generationId: `generation-${index}`,
+                            publicationKey: null,
+                            actorPrincipalId: `member-${index}`,
+                            lastHeartbeatAtEpochMs: baseEpochMs + 3_000 + index,
+                            expiresAtEpochMs: baseEpochMs + 60_000 + index,
+                            requestId: `heartbeat-${index}`
+                        }
+                    )
+            )
         );
         expect(runtime.groupGuards).toBe(0);
         expect(runtime.presenceGuards).toBe(100);
         expect(runtime.hotPathListReads).toBe(0);
         expect(runtime.snapshotListReads).toBe(0);
 
-        await createService(runtime, baseEpochMs + 4_000).heartbeatPresenceSession(
-            SCOPE,
-            'heartbeat-room',
-            'session-0',
-            {
-                generationId: 'generation-0',
-                publicationKey: null,
-                actorPrincipalId: 'member-0',
-                lastHeartbeatAtEpochMs: baseEpochMs + 4_000,
-                expiresAtEpochMs: baseEpochMs + 70_000,
-                requestId: 'snapshot-heartbeat'
-            }
-        );
+        await createService({ runtimeRepository: runtime, nowEpochMs: baseEpochMs + 4_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .heartbeatPresenceSession(
+                SCOPE,
+                'heartbeat-room',
+                'session-0',
+                {
+                    generationId: 'generation-0',
+                    publicationKey: null,
+                    actorPrincipalId: 'member-0',
+                    lastHeartbeatAtEpochMs: baseEpochMs + 4_000,
+                    expiresAtEpochMs: baseEpochMs + 70_000,
+                    requestId: 'snapshot-heartbeat'
+                }
+            );
         expect(runtime.snapshotListReads).toBeGreaterThan(0);
     });
 

@@ -53,10 +53,7 @@ describe('RTC RTT receipt cleanup ownership', () => {
             ) {
                 changedRevision = true;
                 await harness.runtime.upsert(
-                    namespace,
-                    key,
-                    JSON.stringify(harness.receipt),
-                    harness.expireAtEpochMs
+                    { namespace, key, value: JSON.stringify(harness.receipt), expireAtTimestamp: harness.expireAtEpochMs }
                 );
             }
         };
@@ -174,10 +171,7 @@ async function createReceiptHarness(
     });
     const receipt = createReceipt(acceptedAtEpochMs);
     await runtime.insertIfAbsent(
-        RTC_RTT_RECEIPTS_NAMESPACE,
-        receipt.receiptId,
-        JSON.stringify(receipt),
-        expireAtEpochMs
+        { namespace: RTC_RTT_RECEIPTS_NAMESPACE, key: receipt.receiptId, value: JSON.stringify(receipt), expireAtTimestamp: expireAtEpochMs }
     );
     return { runtime, repository, receipt, expireAtEpochMs };
 }

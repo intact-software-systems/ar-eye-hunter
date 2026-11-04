@@ -18,10 +18,7 @@ describe('GroupStateRepository authority fence', () => {
         const inserted = await repository.findGroupEntry(group);
         const reformattedCanonicalRaw = JSON.stringify(group, null, 2);
         await runtime.upsert(
-            'group-state:groups',
-            inserted!.entry.key,
-            reformattedCanonicalRaw,
-            inserted!.entry.expireAtTimestamp
+            { namespace: 'group-state:groups', key: inserted!.entry.key, value: reformattedCanonicalRaw, expireAtTimestamp: inserted!.entry.expireAtTimestamp }
         );
         const observation = await repository.readSnapshotWithAuthorityGuard(group);
         const before = observation!.authorityGuard.entry;
@@ -118,10 +115,7 @@ describe('GroupStateRepository authority fence', () => {
         const expiredMemberKey = groupStateMemberStorageKey(expiredMember);
         const expiredEntry = await runtime.findEntry('group-state:members', expiredMemberKey);
         await runtime.upsert(
-            'group-state:members',
-            expiredMemberKey,
-            expiredEntry!.value,
-            Date.now() - 1
+            { namespace: 'group-state:members', key: expiredMemberKey, value: expiredEntry!.value, expireAtTimestamp: Date.now() - 1 }
         );
         const groupEntry = await repository.findGroupEntry(group);
         runtime.rejectIndividualReads = true;

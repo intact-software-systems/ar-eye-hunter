@@ -37,7 +37,7 @@ async function proofRepository() {
         if (record.operation !== 'insert') {
             throw new Error('Expected insert-only provenance');
         }
-        await repository.upsert(record.namespace, record.key, record.value, record.expireAtTimestamp);
+        await repository.upsert({ namespace: record.namespace, key: record.key, value: record.value, expireAtTimestamp: record.expireAtTimestamp });
     }
     return repository;
 }

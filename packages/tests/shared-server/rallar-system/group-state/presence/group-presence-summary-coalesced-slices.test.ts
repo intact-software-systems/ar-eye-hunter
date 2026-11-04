@@ -10,7 +10,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, summaryReservationRead, toSummaryExpansion } from './group-presence-test-runtime.ts';
 
@@ -48,10 +48,11 @@ describe('group presence summary coalesced slices', () => {
         const eventsBefore = await listEvents(runtime, groupId);
         await connect(runtime, { groupId, principalId: 'alice', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 1_000 });
         await connect(runtime, { groupId, principalId: 'bob', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 2_000 });
-        await createService(runtime, BASE_EPOCH_MS + 3_000).joinGroup(SCOPE, groupId, {
-            actorPrincipalId: 'carol',
-            requestId: `join-${groupId}-carol`
-        });
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 3_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .joinGroup(SCOPE, groupId, {
+                actorPrincipalId: 'carol',
+                requestId: `join-${groupId}-carol`
+            });
         await connect(runtime, { groupId, principalId: 'carol', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 4_000 });
 
         const deltas = await expandBatch(runtime, groupId, eventsBefore.length);
@@ -86,15 +87,16 @@ describe('group presence summary coalesced slices', () => {
     it('computeGroupStateDeltaEnvelope slices grants by the principals its events write', async () => {
         const runtime = new GroupBarrierRepository();
         const declared = 'declared-grant-room';
-        await createService(runtime, BASE_EPOCH_MS).createGroup(SCOPE, {
-            groupId: declared,
-            displayName: declared,
-            kind: 'room',
-            joinMode: 'open',
-            createdByPrincipalId: 'alice',
-            publicationGrants: { 'room.feed': { publish: true, subscribe: true } },
-            requestId: `seed-${declared}`
-        });
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .createGroup(SCOPE, {
+                groupId: declared,
+                displayName: declared,
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: 'alice',
+                publicationGrants: { 'room.feed': { publish: true, subscribe: true } },
+                requestId: `seed-${declared}`
+            });
         const revoked = 'revoked-grant-room';
         await seedOpenGroupWithMember(runtime, revoked, 'bob');
         const revokedBefore = await listEvents(runtime, revoked);
@@ -104,11 +106,12 @@ describe('group presence summary coalesced slices', () => {
         await seedOpenGroupWithMember(runtime, departed, 'bob');
         await setFeedPublish(runtime, { groupId: departed, publish: true, nowEpochMs: BASE_EPOCH_MS + 1_000 });
         const departedBefore = await listEvents(runtime, departed);
-        await createService(runtime, BASE_EPOCH_MS + 2_000).upsertMember(SCOPE, departed, 'bob', {
-            status: 'left',
-            actorPrincipalId: 'bob',
-            requestId: `leave-${departed}-bob`
-        });
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .upsertMember(SCOPE, departed, 'bob', {
+                status: 'left',
+                actorPrincipalId: 'bob',
+                requestId: `leave-${departed}-bob`
+            });
 
         const [created] = await expandBatch(runtime, declared, 0);
         const revokedDeltas = await expandBatch(runtime, revoked, revokedBefore.length);
@@ -150,7 +153,7 @@ interface FeedPublishStep {
 
 /** alice grants bob publish on room.feed, or revokes it, leaving bob no other permission. */
 async function setFeedPublish(runtime: GroupBarrierRepository, step: FeedPublishStep): Promise<void> {
-    const service = createService(runtime, step.nowEpochMs);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: step.nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     const request = {
         topicId: 'room.feed',
         publish: true,
@@ -179,7 +182,7 @@ async function seedOpenGroupWithMember(
     groupId: string,
     principalId: string
 ): Promise<void> {
-    const service = createService(runtime, BASE_EPOCH_MS);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.createGroup(SCOPE, {
         groupId,
         displayName: groupId,
@@ -206,26 +209,36 @@ interface PresenceSessionStep {
 
 async function connect(runtime: GroupBarrierRepository, step: PresenceSessionStep): Promise<void> {
     const { groupId, principalId, generationId, nowEpochMs } = step;
-    await createService(runtime, nowEpochMs).connectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
-        principalId,
-        generationId,
-        publicationKey: null,
-        connectionGenerationId: `ws-${generationId}`,
-        actorPrincipalId: principalId,
-        expiresAtEpochMs: nowEpochMs + 60_000,
-        requestId: `connect-${groupId}-${principalId}-${generationId}`
-    });
+    await createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).connectPresenceSession(
+        SCOPE,
+        groupId,
+        sessionId(groupId, principalId),
+        {
+            principalId,
+            generationId,
+            publicationKey: null,
+            connectionGenerationId: `ws-${generationId}`,
+            actorPrincipalId: principalId,
+            expiresAtEpochMs: nowEpochMs + 60_000,
+            requestId: `connect-${groupId}-${principalId}-${generationId}`
+        }
+    );
 }
 
 async function disconnect(runtime: GroupBarrierRepository, step: PresenceSessionStep): Promise<void> {
     const { groupId, principalId, generationId, nowEpochMs } = step;
-    await createService(runtime, nowEpochMs).disconnectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
-        generationId,
-        connectionGenerationId: `ws-${generationId}`,
-        actorPrincipalId: principalId,
-        disconnectedAtEpochMs: nowEpochMs,
-        requestId: `disconnect-${groupId}-${principalId}-${generationId}`
-    });
+    await createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).disconnectPresenceSession(
+        SCOPE,
+        groupId,
+        sessionId(groupId, principalId),
+        {
+            generationId,
+            connectionGenerationId: `ws-${generationId}`,
+            actorPrincipalId: principalId,
+            disconnectedAtEpochMs: nowEpochMs,
+            requestId: `disconnect-${groupId}-${principalId}-${generationId}`
+        }
+    );
 }
 
 async function listEvents(runtime: GroupBarrierRepository, groupId: string): Promise<readonly GroupEvent[]> {

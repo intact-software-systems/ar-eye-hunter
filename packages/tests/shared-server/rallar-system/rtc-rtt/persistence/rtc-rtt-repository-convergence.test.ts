@@ -215,15 +215,17 @@ describe('RTC RTT repository convergence', () => {
                 const endpointId = decodeURIComponent(key.slice('endpoint='.length));
                 const peerSessionId = endpointId === 'session-a' ? 'session-b' : 'session-a';
                 await runtimeRepository.upsert(
-                    namespace,
-                    key,
-                    JSON.stringify({
-                        endpointId,
-                        peers: [{ peerSessionId, expiresAtEpochMs: 60_001 }],
-                        version: 1,
-                        updatedAtEpochMs: 1
-                    }),
-                    60_001
+                    {
+                        namespace,
+                        key,
+                        value: JSON.stringify({
+                            endpointId,
+                            peers: [{ peerSessionId, expiresAtEpochMs: 60_001 }],
+                            version: 1,
+                            updatedAtEpochMs: 1
+                        }),
+                        expireAtTimestamp: 60_001
+                    }
                 );
             }
         };
@@ -275,19 +277,21 @@ describe('RTC RTT repository convergence', () => {
             const refA = { applicationId: 'app-1', groupId: 'room-a' };
             const refB = { applicationId: 'app-1', groupId: 'room-b' };
             await runtimeRepository.upsert(
-                RTC_RTT_RECEIPTS_NAMESPACE,
-                receiptId,
-                JSON.stringify({
-                    receiptId,
-                    sessionIdFrom: rtt.sessionIdFrom,
-                    sessionIdTo: rtt.sessionIdTo,
-                    measurementVersion: rtt.version,
-                    affectedGroupRefs: defect === 'duplicate' ? [refA, refA] : [refB, refA],
-                    acceptedAtEpochMs: 1,
-                    outcome: 'accepted',
-                    commandHash: `sha256:${'a'.repeat(64)}`
-                }),
-                86_400_001
+                {
+                    namespace: RTC_RTT_RECEIPTS_NAMESPACE,
+                    key: receiptId,
+                    value: JSON.stringify({
+                        receiptId,
+                        sessionIdFrom: rtt.sessionIdFrom,
+                        sessionIdTo: rtt.sessionIdTo,
+                        measurementVersion: rtt.version,
+                        affectedGroupRefs: defect === 'duplicate' ? [refA, refA] : [refB, refA],
+                        acceptedAtEpochMs: 1,
+                        outcome: 'accepted',
+                        commandHash: `sha256:${'a'.repeat(64)}`
+                    }),
+                    expireAtTimestamp: 86_400_001
+                }
             );
 
             const read = surface === 'direct'
@@ -328,29 +332,31 @@ describe('RTC RTT repository convergence', () => {
                 groupId: 'room-retained-replay'
             };
             await runtimeRepository.insertIfAbsent(
-                RTC_RTT_RECEIPTS_NAMESPACE,
-                receiptId,
-                JSON.stringify({
-                    receiptId,
-                    commandId: receiptId,
-                    requestId: receiptId,
-                    sessionIdFrom: baseRtt.sessionIdFrom,
-                    sessionIdTo: baseRtt.sessionIdTo,
-                    aggregateRef: {
+                {
+                    namespace: RTC_RTT_RECEIPTS_NAMESPACE,
+                    key: receiptId,
+                    value: JSON.stringify({
+                        receiptId,
+                        commandId: receiptId,
+                        requestId: receiptId,
                         sessionIdFrom: baseRtt.sessionIdFrom,
-                        sessionIdTo: baseRtt.sessionIdTo
-                    },
-                    measurementVersion: baseRtt.version,
-                    affectedGroupRefs: [affectedGroupRef],
-                    acceptedAtEpochMs: 1,
-                    outcome: 'accepted',
-                    attemptCount: 1,
-                    acceptedStorageRevision: 0,
-                    eventId: null,
-                    outboxIds: [toRtcRttTopologyOutboxId(receiptId, affectedGroupRef, commandHash)],
-                    commandHash
-                }),
-                1 + RTC_RTT_MUTATION_RETENTION_MS
+                        sessionIdTo: baseRtt.sessionIdTo,
+                        aggregateRef: {
+                            sessionIdFrom: baseRtt.sessionIdFrom,
+                            sessionIdTo: baseRtt.sessionIdTo
+                        },
+                        measurementVersion: baseRtt.version,
+                        affectedGroupRefs: [affectedGroupRef],
+                        acceptedAtEpochMs: 1,
+                        outcome: 'accepted',
+                        attemptCount: 1,
+                        acceptedStorageRevision: 0,
+                        eventId: null,
+                        outboxIds: [toRtcRttTopologyOutboxId(receiptId, affectedGroupRef, commandHash)],
+                        commandHash
+                    }),
+                    expireAtTimestamp: 1 + RTC_RTT_MUTATION_RETENTION_MS
+                }
             );
             const now = () => {
                 throw new Error('RTT receipt replay clock');

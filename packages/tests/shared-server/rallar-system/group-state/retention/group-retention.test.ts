@@ -223,10 +223,12 @@ describe('temporary room retention decisions', () => {
     it('rejects scope corruption before any retention decision', async () => {
         const fixture = await createFixture();
         await fixture.harness.runtimeRepository.upsert(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(REF),
-            JSON.stringify({ ...(await group(fixture)), workspaceId: 'other-workspace' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(REF),
+                value: JSON.stringify({ ...(await group(fixture)), workspaceId: 'other-workspace' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         const ingress = fixture.service.capture({ groupRef: REF, requestId: 'corrupt', observedAtEpochMs: fixture.nowEpochMs });
 

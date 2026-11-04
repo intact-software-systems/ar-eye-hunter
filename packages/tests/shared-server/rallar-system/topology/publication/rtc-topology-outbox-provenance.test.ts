@@ -81,7 +81,7 @@ describe('RTC topology producer provenance', () => {
                 const value = recipient === 'changed-proof-audience'
                     ? JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(computed.outboxWrites[0]!.entry, facts) })
                     : proof.value;
-                await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, proof.key, value, publication.expiresAtEpochMs);
+                await repository.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key: proof.key, value, expireAtTimestamp: publication.expiresAtEpochMs });
             }
             const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
             const engine = new InboxOutboxEngine();

@@ -4,6 +4,17 @@ import type {
     RuntimeStateReadBatchSelector
 } from './read-batch/runtime-state-read-batch.ts';
 
+export interface RuntimeStateWriteInput {
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtTimestamp: number;
+}
+
+export interface RuntimeStateRevisionWriteInput extends RuntimeStateWriteInput {
+    readonly expectedRevision: number;
+}
+
 export interface RuntimeStateEntry {
     readonly key: string;
     readonly value: string;
@@ -28,7 +39,7 @@ export interface RuntimeStateRepositoryLike {
     readRuntimeStateBatch(
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<readonly RuntimeStateReadBatchSelection[]>;
-    upsert(namespace: string, key: string, value: string, expireAtTimestamp: number): Promise<void>;
+    upsert(input: RuntimeStateWriteInput): Promise<void>;
     deleteByKey(namespace: string, key: string): Promise<void>;
     deleteExpired(namespace: string): Promise<number>;
 }
@@ -47,17 +58,10 @@ export interface RuntimeStateConditionalRepositoryLike {
      * a live row under the key is a conflict.
      */
     insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        input: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult>;
     upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        input: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult>;
     deleteIfRevision(
         namespace: string,

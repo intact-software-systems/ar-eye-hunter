@@ -56,10 +56,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             computed: registrationComputed
         });
         await runtime.insertIfAbsent(
-            'auth-users:by-client-id',
-            'client=register-client',
-            JSON.stringify({ collision: true }),
-            FUTURE_MS
+            { namespace: 'auth-users:by-client-id', key: 'client=register-client', value: JSON.stringify({ collision: true }), expireAtTimestamp: FUTURE_MS }
         );
         await assert.rejects(
             () => sql.begin((transaction) => auth.write(transaction, registrationComputed)),
@@ -123,10 +120,12 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             computed: agentComputed
         });
         await runtime.insertIfAbsent(
-            'auth-sessions:by-session',
-            'session=rollback-session-b',
-            JSON.stringify({ collision: true }),
-            FUTURE_MS
+            {
+                namespace: 'auth-sessions:by-session',
+                key: 'session=rollback-session-b',
+                value: JSON.stringify({ collision: true }),
+                expireAtTimestamp: FUTURE_MS
+            }
         );
         await assert.rejects(
             () => sql.begin((transaction) => auth.write(transaction, agentComputed)),
@@ -161,10 +160,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
         await admission.set('sibling-b', { value: 'b' }, FUTURE_MS);
         const computed = admission.computeStateWrite(undefined)!;
         await runtime.insertIfAbsent(
-            'al-admission-rollback',
-            'sibling-b',
-            JSON.stringify({ collision: true }),
-            FUTURE_MS
+            { namespace: 'al-admission-rollback', key: 'sibling-b', value: JSON.stringify({ collision: true }), expireAtTimestamp: FUTURE_MS }
         );
         await assert.rejects(
             () => runtime.begin((transaction) => writePSqlAdmissionState(transaction, computed)),

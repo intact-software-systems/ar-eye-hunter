@@ -7,7 +7,9 @@ import type {
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateOptimisticTransactionalRepositoryLike,
-    RuntimeStateOptimisticTransactionRepositoryLike
+    RuntimeStateOptimisticTransactionRepositoryLike,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 
@@ -65,17 +67,15 @@ export class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     override async begin<T>(
         fn: (repository: RuntimeStateOptimisticTransactionRepositoryLike) => Promise<T>
     ): Promise<T> {
-        let release!: () => void;
+        const pending = Promise.withResolvers<void>();
         const previous = this.aggregateTransactionTail;
-        this.aggregateTransactionTail = new Promise<void>((resolve) => {
-            release = resolve;
-        });
+        this.aggregateTransactionTail = pending.promise;
         await previous;
         try {
             return await super.begin(fn);
         }
         finally {
-            release();
+            pending.resolve();
         }
     }
 }
@@ -95,7 +95,7 @@ export class PrincipalChangeAfterFirstReadRepository extends AggregateBarrierRep
         const [entry] = index < 0 ? [] : selections[index].entries;
         if (entry && this.changeAfterPrincipalRead) {
             this.changeAfterPrincipalRead = false;
-            await super.upsert(selectors[index].namespace, entry.key, entry.value, entry.expireAtTimestamp);
+            await super.upsert({ namespace: selectors[index].namespace, key: entry.key, value: entry.value, expireAtTimestamp: entry.expireAtTimestamp });
         }
         return selections;
     }
@@ -113,16 +113,13 @@ export class AlwaysConflictingPrincipalRepository extends AggregateBarrierReposi
     }
 
     override insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         if (namespace === 'client-state:principals') {
             this.principalGuardCount += 1;
             return Promise.resolve({ status: 'conflict' });
         }
-        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return super.insertIfAbsent({ namespace, key, value, expireAtTimestamp });
     }
 }
 
@@ -145,24 +142,17 @@ export class StatementRecordingRepository extends AggregateBarrierRepository {
     }
 
     override insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.record('insertIfAbsent', namespace);
-        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return super.insertIfAbsent({ namespace, key, value, expireAtTimestamp });
     }
 
     override upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.record('upsertIfRevision', namespace);
-        return super.upsertIfRevision(namespace, key, value, expireAtTimestamp, expectedRevision);
+        return super.upsertIfRevision({ namespace, key, value, expireAtTimestamp, expectedRevision });
     }
 
     resetInstrumentation(): void {

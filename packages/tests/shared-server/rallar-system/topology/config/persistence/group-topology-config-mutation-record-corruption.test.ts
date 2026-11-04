@@ -16,33 +16,35 @@ describe('group topology config mutation record corruption', () => {
         const requestId = 'expected-request';
         const commandHash = `sha256:${'a'.repeat(64)}`;
         await runtimeRepository.insertIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
-            repository.mutationKey(groupRef, requestId),
-            JSON.stringify({
-                groupRef,
-                requestId,
-                commandHash,
-                receipt: {
-                    commandId: 'different-request',
+            {
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key: repository.mutationKey(groupRef, requestId),
+                value: JSON.stringify({
+                    groupRef,
                     requestId,
                     commandHash,
-                    operation: 'deleteConfig',
-                    outcome: 'no-op',
-                    attemptCount: 1,
-                    groupRef,
-                    target: 'config',
-                    acceptedVersion: 0,
-                    acceptedStorageRevision: null,
-                    acceptedCreatedAtEpochMs: null,
-                    acceptedUpdatedAtEpochMs: null,
-                    acceptedExpiresAtEpochMs: null,
-                    acceptedConfig: null,
-                    acceptedCausalRevision: null,
-                    eventId: null,
-                    outboxIds: []
-                }
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+                    receipt: {
+                        commandId: 'different-request',
+                        requestId,
+                        commandHash,
+                        operation: 'deleteConfig',
+                        outcome: 'no-op',
+                        attemptCount: 1,
+                        groupRef,
+                        target: 'config',
+                        acceptedVersion: 0,
+                        acceptedStorageRevision: null,
+                        acceptedCreatedAtEpochMs: null,
+                        acceptedUpdatedAtEpochMs: null,
+                        acceptedExpiresAtEpochMs: null,
+                        acceptedConfig: null,
+                        acceptedCausalRevision: null,
+                        eventId: null,
+                        outboxIds: []
+                    }
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toThrow(
@@ -94,34 +96,36 @@ describe('group topology config mutation record corruption', () => {
             'group=1;presence=0'
         ].join(':');
         await runtimeRepository.insertIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
-            repository.mutationKey(groupRef, requestId),
-            JSON.stringify({
-                groupRef,
-                requestId,
-                commandHash,
-                receipt: {
-                    commandId: requestId,
+            {
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key: repository.mutationKey(groupRef, requestId),
+                value: JSON.stringify({
+                    groupRef,
                     requestId,
                     commandHash,
-                    operation: 'deleteConfig',
-                    outcome: 'no-op',
-                    attemptCount: 1,
-                    groupRef,
-                    target: 'config',
-                    acceptedVersion: 0,
-                    acceptedStorageRevision: null,
-                    acceptedCreatedAtEpochMs: null,
-                    acceptedUpdatedAtEpochMs: null,
-                    acceptedExpiresAtEpochMs: null,
-                    acceptedConfig: null,
-                    acceptedCausalRevision,
-                    eventId: null,
-                    outboxIds: [outboxId],
-                    ...receipt
-                }
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+                    receipt: {
+                        commandId: requestId,
+                        requestId,
+                        commandHash,
+                        operation: 'deleteConfig',
+                        outcome: 'no-op',
+                        attemptCount: 1,
+                        groupRef,
+                        target: 'config',
+                        acceptedVersion: 0,
+                        acceptedStorageRevision: null,
+                        acceptedCreatedAtEpochMs: null,
+                        acceptedUpdatedAtEpochMs: null,
+                        acceptedExpiresAtEpochMs: null,
+                        acceptedConfig: null,
+                        acceptedCausalRevision,
+                        eventId: null,
+                        outboxIds: [outboxId],
+                        ...receipt
+                    }
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toThrow(message);
@@ -136,33 +140,35 @@ describe('group topology config mutation record corruption', () => {
             const requestId = `persisted-impossible-${operation}`;
             const commandHash = `sha256:${'6'.repeat(64)}`;
             await runtimeRepository.insertIfAbsent(
-                GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
-                repository.mutationKey(groupRef, requestId),
-                JSON.stringify({
-                    groupRef,
-                    requestId,
-                    commandHash,
-                    receipt: {
-                        commandId: requestId,
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                    key: repository.mutationKey(groupRef, requestId),
+                    value: JSON.stringify({
+                        groupRef,
                         requestId,
                         commandHash,
-                        operation,
-                        outcome: 'no-op',
-                        attemptCount: 1,
-                        groupRef,
-                        target: operation === 'putConfig' ? 'config' : 'override',
-                        acceptedVersion: 1,
-                        acceptedStorageRevision: null,
-                        acceptedCreatedAtEpochMs: 1_000,
-                        acceptedUpdatedAtEpochMs: 1_000,
-                        acceptedExpiresAtEpochMs: operation === 'putOverride' ? 6_000 : null,
-                        acceptedConfig: createTopologyTestEffectiveConfig('tree'),
-                        acceptedCausalRevision: null,
-                        eventId: null,
-                        outboxIds: []
-                    }
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                        receipt: {
+                            commandId: requestId,
+                            requestId,
+                            commandHash,
+                            operation,
+                            outcome: 'no-op',
+                            attemptCount: 1,
+                            groupRef,
+                            target: operation === 'putConfig' ? 'config' : 'override',
+                            acceptedVersion: 1,
+                            acceptedStorageRevision: null,
+                            acceptedCreatedAtEpochMs: 1_000,
+                            acceptedUpdatedAtEpochMs: 1_000,
+                            acceptedExpiresAtEpochMs: operation === 'putOverride' ? 6_000 : null,
+                            acceptedConfig: createTopologyTestEffectiveConfig('tree'),
+                            acceptedCausalRevision: null,
+                            eventId: null,
+                            outboxIds: []
+                        }
+                    }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
 
             await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toBeInstanceOf(
@@ -205,34 +211,36 @@ describe('group topology config mutation record corruption', () => {
             `group=${acceptedCausalRevision.causalRevision.groupRevision};presence=${acceptedCausalRevision.causalRevision.presenceRevision}`
         ].join(':');
         await runtimeRepository.insertIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
-            repository.mutationKey(groupRef, requestId),
-            JSON.stringify({
-                groupRef,
-                requestId,
-                commandHash,
-                receipt: {
-                    commandId: requestId,
+            {
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key: repository.mutationKey(groupRef, requestId),
+                value: JSON.stringify({
+                    groupRef,
                     requestId,
                     commandHash,
-                    operation: 'putConfig',
-                    outcome: 'applied',
-                    attemptCount: 1,
-                    groupRef,
-                    target: 'config',
-                    acceptedVersion: 1,
-                    acceptedStorageRevision: 0,
-                    acceptedCreatedAtEpochMs: 1,
-                    acceptedUpdatedAtEpochMs: 1,
-                    acceptedExpiresAtEpochMs: null,
-                    acceptedConfig: createTopologyTestEffectiveConfig('tree'),
-                    acceptedCausalRevision,
-                    eventId: null,
-                    outboxIds: [outboxId],
-                    ...receipt
-                }
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+                    receipt: {
+                        commandId: requestId,
+                        requestId,
+                        commandHash,
+                        operation: 'putConfig',
+                        outcome: 'applied',
+                        attemptCount: 1,
+                        groupRef,
+                        target: 'config',
+                        acceptedVersion: 1,
+                        acceptedStorageRevision: 0,
+                        acceptedCreatedAtEpochMs: 1,
+                        acceptedUpdatedAtEpochMs: 1,
+                        acceptedExpiresAtEpochMs: null,
+                        acceptedConfig: createTopologyTestEffectiveConfig('tree'),
+                        acceptedCausalRevision,
+                        eventId: null,
+                        outboxIds: [outboxId],
+                        ...receipt
+                    }
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toThrow(message);

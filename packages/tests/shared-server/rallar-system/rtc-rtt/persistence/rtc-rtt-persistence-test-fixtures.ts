@@ -70,33 +70,7 @@ export async function executeRtcRttMutation(
     const computed = computeRtcRttMutation({ command, read, facts });
     validateRtcRttMutation({ command, read, facts, computed });
     if (computed.outcome === 'write') {
-        await input.runtime.begin(async () => {
-            for (const guard of computed.endpointGuards) {
-                requireTestRttWrite(
-                    await input.repository.commitEndpointAdmission(
-                        guard.value,
-                        guard.expectedRevision,
-                        guard.expireAtTimestamp
-                    )
-                );
-            }
-            requireTestRttWrite(
-                await input.repository.commitMeasurement(
-                    computed.measurementGuard.value,
-                    computed.measurementGuard.expectedRevision,
-                    computed.measurementGuard.purgeAfterEpochMs
-                )
-            );
-            const receipt = await input.runtime.insertIfAbsent(
-                RTC_RTT_RECEIPTS_NAMESPACE,
-                computed.receipt.receiptId,
-                encodeRuntimeStateJsonValue(computed.receipt),
-                computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
-            );
-            if (receipt.status === 'conflict') {
-                throw new RuntimeStateWriteConflictError();
-            }
-        });
+        await commitRtcRttFixtureMutation(input, computed);
     }
     return { computed, updated: computed.outcome === 'write' };
 }
@@ -409,3 +383,38 @@ export const rttWriteCandidateCorruptions: readonly Readonly<{
         corrupt: (candidate) => ({ ...candidate, affectedGroups: [] })
     }
 ];
+
+async function commitRtcRttFixtureMutation(
+    input: TestExecuteRtcRttMutationInput,
+    computed: Extract<RtcRttMutationComputed, { outcome: 'write'; }>
+): Promise<void> {
+    await input.runtime.begin(async () => {
+        for (const guard of computed.endpointGuards) {
+            requireTestRttWrite(
+                await input.repository.commitEndpointAdmission(
+                    guard.value,
+                    guard.expectedRevision,
+                    guard.expireAtTimestamp
+                )
+            );
+        }
+        requireTestRttWrite(
+            await input.repository.commitMeasurement(
+                computed.measurementGuard.value,
+                computed.measurementGuard.expectedRevision,
+                computed.measurementGuard.purgeAfterEpochMs
+            )
+        );
+        const receipt = await input.runtime.insertIfAbsent(
+            {
+                namespace: RTC_RTT_RECEIPTS_NAMESPACE,
+                key: computed.receipt.receiptId,
+                value: encodeRuntimeStateJsonValue(computed.receipt),
+                expireAtTimestamp: computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
+            }
+        );
+        if (receipt.status === 'conflict') {
+            throw new RuntimeStateWriteConflictError();
+        }
+    });
+}

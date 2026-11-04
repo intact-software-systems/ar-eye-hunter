@@ -392,7 +392,12 @@ class RoomFixture {
         const entry = corruption === 'forged-canonical-key' ? { ...raw, key: { ...raw.key, topicId: 'AL_OUTBOUND_MESSAGE' } } : raw;
         const proof = createProof(message, entry, { audience, wrongRoom: corruption === 'wrong-room' });
         if (corruption !== 'missing') {
-            await this.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(entry.key), JSON.stringify(proof), proof.expiresAtMs);
+            await this.repository.upsert({
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            });
         }
         await this.stores.workQueue.enqueue(entry);
         return { message, entry };

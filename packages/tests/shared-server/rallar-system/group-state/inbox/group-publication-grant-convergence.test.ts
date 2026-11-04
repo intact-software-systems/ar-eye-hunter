@@ -5,7 +5,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import {
     applyPublicationMutation,
@@ -56,7 +56,8 @@ describe('group publication grant convergence', () => {
         const runtime = await seededRoom();
         const leaveRequest = { status: 'left', actorPrincipalId: 'bob', requestId: 'leave-bob-racing-a-grant' } as const;
         const heldLeave = runtime.holdNextGroupReadFor(groupStateGroupStorageKey(groupRef(GRANT_ROOM)));
-        const leave = createService(runtime, 3_000).upsertMember(SCOPE, GRANT_ROOM, 'bob', leaveRequest);
+        const leave = createService({ runtimeRepository: runtime, nowEpochMs: 3_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .upsertMember(SCOPE, GRANT_ROOM, 'bob', leaveRequest);
         void leave.catch(() => undefined);
         await heldLeave.firstArrival;
 
@@ -66,7 +67,12 @@ describe('group publication grant convergence', () => {
         // The leave read no grant row; the grant's snapshotVersion bump makes its group-row CAS miss.
         await expect(leave).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(await readGrantRow(runtime, 'bob')).toBeDefined();
-        await createService(runtime, 3_000, 2).upsertMember(SCOPE, GRANT_ROOM, 'bob', leaveRequest);
+        await createService({ runtimeRepository: runtime, nowEpochMs: 3_000, attemptCount: 2, injectedRandomId: undefined, timing: undefined }).upsertMember(
+            SCOPE,
+            GRANT_ROOM,
+            'bob',
+            leaveRequest
+        );
         const snapshot = await createTestGroupStateRepository(runtime).readSnapshot(groupRef(GRANT_ROOM));
         expect(snapshot?.members.find((member) => member.principalId === 'bob')).toMatchObject({ status: 'left' });
         expect(await readGrantRow(runtime, 'bob')).toBeUndefined();

@@ -48,7 +48,7 @@ import { createScriptedTransportFaultPort, type ScriptedTransportFaultPort } fro
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
-import { GroupBarrierRepository } from '../../shared-server/rallar-system/group-state/group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../../shared-server/rallar-system/group-state/group-barrier-repository.ts';
 import { createTestAuthSession, createTestGroupStateRuntime } from '../../shared-server/rallar-system/group-state/group-state-test-runtime.ts';
 import { convergeSummaryForTest } from '../../shared-server/rallar-system/group-state/presence/group-presence-test-runtime.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';

@@ -145,7 +145,12 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
             const key = groupStateGroupStorageKey(groupRef);
             const workWrite = computeAppOutboxInsert(work);
             const writePublication = async (tx: PSqlSql) => {
-                await new PSqlRuntimeStateRepository(tx).insertIfAbsent('connect-test-publication', key, 'candidate-v1', NEVER_EXPIRE_AT_TIMESTAMP);
+                await new PSqlRuntimeStateRepository(tx).insertIfAbsent({
+                    namespace: 'connect-test-publication',
+                    key,
+                    value: 'candidate-v1',
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                });
                 await writeAppOutboxInsert(tx, workWrite);
             };
             await expect(sql.begin(async (tx) => {
@@ -262,14 +267,21 @@ async function seedConnectWrite(sql: PSqlSql, applicationId: string): Promise<Co
     }
     const runtime = new PSqlRuntimeStateRepository(sql);
     const batch = computed.persistence.guardedBatch;
-    await runtime.upsert(batch.guard.namespace, batch.guard.key, JSON.stringify(group.value), NEVER_EXPIRE_AT_TIMESTAMP);
+    await runtime.upsert({
+        namespace: batch.guard.namespace,
+        key: batch.guard.key,
+        value: JSON.stringify(group.value),
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    });
     for (const effect of batch.effects) {
         if (effect.effectId === 'planned-layout-fence' || effect.effectId === 'connect-trigger-latch') {
             await runtime.upsert(
-                effect.namespace,
-                effect.key,
-                JSON.stringify(effect.effectId === 'planned-layout-fence' ? planned : latch),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: effect.namespace,
+                    key: effect.key,
+                    value: JSON.stringify(effect.effectId === 'planned-layout-fence' ? planned : latch),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
         }
     }

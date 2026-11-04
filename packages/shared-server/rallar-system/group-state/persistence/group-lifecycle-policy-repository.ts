@@ -1,5 +1,6 @@
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
@@ -65,12 +66,15 @@ export class GroupLifecyclePolicyRepository extends RuntimeStateJsonStore {
             decodeJsonWireValue(policy, 'Group lifecycle policy')
         );
         await this.putValue(
-            GROUP_LIFECYCLE_POLICIES_NAMESPACE,
-            groupStateGroupStorageKey(ref),
             {
-                groupRef: ref,
-                policy: currentPolicy
-            } satisfies StoredGroupLifecyclePolicy
+                namespace: GROUP_LIFECYCLE_POLICIES_NAMESPACE,
+                key: groupStateGroupStorageKey(ref),
+                value: {
+                    groupRef: ref,
+                    policy: currentPolicy
+                } satisfies StoredGroupLifecyclePolicy,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 }

@@ -64,7 +64,7 @@ it('fails closed without consuming corrupt digest-key ticket rows', async () => 
                 ? { ...valid, ticket: 'plaintext-secret' }
                 : { ...valid, expiresAtEpochMs: valid.issuedAtEpochMs };
             const key = `ticket-digest=${encodeURIComponent(requestedDigest)}`;
-            await runtime.upsert(testCase.namespace, key, JSON.stringify(value), Date.now() + 60_000);
+            await runtime.upsert({ namespace: testCase.namespace, key, value: JSON.stringify(value), expireAtTimestamp: Date.now() + 60_000 });
 
             await expect(testCase.consume(repository, presented)).rejects.toThrow(TypeError);
             expect(await runtime.findEntry(testCase.namespace, key)).toBeDefined();
@@ -181,17 +181,19 @@ it('rejects explicit predecessor rows after the current storage cutover', async 
         const expiresAtEpochMs = Date.now() + 60_000;
         const token = 'current-predecessor-token';
         await runtime.upsert(
-            'auth-sessions:by-token',
-            `token=${encodeURIComponent(token)}`,
-            JSON.stringify({
-                clientId: 'predecessor-client',
-                username: 'predecessor-user',
-                sessionId: 'predecessor-session',
-                accessToken: token,
-                issuedAtEpochMs: Date.now(),
-                expiresAtEpochMs
-            }),
-            expiresAtEpochMs
+            {
+                namespace: 'auth-sessions:by-token',
+                key: `token=${encodeURIComponent(token)}`,
+                value: JSON.stringify({
+                    clientId: 'predecessor-client',
+                    username: 'predecessor-user',
+                    sessionId: 'predecessor-session',
+                    accessToken: token,
+                    issuedAtEpochMs: Date.now(),
+                    expiresAtEpochMs
+                }),
+                expireAtTimestamp: expiresAtEpochMs
+            }
         );
         for (
             const [namespace, ticket, agentId] of [
@@ -200,17 +202,19 @@ it('rejects explicit predecessor rows after the current storage cutover', async 
             ] as const
         ) {
             await runtime.upsert(
-                namespace,
-                `ticket=${encodeURIComponent(ticket)}`,
-                JSON.stringify({
-                    ticket,
-                    sessionId: 'predecessor-session',
-                    clientId: 'predecessor-client',
-                    ...(agentId ? { agentId } : {}),
-                    issuedAtEpochMs: Date.now(),
-                    expiresAtEpochMs
-                }),
-                expiresAtEpochMs
+                {
+                    namespace,
+                    key: `ticket=${encodeURIComponent(ticket)}`,
+                    value: JSON.stringify({
+                        ticket,
+                        sessionId: 'predecessor-session',
+                        clientId: 'predecessor-client',
+                        ...(agentId ? { agentId } : {}),
+                        issuedAtEpochMs: Date.now(),
+                        expiresAtEpochMs
+                    }),
+                    expireAtTimestamp: expiresAtEpochMs
+                }
             );
         }
 

@@ -16,10 +16,12 @@ describe('private scheduled-session interest storage', () => {
         const bob = { ...ref, groupId: 'unlisted-secret', principalId: 'bob', reviewedScheduleRevision: 1 };
         for (const intent of [alice, bob]) {
             await harness.runtimeRepository.upsert(
-                GROUP_SESSION_INTENTS_NAMESPACE,
-                groupSessionIntentKey(intent, intent.principalId),
-                JSON.stringify(intent),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+                    key: groupSessionIntentKey(intent, intent.principalId),
+                    value: JSON.stringify(intent),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
         }
         expect(await harness.repository.listSessionIntentsPage(SCOPE, 'alice', null))
@@ -39,7 +41,12 @@ describe('private scheduled-session interest storage', () => {
             const intent = { ...scoped, principalId, reviewedScheduleRevision: 1 };
             const key = groupSessionIntentKey(scoped, principalId);
             expect(decodeGroupSessionIntentKey(key)).toEqual({ ...scoped, principalId });
-            await harness.runtimeRepository.upsert(GROUP_SESSION_INTENTS_NAMESPACE, key, JSON.stringify(intent), NEVER_EXPIRE_AT_TIMESTAMP);
+            await harness.runtimeRepository.upsert({
+                namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+                key,
+                value: JSON.stringify(intent),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             expect(await harness.repository.listSessionIntentsPage(scoped, principalId, null)).toEqual({ intents: [intent], nextKey: null });
         }
         for (const key of [keys[0].replace('alice', '%61lice'), keys[0] + ':extra=x', keys[0].replace('alice', '')]) {
@@ -52,10 +59,12 @@ describe('private scheduled-session interest storage', () => {
         for (const [principalId, groupId] of [['alice', ref.groupId], ['bob', ref.groupId], ['alice', 'keep-room']]) {
             const intent = { ...ref, groupId, principalId, reviewedScheduleRevision: 1 };
             await harness.runtimeRepository.upsert(
-                GROUP_SESSION_INTENTS_NAMESPACE,
-                groupSessionIntentKey(intent, principalId),
-                JSON.stringify(intent),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+                    key: groupSessionIntentKey(intent, principalId),
+                    value: JSON.stringify(intent),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
         }
         const retired = await harness.repository.readRetirementEntries(ref);
@@ -75,10 +84,12 @@ describe('private scheduled-session interest storage', () => {
     ])('fails direct, page and retirement reads as typed corruption for %s', async (_label, value) => {
         const harness = await createAuthorityHarness([]);
         await harness.runtimeRepository.upsert(
-            GROUP_SESSION_INTENTS_NAMESPACE,
-            groupSessionIntentKey(ref, 'alice'),
-            JSON.stringify(value),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+                key: groupSessionIntentKey(ref, 'alice'),
+                value: JSON.stringify(value),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await Promise.all([
             expect(harness.repository.findSessionIntentEntry(ref, 'alice')),
@@ -90,10 +101,12 @@ describe('private scheduled-session interest storage', () => {
     it('rejects a payload whose account differs from the private physical key', async () => {
         const harness = await createAuthorityHarness([]);
         await harness.runtimeRepository.upsert(
-            GROUP_SESSION_INTENTS_NAMESPACE,
-            groupSessionIntentKey(ref, 'alice'),
-            JSON.stringify({ ...ref, principalId: 'bob', reviewedScheduleRevision: 1 }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+                key: groupSessionIntentKey(ref, 'alice'),
+                value: JSON.stringify({ ...ref, principalId: 'bob', reviewedScheduleRevision: 1 }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(harness.repository.findSessionIntentEntry(ref, 'alice')).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption'

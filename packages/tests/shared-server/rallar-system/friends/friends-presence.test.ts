@@ -115,10 +115,12 @@ function disconnect(principalId = 'alice', sessionId = `session-${principalId}`,
 async function shareOnline(test: FriendsPresenceFixture, visible: boolean, principalId = 'alice'): Promise<void> {
     const { profile } = await test.party.profiles.readProfile(principalId);
     await test.party.runtime.upsert(
-        FRIENDS_PROFILE_NAMESPACE,
-        friendsProfileKey(principalId),
-        JSON.stringify({ ...profile, shareOnline: visible }),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: FRIENDS_PROFILE_NAMESPACE,
+            key: friendsProfileKey(principalId),
+            value: JSON.stringify({ ...profile, shareOnline: visible }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
 }
 
@@ -179,19 +181,23 @@ it('fences an absent profile against concurrent creation and revokes a stale mut
         await test.party.runtime.deleteByKey(FRIENDS_PROFILE_NAMESPACE, friendsProfileKey('alice'));
         const absent = await test.prepare(disconnect());
         await test.party.runtime.upsert(
-            FRIENDS_PROFILE_NAMESPACE,
-            friendsProfileKey('alice'),
-            JSON.stringify({ ...previous.profile, shareOnline: true }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: FRIENDS_PROFILE_NAMESPACE,
+                key: friendsProfileKey('alice'),
+                value: JSON.stringify({ ...previous.profile, shareOnline: true }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(test.write(absent)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         const shared = await test.prepare(disconnect());
         const bob = await test.party.profiles.readProfile('bob');
         await test.party.runtime.upsert(
-            FRIENDS_PROFILE_NAMESPACE,
-            friendsProfileKey('bob'),
-            JSON.stringify({ ...bob.profile, contacts: [] }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: FRIENDS_PROFILE_NAMESPACE,
+                key: friendsProfileKey('bob'),
+                value: JSON.stringify({ ...bob.profile, contacts: [] }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(test.write(shared)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         await test.write(await test.prepare(disconnect()));

@@ -244,10 +244,12 @@ describe.each(['memory', 'postgres'] as const)('group topic subscription rows (%
         await withSubscriptionSql(backend, async (fixture) => {
             await seedSubscribableRoom(fixture);
             await fixture.runtime.upsert(
-                SUBSCRIPTIONS_NAMESPACE,
-                subscriptionKey('room.feed'),
-                JSON.stringify({ ...subscriptionFor('room.feed'), sessionId: 'someone-else' }),
-                fixture.nowEpochMs + 60_000
+                {
+                    namespace: SUBSCRIPTIONS_NAMESPACE,
+                    key: subscriptionKey('room.feed'),
+                    value: JSON.stringify({ ...subscriptionFor('room.feed'), sessionId: 'someone-else' }),
+                    expireAtTimestamp: fixture.nowEpochMs + 60_000
+                }
             );
 
             await expect(runMutation(fixture, subscribeDescriptor('room.feed', 'subscribe-bob-corrupt-row1')))
@@ -282,10 +284,12 @@ function subscriptionKey(topicId: string): string {
 
 async function writeSubscriptionRow(fixture: SubscriptionSqlFixture, subscription: GroupTopicSubscription): Promise<void> {
     await fixture.runtime.upsert(
-        SUBSCRIPTIONS_NAMESPACE,
-        groupStateTopicSubscriptionStorageKey(REF, subscription.sessionId, subscription.topicId),
-        JSON.stringify(subscription),
-        subscription.leaseExpiresAtEpochMs
+        {
+            namespace: SUBSCRIPTIONS_NAMESPACE,
+            key: groupStateTopicSubscriptionStorageKey(REF, subscription.sessionId, subscription.topicId),
+            value: JSON.stringify(subscription),
+            expireAtTimestamp: subscription.leaseExpiresAtEpochMs
+        }
     );
 }
 
@@ -313,10 +317,12 @@ function clientSessionFor(fixture: SubscriptionSqlFixture): ClientSession {
 
 async function writeClientSession(fixture: SubscriptionSqlFixture, session: ClientSession): Promise<void> {
     await fixture.runtime.upsert(
-        CLIENT_STATE_SESSIONS_NAMESPACE,
-        clientStateSessionStorageKey(session),
-        JSON.stringify(session),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+            key: clientStateSessionStorageKey(session),
+            value: JSON.stringify(session),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
 }
 

@@ -53,7 +53,15 @@ describe('RtcTopologyReplayPageProcessor', () => {
     });
 });
 
-async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4') {
+interface ReplayPageFixture {
+    readonly processor: RtcTopologyReplayPageProcessor;
+    readonly input: RtcTopologyReplayPageProcessor.Input;
+    readonly sent: ALMessage[];
+    readonly timeline: string[];
+    readonly diagnostics: RtcTopologyReplayDiagnosticsEvent[];
+}
+
+async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<ReplayPageFixture> {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publications = new RtcTopologyPublicationRepository(runtimeRepository);
     const groupRef = createGroupRef();
@@ -61,10 +69,12 @@ async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4') {
     const outbox = rows.flatMap((publication) => computeRtcTopologyPublicationOutbox(publication));
     for (const [index, publication] of rows.entries()) {
         await runtimeRepository.upsert(
-            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-            publications.publicationKey(groupRef, publication.publicationId),
-            JSON.stringify(index === 1 ? toStoredSecondRow(publication, secondRow) : publication),
-            Date.now() + 60_000
+            {
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: publications.publicationKey(groupRef, publication.publicationId),
+                value: JSON.stringify(index === 1 ? toStoredSecondRow(publication, secondRow) : publication),
+                expireAtTimestamp: Date.now() + 60_000
+            }
         );
     }
     const sent: ALMessage[] = [];
@@ -111,7 +121,14 @@ async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4') {
     return { processor, input, sent, timeline, diagnostics };
 }
 
-function toStoredSecondRow(publication: RtcTopologyPublication, secondRow: 'pre-v4' | 'malformed-v4') {
+interface CorruptPublicationRow extends Omit<RtcTopologyPublication, 'traceId'> {
+    readonly traceId?: string;
+}
+
+function toStoredSecondRow(
+    publication: RtcTopologyPublication,
+    secondRow: 'pre-v4' | 'malformed-v4'
+): CorruptPublicationRow {
     if (secondRow === 'malformed-v4') {
         return { ...publication, traceId: 'not a trace' };
     }

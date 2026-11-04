@@ -4,7 +4,8 @@ import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-b
 import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateTransactionalRepositoryLike
+    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import assert from 'node:assert/strict';
 import { requireApiAuthSession } from '../src/services/request-auth-service.ts';
@@ -142,10 +143,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     }
 
     upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<void> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);

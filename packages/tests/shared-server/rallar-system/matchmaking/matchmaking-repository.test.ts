@@ -161,13 +161,15 @@ describe('durable matchmaking reservations', () => {
             expect((await repository.read(scope)).partySearches).toEqual([]);
             expect((await repository.readCurrent({ scope, principalId: 'bob', nowEpochMs: now + 1 })).finished?.reason).toBe('declined');
             await runtime.upsert(
-                'matchmaking:parties',
-                'app=game:ws=default',
-                JSON.stringify({
-                    scope: { ...scope, workspaceId: 'foreign' },
-                    parties: []
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'matchmaking:parties',
+                    key: 'app=game:ws=default',
+                    value: JSON.stringify({
+                        scope: { ...scope, workspaceId: 'foreign' },
+                        parties: []
+                    }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(repository.read(scope)).rejects.toThrow(/scope|identity/);
         }
@@ -181,14 +183,16 @@ describe('durable matchmaking reservations', () => {
         try {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             await runtime.upsert(
-                'matchmaking:pools',
-                'app=game:ws=default',
-                JSON.stringify({
-                    scope: { ...scope, workspaceId: 'other' },
-                    searching: [],
-                    proposals: []
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'matchmaking:pools',
+                    key: 'app=game:ws=default',
+                    value: JSON.stringify({
+                        scope: { ...scope, workspaceId: 'other' },
+                        searching: [],
+                        proposals: []
+                    }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(new MatchmakingRepository(runtime).read(scope)).rejects.toThrow(/scope/i);
         }

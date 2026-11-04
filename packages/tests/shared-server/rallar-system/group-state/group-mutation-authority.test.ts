@@ -58,8 +58,13 @@ describe('group mutation ingress capture', () => {
         await createRoom(harness, 'publication-room', 'Publication room');
         await joinPublicationRoom(harness, 'bob');
 
-        const granted = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob', PUBLISH_ONLY);
-        const revoked = await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_REVOKE, 'bob', PUBLISH_ONLY);
+        const granted = await processPublicationCommand({ harness, type: AppInboxType.GROUP_PUBLICATION_GRANT, principalId: 'bob', permissions: PUBLISH_ONLY });
+        const revoked = await processPublicationCommand({
+            harness,
+            type: AppInboxType.GROUP_PUBLICATION_REVOKE,
+            principalId: 'bob',
+            permissions: PUBLISH_ONLY
+        });
 
         expect(granted.left, JSON.stringify(granted.left)).toBeUndefined();
         expect(revoked.left, JSON.stringify(revoked.left)).toBeUndefined();
@@ -75,17 +80,22 @@ describe('group mutation ingress capture', () => {
         const harness = await createAuthorityHarness(['owner', 'bob']);
         await createRoom(harness, 'publication-room', 'Publication room');
         await joinPublicationRoom(harness, 'bob');
-        await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob', { publish: false, subscribe: true });
+        await processPublicationCommand({
+            harness,
+            type: AppInboxType.GROUP_PUBLICATION_GRANT,
+            principalId: 'bob',
+            permissions: { publish: false, subscribe: true }
+        });
         await writeMatrixClientSession(harness, 'bob', 'bob-ws-generation-1');
 
         const subscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_SUBSCRIBE, 'bob-session');
-        const row = await readMatrixTopicSubscription(harness, 'publication-room', 'bob-session', 'room.feed');
+        const row = await readMatrixTopicSubscription({ harness, groupId: 'publication-room', sessionId: 'bob-session', topicId: 'room.feed' });
         const unsubscribed = await processSubscriptionCommand(harness, AppInboxType.GROUP_TOPIC_UNSUBSCRIBE, 'bob-session');
 
         expect(subscribed.right).toMatchObject({ outcome: 'applied', eventId: null, subscriptionOutcome: 'subscribed' });
         expect(row).toMatchObject({ principalId: 'bob', connectionGenerationId: 'bob-ws-generation-1' });
         expect(unsubscribed.right).toMatchObject({ outcome: 'applied', subscriptionOutcome: 'unsubscribed' });
-        expect(await readMatrixTopicSubscription(harness, 'publication-room', 'bob-session', 'room.feed')).toBeUndefined();
+        expect(await readMatrixTopicSubscription({ harness, groupId: 'publication-room', sessionId: 'bob-session', topicId: 'room.feed' })).toBeUndefined();
         const events = await harness.repository.listEvents({ ...SCOPE, groupId: 'publication-room' });
         // The subscription writes record no event: the room holds only its creation, join and grant.
         expect(events.map((event) => event.eventType)).toEqual(['group-created', 'member-joined', 'publication-grant-changed']);
@@ -95,7 +105,12 @@ describe('group mutation ingress capture', () => {
         const harness = await createAuthorityHarness(['owner', 'bob', 'carol']);
         await createRoom(harness, 'publication-room', 'Publication room');
         await joinPublicationRoom(harness, 'bob');
-        await processPublicationCommand(harness, AppInboxType.GROUP_PUBLICATION_GRANT, 'bob', { publish: false, subscribe: true });
+        await processPublicationCommand({
+            harness,
+            type: AppInboxType.GROUP_PUBLICATION_GRANT,
+            principalId: 'bob',
+            permissions: { publish: false, subscribe: true }
+        });
         await writeMatrixClientSession(harness, 'bob', 'bob-ws-generation-1');
         await writeMatrixClientSession(harness, 'carol', 'bob-ws-generation-1');
         const carolSession = harness.sessions.carol.sessionId;
@@ -105,7 +120,7 @@ describe('group mutation ingress capture', () => {
             await expectSessionRefused(harness, type, carolSession);
         }
         for (const sessionId of ['bob-other-session', carolSession]) {
-            expect(await readMatrixTopicSubscription(harness, 'publication-room', sessionId, 'room.feed')).toBeUndefined();
+            expect(await readMatrixTopicSubscription({ harness, groupId: 'publication-room', sessionId, topicId: 'room.feed' })).toBeUndefined();
         }
     });
 });
@@ -148,11 +163,15 @@ async function joinPublicationRoom(harness: AuthorityHarness, principalId: strin
     });
 }
 
+interface ProcessPublicationCommandInput {
+    readonly harness: AuthorityHarness;
+    readonly type: typeof AppInboxType.GROUP_PUBLICATION_GRANT | typeof AppInboxType.GROUP_PUBLICATION_REVOKE;
+    readonly principalId: string;
+    readonly permissions: Readonly<{ publish: boolean; subscribe: boolean; }>;
+}
+
 async function processPublicationCommand(
-    harness: AuthorityHarness,
-    type: typeof AppInboxType.GROUP_PUBLICATION_GRANT | typeof AppInboxType.GROUP_PUBLICATION_REVOKE,
-    principalId: string,
-    permissions: Readonly<{ publish: boolean; subscribe: boolean; }>
+    { harness, type, principalId, permissions }: ProcessPublicationCommandInput
 ) {
     const owner = harness.sessions.owner;
     const requestId = `${type}-${principalId}`;

@@ -71,10 +71,12 @@ describe('scheduled-session SQL concurrency and rollback', () => {
                 ]
             ) {
                 await fixture.runtime.upsert(
-                    GROUP_SESSION_INTENTS_NAMESPACE,
-                    groupSessionIntentKey(ref, 'alice'),
-                    JSON.stringify(value),
-                    NEVER_EXPIRE_AT_TIMESTAMP
+                    {
+                        namespace: GROUP_SESSION_INTENTS_NAMESPACE,
+                        key: groupSessionIntentKey(ref, 'alice'),
+                        value: JSON.stringify(value),
+                        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                    }
                 );
                 await Promise.all([
                     expect(fixture.repository.findSessionIntentEntry(ref, 'alice')),

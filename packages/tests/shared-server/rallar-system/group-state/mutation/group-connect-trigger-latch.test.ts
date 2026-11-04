@@ -143,10 +143,12 @@ describe('connect intent handoff', () => {
         const runtime = new FakeRuntimeStateRepository();
         const latches = new GroupConnectTriggerLatchRepository(runtime);
         await runtime.upsert(
-            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-            toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+                key: toGroupConnectTriggerStorageKey(IDENTITY),
+                value: JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         const commands: GroupMutationCommand[] = [];
         let planned: RallarOverlayTopologySnapshot | null = null;
@@ -175,10 +177,12 @@ describe('connect intent handoff', () => {
     it('the connect trigger submits under the trigger message trace', async () => {
         const runtime = new FakeRuntimeStateRepository();
         await runtime.upsert(
-            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-            toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+                key: toGroupConnectTriggerStorageKey(IDENTITY),
+                value: JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         const submissions: GroupSystemCommandSubmission[] = [];
         const handler = createGroupConnectTriggerWorkHandler({
@@ -262,16 +266,18 @@ describe('connect intent handoff', () => {
         const runtime = new FakeRuntimeStateRepository();
         const latches = new GroupConnectTriggerLatchRepository(runtime);
         await runtime.upsert(
-            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-            toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({
-                ...IDENTITY,
-                notBeforeEpochMs: 0,
-                supersedesLayoutIdentity: null,
-                state: 'awaiting-publication',
-                ...patch
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+                key: toGroupConnectTriggerStorageKey(IDENTITY),
+                value: JSON.stringify({
+                    ...IDENTITY,
+                    notBeforeEpochMs: 0,
+                    supersedesLayoutIdentity: null,
+                    state: 'awaiting-publication',
+                    ...patch
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(latches.read(IDENTITY)).rejects.toBeInstanceOf(GroupConnectTriggerLatchCorruptionError);
         await expect(latches.listAwaiting(IDENTITY.groupRef, 3)).rejects.toBeInstanceOf(GroupConnectTriggerLatchCorruptionError);
@@ -281,15 +287,17 @@ describe('connect intent handoff', () => {
         const runtime = new FakeRuntimeStateRepository();
         const latches = new GroupConnectTriggerLatchRepository(runtime);
         await runtime.upsert(
-            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-            toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({
-                ...IDENTITY,
-                notBeforeEpochMs: 0,
-                supersedesLayoutIdentity: SUPERSEDED,
-                state: 'awaiting-publication'
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+                key: toGroupConnectTriggerStorageKey(IDENTITY),
+                value: JSON.stringify({
+                    ...IDENTITY,
+                    notBeforeEpochMs: 0,
+                    supersedesLayoutIdentity: SUPERSEDED,
+                    state: 'awaiting-publication'
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         expect((await latches.read(IDENTITY))?.latch.supersedesLayoutIdentity).toEqual(SUPERSEDED);
     });
@@ -307,7 +315,12 @@ async function connectWriteHarness() {
         throw new Error('Expected connect write');
     }
     const batch = computed.persistence.guardedBatch;
-    await harness.runtimeRepository.upsert(batch.guard.namespace, batch.guard.key, JSON.stringify(read.group!.value), NEVER_EXPIRE_AT_TIMESTAMP);
+    await harness.runtimeRepository.upsert({
+        namespace: batch.guard.namespace,
+        key: batch.guard.key,
+        value: JSON.stringify(read.group!.value),
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    });
     await new GroupLifecyclePolicyRepository(harness.runtimeRepository).writePolicy(
         IDENTITY.groupRef,
         resolveGroupLifecyclePolicyPreset('optimistic')
@@ -318,7 +331,12 @@ async function connectWriteHarness() {
         }
         const value = effect.effectId === 'planned-layout-fence' ? PLANNED : read.connectTriggerLatch!.latch;
         for (let revision = 0; revision <= 1; revision++) {
-            await harness.runtimeRepository.upsert(effect.namespace, effect.key, JSON.stringify(value), NEVER_EXPIRE_AT_TIMESTAMP);
+            await harness.runtimeRepository.upsert({
+                namespace: effect.namespace,
+                key: effect.key,
+                value: JSON.stringify(value),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
         }
     }
     return { harness, computed, batch, latches: new GroupConnectTriggerLatchRepository(harness.runtimeRepository) };
@@ -329,10 +347,12 @@ describe('retry handoff commit races and replay', () => {
         const { harness, latches } = await connectWriteHarness();
         const owner = createGroupAuthorityRead({}).actorMemberEntry!;
         await harness.runtimeRepository.upsert(
-            MEMBERS_NAMESPACE,
-            owner.entry.key,
-            JSON.stringify({ ...owner.value, role: 'owner' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: MEMBERS_NAMESPACE,
+                key: owner.entry.key,
+                value: JSON.stringify({ ...owner.value, role: 'owner' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         const command = toAutomaticGroupConnectCommand(IDENTITY, LAYOUT);
         await harness.service.enqueueFormationAutomationCommand({ command, atEpochMs: 1000, traceId: 'trace-connect-replay-1' });
@@ -346,7 +366,12 @@ describe('retry handoff commit races and replay', () => {
         const { harness, computed, batch } = await connectWriteHarness();
         const effect = batch.effects.find((candidate) => candidate.effectId === effectId)!;
         const current = await harness.runtimeRepository.findEntry(effect.namespace, effect.key);
-        await harness.runtimeRepository.upsert(effect.namespace, effect.key, current!.value, NEVER_EXPIRE_AT_TIMESTAMP);
+        await harness.runtimeRepository.upsert({
+            namespace: effect.namespace,
+            key: effect.key,
+            value: current!.value,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
         const before = new Map(harness.runtimeRepository.data);
         await expect(harness.database.begin((tx) => writeGroupMutation(tx, computed))).rejects.toThrow();
         expect(harness.runtimeRepository.data).toEqual(before);
@@ -410,10 +435,12 @@ describe('retry handoff commit races and replay', () => {
         expect(requests).toHaveLength(1);
         expect(decodeGroupConnectTriggerWork(requests[0]!.resource).kind).toBe('publication');
         await harness.runtimeRepository.upsert(
-            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-            toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+                key: toGroupConnectTriggerStorageKey(IDENTITY),
+                value: JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await createGroupConnectTriggerWorkHandler(port).onMessage(JSON.parse(source.resource) as ALMessage, source);
         expect(commands).toEqual([]);
@@ -472,7 +499,7 @@ describe('retry handoff commit races and replay', () => {
     it('rejects malformed stored generation encoding with the typed corruption error', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const key = toGroupConnectTriggerStorageKey(IDENTITY).replace(/generation=.*$/, 'generation=%XX');
-        await runtime.upsert(GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, key, '{}', NEVER_EXPIRE_AT_TIMESTAMP);
+        await runtime.upsert({ namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, key, value: '{}', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         await expect(new GroupConnectTriggerLatchRepository(runtime).listAwaiting(IDENTITY.groupRef, 3)).rejects.toBeInstanceOf(
             GroupConnectTriggerLatchCorruptionError
         );

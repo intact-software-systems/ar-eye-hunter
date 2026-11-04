@@ -1,22 +1,24 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import {
+    computeRuntimeStateConditionalWrite,
+    type RuntimeStateConditionalWrite
+} from '../../../runtime-state/compute-runtime-state-conditional-write.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
     RuntimeStateGuardedBatch,
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchGuard,
-    RuntimeStateGuardedBatchInsert,
-    RuntimeStateGuardedBatchUpdate,
     RuntimeStateGuardedBatchWrite
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { writeRuntimeStateConditionalBatch } from '../../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
+import { writeRuntimeStateConditional } from '../../../runtime-state/postgres/write-runtime-state-conditional.ts';
 import { writeAppOutboxInserts, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 
 /** Complete conditional guards and outbox writes prepared by a view's domain owner. */
 export interface GuardedViewPublication {
-    readonly storage: RuntimeStateGuardedBatchWrite | RuntimeStateGuardedBatchInsert | RuntimeStateGuardedBatchUpdate;
+    readonly storage: RuntimeStateGuardedBatchWrite | RuntimeStateConditionalWrite;
     readonly outbox: readonly AppOutboxInsert[];
 }
 
@@ -29,7 +31,9 @@ export function computeGuardedViewPublication(
         throw new TypeError('View publication cannot delete its observation guard');
     }
     return {
-        storage: storage.effects.length === 0 ? storage.guard : computeRuntimeStateGuardedBatchWrite(storage),
+        storage: storage.effects.length === 0
+            ? computeRuntimeStateConditionalWrite(storage.guard)
+            : computeRuntimeStateGuardedBatchWrite(storage),
         outbox
     };
 }
@@ -44,16 +48,7 @@ export async function writeGuardedViewPublication(
     }
     const storage = publication.storage;
     if ('operation' in storage) {
-        const repository = new PSqlRuntimeStateRepository(transaction);
-        const result = storage.operation === 'insert'
-            ? await repository.insertIfAbsent(storage.namespace, storage.key, storage.value, storage.expireAtTimestamp)
-            : await repository.upsertIfRevision(
-                storage.namespace,
-                storage.key,
-                storage.value,
-                storage.expireAtTimestamp,
-                storage.expectedRevision
-            );
+        const result = await writeRuntimeStateConditional(transaction, storage);
         if (result.status !== 'applied') {
             throw new RuntimeStateWriteConflictError();
         }

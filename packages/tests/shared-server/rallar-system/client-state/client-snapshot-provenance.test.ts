@@ -570,7 +570,7 @@ function withSnapshotProofCollision(
                 if (!proof) {
                     throw new Error('Expected an exact principal proof collision candidate');
                 }
-                await repository.upsert(proof.namespace, proof.key, 'occupied-proof', Number.MAX_SAFE_INTEGER);
+                await repository.upsert({ namespace: proof.namespace, key: proof.key, value: 'occupied-proof', expireAtTimestamp: Number.MAX_SAFE_INTEGER });
             }
             return read;
         }
@@ -656,10 +656,7 @@ async function seedCoGroup(producer: SnapshotProducerFixture): Promise<void> {
         updated: audit
     });
     await producer.repository.upsert(
-        GROUPS_NAMESPACE,
-        groupStateGroupStorageKey(ref),
-        JSON.stringify(group),
-        Number.MAX_SAFE_INTEGER
+        { namespace: GROUPS_NAMESPACE, key: groupStateGroupStorageKey(ref), value: JSON.stringify(group), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
     );
     for (const [principalId, role] of [['alice', 'owner'], ['bob', 'member']] as const) {
         const member: GroupMember = {
@@ -676,10 +673,12 @@ async function seedCoGroup(producer: SnapshotProducerFixture): Promise<void> {
             banned: null
         };
         await producer.repository.upsert(
-            MEMBERS_NAMESPACE,
-            groupStateMemberStorageKey({ ...ref, principalId }),
-            JSON.stringify(member),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: MEMBERS_NAMESPACE,
+                key: groupStateMemberStorageKey({ ...ref, principalId }),
+                value: JSON.stringify(member),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
     }
 }

@@ -4,7 +4,7 @@ import { groupStateTopicSubscriptionStorageKey } from '@shared-server/rallar-sys
 import { GROUP_TOPIC_SUBSCRIPTION_LEASE_MS } from '@shared/api/group-publication/group-topic-subscriptions.ts';
 import { describe, expect, it } from 'vitest';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createService } from '../presence/group-presence-test-runtime.ts';
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
 import { GRANT_ROOM, requireWrite, seedGrantRoom, writeGrantRow } from './group-publication-grant-test-runtime.ts';
@@ -36,7 +36,7 @@ async function subscribableRoom(): Promise<GroupBarrierRepository> {
     const runtime = new GroupBarrierRepository();
     await seedGrantRoom(runtime);
     await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: true, subscribe: true } });
-    await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-1');
+    await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-1', overrides: {} });
     return runtime;
 }
 
@@ -114,7 +114,7 @@ describe('group topic subscription mutation', () => {
     it('a new generation replaces the row and is subscribed', async () => {
         const runtime = await subscribableRoom();
         await applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2');
+        await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-2', overrides: {} });
         const { read, computed } = await computeSubscriptionMutation(runtime, {
             ...BOB_SUBSCRIBE,
             connectionGenerationId: 'bob-ws-generation-2',
@@ -136,7 +136,12 @@ describe('group topic subscription mutation', () => {
         await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: false, subscribe: true } });
         await expectSubscribeDenial(runtime, BOB_SUBSCRIBE, 'no-live-session');
 
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-1', { expiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS });
+        await writeClientSessionRow({
+            runtime,
+            principalId: 'bob',
+            generationId: 'bob-ws-generation-1',
+            overrides: { expiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS }
+        });
         await expectSubscribeDenial(runtime, BOB_SUBSCRIBE, 'no-live-session');
     });
 
@@ -152,7 +157,7 @@ describe('group topic subscription mutation', () => {
 
     it('a session active under two client instances admits the row whose generation matches the body', async () => {
         const runtime = await subscribableRoom();
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2', { clientInstanceId: 'bob-sdk-instance' });
+        await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-2', overrides: { clientInstanceId: 'bob-sdk-instance' } });
         const second = { ...BOB_SUBSCRIBE, connectionGenerationId: 'bob-ws-generation-2', requestId: 'subscribe-bob-feed-gen-2-x' };
 
         const { read, computed } = await computeSubscriptionMutation(runtime, second);
@@ -173,7 +178,7 @@ describe('group topic subscription mutation', () => {
         const runtime = await subscribableRoom();
         await writeGrantRow(runtime, 'erin', { 'room.feed': { publish: true, subscribe: false } });
         for (const principalId of ['carol', 'erin']) {
-            await writeClientSessionRow(runtime, principalId, `${principalId}-ws-generation-1`);
+            await writeClientSessionRow({ runtime, principalId, generationId: `${principalId}-ws-generation-1`, overrides: {} });
             await expectSubscribeDenial(
                 runtime,
                 {
@@ -191,7 +196,7 @@ describe('group topic subscription mutation', () => {
     it('a member that left is member-not-active', async () => {
         const runtime = await subscribableRoom();
         await writeGrantRow(runtime, 'lee', { 'room.feed': { publish: false, subscribe: true } });
-        await writeClientSessionRow(runtime, 'lee', 'lee-ws-generation-1');
+        await writeClientSessionRow({ runtime, principalId: 'lee', generationId: 'lee-ws-generation-1', overrides: {} });
 
         await expectSubscribeDenial(
             runtime,
@@ -208,7 +213,7 @@ describe('group topic subscription mutation', () => {
     it('a spectator holding subscribe is subscribed', async () => {
         const runtime = await subscribableRoom();
         await writeGrantRow(runtime, 'sam', { 'room.feed': { publish: false, subscribe: true } });
-        await writeClientSessionRow(runtime, 'sam', 'sam-ws-generation-1');
+        await writeClientSessionRow({ runtime, principalId: 'sam', generationId: 'sam-ws-generation-1', overrides: {} });
         const { computed } = await computeSubscriptionMutation(runtime, {
             ...BOB_SUBSCRIBE,
             actorPrincipalId: 'sam',
@@ -221,11 +226,15 @@ describe('group topic subscription mutation', () => {
 
     it('an archived group denies group-archived', async () => {
         const runtime = await subscribableRoom();
-        await createService(runtime, 2_000).updateGroup(SCOPE, GRANT_ROOM, {
-            status: 'archived',
-            actorPrincipalId: 'alice',
-            requestId: 'archive-grant-room-000001'
-        });
+        await createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).updateGroup(
+            SCOPE,
+            GRANT_ROOM,
+            {
+                status: 'archived',
+                actorPrincipalId: 'alice',
+                requestId: 'archive-grant-room-000001'
+            }
+        );
 
         await expectSubscribeDenial(runtime, BOB_SUBSCRIBE, 'group-archived');
     });
@@ -264,7 +273,7 @@ describe('group topic subscription mutation', () => {
     it('an unsubscribe asserting the row\'s generation after the live session moved on is not-subscribed and keeps the row', async () => {
         const runtime = await subscribableRoom();
         await applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2');
+        await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-2', overrides: {} });
         const { computed } = await computeSubscriptionMutation(runtime, BOB_UNSUBSCRIBE);
 
         expect(computed).toMatchObject({ outcome: 'no-op', receipt: { subscriptionOutcome: 'not-subscribed' } });
@@ -278,7 +287,12 @@ describe('group topic subscription mutation', () => {
         const runtime = await subscribableRoom();
         const withoutRow = await computeSubscriptionMutation(runtime, BOB_UNSUBSCRIBE);
         await applySubscriptionMutation(runtime, BOB_SUBSCRIBE);
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-1', { expiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS });
+        await writeClientSessionRow({
+            runtime,
+            principalId: 'bob',
+            generationId: 'bob-ws-generation-1',
+            overrides: { expiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS }
+        });
         const withoutSession = await computeSubscriptionMutation(runtime, BOB_UNSUBSCRIBE);
 
         for (const { computed } of [withoutRow, withoutSession]) {

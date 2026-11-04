@@ -117,15 +117,27 @@ describe('private party recovery', () => {
             expect(await fixture.parties.readAccount(scope, 'bob')).toEqual(stored);
             const party = await fixture.parties.read(ref);
             await fixture.runtime.upsert(
-                'parties:records',
-                party.entry!.key,
-                JSON.stringify({ ...party.record, ref: { ...ref, workspaceId: 'foreign' } }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'parties:records',
+                    key: party.entry!.key,
+                    value: JSON.stringify({ ...party.record, ref: { ...ref, workspaceId: 'foreign' } }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(reader.read(scope, 'bob')).rejects.toThrow(/identity|scope/);
-            await fixture.runtime.upsert('parties:records', party.entry!.key, party.entry!.value, NEVER_EXPIRE_AT_TIMESTAMP);
+            await fixture.runtime.upsert({
+                namespace: 'parties:records',
+                key: party.entry!.key,
+                value: party.entry!.value,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             const corrupted = JSON.stringify({ ...stored.account, scope: { ...scope, workspaceId: 'foreign' } });
-            await fixture.runtime.upsert('parties:accounts', stored.entry!.key, corrupted, NEVER_EXPIRE_AT_TIMESTAMP);
+            await fixture.runtime.upsert({
+                namespace: 'parties:accounts',
+                key: stored.entry!.key,
+                value: corrupted,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             await expect(reader.read(scope, 'bob')).rejects.toThrow(/identity|scope/);
         }
         finally {

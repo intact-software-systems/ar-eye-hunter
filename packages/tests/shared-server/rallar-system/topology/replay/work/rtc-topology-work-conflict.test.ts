@@ -41,7 +41,12 @@ describe('RTC topology queue conflict boundary', () => {
         };
         const stored = toStoredRtcTopologySnapshotRow(snapshot);
         const runtime = new FakeRuntimeStateRepository();
-        await runtime.upsert(RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, stored.key, stored.value, NEVER_EXPIRE_AT_TIMESTAMP);
+        await runtime.upsert({
+            namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            key: stored.key,
+            value: stored.value,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
         const before = [...runtime.data];
         const queue = new InMemoryQueueBox();
         const database = createAppInboxTestDatabase(queue, { replace: async (entry) => entry });

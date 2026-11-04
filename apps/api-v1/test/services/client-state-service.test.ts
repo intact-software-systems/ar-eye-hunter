@@ -6,7 +6,9 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -455,10 +457,7 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
     }
 
     upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<void> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -473,10 +472,7 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
     }
 
     insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
@@ -493,11 +489,7 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
     }
 
     upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);

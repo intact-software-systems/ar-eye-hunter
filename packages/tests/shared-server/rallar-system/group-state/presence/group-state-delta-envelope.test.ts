@@ -19,7 +19,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { convergeSummaryForTest, createService, readSummaryWork, toSummaryExpansion } from './group-presence-test-runtime.ts';
@@ -34,7 +34,13 @@ const BASE_EPOCH_MS = Date.now();
 describe('group-state delta envelope construction', () => {
     it('carries the joined member, complete identity set, counts, and CAS revisions', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         await seedGroupWithBob(service, 'delta-join-group');
 
         const { command, read, computed } = await computeSummaryWork({
@@ -70,7 +76,13 @@ describe('group-state delta envelope construction', () => {
 
     it('carries the connecting principal session slice without any member slice', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         await seedGroupWithBob(service, 'delta-connect-group');
         await connectSession({ service, groupId: 'delta-connect-group', principalId: 'bob', sessionId: 'bob-session' });
 
@@ -94,7 +106,13 @@ describe('group-state delta envelope construction', () => {
 
     it('stamps predecessor equal to resulting for a summary no-op expansion', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         await seedGroupWithBob(service, 'delta-noop-group');
         await connectSession({ service, groupId: 'delta-noop-group', principalId: 'bob', sessionId: 'bob-session' });
         await convergeSummaryForTest({
@@ -129,7 +147,13 @@ describe('group-state delta envelope construction', () => {
 
     it('computes from the explicit observation time without consulting a hidden clock', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         await seedGroupWithBob(service, 'delta-explicit-time-group');
         const ref = groupRef('delta-explicit-time-group');
         const repository = createTestGroupStateRepository(runtime);
@@ -205,7 +229,7 @@ async function computeShuffledScenarioEventRow(
     connectOrder: readonly string[]
 ): Promise<ResourceEntry> {
     const runtime = new GroupBarrierRepository();
-    const service = createService(runtime, BASE_EPOCH_MS);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await seedGroupWithBob(service, 'delta-order-group');
     for (const sessionId of connectOrder) {
         await connectSession({ service, groupId: 'delta-order-group', principalId: 'bob', sessionId: sessionId });

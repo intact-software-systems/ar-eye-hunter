@@ -130,17 +130,21 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         assertStoredGroupTopologyConfig(config, config.groupRef);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-                this.configKey(config.groupRef),
-                config,
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                    key: this.configKey(config.groupRef),
+                    value: config,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             )
             : await this.putValueIfRevision(
-                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-                this.configKey(config.groupRef),
-                config,
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                expectedRevision
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                    key: this.configKey(config.groupRef),
+                    value: config,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                    expectedRevision
+                }
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }
@@ -188,17 +192,21 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         assertStoredGroupTopologyOverride(override, override.groupRef);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
-                this.overrideKey(override.groupRef),
-                override,
-                override.expiresAtEpochMs
+                {
+                    namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                    key: this.overrideKey(override.groupRef),
+                    value: override,
+                    expireAtTimestamp: override.expiresAtEpochMs
+                }
             )
             : await this.putValueIfRevision(
-                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
-                this.overrideKey(override.groupRef),
-                override,
-                override.expiresAtEpochMs,
-                expectedRevision
+                {
+                    namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                    key: this.overrideKey(override.groupRef),
+                    value: override,
+                    expireAtTimestamp: override.expiresAtEpochMs,
+                    expectedRevision
+                }
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }
@@ -290,17 +298,21 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         assertGroupTopologyConfigGeneration(generation, generation.groupRef, generation.target);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
-                this.generationKey(generation.groupRef, generation.target),
-                generation,
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                    key: this.generationKey(generation.groupRef, generation.target),
+                    value: generation,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             )
             : await this.putValueIfRevision(
-                GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
-                this.generationKey(generation.groupRef, generation.target),
-                generation,
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                expectedRevision
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                    key: this.generationKey(generation.groupRef, generation.target),
+                    value: generation,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                    expectedRevision
+                }
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }
@@ -338,17 +350,21 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         assertGroupTopologyConfigInvariantGeneration(generation, generation.groupRef);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
-                this.invariantGenerationKey(generation.groupRef),
-                generation,
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                    key: this.invariantGenerationKey(generation.groupRef),
+                    value: generation,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             )
             : await this.putValueIfRevision(
-                GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
-                this.invariantGenerationKey(generation.groupRef),
-                generation,
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                expectedRevision
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                    key: this.invariantGenerationKey(generation.groupRef),
+                    value: generation,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                    expectedRevision
+                }
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }

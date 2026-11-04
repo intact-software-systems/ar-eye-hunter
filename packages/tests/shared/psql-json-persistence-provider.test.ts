@@ -1,16 +1,16 @@
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import {
     RuntimeStateJsonPersistenceProvider,
     type RuntimeStateJsonPersistenceCodec
 } from '@shared-server/runtime-state/runtime-state-json-persistence-provider.ts';
-import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
+import { FakeRuntimeStateRepository } from '../shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RuntimeStateJsonPersistenceProvider', () => {
     it('stores, lists, and removes values within a namespace', async () => {
-        const repository = createRepository();
+        const repository = new FakeRuntimeStateRepository();
         const provider = createProvider(repository, 'al-runtime:inbound:dedup');
 
         await provider.setItem(
@@ -33,7 +33,7 @@ describe('RuntimeStateJsonPersistenceProvider', () => {
     });
 
     it('lazy-evicts expired values', async () => {
-        const repository = createRepository();
+        const repository = new FakeRuntimeStateRepository();
         const provider = createProvider(repository, 'al-runtime:outbound:repair-attempts');
         const now = Date.now();
 
@@ -45,7 +45,7 @@ describe('RuntimeStateJsonPersistenceProvider', () => {
     });
 
     it('deleteExpired only removes expired values in the current namespace', async () => {
-        const repository = createRepository();
+        const repository = new FakeRuntimeStateRepository();
         const inbound = createProvider(repository, 'al-runtime:inbound:ordering');
         const outbound = createProvider(repository, 'al-runtime:outbound:ordering');
         const now = Date.now();
@@ -60,7 +60,7 @@ describe('RuntimeStateJsonPersistenceProvider', () => {
     });
 
     it('isolates values by namespace', async () => {
-        const repository = createRepository();
+        const repository = new FakeRuntimeStateRepository();
         const inbound = createProvider(repository, 'al-runtime:inbound:supersedence');
         const outbound = createProvider(repository, 'al-runtime:outbound:supersedence');
 
@@ -80,10 +80,10 @@ describe('RuntimeStateJsonPersistenceProvider', () => {
     });
 
     it('rejects malformed stored values through the current codec', async () => {
-        const repository = createRepository();
+        const repository = new FakeRuntimeStateRepository();
         const namespace = 'al-runtime:outbound:repair-attempts';
         const provider = createProvider(repository, namespace);
-        await repository.upsert(namespace, 'bad', '{"value":"not-a-number"}', Date.now() + 60_000);
+        await repository.upsert({ namespace, key: 'bad', value: '{"value":"not-a-number"}', expireAtTimestamp: Date.now() + 60_000 });
 
         await expect(provider.getItem('bad')).rejects.toThrow(
             'Stored test value does not match the current contract'
@@ -99,9 +99,7 @@ const storedTestValueCodec: RuntimeStateJsonPersistenceCodec<StoredTestValue> = 
     encode(value) {
         return { value: value.value };
     },
-    decode(value) {
-        return decodeStoredTestValue(value);
-    }
+    decode: decodeStoredTestValue
 };
 
 function createProvider(
@@ -124,73 +122,4 @@ function decodeStoredTestValue(value: JsonWireValue): StoredTestValue {
 
 function isJsonWireObject(value: JsonWireValue): value is Readonly<Record<string, JsonWireValue>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function createRepository(): RuntimeStateRepositoryLike {
-    const data = new Map<string, RuntimeStateEntry>();
-
-    return {
-        async findEntry(namespace, key) {
-            return data.get(`${namespace}:${key}`);
-        },
-        async findAllEntries(namespace) {
-            return [...data.keys()]
-                .filter((entryKey) => entryKey.startsWith(`${namespace}:`))
-                .map((entryKey) => data.get(entryKey))
-                .filter((entry): entry is RuntimeStateEntry => entry !== undefined)
-                .sort((left, right) => left.key.localeCompare(right.key));
-        },
-        async findEntriesByPrefixPage(namespace, keyPrefix, options) {
-            return (await this.findAllEntries(namespace))
-                .filter((entry) =>
-                    entry.key.startsWith(keyPrefix) &&
-                    (options.afterKey === undefined || entry.key > options.afterKey)
-                )
-                .slice(0, options.limit);
-        },
-        async readRuntimeStateBatch(selectors) {
-            const namespaces = new Set(selectors.map((selector) => selector.namespace));
-            return selectRuntimeStateReadBatch(
-                [...namespaces].flatMap((namespace) =>
-                    [...data]
-                        .filter(([compositeKey]) => compositeKey.startsWith(`${namespace}:`))
-                        .map(([, entry]) => ({ namespace, entry }))
-                ),
-                selectors
-            );
-        },
-        async upsert(namespace, key, value, expireAtTimestamp) {
-            const compositeKey = `${namespace}:${key}`;
-            const previousRevision = data.get(compositeKey)?.revision ?? 0;
-
-            data.set(compositeKey, {
-                key,
-                value,
-                expireAtTimestamp,
-                updatedTimestamp: new Date().toISOString(),
-                revision: previousRevision + 1
-            });
-        },
-        async deleteByKey(namespace, key) {
-            data.delete(`${namespace}:${key}`);
-        },
-        async deleteExpired(namespace) {
-            let deleted = 0;
-
-            for (const [compositeKey, entry] of data.entries()) {
-                if (!compositeKey.startsWith(`${namespace}:`)) {
-                    continue;
-                }
-
-                if (entry.expireAtTimestamp > Date.now()) {
-                    continue;
-                }
-
-                data.delete(compositeKey);
-                deleted += 1;
-            }
-
-            return deleted;
-        }
-    };
 }

@@ -13,16 +13,18 @@ describe('RTC RTT persistence corruption', () => {
             const repository = new RtcRttRepository(runtimeRepository);
             const requestedKey = repository.measurementKey('session-a', 'session-b');
             await runtimeRepository.upsert(
-                RTC_RTT_LATEST_NAMESPACE,
-                requestedKey,
-                JSON.stringify({
-                    sessionIdFrom: 'session-a',
-                    sessionIdTo: 'session-c',
-                    rttMs: 1,
-                    createdAtEpochMs: 1,
-                    version: 1
-                }),
-                9_000
+                {
+                    namespace: RTC_RTT_LATEST_NAMESPACE,
+                    key: requestedKey,
+                    value: JSON.stringify({
+                        sessionIdFrom: 'session-a',
+                        sessionIdTo: 'session-c',
+                        rttMs: 1,
+                        createdAtEpochMs: 1,
+                        version: 1
+                    }),
+                    expireAtTimestamp: 9_000
+                }
             );
 
             await expect(repository.findMeasurement('session-a', 'session-b')).rejects.toMatchObject({
@@ -55,20 +57,22 @@ describe('RTC RTT persistence corruption', () => {
             expect(repository.measurementKey('a%', '＿')).not.toBe(repository.measurementKey('a', '%＿'));
             const key = repository.endpointAdmissionKey('session-a');
             await runtimeRepository.upsert(
-                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
-                key,
-                JSON.stringify({
-                    endpointId: 'session-b',
-                    peers: [
-                        {
-                            peerSessionId: 'session-c',
-                            expiresAtEpochMs: 11_000
-                        }
-                    ],
-                    version: 1,
-                    updatedAtEpochMs: 9_000
-                }),
-                11_000
+                {
+                    namespace: RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                    key,
+                    value: JSON.stringify({
+                        endpointId: 'session-b',
+                        peers: [
+                            {
+                                peerSessionId: 'session-c',
+                                expiresAtEpochMs: 11_000
+                            }
+                        ],
+                        version: 1,
+                        updatedAtEpochMs: 9_000
+                    }),
+                    expireAtTimestamp: 11_000
+                }
             );
 
             await expect(repository.findEndpointAdmissionEntry('session-a')).rejects.toMatchObject({

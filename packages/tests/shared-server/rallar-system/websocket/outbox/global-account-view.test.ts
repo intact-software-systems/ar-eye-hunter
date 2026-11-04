@@ -257,7 +257,7 @@ async function createPublication(): Promise<AccountPublicationFixture> {
         if (proof.operation !== 'insert') {
             throw new Error('Expected insert');
         }
-        await repository.upsert(proof.namespace, proof.key, proof.value, proof.expireAtTimestamp);
+        await repository.upsert({ namespace: proof.namespace, key: proof.key, value: proof.value, expireAtTimestamp: proof.expireAtTimestamp });
     }
     const reader = new WsOutboxProvenanceReader({
         repository,

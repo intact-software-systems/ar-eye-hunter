@@ -63,7 +63,7 @@ import { assembleStateSnapshotMessages } from '../../../../../shared/state-snaps
 import { TestWebSocket } from '../../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
-import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../../../group-state/group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
 import {
     createService,
@@ -98,7 +98,7 @@ describe('RTC topology APP_OUTBOX work', () => {
     it('refreshes a persisted forming removal audience through automatic presence work and reconnect hydration', async () => {
         const nowEpochMs = Date.now();
         const runtime = new GroupBarrierRepository();
-        const groupService = createService(runtime, nowEpochMs);
+        const groupService = createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         const ref = groupRef('forming-removal-audience');
         const groupRepository = createTestGroupStateRepository(runtime);
         const queue = new InMemoryQueueBox();

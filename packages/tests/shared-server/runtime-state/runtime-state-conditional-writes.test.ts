@@ -3,6 +3,7 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { waitForRuntimeStateWriteRetry } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import type { RuntimeStateJsonRevisionWriteInput, RuntimeStateJsonWriteInput } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
@@ -21,10 +22,7 @@ describe('runtime-state conditional writes', () => {
             const repository = new FakeRuntimeStateRepository();
             const store = new ExposedRuntimeStateJsonStore(repository);
             await repository.insertIfAbsent(
-                'state',
-                'key',
-                JSON.stringify({ version: 'expired' }),
-                Date.now() - 1
+                { namespace: 'state', key: 'key', value: JSON.stringify({ version: 'expired' }), expireAtTimestamp: Date.now() - 1 }
             );
             const before = await repository.findEntry('state', 'key');
             const writes: string[] = [];
@@ -55,10 +53,7 @@ describe('runtime-state conditional writes', () => {
         const store = new ExposedRuntimeStateJsonStore(repository);
         const expiredAt = Date.now() - 1;
         await repository.insertIfAbsent(
-            'state',
-            'key',
-            JSON.stringify({ version: 0 }),
-            expiredAt
+            { namespace: 'state', key: 'key', value: JSON.stringify({ version: 0 }), expireAtTimestamp: expiredAt }
         );
         const before = await repository.findEntry('state', 'key');
 
@@ -75,14 +70,13 @@ describe('runtime-state conditional writes', () => {
         const repository = new FakeRuntimeStateRepository();
         const store = new ExposedRuntimeStateJsonStore(repository);
         await repository.insertIfAbsent(
-            'state',
-            'non-finite',
-            '{"value":1e400}',
-            NEVER_EXPIRE_AT_TIMESTAMP
+            { namespace: 'state', key: 'non-finite', value: '{"value":1e400}', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
 
         await expect(store.read('state', 'non-finite')).resolves.toEqual({ value: Infinity });
-        await expect(store.insert('state', 'unrepresentable', { toJSON: () => undefined }, NEVER_EXPIRE_AT_TIMESTAMP))
+        await expect(
+            store.insert({ namespace: 'state', key: 'unrepresentable', value: { toJSON: () => undefined }, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP })
+        )
             .rejects.toThrow('Runtime state value cannot be represented as JSON');
     });
 
@@ -98,11 +92,11 @@ describe('runtime-state conditional writes', () => {
         };
 
         await expect(
-            store.insert('state', 'key', value, NEVER_EXPIRE_AT_TIMESTAMP)
+            store.insert({ namespace: 'state', key: 'key', value, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP })
         ).resolves.toEqual({ status: 'applied', revision: 0 });
         expect(serializations).toBe(1);
         await expect(
-            store.update('state', 'key', value, NEVER_EXPIRE_AT_TIMESTAMP, 0)
+            store.update({ namespace: 'state', key: 'key', value, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision: 0 })
         ).resolves.toEqual({ status: 'applied', revision: 1 });
         expect(serializations).toBe(2);
         await expect(store.delete('state', 'key', 1)).resolves.toEqual({
@@ -134,15 +128,11 @@ describe('runtime-state conditional writes', () => {
         const store = new ExposedRuntimeStateJsonStore(repository);
 
         await expect(
-            store.insert('state', 'key', { stored: true }, NEVER_EXPIRE_AT_TIMESTAMP)
+            store.insert({ namespace: 'state', key: 'key', value: { stored: true }, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP })
         ).rejects.toThrow(/conditional runtime state repository/u);
         await expect(
             store.update(
-                'state',
-                'key',
-                { stored: true },
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                0
+                { namespace: 'state', key: 'key', value: { stored: true }, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision: 0 }
             )
         ).rejects.toThrow(/conditional runtime state repository/u);
         await expect(store.delete('state', 'key', 0)).rejects.toThrow(
@@ -190,12 +180,12 @@ describe('runtime-state conditional writes', () => {
     // The port's contract, which the Postgres repository keeps: an expired row is absent to the insert.
     it('inserts over an expired row one revision past it, and conflicts on a live one', async () => {
         const repository = new FakeRuntimeStateRepository();
-        await repository.insertIfAbsent('state', 'key', 'expired', Date.now() - 1);
-        await repository.upsertIfRevision('state', 'key', 'expired', Date.now() - 1, 0);
+        await repository.insertIfAbsent({ namespace: 'state', key: 'key', value: 'expired', expireAtTimestamp: Date.now() - 1 });
+        await repository.upsertIfRevision({ namespace: 'state', key: 'key', value: 'expired', expireAtTimestamp: Date.now() - 1, expectedRevision: 0 });
 
-        expect(await repository.insertIfAbsent('state', 'key', 'replaced', NEVER_EXPIRE_AT_TIMESTAMP))
+        expect(await repository.insertIfAbsent({ namespace: 'state', key: 'key', value: 'replaced', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }))
             .toEqual({ status: 'applied', revision: 2 });
-        expect(await repository.insertIfAbsent('state', 'key', 'live duplicate', NEVER_EXPIRE_AT_TIMESTAMP))
+        expect(await repository.insertIfAbsent({ namespace: 'state', key: 'key', value: 'live duplicate', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }))
             .toEqual({ status: 'conflict' });
         expect((await repository.findEntry('state', 'key'))?.value).toBe('replaced');
     });
@@ -205,36 +195,22 @@ describe('runtime-state conditional writes', () => {
 
         expect(
             await repository.insertIfAbsent(
-                'state',
-                'key',
-                'v1',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: 'state', key: 'key', value: 'v1', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             )
         ).toEqual({ status: 'applied', revision: 0 });
         expect(
             await repository.insertIfAbsent(
-                'state',
-                'key',
-                'v2',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: 'state', key: 'key', value: 'v2', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             )
         ).toEqual({ status: 'conflict' });
         expect(
             await repository.upsertIfRevision(
-                'state',
-                'key',
-                'v2',
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                0
+                { namespace: 'state', key: 'key', value: 'v2', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision: 0 }
             )
         ).toEqual({ status: 'applied', revision: 1 });
         expect(
             await repository.upsertIfRevision(
-                'state',
-                'key',
-                'stale',
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                0
+                { namespace: 'state', key: 'key', value: 'stale', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision: 0 }
             )
         ).toEqual({ status: 'conflict' });
         expect(await repository.deleteIfRevision('state', 'key', 0)).toEqual({
@@ -288,10 +264,7 @@ describe('runtime-state conditional writes', () => {
 
             await expect(
                 repository.insertIfAbsent(
-                    'state',
-                    'key',
-                    'value',
-                    NEVER_EXPIRE_AT_TIMESTAMP
+                    { namespace: 'state', key: 'key', value: 'value', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
                 )
             ).rejects.toThrow(/Invalid runtime state revision/u);
         }
@@ -307,18 +280,12 @@ describe('runtime-state conditional writes', () => {
 
         await expect(
             negativeZeroRepository.insertIfAbsent(
-                'state',
-                'key',
-                'value',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: 'state', key: 'key', value: 'value', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             )
         ).rejects.toThrow(/Invalid runtime state revision/u);
         await expect(
             zeroRepository.insertIfAbsent(
-                'state',
-                'key',
-                'value',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: 'state', key: 'key', value: 'value', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             )
         ).resolves.toEqual({ status: 'applied', revision: 0 });
     });
@@ -416,30 +383,19 @@ describe('runtime-state conditional writes', () => {
             );
             await expect(
                 sqlRepository.upsertIfRevision(
-                    'state',
-                    'key',
-                    'changed',
-                    NEVER_EXPIRE_AT_TIMESTAMP,
-                    expectedRevision
+                    { namespace: 'state', key: 'key', value: 'changed', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision }
                 )
             ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
             expect(sqlCalls).toBe(0);
 
             const fakeRepository = new FakeRuntimeStateRepository();
             await fakeRepository.insertIfAbsent(
-                'state',
-                'key',
-                'original',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: 'state', key: 'key', value: 'original', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             );
             const before = await fakeRepository.findEntry('state', 'key');
             await expect(
                 fakeRepository.upsertIfRevision(
-                    'state',
-                    'key',
-                    'changed',
-                    NEVER_EXPIRE_AT_TIMESTAMP,
-                    expectedRevision
+                    { namespace: 'state', key: 'key', value: 'changed', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision }
                 )
             ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
             await expect(fakeRepository.findEntry('state', 'key')).resolves
@@ -475,10 +431,7 @@ describe('runtime-state conditional writes', () => {
 
             const fakeRepository = new FakeRuntimeStateRepository();
             await fakeRepository.insertIfAbsent(
-                'state',
-                'key',
-                'original',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: 'state', key: 'key', value: 'original', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             );
             const before = await fakeRepository.findEntry('state', 'key');
             await expect(
@@ -502,11 +455,7 @@ describe('runtime-state conditional writes', () => {
         );
         await expect(
             sqlRepository.upsertIfRevision(
-                'state',
-                'key',
-                'changed',
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                Number.MAX_SAFE_INTEGER
+                { namespace: 'state', key: 'key', value: 'changed', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision: Number.MAX_SAFE_INTEGER }
             )
         ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
         expect(sqlCalls).toBe(0);
@@ -529,11 +478,7 @@ describe('runtime-state conditional writes', () => {
         });
         await expect(
             fakeRepository.upsertIfRevision(
-                'state',
-                'key',
-                'changed',
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                Number.MAX_SAFE_INTEGER
+                { namespace: 'state', key: 'key', value: 'changed', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision: Number.MAX_SAFE_INTEGER }
             )
         ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
         await expect(fakeRepository.findEntry('state', 'key')).resolves
@@ -555,18 +500,12 @@ describe('runtime-state conditional writes', () => {
 
         await repository.begin(async (transactionRepository) => {
             await transactionRepository.insertIfAbsent(
-                'state',
-                'outer',
-                'outer',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: 'state', key: 'outer', value: 'outer', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             );
             await expect(
                 transactionRepository.begin(async (nestedRepository) => {
                     await nestedRepository.insertIfAbsent(
-                        'state',
-                        'rolled-back',
-                        'nested',
-                        NEVER_EXPIRE_AT_TIMESTAMP
+                        { namespace: 'state', key: 'rolled-back', value: 'nested', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
                     );
                     throw new Error('rollback nested fake begin');
                 })
@@ -608,27 +547,16 @@ class ExposedRuntimeStateJsonStore extends RuntimeStateJsonStore {
     }
 
     insert(
-        namespace: string,
-        key: string,
-        value: object,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateJsonWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
-        return this.putValueIfAbsent(namespace, key, value, expireAtTimestamp);
+        return this.putValueIfAbsent({ namespace, key, value, expireAtTimestamp });
     }
 
     update(
-        namespace: string,
-        key: string,
-        value: object,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateJsonRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         return this.putValueIfRevision(
-            namespace,
-            key,
-            value,
-            expireAtTimestamp,
-            expectedRevision
+            { namespace, key, value, expireAtTimestamp, expectedRevision }
         );
     }
 

@@ -99,7 +99,12 @@ describe('group presence delta producer provenance', () => {
                 producer.now
             )).right ?? [];
             const row = producer.worker.compute(toSummaryExpansion(work, read!)).downstreamOutboxWrites[0]!.entry;
-            await producer.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(row.key), 'existing-proof', producer.now + 60_000);
+            await producer.repository.upsert({
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(row.key),
+                value: 'existing-proof',
+                expireAtTimestamp: producer.now + 60_000
+            });
         }
         await expect(producer.worker.processReservedEntry(producer.message, producer.entry)).rejects.toBeDefined();
         expect(await producer.repository.findAllEntries(PRESENCE_SUMMARIES_NAMESPACE)).toEqual(before);
@@ -173,7 +178,12 @@ describe('group presence delta producer provenance', () => {
                 const stored = (await producer.repository.findEntry(WS_OUTBOX_PROVENANCE_NAMESPACE, key))!;
                 const proof = JSON.parse(stored.value);
                 proof.target.groupRef.groupId = 'other';
-                await producer.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), stored.expireAtTimestamp);
+                await producer.repository.upsert({
+                    namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                    key,
+                    value: JSON.stringify(proof),
+                    expireAtTimestamp: stored.expireAtTimestamp
+                });
             }
             await receiver.stores.workQueue.enqueue(kind === 'audit-tampering' ? { ...entry, audit: { ...entry.audit, createdBy: 'forged' } } : entry);
             await receiver.engine.executeOnce();

@@ -147,11 +147,13 @@ async function deleteGuardedRtcRttReceipt(
 ): Promise<boolean> {
     return await runtime.begin(async (transaction) => {
         const guardedReceipt = await transaction.upsertIfRevision(
-            RTC_RTT_RECEIPTS_NAMESPACE,
-            receipt.entry.key,
-            receipt.entry.value,
-            receipt.entry.expireAtTimestamp,
-            receipt.entry.revision
+            {
+                namespace: RTC_RTT_RECEIPTS_NAMESPACE,
+                key: receipt.entry.key,
+                value: receipt.entry.value,
+                expireAtTimestamp: receipt.entry.expireAtTimestamp,
+                expectedRevision: receipt.entry.revision
+            }
         );
         if (guardedReceipt.status === 'conflict') {
             throw new RuntimeStateWriteConflictError();

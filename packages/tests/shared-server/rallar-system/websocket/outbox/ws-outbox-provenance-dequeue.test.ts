@@ -75,10 +75,12 @@ describe('producer provenance through WS dequeue', () => {
             };
             const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
             await fixture.repository.upsert(
-                WS_OUTBOX_PROVENANCE_NAMESPACE,
-                toWsOutboxProvenanceKey(entry.key),
-                JSON.stringify(proof),
-                proof.expiresAtMs
+                {
+                    namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                    key: toWsOutboxProvenanceKey(entry.key),
+                    value: JSON.stringify(proof),
+                    expireAtTimestamp: proof.expiresAtMs
+                }
             );
 
             await fixture.stores.workQueue.enqueue(entry);
@@ -127,10 +129,12 @@ describe('producer provenance through WS dequeue', () => {
             };
             const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
             await fixture.repository.upsert(
-                WS_OUTBOX_PROVENANCE_NAMESPACE,
-                toWsOutboxProvenanceKey(entry.key),
-                JSON.stringify(proof),
-                proof.expiresAtMs
+                {
+                    namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                    key: toWsOutboxProvenanceKey(entry.key),
+                    value: JSON.stringify(proof),
+                    expireAtTimestamp: proof.expiresAtMs
+                }
             );
             if (recipient === 'wrong-scope') {
                 fixture.authentication.scope = { ...SCOPE, workspaceId: 'other' };
@@ -162,7 +166,12 @@ describe('producer provenance through WS dequeue', () => {
                 await fixture.repository.deleteByKey(WS_OUTBOX_PROVENANCE_NAMESPACE, fixture.key);
             }
             else {
-                await fixture.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, fixture.key, JSON.stringify(proof), fixture.proof.expiresAtMs);
+                await fixture.repository.upsert({
+                    namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                    key: fixture.key,
+                    value: JSON.stringify(proof),
+                    expireAtTimestamp: fixture.proof.expiresAtMs
+                });
             }
             const entry = kind === 'broadcast'
                 ? {
@@ -248,7 +257,7 @@ async function createFixture(): Promise<ProvenanceDequeueFixture> {
     const proof = createProof(message.id.msgId, entry);
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
-    await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
+    await repository.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key, value: JSON.stringify(proof), expireAtTimestamp: proof.expiresAtMs });
     const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');

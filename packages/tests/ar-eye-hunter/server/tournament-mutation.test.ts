@@ -60,7 +60,12 @@ async function fixture() {
         principalIds: ['owner', 'bob']
     };
     const attempt = { binding, status: 'playing', startedAtEpochMs: database.nowEpochMs };
-    await database.runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, groupStateGroupStorageKey(RETENTION_REF), JSON.stringify(attempt), NEVER_EXPIRE_AT_TIMESTAMP);
+    await database.runtime.upsert({
+        namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+        key: groupStateGroupStorageKey(RETENTION_REF),
+        value: JSON.stringify(attempt),
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    });
     const dataBinding = {
         applicationId: RETENTION_REF.applicationId,
         workspaceId: RETENTION_REF.workspaceId,
@@ -209,10 +214,12 @@ describe('AR Eye tournament mutation authority', () => {
             const read = await game.service.read(tick('racing-start'), 'arena-test');
             const computed = game.service.compute(read);
             await game.runtime.upsert(
-                TOURNAMENT_ATTEMPTS_NAMESPACE,
-                groupStateGroupStorageKey(RETENTION_REF),
-                JSON.stringify({ ...game.attempt, status: 'cancelled' }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                    key: groupStateGroupStorageKey(RETENTION_REF),
+                    value: JSON.stringify({ ...game.attempt, status: 'cancelled' }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(game.storage.sql.begin((transaction) => game.service.write(transaction, computed))).rejects.toBeInstanceOf(
                 RuntimeStateWriteConflictError

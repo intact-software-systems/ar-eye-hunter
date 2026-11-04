@@ -167,7 +167,12 @@ async function seedLatch(fixture: RetentionDatabaseFixture, groupRef: typeof RET
         supersedesLayoutIdentity: null
     };
     const key = toGroupConnectTriggerStorageKey(latch);
-    await fixture.runtime.upsert(GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, key, JSON.stringify(latch), NEVER_EXPIRE_AT_TIMESTAMP);
+    await fixture.runtime.upsert({
+        namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+        key,
+        value: JSON.stringify(latch),
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    });
     expect(key.startsWith(groupStateGroupStorageKey(groupRef))).toBe(true);
     return key;
 }
@@ -186,7 +191,7 @@ async function seedGrant(fixture: RetentionDatabaseFixture, groupRef: typeof RET
         }
     };
     const key = groupStatePublicationGrantStorageKey(groupRef, 'owner');
-    await fixture.runtime.upsert(PUBLICATION_GRANTS_NAMESPACE, key, JSON.stringify(grant), NEVER_EXPIRE_AT_TIMESTAMP);
+    await fixture.runtime.upsert({ namespace: PUBLICATION_GRANTS_NAMESPACE, key, value: JSON.stringify(grant), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
     return key;
 }
 
@@ -199,6 +204,11 @@ async function seedSubscription(fixture: RetentionDatabaseFixture, groupRef: typ
         leaseExpiresAtEpochMs: fixture.nowEpochMs + 120_000
     };
     const key = groupStateTopicSubscriptionStorageKey(groupRef, subscription.sessionId, subscription.topicId);
-    await fixture.runtime.upsert(SUBSCRIPTIONS_NAMESPACE, key, JSON.stringify(subscription), subscription.leaseExpiresAtEpochMs);
+    await fixture.runtime.upsert({
+        namespace: SUBSCRIPTIONS_NAMESPACE,
+        key,
+        value: JSON.stringify(subscription),
+        expireAtTimestamp: subscription.leaseExpiresAtEpochMs
+    });
     return key;
 }

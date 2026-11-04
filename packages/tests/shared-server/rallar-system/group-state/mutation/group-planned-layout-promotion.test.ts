@@ -444,10 +444,7 @@ describe('applyPlannedLayout through the inbox lane', () => {
         });
         await createRoom(harness, LANE_GROUP_REF.groupId, 'Lane promotion room');
         await runtimeRepository.upsert(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-            plannedRow.key,
-            plannedRow.value,
-            NEVER_EXPIRE_AT_TIMESTAMP
+            { namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, key: plannedRow.key, value: plannedRow.value, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
         await harness.service.enqueueTopologyPublicationCommand({
             command: toApplyPlannedLayoutCommand({ groupRef: LANE_GROUP_REF, formationEpoch: 0, expectedLayout }),

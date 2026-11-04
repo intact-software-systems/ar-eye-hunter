@@ -195,15 +195,17 @@ describe('authenticated friends commands through AppInbox', () => {
             const runtime = new PSqlRuntimeStateRepository(fixture.storage.sql);
             for (const [principalId, other, status] of [['alice', 'bob', 'incoming'], ['bob', 'alice', 'outgoing']]) {
                 await runtime.upsert(
-                    FRIENDS_PROFILE_NAMESPACE,
-                    `principal=${principalId}`,
-                    JSON.stringify({
-                        principalId,
-                        shareOnline: false,
-                        contacts: [{ principalId: other, status }],
-                        invitations: []
-                    }),
-                    NEVER_EXPIRE_AT_TIMESTAMP
+                    {
+                        namespace: FRIENDS_PROFILE_NAMESPACE,
+                        key: `principal=${principalId}`,
+                        value: JSON.stringify({
+                            principalId,
+                            shareOnline: false,
+                            contacts: [{ principalId: other, status }],
+                            invitations: []
+                        }),
+                        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                    }
                 );
             }
             const readProfiles = fixture.profiles.readProfiles.bind(fixture.profiles);

@@ -12,7 +12,7 @@ describe('group authority with observed authorization rows', () => {
         const fixture = await createRetentionDatabaseFixture();
         try {
             await seedRetentionRoom(fixture);
-            await fixture.runtime.upsert('test:authorization', 'session', 'issued', NEVER_EXPIRE_AT_TIMESTAMP);
+            await fixture.runtime.upsert({ namespace: 'test:authorization', key: 'session', value: 'issued', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
             const group = await fixture.repository.readSnapshotWithAuthorityGuard(RETENTION_REF);
             if (!group) {
                 throw new Error('Expected group');
@@ -38,7 +38,12 @@ describe('group authority with observed authorization rows', () => {
         try {
             await seedRetentionRoom(fixture);
             if (change !== 'new-row') {
-                await fixture.runtime.upsert('test:authorization', 'session', 'issued', NEVER_EXPIRE_AT_TIMESTAMP);
+                await fixture.runtime.upsert({
+                    namespace: 'test:authorization',
+                    key: 'session',
+                    value: 'issued',
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                });
             }
             const group = await fixture.repository.readSnapshotWithAuthorityGuard(RETENTION_REF);
             if (!group) {
@@ -53,7 +58,12 @@ describe('group authority with observed authorization rows', () => {
                 await fixture.runtime.deleteByKey('test:authorization', 'session');
             }
             else {
-                await fixture.runtime.upsert('test:authorization', 'session', 'changed', NEVER_EXPIRE_AT_TIMESTAMP);
+                await fixture.runtime.upsert({
+                    namespace: 'test:authorization',
+                    key: 'session',
+                    value: 'changed',
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                });
             }
             await expect(fixture.storage.sql.begin(async (transaction) => {
                 await transaction`insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)

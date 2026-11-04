@@ -1,3 +1,5 @@
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
@@ -105,7 +107,12 @@ describe('activation status series settlement', () => {
         await snapshots.commitSnapshotGuard(plan.snapshot, null);
         await accepted.commitSnapshotGuard(plan.snapshot, null);
         const fingerprint = computeRtcTopologyInputFingerprintWrite(current.group, computeAuthorityTopologyInputFingerprint(authority));
-        await runtime.upsert(RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE, fingerprint.key, fingerprint.value, Date.parse(fingerprint.expireAtIsoTimestamp));
+        await runtime.upsert({
+            namespace: RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
+            key: fingerprint.key,
+            value: fingerprint.value,
+            expireAtTimestamp: Date.parse(fingerprint.expireAtIsoTimestamp)
+        });
         const publications: string[] = [];
         const publicationTraces: string[] = [];
         const handler = createRtcTopologyWorkHandler({
@@ -301,7 +308,14 @@ describe('activation status series settlement', () => {
     });
 });
 
-function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean) {
+interface ActivationSettlementFixture {
+    readonly read: GroupMutationRead;
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly planned: RallarOverlayTopologySnapshot;
+    readonly basis: GroupLayoutIdentity;
+}
+
+function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean): ActivationSettlementFixture {
     const base = createMutationRead();
     if (base.group === null) {
         throw new Error('Expected fixture group');

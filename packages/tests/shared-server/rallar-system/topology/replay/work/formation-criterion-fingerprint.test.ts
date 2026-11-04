@@ -125,17 +125,19 @@ describe('formation criterion after unchanged topology inputs', () => {
         const fixture = createCriterionFingerprintFixture({ phasedPolicy: presenceConnectPolicy() });
         const newer = presentSnapshot('planned', 2);
         await fixture.runtime.upsert(
-            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-            toGroupConnectTriggerStorageKey({ groupRef: toCanonicalGroupRef(newer.group), formationEpoch: 0, triggerGeneration: 'plan-1' }),
-            JSON.stringify({
-                groupRef: toCanonicalGroupRef(newer.group),
-                formationEpoch: 0,
-                triggerGeneration: 'plan-1',
-                notBeforeEpochMs: 0,
-                supersedesLayoutIdentity: null,
-                state: 'awaiting-publication'
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+                key: toGroupConnectTriggerStorageKey({ groupRef: toCanonicalGroupRef(newer.group), formationEpoch: 0, triggerGeneration: 'plan-1' }),
+                value: JSON.stringify({
+                    groupRef: toCanonicalGroupRef(newer.group),
+                    formationEpoch: 0,
+                    triggerGeneration: 'plan-1',
+                    notBeforeEpochMs: 0,
+                    supersedesLayoutIdentity: null,
+                    state: 'awaiting-publication'
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await fixture.process({ group: newer, origin: 'commanded', traceId: 'trace-newer-plan' });
         fixture.automated.length = 0;
@@ -310,15 +312,7 @@ function createCriterionFingerprintFixture(
         topologySnapshotRepository: snapshots
     }).planning;
     const outboxQueueReader = new OutboxQueueReader(queue);
-    const database = createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, {
-        runtimeRepository: repository,
-        onStage: (stage) => {
-            state.effects.push(stage);
-            if (stage === 'transaction-commit-return' && state.failCommit) {
-                throw new Error('Injected commit failure');
-            }
-        }
-    });
+    const database = createCriterionDatabase(queue, repository, state);
     const handler = createRtcTopologyWorkHandler({
         nowEpochMs: () => NOW,
         finishedRetentionMs: 3_600_000,
@@ -350,14 +344,7 @@ function createCriterionFingerprintFixture(
         await handler.onMessage(decodePersistedALMessage(entry.resource), entry);
         return entry;
     };
-    return Object.assign(state, {
-        runtime: repository,
-        queue,
-        snapshots,
-        topologyService,
-        handler,
-        process
-    });
+    return Object.assign(state, { runtime: repository, queue, snapshots, topologyService, handler, process });
 }
 
 interface ProcessGroupRevisionInput {
@@ -471,4 +458,20 @@ function thresholdPolicy(): GroupLifecyclePolicy {
             strictConfirmation: false
         }
     };
+}
+
+function createCriterionDatabase(
+    queue: InMemoryQueueBox,
+    repository: FakeRuntimeStateRepository,
+    state: Pick<CriterionFingerprintFixture, 'effects' | 'failCommit'>
+): ReturnType<typeof createAppInboxTestDatabase> {
+    return createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, {
+        runtimeRepository: repository,
+        onStage: (stage) => {
+            state.effects.push(stage);
+            if (stage === 'transaction-commit-return' && state.failCommit) {
+                throw new Error('Injected commit failure');
+            }
+        }
+    });
 }

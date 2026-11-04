@@ -31,18 +31,20 @@ describe('group topology config repository scope isolation', () => {
         };
         const noncanonicalKey = groupStateGroupStorageKey(groupRef).replace('app=app-1', 'app=%61pp-1');
         await runtimeRepository.insertIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            noncanonicalKey,
-            JSON.stringify({
-                groupRef,
-                config: createTopologyTestEffectiveConfig('tree'),
-                version: 1,
-                createdAtEpochMs: 1,
-                updatedAtEpochMs: 1,
-                updatedByPrincipalId: 'owner',
-                requestId: null
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: noncanonicalKey,
+                value: JSON.stringify({
+                    groupRef,
+                    config: createTopologyTestEffectiveConfig('tree'),
+                    version: 1,
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 1,
+                    updatedByPrincipalId: 'owner',
+                    requestId: null
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(repository.listGenerationSources('config')).rejects.toThrow('not canonical');
@@ -73,10 +75,7 @@ describe('group topology config repository scope isolation', () => {
 
         for (const boundary of boundaries) {
             await runtimeRepository.insertIfAbsent(
-                boundary.namespace,
-                boundary.key,
-                JSON.stringify(boundary.value),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                { namespace: boundary.namespace, key: boundary.key, value: JSON.stringify(boundary.value), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
             );
             await expect(boundary.read(), boundary.label).rejects.toBeInstanceOf(
                 GroupTopologyConfigRepositoryInvariantCorruptionError
@@ -194,33 +193,35 @@ function createCanonicalMutationBoundaryContract(groupRef: GroupRef): CanonicalR
         namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
         seed: (repository, runtimeRepository) =>
             runtimeRepository.insertIfAbsent(
-                GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
-                repository.mutationKey(groupRef, requestId),
-                JSON.stringify({
-                    groupRef,
-                    requestId,
-                    commandHash,
-                    receipt: {
-                        commandId: requestId,
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                    key: repository.mutationKey(groupRef, requestId),
+                    value: JSON.stringify({
+                        groupRef,
                         requestId,
                         commandHash,
-                        operation: 'deleteConfig',
-                        outcome: 'no-op',
-                        attemptCount: 1,
-                        groupRef,
-                        target: 'config',
-                        acceptedVersion: 0,
-                        acceptedStorageRevision: null,
-                        acceptedCreatedAtEpochMs: null,
-                        acceptedUpdatedAtEpochMs: null,
-                        acceptedExpiresAtEpochMs: null,
-                        acceptedConfig: null,
-                        acceptedCausalRevision: null,
-                        eventId: null,
-                        outboxIds: []
-                    }
-                }),
-                Date.now() + 86_400_000
+                        receipt: {
+                            commandId: requestId,
+                            requestId,
+                            commandHash,
+                            operation: 'deleteConfig',
+                            outcome: 'no-op',
+                            attemptCount: 1,
+                            groupRef,
+                            target: 'config',
+                            acceptedVersion: 0,
+                            acceptedStorageRevision: null,
+                            acceptedCreatedAtEpochMs: null,
+                            acceptedUpdatedAtEpochMs: null,
+                            acceptedExpiresAtEpochMs: null,
+                            acceptedConfig: null,
+                            acceptedCausalRevision: null,
+                            eventId: null,
+                            outboxIds: []
+                        }
+                    }),
+                    expireAtTimestamp: Date.now() + 86_400_000
+                }
             ),
         read: (repository) => repository.findMutationRecord(groupRef, requestId)
     };

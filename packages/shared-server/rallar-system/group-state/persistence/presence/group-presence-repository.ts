@@ -59,20 +59,24 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     async putPresenceSession(session: GroupPresenceSession): Promise<void> {
         validatePersistedGroupPresenceSession(session, session);
         await this.putValue(
-            SESSIONS_NAMESPACE,
-            groupStatePresenceSessionStorageKey(session),
-            session,
-            toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs)
+            {
+                namespace: SESSIONS_NAMESPACE,
+                key: groupStatePresenceSessionStorageKey(session),
+                value: session,
+                expireAtTimestamp: toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs)
+            }
         );
     }
 
     async insertPresence(session: GroupPresenceSession): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroupPresenceSession(session, session);
         return await this.putValueIfAbsent(
-            SESSIONS_NAMESPACE,
-            groupStatePresenceSessionStorageKey(session),
-            session,
-            toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs)
+            {
+                namespace: SESSIONS_NAMESPACE,
+                key: groupStatePresenceSessionStorageKey(session),
+                value: session,
+                expireAtTimestamp: toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs)
+            }
         );
     }
 
@@ -82,11 +86,13 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroupPresenceSession(session, session);
         return await this.putValueIfRevision(
-            SESSIONS_NAMESPACE,
-            groupStatePresenceSessionStorageKey(session),
-            session,
-            toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs),
-            expectedRevision
+            {
+                namespace: SESSIONS_NAMESPACE,
+                key: groupStatePresenceSessionStorageKey(session),
+                value: session,
+                expireAtTimestamp: toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs),
+                expectedRevision
+            }
         );
     }
 
@@ -106,9 +112,12 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroupPresenceAdmission(admission, admission);
         return await this.putValueIfAbsent(
-            PRESENCE_ADMISSIONS_NAMESPACE,
-            groupStatePresenceAdmissionStorageKey(admission),
-            admission
+            {
+                namespace: PRESENCE_ADMISSIONS_NAMESPACE,
+                key: groupStatePresenceAdmissionStorageKey(admission),
+                value: admission,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
@@ -118,11 +127,13 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroupPresenceAdmission(admission, admission);
         return await this.putValueIfRevision(
-            PRESENCE_ADMISSIONS_NAMESPACE,
-            groupStatePresenceAdmissionStorageKey(admission),
-            admission,
-            NEVER_EXPIRE_AT_TIMESTAMP,
-            expectedRevision
+            {
+                namespace: PRESENCE_ADMISSIONS_NAMESPACE,
+                key: groupStatePresenceAdmissionStorageKey(admission),
+                value: admission,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                expectedRevision
+            }
         );
     }
 
@@ -135,9 +146,12 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroupPresenceSummary(summary, summary);
         return await this.putValueIfAbsent(
-            PRESENCE_SUMMARIES_NAMESPACE,
-            groupStateGroupStorageKey(summary),
-            summary
+            {
+                namespace: PRESENCE_SUMMARIES_NAMESPACE,
+                key: groupStateGroupStorageKey(summary),
+                value: summary,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
@@ -147,11 +161,13 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroupPresenceSummary(summary, summary);
         return await this.putValueIfRevision(
-            PRESENCE_SUMMARIES_NAMESPACE,
-            groupStateGroupStorageKey(summary),
-            summary,
-            NEVER_EXPIRE_AT_TIMESTAMP,
-            expectedRevision
+            {
+                namespace: PRESENCE_SUMMARIES_NAMESPACE,
+                key: groupStateGroupStorageKey(summary),
+                value: summary,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                expectedRevision
+            }
         );
     }
 }

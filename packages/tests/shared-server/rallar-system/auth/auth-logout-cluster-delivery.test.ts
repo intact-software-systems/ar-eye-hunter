@@ -146,7 +146,12 @@ describe('auth logout exact-session cluster delivery', () => {
             return digest(algorithm, data);
         });
         const key = `v1:${JSON.stringify(['auth.session.logout', 'logout', fixture.session.sessionId])}`;
-        await fixture.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, 'occupied-proof', fixture.session.expiresAtEpochMs);
+        await fixture.repository.upsert({
+            namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+            key,
+            value: 'occupied-proof',
+            expireAtTimestamp: fixture.session.expiresAtEpochMs
+        });
         const result = await runAuthInboxCommand({
             ...fixture.auth,
             minimumEntries: 2,

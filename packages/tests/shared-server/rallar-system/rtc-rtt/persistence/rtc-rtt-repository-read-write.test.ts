@@ -110,7 +110,7 @@ describe('RTC RTT repository reads and writes', () => {
                 return;
             }
             runtimeRepository.beforeConditionalWrite = undefined;
-            await runtimeRepository.insertIfAbsent(namespace, key, JSON.stringify(competing), 100);
+            await runtimeRepository.insertIfAbsent({ namespace, key, value: JSON.stringify(competing), expireAtTimestamp: 100 });
         };
 
         await expect(
@@ -219,20 +219,22 @@ describe('RTC RTT repository reads and writes', () => {
             });
             const key = repository.endpointAdmissionKey('session-a');
             await runtimeRepository.upsert(
-                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
-                key,
-                JSON.stringify({
-                    endpointId: 'session-a',
-                    peers: [
-                        {
-                            peerSessionId: 'session-b',
-                            expiresAtEpochMs: 9_000
-                        }
-                    ],
-                    version: 2,
-                    updatedAtEpochMs: 1
-                }),
-                9_000
+                {
+                    namespace: RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                    key,
+                    value: JSON.stringify({
+                        endpointId: 'session-a',
+                        peers: [
+                            {
+                                peerSessionId: 'session-b',
+                                expiresAtEpochMs: 9_000
+                            }
+                        ],
+                        version: 2,
+                        updatedAtEpochMs: 1
+                    }),
+                    expireAtTimestamp: 9_000
+                }
             );
 
             const read = surface === 'direct'
@@ -270,7 +272,7 @@ describe('RTC RTT repository reads and writes', () => {
             version: 1
         };
         const key = repository.measurementKey('session-a', 'session-b');
-        await runtimeRepository.upsert(RTC_RTT_LATEST_NAMESPACE, key, JSON.stringify(measurement), 90);
+        await runtimeRepository.upsert({ namespace: RTC_RTT_LATEST_NAMESPACE, key, value: JSON.stringify(measurement), expireAtTimestamp: 90 });
         const before = await runtimeRepository.findEntry(RTC_RTT_LATEST_NAMESPACE, key);
 
         await expect(repository.findMeasurement('session-a', 'session-b')).resolves.toBeUndefined();

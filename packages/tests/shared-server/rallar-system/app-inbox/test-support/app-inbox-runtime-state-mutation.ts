@@ -44,11 +44,7 @@ export async function tryExecuteRuntimeStateConditionalMutation(
             'Conditional runtime-state expected revision'
         );
         const result = await runtime.upsertIfRevision(
-            namespace,
-            key,
-            value,
-            expireAt.getTime(),
-            expectedRevision
+            { namespace, key, value, expireAtTimestamp: expireAt.getTime(), expectedRevision }
         );
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }

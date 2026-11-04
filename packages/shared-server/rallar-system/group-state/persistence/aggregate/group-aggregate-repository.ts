@@ -53,10 +53,12 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroup(group, group);
         return await this.putValueIfAbsent(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(group),
-            group,
-            group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp()
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(group),
+                value: group,
+                expireAtTimestamp: group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp()
+            }
         );
     }
 
@@ -66,11 +68,13 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedGroup(group, group);
         return await this.putValueIfRevision(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(group),
-            group,
-            group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp(),
-            expectedRevision
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(group),
+                value: group,
+                expireAtTimestamp: group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp(),
+                expectedRevision
+            }
         );
     }
 
@@ -83,10 +87,12 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     async putGroup(group: Group): Promise<void> {
         validatePersistedGroup(group, group);
         await this.putValue(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(group),
-            group,
-            group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp()
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(group),
+                value: group,
+                expireAtTimestamp: group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp()
+            }
         );
     }
 
@@ -131,11 +137,13 @@ export async function advanceGroupStateAuthorityFence(
         throw new TypeError('Group authority fences require a conditional runtime-state repository');
     }
     return await repository.upsertIfRevision(
-        descriptor.namespace,
-        descriptor.key,
-        descriptor.value,
-        descriptor.expireAtTimestamp,
-        descriptor.expectedRevision
+        {
+            namespace: descriptor.namespace,
+            key: descriptor.key,
+            value: descriptor.value,
+            expireAtTimestamp: descriptor.expireAtTimestamp,
+            expectedRevision: descriptor.expectedRevision
+        }
     );
 }
 

@@ -44,16 +44,10 @@ describe('auth persisted session codecs', () => {
             credentialSeed: 'unexpected-reconstruction-material'
         });
         await runtime.upsert(
-            'auth-sessions:by-session',
-            'session=predecessor-malformed-session',
-            malformed,
-            expiresAtEpochMs
+            { namespace: 'auth-sessions:by-session', key: 'session=predecessor-malformed-session', value: malformed, expireAtTimestamp: expiresAtEpochMs }
         );
         await runtime.upsert(
-            'auth-sessions:by-token',
-            `token=${encodeURIComponent(accessToken)}`,
-            malformed,
-            expiresAtEpochMs
+            { namespace: 'auth-sessions:by-token', key: `token=${encodeURIComponent(accessToken)}`, value: malformed, expireAtTimestamp: expiresAtEpochMs }
         );
 
         await expect(repository.findBySessionId('predecessor-malformed-session')).rejects.toThrow(

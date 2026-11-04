@@ -12,7 +12,9 @@ import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } fr
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
-    RuntimeStateEntryPageOptions
+    RuntimeStateEntryPageOptions,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -189,20 +191,16 @@ class CountingRuntimeStateRepository extends FakeRuntimeStateRepository {
         return super.findEntriesByKeys(namespace, keys);
     }
 
-    override upsert(namespace: string, key: string, value: string, expireAtTimestamp: number): Promise<void> {
+    override upsert({ namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput): Promise<void> {
         this.writeCount += 1;
-        return super.upsert(namespace, key, value, expireAtTimestamp);
+        return super.upsert({ namespace, key, value, expireAtTimestamp });
     }
 
     override upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.writeCount += 1;
-        return super.upsertIfRevision(namespace, key, value, expireAtTimestamp, expectedRevision);
+        return super.upsertIfRevision({ namespace, key, value, expireAtTimestamp, expectedRevision });
     }
 
     override writeGuardedBatch(input: RuntimeStateGuardedBatchWrite): Promise<RuntimeStateGuardedBatchResult> {

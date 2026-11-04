@@ -716,7 +716,7 @@ async function readHandlerTicket(
         return { ticket: null, session: storedSession };
     }
     const key = authTicketDigestKey(ticketDigest);
-    await runtimeRepository.upsert(WS_AUTH_TICKETS_NAMESPACE, key, JSON.stringify(ticket), FAR_FUTURE_EPOCH_MS);
+    await runtimeRepository.upsert({ namespace: WS_AUTH_TICKETS_NAMESPACE, key, value: JSON.stringify(ticket), expireAtTimestamp: FAR_FUTURE_EPOCH_MS });
     const entry = await runtimeRepository.findEntry(WS_AUTH_TICKETS_NAMESPACE, key);
     return { ticket: entry === undefined ? null : { entry, value: ticket }, session: storedSession };
 }

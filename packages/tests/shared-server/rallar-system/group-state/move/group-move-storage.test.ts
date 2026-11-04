@@ -151,7 +151,12 @@ describe('durable group move claims and recovery', () => {
         if (!bobClaim) {
             throw new Error('Expected Bob claim selector');
         }
-        await fixture.runtime.upsert(bobClaim.namespace, bobClaim.key, claim.current.entry.value, claim.current.entry.expireAtTimestamp);
+        await fixture.runtime.upsert({
+            namespace: bobClaim.namespace,
+            key: bobClaim.key,
+            value: claim.current.entry.value,
+            expireAtTimestamp: claim.current.entry.expireAtTimestamp
+        });
         await expect(fixture.moves.read(other)).rejects.toThrow(/identity|principal/i);
     });
 
@@ -178,10 +183,12 @@ describe('durable group move claims and recovery', () => {
         }
         const namespace = 'group_moves';
         await fixture.runtime.upsert(
-            namespace,
-            stored.entry.key,
-            JSON.stringify({ ...first, move: { ...first.move, moveId: 'different' } }),
-            stored.entry.expireAtTimestamp
+            {
+                namespace,
+                key: stored.entry.key,
+                value: JSON.stringify({ ...first, move: { ...first.move, moveId: 'different' } }),
+                expireAtTimestamp: stored.entry.expireAtTimestamp
+            }
         );
         await expect(fixture.moves.read(first.move)).rejects.toThrow(/identity/i);
     });

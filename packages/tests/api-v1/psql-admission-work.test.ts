@@ -75,17 +75,11 @@ describe('PostgreSQL inbound admission', () => {
 
         for (let index = 0; index < total; index++) {
             await repository.upsert(
-                namespace,
-                `${prefix}${String(index).padStart(6, '0')}`,
-                JSON.stringify({ index }),
-                Date.now() + 60_000
+                { namespace, key: `${prefix}${String(index).padStart(6, '0')}`, value: JSON.stringify({ index }), expireAtTimestamp: Date.now() + 60_000 }
             );
         }
         await repository.upsert(
-            namespace,
-            'other:000001',
-            JSON.stringify({ index: -1 }),
-            Date.now() + 60_000
+            { namespace, key: 'other:000001', value: JSON.stringify({ index: -1 }), expireAtTimestamp: Date.now() + 60_000 }
         );
 
         const values = await backend.list(prefix, decodeIndexedRecord);

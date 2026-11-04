@@ -190,10 +190,12 @@ describe('durable retention invariants', () => {
         const harness = await createAuthorityHarness(['owner']);
         const created = requireGroupStateResult(await createRoom(harness, { retention: { mode: 'temporary' } }));
         await harness.runtimeRepository.upsert(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(ROOM_REF),
-            JSON.stringify({ ...created.result.snapshot.group, ...corruption }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(ROOM_REF),
+                value: JSON.stringify({ ...created.result.snapshot.group, ...corruption }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(harness.repository.readSnapshot(ROOM_REF)).rejects.toMatchObject({

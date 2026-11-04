@@ -619,17 +619,19 @@ describe('client mutation principal audience read', () => {
             principalId: 'alice'
         });
         await runtime.upsert(
-            'group-state:members',
-            actorKey,
-            JSON.stringify(
-                member({
-                    groupId: 'corrupt-room',
-                    principalId: 'mallory',
-                    role: 'owner',
-                    status: 'active'
-                })
-            ),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:members',
+                key: actorKey,
+                value: JSON.stringify(
+                    member({
+                        groupId: 'corrupt-room',
+                        principalId: 'mallory',
+                        role: 'owner',
+                        status: 'active'
+                    })
+                ),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
 
         await expect(readClientMutation({
@@ -665,10 +667,12 @@ describe('client mutation principal audience read', () => {
         }
         const principalKey = clientStatePrincipalStorageKey(bobRef);
         await runtime.upsert(
-            'client-state:principals',
-            principalKey,
-            JSON.stringify({ ...bob, principalId: 'erin' }),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'client-state:principals',
+                key: principalKey,
+                value: JSON.stringify({ ...bob, principalId: 'erin' }),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
 
         await expect(readClientMutation({

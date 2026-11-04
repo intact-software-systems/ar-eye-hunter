@@ -492,7 +492,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                     } satisfies GroupTopicSubscribeAppInboxPayload,
                     outboxEntries: 0,
                     assertDomain: async () => {
-                        expect(await readMatrixTopicSubscription(harness, groupId, 'bob-session', 'room.feed'))
+                        expect(await readMatrixTopicSubscription({ harness, groupId, sessionId: 'bob-session', topicId: 'room.feed' }))
                             .toMatchObject({ principalId: 'bob', connectionGenerationId: 'matrix-ws-generation' });
                     }
                 },
@@ -513,7 +513,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                     } satisfies GroupTopicUnsubscribeAppInboxPayload,
                     outboxEntries: 0,
                     assertDomain: async () => {
-                        expect(await readMatrixTopicSubscription(harness, groupId, 'bob-session', 'room.feed'))
+                        expect(await readMatrixTopicSubscription({ harness, groupId, sessionId: 'bob-session', topicId: 'room.feed' }))
                             .toBeUndefined();
                     }
                 },

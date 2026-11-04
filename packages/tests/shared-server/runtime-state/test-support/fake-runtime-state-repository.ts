@@ -17,7 +17,9 @@ import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
     RuntimeStateGuardedBatchTransactionalRepositoryLike,
-    RuntimeStateOptimisticTransactionRepositoryLike
+    RuntimeStateOptimisticTransactionRepositoryLike,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { assertRuntimeStateExpectedRevision, assertRuntimeStateUpsertExpectedRevision } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -157,20 +159,8 @@ export class FakeRuntimeStateRepository
         );
     }
 
-    upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
-    ): Promise<void> {
-        return this.upsertAfterHook(namespace, key, value, expireAtTimestamp);
-    }
-
-    private async upsertAfterHook(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+    async upsert(
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<void> {
         await this.beforeUpsert?.(namespace, key);
         const compositeKey = this.toKey(namespace, key);
@@ -185,10 +175,7 @@ export class FakeRuntimeStateRepository
     }
 
     async insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         await this.beforeConditionalWrite?.('insertIfAbsent', namespace, key);
         const compositeKey = this.toKey(namespace, key);
@@ -208,11 +195,7 @@ export class FakeRuntimeStateRepository
     }
 
     async upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         await this.beforeConditionalWrite?.('upsertIfRevision', namespace, key);
@@ -324,18 +307,17 @@ async function applyGuardedBatchGuard(
 ): Promise<RuntimeStateGuardedBatchGuardResult> {
     const result = guard.operation === 'insert'
         ? await repository.insertIfAbsent(
-            guard.namespace,
-            guard.key,
-            guard.value,
-            guard.expireAtTimestamp
+            { namespace: guard.namespace, key: guard.key, value: guard.value, expireAtTimestamp: guard.expireAtTimestamp }
         )
         : guard.operation === 'update'
         ? await repository.upsertIfRevision(
-            guard.namespace,
-            guard.key,
-            guard.value,
-            guard.expireAtTimestamp,
-            guard.expectedRevision
+            {
+                namespace: guard.namespace,
+                key: guard.key,
+                value: guard.value,
+                expireAtTimestamp: guard.expireAtTimestamp,
+                expectedRevision: guard.expectedRevision
+            }
         )
         : await repository.deleteIfRevision(guard.namespace, guard.key, guard.expectedRevision);
     if (result.status === 'conflict') {
@@ -373,7 +355,7 @@ async function applyGuardedBatchEffect(
     effect: RuntimeStateGuardedBatchEffect
 ): Promise<RuntimeStateGuardedBatchEffectResult> {
     if (effect.operation === 'put') {
-        await repository.upsert(effect.namespace, effect.key, effect.value, effect.expireAtTimestamp);
+        await repository.upsert(effect);
         const stored = await repository.findEntry(effect.namespace, effect.key);
         if (!stored) {
             throw new Error(`Guarded runtime state put result is missing: ${effect.effectId}`);
@@ -388,20 +370,9 @@ async function applyGuardedBatchEffect(
         };
     }
     const result = effect.operation === 'insert'
-        ? await repository.insertIfAbsent(
-            effect.namespace,
-            effect.key,
-            effect.value,
-            effect.expireAtTimestamp
-        )
+        ? await repository.insertIfAbsent(effect)
         : effect.operation === 'update'
-        ? await repository.upsertIfRevision(
-            effect.namespace,
-            effect.key,
-            effect.value,
-            effect.expireAtTimestamp,
-            effect.expectedRevision
-        )
+        ? await repository.upsertIfRevision(effect)
         : await repository.deleteIfRevision(effect.namespace, effect.key, effect.expectedRevision);
     if (result.status === 'conflict') {
         return {

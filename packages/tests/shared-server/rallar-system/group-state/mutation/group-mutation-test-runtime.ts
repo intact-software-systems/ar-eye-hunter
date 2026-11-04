@@ -514,18 +514,17 @@ async function applyGuard(
 ): Promise<RuntimeStateGuardedBatchGuardResult> {
     const result = guard.operation === 'insert'
         ? await repository.insertIfAbsent(
-            guard.namespace,
-            guard.key,
-            guard.value,
-            guard.expireAtTimestamp
+            { namespace: guard.namespace, key: guard.key, value: guard.value, expireAtTimestamp: guard.expireAtTimestamp }
         )
         : guard.operation === 'update'
         ? await repository.upsertIfRevision(
-            guard.namespace,
-            guard.key,
-            guard.value,
-            guard.expireAtTimestamp,
-            guard.expectedRevision
+            {
+                namespace: guard.namespace,
+                key: guard.key,
+                value: guard.value,
+                expireAtTimestamp: guard.expireAtTimestamp,
+                expectedRevision: guard.expectedRevision
+            }
         )
         : await repository.deleteIfRevision(guard.namespace, guard.key, guard.expectedRevision);
     if (result.status === 'conflict') {
@@ -557,7 +556,7 @@ async function applyEffect(
     effect: RuntimeStateGuardedBatchEffect
 ): Promise<RuntimeStateGuardedBatchEffectResult> {
     if (effect.operation === 'put') {
-        await repository.upsert(effect.namespace, effect.key, effect.value, effect.expireAtTimestamp);
+        await repository.upsert({ namespace: effect.namespace, key: effect.key, value: effect.value, expireAtTimestamp: effect.expireAtTimestamp });
         const stored = await repository.findEntry(effect.namespace, effect.key);
         if (!stored) {
             throw new Error('Guarded member put result is missing');
@@ -566,18 +565,17 @@ async function applyEffect(
     }
     const result = effect.operation === 'insert'
         ? await repository.insertIfAbsent(
-            effect.namespace,
-            effect.key,
-            effect.value,
-            effect.expireAtTimestamp
+            { namespace: effect.namespace, key: effect.key, value: effect.value, expireAtTimestamp: effect.expireAtTimestamp }
         )
         : effect.operation === 'update'
         ? await repository.upsertIfRevision(
-            effect.namespace,
-            effect.key,
-            effect.value,
-            effect.expireAtTimestamp,
-            effect.expectedRevision
+            {
+                namespace: effect.namespace,
+                key: effect.key,
+                value: effect.value,
+                expireAtTimestamp: effect.expireAtTimestamp,
+                expectedRevision: effect.expectedRevision
+            }
         )
         : await repository.deleteIfRevision(effect.namespace, effect.key, effect.expectedRevision);
     if (result.status === 'conflict') {

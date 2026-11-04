@@ -36,7 +36,7 @@ describe('readRuntimeStateKeyEntries', () => {
 async function createLoggedRepository(keys: readonly string[]): Promise<LoggedRepository> {
     const stored = new FakeRuntimeStateRepository();
     for (const key of keys) {
-        await stored.upsert(NAMESPACE, key, JSON.stringify(key), FAR_FUTURE_EPOCH_MS);
+        await stored.upsert({ namespace: NAMESPACE, key, value: JSON.stringify(key), expireAtTimestamp: FAR_FUTURE_EPOCH_MS });
     }
     const reads: string[] = [];
     return {

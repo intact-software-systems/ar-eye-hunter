@@ -35,23 +35,27 @@ describe('RTC topology publication repository', () => {
             const publicationKey = repository.publicationKey(groupRef, publication.publicationId);
             const workKey = repository.workIndexKey(groupRef, publication.workId);
             await runtimeRepository.upsert(
-                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                publicationKey,
-                JSON.stringify({
-                    ...publication,
-                    publicationId: 'wrong-publication'
-                }),
-                9_000
+                {
+                    namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    key: publicationKey,
+                    value: JSON.stringify({
+                        ...publication,
+                        publicationId: 'wrong-publication'
+                    }),
+                    expireAtTimestamp: 9_000
+                }
             );
             await runtimeRepository.upsert(
-                RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-                workKey,
-                JSON.stringify({
-                    groupRef,
-                    workId: 'wrong-work',
-                    publicationId: publication.publicationId
-                }),
-                9_000
+                {
+                    namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    key: workKey,
+                    value: JSON.stringify({
+                        groupRef,
+                        workId: 'wrong-work',
+                        publicationId: publication.publicationId
+                    }),
+                    expireAtTimestamp: 9_000
+                }
             );
 
             await expect(
@@ -120,16 +124,20 @@ describe('RTC topology publication repository', () => {
             const corrupted = corruptTopologyExecutionReceipt(receipt, defect);
             const expireAtTimestamp = Date.now() + 60_000;
             await runtimeRepository.upsert(
-                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                publications.publicationKey(publication.groupRef, publication.publicationId),
-                JSON.stringify(publication),
-                expireAtTimestamp
+                {
+                    namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    key: publications.publicationKey(publication.groupRef, publication.publicationId),
+                    value: JSON.stringify(publication),
+                    expireAtTimestamp
+                }
             );
             await runtimeRepository.upsert(
-                RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-                publications.workIndexKey(publication.groupRef, publication.workId),
-                JSON.stringify(corrupted),
-                expireAtTimestamp
+                {
+                    namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+                    key: publications.workIndexKey(publication.groupRef, publication.workId),
+                    value: JSON.stringify(corrupted),
+                    expireAtTimestamp
+                }
             );
             const snapshotWrites = vi.spyOn(runtimeRepository, 'upsertIfRevision');
             const inserts = vi.spyOn(runtimeRepository, 'insertIfAbsent');
@@ -168,10 +176,7 @@ describe('RTC topology publication repository', () => {
                     );
                     const key = repository.publicationKey(groupRef, publication.publicationId);
                     await runtimeRepository.upsert(
-                        RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                        key,
-                        JSON.stringify(malformedPublication),
-                        9_000
+                        { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, key, value: JSON.stringify(malformedPublication), expireAtTimestamp: 9_000 }
                     );
 
                     const read = surface === 'direct'
@@ -203,16 +208,20 @@ describe('RTC topology publication repository', () => {
         const current = createPublication(createTopologySnapshot(groupRef, 2), 'work-v4');
         const { traceId: _traceId, ...preV4Row } = preV4;
         await runtimeRepository.upsert(
-            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-            repository.publicationKey(groupRef, preV4.publicationId),
-            JSON.stringify(preV4Row),
-            Date.now() + 60_000
+            {
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: repository.publicationKey(groupRef, preV4.publicationId),
+                value: JSON.stringify(preV4Row),
+                expireAtTimestamp: Date.now() + 60_000
+            }
         );
         await runtimeRepository.upsert(
-            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-            repository.publicationKey(groupRef, current.publicationId),
-            JSON.stringify(current),
-            Date.now() + 60_000
+            {
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: repository.publicationKey(groupRef, current.publicationId),
+                value: JSON.stringify(current),
+                expireAtTimestamp: Date.now() + 60_000
+            }
         );
 
         expect((await repository.listPublicationEntries()).map((entry) => entry.value)).toEqual([current]);
@@ -239,10 +248,12 @@ describe('RTC topology publication repository', () => {
             const groupRef = createGroupRef();
             const publication = createPublication(createTopologySnapshot(groupRef, 1), `work-bad-trace-${surface}`);
             await runtimeRepository.upsert(
-                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                repository.publicationKey(groupRef, publication.publicationId),
-                JSON.stringify({ ...publication, traceId: 'not a trace' }),
-                Date.now() + 60_000
+                {
+                    namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    key: repository.publicationKey(groupRef, publication.publicationId),
+                    value: JSON.stringify({ ...publication, traceId: 'not a trace' }),
+                    expireAtTimestamp: Date.now() + 60_000
+                }
             );
 
             const read = surface === 'direct'

@@ -7,14 +7,14 @@ import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/g
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { convergeSummaryForTest, createService, requireSnapshot } from '../presence/group-presence-test-runtime.ts';
 import { SCOPE } from './group-mutation-test-runtime.ts';
 
 describe('spectator admission and promotion', () => {
     it('keeps watchers outside player capacity and preserves watching on failed promotion and ordinary rejoin', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, 1_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await service.createGroup(SCOPE, {
             groupId: 'watch',
             displayName: 'Watch',
@@ -44,7 +44,7 @@ describe('spectator admission and promotion', () => {
 
     it('promotes only explicitly, preserves total roster count, and replays one durable result', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, 1_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await seedWatchRoom(runtime, 2, 2);
         const watch = { actorPrincipalId: 'bob', participation: 'spectator' as const, requestId: 'watch' };
         await service.joinGroup(SCOPE, 'watch', watch);
@@ -60,7 +60,7 @@ describe('spectator admission and promotion', () => {
 
     it('bypasses competitive formation for watching but retains spectators when promotion would park', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, 1_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await service.createGroup(SCOPE, {
             groupId: 'watch',
             displayName: 'Watch',
@@ -80,7 +80,7 @@ describe('spectator admission and promotion', () => {
 
     it('prevents direct role, upsert, ownership and reserved-metadata capacity bypasses', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, 1_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await seedWatchRoom(runtime, 1, 1);
         await service.joinGroup(SCOPE, 'watch', { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch' });
         await expect(service.setGroupMemberRole(SCOPE, 'watch', 'bob', {
@@ -122,11 +122,25 @@ describe('spectator admission and promotion', () => {
         await seedWatchRoom(runtime, 1, 1);
         runtime.armGroupReadBarrier(2);
         const requests = ['bob', 'carol'].map((actorPrincipalId) => ({ actorPrincipalId, participation: 'spectator' as const, requestId: actorPrincipalId }));
-        const results = await Promise.allSettled(requests.map((request) => createService(runtime, 2_000).joinGroup(SCOPE, 'watch', request)));
+        const results = await Promise.allSettled(
+            requests.map((request) =>
+                createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                    SCOPE,
+                    'watch',
+                    request
+                )
+            )
+        );
         expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
         const loser = results.findIndex((result) => result.status === 'rejected');
         expect(results[loser]).toMatchObject({ status: 'rejected' });
-        await expect(createService(runtime, 2_001, 2).joinGroup(SCOPE, 'watch', requests[loser]!)).rejects.toThrow();
+        await expect(
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 2, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'watch',
+                requests[loser]!
+            )
+        ).rejects.toThrow();
         const snapshot = await requireSnapshot(runtime, 'watch');
         expect(snapshot.members.filter((member) => member.status === 'active' && member.role === 'spectator')).toHaveLength(1);
         expect(snapshot.group.activeMemberCount).toBe(2);
@@ -136,11 +150,15 @@ describe('spectator admission and promotion', () => {
         const runtime = new GroupBarrierRepository();
         await seedWatchRoom(runtime, 2, 2);
         for (const principal of ['bob', 'carol']) {
-            await createService(runtime, 1_100).joinGroup(SCOPE, 'watch', {
-                actorPrincipalId: principal,
-                participation: 'spectator',
-                requestId: 'watch-' + principal
-            });
+            await createService({ runtimeRepository: runtime, nowEpochMs: 1_100, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'watch',
+                {
+                    actorPrincipalId: principal,
+                    participation: 'spectator',
+                    requestId: 'watch-' + principal
+                }
+            );
         }
         runtime.armGroupReadBarrier(2);
         const requests = ['bob', 'carol'].map((actorPrincipalId) => ({
@@ -148,10 +166,24 @@ describe('spectator admission and promotion', () => {
             participation: 'player' as const,
             requestId: 'play-' + actorPrincipalId
         }));
-        const results = await Promise.allSettled(requests.map((request) => createService(runtime, 2_000).joinGroup(SCOPE, 'watch', request)));
+        const results = await Promise.allSettled(
+            requests.map((request) =>
+                createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                    SCOPE,
+                    'watch',
+                    request
+                )
+            )
+        );
         expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
         const loser = results.findIndex((result) => result.status === 'rejected');
-        await expect(createService(runtime, 2_001, 2).joinGroup(SCOPE, 'watch', requests[loser]!)).rejects.toThrow();
+        await expect(
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 2, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'watch',
+                requests[loser]!
+            )
+        ).rejects.toThrow();
         const snapshot = await requireSnapshot(runtime, 'watch');
         expect(snapshot.members.find((member) => member.principalId === requests[loser]!.actorPrincipalId))
             .toMatchObject({ role: 'spectator', status: 'active' });
@@ -161,19 +193,39 @@ describe('spectator admission and promotion', () => {
     it('rolls back a failed promotion CAS and re-enters fresh admission on redelivery', async () => {
         const runtime = new GroupBarrierRepository();
         await seedWatchRoom(runtime, 2, 1);
-        await createService(runtime, 1_100).joinGroup(SCOPE, 'watch', { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch' });
+        await createService({ runtimeRepository: runtime, nowEpochMs: 1_100, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+            SCOPE,
+            'watch',
+            { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch' }
+        );
         runtime.failNextGroupCas(1);
         const promotion = { actorPrincipalId: 'bob', participation: 'player' as const, requestId: 'play' };
-        await expect(createService(runtime, 2_000).joinGroup(SCOPE, 'watch', promotion)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        await expect(
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'watch',
+                promotion
+            )
+        ).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect((await requireSnapshot(runtime, 'watch')).members.find((member) => member.principalId === 'bob')?.role).toBe('spectator');
-        await createService(runtime, 2_001).joinGroup(SCOPE, 'watch', { actorPrincipalId: 'carol', requestId: 'carol' });
-        await expect(createService(runtime, 2_002, 2).joinGroup(SCOPE, 'watch', promotion)).rejects.toThrow();
+        await createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+            SCOPE,
+            'watch',
+            { actorPrincipalId: 'carol', requestId: 'carol' }
+        );
+        await expect(
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_002, attemptCount: 2, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'watch',
+                promotion
+            )
+        ).rejects.toThrow();
         expect((await requireSnapshot(runtime, 'watch')).members.find((member) => member.principalId === 'bob')?.role).toBe('spectator');
     });
 
     it('requires the same private-room invitation and rejects inactive spectator upsert into a full player roster', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, 1_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await service.createGroup(SCOPE, {
             groupId: 'watch',
             displayName: 'Watch',
@@ -211,7 +263,7 @@ describe('spectator admission and promotion', () => {
     it.each(['bob', 'alice'])('preserves active spectators but reapplies player admission to omitted-role reactivation by %s', async (actorPrincipalId) => {
         const runtime = new GroupBarrierRepository();
         await seedWatchRoom(runtime, 1, 1);
-        const service = createService(runtime, 1_100);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_100, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await service.joinGroup(SCOPE, 'watch', { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch-bob' });
         await service.upsertMember(SCOPE, 'watch', 'bob', { actorPrincipalId, status: 'active', requestId: 'recover-bob' });
         expect((await requireSnapshot(runtime, 'watch')).members.find((member) => member.principalId === 'bob'))
@@ -235,7 +287,7 @@ describe('spectator admission and promotion', () => {
         { players: 1, occupied: false }
     ])('checks spectator capacity for explicit self reactivation ($occupied)', async ({ players, occupied }) => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, 1_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await seedWatchRoom(runtime, players, 1);
         await service.joinGroup(SCOPE, 'watch', { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch-bob' });
         await service.upsertMember(SCOPE, 'watch', 'bob', { actorPrincipalId: 'bob', status: 'left', requestId: 'leave-bob' });
@@ -260,7 +312,7 @@ describe('spectator admission and promotion', () => {
 
     it('disables spectators without explicit capacity and refuses invalid capacity inputs', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, 1_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await service.createGroup(SCOPE, {
             groupId: 'watch',
             displayName: 'Watch',
@@ -290,7 +342,7 @@ describe('spectator admission and promotion', () => {
         const runtime = new GroupBarrierRepository();
         await seedWatchRoom(runtime, 1, 1);
         const now = Date.now();
-        const service = createService(runtime, now);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: now, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await service.joinGroup(SCOPE, 'watch', { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch' });
         await service.connectPresenceSession(SCOPE, 'watch', 'bob-session', {
             principalId: 'bob',
@@ -328,7 +380,7 @@ describe('spectator admission and promotion', () => {
     it('denies spectator application writes and lifecycle commands while allowing trusted sync reads', async () => {
         const runtime = new GroupBarrierRepository();
         await seedWatchRoom(runtime, 1, 1);
-        const service = createService(runtime, 1_100);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_100, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
         await service.joinGroup(SCOPE, 'watch', { actorPrincipalId: 'bob', participation: 'spectator', requestId: 'watch' });
         const snapshot = await requireSnapshot(runtime, 'watch');
         const actor = { principalId: 'bob', sessionId: 'bob-session' };
@@ -365,7 +417,7 @@ describe('spectator admission and promotion', () => {
 });
 
 async function seedWatchRoom(runtime: GroupBarrierRepository, maxMembers: number, maxSpectators: number): Promise<void> {
-    await createService(runtime, 1_000).createGroup(SCOPE, {
+    await createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).createGroup(SCOPE, {
         groupId: 'watch',
         displayName: 'Watch',
         kind: 'room',

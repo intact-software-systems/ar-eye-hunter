@@ -287,10 +287,12 @@ async function writeProvedWsRows(storage: PSqlAdmissionTestStorage, count: numbe
         };
         const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
         await storage.repository.upsert(
-            WS_OUTBOX_PROVENANCE_NAMESPACE,
-            toWsOutboxProvenanceKey(entry.key),
-            JSON.stringify(proof),
-            proof.expiresAtMs
+            {
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            }
         );
         rows.push(entry);
     }

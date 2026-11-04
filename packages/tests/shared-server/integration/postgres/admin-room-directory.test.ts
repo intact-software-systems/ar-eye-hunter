@@ -51,7 +51,7 @@ describe('PostgreSQL operator room directory', () => {
             }]);
             const invalidKey = groupStateGroupStorageKey({ ...scope, groupId: 'a-invalid' });
             expect((await repository.findEntry(namespace, invalidKey))?.value).toBe('{"private":"payload"}');
-            await repository.upsert(namespace, `${groupStateScopeStorageKey(scope)}:group=c%zz`, '{}', futureMs);
+            await repository.upsert({ namespace, key: `${groupStateScopeStorageKey(scope)}:group=c%zz`, value: '{}', expireAtTimestamp: futureMs });
             await expect(directory.read({ scope, limit: 10, afterGroupId: null }))
                 .rejects.toBeInstanceOf(AdminStateCorruptionError);
         }
@@ -69,7 +69,12 @@ describe('PostgreSQL operator room directory', () => {
 });
 
 async function seedDirectory(repository: PSqlRuntimeStateRepository, scope: GroupScope): Promise<void> {
-    await repository.upsert(namespace, groupStateGroupStorageKey({ ...scope, groupId: 'a-invalid' }), '{"private":"payload"}', futureMs);
+    await repository.upsert({
+        namespace,
+        key: groupStateGroupStorageKey({ ...scope, groupId: 'a-invalid' }),
+        value: '{"private":"payload"}',
+        expireAtTimestamp: futureMs
+    });
     for (
         const room of [
             createTestGroup({ ...scope, groupId: 'b-private', joinMode: 'invite-only' }),
@@ -77,6 +82,6 @@ async function seedDirectory(repository: PSqlRuntimeStateRepository, scope: Grou
             createTestGroup({ ...scope, workspaceId: 'a:b-more', groupId: 'foreign' })
         ]
     ) {
-        await repository.upsert(namespace, groupStateGroupStorageKey(room), JSON.stringify(room), futureMs);
+        await repository.upsert({ namespace, key: groupStateGroupStorageKey(room), value: JSON.stringify(room), expireAtTimestamp: futureMs });
     }
 }

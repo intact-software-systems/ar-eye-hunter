@@ -21,7 +21,7 @@ import {
     ROTATED_PUBLICATION_KEY
 } from '../../../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { InMemoryPublicationKeyStore } from '../../../../shared/signature/publication-key-store-fixtures.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import {
@@ -251,7 +251,7 @@ async function createConnectedScenario(
     publicationKey: GroupPresencePublicationKey | null
 ): Promise<ConnectedScenario> {
     const runtime = new GroupBarrierRepository();
-    const service = createService(runtime, BASE_EPOCH_MS);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.createGroup(SCOPE, {
         groupId,
         displayName: groupId,
@@ -282,7 +282,13 @@ async function heartbeat(
     publicationKey: GroupPresencePublicationKey | null,
     afterMs: number
 ) {
-    return await createService(scenario.runtime, BASE_EPOCH_MS + afterMs).heartbeatPresenceSessionReceipt(
+    return await createService({
+        runtimeRepository: scenario.runtime,
+        nowEpochMs: BASE_EPOCH_MS + afterMs,
+        attemptCount: 1,
+        injectedRandomId: undefined,
+        timing: undefined
+    }).heartbeatPresenceSessionReceipt(
         SCOPE,
         scenario.groupId,
         BOB_SESSION,

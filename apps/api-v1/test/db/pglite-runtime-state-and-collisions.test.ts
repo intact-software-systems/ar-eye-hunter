@@ -181,22 +181,13 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const repository = new PSqlRuntimeStateRepository(sql);
             await repository.insertIfAbsent(
-                'guarded-effect',
-                'update',
-                'before-update',
-                FUTURE_MS
+                { namespace: 'guarded-effect', key: 'update', value: 'before-update', expireAtTimestamp: FUTURE_MS }
             );
             await repository.insertIfAbsent(
-                'guarded-effect',
-                'delete',
-                'before-delete',
-                FUTURE_MS
+                { namespace: 'guarded-effect', key: 'delete', value: 'before-delete', expireAtTimestamp: FUTURE_MS }
             );
             await repository.insertIfAbsent(
-                'guarded-effect',
-                'put',
-                'before-put',
-                FUTURE_MS
+                { namespace: 'guarded-effect', key: 'put', value: 'before-put', expireAtTimestamp: FUTURE_MS }
             );
 
             const insertBatch: RuntimeStateGuardedBatch = {
@@ -384,8 +375,8 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = new PSqlRuntimeStateRepository(sql);
-            await repository.insertIfAbsent('guarded-miss', 'root', 'winner', FUTURE_MS);
-            await repository.insertIfAbsent('guarded-miss', 'put-target', 'before', FUTURE_MS);
+            await repository.insertIfAbsent({ namespace: 'guarded-miss', key: 'root', value: 'winner', expireAtTimestamp: FUTURE_MS });
+            await repository.insertIfAbsent({ namespace: 'guarded-miss', key: 'put-target', value: 'before', expireAtTimestamp: FUTURE_MS });
             const batch: RuntimeStateGuardedBatch = {
                 guard: {
                     operation: 'insert',
@@ -455,16 +446,10 @@ Deno.test(
             const repository = new PSqlRuntimeStateRepository(sql);
             const fractionalEpochMs = 1_234.75;
             await repository.insertIfAbsent(
-                'guarded-expiry',
-                'sequential-future',
-                'future',
-                FUTURE_MS
+                { namespace: 'guarded-expiry', key: 'sequential-future', value: 'future', expireAtTimestamp: FUTURE_MS }
             );
             await repository.insertIfAbsent(
-                'guarded-expiry',
-                'sequential-fractional',
-                'fractional',
-                fractionalEpochMs
+                { namespace: 'guarded-expiry', key: 'sequential-fractional', value: 'fractional', expireAtTimestamp: fractionalEpochMs }
             );
 
             const computed = computeRuntimeStateGuardedBatchWrite({
@@ -514,7 +499,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = new PSqlRuntimeStateRepository(sql);
-            await repository.insertIfAbsent('guarded-rollback', 'root', 'before', FUTURE_MS);
+            await repository.insertIfAbsent({ namespace: 'guarded-rollback', key: 'root', value: 'before', expireAtTimestamp: FUTURE_MS });
             const computed = computeRuntimeStateGuardedBatchWrite({
                 guard: {
                     operation: 'update',
@@ -591,9 +576,9 @@ Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespa
             'rtc-rtt:receipts',
             'test:second-protected-family'
         ];
-        await repository.upsert(protectedNamespaces[0], 'receipt', '{}', PAST_MS);
-        await repository.upsert(protectedNamespaces[1], 'intent', '{}', PAST_MS);
-        await repository.upsert('ordinary-expired', 'row', '{}', PAST_MS);
+        await repository.upsert({ namespace: protectedNamespaces[0], key: 'receipt', value: '{}', expireAtTimestamp: PAST_MS });
+        await repository.upsert({ namespace: protectedNamespaces[1], key: 'intent', value: '{}', expireAtTimestamp: PAST_MS });
+        await repository.upsert({ namespace: 'ordinary-expired', key: 'row', value: '{}', expireAtTimestamp: PAST_MS });
 
         assert.equal(await repository.deleteAllExpired(protectedNamespaces), 1);
         assert.notEqual(

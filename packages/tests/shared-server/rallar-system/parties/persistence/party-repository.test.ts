@@ -102,7 +102,12 @@ describe('party membership conditional storage', () => {
             const repository = new PartyRepository(runtime, () => 1000);
             const initial = party('together', 'alice');
             const prepared = computePartyStorage({ read: await repository.read(initial.ref, ['alice']), party: initial });
-            await runtime.upsert('parties:accounts', 'app=game:ws=default:principal=alice', 'unexpected expired value', 1);
+            await runtime.upsert({
+                namespace: 'parties:accounts',
+                key: 'app=game:ws=default:principal=alice',
+                value: 'unexpected expired value',
+                expireAtTimestamp: 1
+            });
             await expect(storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, prepared)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await repository.read(initial.ref)).record).toBeNull();
@@ -152,10 +157,12 @@ describe('party membership conditional storage', () => {
             expect((await repository.read(first.ref)).record?.invitations).toEqual(first.invitations);
             const account = await repository.readAccount(scope, 'bob');
             await runtime.upsert(
-                'parties:accounts',
-                account.entry!.key,
-                JSON.stringify({ ...account.account, invitations: [{ partyId: 'first', invitationId: '', expiresAtEpochMs: 2000 }] }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'parties:accounts',
+                    key: account.entry!.key,
+                    value: JSON.stringify({ ...account.account, invitations: [{ partyId: 'first', invitationId: '', expiresAtEpochMs: 2000 }] }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(repository.readAccount(scope, 'bob')).rejects.toThrow(/identity|non-empty/);
         }
@@ -170,15 +177,17 @@ describe('party membership conditional storage', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new PartyRepository(runtime, () => 1000);
             await runtime.upsert(
-                'parties:accounts',
-                'app=game:ws=default:principal=alice',
-                JSON.stringify({
-                    scope,
-                    principalId: 'mallory',
-                    partyId: null,
-                    invitations: []
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'parties:accounts',
+                    key: 'app=game:ws=default:principal=alice',
+                    value: JSON.stringify({
+                        scope,
+                        principalId: 'mallory',
+                        partyId: null,
+                        invitations: []
+                    }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(repository.readAccount(scope, 'alice')).rejects.toThrow(/identity|slot/i);
             await runtime.deleteByKey('parties:accounts', 'app=game:ws=default:principal=alice');

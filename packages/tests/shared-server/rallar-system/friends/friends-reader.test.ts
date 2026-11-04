@@ -21,8 +21,18 @@ it('does not request raw presence until the other account has explicitly shared 
         ]);
         const alice = { principalId: 'alice', shareOnline: false, contacts: [{ principalId: 'bob', status: 'friend' }], invitations: [] };
         const bob = { principalId: 'bob', shareOnline: false, contacts: [{ principalId: 'alice', status: 'friend' }], invitations: [] };
-        await runtime.upsert(FRIENDS_PROFILE_NAMESPACE, 'principal=alice', JSON.stringify(alice), NEVER_EXPIRE_AT_TIMESTAMP);
-        await runtime.upsert(FRIENDS_PROFILE_NAMESPACE, 'principal=bob', JSON.stringify(bob), NEVER_EXPIRE_AT_TIMESTAMP);
+        await runtime.upsert({
+            namespace: FRIENDS_PROFILE_NAMESPACE,
+            key: 'principal=alice',
+            value: JSON.stringify(alice),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
+        await runtime.upsert({
+            namespace: FRIENDS_PROFILE_NAMESPACE,
+            key: 'principal=bob',
+            value: JSON.stringify(bob),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
         const reader = new FriendsReader({
             profiles,
             accounts,
@@ -35,7 +45,12 @@ it('does not request raw presence until the other account has explicitly shared 
         });
         expect((await reader.read('alice', { applicationId: 'ar-eye-hunter', workspaceId: 'default' })).contacts)
             .toEqual([{ principalId: 'bob', username: 'bob', displayName: 'Bob', status: 'friend', presence: 'hidden' }]);
-        await runtime.upsert(FRIENDS_PROFILE_NAMESPACE, 'principal=bob', JSON.stringify({ ...bob, contacts: [] }), NEVER_EXPIRE_AT_TIMESTAMP);
+        await runtime.upsert({
+            namespace: FRIENDS_PROFILE_NAMESPACE,
+            key: 'principal=bob',
+            value: JSON.stringify({ ...bob, contacts: [] }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
         expect((await reader.read('alice', { applicationId: 'relic-hunters', workspaceId: 'default' })).contacts).toEqual([]);
     }
     finally {

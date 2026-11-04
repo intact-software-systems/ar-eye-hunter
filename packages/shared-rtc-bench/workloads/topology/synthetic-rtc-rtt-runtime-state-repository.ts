@@ -6,7 +6,8 @@ import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-b
 import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateRepositoryLike
+    RuntimeStateRepositoryLike,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 
 export class SyntheticRtcRttRuntimeStateRepository implements RuntimeStateRepositoryLike {
@@ -53,7 +54,7 @@ export class SyntheticRtcRttRuntimeStateRepository implements RuntimeStateReposi
         ));
     }
 
-    upsert(namespace: string, key: string, value: string, expireAtTimestamp: number): Promise<void> {
+    upsert({ namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput): Promise<void> {
         const compositeKey = this.toCompositeKey(namespace, key);
         const current = this.data.get(compositeKey);
         this.data.set(compositeKey, {

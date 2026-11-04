@@ -15,6 +15,7 @@ import {
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import {
     admissionFor,
     createMutationCommand,
@@ -24,7 +25,6 @@ import {
     memberFor,
     requireMutationGroupAndActor
 } from '../group-state-concurrency-test-fixtures.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import {
     groupMemberStorageKey,
     groupRef,
@@ -177,7 +177,7 @@ describe('convergent group and presence state', () => {
             const groupId = 'trusted-heartbeat-slot-room';
             const sessionId = 'alice-trusted-slot-session';
             const generationId = 'alice-trusted-slot-generation';
-            const service = createService(runtime, 2_000);
+            const service = createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
             await seedOpenGroup(runtime, groupId);
             await service.connectPresenceSession(SCOPE, groupId, sessionId, {
                 principalId: 'alice',
@@ -200,13 +200,15 @@ describe('convergent group and presence state', () => {
                 throw new Error('Expected stored session');
             }
             await runtime.upsert(
-                'group-state:sessions',
-                sessionKey,
-                JSON.stringify({
-                    ...(JSON.parse(storedSession.value) as GroupPresenceSession),
-                    principalId: 'candidate-principal'
-                }),
-                storedSession.expireAtTimestamp
+                {
+                    namespace: 'group-state:sessions',
+                    key: sessionKey,
+                    value: JSON.stringify({
+                        ...(JSON.parse(storedSession.value) as GroupPresenceSession),
+                        principalId: 'candidate-principal'
+                    }),
+                    expireAtTimestamp: storedSession.expireAtTimestamp
+                }
             );
             runtime.entryReadKeys = [];
 

@@ -1,4 +1,5 @@
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import {
     RuntimeStateJsonStore,
@@ -25,7 +26,12 @@ export class GroupMembershipRepository extends RuntimeStateJsonStore {
 
     async putMember(member: GroupMember): Promise<void> {
         validatePersistedGroupMember(member, member);
-        await this.putValue(MEMBERS_NAMESPACE, groupStateMemberStorageKey(member), member);
+        await this.putValue({
+            namespace: MEMBERS_NAMESPACE,
+            key: groupStateMemberStorageKey(member),
+            value: member,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
     }
 
     async removeMember(ref: GroupRef & Readonly<{ principalId: string; }>): Promise<void> {

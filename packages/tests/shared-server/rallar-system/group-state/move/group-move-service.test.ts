@@ -77,7 +77,7 @@ async function database() {
     return {
         ...fixture,
         storeParty: (members: readonly string[], rosterRevision = 0, leaderPrincipalId = 'alice') =>
-            storeParty(fixture, members, rosterRevision, leaderPrincipalId),
+            storeParty({ fixture, members, rosterRevision, leaderPrincipalId }),
         moves,
         moveService: service,
         act,
@@ -89,11 +89,15 @@ async function database() {
     };
 }
 
+interface StorePartyInput {
+    readonly fixture: Awaited<ReturnType<typeof createGroupMoveTestDatabase>>;
+    readonly members: readonly string[];
+    readonly rosterRevision: number;
+    readonly leaderPrincipalId: string;
+}
+
 async function storeParty(
-    fixture: Awaited<ReturnType<typeof createGroupMoveTestDatabase>>,
-    members: readonly string[],
-    rosterRevision: number,
-    leaderPrincipalId: string
+    { fixture, members, rosterRevision, leaderPrincipalId }: StorePartyInput
 ): Promise<void> {
     const ref = { applicationId: DESTINATION.applicationId, workspaceId: DESTINATION.workspaceId, partyId: 'party-one' };
     const record: PartyRecord = {
@@ -105,18 +109,25 @@ async function storeParty(
         members: members.map((principalId) => ({ principalId, joinedAtEpochMs: fixture.nowEpochMs })),
         invitations: []
     };
-    await fixture.runtime.upsert('parties:records', partyRecordKey(ref), JSON.stringify(record), NEVER_EXPIRE_AT_TIMESTAMP);
+    await fixture.runtime.upsert({
+        namespace: 'parties:records',
+        key: partyRecordKey(ref),
+        value: JSON.stringify(record),
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    });
     for (const principalId of members) {
         await fixture.runtime.upsert(
-            'parties:accounts',
-            partyAccountKey(ref, principalId),
-            JSON.stringify({
-                scope: { applicationId: ref.applicationId, workspaceId: ref.workspaceId },
-                principalId,
-                partyId: ref.partyId,
-                invitations: []
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'parties:accounts',
+                key: partyAccountKey(ref, principalId),
+                value: JSON.stringify({
+                    scope: { applicationId: ref.applicationId, workspaceId: ref.workspaceId },
+                    principalId,
+                    partyId: ref.partyId,
+                    invitations: []
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 }

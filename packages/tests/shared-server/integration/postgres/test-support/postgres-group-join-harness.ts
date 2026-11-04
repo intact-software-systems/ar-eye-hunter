@@ -195,18 +195,23 @@ export function toGroupJoinEnqueue(groupRef: GroupRef, authority: IssuedAuthSess
 
 /** Moves the group row's revision once, after a join's decision read, so that join's compare-and-set conflicts. */
 export function createInterleavedGroupWrite(sql: PSqlSql, groupRef: GroupRef): InterleavedRowWrite {
-    return createInterleavedRowWrite<object>(sql, GROUPS_NAMESPACE, groupRef, (group) => group);
+    return createInterleavedRowWrite<object>({ sql, namespace: GROUPS_NAMESPACE, groupRef, move: (group) => group });
 }
 
 /** Moves the presence summary's revision once, after a join's decision read; the join does not guard on it. */
 export function createInterleavedSummaryWrite(sql: PSqlSql, groupRef: GroupRef): InterleavedRowWrite {
-    return createInterleavedRowWrite<StoredPresenceSummary>(sql, PRESENCE_SUMMARIES_NAMESPACE, groupRef, (summary) => ({
-        ...summary,
-        causalRevision: {
-            ...summary.causalRevision,
-            presenceRevision: summary.causalRevision.presenceRevision + 1
-        }
-    }));
+    return createInterleavedRowWrite<StoredPresenceSummary>({
+        sql,
+        namespace: PRESENCE_SUMMARIES_NAMESPACE,
+        groupRef,
+        move: (summary) => ({
+            ...summary,
+            causalRevision: {
+                ...summary.causalRevision,
+                presenceRevision: summary.causalRevision.presenceRevision + 1
+            }
+        })
+    });
 }
 
 async function createJoinReadGroup(sql: PSqlSql, scope: StateScope): Promise<void> {
@@ -260,31 +265,7 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
             waitJitterRatio: 0
         }
     });
-    const run = async (
-        attempt: GroupJoinAttempt,
-        enqueue: AuthenticatedGroupMutationEnqueue
-    ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> => {
-        if (attempt.storedSession !== null) {
-            await authSessions.putSession(attempt.storedSession);
-        }
-        let settled = false;
-        const pending = group.processAuthenticatedGroupEntryUntilCompletion(enqueue, attempt.authority)
-            .finally(() => (settled = true));
-        while (!settled) {
-            await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createWorkerResilience());
-            await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-        return await pending;
-    };
-    const runAs = async (
-        principalId: string,
-        toEnqueue: (groupRef: GroupRef, authority: IssuedAuthSession) => AuthenticatedGroupMutationEnqueue
-    ): Promise<AuthenticatedGroupMutationEnqueue> => {
-        const authority = toGroupJoinAuthority(groupRef, principalId);
-        const enqueue = toEnqueue(groupRef, authority);
-        unwrapAppInboxResult(await run({ authority, storedSession: authority }, enqueue));
-        return enqueue;
-    };
+    const execution: JoinExecution = { authSessions, group, inbox, groupRef };
     return {
         sql,
         groupRef,
@@ -294,9 +275,9 @@ function createJoinReadHarness(sql: PSqlSql, groupRef: GroupRef): PostgresGroupJ
         advanceLaneClock: (offsetMs) => {
             laneClockOffsetMs = offsetMs;
         },
-        join: async (principalId) => await runAs(principalId, toGroupJoinEnqueue),
-        attemptJoin: async (attempt) => await run(attempt, toGroupJoinEnqueue(groupRef, attempt.authority)),
-        connect: async (principalId) => await runAs(principalId, toConnectEnqueue),
+        join: async (principalId) => await runJoinAs(execution, principalId, toGroupJoinEnqueue),
+        attemptJoin: async (attempt) => await runJoinAttempt(execution, attempt, toGroupJoinEnqueue(groupRef, attempt.authority)),
+        connect: async (principalId) => await runJoinAs(execution, principalId, toConnectEnqueue),
         recordReads: async (action) => {
             const statementsBefore = readStatementCount(countedSql);
             const callsBefore = probe.calls.length;
@@ -338,11 +319,15 @@ interface StoredPresenceSummary {
     readonly causalRevision: Readonly<{ presenceRevision: number; }>;
 }
 
+interface InterleavedRowWriteInput<Row> {
+    readonly sql: PSqlSql;
+    readonly namespace: string;
+    readonly groupRef: GroupRef;
+    readonly move: (stored: Row) => Row;
+}
+
 function createInterleavedRowWrite<Row>(
-    sql: PSqlSql,
-    namespace: string,
-    groupRef: GroupRef,
-    move: (stored: Row) => Row
+    { sql, namespace, groupRef, move }: InterleavedRowWriteInput<Row>
 ): InterleavedRowWrite {
     const repository = new PSqlRuntimeStateRepository(sql);
     let writes = 0;
@@ -362,7 +347,7 @@ function createInterleavedRowWrite<Row>(
                 throw new Error(`The group has no ${namespace} row to move`);
             }
             const moved = move(JSON.parse(stored.value) as Row);
-            await repository.upsert(namespace, key, JSON.stringify(moved), stored.expireAtTimestamp);
+            await repository.upsert({ namespace, key, value: JSON.stringify(moved), expireAtTimestamp: stored.expireAtTimestamp });
             resolveWritten();
         }
     };
@@ -387,4 +372,41 @@ function requireDatabaseUrl(): string {
         throw new Error('DATABASE_URL is required when RALLAR_POSTGRES_INTEGRATION=1');
     }
     return databaseUrl;
+}
+
+interface JoinExecution {
+    readonly authSessions: AuthSessionRepository;
+    readonly group: GroupStateInboxService;
+    readonly inbox: InboxQueueReader;
+    readonly groupRef: GroupRef;
+}
+
+async function runJoinAttempt(
+    { authSessions, group, inbox }: JoinExecution,
+    attempt: GroupJoinAttempt,
+    enqueue: AuthenticatedGroupMutationEnqueue
+): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
+    if (attempt.storedSession !== null) {
+        await authSessions.putSession(attempt.storedSession);
+    }
+    let settled = false;
+    const pending = group.processAuthenticatedGroupEntryUntilCompletion(enqueue, attempt.authority)
+        .finally(() => (settled = true));
+    while (!settled) {
+        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createWorkerResilience());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return await pending;
+}
+
+async function runJoinAs(
+    execution: JoinExecution,
+    principalId: string,
+    toEnqueue: (groupRef: GroupRef, authority: IssuedAuthSession) => AuthenticatedGroupMutationEnqueue
+): Promise<AuthenticatedGroupMutationEnqueue> {
+    const { groupRef } = execution;
+    const authority = toGroupJoinAuthority(groupRef, principalId);
+    const enqueue = toEnqueue(groupRef, authority);
+    unwrapAppInboxResult(await runJoinAttempt(execution, { authority, storedSession: authority }, enqueue));
+    return enqueue;
 }

@@ -209,10 +209,7 @@ describe('client mutation persisted-state validation', () => {
                 }
             };
             await runtime.upsert(
-                'client-state:idempotent',
-                entry.key,
-                JSON.stringify(malformed),
-                Number.MAX_SAFE_INTEGER
+                { namespace: 'client-state:idempotent', key: entry.key, value: JSON.stringify(malformed), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
             );
 
             await expect(
@@ -268,10 +265,7 @@ describe('client mutation persisted-state validation', () => {
                 }
             };
             await runtime.upsert(
-                'client-state:idempotent',
-                entry.key,
-                JSON.stringify(malformed),
-                Number.MAX_SAFE_INTEGER
+                { namespace: 'client-state:idempotent', key: entry.key, value: JSON.stringify(malformed), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
             );
 
             await expect(
@@ -399,10 +393,7 @@ async function removePersistedWorkspaceId(
     const { workspaceId: ignoredWorkspaceId, ...persistedWithoutWorkspaceId } = persisted;
     void ignoredWorkspaceId;
     await runtime.upsert(
-        namespace,
-        entry.key,
-        JSON.stringify(persistedWithoutWorkspaceId),
-        Number.MAX_SAFE_INTEGER
+        { namespace, key: entry.key, value: JSON.stringify(persistedWithoutWorkspaceId), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
     );
 }
 
@@ -425,10 +416,12 @@ async function replacePersistedField(
         throw new Error(`Expected stored ${replacement.namespace} to hold ${replacement.field}`);
     }
     await runtime.upsert(
-        replacement.namespace,
-        entry.key,
-        entry.value.replace(fieldPattern, `"${replacement.field}":${replacement.corruptLiteral}`),
-        Number.MAX_SAFE_INTEGER
+        {
+            namespace: replacement.namespace,
+            key: entry.key,
+            value: entry.value.replace(fieldPattern, `"${replacement.field}":${replacement.corruptLiteral}`),
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER
+        }
     );
 }
 

@@ -108,15 +108,17 @@ export class PartyServiceFixture {
             await this.seedClientIdentity(principalId);
             await this.seedClientSession(session);
             await this.runtime.upsert(
-                'friends:profiles',
-                `principal=${principalId}`,
-                JSON.stringify({
-                    principalId,
-                    shareOnline: false,
-                    contacts: ['alice', 'bob'].includes(principalId) ? [{ principalId: principalId === 'alice' ? 'bob' : 'alice', status: 'friend' }] : [],
-                    invitations: []
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'friends:profiles',
+                    key: `principal=${principalId}`,
+                    value: JSON.stringify({
+                        principalId,
+                        shareOnline: false,
+                        contacts: ['alice', 'bob'].includes(principalId) ? [{ principalId: principalId === 'alice' ? 'bob' : 'alice', status: 'friend' }] : [],
+                        invitations: []
+                    }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
         }
     }

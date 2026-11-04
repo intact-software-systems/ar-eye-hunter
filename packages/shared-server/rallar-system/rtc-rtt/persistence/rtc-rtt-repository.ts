@@ -206,17 +206,21 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         validateRtcRttMeasurement(measurement);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                RTC_RTT_LATEST_NAMESPACE,
-                this.measurementKey(measurement.sessionIdFrom, measurement.sessionIdTo),
-                measurement,
-                purgeAfterEpochMs
+                {
+                    namespace: RTC_RTT_LATEST_NAMESPACE,
+                    key: this.measurementKey(measurement.sessionIdFrom, measurement.sessionIdTo),
+                    value: measurement,
+                    expireAtTimestamp: purgeAfterEpochMs
+                }
             )
             : await this.putValueIfRevision(
-                RTC_RTT_LATEST_NAMESPACE,
-                this.measurementKey(measurement.sessionIdFrom, measurement.sessionIdTo),
-                measurement,
-                purgeAfterEpochMs,
-                expectedRevision
+                {
+                    namespace: RTC_RTT_LATEST_NAMESPACE,
+                    key: this.measurementKey(measurement.sessionIdFrom, measurement.sessionIdTo),
+                    value: measurement,
+                    expireAtTimestamp: purgeAfterEpochMs,
+                    expectedRevision
+                }
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }
@@ -232,17 +236,21 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         validateRtcRttEndpointAdmissionCandidateVersion(admission.version, expectedRevision);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
-                this.endpointAdmissionKey(admission.endpointId),
-                admission,
-                expireAtTimestamp
+                {
+                    namespace: RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                    key: this.endpointAdmissionKey(admission.endpointId),
+                    value: admission,
+                    expireAtTimestamp
+                }
             )
             : await this.putValueIfRevision(
-                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
-                this.endpointAdmissionKey(admission.endpointId),
-                admission,
-                expireAtTimestamp,
-                expectedRevision
+                {
+                    namespace: RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                    key: this.endpointAdmissionKey(admission.endpointId),
+                    value: admission,
+                    expireAtTimestamp,
+                    expectedRevision
+                }
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }

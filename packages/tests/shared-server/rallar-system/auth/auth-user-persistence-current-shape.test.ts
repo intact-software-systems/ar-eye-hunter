@@ -90,9 +90,6 @@ interface WriteStoredUserInput {
 
 async function writeStoredUser(input: WriteStoredUserInput): Promise<void> {
     await input.runtime.upsert(
-        input.namespace,
-        input.key,
-        JSON.stringify(input.value),
-        Date.now() + 60_000
+        { namespace: input.namespace, key: input.key, value: JSON.stringify(input.value), expireAtTimestamp: Date.now() + 60_000 }
     );
 }

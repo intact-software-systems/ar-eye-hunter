@@ -35,17 +35,19 @@ describe('auth session persistence security', () => {
     it(corruptCanonicalSessionCase, async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await runtimeRepository.upsert(
-            'auth-sessions:by-session',
-            'session=session-1',
-            JSON.stringify({
-                clientId: 'client-1',
-                username: 'alice',
-                sessionId: 'different-session',
-                accessTokenDigest: 'digest-1',
-                issuedAtEpochMs: 1_000,
-                expiresAtEpochMs: Date.now() + 60_000
-            }),
-            Date.now() + 60_000
+            {
+                namespace: 'auth-sessions:by-session',
+                key: 'session=session-1',
+                value: JSON.stringify({
+                    clientId: 'client-1',
+                    username: 'alice',
+                    sessionId: 'different-session',
+                    accessTokenDigest: 'digest-1',
+                    issuedAtEpochMs: 1_000,
+                    expiresAtEpochMs: Date.now() + 60_000
+                }),
+                expireAtTimestamp: Date.now() + 60_000
+            }
         );
 
         await expect(

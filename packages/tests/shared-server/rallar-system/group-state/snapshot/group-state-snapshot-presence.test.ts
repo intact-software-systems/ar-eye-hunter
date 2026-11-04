@@ -2,8 +2,8 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { auditStamp } from '../group-state-concurrency-test-fixtures.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { seedOpenGroup } from '../presence/group-presence-test-runtime.ts';
 

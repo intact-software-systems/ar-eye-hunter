@@ -12,7 +12,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import {
     convergeSummaryForTest,
@@ -30,22 +30,24 @@ describe('group presence concurrency', () => {
         await seedPresenceAdmission(runtime, 'two-session-room');
         runtime.resetGuards();
         const results = await Promise.all([
-            createService(runtime, 2_000).connectPresenceSession(SCOPE, 'two-session-room', 'session-a', {
-                principalId: 'alice',
-                generationId: 'generation-a',
-                publicationKey: null,
-                connectionGenerationId: 'ws-generation-a',
-                expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
-                requestId: 'connect-session-a'
-            }),
-            createService(runtime, 2_001).connectPresenceSession(SCOPE, 'two-session-room', 'session-b', {
-                principalId: 'alice',
-                generationId: 'generation-b',
-                publicationKey: null,
-                connectionGenerationId: 'ws-generation-b',
-                expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
-                requestId: 'connect-session-b'
-            })
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+                .connectPresenceSession(SCOPE, 'two-session-room', 'session-a', {
+                    principalId: 'alice',
+                    generationId: 'generation-a',
+                    publicationKey: null,
+                    connectionGenerationId: 'ws-generation-a',
+                    expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
+                    requestId: 'connect-session-a'
+                }),
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+                .connectPresenceSession(SCOPE, 'two-session-room', 'session-b', {
+                    principalId: 'alice',
+                    generationId: 'generation-b',
+                    publicationKey: null,
+                    connectionGenerationId: 'ws-generation-b',
+                    expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
+                    requestId: 'connect-session-b'
+                })
         ]);
 
         expect(results).toHaveLength(2);
@@ -79,13 +81,17 @@ describe('group presence concurrency', () => {
         runtime.armGroupReadBarrier(2);
 
         const attempts = await Promise.allSettled(
-            requests.map((request, index) => createService(runtime, 2_000 + index).updateGroup(SCOPE, 'cross-service-lane-room', request))
+            requests.map((request, index) =>
+                createService({ runtimeRepository: runtime, nowEpochMs: 2_000 + index, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+                    .updateGroup(SCOPE, 'cross-service-lane-room', request)
+            )
         );
         const lost = attempts.findIndex((attempt) => attempt.status === 'rejected');
         expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1);
         expect(attempts[lost]).toMatchObject({ reason: expect.any(RuntimeStateWriteConflictError) });
         // The loser's next queue delivery is a fresh attempt that reads the winner's row.
-        await createService(runtime, 2_000 + lost, 2).updateGroup(SCOPE, 'cross-service-lane-room', requests[lost]);
+        await createService({ runtimeRepository: runtime, nowEpochMs: 2_000 + lost, attemptCount: 2, injectedRandomId: undefined, timing: undefined })
+            .updateGroup(SCOPE, 'cross-service-lane-room', requests[lost]);
 
         expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion).toBe(
             3
@@ -99,7 +105,13 @@ describe('group presence concurrency', () => {
         await seedPresenceAdmission(runtime, 'presence-lane-bypass-room');
         runtime.resetGuards();
         let nowEpochMs = BASE_EPOCH_MS + 2_000;
-        const service = createService(runtime, () => nowEpochMs);
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: () => nowEpochMs,
+            attemptCount: 1,
+            injectedRandomId: undefined,
+            timing: undefined
+        });
         const heldGuard = runtime.holdGroupGuardFor(
             groupStateGroupStorageKey(groupRef('presence-lane-bypass-room'))
         );
@@ -172,7 +184,13 @@ describe('group presence concurrency', () => {
         const run = async (reverse: boolean) => {
             const runtime = new GroupBarrierRepository();
             await seedOpenGroup(runtime, `ordered-${reverse}`);
-            const service = createService(runtime, BASE_EPOCH_MS + 1_000);
+            const service = createService({
+                runtimeRepository: runtime,
+                nowEpochMs: BASE_EPOCH_MS + 1_000,
+                attemptCount: 1,
+                injectedRandomId: undefined,
+                timing: undefined
+            });
             const connects = [
                 {
                     generationId: 'generation-a',
@@ -228,41 +246,46 @@ describe('group presence concurrency', () => {
 
     it('admits only one concurrent last session for a member', async () => {
         const runtime = new GroupBarrierRepository();
-        await createService(runtime, 1_000).createGroup(SCOPE, {
-            groupId: 'session-cap-room',
-            displayName: 'Session cap',
-            kind: 'room',
-            joinMode: 'open',
-            maxSessionsPerMember: 1,
-            createdByPrincipalId: 'alice',
-            requestId: 'seed-session-cap'
-        });
+        await createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).createGroup(
+            SCOPE,
+            {
+                groupId: 'session-cap-room',
+                displayName: 'Session cap',
+                kind: 'room',
+                joinMode: 'open',
+                maxSessionsPerMember: 1,
+                createdByPrincipalId: 'alice',
+                requestId: 'seed-session-cap'
+            }
+        );
         runtime.armPresenceReadBarrier(2);
         const results = await Promise.allSettled([
-            createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
-                SCOPE,
-                'session-cap-room',
-                'session-a',
-                {
-                    principalId: 'alice',
-                    generationId: 'generation-a',
-                    publicationKey: null,
-                    connectionGenerationId: 'ws-generation-a',
-                    requestId: 'session-cap-a'
-                }
-            ),
-            createService(runtime, BASE_EPOCH_MS + 2_001).connectPresenceSession(
-                SCOPE,
-                'session-cap-room',
-                'session-b',
-                {
-                    principalId: 'alice',
-                    generationId: 'generation-b',
-                    publicationKey: null,
-                    connectionGenerationId: 'ws-generation-b',
-                    requestId: 'session-cap-b'
-                }
-            )
+            createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+                .connectPresenceSession(
+                    SCOPE,
+                    'session-cap-room',
+                    'session-a',
+                    {
+                        principalId: 'alice',
+                        generationId: 'generation-a',
+                        publicationKey: null,
+                        connectionGenerationId: 'ws-generation-a',
+                        requestId: 'session-cap-a'
+                    }
+                ),
+            createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+                .connectPresenceSession(
+                    SCOPE,
+                    'session-cap-room',
+                    'session-b',
+                    {
+                        principalId: 'alice',
+                        generationId: 'generation-b',
+                        publicationKey: null,
+                        connectionGenerationId: 'ws-generation-b',
+                        requestId: 'session-cap-b'
+                    }
+                )
         ]);
         expect(
             results.filter((result) => result.status === 'fulfilled' && result.value.status === 'ok')
@@ -285,7 +308,13 @@ describe('group presence concurrency', () => {
         'fences a first connect racing %s with forced %s commit ordering',
         async (operation, order) => {
             const runtime = new GroupBarrierRepository();
-            const seed = createService(runtime, BASE_EPOCH_MS);
+            const seed = createService({
+                runtimeRepository: runtime,
+                nowEpochMs: BASE_EPOCH_MS,
+                attemptCount: 1,
+                injectedRandomId: undefined,
+                timing: undefined
+            });
             await seed.createGroup(SCOPE, {
                 groupId: `${operation}-${order}`,
                 displayName: 'Admission fence',
@@ -303,22 +332,29 @@ describe('group presence concurrency', () => {
 
             runtime.armAdmissionReadBarrier(2);
             const connect = (attemptCount: number) =>
-                createService(runtime, BASE_EPOCH_MS + 2_000, attemptCount).connectPresenceSession(
-                    SCOPE,
-                    `${operation}-${order}`,
-                    'bob-session-old',
-                    {
-                        principalId: 'bob',
-                        generationId: 'bob-generation-old',
-                        publicationKey: null,
-                        connectionGenerationId: 'bob-ws-generation-old',
-                        actorPrincipalId: 'bob',
-                        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-                        requestId: `connect-old-${operation}-${order}`
-                    }
-                );
+                createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000, attemptCount, injectedRandomId: undefined, timing: undefined })
+                    .connectPresenceSession(
+                        SCOPE,
+                        `${operation}-${order}`,
+                        'bob-session-old',
+                        {
+                            principalId: 'bob',
+                            generationId: 'bob-generation-old',
+                            publicationKey: null,
+                            connectionGenerationId: 'bob-ws-generation-old',
+                            actorPrincipalId: 'bob',
+                            expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                            requestId: `connect-old-${operation}-${order}`
+                        }
+                    );
             const changeMembership = (attemptCount: number) => {
-                const service = createService(runtime, BASE_EPOCH_MS + 2_001, attemptCount);
+                const service = createService({
+                    runtimeRepository: runtime,
+                    nowEpochMs: BASE_EPOCH_MS + 2_001,
+                    attemptCount,
+                    injectedRandomId: undefined,
+                    timing: undefined
+                });
                 const request = {
                     actorPrincipalId: 'alice',
                     requestId: `${operation}-bob-${order}`
@@ -383,7 +419,13 @@ describe('group presence concurrency', () => {
                 activeSessionIds: []
             });
 
-            await createService(runtime, BASE_EPOCH_MS + 4_000).upsertMember(
+            await createService({
+                runtimeRepository: runtime,
+                nowEpochMs: BASE_EPOCH_MS + 4_000,
+                attemptCount: 1,
+                injectedRandomId: undefined,
+                timing: undefined
+            }).upsertMember(
                 SCOPE,
                 `${operation}-${order}`,
                 'bob',
@@ -405,7 +447,13 @@ describe('group presence concurrency', () => {
                 activeSessionIds: []
             });
 
-            const fresh = await createService(runtime, BASE_EPOCH_MS + 5_000).connectPresenceSession(
+            const fresh = await createService({
+                runtimeRepository: runtime,
+                nowEpochMs: BASE_EPOCH_MS + 5_000,
+                attemptCount: 1,
+                injectedRandomId: undefined,
+                timing: undefined
+            }).connectPresenceSession(
                 SCOPE,
                 `${operation}-${order}`,
                 'bob-session-fresh',
@@ -433,7 +481,7 @@ describe('group presence concurrency', () => {
 });
 
 async function seedPresenceAdmission(runtime: GroupBarrierRepository, groupId: string): Promise<void> {
-    const service = createService(runtime, 1_500);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_500, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.connectPresenceSession(SCOPE, groupId, 'admission-seed', {
         principalId: 'alice',
         generationId: 'admission-seed',

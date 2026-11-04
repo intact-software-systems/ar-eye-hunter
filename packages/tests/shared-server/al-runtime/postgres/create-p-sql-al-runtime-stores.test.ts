@@ -140,10 +140,7 @@ async function seedCapturedPolicyRead(
     };
     await workQueue.enqueue(toALOutboundIdentityEntry(reference, entry, creationExpiry));
     await storage.repository.upsert(
-        namespace,
-        toALOutboundSentMessageKey(namespace, message.id.msgId),
-        JSON.stringify(stored),
-        Date.now() + 120_000
+        { namespace, key: toALOutboundSentMessageKey(namespace, message.id.msgId), value: JSON.stringify(stored), expireAtTimestamp: Date.now() + 120_000 }
     );
     return { message, entry };
 }

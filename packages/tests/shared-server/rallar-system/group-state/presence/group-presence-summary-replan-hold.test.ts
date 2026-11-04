@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type {
@@ -25,7 +26,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, readSummaryWork, toSummaryExpansion } from './group-presence-test-runtime.ts';
 
@@ -182,7 +183,7 @@ describe('group presence summary replan hold', () => {
 
 async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
     const runtime = new GroupBarrierRepository();
-    const service = createService(runtime, BASE_EPOCH_MS);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     const ref = groupRef(input.groupId);
     await service.createGroup(SCOPE, {
         groupId: input.groupId,
@@ -193,31 +194,7 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
         requestId: `seed-${input.groupId}`,
         lifecyclePolicy: input.policy
     });
-    await service.upsertMember(SCOPE, input.groupId, 'bob', {
-        status: 'active',
-        actorPrincipalId: 'alice',
-        requestId: `activate-${input.groupId}-bob`
-    });
-    await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-bob-session`, {
-        principalId: 'bob',
-        generationId: `${input.groupId}-bob-generation`,
-        publicationKey: null,
-        connectionGenerationId: `${input.groupId}-bob-ws-generation`,
-        actorPrincipalId: 'bob',
-        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-        requestId: `connect-${input.groupId}-bob`
-    });
-    if (input.fullAtMaxMembers !== undefined) {
-        await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-alice-session`, {
-            principalId: 'alice',
-            generationId: `${input.groupId}-alice-generation`,
-            publicationKey: null,
-            connectionGenerationId: `${input.groupId}-alice-ws-generation`,
-            actorPrincipalId: 'alice',
-            expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-            requestId: `connect-${input.groupId}-alice`
-        });
-    }
+    await seedScenarioPresence(service, input);
     const repository = createTestGroupStateRepository(runtime);
     const stored = await repository.findGroupEntry(ref);
     if (!stored) {
@@ -265,10 +242,12 @@ async function seedPlannedLayout(
     }
     if (plannedLayout === 'corrupt') {
         await runtime.upsert(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-            groupStateGroupStorageKey(ref),
-            JSON.stringify({ broken: true }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify({ broken: true }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 }
@@ -311,4 +290,32 @@ function plannedSnapshot(ref: GroupRef): RallarOverlayTopologySnapshot {
         createdAtEpochMs: BASE_EPOCH_MS,
         updatedAtEpochMs: BASE_EPOCH_MS
     };
+}
+
+async function seedScenarioPresence(service: GroupStateTestService, input: HoldScenario): Promise<void> {
+    await service.upsertMember(SCOPE, input.groupId, 'bob', {
+        status: 'active',
+        actorPrincipalId: 'alice',
+        requestId: `activate-${input.groupId}-bob`
+    });
+    await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-bob-session`, {
+        principalId: 'bob',
+        generationId: `${input.groupId}-bob-generation`,
+        publicationKey: null,
+        connectionGenerationId: `${input.groupId}-bob-ws-generation`,
+        actorPrincipalId: 'bob',
+        expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+        requestId: `connect-${input.groupId}-bob`
+    });
+    if (input.fullAtMaxMembers !== undefined) {
+        await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-alice-session`, {
+            principalId: 'alice',
+            generationId: `${input.groupId}-alice-generation`,
+            publicationKey: null,
+            connectionGenerationId: `${input.groupId}-alice-ws-generation`,
+            actorPrincipalId: 'alice',
+            expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+            requestId: `connect-${input.groupId}-alice`
+        });
+    }
 }

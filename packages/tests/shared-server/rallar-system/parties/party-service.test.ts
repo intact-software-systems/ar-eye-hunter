@@ -67,10 +67,12 @@ describe('party mutations through authenticated AppInbox', () => {
                 const observed = await readProfiles(principalIds);
                 const bob = observed.find((profile) => profile.profile.principalId === 'bob')!;
                 await fixture.runtime.upsert(
-                    'friends:profiles',
-                    bob.entry!.key,
-                    JSON.stringify({ ...bob.profile, contacts: change === 'blocked' ? [{ principalId: 'alice', status: 'blocked' }] : [] }),
-                    NEVER_EXPIRE_AT_TIMESTAMP
+                    {
+                        namespace: 'friends:profiles',
+                        key: bob.entry!.key,
+                        value: JSON.stringify({ ...bob.profile, contacts: change === 'blocked' ? [{ principalId: 'alice', status: 'blocked' }] : [] }),
+                        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                    }
                 );
                 return observed;
             });
