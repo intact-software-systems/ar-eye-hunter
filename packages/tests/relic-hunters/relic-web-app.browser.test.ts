@@ -35,7 +35,7 @@ import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delive
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
+import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonRequest, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import {
     act,
@@ -63,6 +63,35 @@ interface MockWsMessage {
     readonly senderId: string;
     readonly roomId?: string;
     readonly receivedAtEpochMs: number;
+}
+
+interface MockRoomPayloads {
+    readonly 'room.relic.hunter': RelicHunterEvent;
+    readonly 'room.relic.event': RelicRoundTransitionEvent;
+    readonly 'room.relic.ai.planning': RallarAiJsonResult<object>;
+}
+
+type MockRoomRegistration = {
+    [Topic in keyof MockRoomPayloads]: {
+        readonly topicId: Topic;
+        readonly handler: RallarTypedPayloadHandler<MockRoomPayloads[Topic]>;
+    };
+}[keyof MockRoomPayloads];
+
+function registerMockRoomHandler(registration: MockRoomRegistration): () => void {
+    if (registration.topicId === 'room.relic.hunter') {
+        rallarMock.hunterEventHandler = registration.handler;
+        return () => {
+            rallarMock.hunterEventHandler = undefined;
+        };
+    }
+    if (registration.topicId === 'room.relic.event') {
+        rallarMock.roundTransitionHandler = registration.handler;
+        return () => {
+            rallarMock.roundTransitionHandler = undefined;
+        };
+    }
+    return () => undefined;
 }
 
 type PlanningRequestAnswer = (
@@ -185,22 +214,9 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                 onMessage: () => () => undefined,
                 send: vi.fn(async () => ({ status: 'no-route' }))
             },
-            room: (definition: { topicId: string; }) => ({
-                onWs: <T>(handler: RallarTypedPayloadHandler<T>) => {
-                    if (definition.topicId === 'room.relic.hunter') {
-                        rallarMock.hunterEventHandler = handler as RallarTypedPayloadHandler<RelicHunterEvent>;
-                        return () => {
-                            rallarMock.hunterEventHandler = undefined;
-                        };
-                    }
-                    if (definition.topicId !== RELIC_TOPICS.event) {
-                        return () => undefined;
-                    }
-                    rallarMock.roundTransitionHandler = handler as RallarTypedPayloadHandler<RelicRoundTransitionEvent>;
-                    return () => {
-                        rallarMock.roundTransitionHandler = undefined;
-                    };
-                },
+            room: <Topic extends keyof MockRoomPayloads>(definition: { topicId: Topic; }) => ({
+                onWs: (handler: RallarTypedPayloadHandler<MockRoomPayloads[Topic]>) =>
+                    registerMockRoomHandler({ topicId: definition.topicId, handler } as MockRoomRegistration),
                 sendRtc: async () => ({ wait: async () => ({ lifecycle: { state: 'transport-accepted' as const } }) }),
                 sendWs: async (request: RallarAiJsonRequest) => {
                     if (definition.topicId !== RELIC_TOPICS.aiPlanning || rallarMock.answerPlanningRequest === undefined) {
@@ -226,7 +242,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
 
 interface MockRelicSceneProps {
     readonly children?: ReactNode;
-    readonly onPrimeAction?: (action: RelicActionInput) => void;
+    readonly onPrimeAction: (action: RelicActionInput) => void;
 }
 function MockRelicScene({ children, onPrimeAction }: MockRelicSceneProps) {
     return createElement(
@@ -235,16 +251,16 @@ function MockRelicScene({ children, onPrimeAction }: MockRelicSceneProps) {
         createElement('button', {
             type: 'button',
             'data-testid': 'scene-move-hallway',
-            onClick: () => onPrimeAction?.({ kind: 'move', targetRoomId: 'hallway' })
+            onClick: () => onPrimeAction({ kind: 'move', targetRoomId: 'hallway' })
         }, 'Move to Hallway'),
-        createElement('button', { type: 'button', 'data-testid': 'scene-search-clue', onClick: () => onPrimeAction?.({ kind: 'search' }) }, 'Search clue'),
+        createElement('button', { type: 'button', 'data-testid': 'scene-search-clue', onClick: () => onPrimeAction({ kind: 'search' }) }, 'Search clue'),
         children
     );
 }
 
-vi.mock('../../../apps/relic-hunters-v1/src/game/RelicSceneNext.tsx', () => ({ RelicSceneNext: MockRelicScene }));
+vi.mock('../../../apps/relic-hunters-v1/src/game/relic-scene.tsx', () => ({ RelicScene: MockRelicScene }));
 
-vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async () => {
+vi.mock('../../../apps/relic-hunters-v1/src/game/opening-relic-scene.tsx', async () => {
     const React = await vi.importActual<typeof import('react')>('react');
     return {
         OpeningRelicScene: () => React.createElement('div', { 'data-testid': 'opening-relic-scene' })
@@ -575,8 +591,9 @@ describe('Relic Hunters browser app', () => {
         expect(container.textContent).not.toContain('Move toward Hallway');
         expect(rallarMock.planningRequests).toHaveLength(1);
         expect(rallarMock.planningRequests[0]).not.toHaveProperty('signal');
-        expect(sentPlanningProposals().map((input) => (input.payload as { value: { headline: string; }; }).value.headline))
-            .toEqual([SERVER_SUGGESTION.headline]);
+        expect(sentPlanningProposals()).toEqual([expect.objectContaining({
+            payload: expect.objectContaining({ value: expect.objectContaining({ headline: SERVER_SUGGESTION.headline }) })
+        })]);
         await waitFor(() => aiPrimeButton() !== undefined);
         await act(async () => {
             aiPrimeButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -1255,5 +1272,27 @@ function repliedWith(request: RallarAiJsonRequest, suggestion: object): RallarMe
         value: suggestion,
         generationId: 'server-generation-1'
     });
-    return { status: 'replied', reply: { payload } as RallarMessage<object>, lifecycle: PLANNING_REQUEST_LIFECYCLE };
+    const raw = newALBroadcastMessage(
+        'default-qbox-server',
+        newALRoute(RELIC_TOPICS.aiPlanning, 'room-1', payload.generationId),
+        'room',
+        RELIC_TYPES.aiPlanningReply,
+        payload,
+        { groupRef: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, groupId: 'room-1' } }
+    );
+    const reply: RallarMessage<object> = {
+        transport: 'ws',
+        topicId: RELIC_TOPICS.aiPlanning,
+        typeId: RELIC_TYPES.aiPlanningReply,
+        contextId: 'room-1',
+        resourceId: raw.route.resourceId,
+        roomId: 'room-1',
+        senderId: 'default-qbox-server',
+        traceId: raw.id.traceId,
+        payload,
+        raw,
+        receivedAtEpochMs: Date.now(),
+        reply: unrepliedInTheseTests
+    };
+    return { status: 'replied', reply, lifecycle: PLANNING_REQUEST_LIFECYCLE };
 }

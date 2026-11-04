@@ -37,8 +37,8 @@ The intended playable loop is:
   and overlays for help, tension, and final scoring. Desktop side controls scroll
   independently; mobile retains page scrolling. Sticky section buttons navigate
   Rooms, Party/Plan, Map, and Intel.
-- `RelicSceneNext.tsx` renders the accepted snapshot as a procedural neon facility.
-  `OpeningRelicScene.tsx` renders when no snapshot is available. Avatar, Visor,
+- `relic-scene.tsx` renders the accepted snapshot as a procedural neon facility.
+  `opening-relic-scene.tsx` renders when no snapshot is available. Avatar, Visor,
   Overview, and Flyover controls affect presentation only.
 - The AI Companion is advisory. A validated local suggestion can prime a draft;
   it cannot submit. Proposals are shared only with the hunter's own sessions.
@@ -132,7 +132,7 @@ immediately, so clue trails and room objectives can update after the first find.
 ## Visual State
 
 The active scene uses the neon facility and camera model in
-`scene/relicSceneNextModel.ts`, with palette values in `scene/neonTheme.ts`.
+`scene/relic-scene-model.ts`, with palette values in `scene/neonTheme.ts`.
 Room kinds, hazards, relics, avatars, and escape routes must remain readable at
 both desktop and mobile sizes. Scene readiness, camera mode, review playback,
 and render/motion diagnostics are exposed on the canvas for browser checks.

@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { relicMutationPlayerId, toRelicTournamentParticipation } from './relic-tournament.ts';
+import type { RelicTournamentParticipation } from '../src/relic-tournament-participation.ts';
+import { relicMutationPlayerId } from './relic-tournament.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
@@ -50,6 +51,7 @@ export interface RelicGamePublicationProvenance {
 
 interface RelicGamePublicationInput {
     readonly read: RelicGameMutationService.Attempt;
+    readonly participation: RelicTournamentParticipation | null;
     readonly previous: RelicGameState | null;
     readonly next: RelicGameState | null;
     readonly refusal: string | null;
@@ -286,7 +288,7 @@ function toSnapshotNotification(input: RelicGamePublicationInput, next: RelicGam
         payload: {
             protocolVersion: next.protocolVersion,
             gameId: next.gameId,
-            snapshot: toPublicRelicSnapshot(next, toRelicTournamentParticipation(input.read.tournament))
+            snapshot: toPublicRelicSnapshot(next, input.participation)
         },
         ttlMs: RELIC_SNAPSHOT_TTL_MS,
         principalId: null,

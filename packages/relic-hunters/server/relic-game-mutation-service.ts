@@ -73,11 +73,11 @@ import {
     type RelicGameMove
 } from './relic-game-move.ts';
 import { computeRelicTournamentDeadline } from './relic-tournament-deadline.ts';
-import { toRelicTournamentParticipation } from './relic-tournament.ts';
 import {
-    computeRelicTournamentWrite,
+    computeRelicTournamentChange,
     relicMutationPlayerId,
-    relicTournamentMutationRefusal
+    relicTournamentMutationRefusal,
+    toRelicTournamentParticipation
 } from './relic-tournament.ts';
 
 import {
@@ -95,13 +95,19 @@ export const RELIC_ROOM_DATA_BINDING: RoomOwnedAppData.Binding = {
 };
 
 export namespace RelicGameMutationService {
+    export interface Actor {
+        readonly clientId: string;
+        readonly sessionId: string;
+        readonly issuedAtEpochMs: number;
+    }
+
     /** The transport's command: its trace rides the admitted envelope, never the captured command. */
     export interface CommandInput {
         readonly operation: 'ensure' | 'reset' | 'command';
         readonly gameId: string;
         readonly requestId: string;
         readonly traceId: string;
-        readonly actor: Readonly<{ clientId: string; sessionId: string; issuedAtEpochMs: number; }>;
+        readonly actor: Actor;
         readonly authorization: 'authenticated' | 'group-policy';
         readonly move: RelicCommand | null;
     }
@@ -158,10 +164,17 @@ export namespace RelicGameMutationService {
         readonly gameId: string;
     }
 
-    export type Result =
-        | Readonly<{ status: 'initialized'; gameId: string; }>
-        | Readonly<{ status: 'applied'; gameId: string; }>
-        | Refusal;
+    export interface Initialized {
+        readonly status: 'initialized';
+        readonly gameId: string;
+    }
+
+    export interface Applied {
+        readonly status: 'applied';
+        readonly gameId: string;
+    }
+
+    export type Result = Initialized | Applied | Refusal;
 
     export interface Computed {
         readonly result: Result;
@@ -434,13 +447,9 @@ function authorizeRelicGameMutation(
 
 function computeRelicGameMutation(read: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
     const { command } = read.ingress;
-    const denial = authorizeRelicGameMutation(read);
+    const denial = authorizeRelicGameMutation(read) ?? relicTournamentMutationRefusal(read);
     if (denial !== null) {
         return refused(command, denial);
-    }
-    const tournamentDenial = relicTournamentMutationRefusal(read);
-    if (tournamentDenial !== null) {
-        return refused(command, tournamentDenial);
     }
     const group = read.group;
     if (group === null) {
@@ -482,14 +491,19 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
         return {
             ...refused(command, { ...scheduledStartRefusal, httpStatus: 409 }),
             guard,
-            ...computeRelicGamePublications({ read, previous, next: null, refusal: scheduledStartRefusal.message })
+            ...computeRelicGamePublications({
+                read,
+                participation: toRelicTournamentParticipation(read.tournament),
+                previous,
+                next: null,
+                refusal: scheduledStartRefusal.message
+            })
         };
     }
     const missingProposal = evaluateRelicGameProposal(command, previous, read.ingress.initial);
-    if (missingProposal !== null) {
-        return refused(command, missingProposal);
-    }
-    return computeRelicGameTransitionResult(read, previous, guard);
+    return missingProposal !== null
+        ? refused(command, missingProposal)
+        : computeRelicGameTransitionResult(read, previous, guard);
 }
 
 function computeRelicGameTransitionResult(
@@ -503,7 +517,13 @@ function computeRelicGameTransitionResult(
         return {
             ...refused(command, { code: 'rule-refused', message: transition.left.message, httpStatus: 409 }),
             guard,
-            ...computeRelicGamePublications({ read, previous, next: null, refusal: transition.left.message })
+            ...computeRelicGamePublications({
+                read,
+                participation: toRelicTournamentParticipation(read.tournament),
+                previous,
+                next: null,
+                refusal: transition.left.message
+            })
         };
     }
     const next = transition.right;
@@ -520,8 +540,10 @@ function computeRelicGameTransitionResult(
             provenance: []
         };
     }
+    const tournament = computeRelicTournamentChange(read, next);
     const publications = computeRelicGamePublications({
         read,
+        participation: tournament.participation,
         previous: previous ?? read.ingress.initial,
         next,
         refusal: null
@@ -533,7 +555,7 @@ function computeRelicGameTransitionResult(
         guard,
         ...publications,
         outboxWrites: [...publications.outboxWrites, ...computeRelicTournamentDeadline(read, previous, next)],
-        tournamentWrite: computeRelicTournamentWrite(read, next),
+        tournamentWrite: tournament.write,
         save: computeRoomOwnedAppDataSave({
             read: read.save,
             value: encodeRelicGameStateAppData(next),

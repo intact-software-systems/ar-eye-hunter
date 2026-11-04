@@ -9,9 +9,9 @@ import { RelicSidePanel } from './game/hud/relic-side-panel.tsx';
 import { RelicStatus } from './game/hud/relic-status.tsx';
 import { RelicTimeline } from './game/hud/relic-timeline.tsx';
 import { phaseLabel } from './game/lang.ts';
-import { OpeningRelicScene } from './game/OpeningRelicScene.tsx';
+import { OpeningRelicScene } from './game/opening-relic-scene.tsx';
 import type { RelicHuntersRuntime } from './game/relic-hunters-runtime.ts';
-import { RelicSceneNext } from './game/RelicSceneNext.tsx';
+import { RelicScene } from './game/relic-scene.tsx';
 import { playUiSound } from './game/sound.ts';
 import { useRelicHunters } from './game/use-relic-hunters.ts';
 import { useRelicPlayback, type RelicPlayback } from './game/use-relic-playback.ts';
@@ -73,7 +73,7 @@ function RelicGameScene({ game, turn, playback }: RelicGameSceneProps) {
         await game.pickupRelic(relicId);
     };
     return (
-        <RelicSceneNext
+        <RelicScene
             snapshot={game.snapshot}
             localPlayerId={game.participation === 'player' ? game.playerId : undefined}
             selectedRoomId={turn.selection.roomId}

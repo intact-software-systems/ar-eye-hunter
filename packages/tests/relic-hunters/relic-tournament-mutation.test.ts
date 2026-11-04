@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'vitest';
+
 import { createRelicGame, RELIC_PROTOCOL_VERSION, type RelicCommand } from '@relic-hunters/mod.ts';
 import { RelicGameMutationService } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
@@ -5,10 +7,10 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { TOURNAMENT_ATTEMPTS_NAMESPACE } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { describe, expect, it } from 'vitest';
+
 import { createTestAuthSession } from '../shared-server/rallar-system/group-state/group-state-test-runtime.ts';
 import { connectGameSession, prepareGameWrite } from './relic-game-database-fixture.ts';
-import { createTournamentGameFixture } from './relic-tournament-database-fixture.ts';
+import { createTournamentGameFixture, readTournamentGameSnapshots, type TournamentGameFixture } from './relic-tournament-database-fixture.ts';
 
 describe('Relic tournament authority', () => {
     it('requires the committed native start before public initialization or gameplay', async () => {
@@ -47,6 +49,13 @@ describe('Relic tournament authority', () => {
             expect(finished?.phase).toBe('finished');
             const stored = await game.tournaments.read(game.binding);
             expect(stored.attempt?.status).toBe('finished');
+            expect(stored.attempt?.binding).toEqual(game.binding);
+            const pushed = (await readTournamentGameSnapshots(game)).filter((snapshot) => snapshot.phase === 'finished');
+            expect(pushed.length).toBeGreaterThan(0);
+            for (const snapshot of pushed) {
+                expect(snapshot.tournament, 'committed native completion must push finished participation')
+                    .toEqual({ binding: game.binding, status: 'finished' });
+            }
             expect(stored.result?.standings).toHaveLength(2);
             for (const hunter of finished!.players) {
                 expect(stored.result?.standings.find((row) => row.principalId === hunter.playerId)?.metrics.points).toBe(hunter.score);
@@ -191,12 +200,8 @@ describe('Relic tournament authority', () => {
             expect(computed.result.status).toBe('applied');
             expect(game.service.validate(attempt, computed)).toEqual([]);
             await game.storage.sql.begin((transaction) => game.service.write(transaction, computed));
-            const rows = await game.storage.sql<readonly { resource: string; }[]>`
-                select ri_resource as resource from resource_inbox where ri_topic_id = 'room.relic.snapshot'
-            `;
-            const messages = rows.map((row) => JSON.parse(row.resource));
-            expect(messages.map((message) => JSON.parse(message.payload.resource).snapshot.tournament.status))
-                .toContain('cancelled');
+            const pushed = await readTournamentGameSnapshots(game);
+            expect(pushed.map((snapshot) => snapshot.tournament?.status)).toContain('cancelled');
             expect(await game.data.read(game.ref)).toEqual(saved);
             expect((await game.tournaments.read(game.binding)).result).toBeNull();
         }
@@ -233,7 +238,7 @@ type TournamentMove =
     | { readonly kind: 'set-round-limit'; readonly timeLimitMs: number; }
     | { readonly kind: 'submit-action'; readonly action: { readonly kind: 'search'; }; };
 
-async function tournamentFixture() {
+async function tournamentFixture(): Promise<TournamentGameFixture> {
     const game = await createTournamentGameFixture();
     const ingress = game.service.capture(
         {
@@ -249,13 +254,15 @@ async function tournamentFixture() {
         'relic-test'
     );
     const read = await game.service.read(ingress);
-    const initial = game.service.compute({ ...read, attemptCount: 1, traceId: 'native-start' });
+    const attempt = { ...read, attemptCount: 1, traceId: 'native-start' };
+    const initial = game.service.compute(attempt);
+    expect(game.service.validate(attempt, initial)).toEqual([]);
     expect(initial.result.status).toBe('applied');
     await game.storage.sql.begin((transaction) => game.service.write(transaction, initial));
     return game;
 }
 
-async function prepareMove(game: Awaited<ReturnType<typeof tournamentFixture>>, session: typeof game.owner, input: TournamentMove) {
+async function prepareMove(game: TournamentGameFixture, session: typeof game.owner, input: TournamentMove) {
     const command: RelicCommand = { ...input, protocolVersion: RELIC_PROTOCOL_VERSION, gameId: game.ref.groupId, username: session.username };
     return await prepareGameWrite(game, {
         ...game.command,
@@ -266,7 +273,7 @@ async function prepareMove(game: Awaited<ReturnType<typeof tournamentFixture>>, 
     }, null);
 }
 
-async function move(game: Awaited<ReturnType<typeof tournamentFixture>>, session: typeof game.owner, input: TournamentMove) {
+async function move(game: TournamentGameFixture, session: typeof game.owner, input: TournamentMove) {
     const prepared = await prepareMove(game, session, input);
     expect(prepared.computed.result).toMatchObject({ status: 'applied' });
     await game.storage.sql.begin((transaction) => game.service.write(transaction, prepared.computed));

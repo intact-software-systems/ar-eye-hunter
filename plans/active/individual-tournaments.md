@@ -49,44 +49,29 @@
 4. Reload, sign-out, room replacement and reconnect must preserve the current tournament without replaying stale browser intent.
 5. Neither a tied score nor both players missing may silently pick a winner; the UI must expose the unresolved state and permitted recovery.
 
-## Stage 1: Trusted match results
+## Remaining implementation horizon
 
-**Owners and interfaces:**
+### 1. Complete browser reliability and affected scene ownership
 
-- `packages/shared/api/tournaments/tournament-types.ts`: mandatory scoped tournament, match-attempt, entrant and result contracts. Results bind the exact game instance and account roster.
-- `packages/shared-server/rallar-system/tournaments/tournament-result-repository.ts`: exact validated immutable result reads and prepared conditional writes within the game owner's AppInbox transaction.
-- `packages/ar-eye-hunter/`: canonical renderer-independent arena rules and server tournament mutation owner, extracted from `apps/ar-eye-hunter-v1/src/game/` without compatibility re-export files.
-- `apps/ar-eye-hunter-server-v1/`: application composition using the existing Rallar server bootstrap and public application AppInbox; no game branches in generic API-v1.
-- `packages/relic-hunters/server/relic-game-mutation-service.ts`: final-result production at its existing authoritative save boundary.
-- Browser game adapters consume authoritative tournament snapshots/command outcomes and preserve current casual room behavior.
+Keep the complete native tournament experience as the outcome. Preserve the existing trusted result, admission, scope and clock policies. The current evidence calls for targeted corrections in the actual browser path, with semantic regressions at each affected owner and human-clickable proof in both SPAs.
 
-- [x] Write result-binding, immutable replay/conflicting result, wrong-slot corruption, cancelled attempt and competing finalization regressions; observe RED and verify the SQL-backed boundary.
-- [ ] Extract only the pure AR Eye rule surface required by server authority, update direct browser imports, and prove rules remain identical through existing semantic suites. Remove the old definitions rather than retaining aliases.
-- [ ] Add server-owned tournament game commands and canonical result writes. Test forged pose scores, invalid shots/movement, replay, expiry, spectator/ban refusal, exact account identity and server-controlled completion with real conditional storage.
-- [ ] Connect Relic finalization to the same result contract without placing Relic rules in Rallar packages. Prove ordinary reset/rematch cannot rewrite a tournament result.
-- [ ] Run focused game/result suites, both game builds, reusable package typechecks and both server native checks. Commit a coherent result-authority increment and publish one draft PR.
+For AR Eye, retain independent queued-fire progression, terminal graphics idling, conditional renderer publication, current-snapshot egress and frame completion before local-pose side effects. Validate both the native full bracket and ordinary Quick Join, reload, readiness cancellation and repeat play. Do not treat a passing unit model as a substitute for the real frame/command integration.
 
-## Stage 2: Complete four-player tournaments
+For Relic, eliminate ongoing rendering of finished/cancelled native tournament scenes while keeping active games and spectators live. The large existing scene owner enters full standards closure: first consolidate its React presentation, Babylon lifecycle and coherent geometry/synchronization responsibilities, then implement the immediately following terminal-idling behavior through those owners. Reuse the existing timing abstractions and put any missing game-independent frame scheduling mechanism in shared code, with no Babylon or React dependency there. Domain terminal and shader-readiness policy remains in the app. Preserve the reviewed hydration guard and direct imports; remove affected predecessors instead of retaining compatibility paths.
 
-**Owners and interfaces:**
+Terminal-page acceptance includes compositor work as well as Babylon draws. A same-page intervention/restoration measured the infinite brand pulse and backdrop blur as recurring GPU costs even with a stable draw counter. Keep the brand static, give decorative cues and victory confetti finite lifetimes, and remove the expensive backdrop blur while preserving readable panel backgrounds, current camera controls and gameplay feedback. The browser regression must observe every draw, current intended-image readiness, actual pixels and settled page animations; a latched last-ready timestamp is insufficient. Full room-entry reliability remains a separate required result, with no raised deadline.
 
-- `packages/shared/api/tournaments/tournament-request.ts`: decoded user intent and exact durable mutation result; no user-supplied authority.
-- `packages/shared/tournaments/compute-tournament.ts`: explicit registration, bracket, check-in, scheduling, withdrawal and cancellation decisions. `settle-tournament.ts` owns automatic trusted-result and deadline advancement; `assert-tournament-integrity.ts` owns cross-field invariants shared by decoded reads and prepared writes.
-- `packages/shared-server/rallar-system/tournaments/tournament-service.ts`: AppInbox registration and visible read/compute/validate/write; its repository owns canonical scoped records, corruption checks and CAS.
-- `apps/api-v1/src/tournaments/register-tournament-routes.ts`: authenticated reads and request-keyed mutation ingress; app composition/config/OpenAPI bind the existing owners.
-- `packages/shared-web/browser/tournaments/rallar-tournament.ts`: account-fenced API resource, share-link preview and explicit room entry, composing AuthenticatedResource.
-- `packages/shared-react/tournament-panel.tsx`: shared visible registration/bracket/match controls; app bindings stay narrow.
-- `tests/playwright/tournament-journey.ts`: shared four-account human-clickable workflow used by both game specs; independent game actions remain game-owned.
+Native completion publication also belongs to this reliability outcome: persisted WebSocket snapshots must expose the same computed tournament participation status and exact binding that commit with the final game/result. Player-driven and clock-driven finalization require durable outbox regressions; do not compensate with client inference or REST polling. Preserve read/compute/validate/write, AppInbox retries and the existing conditional guard.
 
-- [x] Write pure rule tests for seed order, capacity, semifinals/final, ties, exact deadline boundaries, one/both no-shows, withdrawal and terminal cancellation. Observe RED, implement minimal pure decisions, verify GREEN.
-- [x] Define exact public intent and canonical bracket decoders. Reject caller-selected scores, principals, rules and room identities; validate every exercised policy transition against the canonical representation.
-- [ ] Write real persistence tests for two contenders for the fourth seat, duplicate commands, no-show/check-in races, cancel/result races, stale attempts, corrupt scope and all-or-none room admission. Implement through existing AppInbox and conditional batch owners; no inner retry.
-- [ ] Add authenticated REST and black-box recipes covering unauthorized access, complete bracket, result forgery refusal and exact replay. Reuse cohort admission, canonical keys and durable deadline work.
-- [ ] Add browser resource and shared panel with visible refusal/retry, account fencing, links, check-in, start, tied replay, reschedule and cancellation. Add semantic UI tests before implementation.
-- [ ] Play all three matches through visible controls in each built SPA and crown the actual winner. Include reload, account replacement, stale result, tied attempt, no-show recovery and spectator refusal. No test-only scoring endpoint or fabricated completion stands in for real play.
-- [ ] Run focused suites and app builds, API black-box/Postgres overlap tests, medium-scale and controlled performance comparison, local and hosted clickable journeys, Branch Release Gate and classified Hetzner validation. Retain failure diagnostics and obtain explicit approval for any real performance exception.
-- [ ] Perform one independent whole-branch code/structure/legacy review. Fix findings with RED-to-GREEN regressions. Review every changed human-authored file and recursively changed support file in full; independent untouched code stays outside closure.
-- [ ] Update product/architecture docs and PR evidence, delete this completed plan, run delivery readiness once and wait for maintainer merge.
+Direct acceptance uses genuine native completion/cancellation, active Watch, stable terminal rendering, ready resize redraw, retained graphics allocation and next-room rendering. Both games must play the full bracket with existing per-action entry limits. Measure terminal-page CPU and final-entry responsiveness in the same environment; distinguish elapsed script time from process CPU, and do not claim an exact native blocking call without a profile.
+
+Every changed human-authored file is reviewed and remediated in full. Every support file changed by that remediation enters closure recursively. Independent untouched code remains outside closure. App/package typechecks and builds validate the affected boundaries in addition to direct behavioral tests. No legacy, migration, duplicate mechanism, timeout weakening or new unapproved standards exception is planned.
+
+### 2. Complete final review and exact-candidate validation
+
+After the browser correction is coherent, publish it through the existing PR and complete the final local and hosted native brackets, ordinary affected journeys, release gate, API correctness and unchanged medium-scale workload. Run the full controlled state-write comparison and selected distributed validation, including GitHub Free and the authorized Hetzner workflow. Record actual results and remaining uncertainty in the PR; partial benchmark output cannot establish a verdict, and a prior commit's pass cannot replace a required final-candidate check.
+
+Complete independent review of the changed code, ownership and affected legacy. Resolve real conflicts before final validation, but do not rebase merely because the branch is behind while mergeable. Delete this plan only when its outcomes are complete, update the semantic PR description, run delivery readiness once, and leave the merge to the maintainer.
 
 ## Validation and completion
 

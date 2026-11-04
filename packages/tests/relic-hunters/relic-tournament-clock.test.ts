@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, it } from 'vitest';
+
 import { createRelicGame } from '@relic-hunters/mod.ts';
 import { decodeRelicGameCommand } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import type { RelicGameMutationService } from '@relic-hunters/server/relic-game-mutation-service.ts';
@@ -7,10 +9,10 @@ import { advanceRelicTournamentClock, startRelicTournament } from '@relic-hunter
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { describe, expect, it } from 'vitest';
+
 import { createAppInboxTestResilience } from '../shared-server/rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createRelicGameInboxFixture } from './relic-game-inbox-fixture.ts';
-import { createTournamentGameFixture } from './relic-tournament-database-fixture.ts';
+import { createTournamentGameFixture, readTournamentGameSnapshots } from './relic-tournament-database-fixture.ts';
 
 const start = 1700000000000;
 const players = ['alice', 'bob'] as const;
@@ -89,6 +91,13 @@ describe('Relic durable tournament transitions', () => {
             }
             const stored = await game.tournaments.read(game.binding);
             expect(stored.attempt?.status).toBe('finished');
+            expect(stored.attempt?.binding).toEqual(game.binding);
+            const pushed = (await readTournamentGameSnapshots(game)).filter((snapshot) => snapshot.phase === 'finished');
+            expect(pushed.length).toBeGreaterThan(0);
+            for (const snapshot of pushed) {
+                expect(snapshot.tournament, 'committed native clock completion must push finished participation')
+                    .toEqual({ binding: game.binding, status: 'finished' });
+            }
             expect(stored.result?.standings).toHaveLength(2);
         }
         finally {

@@ -3,18 +3,16 @@ import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
 import { describe, expect, it } from 'vitest';
 import {
     blackHumourSignForRoom,
-    calculateFacilityBounds,
+    computeFacilityBounds,
     facilityRoomCallsign,
-    neonFlyoverRouteRooms,
     planNeonAvatarCameraPose,
     planNeonFirstPersonCameraPose,
     planNeonFlyoverCameraPose,
     planNeonOverviewCameraPose,
     planNeonTacticalCameraPose,
     projectFacilityMapPoint,
-    RELIC_SCENE_NEXT_VISUAL_CONTRACT,
     shouldShowFacilityMapLabel
-} from '../src/game/scene/relicSceneNextModel.ts';
+} from '../src/game/scene/relic-scene-model.ts';
 
 const map: readonly RelicRoom[] = [
     { id: 'entrance', name: 'Corporate Intake Gate', kind: 'entrance', x: 0, z: -1, neighbors: ['hall'] },
@@ -24,9 +22,9 @@ const map: readonly RelicRoom[] = [
     { id: 'exit', name: 'Gift Shop Evacuation', kind: 'exit', x: 0, z: 1, neighbors: ['hall'] }
 ];
 
-describe('RelicSceneNext model helpers', () => {
+describe('RelicScene model helpers', () => {
     it('projects facility rooms into a padded tactical map area', () => {
-        const bounds = calculateFacilityBounds(map);
+        const bounds = computeFacilityBounds(map);
 
         expect(projectFacilityMapPoint(map[0], bounds)).toEqual({ x: 50, y: 11 });
         expect(projectFacilityMapPoint(map[4], bounds)).toEqual({ x: 50, y: 89 });
@@ -61,7 +59,7 @@ describe('RelicSceneNext model helpers', () => {
         expect(blackHumourSignForRoom({ id: 'exit', kind: 'exit' })).toMatch(/Exit|evacuation/i);
     });
 
-    it('frames the local tactical cluster lower and closer than the legacy full-map flyout', () => {
+    it('frames the selected local tactical cluster', () => {
         const pose = planNeonTacticalCameraPose({
             snapshot: snapshot(),
             localPlayerId: 'alice',
@@ -113,31 +111,20 @@ describe('RelicSceneNext model helpers', () => {
             .toBeGreaterThan(tactical.position.subtract(tactical.target).length());
     });
 
-    it('builds a deterministic entrance-to-exit flyover route and progresses along it', () => {
+    it('plans a deterministic flyover that starts at the entrance and progresses across the facility', () => {
         const sample = snapshot();
-        const firstRoute = neonFlyoverRouteRooms(sample).map((room) => room.id);
-        const secondRoute = neonFlyoverRouteRooms(sample).map((room) => room.id);
         const startPose = planNeonFlyoverCameraPose({ snapshot: sample, progress: 0, aspectRatio: 16 / 9 });
         const endPose = planNeonFlyoverCameraPose({ snapshot: sample, progress: 1, aspectRatio: 16 / 9 });
 
-        expect(firstRoute).toEqual(secondRoute);
-        expect(firstRoute[0]).toBe('entrance');
-        expect(firstRoute).toContain('exit');
+        expect(planNeonFlyoverCameraPose({ snapshot: sample, progress: 0, aspectRatio: 16 / 9 })).toEqual(startPose);
+        expect(startPose.position.z).toBeLessThan(0);
         expect(startPose.position.subtract(endPose.position).length()).toBeGreaterThan(1);
-    });
-
-    it('documents visual smoke thresholds for the next canvas runtime', () => {
-        expect(RELIC_SCENE_NEXT_VISUAL_CONTRACT).toMatchObject({
-            minAverageLuma: expect.any(Number),
-            maxDarkPixelRatio: expect.any(Number),
-            minNeonPixelRatio: expect.any(Number)
-        });
-        expect(RELIC_SCENE_NEXT_VISUAL_CONTRACT.maxDarkPixelRatio).toBeLessThan(0.7);
     });
 });
 
 function snapshot(): RelicPublicSnapshot {
     return {
+        tournament: null,
         protocolVersion: 1,
         gameId: 'game-1',
         roomId: 'room-1',

@@ -119,13 +119,18 @@ function relicTournamentCommandRefusal(
 }
 
 /** Native state and the exact private attempt/result commit in one AppInbox transaction. */
-export function computeRelicTournamentWrite(
+export interface RelicTournamentChange {
+    readonly write: TournamentResultRepository.Write | null;
+    readonly participation: RelicTournamentParticipation | null;
+}
+
+export function computeRelicTournamentChange(
     read: RelicGameMutationService.Read,
     next: RelicGameState
-): TournamentResultRepository.Write | null {
+): RelicTournamentChange {
     const tournament = read.tournament;
     if (tournament === null) {
-        return null;
+        return { write: null, participation: null };
     }
     if (next.maxRounds !== 10 || next.roundTimeLimitMs !== 60000 || next.gameId !== tournament.binding.gameId) {
         throw new TypeError('Relic tournament state differs from its frozen rules');
@@ -134,7 +139,10 @@ export function computeRelicTournamentWrite(
         throw new TypeError('Relic tournament contains an unbound hunter');
     }
     if (next.phase !== 'finished') {
-        return { storage: computeTournamentAttemptFence(tournament, 'playing'), outbox: [] };
+        return {
+            write: { storage: computeTournamentAttemptFence(tournament, 'playing'), outbox: [] },
+            participation: toRelicTournamentParticipation(tournament)
+        };
     }
     const scores = tournament.binding.principalIds.map((principalId) => {
         const player = next.players.find((candidate) => candidate.playerId === principalId);
@@ -162,7 +170,7 @@ export function computeRelicTournamentWrite(
     if (publication.kind !== 'publish') {
         throw new TypeError('Relic completion lacks a new authorized result');
     }
-    return publication.write;
+    return { write: publication.write, participation: { binding: tournament.binding, status: 'finished' } };
 }
 
 /** Public participation carries cancellation so clients can leave without reviving an obsolete attempt. */

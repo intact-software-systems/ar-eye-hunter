@@ -5428,6 +5428,21 @@ moved or changed test.
         "requiredConstraint": "No peer snapshot publication occurs while a tournament is active, including the periodic publication interval.",
         "failureRationale": "Correct local player identity and rendering do not exclude unauthorized snapshot publication to other peers."
       }
+    },
+    {
+      "id": "relic-failed-scene-startup-releases-owned-engine",
+      "domain": "Relic graphics lifecycle",
+      "owner": "Relic Hunters maintainers",
+      "summary": "A failed scene startup releases its already allocated graphics engine exactly once before propagating the construction error.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts#disposes the allocated engine if early scaling fails before Scene construction",
+      "coverageRelation": "The test allocates the engine through the real runtime factory, injects failure at its first scaling operation before Scene construction, observes the original error, and verifies the owned native dispose port releases the allocation once.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "the allocated Babylon Engine dispose port owned by createRelicSceneRuntime",
+        "observableEffect": "The failed graphics lifetime is released without leaving an allocated engine or competing cleanup owners.",
+        "requiredConstraint": "A failure after engine allocation but before Scene construction must invoke disposal exactly once while preserving the original construction failure.",
+        "failureRationale": "No usable runtime is returned on this path, so a returned-state assertion cannot observe the allocated graphics resource; its release port directly witnesses whether failed construction leaks that resource or releases it twice."
+      }
     }
   ],
   "entries": [
@@ -11469,6 +11484,17 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "Advancing the runtime publication timer must not publish a server-owned tournament snapshot over RTC.",
       "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#restores the same tournament hunter after signing in with a new session"
+    },
+    {
+      "id": "test-structure-coupling-544d8592389f0c35",
+      "path": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-failed-scene-startup-releases-owned-engine",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "The one-disposal assertion observes cleanup of the one engine already allocated before construction fails; it protects the graphics resource lifetime rather than the order of internal helper calls.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts#disposes the allocated engine if early scaling fails before Scene construction"
     }
   ]
 }

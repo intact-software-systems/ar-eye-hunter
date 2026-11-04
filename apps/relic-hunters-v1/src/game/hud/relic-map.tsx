@@ -9,12 +9,12 @@ import {
 import { plural } from '../lang.ts';
 import { shortestOpenRoomPath } from '../scene/objectives.ts';
 import {
-    calculateFacilityBounds,
+    computeFacilityBounds,
     projectFacilityMapPoint,
     shouldShowFacilityMapLabel,
     type FacilityBounds,
     type FacilityPoint
-} from '../scene/relicSceneNextModel.ts';
+} from '../scene/relic-scene-model.ts';
 
 interface CastleMapProps {
     readonly snapshot: RelicPublicSnapshot;
@@ -26,7 +26,7 @@ interface CastleMapProps {
 
 export function CastleMap(props: CastleMapProps) {
     const { snapshot, localPlayerId } = props;
-    const bounds = calculateFacilityBounds(snapshot.map);
+    const bounds = computeFacilityBounds(snapshot.map);
     const exitDistances = castleMapExitDistances(snapshot.map);
     const localPlayer = snapshot.players.find((player) => player.playerId === localPlayerId);
     return (
@@ -343,7 +343,7 @@ export function SceneMinimapOverlay({ snapshot, localPlayerId }: SceneMinimapOve
     if (snapshot.phase === 'lobby') {
         return null;
     }
-    const bounds = calculateFacilityBounds(snapshot.map);
+    const bounds = computeFacilityBounds(snapshot.map);
     const localRoomId = snapshot.players.find((player) => player.playerId === localPlayerId)?.roomId;
     return (
         <div className="scene-minimap" aria-hidden="true">

@@ -1,43 +1,65 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
+import { clamp, NEON_ROOM_GRID_SCALE, smoothstep } from './neon/relic-scene-space.ts';
+import { shortestOpenRoomPath } from './objectives.ts';
 
-export type FacilityBounds = Readonly<{
-    minX: number;
-    maxX: number;
-    minZ: number;
-    maxZ: number;
-}>;
+interface ShouldShowFacilityMapLabelInput {
+    room: Pick<RelicRoom, 'id' | 'kind'>;
+    selectedRoomId?: string;
+    localRoomId?: string;
+    exitRoomId?: string;
+}
 
-export type FacilityPoint = Readonly<{
-    x: number;
-    y: number;
-}>;
+interface PlanNeonTacticalCameraPoseInput {
+    snapshot: RelicPublicSnapshot;
+    localPlayerId?: string;
+    selectedRoomId?: string;
+    focusRoomId?: string;
+    aspectRatio: number;
+}
 
-export type NeonCameraPose = Readonly<{
-    position: Vector3;
-    target: Vector3;
-    fov: number;
-}>;
+interface PlanNeonAvatarCameraPoseInput {
+    avatarPosition: Vector3;
+    cameraYaw: number;
+    cameraPitch?: number;
+}
 
-export type RelicSceneNextCameraMode = 'avatar' | 'first-person' | 'overview' | 'flyover';
+interface PlanNeonFirstPersonCameraPoseInput {
+    avatarPosition: Vector3;
+    cameraYaw: number;
+    cameraPitch?: number;
+}
 
-export const NEON_ROOM_GRID_SCALE = 15.2;
+interface PlanNeonOverviewCameraPoseInput {
+    snapshot: RelicPublicSnapshot;
+    aspectRatio: number;
+}
 
-export const RELIC_SCENE_NEXT_CAMERA_MODES: readonly RelicSceneNextCameraMode[] = [
-    'avatar',
-    'first-person',
-    'overview'
-] as const;
+interface PlanNeonFlyoverCameraPoseInput {
+    snapshot: RelicPublicSnapshot;
+    progress: number;
+    aspectRatio: number;
+}
 
-export const RELIC_SCENE_NEXT_FLYOVER_DURATION_MS = 6200;
-export const RELIC_SCENE_NEXT_REDUCED_FLYOVER_DURATION_MS = 650;
+export interface FacilityBounds {
+    readonly minX: number;
+    readonly maxX: number;
+    readonly minZ: number;
+    readonly maxZ: number;
+}
 
-export const RELIC_SCENE_NEXT_VISUAL_CONTRACT = {
-    minAverageLuma: 0.28,
-    maxDarkPixelRatio: 0.62,
-    minNeonPixelRatio: 0.035,
-    persistentHudBudgetDesktop: 0.25
-} as const;
+export interface FacilityPoint {
+    readonly x: number;
+    readonly y: number;
+}
+
+export interface NeonCameraPose {
+    readonly position: Vector3;
+    readonly target: Vector3;
+    readonly fov: number;
+}
+
+export type RelicCameraMode = 'avatar' | 'first-person' | 'overview' | 'flyover';
 
 const BLACK_HUMOUR_SIGNS: Record<RelicRoom['kind'], readonly string[]> = {
     entrance: [
@@ -78,7 +100,7 @@ export function facilityRoomPosition(room: Pick<RelicRoom, 'x' | 'z'>): Vector3 
     return new Vector3(room.x * NEON_ROOM_GRID_SCALE, 0, room.z * NEON_ROOM_GRID_SCALE);
 }
 
-export function calculateFacilityBounds(map: readonly Pick<RelicRoom, 'x' | 'z'>[]): FacilityBounds {
+export function computeFacilityBounds(map: readonly Pick<RelicRoom, 'x' | 'z'>[]): FacilityBounds {
     if (map.length === 0) {
         return { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
     }
@@ -110,12 +132,7 @@ export function shouldShowFacilityMapLabel({
     selectedRoomId,
     localRoomId,
     exitRoomId
-}: Readonly<{
-    room: Pick<RelicRoom, 'id' | 'kind'>;
-    selectedRoomId?: string;
-    localRoomId?: string;
-    exitRoomId?: string;
-}>): boolean {
+}: ShouldShowFacilityMapLabelInput): boolean {
     return room.id === selectedRoomId ||
         room.id === localRoomId ||
         room.id === exitRoomId ||
@@ -145,14 +162,8 @@ export function planNeonTacticalCameraPose({
     selectedRoomId,
     focusRoomId,
     aspectRatio
-}: Readonly<{
-    snapshot: RelicPublicSnapshot;
-    localPlayerId?: string;
-    selectedRoomId?: string;
-    focusRoomId?: string;
-    aspectRatio: number;
-}>): NeonCameraPose {
-    const focusRooms = selectCameraFocusRooms(snapshot, localPlayerId, selectedRoomId, focusRoomId);
+}: PlanNeonTacticalCameraPoseInput): NeonCameraPose {
+    const focusRooms = selectCameraFocusRooms({ snapshot, localPlayerId, selectedRoomId, focusRoomId });
     const positions = focusRooms.map(facilityRoomPosition);
     const minX = Math.min(...positions.map((position) => position.x));
     const maxX = Math.max(...positions.map((position) => position.x));
@@ -181,11 +192,7 @@ export function planNeonAvatarCameraPose({
     avatarPosition,
     cameraYaw,
     cameraPitch = 0
-}: Readonly<{
-    avatarPosition: Vector3;
-    cameraYaw: number;
-    cameraPitch?: number;
-}>): NeonCameraPose {
+}: PlanNeonAvatarCameraPoseInput): NeonCameraPose {
     const forward = yawForward(cameraYaw);
     const right = yawRight(cameraYaw);
     const pitch = clamp(cameraPitch, -0.48, 0.58);
@@ -210,11 +217,7 @@ export function planNeonFirstPersonCameraPose({
     avatarPosition,
     cameraYaw,
     cameraPitch = 0
-}: Readonly<{
-    avatarPosition: Vector3;
-    cameraYaw: number;
-    cameraPitch?: number;
-}>): NeonCameraPose {
+}: PlanNeonFirstPersonCameraPoseInput): NeonCameraPose {
     const pitch = clamp(cameraPitch, -0.72, 0.72);
     const forward = yawForward(cameraYaw);
     const eye = avatarPosition
@@ -235,10 +238,7 @@ export function planNeonFirstPersonCameraPose({
 export function planNeonOverviewCameraPose({
     snapshot,
     aspectRatio
-}: Readonly<{
-    snapshot: RelicPublicSnapshot;
-    aspectRatio: number;
-}>): NeonCameraPose {
+}: PlanNeonOverviewCameraPoseInput): NeonCameraPose {
     const positions = snapshot.map.map(facilityRoomPosition);
     if (positions.length === 0) {
         return {
@@ -273,11 +273,7 @@ export function planNeonFlyoverCameraPose({
     snapshot,
     progress,
     aspectRatio
-}: Readonly<{
-    snapshot: RelicPublicSnapshot;
-    progress: number;
-    aspectRatio: number;
-}>): NeonCameraPose {
+}: PlanNeonFlyoverCameraPoseInput): NeonCameraPose {
     const route = neonFlyoverRouteRooms(snapshot);
     if (route.length === 0) {
         return planNeonOverviewCameraPose({ snapshot, aspectRatio });
@@ -313,11 +309,11 @@ export function planNeonFlyoverCameraPose({
     };
 }
 
-export function neonFlyoverRouteRooms(snapshot: RelicPublicSnapshot): readonly RelicRoom[] {
+function neonFlyoverRouteRooms(snapshot: RelicPublicSnapshot): readonly RelicRoom[] {
     const entrance = snapshot.map.find((room) => room.kind === 'entrance') ?? snapshot.map[0];
     const exit = snapshot.map.find((room) => room.kind === 'exit');
     const routeIds = entrance && exit
-        ? shortestRoomPath(snapshot.map, entrance.id, exit.id)
+        ? (shortestOpenRoomPath(snapshot.map, entrance.id, exit.id) ?? [entrance.id])
         : entrance
         ? [entrance.id]
         : [];
@@ -331,11 +327,15 @@ export function neonFlyoverRouteRooms(snapshot: RelicPublicSnapshot): readonly R
     return [...route, ...remaining];
 }
 
+interface CameraFocusInput {
+    readonly snapshot: RelicPublicSnapshot;
+    readonly localPlayerId: string | undefined;
+    readonly selectedRoomId: string | undefined;
+    readonly focusRoomId: string | undefined;
+}
+
 function selectCameraFocusRooms(
-    snapshot: RelicPublicSnapshot,
-    localPlayerId?: string,
-    selectedRoomId?: string,
-    focusRoomId?: string
+    { snapshot, localPlayerId, selectedRoomId, focusRoomId }: CameraFocusInput
 ): readonly RelicRoom[] {
     const roomById = new Map(snapshot.map.map((room) => [room.id, room]));
     const ids = new Set<string>();
@@ -364,55 +364,10 @@ function selectCameraFocusRooms(
     return rooms.length > 0 ? rooms : snapshot.map;
 }
 
-function shortestRoomPath(
-    map: readonly RelicRoom[],
-    fromRoomId: string,
-    toRoomId: string
-): readonly string[] {
-    if (fromRoomId === toRoomId) {
-        return [fromRoomId];
-    }
-    const roomById = new Map(map.map((room) => [room.id, room]));
-    const visited = new Set<string>([fromRoomId]);
-    const queue: string[][] = [[fromRoomId]];
-    while (queue.length > 0) {
-        const path = queue.shift()!;
-        const room = roomById.get(path[path.length - 1]);
-        if (!room) {
-            continue;
-        }
-        for (const neighborId of room.neighbors) {
-            if (visited.has(neighborId)) {
-                continue;
-            }
-            const neighbor = roomById.get(neighborId);
-            if (!neighbor || neighbor.collapsed) {
-                continue;
-            }
-            const next = [...path, neighborId];
-            if (neighborId === toRoomId) {
-                return next;
-            }
-            visited.add(neighborId);
-            queue.push(next);
-        }
-    }
-    return [fromRoomId];
-}
-
 function yawForward(yaw: number): Vector3 {
     return new Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
 }
 
 function yawRight(yaw: number): Vector3 {
     return new Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
-}
-
-function smoothstep(value: number): number {
-    const t = clamp(value, 0, 1);
-    return t * t * (3 - 2 * t);
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
 }
