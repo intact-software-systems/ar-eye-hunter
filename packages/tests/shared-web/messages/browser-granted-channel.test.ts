@@ -313,6 +313,32 @@ describe('a granted typed channel', () => {
         expect(admissions).toEqual([]);
     });
 
+    it('a raw WS send and a members channel\'s WS send on a declared granted topic naming no room are refused unsupported before any leg', async () => {
+        const facade = createRallarTestFacade();
+        const { roomRef: _roomRef, ...definition } = { ...toGrantedDefinition(), topicId: 'app.granted-feed' };
+        facade.messages.channel<FeedItem>(definition);
+
+        const handles = [
+            await facade.messages.ws.send({
+                typeId: 'room.granted-feed.v1',
+                topicId: 'app.granted-feed',
+                payload: { text: 'raw' },
+                scope: 'world',
+                ack: 'none'
+            }),
+            await facade.messages.channel<FeedItem>({ ...definition, access: 'members' })
+                .sendWs({ text: 'members' }, { scope: 'world', ack: 'none' })
+        ];
+
+        for (const handle of handles) {
+            expect((await handle.wait()).lifecycle).toMatchObject({
+                state: 'rejected',
+                evidence: { failure: { kind: 'refused', reason: 'unsupported' } }
+            });
+        }
+        expect(admissions).toEqual([]);
+    });
+
     it('a send with a cached publish grant reaches the WS leg', async () => {
         setRallarFacadeRoomSnapshots([createRoomSnapshot(PUBLISHER, undefined)]);
         const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());

@@ -16,6 +16,7 @@ import {
 import type { Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { RFC_7517_PUBLICATION_KEY } from '../../../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { createMutationCommand, createMutationFacts, createMutationRead, rekey } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef, presenceFor } from '../mutation/group-mutation-test-runtime.ts';
 
@@ -127,6 +128,36 @@ describe('group presence summary evaluation time', () => {
                     groupRevision: 2,
                     presenceRevision: 2
                 }
+            }
+        });
+    });
+
+    it('advances the presence revision when only a session\'s publication key changes, at the same group revision', () => {
+        const read = createActivePresenceRead();
+        if (!read.current) {
+            throw new Error('Expected an active presence summary');
+        }
+        const current = read.current.value;
+        const keyed = {
+            ...current,
+            activeSessions: current.activeSessions.map((session) => ({
+                ...session,
+                publicationKey: RFC_7517_PUBLICATION_KEY
+            }))
+        };
+
+        expect(computeGroupPresenceSummary({
+            ref: REF,
+            read: { ...read, current: stored(groupStatePresenceSummaryStorageKey(REF), keyed) },
+            nowEpochMs: 1_200
+        })).toMatchObject({
+            outcome: 'write',
+            summary: {
+                causalRevision: {
+                    groupRevision: current.causalRevision.groupRevision,
+                    presenceRevision: current.causalRevision.presenceRevision + 1
+                },
+                activeSessions: current.activeSessions.map(() => expect.objectContaining({ publicationKey: null }))
             }
         });
     });

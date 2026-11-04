@@ -495,8 +495,9 @@ the reply cells, so they stay as recorded.
 The `topic-subscription` conformance scenarios (`scenarios/topic-subscription/`) prove the
 granted topic's elections: a session receives `room.alm-conformance-granted`, which the lane's API
 profile installs, only while it holds `subscribe` and an election its current connection
-generation asserted. They run in the full scope over `ws` and `rtc-with-ws-fallback`, since a
-granted channel is WS-only. Four of them form the `four-role` family: the receiver owns the room
+generation asserted. They run in the full scope over `ws` and `rtc-with-ws-fallback`: a granted
+topic rides RTC only as a signed `ack: 'none'` room multicast with a verified publisher proof,
+delivered to `subscribe(handler)`, and every other granted send goes over WS. Four of them form the `four-role` family: the receiver owns the room
 and grants, the sender and `sibling` are two sessions of user A, and `publisher-b` is user C, a
 second producer. The owner's grants name each grantee as `{principal:<role>}`, which recipe
 creation substitutes from `principalIdsByRole` (the lane passes its opened agents' client ids;

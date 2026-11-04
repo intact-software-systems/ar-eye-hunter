@@ -42,7 +42,10 @@ export interface TypedChannelRoute {
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly roomRef: GroupRef | undefined;
-    /** `granted` only on the connect's granted selector topic, whose channel is WS-only. */
+    /**
+     * `granted` only on the connect's granted selector topic, which rides RTC only as a signed `ack: 'none'` room
+     * multicast delivered to `subscribe(handler)`; every other granted send goes over WS.
+     */
     readonly access: 'members' | 'granted';
     readonly durability: ALDurabilityAlgo | undefined;
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy | undefined;

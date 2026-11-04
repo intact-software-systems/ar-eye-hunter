@@ -9,7 +9,10 @@ export namespace BrowserGrantedTopics {
     }
 }
 
-/** The page's granted topics: each a typed channel declared granted, and each a cached room snapshot grants. */
+/**
+ * The page's granted topics: each a typed channel declared granted, and each a cached room snapshot grants. A declared
+ * topic stays granted for the page's lifetime and is never undone, by design: one page runs one application.
+ */
 export class BrowserGrantedTopics implements RtcGrantedTopicReader {
     private readonly declaredTopicIds = new Set<string>();
     private readonly input: BrowserGrantedTopics.Input;

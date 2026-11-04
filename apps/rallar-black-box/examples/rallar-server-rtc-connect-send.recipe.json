@@ -65,7 +65,10 @@
         "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}/requests/rallar-black-box-bb-rtc-ensure-session-scope",
         "method": "PUT",
         "body": {
-          "principalId": "{auth.clientId}"
+          "principalId": "{auth.clientId}",
+          "generationId": "rallar-black-box-bb-rtc-generation-{auth.sessionId}",
+          "publicationKey": null,
+          "connectionGenerationId": "rallar-black-box-bb-rtc-connection-generation-{auth.sessionId}"
         }
       },
       "response": {

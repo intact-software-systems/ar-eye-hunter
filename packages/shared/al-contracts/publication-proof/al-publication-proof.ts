@@ -140,7 +140,10 @@ type ALPublicationProofSignedSection = {
 
 const UTF8_ENCODER = new TextEncoder();
 
-/** Canonical JSON over the signed fields in their classified order, each absent value `null`; its UTF-8 bytes are signed. */
+/**
+ * The domain tag leads, so a signature over these bytes never verifies as another protocol's; an absent signed field
+ * signs as `null`, so dropping one changes the bytes as surely as rewriting it.
+ */
 export function toALPublicationProofSigningInput(message: ALMessage): string {
     const sectionValues = toALPublicationProofSectionValues(message);
     return serializeCanonicalJson([
@@ -202,7 +205,6 @@ function toALPublicationProofSectionValues(
     };
 }
 
-/** The value of each `signed` key in the record's order; a section or field that is absent signs as `null`. */
 function toSignedFieldValues<Key extends string, Value>(
     fields: Partial<Readonly<Record<NoInfer<Key>, Value>>> | undefined,
     classes: Readonly<Record<Key, ALPublicationProofFieldClass>>

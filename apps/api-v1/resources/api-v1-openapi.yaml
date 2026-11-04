@@ -7794,11 +7794,17 @@ components:
         x:
           type: string
           pattern: '^[A-Za-z0-9_-]{43}$'
-          description: The 32-byte x coordinate in unpadded base64url.
+          description: >-
+            The 32-byte x coordinate in unpadded base64url. Canonical base64url text: no padding, and the unused
+            trailing bits are zero; the pattern also admits non-canonical trailing bits, which the server refuses with
+            400.
         y:
           type: string
           pattern: '^[A-Za-z0-9_-]{43}$'
-          description: The 32-byte y coordinate in unpadded base64url.
+          description: >-
+            The 32-byte y coordinate in unpadded base64url. Canonical base64url text: no padding, and the unused
+            trailing bits are zero; the pattern also admits non-canonical trailing bits, which the server refuses with
+            400.
 
     GroupPresencePublicationKey:
       type: object
@@ -7812,7 +7818,10 @@ components:
         keyId:
           type: string
           pattern: '^[A-Za-z0-9_-]{43}$'
-          description: The RFC 7638 SHA-256 thumbprint of publicJwk in unpadded base64url.
+          description: >-
+            The RFC 7638 SHA-256 thumbprint of publicJwk in unpadded base64url. Canonical base64url text: no padding,
+            and the unused trailing bits are zero; the pattern also admits non-canonical trailing bits, which the
+            server refuses with 400.
         publicJwk:
           $ref: '#/components/schemas/EcdsaP256PublicJwk'
 

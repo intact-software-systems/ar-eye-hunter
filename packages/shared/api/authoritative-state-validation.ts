@@ -575,7 +575,7 @@ export function validateAuthoritativeGroupSnapshot(
     }
 }
 
-/** One active presence session of the group, as a snapshot or a delta carries it: exact keys, scope and lifecycle. */
+/** The snapshot and the delta decoders both judge an active session here, so neither admits a shape the other refuses. */
 export function validateAuthoritativeActiveGroupSession(
     value: WireValue,
     ref: GroupRef,
