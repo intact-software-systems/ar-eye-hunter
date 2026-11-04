@@ -208,7 +208,7 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
-    it('starts the sender\'s continuation only once its gate passed in the sibling\'s still running recipe', async () => {
+    it('starts the sender\'s continuation only once its first recipe ended and the gate passed in the sibling\'s still running recipe', async () => {
         const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
         const continuation = {
@@ -216,10 +216,12 @@ describe('ALM run on an agent per role', () => {
             recipe: { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-continuation` }
         };
         const siblingRunId = `${sibling.recipeId}-run`;
+        const senderRunId = `${baseline.sender.recipeId}-run`;
         const continuationRunId = `${continuation.recipe.recipeId}-run`;
         const siblingConnect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
         const posted: string[] = [];
         let gateOpen = false;
+        let senderDone = false;
         const server = createServer((_request, response) => {
             response.writeHead(202, { 'content-type': 'application/json' });
             response.end('{}');
@@ -269,7 +271,9 @@ describe('ALM run on an agent per role', () => {
                 stats: [],
                 reports: [],
                 heartbeats: [],
-                results: posted.filter((commandId) => gateOpen || commandId !== siblingRunId).map((commandId) => ({
+                results: posted.filter((commandId) => (gateOpen || commandId !== siblingRunId) && (senderDone || commandId !== senderRunId)).map((
+                    commandId
+                ) => ({
                     kind: 'result',
                     protocolVersion: 1,
                     runId: 'gated-run',
@@ -285,11 +289,16 @@ describe('ALM run on an agent per role', () => {
                 new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['sibling', sibling]]),
                 continuation
             );
-            await vi.waitFor(() => expect(posted).toContain(`${baseline.sender.recipeId}-run`));
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            await vi.waitFor(() => expect(posted).toContain(senderRunId));
+            await new Promise((resolve) => setTimeout(resolve, 600));
             expect(posted).not.toContain(continuationRunId);
 
+            // The gate passed, but the continuation is the sender's later steps: its first recipe must end first.
             gateOpen = true;
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            expect(posted).not.toContain(continuationRunId);
+
+            senderDone = true;
             const outcome = await running;
 
             expect(posted.at(-1)).toBe(continuationRunId);
