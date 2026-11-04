@@ -83,7 +83,7 @@ export function toALInboundForwardingEffects(
 ): readonly ALInboundEffectIntent[] {
     if (shouldForward) {
         return [{
-            effectId: toEffectId(['forward', input.msg.id.senderId, input.msg.id.msgId, input.fromPeerId]),
+            effectId: toALInboundEffectId(['forward', input.msg.id.senderId, input.msg.id.msgId, input.fromPeerId]),
             expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
             carrier: input.carrier,
             payload: {
@@ -118,12 +118,12 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
 
 /** The one row that releases `seq` of a track: a delivered predecessor finds its successor by it (D190). */
 export function toALInboundReleaseEffectId(trackKey: string, seq: number): string {
-    return toEffectId(['release', trackKey, seq]);
+    return toALInboundEffectId(['release', trackKey, seq]);
 }
 
 /** The one row that delivers `msg` to this peer's own consumers; a retained delivery is found by it. */
 export function toALInboundLocalDeliveryEffectId(msg: ALMessage): string {
-    return toEffectId(['dispatch', msg.id.senderId, msg.id.msgId]);
+    return toALInboundEffectId(['dispatch', msg.id.senderId, msg.id.msgId]);
 }
 
 export function toALInboundLocalDeliveryEffects(
@@ -153,7 +153,7 @@ export function toALInboundNegativeControlEffects(
     const reason = toNackReason(input.plan.nack.reason);
     const authorityRefusal = isAuthorityRefusalNackReason(reason);
     const nack: ALInboundEffectIntent = {
-        effectId: toEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
+        effectId: toALInboundEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         carrier: input.carrier,
         payload: {
@@ -183,7 +183,7 @@ export function toALInboundRelayedNotSubscribedEffect(
     relayed: Readonly<{ toPeerId: string; peerId: string; }>
 ): ALInboundEffectIntent {
     return {
-        effectId: toEffectId([
+        effectId: toALInboundEffectId([
             'nack',
             input.msg.id.senderId,
             input.msg.id.msgId,
@@ -212,7 +212,7 @@ function toRepairEffects(
     }
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
     return [{
-        effectId: toEffectId([
+        effectId: toALInboundEffectId([
             'repair',
             input.msg.id.senderId,
             input.msg.id.msgId,
@@ -258,7 +258,7 @@ export function toALInboundUpwardAcks(
 
 export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundEffectIntent {
     return {
-        effectId: toEffectId([
+        effectId: toALInboundEffectId([
             'ack',
             input.ackedMsgId,
             input.toPeerId,
@@ -278,9 +278,8 @@ export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundE
     };
 }
 
-function toEffectId(
-    parts: readonly (number | string)[]
-): string {
+/** The work identity of an inbound effect: its parts, each URI-encoded, joined by `:`. */
+export function toALInboundEffectId(parts: readonly (number | string)[]): string {
     return parts.map((part) => encodeURIComponent(String(part))).join(':');
 }
 

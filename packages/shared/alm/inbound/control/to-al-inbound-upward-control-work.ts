@@ -7,7 +7,7 @@ import {
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import type { ALInboundMessageOwner } from '../al-inbound-admission-store.ts';
-import type { ALInboundUpwardAck } from '../al-inbound-effect-intent.ts';
+import { toALInboundEffectId, type ALInboundUpwardAck } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 
@@ -44,13 +44,13 @@ export function toALInboundUpwardControlWork(
         return computeALInboundWorkEntry({
             namespace: context.namespace,
             observedAtMs: context.nowMs,
-            effectId: toInboundEffectId(
+            effectId: toALInboundEffectId([
                 control.kind,
                 context.msgId,
                 context.pending.toPeerId,
                 control.kind === 'ack' ? control.ack.status : control.logicalRecipientPeerId,
                 controlMsgId
-            ),
+            ]),
             expireAtTimestamp: resolveExpireAtTimestampWithFallback(
                 context.pending.expireAtTimestamp,
                 retention.durableEffectTtlMs,
@@ -94,8 +94,4 @@ function toUpwardControlMessage(
         carrier: toALDeliveryCarrier(context.owner.source),
         status: control.ack.status
     });
-}
-
-function toInboundEffectId(...parts: readonly (number | string)[]): string {
-    return parts.map((part) => encodeURIComponent(String(part))).join(':');
 }
