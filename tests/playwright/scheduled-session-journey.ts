@@ -56,7 +56,11 @@ export async function scheduledSessionRecoveryJourney(host: Page, guest: Page, g
 async function observeUnreservedPreviewChange(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
     const hostPanel = host.getByRole('region', { name: 'Scheduled sessions', exact: true });
     const guestPanel = guest.getByRole('region', { name: 'Scheduled sessions', exact: true });
-    await expect(guestPanel).toContainText('No scheduled sessions saved for this account.');
+    const previewName = await guestPanel.getByRole('article', { name: 'Session details' }).getByRole('heading')
+        .innerText();
+    const savedPreview = guestPanel.getByLabel('Your scheduled sessions', { exact: true })
+        .getByRole('button', { name: previewName });
+    await expect(savedPreview).toHaveCount(0);
     await expect(guestPanel).toContainText('Reserve a seat before entering.');
     await assertIdleViewReads(guest, 'sessions');
     const oldStart = await guestPanel.getByText(/^Starts /).innerText();
@@ -66,7 +70,7 @@ async function observeUnreservedPreviewChange(host: Page, guest: Page, game: 'ar
     await hostPanel.getByRole('button', { name: 'Reschedule session', exact: true }).click();
     await expect(guestPanel.getByText(/^Starts /)).not.toHaveText(oldStart);
     await expect(guestPanel.getByText(/^Starts /)).toHaveText(await hostPanel.getByText(/^Starts /).innerText());
-    await expect(guestPanel).toContainText('No scheduled sessions saved for this account.');
+    await expect(savedPreview).toHaveCount(0);
     await assertIdleViewReads(guest, 'sessions');
     const previewLink = guest.url();
     await guest.goto('about:blank');
@@ -76,7 +80,7 @@ async function observeUnreservedPreviewChange(host: Page, guest: Page, game: 'ar
     await hostPanel.getByRole('button', { name: 'Reschedule session', exact: true }).click();
     await followSessionLink(guest, previewLink, game);
     await expect(guestPanel.getByText(/^Starts /)).toHaveText(await hostPanel.getByText(/^Starts /).innerText());
-    await expect(guestPanel).toContainText('No scheduled sessions saved for this account.');
+    await expect(savedPreview).toHaveCount(0);
 }
 
 export async function scheduledSessionPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
