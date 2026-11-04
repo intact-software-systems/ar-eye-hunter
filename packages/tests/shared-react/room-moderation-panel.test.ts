@@ -142,6 +142,71 @@ it.each(['member-banned', 'member-removed'])('clears access after the current-ro
     }
 });
 
+it.each(['member-banned', 'member-removed'])('explains %s when collection repair drops the room before the access timer', async (code) => {
+    const fixture = createModerationFixture();
+    fixture.props.rooms.session = () => ({
+        refresh: vi.fn().mockRejectedValue(new ApiHttpError('GET', '/group', 403, JSON.stringify({ error: 'forbidden', code })))
+    });
+    const view = await renderModeration(fixture.props);
+    try {
+        await act(async () => fixture.clearSelection());
+        expect(view.container.textContent).toContain(code === 'member-banned' ? 'You were banned' : 'You were removed');
+    }
+    finally {
+        await view.close();
+    }
+});
+
+it('does not label a cache gap as removal when the authenticated room read succeeds', async () => {
+    const fixture = createModerationFixture();
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    fixture.props.rooms.session = () => ({ refresh });
+    const view = await renderModeration(fixture.props);
+    try {
+        await act(async () => fixture.clearSelection());
+        expect(refresh).toHaveBeenCalledOnce();
+        expect(view.container.textContent).not.toContain('You were');
+    }
+    finally {
+        await view.close();
+    }
+});
+
+it('ignores a departed-room access result after a newer room has also been cleared', async () => {
+    const fixture = createModerationFixture();
+    const response = Promise.withResolvers<never>();
+    fixture.props.rooms.session = (room) => ({
+        refresh: () =>
+            room.groupId === fixture.snapshot.group.groupId ? response.promise : Promise.reject(new ApiHttpError('GET', '/next-room', 503, 'unavailable'))
+    });
+    const view = await renderModeration(fixture.props);
+    try {
+        await act(async () => fixture.clearSelection());
+        await act(async () => fixture.publish({ ...fixture.snapshot, group: { ...fixture.snapshot.group, groupId: 'next-room' } }));
+        await act(async () => fixture.clearSelection());
+        await act(async () => response.reject(new ApiHttpError('GET', '/old-room', 403, JSON.stringify({ error: 'forbidden', code: 'member-removed' }))));
+        expect(view.container.textContent).not.toContain('You were');
+    }
+    finally {
+        await view.close();
+    }
+});
+
+it('does not read disposed room state when a pending access check rejects after unmount', async () => {
+    const fixture = createModerationFixture();
+    const response = Promise.withResolvers<never>();
+    fixture.props.rooms.session = () => ({ refresh: () => response.promise });
+    const view = await renderModeration(fixture.props);
+    await act(async () => fixture.clearSelection());
+    await view.close();
+    const readDisposedState = vi.fn(() => {
+        throw new Error('Room state disposed');
+    });
+    fixture.props.rooms.state = readDisposedState;
+    await act(async () => response.reject(new ApiHttpError('GET', '/old-room', 403, JSON.stringify({ error: 'forbidden', code: 'member-removed' }))));
+    expect(readDisposedState).not.toHaveBeenCalled();
+});
+
 it.each(['banned', 'removed'] as const)('explains an authoritative %s roster update before the access timer runs', async (status) => {
     const fixture = createModerationFixture();
     const view = await renderModeration(fixture.props);
