@@ -888,7 +888,9 @@ Explicit ACK capture is owned by
 The black-box browser diagnostic installer supplies its class and the existing
 `ALWorkBatchObservations` resource through the callable sink's optional
 `acknowledgementCapture`. Runtime/lane/admission reference that owner only as a
-type; ordinary sinks create no new ACK evidence. The association retains exact
+type; ordinary sinks create no new ACK evidence. It covers both controls the relay
+admits — a child's ACK and its `not-subscribed` NACK — through one recording path,
+each identity naming its `control`. The association retains exact
 received and generated control identities, logical recipient, prior owner/source,
 pending parent, candidate validity, actual conditional commit and retention results.
 A conflict's candidate IDs remain distinguishable from a replay's newly generated
