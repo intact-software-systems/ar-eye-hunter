@@ -335,11 +335,11 @@ the relay-mutable `forwarding`, `constraints.ttlHops` and `diagnostics`,
 `id.traceId` and the `audit` and `proof` sections are excluded, and no stage
 after the signature may change a signed field (D514). The key pair is the
 session's, kept in the browser's IndexedDB and shared by its pages, and its
-public half rides the session's presence row as `publicationKey`, reaching members on the
-snapshot and its delta and leaving with the session; a key-only change replans
-no topology (D512, D513). Every relay and receiver judges a granted frame
-against its own readable room snapshot, at least as new as the frame's signed
-`targets.snapshotVersion`, before forwarding or delivering it
+public half rides the session's presence row as `publicationKey`, reaching
+members on the snapshot and its delta and leaving with the session; a key-only
+change replans no topology (D512, D513). Every relay and receiver judges a
+granted frame against its own readable room snapshot, at least as new as the
+frame's signed `targets.snapshotVersion`, before forwarding or delivering it
 ([`compute-rtc-publication-admission.ts`](../../packages/shared/multicast/publication/compute-rtc-publication-admission.ts)):
 a missing proof, an invalid signature, an unbound target, a publisher without
 `publish` or no readable snapshot drop it `unauthorized` with no NACK and no
@@ -348,10 +348,11 @@ after one refresh. Relays need membership only; a session delivers only with
 `subscribe` and an active token (D515, D516). A topic is granted at a page when
 its typed channel declares it or its cached snapshot grants it, so a raw
 `messages.rtc.send` on it obeys the same rules (D517). A frozen recipient
-without `subscribe` or an active token forwards, delivers nothing and answers a `not-subscribed` NACK for itself,
-which relays carry to the origin per logical recipient; the receipt records it
-outside the audience, neither confirmed nor unconfirmed, and completes once
-every expected recipient is confirmed or outside and one is confirmed (D518).
+without `subscribe` or an active token forwards, delivers nothing and answers a
+`not-subscribed` NACK for itself, which relays carry to the origin per logical
+recipient; the receipt records it outside the audience, neither confirmed nor
+unconfirmed, and completes once every expected recipient is confirmed or outside
+and one is confirmed (D518).
 A stored granted publication is repaired, re-planned and dequeued only while
 the origin's snapshot still grants it `publish`, a revoke ending the handle
 `rejected` `no-publish-grant`, and a responder repairs only toward a frozen

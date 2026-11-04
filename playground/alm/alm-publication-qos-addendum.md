@@ -601,10 +601,11 @@ sent at socket admission and at `route`; a refusal at a pending replay or an inb
 dispatch drops the message without one, as every refusal there does. A granted
 browser channel refuses a send its cached room snapshot grants no `publish`
 before any carrier; its RTC carriage is Slice 3's, below. api-v1 installs its
-granted topics from `grantedWsTopics` (`RALLAR_GRANTED_WS_TOPICS_JSON`). The recipes
-`api-v1-group-publication-grants.json` and its cluster twin prove persisted
-readback, idempotency, conflict, the denials and a revocation's WS refusal across
-three servers. Decisions D483–D501 are in the roadmap; S2-ii is next.
+granted topics from `grantedWsTopics` (`RALLAR_GRANTED_WS_TOPICS_JSON`). The
+recipes `api-v1-group-publication-grants.json` and its cluster twin prove
+persisted readback, idempotency, conflict, the denials and a revocation's WS
+refusal across three servers. Decisions D483–D501 are in the roadmap; S2-ii is
+next.
 
 As applied (S2-ii): a session elects to receive a granted topic with a leased
 subscription, one row of `group-state:subscriptions` per (group, session,
@@ -666,8 +667,8 @@ domain-tagged, positional canonical JSON of the envelope's signed fields
 included directly; the relay-mutable `forwarding`, `constraints.ttlHops` and
 `diagnostics`, and `id.traceId`, `audit` and `proof`, are excluded, and the
 envelope version stays 4. The key's public half rides the session's presence
-row as `publicationKey` and reaches members on the snapshot and its delta; it
-leaves with the session and never replans. Every relay and receiver judges a
+row as `publicationKey` and reaches members on the snapshot and its delta, and
+it leaves with the session. Every relay and receiver judges a
 granted frame against its own readable room snapshot, at least as new as the
 frame's signed `targets.snapshotVersion`, before forwarding or delivering it:
 a missing proof, an invalid signature, an unbound target, a publisher without
@@ -700,11 +701,12 @@ granted messages on WS. Repair, re-plan and dequeue of a stored signed
 publication re-check the origin's own `publish` in its snapshot, a revoke
 settling the handle `rejected` `no-publish-grant`; a responder repairs only
 toward a frozen recipient still holding `subscribe`, and nothing re-signs.
-The key pair is the session's, kept in the browser's IndexedDB and shared by
-the session's pages, and a presence change that alters only a key replans no
-topology. Receipts stay unsigned. The `granted-rtc` cells, the relay fixture and
-the four-role family over `rtc` are the evidence, and no hosted manifest carries
-the cells. Decisions D512–D523 are in the roadmap, and Slice 3 is complete.
+The key pair is the session's, kept in the browser's IndexedDB and shared by the
+session's pages, and a presence change that alters only a key fans out the delta
+but replans no topology. Receipts stay unsigned. The `granted-rtc` cells, the
+relay fixture and the four-role family over `rtc` are the evidence, and no
+hosted manifest carries the cells. Decisions D512–D523 are in the roadmap, and
+Slice 3 is complete.
 
 ### Later outcomes
 

@@ -1109,12 +1109,13 @@ and `sendRtc` end `rejected` with
 `failure: { kind: 'refused', reason: 'unsupported' }`, and
 `rtc-with-ws-fallback` sends it over WS. A `group-leader` send in a room with no
 director, or one the sender directs, keeps `no-leader`. `ws-then-rtc` sends every
-granted message over WS. A lane `messages.rtc.send` on a topic the cached snapshot grants
-follows the same rules. `onRtc` throws the `unsupported` issue at `$.access`;
-`subscribe(handler)` hears both carriers. A granted send names its room; one that
-names none is refused `unsupported`. Before any carrier, the send reads the room's
-cached snapshot: when it grants this principal no effective `publish` (none for a
-spectator or a member that is not active), the send ends `rejected` with
+granted message over WS. A lane `messages.rtc.send` on a topic the cached
+snapshot grants follows the same rules. `onRtc` throws the `unsupported` issue
+at `$.access`; `subscribe(handler)` hears both carriers. A granted send names
+its room; one that names none is refused `unsupported`. Before any carrier, the
+send reads the room's cached snapshot: when it grants this principal no
+effective `publish` (none for a spectator or a member that is not active), the
+send ends `rejected` with
 `failure: { kind: 'refused', reason: 'no-publish-grant' }`. With no snapshot
 cached, the server decides. The server refuses a publication without effective
 `publish` at socket admission or at `route` with the NACK reason

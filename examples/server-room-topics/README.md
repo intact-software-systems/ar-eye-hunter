@@ -138,7 +138,9 @@ reason `no-publish-grant`, and a server publish whose producer the topic does
 not list with `status: 'refused'`. The browser channel on a granted topic
 declares `access: 'granted'`; its room multicasts ride RTC, signed by the
 sender's session and verified at every hop, under `rtc` and
-`rtc-with-ws-fallback`, and every other send goes over WS. A browser session
+`rtc-with-ws-fallback`. Any other send on it goes over WS under
+`rtc-with-ws-fallback`, `ws-then-rtc` and `ws`, and is refused `unsupported`
+under `rtc`. A browser session
 receives the topic once it calls the channel's
 `subscribe(handler)`, which returns a `RallarTopicSubscription` token that
 renews itself, re-subscribes after a reconnect and releases on
