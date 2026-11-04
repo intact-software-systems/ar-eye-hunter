@@ -1,4 +1,5 @@
 import { createRallarFacade } from '@shared-web/browser/composition/create-rallar-facade.ts';
+import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
@@ -16,16 +17,21 @@ const rallarFacadeMocks = await vi.hoisted(async () => {
         rtcCaptureReceipt: createBrowserRtcCaptureReceiptFixture(),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
         findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
-        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>()
+        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(),
+        /** The carriers' settlement sinks of the facade's current connect; undefined before it connects. */
+        deliverySettlements: undefined as BrowserDeliverySettlements.Carriers | undefined
     };
 });
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => ({
-        middleware: rallarFacadeMocks.apiMiddleware.middleware,
-        rtcCaptureReceipt: rallarFacadeMocks.rtcCaptureReceipt,
-        checkpoints: []
-    })
+    initialiseMiddleware: async (_session, _rtcSignalingTopicId, options) => {
+        rallarFacadeMocks.deliverySettlements = options.deliverySettlements;
+        return {
+            middleware: rallarFacadeMocks.apiMiddleware.middleware,
+            rtcCaptureReceipt: rallarFacadeMocks.rtcCaptureReceipt,
+            checkpoints: []
+        };
+    }
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),
@@ -50,6 +56,7 @@ export function getRallarFacadeMocks(): typeof rallarFacadeMocks {
 export function resetRallarFacadeTestRuntime(): void {
     configureTestCacheRepositories();
     rallarFacadeMocks.apiMiddleware = createDefaultApiMiddlewareTestDouble();
+    rallarFacadeMocks.deliverySettlements = undefined;
     setRallarFacadeRoomSnapshots([]);
 }
 

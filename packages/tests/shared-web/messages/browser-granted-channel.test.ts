@@ -6,7 +6,8 @@ import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     type ALDeliveryAdmissionVerdict,
-    type ALDeliveryCarrier
+    type ALDeliveryCarrier,
+    type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
@@ -372,6 +373,76 @@ describe('a granted typed channel', () => {
             ['ws', 'admitted', GRANTED_TOPIC_ID]
         ]);
     });
+
+    it('a revoke the page sees between the RTC refusal and the WS admission ends the handle rejected no-publish-grant, with no WS leg', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(UNAVAILABLE_PUBLICATION_CRYPTO, createRoomSnapshot(PUBLISHER, crypto));
+        revokeAfterRtcAdmission(createRoomSnapshot(SUBSCRIBER, crypto));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+
+        const handle = await channel.send({ text: 'revoked' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { failure: { kind: 'refused', reason: 'no-publish-grant' } }
+        });
+        expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'refused']]);
+    });
+
+    it('a revoke only the server has seen ends the handed-over WS leg rejected by the server\'s no-publish-grant refusal', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(UNAVAILABLE_PUBLICATION_CRYPTO, createRoomSnapshot(PUBLISHER, crypto));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+        const handle = await channel.send({ text: 'server' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        mocks.deliverySettlements!.ws(toServerPublishRefusal(handle.msgId));
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { relayRejection: { relay: 'trusted-server', reason: 'no-publish-grant' } }
+        });
+        expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'refused'], ['ws', 'admitted']]);
+    });
+
+    it('a revoke after the RTC admission ends the handle rejected at the origin\'s next retry, handing nothing to WS', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const overlay = wireRtcOverlay(
+            crypto,
+            createRoomSnapshot(PUBLISHER, crypto),
+            (settlement) => mocks.deliverySettlements?.rtc(settlement)
+        );
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+        const handle = await channel.send({ text: 'admitted' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        const revoked = createRoomSnapshot(SUBSCRIBER, crypto);
+        overlay.groups.accept('room', revoked);
+        setRallarFacadeRoomSnapshots([revoked]);
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { failure: { kind: 'refused', reason: 'no-publish-grant' }, carrierFallback: undefined }
+        });
+        expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'admitted']]);
+    });
+
+    it('a receipt that runs out on RTC after a revoke hands over to a WS re-admission the cached snapshot refuses', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+        const handle = await channel.send({ text: 'exhausted' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        setRallarFacadeRoomSnapshots([createRoomSnapshot(SUBSCRIBER, crypto)]);
+        mocks.deliverySettlements!.rtc(toReceiptExhausted(handle.msgId));
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { failure: { kind: 'refused', reason: 'no-publish-grant' }, carrierFallback: { reason: 'receipt-exhausted' } }
+        });
+        expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'admitted']]);
+    });
 });
 
 function toLaneSend(ack: ALAckMode) {
@@ -420,13 +491,18 @@ function toGrantRow(principalId: string, permissions: GroupPublicationTopicPermi
  * The page's RTC overlay over the cached room, signing with `publicationCrypto`; its admissions join the log. Its
  * accepted overlay is the one the browser's room send names.
  */
-function wireRtcOverlay(publicationCrypto: PublicationCrypto, snapshot: GroupSnapshot): RtcOriginOverlayFixture {
+function wireRtcOverlay(
+    publicationCrypto: PublicationCrypto,
+    snapshot: GroupSnapshot,
+    onSettlement?: (settlement: ALDeliverySettlement) => void
+): RtcOriginOverlayFixture {
     setRallarFacadeRoomSnapshots([snapshot]);
     const overlay = createRtcOriginOverlayFixture({
         snapshot,
         nextHopPeerIds: ['b', 'c'],
         grantedTopics: createRtcGrantedTopicsFixture([GRANTED_TOPIC_ID]),
-        publicationCrypto
+        publicationCrypto,
+        onSettlement
     });
     const overlayId = toScopedOverlayId(ROOM_REF);
     overlay.overlays.accept(overlayId, { ...createOriginOverlay(['b', 'c']), overlayId });
@@ -436,6 +512,46 @@ function wireRtcOverlay(publicationCrypto: PublicationCrypto, snapshot: GroupSna
         return result;
     };
     return overlay;
+}
+
+/** The page's cached snapshot turns to `revoked` once the RTC carrier answered, before any fallback leg reads it. */
+function revokeAfterRtcAdmission(revoked: GroupSnapshot): void {
+    const port = mocks.apiMiddleware.middleware.rtcRxStreamer;
+    const admit = port.enqueueOutboxIfAbsent;
+    port.enqueueOutboxIfAbsent = async (message, carrierGap) => {
+        const result = await admit(message, carrierGap);
+        setRallarFacadeRoomSnapshots([revoked]);
+        return result;
+    };
+}
+
+/** The WS server's NACK for a granted send whose sender it reads without publish (D487), as its relay rejection. */
+function toServerPublishRefusal(msgId: string): ALDeliverySettlement {
+    return {
+        kind: 'relay-rejected',
+        msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        relayRejection: { relay: 'trusted-server', reason: 'no-publish-grant' },
+        detail: 'The server relay refused the message: no-publish-grant.',
+        traceId: 'trace-browser-granted-channel'
+    };
+}
+
+function toReceiptExhausted(msgId: string): ALDeliverySettlement {
+    return {
+        kind: 'receipt-exhausted',
+        msgId,
+        carrier: 'rtc',
+        atMs: Date.now(),
+        mode: 'receiver',
+        confirmedPeerIds: [],
+        unconfirmedPeerIds: ['b', 'c'],
+        outsideAudiencePeerIds: [],
+        cause: 'budget',
+        detail: 'The receipt ran out of retries after 3 of 3.',
+        traceId: 'trace-browser-granted-channel'
+    };
 }
 
 /** Both carriers' admission ports, admitting every send and logging it in the order the sends reached them. */
