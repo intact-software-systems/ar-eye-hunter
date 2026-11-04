@@ -44,6 +44,8 @@ describe('existing state-write CLI native mode composition', () => {
                 '--allow-read',
                 '--config',
                 'apps/api-v1/deno.json',
+                // The run resolves its own lock, so it never rewrites the tracked one beside the config.
+                `--lock=${path.join(directory, 'deno.lock')}`,
                 '--import-map',
                 importMap,
                 'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
