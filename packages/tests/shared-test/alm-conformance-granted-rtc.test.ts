@@ -100,10 +100,6 @@ function toRequests(recipe: RallarBlackBoxTestRecipe | undefined): readonly Rall
     return toFlatCommands(recipe).filter((command): command is RallarBlackBoxTestHttpRequestCommand => command.kind === 'http.request');
 }
 
-function toLocalDisabledWaits(recipe: RallarBlackBoxTestRecipe | undefined): readonly RallarBlackBoxTestCommand[] {
-    return toFlatCommands(recipe).filter((command) => command.kind === 'wait' && command.match.payloadFields?.['data.disposition'] === 'local-disabled');
-}
-
 function toPublicationAbsences(recipe: RallarBlackBoxTestRecipe | undefined): readonly string[] {
     return toFlatCommands(recipe).flatMap((command) =>
         command.kind === 'wait' && command.absent === true && command.match.kind === 'message' && isJsonRecordValue(command.match.equals)
@@ -328,18 +324,9 @@ describe('the granted rtc cells', () => {
             { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
         ]);
         expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
-        expect(toLocalDisabledWaits(recipientB)).toEqual([
-            expect.objectContaining({
-                match: expect.objectContaining({
-                    topic: INBOUND_DIAGNOSTICS_TOPIC,
-                    payloadFields: {
-                        'data.kind': 'dispatch-decision',
-                        'data.typeId': 'alm.conformance.rtc.granted-rtc-not-subscribed',
-                        'data.carrier': 'rtc',
-                        'data.disposition': 'local-disabled'
-                    }
-                })
-            })
+        // Its frame is admitted over RTC and, with the absence below, delivered nowhere on its page.
+        expect(toOutcomeWaits(recipientB)).toEqual([
+            `"typeId":"alm.conformance.rtc.granted-rtc-not-subscribed","carrier":"rtc","outcome":"committed","reason":"admitted"`
         ]);
         expect(toPublicationAbsences(recipientB)).toEqual(['publication']);
         expect(toFlatCommands(receiver).map((command) => command.kind)).toContain('messages.subscribe');
@@ -375,6 +362,9 @@ describe('the granted rtc cells', () => {
             ['DELETE', undefined]
         ]);
         expect(toStepIndex(receiver, '-topology-tree')).toBeLessThan(toStepIndex(receiver, '-grant-receiver-s-request'));
+        // A cue reaches only a role that already listens, so the owner cues the path once the sender said it listens.
+        expect(toStepIndex(sender, '-cue-ready-sent')).toBeLessThan(toStepIndex(sender, '-cue-tree-received'));
+        expect(toStepIndex(receiver, '-cue-ready-received')).toBeLessThan(toStepIndex(receiver, '-cue-tree'));
         expect(toStepIndex(receiver, '-cue-recorded-received')).toBeLessThan(toStepIndex(receiver, '-topology-reset'));
         expect(recipientBGrants.map(({ request }) => request.body)).toEqual([
             { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }
@@ -383,7 +373,9 @@ describe('the granted rtc cells', () => {
             .toMatchObject({ readiness: { minReadyPeers: 1 } });
         expect(toStepIndex(sender, '-cue-tree-received')).toBeLessThan(toStepIndex(sender, '-publish'));
         expect(toFlatCommands(receiver).some((command) => command.kind === 'wait' && command.match.payloadFields?.['data.transport'] === 'rtc')).toBe(true);
-        expect(toLocalDisabledWaits(recipientB)).toHaveLength(1);
+        expect(toOutcomeWaits(recipientB)).toEqual([
+            `"typeId":"alm.conformance.rtc.granted-rtc-relay-only","carrier":"rtc","outcome":"committed","reason":"admitted"`
+        ]);
         expect(toPublicationAbsences(recipientB)).toEqual(['publication']);
         expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
         for (const recipe of [sender, receiver, recipientB]) {

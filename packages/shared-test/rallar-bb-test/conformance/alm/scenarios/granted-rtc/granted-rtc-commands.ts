@@ -153,6 +153,18 @@ export function toInboundRefusalWait(
 }
 
 /**
+ * This page admitted the cell's frame over RTC: verified, and forwarded wherever its plan names a next hop. With an
+ * absence wait beside it, the frame reached a member that delivers nothing.
+ */
+export function toRtcAdmittedWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
+    return toAdmissionOutcomeWait(step, {
+        name: 'rtc-admitted',
+        contains: '"carrier":"rtc","outcome":"committed","reason":"admitted"',
+        timeoutMs: SUBSCRIPTION_PHASE_MS
+    });
+}
+
+/**
  * Sends through the `rallar.messages.rtc.send` lane entry until one attempt's handle settles `rejected` with every fact,
  * which a refusal before admission does at once: the send observes `rejected`, so a rejected handle is its value. Until
  * the page's snapshot holds the grant the cell needs, an attempt ends another way, fails, and the poll sends again.

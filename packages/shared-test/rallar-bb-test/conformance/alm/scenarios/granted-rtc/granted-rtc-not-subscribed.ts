@@ -1,6 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toLocalDisabledDispatchWait } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -11,14 +10,18 @@ import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toUnsubscribeCommands
 } from '../topic-subscription/topic-subscription-commands.ts';
-import { SUBSCRIPTION_PHASE_MS } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
     toPublicationWait,
     toPublishUntilConfirmedCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
-import { GRANTED_RTC_CARRIERS, toGrantedRtcOwnerCommands, toRtcArrivalWait } from './granted-rtc-commands.ts';
+import {
+    GRANTED_RTC_CARRIERS,
+    toGrantedRtcOwnerCommands,
+    toRtcAdmittedWait,
+    toRtcArrivalWait
+} from './granted-rtc-commands.ts';
 
 /**
  * Recipient-b holds `subscribe` but takes no election, so the sender's grant-narrowed audience freezes it in: its copy
@@ -58,7 +61,7 @@ function toConfirmingOwnerCommands(owner: AlmConformanceStepInput): readonly Ral
 function toUnelectedRecipientCommands(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(recipient),
-        toLocalDisabledDispatchWait(recipient, SUBSCRIPTION_PHASE_MS),
+        toRtcAdmittedWait(recipient),
         toConfirmedCueWait(recipient, 'publication'),
         toPublicationWait(recipient, 'publication', true)
     ];

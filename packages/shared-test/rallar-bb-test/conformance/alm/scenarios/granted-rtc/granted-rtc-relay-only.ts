@@ -1,6 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toLocalDisabledDispatchWait } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -13,10 +12,7 @@ import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toUnsubscribeCommands
 } from '../topic-subscription/topic-subscription-commands.ts';
-import {
-    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS
-} from '../topic-subscription/topic-subscription-polls.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -28,6 +24,7 @@ import {
     toGrantedRtcOwnerCommands,
     toOverlayNextHopsCommand,
     toPublishUntilCueCommand,
+    toRtcAdmittedWait,
     toRtcArrivalWait
 } from './granted-rtc-commands.ts';
 
@@ -35,10 +32,10 @@ import {
 const PATH_TOPOLOGY = { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } as const;
 
 /**
- * The owner reshapes the room into a path before the others publish, so a path leaf's connect waits for its one next
+ * The owner reshapes the room into a path before the sender publishes, so a path leaf's connect waits for its one next
  * hop. The receiver holds `subscribe` and an election, recipient-b `publish` alone, so the sender's `ack: 'none'`
- * publication is frozen to the receiver. Whichever of the two the path puts in the middle, recipient-b delivers
- * nothing: as the middle it forwards the frame to the receiver, as a leaf it only admits it. Each page records its
+ * publication is frozen to the receiver. Whichever of the two the path puts in the middle, recipient-b admits the
+ * frame over RTC and delivers nothing: as the middle it forwards the frame to the receiver, as a leaf it only admits it. Each page records its
  * next hops, which name the layout the run drew; the cell asserts neither which agent relays nor the hop count.
  */
 export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
@@ -53,6 +50,7 @@ export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
     connect: { minReadyPeers: 1 },
     toSenderCommands: (sender) => [
         ...toCueListenCommands(sender),
+        ...toCueSendCommands(sender, 'ready'),
         toCueWait(sender, 'tree'),
         toPublishUntilCueCommand(sender, 'received'),
         toOverlayNextHopsCommand(sender)
@@ -61,11 +59,16 @@ export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
         recipient.role === 'receiver' ? toPathOwnerCommands(recipient) : toPublisherOnlyCommands(recipient)
 };
 
-/** The room's three-agent cells share it, so the owner resets the topology once every page recorded its next hops. */
+/**
+ * A cue reaches only a role whose own first cue opened its channel, so the owner says the path is set only once the
+ * sender, which starts last, says it listens. The room's three-agent cells share it, so the owner resets the topology
+ * once every page recorded its next hops.
+ */
 function toPathOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         toTopologyConfigCommand(owner, 'tree'),
         ...toGrantedRtcOwnerCommands(owner, [{ grantee: 'recipient-b', publish: true, subscribe: false }]),
+        toCueWait(owner, 'ready'),
         ...toCueSendCommands(owner, 'tree'),
         toRtcArrivalWait(owner),
         ...toCueSendCommands(owner, 'received'),
@@ -79,7 +82,7 @@ function toPathOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBla
 function toPublisherOnlyCommands(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(recipient),
-        toLocalDisabledDispatchWait(recipient, SUBSCRIPTION_PHASE_MS),
+        toRtcAdmittedWait(recipient),
         toCueWait(recipient, 'received'),
         toPublicationWait(recipient, 'publication', true),
         toOverlayNextHopsCommand(recipient),
