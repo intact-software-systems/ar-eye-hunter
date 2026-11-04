@@ -290,7 +290,9 @@ that says why: under `receiver` and `leader` it sends its hop a `not-subscribed`
 confirms itself -- no `accepted`, no `delivered`, on a retried copy neither. Its hop still ends as any hop does,
 with a terminal ACK once its subtree answered (a leaf at once), but of status `subtree-complete-not-subscribed`,
 which completes the hop and confirms no recipient: no relay passes it upward and the origin counts nobody for it
-(PL11). A relay admits a child's `not-subscribed` NACK -- the one NACK inbound control admission handles; every
+(PL11). A copy that arrives past an ordering gap is answered the same way: its gap NACK, which would ask for
+history the session is not entitled to, gives way to the `not-subscribed` NACK, and its hop ends with that status.
+A relay admits a child's `not-subscribed` NACK -- the one NACK inbound control admission handles; every
 other NACK stays its outbound owner's -- from a child hop its row waits on and for a recipient of the frozen
 audience whose confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`,
 and re-originates it to its parent from itself naming the same recipient, once per recipient and again in its
