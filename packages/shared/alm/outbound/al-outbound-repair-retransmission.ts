@@ -17,6 +17,7 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
+import { writeALOutboundReplanRefusal } from './control/write-al-outbound-replan-refusal.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
@@ -51,7 +52,7 @@ export namespace ALOutboundRepairRetransmission {
         readonly hopPeerIds: readonly string[] | undefined;
         /**
          * The lane's guarded emitter: where a spent repair budget states that its message is skipped, and a retransmit
-         * refused for a revoked publisher states that refusal.
+         * refused for a revoked publisher ends its receipt and states that refusal.
          */
         readonly settlements: ALOutboundSettlementEmitter;
     }
@@ -130,7 +131,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         });
         const refusal = resolveALOutboundReplanRefusalSettlement(sent.msg, computed.verdict);
         if (refusal !== undefined) {
-            this.dependencies.settlements(refusal);
+            await writeALOutboundReplanRefusal({
+                admissionStore: this.dependencies.admissionStore,
+                settlements: this.dependencies.settlements,
+                senderId: sent.msg.id.senderId,
+                refusal
+            });
         }
     }
 
@@ -145,8 +151,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         );
         const msg = read.sentSnapshot?.msg;
         const plan = read.plan;
-        if (!msg || !plan || plan.dropReason) {
+        if (!msg || !plan) {
             console.warn(`No cached outbound message found for repair ${msgId}`);
+            return;
+        }
+        if (plan.dropReason) {
+            console.warn(`Skipping outbound repair of a refused re-plan: ${plan.dropReason}`);
             return;
         }
 

@@ -20,8 +20,7 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
     ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundSettlementEmitter,
-    ALOutboundSettlementFact
+    ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
 import {
     controlTargetMsgId,
@@ -35,9 +34,11 @@ import type {
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
 import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
+import { toALOutboundEndReceiptBundle } from './control/to-al-outbound-end-receipt-bundle.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
+import { writeALOutboundReplanRefusal } from './control/write-al-outbound-replan-refusal.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
@@ -234,7 +235,12 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const refusal = read.plan &&
             resolveALOutboundReplanRefusalSettlement(msg, toALOutboundAdmissionVerdict(read.plan));
         if (refusal) {
-            await this.commitRefusedReceipt(msg, refusal, read.clientRecord?.version);
+            await writeALOutboundReplanRefusal({
+                admissionStore: this.admissionStore,
+                settlements: this.dependencies.settlements,
+                senderId: msg.id.senderId,
+                refusal
+            });
             return;
         }
         if (pending.attempts >= pending.maxAttempts) {
@@ -267,26 +273,6 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     /**
-     * A re-plan refused for good ends the receipt in the commit whose success states the refusal, so a retry never
-     * re-sends the message and a late ACK finds no row to complete.
-     */
-    private async commitRefusedReceipt(
-        msg: ALMessage,
-        refusal: ALOutboundSettlementFact,
-        expectedVersion: number | undefined
-    ): Promise<void> {
-        const status = await this.admissionStore.commitBundle(
-            toEndReceiptBundle(msg.id.senderId, msg.id.msgId, expectedVersion)
-        );
-        if (status === 'conflict') {
-            throw new RetryableConflictError('Outbound receipt refusal commit conflict');
-        }
-        if (status === 'committed') {
-            this.dependencies.settlements(refusal);
-        }
-    }
-
-    /**
      * Ends this owner's receipt of a message another carrier now owns (D56): both rows go in one commit and
      * nothing is stated -- the message is not cancelled. A conflict leaves an inert row: the hand-over
      * completes every later effect of the message silently, so nothing retries it before it expires.
@@ -297,7 +283,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return;
         }
         await this.admissionStore.commitBundle(
-            toEndReceiptBundle(read.clientRecord.senderId, msgId, read.clientRecord.version)
+            toALOutboundEndReceiptBundle(read.clientRecord.senderId, msgId, read.clientRecord.version)
         );
     }
 
@@ -310,7 +296,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return;
         }
         const status = await this.admissionStore.commitBundle(
-            toEndReceiptBundle(clientRecord.senderId, msgId, clientRecord.version)
+            toALOutboundEndReceiptBundle(clientRecord.senderId, msgId, clientRecord.version)
         );
         if (status === 'conflict') {
             throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
@@ -384,7 +370,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         expectedVersion?: number
     ): Promise<void> {
         const status = await this.admissionStore.commitBundle(
-            toEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
+            toALOutboundEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
         );
         if (status === 'conflict') {
             throw new RetryableConflictError(
@@ -403,7 +389,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         expectedVersion: number | undefined
     ): Promise<void> {
         const status = await this.admissionStore.commitBundle(
-            toEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
+            toALOutboundEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
         );
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound receipt exhaustion commit conflict');
@@ -436,21 +422,4 @@ export class ALOutboundRepairAdmission<TPrepared> {
             }
         };
     }
-}
-
-/** The commit that ends one receipt: its pending-ACK row and its repair-attempt row, under the sender's fence. */
-function toEndReceiptBundle<TPrepared>(
-    senderId: string,
-    msgId: string,
-    expectedVersion: number | undefined
-): ALOutboundCommitBundle<TPrepared> {
-    return {
-        senderId,
-        expectedVersion,
-        mutations: [
-            { kind: 'delete-pending-ack', originPeerId: senderId, msgId },
-            { kind: 'delete-repair-attempt', msgId }
-        ],
-        durableEffects: []
-    };
 }

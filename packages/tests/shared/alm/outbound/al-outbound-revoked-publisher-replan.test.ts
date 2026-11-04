@@ -42,17 +42,43 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         vi.restoreAllMocks();
     });
 
-    it.each(REFUSAL_CASES)('a retransmit refused %s states that refusal: %s', async (code, stated) => {
-        const stores = createDefaultOutboundTestStores();
-        const message = createOutboundMessage(`retransmit-${code}`);
-        await admitDurably(stores, message);
-        const facts: ALOutboundSettlementFact[] = [];
+    it.each(REFUSAL_CASES)(
+        'a retransmit refused %s ends the receipt and states that refusal once, so its ack-timeout restates nothing: %s',
+        async (code, stated) => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(1_000);
+            const stores = createDefaultOutboundTestStores();
+            const message = createOutboundMessage(`retransmit-${code}`);
+            await admitDurably(stores, message, true);
+            const facts: ALOutboundSettlementFact[] = [];
 
-        await createRetransmission(stores, facts, toRefusingPlanner(code)).retransmitByMsgId(message.id.msgId, {
-            attemptIdentity: `nack-retry-${code}`
+            await createRetransmission(stores, facts, toRefusingPlanner(code)).retransmitByMsgId(message.id.msgId, {
+                attemptIdentity: `nack-retry-${code}`
+            });
+            const receiptAfterRetransmit = await readReceipt(stores, message);
+            await createRepairAdmission(stores, facts, toRefusingPlanner(code)).retryPendingAck(message.id.msgId);
+
+            expect(facts).toEqual(stated ? [toRefusedFact(message, code)] : []);
+            expect(receiptAfterRetransmit === undefined).toBe(stated);
+        }
+    );
+
+    it('reports a hint\'s refused re-plan by its drop reason, never as a missing message', async () => {
+        const warnings: string[] = [];
+        vi.spyOn(console, 'warn').mockImplementation((warning: string) => {
+            warnings.push(warning);
         });
+        const stores = createDefaultOutboundTestStores();
+        const message = createOutboundMessage('hint-no-publish-grant');
+        await admitDurably(stores, message);
 
-        expect(facts).toEqual(stated ? [toRefusedFact(message, code)] : []);
+        await createRetransmission(stores, [], toRefusingPlanner('no-publish-grant')).retransmitFromRepairHint(
+            message.id.msgId,
+            { trigger: 'repair', failedPeerIds: [], missingRanges: [] },
+            'hint-1'
+        );
+
+        expect(warnings).toEqual(['Skipping outbound repair of a refused re-plan: Refused no-publish-grant on re-plan']);
     });
 
     it.each(REFUSAL_CASES)('an ack-timeout retry refused %s ends the receipt and states that refusal: %s', async (code, stated) => {
@@ -66,8 +92,7 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         await createRepairAdmission(stores, facts, toRefusingPlanner(code)).retryPendingAck(message.id.msgId);
 
         expect(facts).toEqual(stated ? [toRefusedFact(message, code)] : []);
-        expect(await stores.admissionStore.readPendingAck({ originPeerId: 'self', msgId: message.id.msgId }) === undefined)
-            .toBe(stated);
+        expect(await readReceipt(stores, message) === undefined).toBe(stated);
     });
 
     it.each(REFUSAL_CASES)('a dequeue refused %s completes its row and states that refusal: %s', async (code, stated) => {
@@ -92,6 +117,10 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         );
     });
 });
+
+async function readReceipt(stores: OutboundTestStores, message: ReturnType<typeof createOutboundMessage>) {
+    return await stores.admissionStore.readPendingAck({ originPeerId: message.id.senderId, msgId: message.id.msgId });
+}
 
 function createDequeueResilience(): ResourceInboxResilience {
     const window = Temporal.Duration.from({ milliseconds: 500 });
