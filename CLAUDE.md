@@ -280,27 +280,39 @@ Highest-frequency rules:
 `main` — including amend, merge, revert, cherry-pick, rebase, and squash. Commit approval and push
 approval are separate. Read the exact disclosure requirements in `AGENTS.md` before asking.
 
-Branch CI (`branch-release-gate.yml` → `release-gate.yml`) runs on pull requests (`opened`,
-`synchronize`, `reopened`, `ready_for_review`, `labeled`, `unlabeled`), not on bare branch pushes. The
-main-push deploy calls the same `release-gate.yml`. Its blocking lanes run in parallel:
+Branch CI (`branch-release-gate.yml` → `release-gate.yml` and `games-release-gate.yml`) runs on pull
+requests (`opened`, `synchronize`, `reopened`, `ready_for_review`, `labeled`, `unlabeled`), not on
+bare branch pushes. The main-push deploy calls only `release-gate.yml`. The platform gate's blocking
+lanes run in parallel:
 
 | Lane                   | Runs                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checks`               | navigation report, changed style and coupling (PR only), test reachability, `typecheck`, app builds, Deno checks                                           |
+| `checks`               | navigation report, changed style and coupling (PR only), test reachability, `typecheck`, `rallar` build, Deno checks (shared-test, api-v1, control-server) |
 | `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                                                                   |
 | `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                                                                             |
-| `deno`                 | `test:deno`                                                                                                                                                |
+| `deno`                 | `test:deno:platform` (api-v1 + control-server + shared-test)                                                                                               |
 | `e2e-app`              | `test:rallar`, `test:full-stack:memory`                                                                                                                    |
 | `e2e-recipe-console`   | `test:rallar:recipe-console`, as two Playwright shards (`--shard=1/2`, `2/2`)                                                                              |
 | `black-box`            | API-v1 black-box recipes on Postgres: the standard profile as two balanced shards, plus the cluster profile, each on its own runner with all three servers |
 | `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
 
+The games (`ar-eye-hunter-v1`, `relic-hunters-v1`, and their Deno servers) validate in
+`games-release-gate.yml`: required on pull requests, skipped when the diff is exclusively platform,
+and never run on the deploy path. Its lanes run in parallel:
+
+| Lane             | Runs                                                                 |
+| ---------------- | -------------------------------------------------------------------- |
+| `checks-games`   | game app builds and game Deno server checks                          |
+| `deno-games`     | `test:deno:games` (relic-hunter-server-v1 + ar-eye-hunter-server-v1) |
+| `e2e-game-rooms` | the seven game-room browser lanes (AR Eye + Relic)                   |
+
 `npm run check:test-reachability` fails when a tracked test file is run by no CI workflow and is not
 owned by an entry (owner, command, reason) in `tests/manual-suites.json`.
 
-Together `unit`, `unit-tooling`, `deno`, `e2e-app` and `e2e-recipe-console` run exactly what
-`npm run test:ci` runs;
-`packages/tests/repo/release-gate-lanes.test.ts` fails if a lane drops a suite or a Vitest project.
+Together `unit`, `unit-tooling`, `deno`, `deno-games`, `e2e-app` and `e2e-recipe-console` run exactly
+what `npm run test:ci` runs;
+`packages/tests/repo/release-gate-lanes.test.ts` (and its `games-release-gate-lanes.test.ts` sibling)
+fails if a lane drops a suite or a Vitest project.
 
 The non-blocking ALM conformance observation is not a lane of `release-gate.yml`. It lives in
 `alm-conformance-observation.yml`, which `branch-release-gate.yml` and `deploy.yml` start beside the

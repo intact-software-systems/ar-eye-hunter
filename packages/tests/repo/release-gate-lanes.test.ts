@@ -47,7 +47,10 @@ const scripts = (JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'u
 const releaseGate = load(
     readFileSync(path.join(repoRoot, '.github/workflows/release-gate.yml'), 'utf8')
 ) as WorkflowDocument;
-const blockingLanes = Object.values(releaseGate.jobs);
+const gamesReleaseGate = load(
+    readFileSync(path.join(repoRoot, '.github/workflows/games-release-gate.yml'), 'utf8')
+) as WorkflowDocument;
+const blockingLanes = [...Object.values(releaseGate.jobs), ...Object.values(gamesReleaseGate.jobs)];
 const laneScripts = blockingLanes.flatMap((job) => job.steps.flatMap(toNpmScripts));
 
 describe('Release Gate lanes', () => {
@@ -91,8 +94,9 @@ describe('Release Gate lanes', () => {
             const denoCheck of [
                 'npm --workspace @ar-eye-hunter/shared-test run check:deno',
                 '(cd apps/api-v1 && deno task check)',
-                '(cd apps/relic-hunter-server-v1 && deno task check)',
-                '(cd apps/rallar-black-box-control-server && deno task check)'
+                '(cd apps/rallar-black-box-control-server && deno task check)',
+                '(cd apps/ar-eye-hunter-server-v1 && deno task check)',
+                '(cd apps/relic-hunter-server-v1 && deno task check)'
             ]
         ) {
             expect(laneRuns).toContain(denoCheck);

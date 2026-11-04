@@ -79,6 +79,7 @@ describe('PR-scoped validation reuse workflow', () => {
         expect(result.name).toBe('Branch Release Gate result');
         expect(conclusion.run).toContain('--governance-result');
         expect(conclusion.run).toContain('--rtc-observation-result');
+        expect(conclusion.run).toContain('--games-result');
         expect(conclusion.run).not.toMatch(/governance-status|decision-id|receipt|APP_SLUG/iu);
     });
 });
