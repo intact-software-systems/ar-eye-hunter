@@ -1232,6 +1232,12 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   `not-yet-in-sync-exhausted`. It ends nothing on its own -- the receipt budget still ends the message --
   and is one of the declared retryable outcomes below.
 
+A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop re-originated it: it moves a
+recipient the receipt still owes into the row's `outsideAudiencePeerIds` and is refused for any other peer, a
+repeat or a confirmed one, and no ACK confirms a recipient after it. It ends no receipt and hands nothing over:
+the row completes once every expected recipient is confirmed or outside and one is confirmed, and a receipt whose
+every recipient is outside stays open to its deadline and ends `receipt-exhausted` (PL10, PL16).
+
 A receipt that a control ends -- a complete ACK or a terminal NACK -- completes the send's `ack-timeout`
 work row in the commit that ends it, so no timeout batch runs for it; a row a batch already leased is
 left to that batch, which reads the ended receipt and completes. For a complete receipt the old timeout

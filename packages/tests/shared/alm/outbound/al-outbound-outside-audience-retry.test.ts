@@ -7,7 +7,7 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 import {
@@ -28,29 +28,26 @@ const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     mode: 'receiver'
 };
 
-/** No producer moves a recipient outside the audience yet, so the test writes the row the way one will. */
-async function writeOutsideAudience(
-    stores: OutboundTestStores,
+/** A relay re-originates the `not-subscribed` NACK of each recipient below it. */
+async function answerNotSubscribed(
+    runtime: ReturnType<typeof createDefaultOutboundTestRuntime>,
     msg: ALMessage,
     outsideAudiencePeerIds: readonly string[]
 ): Promise<void> {
-    const surface = await stores.admissionStore.readReceiptAdmission({
-        originPeerId: msg.id.senderId,
-        msgId: msg.id.msgId
-    });
-    const pending = surface.pending!;
-    const status = await stores.admissionStore.commitBundle({
-        senderId: msg.id.senderId,
-        expectedVersion: surface.clientRecord?.version,
-        mutations: [{
-            kind: 'set-pending-ack',
-            originPeerId: msg.id.senderId,
-            snapshot: { ...pending, outsideAudiencePeerIds },
-            expireAtTimestamp: pending.deadlineAtMs + 60_000
-        }],
-        durableEffects: []
-    });
-    expect(status).toBe('committed');
+    for (const logicalRecipientPeerId of outsideAudiencePeerIds) {
+        const nack = newALNackControlMessage(
+            { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-outside-retry' },
+            {
+                msgId: msg.id.msgId,
+                fromPeerId: 'relay',
+                toPeerId: 'self',
+                logicalRecipientPeerId,
+                reason: 'not-subscribed',
+                observedAtEpochMs: Date.now()
+            }
+        );
+        expect(await runtime.acceptControlMessage(nack, 'peer')).toEqual({ kind: 'committed' });
+    }
 }
 
 async function acknowledgeAsRelay(
@@ -109,7 +106,7 @@ describe('a receipt recipient outside the audience is never a retry target', () 
         const msg = createOutboundMessage('msg-outside-retry');
         await enqueueOutboundOrThrow(runtime, msg);
         await acknowledgeAsRelay(runtime, msg, 'r1');
-        await writeOutsideAudience(stores, msg, ['r2']);
+        await answerNotSubscribed(runtime, msg, ['r2']);
 
         await vi.advanceTimersByTimeAsync(102);
 
@@ -148,7 +145,7 @@ describe('a receipt recipient outside the audience is never a retry target', () 
         const created = createOutboundMessage('msg-outside-own-hop');
         const msg: ALMessage = { ...created, route: { ...created.route, topicId: 'room.chat' } };
         await enqueueOutboundOrThrow(runtime, msg);
-        await writeOutsideAudience(stores, msg, ['other']);
+        await answerNotSubscribed(runtime, msg, ['other']);
 
         await vi.advanceTimersByTimeAsync(102);
 

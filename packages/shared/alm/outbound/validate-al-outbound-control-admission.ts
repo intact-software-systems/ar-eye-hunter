@@ -9,6 +9,7 @@ import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
@@ -46,6 +47,9 @@ export function validateALOutboundControlAdmission(
         }
         return [...issues, ...validateAcknowledgedReceipt(read, payload)];
     }
+    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'not-subscribed') {
+        return [...issues, ...validateOutsideAudienceAnswer(read, read.parsed.payload)];
+    }
     const payload = read.parsed.payload;
     if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read, payload.fromPeerId)) {
         issues.push({ code: 'unauthorized', message: 'AL repair sender has no retained outbound obligation' });
@@ -68,7 +72,10 @@ export function validateALOutboundControlAdmission(
 function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPayload): readonly ALMessageRejection[] {
     const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
-    if (!pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId)) {
+    if (
+        !pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId) ||
+        pending.outsideAudiencePeerIds.includes(countedPeerId)
+    ) {
         return [{
             code: 'unauthorized',
             message: 'AL acknowledgement confirms no peer of the pending outbound receipt'
@@ -77,6 +84,30 @@ function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPay
     return pending.ackedPeerIds.includes(countedPeerId) && !isOpenNextHopCompletion(read, ack)
         ? [{ code: 'unauthorized', message: 'AL acknowledgement confirms a peer the receipt already counted' }]
         : [];
+}
+
+/**
+ * A `not-subscribed` NACK speaks for its logical recipient, as an ACK does, whichever hop relayed it: it moves a
+ * recipient the receipt still owes outside the audience, and is refused for anyone else (PL9, PL16).
+ */
+function validateOutsideAudienceAnswer(
+    read: ALControlAdmissionRead,
+    nack: ALNackPayload
+): readonly ALMessageRejection[] {
+    const recipientPeerId = nack.logicalRecipientPeerId;
+    const owed = read.pending !== undefined &&
+        toALOutboundReceiptClasses(read.pending).unconfirmedPeerIds.includes(recipientPeerId);
+    return [
+        ...(owed
+            ? []
+            : [{
+                code: 'unauthorized' as const,
+                message: 'AL not-subscribed NACK names no recipient the receipt still owes'
+            }]),
+        ...(read.sent !== undefined && read.sent.reference.expiresAtMs <= read.nowMs
+            ? [{ code: 'unauthorized' as const, message: 'AL not-subscribed NACK arrived after its message deadline' }]
+            : [])
+    ];
 }
 
 function isOpenNextHopCompletion(read: ALControlAdmissionRead, ack: ALAckPayload): boolean {
@@ -103,6 +134,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
             return read.history.kind === 'nacks' &&
                 read.history.values.some((prior) =>
                     prior.fromPeerId === payload.fromPeerId && prior.reason === payload.reason &&
+                    prior.logicalRecipientPeerId === payload.logicalRecipientPeerId &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
                     prior.serverSnapshotVersion === payload.serverSnapshotVersion &&
                     equalSeqRanges(prior.missingRanges, payload.missingRanges)

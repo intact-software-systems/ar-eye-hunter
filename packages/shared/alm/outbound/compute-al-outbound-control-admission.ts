@@ -25,6 +25,7 @@ import {
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
+    acceptALOutboundNotSubscribedNack,
     acceptALOutboundPendingAckSnapshot,
     isALOutboundReceiptComplete,
     toALOutboundAcknowledgementFact,
@@ -232,6 +233,12 @@ function computePendingAckWrite(
         });
         return next ? { kind: 'set', value: next } : { kind: 'remove' };
     }
+    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'not-subscribed' && read.pending) {
+        return {
+            kind: 'set',
+            value: acceptALOutboundNotSubscribedNack(read.pending, read.parsed.payload.logicalRecipientPeerId)
+        };
+    }
     return read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload) && read.pending
         ? { kind: 'remove' }
         : { kind: 'unchanged' };
@@ -274,7 +281,7 @@ export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairP
 
 /**
  * A `resync-required`, `held-by-other`, `unsupported` or `no-publish-grant` refusal ends the receipt too: the hop will
- * refuse every resend of the message.
+ * refuse every resend of the message. A `not-subscribed` NACK speaks for one recipient only, so it never ends one.
  */
 function isTerminalNack(nack: ALNackPayload): boolean {
     return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale' ||

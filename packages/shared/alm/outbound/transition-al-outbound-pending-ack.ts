@@ -132,6 +132,17 @@ export function acceptALOutboundPendingAckSnapshot(
     return { ...input.current, ackedPeerIds: [...ackedPeerIds] };
 }
 
+/** A `not-subscribed` NACK places its recipient outside the audience: neither confirmed nor still owed (PL10). */
+export function acceptALOutboundNotSubscribedNack(
+    current: ALOutboundPendingAckSnapshot,
+    logicalRecipientPeerId: string
+): ALOutboundPendingAckSnapshot {
+    return {
+        ...current,
+        outsideAudiencePeerIds: [...new Set([...current.outsideAudiencePeerIds, logicalRecipientPeerId])]
+    };
+}
+
 /**
  * The peer an ACK confirms in a receipt of this mode: the logical recipient it speaks for under
  * `receiver` and `leader`, and the hop that sent it otherwise. A hop ACK names the hop itself, so it never stands in
