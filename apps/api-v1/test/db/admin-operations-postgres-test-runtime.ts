@@ -350,6 +350,7 @@ export function canonicalSessionRuntimeValue(
         generationId: `${identity.sessionId}-generation`,
         generationVersion: connectedAtEpochMs,
         connectionGenerationId: `${identity.sessionId}-ws-generation`,
+        publicationKey: null,
         status: 'active',
         connectedAtEpochMs,
         lastHeartbeatAtEpochMs: connectedAtEpochMs,

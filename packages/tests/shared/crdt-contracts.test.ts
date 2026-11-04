@@ -1,3 +1,6 @@
+import { Buffer } from 'node:buffer';
+import { describe, expect, it } from 'vitest';
+
 import {
     canonicalRallarCrdtJson,
     createRallarCrdtDocument,
@@ -25,9 +28,11 @@ import {
     validateRallarCrdtSyncResponseEnvelope,
     validateRallarCrdtUpdateEnvelope,
     type RallarCrdtDocumentRef,
+    type RallarCrdtJsonValue,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-import { describe, expect, it } from 'vitest';
+
+type CrdtTestDocument = Readonly<Record<string, RallarCrdtJsonValue>>;
 
 const roomRef = {
     applicationId: 'rallar-test',
@@ -138,7 +143,7 @@ describe('Rallar CRDT contracts', () => {
     it('rejects unknown protocol and operation versions', () => {
         // Protocol version 2 is not representable in RallarCrdtUpdateEnvelope,
         // so this stands in for a wire value the decoder has to reject.
-        const update: Record<string, unknown> = {
+        const update = {
             ...createUpdateEnvelope(),
             protocolVersion: 2,
             operationVersion: 99
@@ -191,13 +196,13 @@ describe('Rallar CRDT contracts', () => {
     });
 
     it('converges counter and numeric min/max operations across replicas', () => {
-        const first = createRallarCrdtDocument<Record<string, unknown>>({
+        const first = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
             createUpdateId: sequenceIds('a')
         });
-        const second = createRallarCrdtDocument<Record<string, unknown>>({
+        const second = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(2_000),
@@ -231,7 +236,7 @@ describe('Rallar CRDT contracts', () => {
     });
 
     it('preserves numeric CRDT state across snapshot import plus later replay', () => {
-        const full = createRallarCrdtDocument<Record<string, unknown>>({
+        const full = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
@@ -251,7 +256,7 @@ describe('Rallar CRDT contracts', () => {
             ])
         );
 
-        const compacted = createRallarCrdtDocument<Record<string, unknown>>({
+        const compacted = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(2_000),
@@ -322,7 +327,7 @@ describe('Rallar CRDT contracts', () => {
     });
 
     it('requires CRDT-state snapshots before destructive compaction is considered safe', () => {
-        const document = createRallarCrdtDocument<Record<string, unknown>>({
+        const document = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
@@ -426,13 +431,13 @@ describe('Rallar CRDT contracts', () => {
 
     it('encrypts update payloads and snapshots while preserving client convergence', async () => {
         const keyring = testKeyring();
-        const first = createRallarCrdtDocument<Record<string, unknown>>({
+        const first = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
             createUpdateId: sequenceIds('a')
         });
-        const second = createRallarCrdtDocument<Record<string, unknown>>({
+        const second = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(1_000),
@@ -488,10 +493,46 @@ describe('Rallar CRDT contracts', () => {
             'Encrypted title'
         );
 
-        const decryptedSnapshot = await decryptRallarCrdtSnapshotEnvelope<Record<string, unknown>>(encryptedSnapshot, keyring);
+        const decryptedSnapshot = await decryptRallarCrdtSnapshotEnvelope<CrdtTestDocument>(encryptedSnapshot, keyring);
         expect(decryptedSnapshot.value).toEqual({
             title: 'Encrypted title'
         });
+    });
+
+    it('rejects an encrypted update whose nonce is not base64url text', async () => {
+        const encryptedUpdate = await encryptRallarCrdtUpdateEnvelope(createUpdateEnvelope(), testKeyring());
+        const encryption = encryptedUpdate.payload.encryption;
+        if (encryption === undefined) {
+            throw new Error('Expected an encrypted payload.');
+        }
+        const tamperedUpdate = {
+            ...encryptedUpdate,
+            payload: { ...encryptedUpdate.payload, encryption: { ...encryption, nonce: 'not*base64url' } }
+        };
+
+        await expect(decryptRallarCrdtUpdateEnvelope(tamperedUpdate, testKeyring()))
+            .rejects.toThrow('Invalid base64url character in CRDT encryption value.');
+    });
+
+    it('accepts a raw key in standard or URL-safe base64, padded or not', async () => {
+        const rawKey = Uint8Array.from({ length: 32 }, (_, index) => 250 - index);
+        const update = createUpdateEnvelope();
+        const keyringFor = (rawKeyBase64: string) => ({
+            ...testKeyring(),
+            keys: [{ keyId: 'test-key', rawKeyBase64 }]
+        });
+        const encryptedUpdate = await encryptRallarCrdtUpdateEnvelope(
+            update,
+            keyringFor(Buffer.from(rawKey).toString('base64url'))
+        );
+
+        for (const rawKeyBase64 of [Buffer.from(rawKey).toString('base64'), Buffer.from(rawKey).toString('base64url')]) {
+            const decrypted = await decryptRallarCrdtUpdateEnvelope(encryptedUpdate, keyringFor(rawKeyBase64));
+
+            expect(decrypted.payload.operations).toEqual(update.payload.operations);
+        }
+        await expect(encryptRallarCrdtUpdateEnvelope(update, keyringFor('not*a*key')))
+            .rejects.toThrow('Invalid base64url character in CRDT encryption value.');
     });
 
     it('decrypts rotated encrypted updates and rejects revoked keys', async () => {
@@ -987,7 +1028,7 @@ describe('Rallar CRDT deterministic engine', () => {
     });
 
     it('keeps CRDT-state snapshots equivalent to full replay across core kinds', () => {
-        const full = createRallarCrdtDocument<Record<string, unknown>>({
+        const full = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(8_000),
@@ -1037,7 +1078,7 @@ describe('Rallar CRDT deterministic engine', () => {
             ])
         );
         const snapshot = full.snapshot('state-preserving-compaction');
-        const compacted = createRallarCrdtDocument<Record<string, unknown>>({
+        const compacted = createRallarCrdtDocument<CrdtTestDocument>({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(9_000)

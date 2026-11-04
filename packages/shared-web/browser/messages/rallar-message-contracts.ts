@@ -190,9 +190,11 @@ export interface RallarTypedMessageChannelDefinition {
     readonly purpose: ALChannelPurpose;
     /**
      * Who may publish on the channel's topic: every active member of the room (`members`), or only the principals a
-     * publication grant names (`granted`), whose topic it names. A granted channel is WS-only: its RTC sends and
-     * `onRtc` are refused `unsupported`. A granted send whose principal holds no `publish` in the room's cached snapshot
-     * settles `rejected` as `no-publish-grant` before any carrier; with no snapshot cached, the server decides.
+     * publication grant names (`granted`), whose topic it names. A granted topic rides RTC only as a signed
+     * `ack: 'none'` room multicast with a verified publisher proof, delivered to `subscribe(handler)`; every other
+     * granted send goes over WS, and `onRtc` is refused `unsupported`. A granted send whose principal holds no `publish`
+     * in the room's cached snapshot settles `rejected` as `no-publish-grant` before any carrier; with no snapshot
+     * cached, the server decides.
      */
     readonly access: 'members' | 'granted';
     /**

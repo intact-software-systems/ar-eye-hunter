@@ -37,11 +37,15 @@ import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-ser
 import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import '../../setup-browser-indexeddb.ts';
 import { captureOutboundWorkRunnable, peekOutboundWorkReadyAt } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import {
     installNativeRtcRuntime,
     type NativeRtcRuntime,
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 let nativeRuntime: NativeRtcRuntime;
@@ -281,7 +285,12 @@ class RtcRecoveryOwner {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: this.connection.input.sessionId
         });
         onTestFinished(() => this.close());
     }

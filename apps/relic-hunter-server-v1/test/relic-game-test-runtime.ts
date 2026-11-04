@@ -233,6 +233,7 @@ async function connectRelicTestSession(
                 principalId: owner.clientId,
                 generationId: `generation-${owner.sessionId}`,
                 connectionGenerationId: `connection-${owner.sessionId}`,
+                publicationKey: null,
                 connectedAtEpochMs: now,
                 lastHeartbeatAtEpochMs: now,
                 expiresAtEpochMs: now + 60_000,

@@ -1,5 +1,5 @@
 import type { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-server-app-inbox.ts';
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import { encodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     requireEpoch,

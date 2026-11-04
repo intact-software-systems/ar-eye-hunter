@@ -458,6 +458,7 @@
         },
         "body": {
           "generationId": "limits-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "limits-connection-generation-{runId}",
           "principalId": "{capperClientId}"
         }
@@ -484,6 +485,7 @@
         },
         "body": {
           "generationId": "limits-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "limits-connection-generation-{runId}",
           "principalId": "{capperClientId}"
         }

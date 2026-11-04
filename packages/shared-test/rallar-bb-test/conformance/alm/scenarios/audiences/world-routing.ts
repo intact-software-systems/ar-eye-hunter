@@ -15,16 +15,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-
-/**
- * RTC carries no world audience: the RTC carrier refuses the send at admission, a carrier-unsupported rejection that
- * no carrier attempt follows, so no WS leg carries it either.
- */
-export const RTC_REFUSAL_FACTS: readonly AlmConformanceVerdictFact[] = [
-    ['refused', 'failure.kind', 'equals', 'refused'],
-    ['unsupported', 'failure.reason', 'equals', 'unsupported'],
-    ['no-attempt', 'attempts', 'equals', 0]
-];
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 
 /**
  * A strategy that allows WS sends a world send there at once: one WS attempt and no hand-over from an RTC leg. An
@@ -72,7 +63,7 @@ function toWorldVerdictCommands(sender: AlmConformanceStepInput): readonly Ralla
         case 'ws':
             return toAdmissionCommands({ ...sender, index: 1 });
         case 'rtc':
-            return toVerdictCommands(sender, 'rejected', RTC_REFUSAL_FACTS);
+            return toVerdictCommands(sender, 'rejected', toRtcRefusalFacts('unsupported'));
         case 'rtc-with-ws-fallback':
             return toVerdictCommands(sender, 'transport-accepted', WS_ROUTE_FACTS);
     }

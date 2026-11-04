@@ -388,6 +388,7 @@ function withBobPresence(snapshot: GroupSnapshot, fixture: SubscriptionSqlFixtur
         generationId: 'bob-presence-generation',
         generationVersion: 1,
         connectionGenerationId: GENERATION,
+        publicationKey: null,
         connectedAtEpochMs: fixture.nowEpochMs,
         lastHeartbeatAtEpochMs: fixture.nowEpochMs,
         expiresAtEpochMs: fixture.nowEpochMs + 60_000,

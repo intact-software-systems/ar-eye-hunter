@@ -1,4 +1,5 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { toBase64Url } from '@shared/encoding/base64url.ts';
 
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE,
@@ -28,7 +29,7 @@ import {
     computeRetainedCatalogCandidates,
     type CatalogAnchors
 } from './distributed-artifact-evidence/catalog-candidate-retention.ts';
-import { computeCanonicalDigest, toBase64Url } from './distributed-artifact-evidence/compute-canonical-digest.ts';
+import { computeCanonicalDigest } from './distributed-artifact-evidence/compute-canonical-digest.ts';
 import {
     computeDistributedArtifactEvidenceIndexFromSource,
     computeDistributedArtifactEvidenceSource

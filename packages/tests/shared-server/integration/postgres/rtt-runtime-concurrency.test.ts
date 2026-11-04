@@ -193,6 +193,7 @@ function rttGroupSnapshot(groupRef: GroupRef, sessionIds: readonly string[]): Gr
             principalId: sessionId,
             generationId: `${sessionId}-generation`,
             connectionGenerationId: `${sessionId}-ws-generation`,
+            publicationKey: null,
             generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,

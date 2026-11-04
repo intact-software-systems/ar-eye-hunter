@@ -205,6 +205,29 @@ it('a granted selector opens a granted room channel; an absent access opens memb
     );
 });
 
+it('records the RTC copy a granted election hears, and leaves each WS copy to the connect\'s own selector', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(toGrantedConfig({ topicId: GRANTED_TOPIC_ID, access: 'granted' }));
+    await runtime.subscribeTopic({ connection: 'granted', subscriptionId: 't1', timeoutMs: 100 });
+    const [handler] = facade.records.typedSubscribeHandlers;
+    if (handler === undefined) {
+        throw new Error('messages.subscribe must hand the granted channel a handler.');
+    }
+    const messagesBefore = events.filter((event) => event.kind === 'message').length;
+
+    const rtc = toInboundMessage('rtc', 'alm.conformance.ws.subscription-delivery', 'granted-rtc');
+    const ws = toInboundMessage('ws', 'alm.conformance.ws.subscription-delivery', 'granted-ws');
+    await handler(rtc.payload, rtc);
+    await handler(ws.payload, ws);
+
+    const recorded = events.filter((event) => event.kind === 'message').slice(messagesBefore);
+    expect(recorded.map((event) => [event.topic, event.transport])).toEqual([
+        ['rallar.browser.messages.rtc.message', 'messages.rtc']
+    ]);
+    expect(recorded[0]?.data).toMatchObject({ msgId: rtc.raw.id.msgId, transport: 'rtc', payload: rtc.payload });
+    await runtime.close();
+});
+
 it('keeps each token under its subscriptionId beside the socket generation, renews an ended one, until the page closes', async () => {
     const runtime = await loadRuntime();
     await runtime.connect(toGrantedConfig({ topicId: GRANTED_TOPIC_ID, access: 'granted' }));

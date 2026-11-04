@@ -46,6 +46,7 @@ import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } fr
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     acknowledgeAtOrigin,
     createOriginSnapshot,
@@ -644,7 +645,8 @@ function createDispatchHarness({ registry, carrier, admits, publication }: Dispa
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
         nowMs: Date.now,
-        readPublicationPermissions: () => publication.permissions
+        readPublicationPermissions: () => publication.permissions,
+        grantedTopics: NO_RTC_GRANTED_TOPICS
     });
     const canFallback = admits.ws !== undefined && admits.rtc !== undefined;
     return {

@@ -8,6 +8,8 @@ import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@sha
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+/** Well formed and unverified: no WS planner reads a proof. */
+const PROOF = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) } as const;
 const CONTEXT = {
     sessionId: 'self',
     serverPeerId: 'server',
@@ -53,6 +55,16 @@ describe('the WS client dispatch plan', () => {
         });
         expect(plan.msg.qos?.durability).toEqual({ algo: 'local-outbox' });
         expect(plan.preparedMessages).toHaveLength(1);
+    });
+
+    it('normalizes the expiry of a message carrying a publication proof as it does any other', () => {
+        const message = roomSend('best-effort');
+        const proven: ALMessage = { ...message, proof: PROOF };
+
+        const plan = toWsQueueBoxClientDispatchPlan(proven, CONTEXT);
+
+        expect(plan.msg.qos?.expiry).toBeDefined();
+        expect(plan.msg).toEqual({ ...toWsQueueBoxClientDispatchPlan(message, CONTEXT).msg, proof: PROOF });
     });
 
     it('tracks no server hop while the server names no peer id', () => {

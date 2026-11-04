@@ -27,7 +27,13 @@ import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-res
 import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 export interface CreateRallarSessionControllerOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
@@ -40,6 +46,10 @@ export interface CreateRallarSessionControllerOptions {
     readonly authRuntime: RallarAuthRuntimePort;
     readonly stateRuntime: Pick<RallarBrowserFacadeRuntimeContext, 'clearCurrentRoom'>;
     readonly lifecycle: RallarLifecycleCoordinator;
+    readonly publicationCrypto: Promise<PublicationCrypto>;
+    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+    readonly grantedTopics: RtcGrantedTopicReader;
+    readonly topicSubscriptions: RtcTopicSubscriptionReader;
     readonly emitState: () => void;
     readonly closeDataScopes: (session: AuthSession) => Promise<void>;
 }
@@ -54,6 +64,8 @@ export interface RallarSessionController {
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
     requireSession(): AuthSession;
+    /** The public half of the page's key, which room entry registers on the presence row; `null` for a keyless page. */
+    readPublicationKey(): Promise<GroupPresencePublicationKey | null>;
     readDefaults(): RallarDefaults | undefined;
     readDefaultScope(): StateScope | undefined;
     resolveOperationOptions<T extends RallarOperationOptions>(
@@ -76,6 +88,10 @@ export function createRallarSessionController(
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         lifecycle: options.lifecycle,
+        publicationCrypto: options.publicationCrypto,
+        publicationVerifier: options.publicationVerifier,
+        grantedTopics: options.grantedTopics,
+        topicSubscriptions: options.topicSubscriptions,
         clearCurrentRoom: options.stateRuntime.clearCurrentRoom
     });
     const authLifecycle = new BrowserSessionAuthLifecycle({
@@ -109,6 +125,7 @@ export function createRallarSessionController(
         readMiddleware: () => options.connectionRuntime.readMiddleware(),
         requireMiddleware: () => options.connectionRuntime.requireMiddleware(),
         requireSession: () => authLifecycle.requireSession(),
+        readPublicationKey: async () => toGroupPresencePublicationKey(await options.publicationCrypto),
         readDefaults: () => options.connectionRuntime.readDefaults(),
         readDefaultScope: () => options.connectionRuntime.readDefaultScope(),
         resolveOperationOptions: (operationOptions) =>

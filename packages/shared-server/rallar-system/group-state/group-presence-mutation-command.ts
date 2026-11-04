@@ -1,12 +1,14 @@
-import type { GroupPresenceSession } from '@shared/api/group-types.ts';
+import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
+import type { GroupPresencePublicationKey, GroupPresenceSession } from '@shared/api/group-types.ts';
+import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 import type {
     ConnectGroupPresenceSessionRequest,
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest
 } from '@shared/api/state-types.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
-import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import { toGroupMutationActorInput, toGroupMutationIdentity } from './group-mutation-command.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
@@ -64,6 +66,7 @@ function toConnectPresenceCommand(
             principalId: request.principalId,
             generationId: request.generationId,
             connectionGenerationId: request.connectionGenerationId,
+            publicationKey: requirePublicationKey(request),
             connectedAtEpochMs: 'connectedAtEpochMs' in request
                 ? (request.connectedAtEpochMs ?? null)
                 : null,
@@ -89,11 +92,23 @@ function toHeartbeatPresenceCommand(
         input: {
             principalId: request.principalId ?? null,
             generationId: request.generationId,
+            publicationKey: requirePublicationKey(request),
             lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             ...toGroupMutationActorInput(request)
         }
     };
+}
+
+function requirePublicationKey(request: GroupPresenceMutationRequest): GroupPresencePublicationKey | null {
+    return decodeGroupPresencePublicationKey('publicationKey' in request ? request.publicationKey : undefined).fold(
+        (issues) => {
+            throw new NonRetryableException(
+                `Group presence publication key is invalid: ${formatRallarValidation(issues)}`
+            );
+        },
+        (publicationKey) => publicationKey
+    );
 }
 
 function toDisconnectPresenceCommand(

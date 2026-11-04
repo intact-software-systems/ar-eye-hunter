@@ -16,6 +16,7 @@ import type {
     Group,
     GroupJoinMode,
     GroupMemberStatus,
+    GroupPresencePublicationKey,
     GroupRef,
     GroupRole,
     GroupSnapshot,
@@ -215,6 +216,7 @@ export interface ConnectGroupPresenceSessionRequest extends MutationActorInput {
     readonly principalId: string;
     readonly generationId: string;
     readonly connectionGenerationId: string;
+    readonly publicationKey: GroupPresencePublicationKey | null;
     readonly connectedAtEpochMs?: number;
     readonly lastHeartbeatAtEpochMs?: number;
     readonly expiresAtEpochMs?: number;
@@ -222,6 +224,7 @@ export interface ConnectGroupPresenceSessionRequest extends MutationActorInput {
 
 export interface HeartbeatGroupPresenceSessionRequest extends MutationActorInput {
     readonly generationId: string;
+    readonly publicationKey: GroupPresencePublicationKey | null;
     readonly principalId?: string;
     readonly lastHeartbeatAtEpochMs?: number;
     readonly expiresAtEpochMs?: number;

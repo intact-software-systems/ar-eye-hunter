@@ -884,6 +884,7 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             sessionId: 'group-session-1',
             generationId: 'group-session-generation-1',
             connectionGenerationId: 'group-session-ws-generation-1',
+            publicationKey: null,
             generationVersion: 1,
             status: 'active',
             disconnectedAtEpochMs: null,

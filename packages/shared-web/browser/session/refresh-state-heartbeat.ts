@@ -4,7 +4,7 @@ import {
     validateAuthoritativeGroupSnapshot
 } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
@@ -34,6 +34,8 @@ export interface RefreshStateHeartbeatOptions {
     readonly wsConnectionGenerationId: string | undefined;
     /** The browser's cached snapshot of its principal; absent until the server's connect snapshot has arrived. */
     readonly clientSnapshot: ClientSnapshot | undefined;
+    /** What each group heartbeat registers on the page's presence row. */
+    readonly publicationKey: GroupPresencePublicationKey | null;
     readonly scope?: StateScope;
     readonly authSession?: AuthSession;
     readonly heartbeatAtEpochMs?: number;
@@ -124,6 +126,7 @@ export async function refreshStateHeartbeat(
                 snapshot,
                 clientData,
                 generationId: options.generationId,
+                publicationKey: options.publicationKey,
                 heartbeatAtEpochMs,
                 expiresAtEpochMs,
                 scope,
@@ -147,6 +150,7 @@ interface GroupHeartbeatStepInput {
     readonly snapshot: GroupSnapshot;
     readonly clientData: ClientInfo;
     readonly generationId: string;
+    readonly publicationKey: GroupPresencePublicationKey | null;
     readonly heartbeatAtEpochMs: number;
     readonly expiresAtEpochMs: number;
     readonly scope: StateScope;
@@ -168,6 +172,7 @@ function groupHeartbeatStep(input: GroupHeartbeatStepInput) {
                 sessionId: input.clientData.sessionId,
                 request: {
                     generationId,
+                    publicationKey: input.publicationKey,
                     principalId: input.clientData.clientId,
                     actorPrincipalId: input.clientData.clientId,
                     actorSessionId: input.clientData.sessionId,

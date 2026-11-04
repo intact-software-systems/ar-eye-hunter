@@ -214,6 +214,7 @@
         "body": {
           "principalId": "{aliceClientId}",
           "generationId": "parity-generation-{aliceSessionId}",
+          "publicationKey": null,
           "connectionGenerationId": "parity-connection-generation-{aliceSessionId}"
         }
       },

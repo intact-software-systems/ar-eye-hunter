@@ -11,7 +11,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { computeAppOutboxInsert, type AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
 import { groupStateScopeStorageKey } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import type { MatchmakingPool } from './matchmaking-pool.ts';
 
 export interface MatchmakingDeadline {

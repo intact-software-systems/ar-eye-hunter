@@ -15,7 +15,7 @@ import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-h
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
@@ -30,6 +30,8 @@ export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
 export const SESSION_HEARTBEAT_RENEWAL_MARGIN_MS = 2 * SESSION_HEARTBEAT_RETRY_MS;
 
 export interface InitHeartbeatOptions {
+    /** What each group heartbeat registers on the page's presence row. */
+    readonly publicationKey: GroupPresencePublicationKey | null;
     readonly authSession?: AuthSession;
     /** Absent for a heartbeat without a socket; the client session then keeps no socket generation. */
     readonly ownWsConnectionGeneration?: BrowserOwnWsConnectionGeneration;
@@ -174,6 +176,7 @@ class BrowserStateHeartbeatRuntime {
             clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
                 this.#clientData.clientId
             ),
+            publicationKey: this.#options.publicationKey,
             authSession: this.#options.authSession,
             scope: this.#scope,
             policies: this.#options.policies
@@ -247,7 +250,7 @@ class BrowserStateHeartbeatRuntime {
 
 export async function initHeartbeat(
     clientData: ClientInfo,
-    options: InitHeartbeatOptions = {}
+    options: InitHeartbeatOptions
 ): Promise<RallarSessionHeartbeat> {
     activeHeartbeat?.stop();
     const runtime = new BrowserStateHeartbeatRuntime(clientData, options);

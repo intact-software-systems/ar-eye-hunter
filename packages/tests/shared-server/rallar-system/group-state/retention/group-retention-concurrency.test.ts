@@ -186,6 +186,7 @@ function activityDescriptor(fixture: RetentionDatabaseFixture, operation: Racing
             request: {
                 requestId: 'racing-heartbeat',
                 generationId: 'initial',
+                publicationKey: null,
                 lastHeartbeatAtEpochMs: fixture.nowEpochMs,
                 expiresAtEpochMs: fixture.nowEpochMs + 60_000,
                 actorPrincipalId: 'owner'
@@ -219,6 +220,7 @@ function connectDescriptor(fixture: RetentionDatabaseFixture, generation: string
             requestId: `connect-${generation}`,
             principalId: 'owner',
             generationId: generation,
+            publicationKey: null,
             connectionGenerationId: `${generation}-connection`,
             connectedAtEpochMs: fixture.nowEpochMs,
             lastHeartbeatAtEpochMs: fixture.nowEpochMs,

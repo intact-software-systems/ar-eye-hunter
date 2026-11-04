@@ -31,7 +31,9 @@ const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/bro
 
 const roomWorkflowMocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+    const { createAvailablePublicationCryptoFixture } = await import('../../shared/signature/publication-crypto-fixtures.ts');
     const context = createDefaultApiMiddlewareTestDouble();
+    const publicationCrypto = await createAvailablePublicationCryptoFixture();
     const operationLog: string[] = [];
 
     return {
@@ -39,6 +41,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         cacheListeners: new Set<StateCacheChangeListener>(),
         session: context.session,
         context,
+        publicationCrypto,
         createAndJoinStateGroup: vi.fn<(typeof RoomGroupStateWorkflowsModule)['createAndJoinStateGroup']>(),
         joinStateGroup: vi.fn<(typeof RoomGroupStateWorkflowsModule)['joinStateGroup']>(),
         leaveStateGroup: vi.fn<(typeof RoomGroupStateWorkflowsModule)['leaveStateGroup']>(),
@@ -58,6 +61,10 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
         readSession: vi.fn<() => AuthSession | undefined>(() => context.session)
     };
 });
+
+vi.mock(import('@shared-web/browser/composition/create-default-publication-crypto.ts'), () => ({
+    createDefaultPublicationCrypto: () => Promise.resolve(roomWorkflowMocks.publicationCrypto)
+}));
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({

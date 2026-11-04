@@ -1,6 +1,6 @@
 import type { AppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeAppOutboxSignal } from '@shared-server/rallar-system/app-outbox/compute-app-outbox-signal.ts';
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { RelicGameState } from '../src/model.ts';

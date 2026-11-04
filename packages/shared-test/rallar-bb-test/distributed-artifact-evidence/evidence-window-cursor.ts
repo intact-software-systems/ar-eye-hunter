@@ -1,9 +1,10 @@
+import { decodeBase64Url, toBase64Url } from '@shared/encoding/base64url.ts';
+
 import {
     MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE,
     type DistributedArtifactEvidenceCursor
 } from '../distributed-artifact-evidence-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
-import { toBase64Url } from './compute-canonical-digest.ts';
 
 /** The catalog a cursor belongs to: its artifact, its evidence model and the catalog instance that signed it. */
 export interface EvidenceCursorIdentity {
@@ -40,7 +41,6 @@ interface CursorPayload {
 
 const CURSOR_REVISION = 'distributed-artifact-evidence/source-v1';
 const CURSOR_SIGNATURE_BYTES = 32;
-const BASE64_URL_TEXT = /^[A-Za-z0-9_-]+$/;
 
 let cursorMasterKey: Promise<CryptoKey> | undefined;
 
@@ -93,7 +93,7 @@ export function decodeEvidenceCursor(cursor: string): DecodedEvidenceCursor | un
         return undefined;
     }
     const payload = decodeCursorPayload(body);
-    const signature = decodeBase64Url(signatureText);
+    const signature = decodeBase64Url(signatureText).right;
     if (payload === undefined || signature?.length !== CURSOR_SIGNATURE_BYTES) {
         return undefined;
     }
@@ -106,7 +106,7 @@ export function decodeEvidenceCursor(cursor: string): DecodedEvidenceCursor | un
 }
 
 function decodeCursorPayload(body: string): CursorPayload | undefined {
-    const bytes = decodeBase64Url(body);
+    const bytes = decodeBase64Url(body).right;
     if (bytes === undefined) {
         return undefined;
     }
@@ -128,18 +128,4 @@ function isCursorPayload(value: unknown): value is CursorPayload {
         Number.isSafeInteger(value.s) && Number(value.s) >= 1 &&
         Number(value.s) <= MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE &&
         Number.isSafeInteger(value.p);
-}
-
-function decodeBase64Url(value: string): Uint8Array | undefined {
-    if (!BASE64_URL_TEXT.test(value)) {
-        return undefined;
-    }
-    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-    try {
-        const binary = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='));
-        return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    }
-    catch {
-        return undefined;
-    }
 }

@@ -3,7 +3,7 @@ import type { Tournament, TournamentMatchBinding } from '@shared/api/tournaments
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app-inbox.ts';
 import type { AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { computeTournamentAttemptState } from './tournament-repository.ts';
 import type { TournamentService } from './tournament-service.ts';
 import {

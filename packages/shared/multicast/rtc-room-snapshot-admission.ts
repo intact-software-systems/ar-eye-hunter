@@ -10,6 +10,8 @@ import { isSameGroupRef } from '../api/api-type-utils.ts';
 import { resolveRallarGroupLeaderSessionId } from '../api/group-director.ts';
 import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
+import type { Either } from '../resilience/Either.ts';
+import type { RtcPublicationAdmitted, RtcPublicationRefusal } from './publication/compute-rtc-publication-admission.ts';
 import {
     resolveRtcRoomPeerDenial,
     resolveRtcRoomRosterPosition,
@@ -101,7 +103,34 @@ export function toRtcRoomSnapshotHandlingPlan(
     if (admission.kind === 'not-room' || plan.dropReasonCode === 'expired') {
         return plan;
     }
-    const refusal = toRtcRoomRefusal(admission);
+    return toRtcRefusedHandlingPlan(plan, toRtcRoomRefusal(admission), fromPeerId);
+}
+
+/**
+ * The publication admission of a granted frame, or of a proof frame on an ungranted topic, on a plan its room admission
+ * authorized or on the plan of a frame with no readable snapshot; a frame its room refused never reaches it. A key or
+ * authority the receiver has not yet observed is not yet in sync, which the receiver's one-shot room refresh answers;
+ * every other refusal is unauthorized, with no NACK and no forward.
+ */
+export function toRtcPublicationHandlingPlan(
+    plan: ALMessageHandlingPlan,
+    admission: Either<RtcPublicationRefusal, RtcPublicationAdmitted>,
+    fromPeerId: string | undefined
+): ALMessageHandlingPlan {
+    return admission.fold(
+        (refusal) =>
+            plan.dropReasonCode === 'expired'
+                ? plan
+                : toRtcRefusedHandlingPlan(plan, toRtcPublicationRefusal(refusal), fromPeerId),
+        (admitted) => admitted.delivery === 'deliver' ? plan : toForwardOnlyHandlingPlan(plan)
+    );
+}
+
+function toRtcRefusedHandlingPlan(
+    plan: ALMessageHandlingPlan,
+    refusal: RtcRoomRefusal,
+    fromPeerId: string | undefined
+): ALMessageHandlingPlan {
     return {
         ...plan,
         dropReason: refusal.dropReason,
@@ -117,6 +146,12 @@ export function toRtcRoomSnapshotHandlingPlan(
         },
         repair: { enabled: false, algo: 'none' }
     };
+}
+
+function toRtcPublicationRefusal(refusal: RtcPublicationRefusal): RtcRoomRefusal {
+    return refusal.code === 'unknown-key' || refusal.code === 'authority-ahead'
+        ? { code: 'not-yet-in-sync', dropReason: `not-yet-in-sync: ${refusal.code}` }
+        : { code: 'unauthorized', dropReason: `unauthorized: ${refusal.code}` };
 }
 
 /**
@@ -210,7 +245,8 @@ function toForwardOnlyHandlingPlan(plan: ALMessageHandlingPlan): ALMessageHandli
     return { ...plan, localDelivery: { ...plan.localDelivery, enabled: false, deferred: false } };
 }
 
-function resolveRoomObservationDenial(
+/** The snapshot's own observability: the room it names, active and unexpired at `nowMs`. */
+export function resolveRoomObservationDenial(
     roomRef: GroupRef,
     snapshot: GroupSnapshot,
     nowMs: number

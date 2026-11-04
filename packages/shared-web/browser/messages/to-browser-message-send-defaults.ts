@@ -1,8 +1,11 @@
 import { isExclusiveSendInput } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
     RallarMessageSendBase,
+    RallarRoomAudienceInput,
     RallarStorageUnavailablePolicy,
-    RallarTypedMessageChannelDefinition
+    RallarTypedMessageChannelDefinition,
+    RallarTypedMessageSendStrategy,
+    RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
@@ -44,12 +47,43 @@ export function resolveBrowserStorageUnavailablePolicy(
     return channel?.onStorageUnavailable ?? 'refuse';
 }
 
-/** Only the WS server arbitrates a claim and checks a publication grant, so RTC can carry neither send (D500). */
-export function isBrowserWsOnlySend(
-    send: Pick<RallarMessageSendBase<never>, 'ownership' | 'qos'>,
-    channel: BrowserTypedChannelPolicy | undefined
-): boolean {
-    return isExclusiveSendInput(send) || resolveBrowserChannelAccess(channel) === 'granted';
+export interface BrowserWsOnlySendInput {
+    readonly send:
+        & Pick<RallarMessageSendBase<never>, 'ownership' | 'qos'>
+        & RallarRoomAudienceInput
+        & Pick<RallarWsSendInput<never>, 'peerId'>;
+    readonly channel: BrowserTypedChannelPolicy | undefined;
+    /** The ack `toBrowserMessageSendDefaults` resolves for the send. */
+    readonly ack: ALAckMode;
+    readonly strategy: RallarTypedMessageSendStrategy;
+}
+
+/**
+ * Only the WS server arbitrates a claim, so RTC carries no exclusive send. RTC carries a granted publication only
+ * as a signed room multicast without a receipt, the one a strategy that starts on RTC sends there.
+ */
+export function isBrowserWsOnlySend(input: BrowserWsOnlySendInput): boolean {
+    if (isExclusiveSendInput(input.send)) {
+        return true;
+    }
+    return resolveBrowserChannelAccess(input.channel) === 'granted' && !isBrowserRtcGrantedPublication(input);
+}
+
+function isBrowserRtcGrantedPublication(input: BrowserWsOnlySendInput): boolean {
+    return (input.strategy === 'rtc' || input.strategy === 'rtc-with-ws-fallback') && input.ack === 'none' &&
+        isBrowserRoomMulticastSend(input.send);
+}
+
+/** A send no carrier turns into a broadcast: no peer, no world or principal scope and no narrowed audience. */
+function isBrowserRoomMulticastSend(send: BrowserWsOnlySendInput['send']): boolean {
+    return send.peerId === undefined && send.scope !== 'world' && send.scope !== 'principal' &&
+        !isRallarRoomNarrowedAudience(send);
+}
+
+/** A room send that names its exclusions, its principal or its fixed list, which both carriers send as a broadcast. */
+export function isRallarRoomNarrowedAudience(audience: Omit<RallarRoomAudienceInput, 'scope'>): boolean {
+    return audience.exceptPeerIds !== undefined || audience.principalId !== undefined ||
+        audience.recipientPeerIds !== undefined;
 }
 
 /** A lane send names no channel, so every active member of its room may publish it. */

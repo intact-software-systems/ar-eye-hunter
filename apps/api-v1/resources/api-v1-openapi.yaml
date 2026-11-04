@@ -7911,6 +7911,52 @@ components:
             - 'null'
           format: int64
 
+    EcdsaP256PublicJwk:
+      type: object
+      additionalProperties: false
+      description: An ECDSA P-256 public JWK with exactly its four public members; a private member such as d is refused.
+      required: [kty, crv, x, y]
+      properties:
+        kty:
+          type: string
+          enum: [EC]
+        crv:
+          type: string
+          enum: [P-256]
+        x:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            The 32-byte x coordinate in unpadded base64url. Canonical base64url text: no padding, and the unused
+            trailing bits are zero; the pattern also admits non-canonical trailing bits, which the server refuses with
+            400.
+        y:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            The 32-byte y coordinate in unpadded base64url. Canonical base64url text: no padding, and the unused
+            trailing bits are zero; the pattern also admits non-canonical trailing bits, which the server refuses with
+            400.
+
+    GroupPresencePublicationKey:
+      type: object
+      additionalProperties: false
+      description: |
+        The page's publication public key. The server checks its shape only; receivers recompute the RFC 7638
+        thumbprint of publicJwk and compare it with keyId. Connect and heartbeat both name it, and the session row
+        keeps what the latest one said; null names a page without WebCrypto SubtleCrypto.
+      required: [keyId, publicJwk]
+      properties:
+        keyId:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            The RFC 7638 SHA-256 thumbprint of publicJwk in unpadded base64url. Canonical base64url text: no padding,
+            and the unused trailing bits are zero; the pattern also admits non-canonical trailing bits, which the
+            server refuses with 400.
+        publicJwk:
+          $ref: '#/components/schemas/EcdsaP256PublicJwk'
+
     GroupPresenceSession:
       type: object
       required:
@@ -7923,6 +7969,7 @@ components:
         - generationId
         - generationVersion
         - connectionGenerationId
+        - publicationKey
         - connectedAtEpochMs
         - lastHeartbeatAtEpochMs
         - expiresAtEpochMs
@@ -7966,6 +8013,10 @@ components:
           type: string
           minLength: 1
           description: WebSocket connection generation of the socket this presence belongs to.
+        publicationKey:
+          oneOf:
+            - $ref: '#/components/schemas/GroupPresencePublicationKey'
+            - type: 'null'
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -8930,7 +8981,7 @@ components:
           type: string
     ConnectGroupPresenceSessionRequest:
       type: object
-      required: [generationId, connectionGenerationId]
+      required: [generationId, connectionGenerationId, publicationKey]
       properties:
         generationId:
           type: string
@@ -8940,6 +8991,10 @@ components:
           description: |
             WebSocket connection generation of the caller's socket, as its own session entry in the client
             snapshot names it. The socket's close cleans only presence rows that carry its generation.
+        publicationKey:
+          oneOf:
+            - $ref: '#/components/schemas/GroupPresencePublicationKey'
+            - type: 'null'
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -8953,10 +9008,14 @@ components:
           type: string
     HeartbeatGroupPresenceSessionRequest:
       type: object
-      required: [generationId]
+      required: [generationId, publicationKey]
       properties:
         generationId:
           type: string
+        publicationKey:
+          oneOf:
+            - $ref: '#/components/schemas/GroupPresencePublicationKey'
+            - type: 'null'
         lastHeartbeatAtEpochMs:
           type: integer
           format: int64

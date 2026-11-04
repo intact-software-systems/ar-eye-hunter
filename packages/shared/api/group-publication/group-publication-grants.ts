@@ -127,6 +127,11 @@ export function resolveGroupPublicationPermissions(
     );
 }
 
+/** A topic is granted in a room once any grant row of the room names it, whichever principal holds the row. */
+export function isGroupPublicationTopicGranted(snapshot: GroupSnapshot, topicId: string): boolean {
+    return snapshot.publicationGrants.some((grant) => Object.hasOwn(grant.topics, topicId));
+}
+
 /** D501 on one member's own rows: the member row and the grant row of the same principal, either absent. */
 export function resolveMemberPublicationPermissions(
     member: GroupMember | null,

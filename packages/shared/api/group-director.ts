@@ -1,5 +1,5 @@
 import type { AuthSession } from './api-config.ts';
-import type { ApiJsonObject, ApiJsonValue } from './api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from './api-json-value.ts';
 import type { GroupMember, GroupMemberStatus, GroupRef, GroupRole, GroupSnapshot } from './group-types.ts';
 
 export const RALLAR_GROUP_DIRECTOR_METADATA_KEY = 'rallarDirector';
@@ -285,10 +285,6 @@ export function toRallarGroupDirectorRoomRef(
     snapshot: GroupSnapshot | undefined
 ): GroupRef | undefined {
     return snapshot?.group;
-}
-
-function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isValidRallarGroupDirectorHeartbeatTtlMs(value: ApiJsonValue | undefined): value is number {

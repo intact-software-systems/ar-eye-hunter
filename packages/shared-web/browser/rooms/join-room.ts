@@ -6,6 +6,7 @@ import {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
@@ -46,6 +47,7 @@ import { assertValidRoomTarget, toJoinRoomTarget } from './room-target.ts';
 export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly room: string | GroupRef | RallarJoinRoomInput;
     readonly options?: RallarJoinRoomOptions;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
     readonly createRoomSession: (roomRef: GroupRef) => RallarRoomSession;
 }
 
@@ -85,6 +87,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
         sessionId: session.sessionId,
         generationId,
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
+        publicationKey: await input.readPublicationKey(),
         scope,
         authSession: session,
         assertCurrent: sessionFence.assertCurrent,
@@ -177,6 +180,7 @@ async function completeRoomJoin(completion: RoomJoinCompletion): Promise<GroupSn
 export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'> {
     readonly move: GroupMove;
     readonly options: RallarOperationOptions;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
 }
 
 /** Membership was admitted atomically by the move; activation changes this session's presence only. */
@@ -200,7 +204,7 @@ async function activateAuthenticatedGroupMove(input: ActivateGroupMoveInput): Pr
     }
     const context = await input.connect(options);
     fence.assertCurrent(context);
-    const snapshot = await connectMovedSession({ move, context, fence, options });
+    const snapshot = await connectMovedSession({ input, move, context, fence, options });
     const departedRoom = await disconnectRoomSession({
         input,
         context,
@@ -254,13 +258,16 @@ async function adoptRoomAfterDeparture(handoff: RoomPresenceHandoff): Promise<Gr
 }
 
 interface GroupMoveActivation {
+    readonly input: ActivateGroupMoveInput;
     readonly move: GroupMove;
     readonly context: ApiMiddleware;
     readonly fence: RoomSessionFence;
     readonly options: RallarOperationOptions;
 }
 
-async function connectMovedSession({ move, context, fence, options }: GroupMoveActivation): Promise<GroupSnapshot> {
+async function connectMovedSession(
+    { input, move, context, fence, options }: GroupMoveActivation
+): Promise<GroupSnapshot> {
     const generationId = crypto.randomUUID();
     const connected = await createStateGroupPresenceCommand({
         groupId: move.destination.groupId,
@@ -268,6 +275,7 @@ async function connectMovedSession({ move, context, fence, options }: GroupMoveA
         sessionId: fence.session.sessionId,
         generationId,
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, options.signal),
+        publicationKey: await input.readPublicationKey(),
         scope: toStateScope(move.destination),
         authSession: fence.session,
         assertCurrent: () => fence.assertCurrent(context),
@@ -403,6 +411,7 @@ class RoomPresencePendingError extends Error {}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
 }
 
 interface ConnectQuickJoinedRoomInput {
@@ -485,6 +494,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         sessionId: input.session.sessionId,
         generationId,
         connectionGenerationId,
+        publicationKey: await input.dependencies.readPublicationKey(),
         scope,
         authSession: input.session,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(input.options)

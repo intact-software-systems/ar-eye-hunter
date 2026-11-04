@@ -201,6 +201,7 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
     await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-bob-session`, {
         principalId: 'bob',
         generationId: `${input.groupId}-bob-generation`,
+        publicationKey: null,
         connectionGenerationId: `${input.groupId}-bob-ws-generation`,
         actorPrincipalId: 'bob',
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
@@ -210,6 +211,7 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
         await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-alice-session`, {
             principalId: 'alice',
             generationId: `${input.groupId}-alice-generation`,
+            publicationKey: null,
             connectionGenerationId: `${input.groupId}-alice-ws-generation`,
             actorPrincipalId: 'alice',
             expiresAtEpochMs: BASE_EPOCH_MS + 60_000,

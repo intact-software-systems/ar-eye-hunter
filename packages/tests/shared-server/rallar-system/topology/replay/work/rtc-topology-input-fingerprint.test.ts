@@ -14,6 +14,7 @@ import type { Group, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { createTestGroup } from '../../../../../create-test-group.ts';
+import { RFC_7517_PUBLICATION_KEY } from '../../../../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
 import {
@@ -157,6 +158,22 @@ describe('RTC topology input fingerprint inputs', () => {
         };
 
         expect(computeRtcTopologyInputFingerprint({ ...facts, group: granted })).toBe(computeRtcTopologyInputFingerprint(facts));
+    });
+
+    // A heartbeat that rotates a publication key enqueues presence-summary work, so the planner sees a fresh
+    // presence revision; the key is no planning input, so that work is a no-op.
+    it('a snapshot differing only in a session publication key has the same topology input fingerprint', () => {
+        const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1', 'peer-2']);
+        const rotated = {
+            ...group,
+            activeSessions: group.activeSessions.map((session) =>
+                session.sessionId === 'peer-2' ? { ...session, publicationKey: RFC_7517_PUBLICATION_KEY } : session
+            )
+        };
+        const fingerprintOf = (snapshot: GroupSnapshot) => computeRtcTopologyInputFingerprint({ ...fingerprintFacts({}), group: snapshot });
+
+        expect(rotated.activeSessions.map((session) => session.publicationKey)).toEqual([null, RFC_7517_PUBLICATION_KEY]);
+        expect(fingerprintOf(rotated)).toBe(fingerprintOf(group));
     });
 
     it('changes when a planning input changes', () => {

@@ -304,6 +304,7 @@ function toGroupPresenceSession(input: GroupRoutingFixtureMember): GroupPresence
         sessionId: input.sessionId,
         generationId: `${input.sessionId}-generation`,
         connectionGenerationId: `${input.sessionId}-ws-generation`,
+        publicationKey: null,
         generationVersion: 1,
         status: 'active',
         disconnectedAtEpochMs: null,

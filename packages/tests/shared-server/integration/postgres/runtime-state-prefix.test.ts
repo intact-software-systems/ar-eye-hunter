@@ -322,6 +322,7 @@ function activePresenceFixture(input: ActivePresenceFixtureInput): GroupPresence
         sessionId,
         generationId: `${sessionId}-generation`,
         connectionGenerationId: `${sessionId}-ws-generation`,
+        publicationKey: null,
         generationVersion: connectedAtEpochMs,
         connectedAtEpochMs,
         lastHeartbeatAtEpochMs: connectedAtEpochMs,

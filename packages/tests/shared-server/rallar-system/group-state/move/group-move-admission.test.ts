@@ -85,6 +85,7 @@ describe('group move admission', () => {
             actorPrincipalId: 'bob',
             actorSessionId: 'bob-other',
             generationId: 'bob-other-generation',
+            publicationKey: null,
             connectionGenerationId: 'bob-other-ws',
             requestId: 'bob-other-connect',
             expiresAtEpochMs: 60000

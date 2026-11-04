@@ -1,6 +1,7 @@
 import type { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import {
     validateBrowserLiveSend,
     type BrowserLiveSendOptions
@@ -18,7 +19,10 @@ import type {
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
 export namespace BrowserTypedMessageChannels {
@@ -29,6 +33,8 @@ export namespace BrowserTypedMessageChannels {
         readonly ws: Pick<RallarMessagesOperations['ws'], 'onMessage'>;
         readonly recoveryOwners: BrowserChannelRecoveryOwners;
         readonly topicSubscriptions: Pick<BrowserTopicSubscriptions, 'hold'>;
+        /** Where a granted channel declares its topic, so every send on it is a granted delivery. */
+        readonly grantedTopics: Pick<BrowserGrantedTopics, 'declareGrantedTopic'>;
     }
 }
 
@@ -53,6 +59,9 @@ export class BrowserTypedMessageChannels {
         const route = { topicId: definition.topicId, typeId: definition.typeId };
         if (definition.recovery !== undefined) {
             this.input.recoveryOwners.setOwner(route, definition.recovery);
+        }
+        if (definition.access === 'granted' && definition.topicId !== undefined) {
+            this.input.grantedTopics.declareGrantedTopic(definition.topicId);
         }
         const policy: BrowserTypedChannelPolicy = {
             purpose: definition.purpose,
@@ -130,16 +139,36 @@ export class BrowserTypedMessageChannels {
             return throwUnsupportedSubscribe();
         }
         const token = this.input.topicSubscriptions.hold({ roomRef, topicId });
-        const removeHandler = channel.onWs(handler);
+        const removeWsHandler = channel.onWs(async (payload, message) => {
+            if (isRoomFrame(message.raw, roomRef)) {
+                await handler(payload, message);
+            }
+        });
+        // Not `onRtc`, which a granted channel refuses: only its own room's admitted granted multicast reaches here.
+        const removeRtcHandler = this.input.rtc.onMessage<T>(
+            { topicId, typeId: definition.typeId },
+            async (message) => {
+                if (message.raw.targets?.mode === 'multicast' && isRoomFrame(message.raw, roomRef)) {
+                    await handler(message.payload, message);
+                }
+            }
+        );
         return {
             status: () => token.status(),
             wait: async () => await token.wait(),
             unsubscribe: async () => {
-                removeHandler();
+                removeWsHandler();
+                removeRtcHandler();
                 await token.unsubscribe();
             }
         };
     }
+}
+
+/** A granted room channel's frame targets its room: another room's frame, or one naming no room, is never its. */
+function isRoomFrame(message: ALMessage, roomRef: GroupRef): boolean {
+    const targetRoomRef = readALTargetGroupRef(message);
+    return targetRoomRef !== undefined && isSameGroupRef(targetRoomRef, roomRef);
 }
 
 /** The send a channel hands its sender: a live channel's is refused here, where its policy is known, before a handle opens. */
@@ -160,13 +189,13 @@ function throwUnsupportedSubscribe(): never {
     }]);
 }
 
-/** No server stands on the RTC path to check a publication grant, so a granted channel neither sends nor listens there. */
+/** A granted channel's RTC copies reach its `subscribe(handler)` only, which judges them per room and token. */
 function throwIfGrantedRtc(policy: BrowserTypedChannelPolicy): void {
     if (policy.access === 'granted') {
         throwRallarValidation([{
             path: '$.access',
             code: 'unsupported',
-            message: 'A granted channel is WS-only: RTC carries no publication grant.'
+            message: 'A granted channel\'s RTC copies reach subscribe(handler) only; onRtc is not offered.'
         }]);
     }
 }

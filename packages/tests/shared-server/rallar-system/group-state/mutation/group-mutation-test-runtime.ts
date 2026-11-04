@@ -88,6 +88,7 @@ export function presenceFor(
         generationId,
         generationVersion: 1_000,
         connectionGenerationId: `ws-${generationId}`,
+        publicationKey: null,
         connectedAtEpochMs: 1_000,
         lastHeartbeatAtEpochMs: 1_000,
         expiresAtEpochMs: 10_000,

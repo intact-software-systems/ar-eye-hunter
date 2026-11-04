@@ -18,8 +18,8 @@ export interface CreateAlmConformanceRecipesInput {
     readonly laneFamilies: readonly AlmConformanceLaneFamily[];
     /**
      * The principal each role signs in as, which a step names as `{principal:<role>}` and creation substitutes. The lane
-     * passes its opened agents' client ids; a caller whose agents are not known when it creates passes `{}` and creates
-     * no family whose cells name a principal.
+     * passes its opened agents' client ids; a caller whose agents are not known when it creates passes `{}`, and creation
+     * makes no scenario whose `principalRoles` it does not resolve.
      */
     readonly principalIdsByRole: Readonly<Partial<Record<AlmConformanceRole, string>>>;
     /**
@@ -58,6 +58,11 @@ export type AlmConformanceScenarioId =
     | 'fenced-rejection'
     | 'fixed-list-delivery'
     | 'flush-on-hide'
+    | 'granted-rtc-delivered'
+    | 'granted-rtc-forged-sender'
+    | 'granted-rtc-publish-refused'
+    | 'granted-rtc-missing-proof'
+    | 'granted-rtc-receipted-unsupported'
     | 'leader-confirms'
     | 'leader-outside-list'
     | 'no-fallback-after-deadline'
@@ -160,6 +165,11 @@ export interface AlmConformanceScenarioDefinition {
      * this selector instead, so its pages hear the server's own publications on that topic.
      */
     readonly messageSelector?: AlmConformanceMessageSelector;
+    /**
+     * Absent when no step names a principal. Otherwise every role a step names as `{principal:<role>}`: creation makes
+     * the scenario only when `principalIdsByRole` resolves each of them.
+     */
+    readonly principalRoles?: readonly AlmConformanceRole[];
     /** Called once per producer page: the sender, the successor and `publisher-b` a scenario declares. */
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
     /** Called once per recipient role the scenario declares; the step's role tells the recipients apart. */

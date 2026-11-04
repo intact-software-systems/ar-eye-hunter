@@ -97,6 +97,7 @@ function session(input: SessionInput): GroupPresenceSession {
         principalId: input.principalId ?? AUTH_SESSION.clientId,
         generationId: 'generation-1',
         connectionGenerationId: input.connectionGenerationId ?? CONNECTION_GENERATION_ID,
+        publicationKey: null,
         generationVersion: connectedAtEpochMs,
         connectedAtEpochMs,
         lastHeartbeatAtEpochMs: input.lastHeartbeatAtEpochMs ?? Math.max(connectedAtEpochMs, 3_000),

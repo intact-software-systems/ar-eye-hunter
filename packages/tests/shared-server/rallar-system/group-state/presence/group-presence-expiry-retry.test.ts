@@ -98,6 +98,7 @@ describe('group presence expiry retry', () => {
             {
                 principalId: 'alice',
                 generationId: 'expiry-generation',
+                publicationKey: null,
                 connectionGenerationId: 'expiry-ws-generation',
                 connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
                 lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
@@ -152,6 +153,7 @@ describe('group presence expiry retry', () => {
             {
                 principalId: 'alice',
                 generationId: 'cleanup-generation',
+                publicationKey: null,
                 connectionGenerationId: 'cleanup-ws-generation',
                 connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
                 lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
@@ -205,6 +207,7 @@ describe('group presence expiry retry', () => {
             {
                 principalId: 'alice',
                 generationId: 'duplicate-expiry-generation',
+                publicationKey: null,
                 connectionGenerationId: 'duplicate-expiry-ws-generation',
                 connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
                 lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
@@ -262,6 +265,7 @@ describe('group presence expiry retry', () => {
             {
                 principalId: 'alice',
                 generationId: 'expiry-delete-exhaustion-generation',
+                publicationKey: null,
                 connectionGenerationId: 'expiry-delete-exhaustion-ws-generation',
                 connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
                 lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
@@ -305,6 +309,7 @@ describe('group presence expiry retry', () => {
         await service.connectPresenceSession(SCOPE, 'presence-room', 'session-a', {
             principalId: 'alice',
             generationId: 'generation-1',
+            publicationKey: null,
             connectionGenerationId: 'ws-generation-1',
             connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
             lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
@@ -328,6 +333,7 @@ describe('group presence expiry retry', () => {
                     'session-a',
                     {
                         generationId: 'generation-1',
+                        publicationKey: null,
                         actorPrincipalId: 'alice',
                         lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_500,
                         expiresAtEpochMs: BASE_EPOCH_MS + 5_000,
@@ -381,6 +387,7 @@ describe('group presence expiry retry', () => {
             {
                 principalId: 'alice',
                 generationId: 'generation-2',
+                publicationKey: null,
                 connectionGenerationId: 'ws-generation-2',
                 connectedAtEpochMs: BASE_EPOCH_MS + 3_001,
                 lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 3_001,

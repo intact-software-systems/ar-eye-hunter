@@ -256,6 +256,7 @@ async function connectSession({ service, groupId, principalId, sessionId }: Conn
     await service.connectPresenceSession(SCOPE, groupId, sessionId, {
         principalId,
         generationId: `${sessionId}-generation`,
+        publicationKey: null,
         connectionGenerationId: `${sessionId}-ws-generation`,
         actorPrincipalId: principalId,
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,

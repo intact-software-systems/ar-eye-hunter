@@ -31,7 +31,7 @@ import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-syste
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     computeTournamentAttemptFence,

@@ -31,6 +31,7 @@ import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
@@ -38,6 +39,7 @@ import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@s
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundDispatchPlan, ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 beforeEach(() => {
@@ -583,7 +585,8 @@ function createChannel(input: ChannelInput): ChannelFixture {
             sessionDeliveries,
             publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
             nowMs: Date.now,
-            readPublicationPermissions: () => undefined
+            readPublicationPermissions: () => undefined,
+            grantedTopics: NO_RTC_GRANTED_TOPICS
         }),
         inputValidator,
         connect: async () => context,
@@ -604,7 +607,8 @@ function createChannel(input: ChannelInput): ChannelFixture {
             hold: () => {
                 throw new Error('No channel in this test subscribes.');
             }
-        }
+        },
+        grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
     });
     return {
         originalRoom: admission.originalRoom,

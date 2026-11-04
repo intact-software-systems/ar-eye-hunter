@@ -1,7 +1,7 @@
 import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { readNewGroupCohortAdmission } from '../group-state/mutation/membership/read-new-group-cohort-admission.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import type { MatchmakingCommand } from './matchmaking-command.ts';
 import type { MatchmakingProposal } from './matchmaking-pool.ts';
 

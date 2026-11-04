@@ -1,9 +1,12 @@
-import type {
-    GroupPresenceAdmission,
-    GroupPresenceSession,
-    GroupPresenceSummary,
-    GroupRef
+import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
+import {
+    GROUP_PRESENCE_SESSION_KEYS,
+    type GroupPresenceAdmission,
+    type GroupPresenceSession,
+    type GroupPresenceSummary,
+    type GroupRef
 } from '@shared/api/group-types.ts';
+import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import {
@@ -19,23 +22,6 @@ import {
 } from '../group-state-validation-primitives.ts';
 
 import { validateCausalRevision, validateScopedRecord } from './validate-persisted-group.ts';
-
-const PRESENCE_SESSION_KEYS = [
-    'applicationId',
-    'workspaceId',
-    'groupId',
-    'sessionId',
-    'principalId',
-    'generationId',
-    'generationVersion',
-    'connectionGenerationId',
-    'connectedAtEpochMs',
-    'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs',
-    'disconnectedAtEpochMs',
-    'disconnectReason',
-    'status'
-] as const;
 
 const PRESENCE_SUMMARY_KEYS = [
     'applicationId',
@@ -72,13 +58,16 @@ export function validatePresenceSession(
     label: string
 ): asserts session is GroupPresenceSession {
     const value = requireRecord(session, `${label} value`);
-    assertExactKeys(value, PRESENCE_SESSION_KEYS, `${label} value`);
-    assertRequiredKeys(value, PRESENCE_SESSION_KEYS, `${label} value`);
+    assertExactKeys(value, GROUP_PRESENCE_SESSION_KEYS, `${label} value`);
+    assertRequiredKeys(value, GROUP_PRESENCE_SESSION_KEYS, `${label} value`);
     validateScopedRecord(value, ref, label);
     requireNonEmptyString(value.sessionId, `${label} sessionId`);
     requireNonEmptyString(value.principalId, `${label} principalId`);
     requireNonEmptyString(value.generationId, `${label} generationId`);
     requireNonEmptyString(value.connectionGenerationId, `${label} connectionGenerationId`);
+    decodeGroupPresencePublicationKey(value.publicationKey).foldLeft((issues) => {
+        throw new TypeError(`${label} publicationKey is invalid: ${formatRallarValidation(issues)}`);
+    });
     requirePositiveSafeInteger(value.connectedAtEpochMs, 'Stored presence connectedAtEpochMs');
     requirePositiveSafeInteger(value.generationVersion, 'Stored presence generationVersion');
     if (value.generationVersion !== value.connectedAtEpochMs) {

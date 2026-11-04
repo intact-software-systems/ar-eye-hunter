@@ -1,7 +1,7 @@
 import { Either } from '../resilience/Either.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from './al-contract.ts';
-
 import { assertPersistedALDelivery } from './al-message-persistence/assert-persisted-al-delivery.ts';
+import { assertPersistedALProof } from './al-message-persistence/assert-persisted-al-proof.ts';
 import { assertPersistedALQos } from './al-message-persistence/assert-persisted-al-qos.ts';
 import { assertPersistedALTargets } from './al-message-persistence/assert-persisted-al-targets.ts';
 import {
@@ -40,7 +40,8 @@ const MESSAGE_SECTIONS = [
     'qos',
     'payload',
     'audit',
-    'diagnostics'
+    'diagnostics',
+    'proof'
 ] as const;
 
 /** A row that stores one serialized AL message, as a queue row does. */
@@ -219,6 +220,20 @@ function assertProvenanceSections(message: PersistedALRecord): void {
         const section = requirePersistedALRecord(message.diagnostics, 'diagnostics');
         requirePersistedALFields(section, ['visitedPeerIds'], []);
         requireOptionalPersistedALStringArray(section.visitedPeerIds, 'diagnostic visited peers');
+    }
+    if (message.proof !== undefined) {
+        assertPersistedALProof(message.proof);
+        assertProofBindsExpiry(message);
+    }
+}
+
+/** The origin signs its admitted, expiry-bound message, so a receiver keeps that expiry instead of setting one. */
+function assertProofBindsExpiry(message: PersistedALRecord): void {
+    const constraints = message.constraints === undefined
+        ? undefined
+        : requirePersistedALRecord(message.constraints, 'constraints');
+    if (constraints?.expiresAtMs === undefined) {
+        throw new TypeError('A publication proof binds its message expiry');
     }
 }
 

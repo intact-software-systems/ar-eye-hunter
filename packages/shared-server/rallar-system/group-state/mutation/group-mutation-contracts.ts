@@ -25,6 +25,7 @@ import type {
     GroupMember,
     GroupMemberStatus,
     GroupPresenceAdmission,
+    GroupPresencePublicationKey,
     GroupPresenceSession,
     GroupPresenceSummary,
     GroupRef,
@@ -392,6 +393,7 @@ export type GroupMutationCommand =
                     principalId: string;
                     generationId: string;
                     connectionGenerationId: string;
+                    publicationKey: GroupPresencePublicationKey | null;
                     connectedAtEpochMs: number | null;
                     lastHeartbeatAtEpochMs: number | null;
                     expiresAtEpochMs: number | null;
@@ -408,6 +410,7 @@ export type GroupMutationCommand =
                 & Readonly<{
                     principalId: string | null;
                     generationId: string;
+                    publicationKey: GroupPresencePublicationKey | null;
                     lastHeartbeatAtEpochMs: number | null;
                     expiresAtEpochMs: number | null;
                 }>;

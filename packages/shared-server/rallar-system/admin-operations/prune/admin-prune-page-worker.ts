@@ -1,6 +1,8 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
@@ -9,7 +11,6 @@ import {
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
-import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
 import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
 import {
     decodeAdminPruneWork,

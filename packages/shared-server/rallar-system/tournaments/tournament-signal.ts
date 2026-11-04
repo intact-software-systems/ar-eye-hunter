@@ -5,7 +5,7 @@ import type { TournamentMatchBinding } from '@shared/api/tournaments/tournament-
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { computeAppOutboxSignal } from '../app-outbox/compute-app-outbox-signal.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireText } from '../protocol/json-wire-identity.ts';
 
 export const TOURNAMENT_RECONCILE_TOPIC = 'app:rallar-tournaments:reconcile';

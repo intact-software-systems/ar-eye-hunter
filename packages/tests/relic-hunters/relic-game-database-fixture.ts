@@ -134,6 +134,7 @@ export async function connectGameSession(
                 requestId: `connect-${session.sessionId}`,
                 principalId: session.clientId,
                 generationId: `generation-${session.sessionId}`,
+                publicationKey: null,
                 connectionGenerationId: `connection-${session.sessionId}`,
                 connectedAtEpochMs: fixture.nowEpochMs,
                 lastHeartbeatAtEpochMs: fixture.nowEpochMs,

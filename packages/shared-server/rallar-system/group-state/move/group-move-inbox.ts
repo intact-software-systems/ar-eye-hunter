@@ -32,7 +32,7 @@ import type { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-
 import type { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
-import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import { GroupMutationRejectedError } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';

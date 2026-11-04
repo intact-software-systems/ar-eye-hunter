@@ -18,6 +18,10 @@ import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persiste
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 
 describe('browser IndexedDB terminal ownership', () => {
     it('retires each successful connection while a fresh connection keeps persisted rows usable', async () => {
@@ -56,6 +60,10 @@ describe('browser IndexedDB terminal ownership', () => {
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             scope: { applicationId: 'indexeddb-lifecycle', workspaceId: 'successful' }
         };
         await runtime.init(options);
@@ -134,6 +142,10 @@ describe('browser IndexedDB terminal ownership', () => {
                 deliverySettlements: { ws: () => {}, rtc: () => {} },
                 diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
                 onResyncRequired: () => {},
+                publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+                publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
                 durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
                 readIceCandidates: (signal) => connectionHttp.readIceCandidates({ signal }),
                 scope: { applicationId: 'indexeddb-lifecycle', workspaceId: 'failure' }

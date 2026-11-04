@@ -25,6 +25,7 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { RFC_7517_PUBLICATION_KEY } from '../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import {
     createActiveClientInstanceFixture,
     createActiveClientSessionFixture,
@@ -115,6 +116,7 @@ describe('Browser session heartbeat', () => {
         );
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -139,6 +141,7 @@ describe('Browser session heartbeat', () => {
         );
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -172,6 +175,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -214,6 +218,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -254,6 +259,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -261,6 +267,35 @@ describe('Browser session heartbeat', () => {
         handle.stop();
 
         expect(fetchCalls.filter((call) => call.url.includes('/groups/joined-room/'))).toHaveLength(1);
+    });
+
+    it('registers the page\'s publication key on each renewal of a joined group\'s presence', async () => {
+        vi.useFakeTimers();
+        const joined = createJoinedGroupSnapshot({
+            groupId: 'joined-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshots([joined]);
+        stubFetch(({ url }) =>
+            url.includes('/clients/principal-1/')
+                ? createJsonResponse(createOwnClientSnapshot('principal-1'))
+                : createJsonResponse(joined)
+        );
+
+        const handle = await initHeartbeat(clientData, {
+            publicationKey: RFC_7517_PUBLICATION_KEY,
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await vi.advanceTimersByTimeAsync(BROWSER_STATE_CACHE_TTL_MS);
+        handle.stop();
+
+        const groupBodies = fetchCalls.filter((call) => call.url.includes('/groups/joined-room/')).map((call) => call.body);
+        expect(groupBodies.length).toBeGreaterThan(0);
+        expect(groupBodies).toEqual(groupBodies.map(() => expect.objectContaining({ publicationKey: RFC_7517_PUBLICATION_KEY })));
     });
 
     it('retries a failed heartbeat after the retry interval and then resumes the interval', async () => {
@@ -279,6 +314,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -327,6 +363,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: {
                 applicationId: 'ar-eye-hunter',
@@ -392,6 +429,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -434,6 +472,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -479,6 +518,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -513,6 +553,7 @@ describe('Browser session heartbeat', () => {
         });
 
         await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
             onAuthInvalid: firstAuthInvalid
@@ -521,6 +562,7 @@ describe('Browser session heartbeat', () => {
         expect(fetchCalls).toHaveLength(1);
 
         const replacement = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -549,6 +591,7 @@ describe('Browser session heartbeat', () => {
         });
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: {
                 applicationId: 'ar-eye-hunter',
@@ -579,6 +622,7 @@ describe('Browser session heartbeat', () => {
         );
 
         const handle = await initHeartbeat(clientData, {
+            publicationKey: null,
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
@@ -605,14 +649,14 @@ describe('Browser session heartbeat', () => {
             return createTextResponse('unexpected', 500);
         });
 
-        const first = await initHeartbeat(clientData, { authSession });
+        const first = await initHeartbeat(clientData, { publicationKey: null, authSession });
         await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
         expect(fetchCalls).toHaveLength(1);
         expect(fetchCalls[0]?.body).toMatchObject({
             generationId: first.generationId
         });
 
-        const second = await initHeartbeat(clientData, { authSession });
+        const second = await initHeartbeat(clientData, { publicationKey: null, authSession });
         await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
         second.stop();
         expect(fetchCalls).toHaveLength(2);

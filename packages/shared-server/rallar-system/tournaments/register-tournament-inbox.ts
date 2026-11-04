@@ -2,7 +2,7 @@ import type { TournamentMutationResult } from '@shared/api/tournaments/tournamen
 import { decodeTournamentMutationResult } from '@shared/api/tournaments/tournament-mutation-result.ts';
 import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app-inbox.ts';
 import { toAppInboxCommandAttempt } from '../app-inbox/app-inbox-contracts.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { encodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeTournamentCommand } from './decode-tournament-command.ts';
 import type { TournamentService } from './tournament-service.ts';

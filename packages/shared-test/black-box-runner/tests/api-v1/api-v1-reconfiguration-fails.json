@@ -148,6 +148,7 @@
         "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -164,6 +165,7 @@
         "headers": { "Authorization": "{bobAuthHeader}", "x-client-id": "{bobClientId}" },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }

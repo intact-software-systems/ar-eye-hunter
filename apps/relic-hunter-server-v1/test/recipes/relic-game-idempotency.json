@@ -1045,6 +1045,7 @@
         },
         "body": {
           "generationId": "rematch-alice-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "rematch-connection-alice-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -1066,6 +1067,7 @@
         },
         "body": {
           "generationId": "rematch-bob-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "rematch-connection-bob-{runId}",
           "principalId": "{bobClientId}"
         }

@@ -52,6 +52,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
@@ -554,7 +555,8 @@ function createReceiptLoopOrigin(
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
         nowMs: Date.now,
-        readPublicationPermissions: () => undefined
+        readPublicationPermissions: () => undefined,
+        grantedTopics: NO_RTC_GRANTED_TOPICS
     });
     const message = createReceiptLoopMessage(expectation);
     const delivery: BrowserRallarMessageDispatch.Delivery = {

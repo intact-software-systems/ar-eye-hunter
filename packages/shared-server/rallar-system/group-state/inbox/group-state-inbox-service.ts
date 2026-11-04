@@ -32,7 +32,7 @@ import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-tra
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService } from '../group-state-service-contracts.ts';

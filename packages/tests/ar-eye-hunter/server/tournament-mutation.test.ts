@@ -102,6 +102,7 @@ async function connectOwner(game: Awaited<ReturnType<typeof fixture>>) {
                 principalId: game.owner.clientId,
                 generationId: 'generation-owner',
                 connectionGenerationId: 'connection-owner',
+                publicationKey: null,
                 connectedAtEpochMs: game.nowEpochMs,
                 lastHeartbeatAtEpochMs: game.nowEpochMs,
                 expiresAtEpochMs: game.nowEpochMs + 60000,

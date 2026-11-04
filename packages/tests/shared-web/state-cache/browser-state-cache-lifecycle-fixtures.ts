@@ -170,6 +170,7 @@ function toGroupFixtureActiveSessions(input: CreateGroupSnapshotInput): GroupSna
         principalId: sessionId,
         generationId: `generation-${input.snapshotVersion}`,
         connectionGenerationId: `ws-generation-${input.snapshotVersion}`,
+        publicationKey: null,
         generationVersion: input.snapshotVersion,
         status: 'active',
         connectedAtEpochMs: 1,

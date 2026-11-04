@@ -18,6 +18,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 describe('required capture at final message admission', () => {
@@ -80,7 +81,8 @@ describe('required capture at final message admission', () => {
                     }
                     return 1;
                 },
-                readPublicationPermissions: () => undefined
+                readPublicationPermissions: () => undefined,
+                grantedTopics: NO_RTC_GRANTED_TOPICS
             });
             const message = newALBroadcastMessage(
                 context.session.sessionId,
@@ -143,7 +145,8 @@ describe('required capture at final message admission', () => {
                 }
                 return 1;
             },
-            readPublicationPermissions: () => undefined
+            readPublicationPermissions: () => undefined,
+            grantedTopics: NO_RTC_GRANTED_TOPICS
         });
         const message = newALBroadcastMessage(context.session.sessionId, { topicId: 'app.capture', contextId: 'all', resourceId: 'one' }, 'all', 'test', {}, {
             ttlMs: 100
@@ -236,7 +239,8 @@ describe('required capture at final message admission', () => {
                 sessionDeliveries,
                 publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
                 nowMs: () => 1,
-                readPublicationPermissions: () => undefined
+                readPublicationPermissions: () => undefined,
+                grantedTopics: NO_RTC_GRANTED_TOPICS
             });
             const message = newALMulticastMessage(
                 context.session.sessionId,

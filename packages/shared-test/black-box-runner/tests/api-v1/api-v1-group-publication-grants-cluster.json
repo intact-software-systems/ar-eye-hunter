@@ -674,6 +674,7 @@
         },
         "body": {
           "generationId": "pubgrantcl-generation-alice-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "pubgrantcl-connection-generation-alice-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -695,6 +696,7 @@
         },
         "body": {
           "generationId": "pubgrantcl-generation-bob-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "pubgrantcl-connection-generation-bob-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -716,6 +718,7 @@
         },
         "body": {
           "generationId": "pubgrantcl-generation-carol-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "pubgrantcl-connection-generation-carol-{runId}",
           "principalId": "{carolClientId}"
         }

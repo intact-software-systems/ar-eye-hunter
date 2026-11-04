@@ -5,6 +5,7 @@ import { BrowserMessageInputValidator } from '@shared-web/browser/messages/brows
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import type { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import type {
     RallarMessageHandler,
     RallarRoomMessageChannelDefinition,
@@ -54,6 +55,8 @@ export namespace BrowserRallarMessagesController {
         resolveRoomSendFence(room: string | GroupRef | undefined, explicitMinSnapshotVersion?: number): RoomSendFence;
         readMessageMaxPayloadBytes(): number;
         readPublicationPermissions: BrowserRallarMessageDispatch.Input['readPublicationPermissions'];
+        /** Where `channel(...)` declares a granted topic, and the dispatch reads whether a delivery is granted. */
+        readonly grantedTopics: BrowserGrantedTopics;
         /** The session's port, read when a reply is dropped. */
         readInboundDiagnostics(): ALInboundRuntimeDiagnosticsSink;
     }
@@ -103,7 +106,10 @@ export class BrowserRallarMessagesController {
 
     private createOperations(
         inputValidator: BrowserMessageInputValidator,
-        channelOwners: Pick<BrowserRallarMessagesController.Input, 'recoveryOwners' | 'topicSubscriptions'>,
+        channelOwners: Pick<
+            BrowserRallarMessagesController.Input,
+            'recoveryOwners' | 'topicSubscriptions' | 'grantedTopics'
+        >,
         readUsage: RallarMessagesOperations['readUsage']
     ): RallarMessagesOperations {
         const rtc: RallarMessagesOperations['rtc'] = {
@@ -126,7 +132,8 @@ export class BrowserRallarMessagesController {
             rtc,
             ws,
             recoveryOwners: channelOwners.recoveryOwners,
-            topicSubscriptions: channelOwners.topicSubscriptions
+            topicSubscriptions: channelOwners.topicSubscriptions,
+            grantedTopics: channelOwners.grantedTopics
         });
         return {
             rtc,
@@ -154,7 +161,8 @@ function createMessageSender(
             sessionDeliveries: input.sessionDeliveries,
             publicationStages: input.publicationStages,
             nowMs: input.nowMs,
-            readPublicationPermissions: input.readPublicationPermissions
+            readPublicationPermissions: input.readPublicationPermissions,
+            grantedTopics: input.grantedTopics
         }),
         sessionDeliveries: input.sessionDeliveries,
         inputValidator,

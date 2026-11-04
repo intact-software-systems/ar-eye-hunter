@@ -35,6 +35,7 @@ Deno.test('connectPresenceSession rejects missing and non-active group members',
         () =>
             service.connectPresenceSession(TEST_SCOPE, 'group-1', 'missing-session', {
                 generationId: 'test-generation',
+                publicationKey: null,
                 connectionGenerationId: 'test-ws-generation',
                 principalId: 'missing-member',
                 actorPrincipalId: 'missing-member',
@@ -58,6 +59,7 @@ Deno.test('connectPresenceSession rejects missing and non-active group members',
                     `session-${status}`,
                     {
                         generationId: 'test-generation',
+                        publicationKey: null,
                         connectionGenerationId: 'test-ws-generation',
                         principalId: 'member-2',
                         actorPrincipalId: 'member-2',
@@ -157,6 +159,7 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
         'member-session',
         {
             generationId: 'test-generation',
+            publicationKey: null,
             connectionGenerationId: 'test-ws-generation',
             principalId: 'member-1',
             actorPrincipalId: 'member-1',
@@ -176,6 +179,7 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
             'member-session',
             {
                 generationId: 'test-generation',
+                publicationKey: null,
                 principalId: 'member-1',
                 actorPrincipalId: 'member-1',
                 actorSessionId: 'member-session',
@@ -218,6 +222,7 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
@@ -234,6 +239,7 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
             'owner-session',
             {
                 generationId: 'test-generation',
+                publicationKey: null,
                 principalId: 'owner-1',
                 actorPrincipalId: 'owner-1',
                 actorSessionId: 'owner-session',
@@ -290,6 +296,7 @@ Deno.test('archived and deleted groups reject member activation and presence mut
         });
         await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
             generationId: 'test-generation',
+            publicationKey: null,
             connectionGenerationId: 'test-ws-generation',
             principalId: 'member-1',
             actorPrincipalId: 'member-1',
@@ -316,6 +323,7 @@ Deno.test('archived and deleted groups reject member activation and presence mut
             () =>
                 service.connectPresenceSession(TEST_SCOPE, 'group-1', 'late-session', {
                     generationId: 'test-generation',
+                    publicationKey: null,
                     connectionGenerationId: 'test-ws-generation',
                     principalId: 'member-1',
                     actorPrincipalId: 'member-1',
@@ -328,6 +336,7 @@ Deno.test('archived and deleted groups reject member activation and presence mut
             () =>
                 service.heartbeatPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
                     generationId: 'test-generation',
+                    publicationKey: null,
                     principalId: 'member-1',
                     actorPrincipalId: 'member-1',
                     actorSessionId: 'member-session',
@@ -419,6 +428,7 @@ Deno.test('expired groups reject member activation and presence connect', async 
         () =>
             service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
                 generationId: 'test-generation',
+                publicationKey: null,
                 connectionGenerationId: 'test-ws-generation',
                 principalId: 'owner-1',
                 actorPrincipalId: 'owner-1',
@@ -446,6 +456,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
@@ -454,6 +465,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
@@ -488,6 +500,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
     const reconnected = snapshotFromGroupStateWritten(
         await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
             generationId: 'test-generation',
+            publicationKey: null,
             connectionGenerationId: 'test-ws-generation',
             principalId: 'owner-1',
             actorPrincipalId: 'owner-1',
@@ -511,6 +524,7 @@ Deno.test('expired presence sessions mark groups empty without purging durable s
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
@@ -760,6 +774,7 @@ Deno.test('maxSessionsPerMember blocks additional live sessions without mutating
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session-1', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
@@ -773,6 +788,7 @@ Deno.test('maxSessionsPerMember blocks additional live sessions without mutating
         () =>
             service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session-2', {
                 generationId: 'test-generation',
+                publicationKey: null,
                 connectionGenerationId: 'test-ws-generation',
                 principalId: 'owner-1',
                 actorPrincipalId: 'owner-1',
@@ -826,6 +842,7 @@ Deno.test('idempotent accepted capacity mutations do not double-count existing s
     const connected = snapshotFromGroupStateWritten(
         await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
             generationId: 'test-generation',
+            publicationKey: null,
             connectionGenerationId: 'test-ws-generation',
             principalId: 'member-1',
             actorPrincipalId: 'member-1',
@@ -837,6 +854,7 @@ Deno.test('idempotent accepted capacity mutations do not double-count existing s
     const connectedAgain = snapshotFromGroupStateWritten(
         await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
             generationId: 'test-generation',
+            publicationKey: null,
             connectionGenerationId: 'test-ws-generation',
             principalId: 'member-1',
             actorPrincipalId: 'member-1',
@@ -1384,6 +1402,7 @@ Deno.test('appointDirector lets an active member become director when owner is o
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
@@ -1430,6 +1449,7 @@ Deno.test('appointDirector does not replay cached appointments to a different ac
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-1-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
@@ -1438,6 +1458,7 @@ Deno.test('appointDirector does not replay cached appointments to a different ac
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-2-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'member-2',
         actorPrincipalId: 'member-2',
@@ -1478,6 +1499,7 @@ Deno.test('appointDirector rejects invalid heartbeat TTL values', async () => {
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
@@ -1518,6 +1540,7 @@ Deno.test('appointDirector denies member fallback while owner is online or direc
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
@@ -1526,6 +1549,7 @@ Deno.test('appointDirector denies member fallback while owner is online or direc
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
@@ -1534,6 +1558,7 @@ Deno.test('appointDirector denies member fallback while owner is online or direc
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'director-session', {
         generationId: 'test-generation',
+        publicationKey: null,
         connectionGenerationId: 'test-ws-generation',
         principalId: 'member-2',
         actorPrincipalId: 'member-2',
@@ -1613,6 +1638,7 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
             'member-session',
             {
                 generationId: 'test-generation',
+                publicationKey: null,
                 connectionGenerationId: 'test-ws-generation',
                 principalId: 'member-1',
                 actorPrincipalId: 'member-1',
@@ -1628,6 +1654,7 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
             'member-session',
             {
                 generationId: 'test-generation',
+                publicationKey: null,
                 connectionGenerationId: 'test-ws-generation',
                 principalId: 'member-1',
                 actorPrincipalId: 'member-1',

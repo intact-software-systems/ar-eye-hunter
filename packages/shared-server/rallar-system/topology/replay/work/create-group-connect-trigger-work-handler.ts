@@ -3,6 +3,7 @@ import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/gr
 import { holdsPlannedCandidateAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import {
@@ -15,7 +16,6 @@ import type {
     GroupConnectTriggerIdentity,
     GroupConnectTriggerLatchRepository
 } from '../../../group-state/persistence/group-connect-trigger-latch-repository.ts';
-import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
 
 export interface GroupFormationAutomationPort extends GroupSystemCommandPort {
     readonly latches: GroupConnectTriggerLatchRepository;

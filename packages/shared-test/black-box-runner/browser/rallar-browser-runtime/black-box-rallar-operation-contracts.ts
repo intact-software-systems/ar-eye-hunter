@@ -1,3 +1,4 @@
+import type { AlmFaultRewrite } from '@shared-test/rallar-bb-test/alm/decode-alm-fault-rewrite.ts';
 import type {
     RallarMessagePayload,
     RallarMessageReplyOutcome,
@@ -66,6 +67,7 @@ import type {
     RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
+import type { ScriptedTransportFault, TransportFaultMatch } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
@@ -513,6 +515,15 @@ export interface BlackBoxRallarReplyDiagnostics {
 
 export interface BlackBoxRallarStorageCountersInput {
     readonly reset: boolean;
+}
+
+/** A scripted RTC rewrite as the recipe names it; the page resolves a forged principal when it injects the fault. */
+export interface BlackBoxRallarRewriteFault {
+    readonly faultId: string;
+    readonly carrier: 'rtc';
+    readonly match: TransportFaultMatch;
+    readonly rewrite: AlmFaultRewrite;
+    readonly remaining: ScriptedTransportFault['remaining'];
 }
 
 /** An action on the page's own product socket; it matches no frame, so it names no match and no count. */

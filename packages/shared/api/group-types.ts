@@ -1,3 +1,4 @@
+import type { EcdsaP256PublicJwk } from '../signature/ecdsa-p256-signature.ts';
 import type { ApiJsonObject } from './api-json-value.ts';
 import type { GroupActivationStatus } from './group-lifecycle/activation-status/group-activation-status.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
@@ -207,6 +208,12 @@ export type GroupMember =
         }>
     );
 
+/** The page's publication public key; `keyId` is the RFC 7638 thumbprint receivers recompute. */
+export interface GroupPresencePublicationKey {
+    readonly keyId: string;
+    readonly publicJwk: EcdsaP256PublicJwk;
+}
+
 type GroupPresenceSessionBase =
     & GroupRef
     & Readonly<{
@@ -217,6 +224,8 @@ type GroupPresenceSessionBase =
         generationVersion: number;
         /** The WebSocket connection generation of the socket this presence belongs to; its close cleans only this. */
         connectionGenerationId: string;
+        /** `null`: a page without SubtleCrypto; the latest connect or heartbeat names it. */
+        publicationKey: GroupPresencePublicationKey | null;
 
         connectedAtEpochMs: number;
         lastHeartbeatAtEpochMs: number;
@@ -237,6 +246,25 @@ export type GroupPresenceSession =
             disconnectReason: string;
         }>
     );
+
+/** Every key of a stored, snapshot or delta presence session: the one list each exact-key decoder checks. */
+export const GROUP_PRESENCE_SESSION_KEYS = [
+    'applicationId',
+    'workspaceId',
+    'groupId',
+    'sessionId',
+    'principalId',
+    'generationId',
+    'generationVersion',
+    'connectionGenerationId',
+    'publicationKey',
+    'status',
+    'connectedAtEpochMs',
+    'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs',
+    'disconnectedAtEpochMs',
+    'disconnectReason'
+] as const satisfies readonly (keyof GroupPresenceSession)[];
 
 export interface GroupStateCausalRevision {
     readonly groupRevision: number;

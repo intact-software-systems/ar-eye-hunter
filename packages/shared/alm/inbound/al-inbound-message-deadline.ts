@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { assertALPublicationProofSigningInputKept } from '../../al-contracts/publication-proof/al-publication-proof.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 
 /** A message whose retained deadline is part of its type, so no reader has to assert one. */
@@ -18,14 +19,29 @@ export function decodeALDeadlinedMessage(msg: ALMessage): ALDeadlinedMessage {
     return { ...msg, constraints: { ...msg.constraints, expiresAtMs } };
 }
 
+/**
+ * A signed message keeps its origin's expiry, a signed field: the receiver's own earlier deadline is the one its
+ * plan resolves and its work rows carry. Every other message takes the earlier of the two.
+ *
+ * Invariant: every decoded RTC frame passes through here before its plan can drop it, so the exact statement is that a
+ * proof on a frame that commits work here is a granted, verified publication's. The RTC plan drops every frame whose
+ * proof it has not verified (an ungranted topic's, or a granted one's its verifier refused) before any pending or
+ * committed row, and a NACK row's expiry goes through `resolveALMessageExpireAtMs`; a WS message carries a proof only
+ * after a hand-over its server already normalized.
+ */
 export function toALInboundMessageWithDeadline(msg: ALMessage, expireAtTimestamp: number): ALDeadlinedMessage {
-    return {
+    const ownExpiresAtMs = msg.constraints?.expiresAtMs ?? expireAtTimestamp;
+    const deadlined = {
         ...msg,
         constraints: {
             ...msg.constraints,
-            expiresAtMs: Math.min(msg.constraints?.expiresAtMs ?? expireAtTimestamp, expireAtTimestamp)
+            expiresAtMs: msg.proof === undefined ? Math.min(ownExpiresAtMs, expireAtTimestamp) : ownExpiresAtMs
         }
     };
+    if (msg.proof !== undefined) {
+        assertALPublicationProofSigningInputKept(msg, deadlined);
+    }
+    return deadlined;
 }
 
 export function toALInboundDispatchEntry(

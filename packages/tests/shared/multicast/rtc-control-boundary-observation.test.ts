@@ -43,12 +43,16 @@ import {
     type NativeRtcConnectionFixture,
     type SimulatedNativeRtcDataChannel
 } from '../native-rtc-connection-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginOverlay,
     createOriginSnapshot,
     ORIGIN_ROOM,
     toOriginDirectedSnapshot
 } from './rtc-origin-overlay-fixture.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 describe('exact RTC ACK boundary observations', () => {
     it.each(['healthy', 'relay-quota-exhausted'] as const)(
@@ -224,7 +228,12 @@ describe('exact RTC ACK boundary observations', () => {
                         circuitBreaker,
                         rateLimiter,
                         faultPort,
-                        dequeueResilience: createDefaultALOutboundDequeueResilience()
+                        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                        grantedTopics: NO_RTC_GRANTED_TOPICS,
+                        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                        selfPrincipalId: connection.service.input.sessionId
                     });
                     managers.set(sessionId, manager);
 

@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import {
     describe,
     expect,
@@ -5,7 +6,10 @@ import {
 } from 'vitest';
 
 import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
-import { decodeGroupDirectoryQuery } from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
+import {
+    decodeGroupDirectoryQuery,
+    encodeGroupDirectoryCursor
+} from '@shared-server/rallar-system/group-state/directory/decode-group-directory-query.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -139,6 +143,32 @@ describe('directory measured peer RTT', () => {
             .toEqual(['z-fast', 'a-slow', 'b-unknown']);
         expect(third.nextCursor).toBeNull();
         expect(decodeGroupDirectoryQuery(new URLSearchParams({ cursor: first.nextCursor! })).left)
+            .toEqual(['cursor is not a cursor issued for this directory order']);
+    });
+
+    it('encodes a cursor as unpadded base64url and decodes it from either base64 alphabet', () => {
+        const cursor = encodeGroupDirectoryCursor({
+            order: 'peer-rtt',
+            onlineMemberCount: 2,
+            peerRttMs: 90,
+            groupId: 'room-?>?>'
+        });
+        const decoded = {
+            order: 'peer-rtt',
+            onlineMemberCount: 2,
+            peerRttMs: 90,
+            groupId: 'room-?>?>'
+        };
+
+        expect(cursor).toBe('WyJwZWVyLXJ0dCIsMiw5MCwicm9vbS0_Pj8-Il0');
+        expect(decodeGroupDirectoryQuery(new URLSearchParams({ order: 'peer-rtt', cursor })).right?.after)
+            .toEqual(decoded);
+        expect(
+            decodeGroupDirectoryQuery(
+                new URLSearchParams({ order: 'peer-rtt', cursor: Buffer.from(cursor, 'base64url').toString('base64') })
+            ).right?.after
+        ).toEqual(decoded);
+        expect(decodeGroupDirectoryQuery(new URLSearchParams({ order: 'peer-rtt', cursor: `${cursor}*` })).left)
             .toEqual(['cursor is not a cursor issued for this directory order']);
     });
 

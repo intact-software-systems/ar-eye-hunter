@@ -1,6 +1,7 @@
 import type { ClientPrincipalRef } from '../api/client-types.ts';
-import type { GroupRef } from '../api/group-types.ts';
+import { toCanonicalGroupRef, type GroupRef } from '../api/group-types.ts';
 import type { ALQosPolicyRequest } from './al-policy.ts';
+import type { ALPublicationProof } from './publication-proof/al-publication-proof.ts';
 import { toALPrincipalBroadcastTargets } from './read-al-principal-broadcast-target.ts';
 import { newALTraceId } from './trace/al-trace-id.ts';
 
@@ -11,24 +12,24 @@ import { newALTraceId } from './trace/al-trace-id.ts';
 /** The one envelope version this build stamps and accepts; a decoder refuses any other as `unsupported`. */
 export const AL_MESSAGE_ENVELOPE_VERSION = 4 as const;
 
-export type ALMessageId = Readonly<{
-    v: typeof AL_MESSAGE_ENVELOPE_VERSION;
-    msgId: string; // UUID for dedup/idempotency
-    ts: number; // sender timestamp (epoch ms)
-    senderId: string; // stable sender identity (clientId / principalId / nodeId)
-    sessionId?: string; // reconnect/session tracing
-    traceId: string;
-}>;
+export interface ALMessageId {
+    readonly v: typeof AL_MESSAGE_ENVELOPE_VERSION;
+    readonly msgId: string; // UUID for dedup/idempotency
+    readonly ts: number; // sender timestamp (epoch ms)
+    readonly senderId: string; // stable sender identity (clientId / principalId / nodeId)
+    readonly sessionId?: string; // reconnect/session tracing
+    readonly traceId: string;
+}
 
 // -------------------------------------------------------
 // 2) Routing / application classification
 // -------------------------------------------------------
 
-export type ALRoute = Readonly<{
-    topicId: string; // subscription/routing domain
-    resourceId: string; // optional domain entity id
-    contextId: string; // room/client/world/application scope
-}>;
+export interface ALRoute {
+    readonly topicId: string; // subscription/routing domain
+    readonly resourceId: string; // optional domain entity id
+    readonly contextId: string; // room/client/world/application scope
+}
 
 // -------------------------------------------------------
 // 3) Logical destination
@@ -75,30 +76,30 @@ export type ALTargets =
 // 4) Forwarding hints for overlay routing
 // -------------------------------------------------------
 
-export type ALForwarding = Readonly<{
-    nextHopPeerIds?: readonly string[]; // immediate next hops, not final logical recipients
-    overlayId?: string; // optional overlay/topology identifier
-    fanoutLimit?: number; // optional forwarding fanout hint
-}>;
+export interface ALForwarding {
+    readonly nextHopPeerIds?: readonly string[]; // immediate next hops, not final logical recipients
+    readonly overlayId?: string; // optional overlay/topology identifier
+    readonly fanoutLimit?: number; // optional forwarding fanout hint
+}
 
 // -------------------------------------------------------
 // 5) Constraints
 // -------------------------------------------------------
 
-export type ALConstraints = Readonly<{
-    ttlHops?: number; // remaining hops; decremented by forwarders
-    expiresAtMs?: number; // wall-clock expiry; drop if now > expiresAtMs
-}>;
+export interface ALConstraints {
+    readonly ttlHops?: number; // remaining hops; decremented by forwarders
+    readonly expiresAtMs?: number; // wall-clock expiry; drop if now > expiresAtMs
+}
 
 // -------------------------------------------------------
 // 6) Ordering
 // -------------------------------------------------------
 
-export type ALOrdering = Readonly<{
-    orderingKey?: string; // e.g. groupId or senderId or roomId
-    epoch?: number; // ordering track epoch
-    seq?: number; // monotonic within orderingKey + sender or server ordering
-}>;
+export interface ALOrdering {
+    readonly orderingKey?: string; // e.g. groupId or senderId or roomId
+    readonly epoch?: number; // ordering track epoch
+    readonly seq?: number; // monotonic within orderingKey + sender or server ordering
+}
 
 // -------------------------------------------------------
 // 7) Delivery semantics
@@ -106,97 +107,99 @@ export type ALOrdering = Readonly<{
 
 export type ALAckMode = 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
 
-export type ALDelivery = Readonly<{
-    ownership?: 'shared' | 'exclusive'; // pubsub vs queue-like semantics
-    reliability: 'best-effort' | 'at-least-once'; // avoid vague "reliable"
-    ack: ALAckMode;
-}>;
+export interface ALDelivery {
+    readonly ownership?: 'shared' | 'exclusive'; // pubsub vs queue-like semantics
+    readonly reliability: 'best-effort' | 'at-least-once'; // avoid vague "reliable"
+    readonly ack: ALAckMode;
+}
 
 // -------------------------------------------------------
 // 8) Actions / correlation
 // -------------------------------------------------------
 
-export type ALActions = Readonly<{
-    corrId?: string; // correlation id for request/reply
-    replyToMsgId?: string; // message id this replies to
-}>;
+export interface ALActions {
+    readonly corrId?: string; // correlation id for request/reply
+    readonly replyToMsgId?: string; // message id this replies to
+}
 
 // -------------------------------------------------------
 // 9) Payload
 // -------------------------------------------------------
 
-export type ALPayload = Readonly<{
-    typeId: string; // schema/message type used for TS mapping/decoding
-    contentType?: 'application/json';
-    resource: string; // JSON string; keeps wire format explicit
-}>;
+export interface ALPayload {
+    readonly typeId: string; // schema/message type used for TS mapping/decoding
+    readonly contentType?: 'application/json';
+    readonly resource: string; // JSON string; keeps wire format explicit
+}
 
 // -------------------------------------------------------
 // 10) Optional diagnostics
 // -------------------------------------------------------
 
-export type ALDiagnostics = Readonly<{
-    visitedPeerIds?: readonly string[]; // optional, bounded; mainly diagnostic
-}>;
+export interface ALDiagnostics {
+    readonly visitedPeerIds?: readonly string[]; // optional, bounded; mainly diagnostic
+}
 
 // -------------------------------------------------------
 // 11) Optional provenance
 // -------------------------------------------------------
 
-export type ALAudit = Readonly<{
-    createdBy?: string;
-    createdTs?: number;
-}>;
+export interface ALAudit {
+    readonly createdBy?: string;
+    readonly createdTs?: number;
+}
 
 // -------------------------------------------------------
 // 12) The wire message
 // -------------------------------------------------------
 
-export type ALMessage = Readonly<{
-    id: ALMessageId;
-    route: ALRoute;
+export interface ALMessage {
+    readonly id: ALMessageId;
+    readonly route: ALRoute;
 
-    targets?: ALTargets;
-    forwarding?: ALForwarding;
-    constraints?: ALConstraints;
-    ordering?: ALOrdering;
+    readonly targets?: ALTargets;
+    readonly forwarding?: ALForwarding;
+    readonly constraints?: ALConstraints;
+    readonly ordering?: ALOrdering;
 
-    delivery?: ALDelivery;
-    actions?: ALActions;
-    qos?: ALQosPolicyRequest;
+    readonly delivery?: ALDelivery;
+    readonly actions?: ALActions;
+    readonly qos?: ALQosPolicyRequest;
 
-    payload: ALPayload;
+    readonly payload: ALPayload;
 
-    audit?: ALAudit;
-    diagnostics?: ALDiagnostics;
-}>;
+    readonly audit?: ALAudit;
+    readonly diagnostics?: ALDiagnostics;
+    /** The publisher's signature over the signed fields; absent on a members frame, which no grant restricts. */
+    readonly proof?: ALPublicationProof;
+}
 
 // -------------------------------------------------------
 // 13) Builders
 // -------------------------------------------------------
 
-type ALMessageBuilderOptions = Readonly<{
-    qos?: ALQosPolicyRequest;
-    ttlMs?: number;
-    actions?: ALActions;
-    traceId?: string;
-}>;
+interface ALMessageBuilderOptions {
+    readonly qos?: ALQosPolicyRequest;
+    readonly ttlMs?: number;
+    readonly actions?: ALActions;
+    readonly traceId?: string;
+}
 
-export type ALBroadcastMessageBuilderOptions = Readonly<{
-    exceptPeerIds?: readonly string[];
-    minSnapshotVersion?: number;
-    rosterVersion?: number;
-    ttlHops?: number;
-    ttlMs?: number;
-    reliability?: 'best-effort' | 'at-least-once';
-    ack?: ALAckMode;
-    ownership?: 'shared' | 'exclusive';
-    qos?: ALQosPolicyRequest;
-    actions?: ALActions;
-    traceId?: string;
+export interface ALBroadcastMessageBuilderOptions {
+    readonly exceptPeerIds?: readonly string[];
+    readonly minSnapshotVersion?: number;
+    readonly rosterVersion?: number;
+    readonly ttlHops?: number;
+    readonly ttlMs?: number;
+    readonly reliability?: 'best-effort' | 'at-least-once';
+    readonly ack?: ALAckMode;
+    readonly ownership?: 'shared' | 'exclusive';
+    readonly qos?: ALQosPolicyRequest;
+    readonly actions?: ALActions;
+    readonly traceId?: string;
     /** A sequence left out is minted by the WS server's outbound for its own publication. */
-    ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
-}>;
+    readonly ordering?: Readonly<{ orderingKey: string; epoch?: number; seq?: number; }>;
+}
 
 type ALUnicastMessageBuilderOptions =
     & ALMessageBuilderOptions
@@ -288,7 +291,7 @@ export function newALUnicastMessage<T>(
         ...newALUntargetedMessage(senderId, route, typeId, resource, options),
         targets: options?.groupRef === undefined
             ? { mode: 'unicast', toPeerId }
-            : { mode: 'unicast', toPeerId, groupRef: toALGroupRef(options.groupRef) },
+            : { mode: 'unicast', toPeerId, groupRef: toCanonicalGroupRef(options.groupRef) },
         ...(options?.reliability === undefined && options?.ack === undefined
             ? {}
             : {
@@ -332,7 +335,7 @@ export function newALMulticastMessage<T>(
         traceId: options?.traceId
     });
     const expiresAtMs = untargeted.constraints?.expiresAtMs;
-    const targetGroupRef = toALGroupRef(groupRef);
+    const targetGroupRef = toCanonicalGroupRef(groupRef);
 
     return {
         ...untargeted,
@@ -371,14 +374,6 @@ export function newALMulticastMessage<T>(
     };
 }
 
-function toALGroupRef(ref: GroupRef): GroupRef {
-    return {
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        groupId: ref.groupId
-    };
-}
-
 export function toALGroupTargetKey(group: string | GroupRef): string {
     if (typeof group === 'string') {
         return group;
@@ -409,10 +404,10 @@ export function isRoomScopedALMessage(message: ALMessage): boolean {
 export function readALTargetGroupRef(message: Pick<ALMessage, 'targets'>): GroupRef | undefined {
     const targets = message.targets;
     if (targets?.mode === 'unicast') {
-        return targets.groupRef === undefined ? undefined : toALGroupRef(targets.groupRef);
+        return targets.groupRef === undefined ? undefined : toCanonicalGroupRef(targets.groupRef);
     }
     if (targets?.mode === 'multicast') {
-        return toALGroupRef(targets.groupRef);
+        return toCanonicalGroupRef(targets.groupRef);
     }
 
     if (
@@ -420,7 +415,7 @@ export function readALTargetGroupRef(message: Pick<ALMessage, 'targets'>): Group
         (targets.scope === 'room' || targets.scope === 'principal') &&
         targets.groupRef !== undefined
     ) {
-        return toALGroupRef(targets.groupRef);
+        return toCanonicalGroupRef(targets.groupRef);
     }
 
     return undefined;
@@ -441,7 +436,7 @@ export function newALBroadcastMessage<T>(
         }>
 ): ALMessage {
     const groupRef = scope === 'room' && options?.groupRef !== undefined
-        ? toALGroupRef(options.groupRef)
+        ? toCanonicalGroupRef(options.groupRef)
         : undefined;
     const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
         qos: options?.qos,
@@ -483,7 +478,10 @@ export function newALBroadcastMessage<T>(
     };
 }
 
-export type ALPrincipalBroadcastTarget = Readonly<{ groupRef: GroupRef; principalRef: ClientPrincipalRef; }>;
+export interface ALPrincipalBroadcastTarget {
+    readonly groupRef: GroupRef;
+    readonly principalRef: ClientPrincipalRef;
+}
 
 /** A broadcast to the principal's live sessions in one room: room-bounded, so both carriers resolve it from the room. */
 export function newALPrincipalBroadcastMessage<T>(

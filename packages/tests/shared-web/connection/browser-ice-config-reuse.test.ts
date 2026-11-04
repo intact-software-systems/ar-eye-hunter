@@ -17,6 +17,10 @@ import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 
 const apiConfiguration: ApiConfigResponse = {
     apiBaseUrl: 'https://first.test',
@@ -33,6 +37,10 @@ const options = {
     deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
+    publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+    publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+    grantedTopics: NO_RTC_GRANTED_TOPICS,
+    topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
     scope: { applicationId: 'ice-cache', workspaceId: 'test' }
 };
 let runtime: BrowserTransportRuntime;

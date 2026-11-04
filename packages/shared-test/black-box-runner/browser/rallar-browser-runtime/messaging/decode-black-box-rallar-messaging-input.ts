@@ -1,3 +1,7 @@
+import {
+    decodeAlmFaultRewrite,
+    type AlmFaultRewrite
+} from '@shared-test/rallar-bb-test/alm/decode-alm-fault-rewrite.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     INDEXED_DB_OPERATION_KINDS,
@@ -15,6 +19,7 @@ import type {
     BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObserveInput,
     BlackBoxRallarProductSocketFault,
+    BlackBoxRallarRewriteFault,
     BlackBoxRallarStorageCountersInput
 } from '../black-box-rallar-operation-contracts.ts';
 import {
@@ -36,7 +41,8 @@ const PRODUCT_SOCKET_ACTIONS: readonly BlackBoxRallarProductSocketFault['action'
  * The RTC data channel treats a delay decision as pass and has no submission readiness port, so arming
  * either there would be inert.
  */
-const FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" or "backpressure" on the rtc carrier.';
+const FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE =
+    'fault.inject.action must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.';
 
 export function decodeBlackBoxRallarDeliveryHandleInput(
     value: unknown
@@ -79,7 +85,10 @@ export function decodeBlackBoxRallarDeliveryObserveInput(
 
 export function decodeBlackBoxRallarFaultInput(
     value: unknown
-): Either<BlackBoxRallarInputIssue, ScriptedTransportFault | ScriptedStorageFault | BlackBoxRallarProductSocketFault> {
+): Either<
+    BlackBoxRallarInputIssue,
+    ScriptedTransportFault | BlackBoxRallarRewriteFault | ScriptedStorageFault | BlackBoxRallarProductSocketFault
+> {
     if (!isBlackBoxCommandRecord(value)) {
         return toInputIssue('fault.inject input must be an object.');
     }
@@ -89,8 +98,39 @@ export function decodeBlackBoxRallarFaultInput(
         case 'product-socket':
             return decodeProductSocketFault(value);
         default:
-            return decodeTransportFault(value);
+            return decodeCarrierFault(value);
     }
+}
+
+/** A WS or RTC fault: a rewrite the fault names, judged by its one decoder, else any other transport fault. */
+function decodeCarrierFault(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, ScriptedTransportFault | BlackBoxRallarRewriteFault> {
+    return decodeAlmFaultRewrite(value).fold(
+        (message) => toInputIssue(message),
+        (rewrite) => rewrite === null ? decodeTransportFault(value) : decodeRewriteFault(value, rewrite)
+    );
+}
+
+function decodeRewriteFault(
+    value: BlackBoxRallarCommandRecord,
+    rewrite: AlmFaultRewrite
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarRewriteFault> {
+    const faultId = decodeBlackBoxCommandString(value.faultId);
+    if (faultId === undefined) {
+        return toInputIssue('fault.inject.faultId is required.');
+    }
+    return decodeFaultMatch(value.match).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (match) =>
+            decodeFaultRemaining(value.remaining).mapRight((remaining) => ({
+                faultId,
+                carrier: 'rtc',
+                match,
+                rewrite,
+                remaining
+            }))
+    );
 }
 
 function decodeProductSocketFault(

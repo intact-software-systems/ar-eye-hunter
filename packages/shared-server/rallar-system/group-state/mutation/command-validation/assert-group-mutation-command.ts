@@ -1,4 +1,6 @@
+import { decodeGroupPresencePublicationKey } from '@shared/api/group-presence/decode-group-presence-publication-key.ts';
 import { assertGroupSessionChange } from '@shared/api/group-sessions/group-session-schedule.ts';
+import { formatRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
 import {
     assertExactKeys,
@@ -68,9 +70,6 @@ export function assertGroupMutationCommand(
     }
     if ('targetPrincipalId' in value) {
         requireNonEmptyString(value.targetPrincipalId, 'Group target principal id');
-    }
-    if (PRESENCE_GROUP_MUTATION_OPERATIONS.has(operation)) {
-        requireNonEmptyString(input.generationId, 'Group presence generationId');
     }
     assertOperationInput(operation, input);
 }
@@ -254,6 +253,7 @@ function assertPresenceOperationInput(
     operation: GroupMutationCommand['operation'],
     input: JsonWireObject
 ): void {
+    requireNonEmptyString(input.generationId, 'Group presence generationId');
     if (operation === 'connectPresence') {
         requireNonEmptyString(input.principalId, 'Group presence principalId');
         requireNonEmptyString(input.connectionGenerationId, 'Group presence connectionGenerationId');
@@ -266,6 +266,11 @@ function assertPresenceOperationInput(
         assertNullableInteger(input, 'generationVersion', true);
         assertNullableInteger(input, 'observedExpiresAtEpochMs', true);
         assertNullableInteger(input, 'disconnectedAtEpochMs', true);
+    }
+    else {
+        decodeGroupPresencePublicationKey(input.publicationKey).foldLeft((issues) => {
+            throw new TypeError(`Group presence publicationKey is invalid: ${formatRallarValidation(issues)}`);
+        });
     }
     assertNullableInteger(input, 'lastHeartbeatAtEpochMs', true);
     assertNullableInteger(input, 'expiresAtEpochMs', true);
@@ -453,6 +458,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'principalId',
         'generationId',
         'connectionGenerationId',
+        'publicationKey',
         'connectedAtEpochMs',
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'
@@ -461,6 +467,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         ...ACTOR_INPUT_KEYS,
         'principalId',
         'generationId',
+        'publicationKey',
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'
     ],

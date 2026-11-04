@@ -149,6 +149,7 @@ export function toConnectCommand(input: GroupFormationCommandInput): GroupFormat
             request: {
                 principalId: input.principalId,
                 generationId: `${sessionId}-generation`,
+                publicationKey: null,
                 connectionGenerationId: `${sessionId}-ws-generation`,
                 connectedAtEpochMs,
                 lastHeartbeatAtEpochMs: connectedAtEpochMs,

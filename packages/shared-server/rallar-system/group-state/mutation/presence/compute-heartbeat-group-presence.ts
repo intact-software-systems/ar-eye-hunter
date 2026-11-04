@@ -59,6 +59,7 @@ export function computeHeartbeatGroupPresence(
     }
     const session: GroupPresenceSession = {
         ...existing.value,
+        publicationKey: command.input.publicationKey,
         lastHeartbeatAtEpochMs: heartbeatAt,
         expiresAtEpochMs: expiresAt
     };
@@ -79,9 +80,9 @@ export function computeHeartbeatGroupPresence(
 /**
  * A pure lease renewal keeps the session row, event, and receipt but must not
  * expand a presence summary: the session is already listed by the stored
- * summary and its lease had not lapsed at read time, so no online/offline
- * transition can be observed. Anything not provably pure — including a
- * lapsed-lease revival — expands normally.
+ * summary, its lease had not lapsed at read time and its publication key is
+ * unchanged, so members observe nothing new. Anything not provably pure —
+ * a lapsed-lease revival, a key change — expands normally.
  */
 export function isPureLeaseRenewalHeartbeat(
     command: Extract<GroupMutationCommand, { operation: 'heartbeatPresence'; }>,
@@ -92,6 +93,7 @@ export function isPureLeaseRenewalHeartbeat(
     return (
         existing !== null &&
         existing.value.expiresAtEpochMs > facts.attemptAtEpochMs &&
+        jsonEquals(existing.value.publicationKey, command.input.publicationKey) &&
         (read.presenceSummary?.value.activeSessionIds ?? []).includes(command.sessionId)
     );
 }

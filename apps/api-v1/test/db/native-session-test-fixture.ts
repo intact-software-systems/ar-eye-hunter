@@ -208,7 +208,8 @@ export async function writeNativeGroupPresence(flow: NativeGroupSessionFlow): Pr
                 requestId: `native-room-presence-${index}`,
                 principalId: 'alice',
                 generationId,
-                connectionGenerationId: generationId
+                connectionGenerationId: generationId,
+                publicationKey: null
             }
         }
     });

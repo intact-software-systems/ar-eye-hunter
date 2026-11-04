@@ -11,6 +11,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
+import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
 import { assessSubscriptionRevokeDisconnected } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import { toSubscriptionSuccessorGateCommandId } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-successor.ts';
 import type {
@@ -161,11 +162,20 @@ describe('ALM topic subscription conformance', () => {
         expect(JSON.stringify(delivery.receiver)).not.toContain('{principal:');
     });
 
-    it('an unresolved principal placeholder throws at creation', () => {
+    it('creates no cell whose principals the caller does not resolve, and an unresolved placeholder throws', () => {
         const { sender: _sender, ...withoutSender } = CONFORMANCE_PRINCIPAL_IDS;
+        const delivery = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-delivery')!;
 
-        expect(() => createAlmConformanceRecipes({ ...toConformanceInput('ws'), principalIdsByRole: withoutSender }))
-            .toThrow('alm-ws-subscription-delivery-receiver names {principal:sender}, which principalIdsByRole does not resolve.');
+        expect(
+            createAlmConformanceRecipes({ ...toConformanceInput('ws'), principalIdsByRole: withoutSender })
+                .some(({ scenarioId }) => scenarioId.startsWith('subscription-'))
+        ).toBe(false);
+        expect(() =>
+            resolveAlmConformancePrincipals(
+                { ...delivery.receiver, commands: [{ kind: 'assert', source: '{principal:sender}', operator: 'exists', expected: true }] },
+                withoutSender
+            )
+        ).toThrow('alm-ws-subscription-delivery-receiver names {principal:sender}, which principalIdsByRole does not resolve.');
         expect(
             createAlmConformanceRecipes({
                 ...toConformanceInput('ws'),

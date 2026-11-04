@@ -28,7 +28,8 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
- * A granted topic is WS-only, so the topic subscription cells run over ws and the fallback cell.
+ * The topic subscription cells run over ws and the fallback cell; a granted topic rides RTC only as a signed `ack: 'none'`
+ * room multicast, whose cells run over rtc alone.
  */
 const TOPIC_SUBSCRIPTION_IDS = [
     'subscription-delivery',
@@ -117,6 +118,10 @@ const CARRIER_SCENARIO_IDS = {
         'paced-cancel',
         'paced-isolation-resources',
         'paced-isolation-lists',
+        'granted-rtc-delivered',
+        'granted-rtc-missing-proof',
+        'granted-rtc-publish-refused',
+        'granted-rtc-receipted-unsupported',
         'backpressure-refused',
         'backpressure-deferred',
         'own-share-under-inbound',
@@ -132,7 +137,8 @@ const CARRIER_SCENARIO_IDS = {
         'no-leader-refused',
         'claim-refused-on-rtc',
         'durable-takeover',
-        'flush-on-hide'
+        'flush-on-hide',
+        'granted-rtc-forged-sender'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',

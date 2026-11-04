@@ -24,7 +24,7 @@ export interface ResultFactInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly source: string;
-    readonly operator: 'equals' | 'notEquals' | 'length';
+    readonly operator: 'equals' | 'notEquals' | 'length' | 'exists' | 'matches';
     readonly expected: ApiJsonValue;
 }
 

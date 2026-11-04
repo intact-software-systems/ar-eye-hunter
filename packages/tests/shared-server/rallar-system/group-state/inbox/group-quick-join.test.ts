@@ -89,6 +89,7 @@ async function seedOnlineSessions(harness: AuthorityHarness, groupId: string, pr
         generationId: `generation-${index}`,
         generationVersion: harness.nowEpochMs,
         connectionGenerationId: `connection-${index}`,
+        publicationKey: null,
         connectedAtEpochMs: harness.nowEpochMs,
         lastHeartbeatAtEpochMs: harness.nowEpochMs,
         expiresAtEpochMs: harness.nowEpochMs + 60_000,

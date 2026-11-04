@@ -16,6 +16,7 @@ import {
     it
 } from 'vitest';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
@@ -117,7 +118,8 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
         sessionDeliveries,
         publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
         nowMs: Date.now,
-        readPublicationPermissions: () => undefined
+        readPublicationPermissions: () => undefined,
+        grantedTopics: NO_RTC_GRANTED_TOPICS
     });
     return {
         origin,

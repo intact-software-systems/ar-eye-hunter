@@ -40,10 +40,10 @@ describe('the fault.inject backpressure action', () => {
 
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
         expect(validateAlmControlCommand(command, 'fault.inject')).toEqual([
-            expect.objectContaining({ message: 'fault.inject.action must be "drop" or "backpressure" on the rtc carrier.' })
+            expect.objectContaining({ message: 'fault.inject.action must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.' })
         ]);
         expect(decodeBlackBoxRallarFaultInput(command).left?.message).toBe(
-            'fault.inject.action must be "drop" or "backpressure" on the rtc carrier.'
+            'fault.inject.action must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.'
         );
     });
 

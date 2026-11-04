@@ -1,9 +1,9 @@
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { computeGroupConnectTriggerEntry } from '../../../group-state/group-connect-trigger-outbox-entry.ts';
-import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
 
 export interface PublicationConnectTriggerRequestsInput {
     readonly automationEnabled: boolean;

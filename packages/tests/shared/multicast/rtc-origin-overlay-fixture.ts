@@ -30,12 +30,14 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter, type RateLimiter } from '@shared/resilience/rate-limiter.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import {
     createPassThroughTransportFaultPort,
     type TransportFaultPort
@@ -45,6 +47,10 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 export interface CapturedChannel {
     readonly channel: QRtcDataChannel;
@@ -85,6 +91,10 @@ export interface RtcOriginOverlayFixtureInput {
     readonly faultPort?: TransportFaultPort;
     /** Also told every settlement the fixture records, as a browser session's delivery feed is; absent, only recorded. */
     readonly onSettlement?: (settlement: ALDeliverySettlement) => void;
+    /** The page's granted topics; absent, none, so every publication is carried unsigned. */
+    readonly grantedTopics?: RtcGrantedTopicReader;
+    /** The page's key; absent, a keyless page. */
+    readonly publicationCrypto?: PublicationCrypto;
 }
 
 export interface OriginAcknowledgementInput {
@@ -136,7 +146,12 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
         rateLimiter: input.rateLimiter ?? toRateLimiter(),
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+        grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: 'a'
     });
     onTestFinished(() => manager.dispose());
     return { manager, resources, groups, overlays, channels, ready, settlements, diagnostics };

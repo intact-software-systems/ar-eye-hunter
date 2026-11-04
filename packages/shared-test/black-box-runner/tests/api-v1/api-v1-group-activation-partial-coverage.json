@@ -494,6 +494,7 @@
         },
         "body": {
           "generationId": "partialcoverage-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "partialcoverage-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -515,6 +516,7 @@
         },
         "body": {
           "generationId": "partialcoverage-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "partialcoverage-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
@@ -536,6 +538,7 @@
         },
         "body": {
           "generationId": "partialcoverage-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "partialcoverage-connection-generation-{runId}",
           "principalId": "{carolClientId}"
         }

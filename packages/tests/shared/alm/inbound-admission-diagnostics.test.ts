@@ -318,6 +318,52 @@ it.each(['memory', 'indexeddb'] as const)(
     }
 );
 
+it('names a publication refusal unauthorized, its refusal code kept in the reason', async () => {
+    const { runtime, diagnostics } = createRuntime({
+        kind: 'memory',
+        plan: (plan) => ({
+            ...plan,
+            dropReason: 'unauthorized: invalid-signature',
+            dropReasonCode: 'unauthorized',
+            localDelivery: { enabled: false, persist: false, deferred: false },
+            nack: { enabled: false, reason: 'unauthorized', missingRanges: [] }
+        })
+    });
+
+    await runtime.ready();
+    await runtime.admitIncomingMessage(
+        createInboundTestMessage({ msgId: 'publication-refusal' }),
+        { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
+    );
+
+    expect(admissionOutcomesOf(diagnostics).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
+        { outcome: 'unauthorized', reason: 'unauthorized: invalid-signature' }
+    ]);
+});
+
+it.each(['memory', 'indexeddb'] as const)(
+    'emits no diagnostic that carries a payload resource, delivered or refused, over %s',
+    async (kind) => {
+        const delivering = createRuntime({ kind });
+        const refusing = createRuntime({
+            kind,
+            plan: (plan) => ({ ...plan, dropReason: 'unauthorized: no-publish-grant', dropReasonCode: 'unauthorized' })
+        });
+        const message = createInboundTestMessage({ msgId: 'resource-carrier', traceId: 'trace-resource-carrier' });
+        const secret: ALMessage = { ...message, payload: { ...message.payload, resource: '{"text":"payload-resource-secret"}' } };
+
+        for (const { runtime } of [delivering, refusing]) {
+            await runtime.ready();
+            await runtime.admitIncomingMessage(secret, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
+        }
+        await expect.poll(() => delivering.delivered).toEqual(['dispatched']);
+
+        const diagnostics = [...delivering.diagnostics, ...refusing.diagnostics];
+        expect(admissionOutcomesOf(diagnostics).map((event) => event.outcome)).toEqual(['committed', 'unauthorized']);
+        expect(JSON.stringify(diagnostics)).not.toContain('payload-resource-secret');
+    }
+);
+
 it.each(['memory', 'indexeddb'] as const)(
     'separates a committed admission no consumer claims from one that was never admitted over %s',
     async (kind) => {

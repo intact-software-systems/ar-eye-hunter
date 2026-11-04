@@ -15,7 +15,7 @@ import type { RuntimeStateReadBatchSelector } from '../../runtime-state/read-bat
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import { writeAppOutboxInserts, type AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { groupStateGroupStorageKey } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireText, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeTournamentResult, tournamentResultKey } from './tournament-result.ts';
 import {

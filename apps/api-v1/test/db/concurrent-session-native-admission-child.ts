@@ -341,7 +341,8 @@ async function assertNativeGroupSessionAuthority(observation: NativeGroupSession
                 requestId,
                 principalId: 'alice',
                 generationId: `${before.generationId}-unauthorized`,
-                connectionGenerationId: `${before.connectionGenerationId}-unauthorized`
+                connectionGenerationId: `${before.connectionGenerationId}-unauthorized`,
+                publicationKey: null
             }
         }
     });

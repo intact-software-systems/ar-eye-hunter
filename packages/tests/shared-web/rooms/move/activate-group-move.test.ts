@@ -9,6 +9,7 @@ import {
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
@@ -58,12 +59,13 @@ describe('activating an admitted group move', () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const previous = createRoomSnapshot('previous', ['session-1']);
         seedRoomSnapshots([previous]);
-        const requests: { path: string; method: string; }[] = [];
+        const requests: { path: string; method: string; body: object; }[] = [];
         vi.stubGlobal(
             'fetch',
             async (url: string, init: RequestInit) => {
-                requests.push({ path: String(url), method: String(init.method) });
-                const generationId = requireRecord(JSON.parse(String(init.body)), 'Presence request').generationId;
+                const body = requireRecord(JSON.parse(String(init.body)), 'Presence request');
+                requests.push({ path: String(url), method: String(init.method), body });
+                const generationId = body.generationId;
                 requireString(generationId, 'generationId');
                 const snapshot = String(url).includes('/previous/')
                     ? { ...previous, activeSessions: [], onlineMemberCount: 0 }
@@ -91,6 +93,7 @@ describe('activating an admitted group move', () => {
         await facade.rooms.activateMove(move);
         expect(requests.map((request) => request.method)).toEqual(['PUT', 'POST']);
         expect(requests[0].path).toContain('/groups/destination/sessions/session-1/requests/');
+        expect(requests[0].body).toMatchObject({ publicationKey: toGroupPresencePublicationKey(runtime.publicationCrypto) });
         expect(requests[1].path).toContain('/groups/previous/sessions/session-1/disconnect/requests/');
         expect(facade.rooms.current()?.group.groupId).toBe('destination');
         expect(runtime.leaveStateGroup).not.toHaveBeenCalled();

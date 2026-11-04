@@ -392,6 +392,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -413,6 +414,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }

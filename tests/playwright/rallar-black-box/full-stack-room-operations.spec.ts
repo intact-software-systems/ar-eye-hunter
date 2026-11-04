@@ -278,6 +278,7 @@ async function connectParticipant({ request, session, groupPath }: ConnectPartic
             data: {
                 generationId: crypto.randomUUID(),
                 connectionGenerationId: crypto.randomUUID(),
+                publicationKey: null,
                 principalId: session.clientId
             }
         }

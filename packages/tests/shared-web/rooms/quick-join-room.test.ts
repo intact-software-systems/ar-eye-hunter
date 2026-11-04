@@ -9,7 +9,12 @@ import {
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { requireEpoch, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
+import {
+    requireEpoch,
+    requireRecord,
+    requireString
+} from '@shared/api/exact-object-decoding.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
@@ -72,7 +77,12 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
         expect(requests).toHaveLength(2);
         expect(requests[0]).toMatchObject({ method: 'POST', body: { kind: 'room', q: 'eye hunter', includeEmpty: true } });
         expect(requests[0].url).toMatch(/\/apps\/app-1\/workspaces\/workspace-1\/groups\/quick-join\/requests\//);
-        expect(requests[1]).toMatchObject({ method: 'PUT', body: { principalId: 'principal-1', generationId: expect.any(String) } });
+        const publicationKey = toGroupPresencePublicationKey(runtime.publicationCrypto);
+        expect(publicationKey).not.toBeNull();
+        expect(requests[1]).toMatchObject({
+            method: 'PUT',
+            body: { principalId: 'principal-1', generationId: expect.any(String), publicationKey }
+        });
         expect(requests[1].body).not.toMatchObject({ generationId: runtime.context.middleware.heartbeat.generationId });
         expect(requests[1].url).toMatch(/\/groups\/selected\/sessions\/session-1\/requests\//);
         expect(currentWhenLeaving).toEqual([connected]);
@@ -313,6 +323,7 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
             stateStore,
             connect,
             requireSession,
+            readPublicationKey: async () => null,
             resolveOperationOptions: (options) => options,
             resolveOperationScope: (requested) => requested ?? scope,
             resolveDefaultRoomRef: () => current?.group,

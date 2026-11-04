@@ -1,7 +1,7 @@
 import { requireEpoch } from '@shared/api/exact-object-decoding.ts';
 import type { MatchmakingPolicy } from '@shared/api/matchmaking/matchmaking-policy.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { decodeMatchmakingPartySearches } from './matchmaking-party-search.ts';
 import type { MatchmakingPartySearch } from './matchmaking-party-search.ts';
 import {

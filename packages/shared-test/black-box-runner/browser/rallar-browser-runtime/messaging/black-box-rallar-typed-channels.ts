@@ -4,7 +4,11 @@ import type {
     RallarStorageUnavailablePolicy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
-import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
+import type {
+    RallarMessage,
+    RallarTypedMessageChannel,
+    RallarTypedPayloadHandler
+} from '@shared-web/browser/rallar.ts';
 import type { ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
@@ -38,7 +42,10 @@ export interface TypedChannelRoute {
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly roomRef: GroupRef | undefined;
-    /** `granted` only on the connect's granted selector topic, whose channel is WS-only. */
+    /**
+     * `granted` only on the connect's granted selector topic, which rides RTC only as a signed `ack: 'none'` room
+     * multicast delivered to `subscribe(handler)`; every other granted send goes over WS.
+     */
     readonly access: 'members' | 'granted';
     readonly durability: ALDurabilityAlgo | undefined;
     readonly onStorageUnavailable: RallarStorageUnavailablePolicy | undefined;
@@ -139,13 +146,7 @@ export class BlackBoxRallarTypedChannels {
                 this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message, peerId });
             });
             const unsubscribeRtc = route.access === 'granted' ? () => undefined : channel.onRtc((_payload, message) => {
-                this.#recordMessage({
-                    config,
-                    topic: 'rallar.browser.messages.rtc.message',
-                    transport: 'messages.rtc',
-                    message,
-                    peerId
-                });
+                this.#recordRtcArrival(config, message, peerId);
             });
             return () => {
                 unsubscribeWs();
@@ -154,6 +155,19 @@ export class BlackBoxRallarTypedChannels {
             };
         });
         return channel;
+    }
+
+    /**
+     * The handler a granted election hands its channel: the connect's own subscription records every WS copy, and a
+     * granted RTC copy reaches only an election, so this records those as a channel's `onRtc` would.
+     */
+    toElectionHandler(config: BlackBoxRallarConnectionConfig): RallarTypedPayloadHandler<RallarMessagePayload> {
+        const peerId = this.#input.connection.session()?.sessionId;
+        return (_payload, message) => {
+            if (message.transport === 'rtc') {
+                this.#recordRtcArrival(config, message, peerId);
+            }
+        };
     }
 
     /**
@@ -192,7 +206,7 @@ export class BlackBoxRallarTypedChannels {
 
     /**
      * A combined recipe keeps its authored topic selector on WS; RTC subscribes once per type it must hear, and not at
-     * all on a granted topic, which never rides RTC.
+     * all on a granted topic, whose RTC copies only an election hears (`toElectionHandler`).
      */
     #subscribeSelector(config: BlackBoxRallarConnectionConfig, connectSelector: BlackBoxRallarMessageSelector): void {
         const selector = toRallarMessageSelector(connectSelector);
@@ -232,6 +246,20 @@ export class BlackBoxRallarTypedChannels {
         received.push(message);
         received.splice(0, received.length - RECEIVED_MESSAGES_RETAINED_PER_TYPE);
         this.#receivedByType.set(message.typeId, received);
+    }
+
+    #recordRtcArrival(
+        config: BlackBoxRallarConnectionConfig,
+        message: RallarMessage<RallarMessagePayload>,
+        peerId: string | undefined
+    ): void {
+        this.#recordMessage({
+            config,
+            topic: 'rallar.browser.messages.rtc.message',
+            transport: 'messages.rtc',
+            message,
+            peerId
+        });
     }
 
     #recordMessage(event: TypedChannelMessageEvent): void {

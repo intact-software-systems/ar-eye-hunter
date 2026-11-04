@@ -551,6 +551,7 @@ function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): Gr
             principalId: sessionId,
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',
+            publicationKey: null,
             generationVersion: 1,
             status: 'active',
             disconnectedAtEpochMs: null,

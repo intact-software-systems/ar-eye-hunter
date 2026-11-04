@@ -55,6 +55,7 @@ describe('retirement fences work authorized before archival', () => {
                             requestId: 'late-connect',
                             principalId: 'owner',
                             generationId: 'late',
+                            publicationKey: null,
                             connectionGenerationId: 'late-connection',
                             connectedAtEpochMs: database.nowEpochMs,
                             lastHeartbeatAtEpochMs: database.nowEpochMs,

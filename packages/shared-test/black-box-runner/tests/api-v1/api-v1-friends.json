@@ -1073,6 +1073,7 @@
         "body": {
           "principalId": "{aliceClientId}",
           "generationId": "move-alice-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "move-alice-connection-{runId}"
         }
       },
@@ -1130,6 +1131,7 @@
         "body": {
           "principalId": "{bobClientId}",
           "generationId": "move-bob-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "move-bob-connection-{runId}"
         }
       },

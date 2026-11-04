@@ -155,6 +155,7 @@ function createRttGroupSnapshot(nowEpochMs: number): GroupSnapshot {
         principalId: members[index]!.principalId,
         generationId: `${sessionId}-generation`,
         connectionGenerationId: `${sessionId}-ws-generation`,
+        publicationKey: null,
         generationVersion: nowEpochMs - 1,
         connectedAtEpochMs: nowEpochMs - 1,
         lastHeartbeatAtEpochMs: nowEpochMs,

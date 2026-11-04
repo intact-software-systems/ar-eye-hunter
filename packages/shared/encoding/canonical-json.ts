@@ -1,14 +1,8 @@
-import { createHash } from 'node:crypto';
-
 export type CanonicalJsonInput = null | boolean | number | string | object;
 
 interface CanonicalJsonObjectEntry {
     readonly key: string;
     readonly value: CanonicalJsonInput;
-}
-
-export function computeSha256CanonicalJson(value: CanonicalJsonInput): string {
-    return createHash('sha256').update(serializeCanonicalJson(value), 'utf8').digest('hex');
 }
 
 export function serializeCanonicalJson(value: CanonicalJsonInput): string {
@@ -43,7 +37,7 @@ function serializeCanonicalJsonValue(
     assertCanonicalJsonObject(value);
     return withActiveObject(activeObjects, value, () =>
         `{${
-            readCanonicalJsonObjectEntries(value)
+            toCanonicalJsonObjectEntries(value)
                 .sort((left, right) => compareCanonicalJsonKeys(left.key, right.key))
                 .map((entry) =>
                     `${JSON.stringify(entry.key)}:${serializeCanonicalJsonValue(entry.value, activeObjects)}`
@@ -97,7 +91,7 @@ function assertCanonicalJsonObject(value: object): void {
     }
 }
 
-function readCanonicalJsonObjectEntries(value: object): CanonicalJsonObjectEntry[] {
+function toCanonicalJsonObjectEntries(value: object): CanonicalJsonObjectEntry[] {
     const entries: CanonicalJsonObjectEntry[] = [];
     for (const key of Reflect.ownKeys(value)) {
         if (typeof key === 'symbol') {
@@ -111,7 +105,7 @@ function readCanonicalJsonObjectEntries(value: object): CanonicalJsonObjectEntry
         ) {
             throw new TypeError('Canonical JSON object properties must be enumerable data properties');
         }
-        const entry = decodeCanonicalJsonObjectEntry(descriptor);
+        const entry = toCanonicalJsonObjectEntryValue(descriptor);
         if (entry === undefined) {
             continue;
         }
@@ -120,7 +114,7 @@ function readCanonicalJsonObjectEntries(value: object): CanonicalJsonObjectEntry
     return entries;
 }
 
-function decodeCanonicalJsonObjectEntry(
+function toCanonicalJsonObjectEntryValue(
     descriptor: PropertyDescriptor
 ): CanonicalJsonInput | undefined {
     const value = descriptor.value;

@@ -70,12 +70,16 @@ import {
     type TransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime,
     type NativeRtcRuntime,
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -745,6 +749,9 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
                 throw new Error('This fixture never addresses a peer.');
             },
             session: () => undefined,
+            getRoomSnapshot: () => {
+                throw new Error('This fixture never addresses a peer.');
+            },
             getRoomSessions: () => {
                 throw new Error('This fixture never addresses a peer.');
             },
@@ -1088,7 +1095,12 @@ class NativeAuthorityEndpoint {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: 'sender'
         });
         onTestFinished(() => this.multicast.dispose());
         this.streamer = createDefaultWebRtcRxStreamerService({

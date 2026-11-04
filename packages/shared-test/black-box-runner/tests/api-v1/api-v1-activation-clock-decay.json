@@ -360,6 +360,7 @@
         },
         "body": {
           "generationId": "activationdecay-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "activationdecay-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -381,6 +382,7 @@
         },
         "body": {
           "generationId": "activationdecay-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "activationdecay-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }

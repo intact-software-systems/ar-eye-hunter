@@ -322,6 +322,7 @@ function onlinePeerRoom(groupId: string, principalId: string): GroupSnapshot {
             generationId: 'generation-1',
             generationVersion: 1,
             connectionGenerationId: 'connection-1',
+            publicationKey: null,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 99_000,
             expiresAtEpochMs: 200_000,

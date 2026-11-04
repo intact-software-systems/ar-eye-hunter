@@ -80,6 +80,7 @@ describe('heartbeat lease renewal classification', () => {
                 reason: null,
                 principalId: 'alice',
                 generationId: 'generation-1',
+                publicationKey: null,
                 lastHeartbeatAtEpochMs: 1_500,
                 expiresAtEpochMs: 12_000
             }

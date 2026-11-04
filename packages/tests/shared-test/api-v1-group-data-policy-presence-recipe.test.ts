@@ -291,6 +291,7 @@ function toPresenceSnapshot(boundary: PresenceRecipeBoundary): GroupSnapshot {
             sessionId: `${principalId}-session`,
             generationId: principalId === 'alice' ? 'generation-semantic' : boundary.bobGenerationId,
             connectionGenerationId: principalId === 'alice' ? 'generation-semantic' : boundary.bobGenerationId,
+            publicationKey: null,
             generationVersion: 1,
             status: 'active',
             connectedAtEpochMs: 0,

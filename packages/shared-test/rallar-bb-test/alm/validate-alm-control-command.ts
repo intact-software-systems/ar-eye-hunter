@@ -18,6 +18,7 @@ import {
     RALLAR_BLACK_BOX_COMMAND_FIELDS,
     RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS
 } from '../schema/rallar-black-box-command-fields.ts';
+import { decodeAlmFaultRewrite } from './decode-alm-fault-rewrite.ts';
 
 export type RallarBlackBoxTestAlmCommandKind =
     | 'messages.send'
@@ -398,8 +399,19 @@ function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly C
     if (action === undefined || action === 'drop' || action === 'backpressure') {
         return [];
     }
+    const rewrite = decodeAlmFaultRewrite(command);
+    if (rewrite.left !== undefined) {
+        return [toControlCommandIssue(rewrite.left)];
+    }
+    if (rewrite.right !== null) {
+        return [];
+    }
     if (command.carrier === 'rtc') {
-        return [toControlCommandIssue(`${path} must be "drop" or "backpressure" on the rtc carrier.`)];
+        return [
+            toControlCommandIssue(
+                `${path} must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.`
+            )
+        ];
     }
     if (action === 'not-ready') {
         return [];
