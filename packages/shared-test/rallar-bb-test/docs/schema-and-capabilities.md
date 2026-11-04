@@ -1205,7 +1205,8 @@ A typed `messages.rtc` send fails its `rtc.send` on a handle that ends `rejected
 or `superseded`. `observe: 'rejected'` reverses that for a send a recipe expects to be refused: a rejected handle is
 the command's value, its `message` carrying the handle's `failure` and `attempts`, and any other end of the send
 fails the command with `RALLAR_BB_RTC_SEND_NOT_REJECTED`. The command schema, the control validator and the page
-read `observe` through one decoder, and `rejected` is its only value.
+read `observe` through one decoder, and `rejected` is its only value. The field is carrier-neutral, read whatever the
+`transport`: a `realtime` send ends in a lane result, never a rejected handle, so `observe: 'rejected'` always fails it.
 
 A `{resultCache.<commandId>.<path>}` token in an `http.request` body stands for the string or
 number an earlier command returned, as in a wait's `contains`; a token naming none fails the
