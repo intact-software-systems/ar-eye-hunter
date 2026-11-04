@@ -46,7 +46,7 @@ export function createFrozenGrantedMulticast(input: FrozenGrantedMulticastInput)
         ORIGIN_ROOM,
         'room.granted-feed.v1',
         { text: input.text ?? `feed ${input.resourceId}` },
-        { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-${input.resourceId}` }
+        { ack: input.ack ?? 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-${input.resourceId}` }
     );
     return {
         ...message,
@@ -66,6 +66,8 @@ export interface FrozenGrantedMulticastInput {
     readonly recipientPeerIds: readonly string[];
     readonly snapshotVersion: number;
     readonly text?: string;
+    /** The receipt the origin asks for; absent, none. */
+    readonly ack?: 'none' | 'receiver';
 }
 
 export async function signPublication(crypto: AvailablePublicationCrypto, message: ALMessage): Promise<ALMessage> {
