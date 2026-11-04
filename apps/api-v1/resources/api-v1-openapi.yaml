@@ -4317,6 +4317,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
         - name: view
           in: query
           schema: { type: string, enum: [public, mine], default: public }
@@ -4330,6 +4331,9 @@ paths:
       responses:
         '200':
           description: A private non-cacheable catalogue page. Empty entries with a continuation do not imply the end of the collection.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TournamentCatalogPage' }
