@@ -6,6 +6,7 @@ import {
     toALPublicationProofSigningInput,
     verifyALPublicationProof
 } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
+import { isALDeliveryAdmissionFallbackVerdict } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { reconstructALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
@@ -247,6 +248,28 @@ describe('the RTC origin of a granted publication', () => {
             reason: 'unsupported',
             detail: RTC_GRANTED_PUBLICATION_REFUSALS.unsigned
         });
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
+    // Pre-existing: the room limit's `unsupported` refusal, which a fallback takes over, comes after the signing step,
+    // so a signed audience past the limit fails the planned message's own decode instead (README, the RTC room limit).
+    it('fails a granted send to a room of more than 257 subscribing sessions, its oversized audience never handed over', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const sessionIds = ['a', 'b', 'c', ...Array.from({ length: 297 }, (_, index) => `s${index}`)];
+        const subscribers = Object.fromEntries(sessionIds.slice(1).map((sessionId) => [sessionId, SUBSCRIBE_ONLY]));
+        const snapshot = createPublicationRoomSnapshot({
+            sessionIds,
+            snapshotVersion: 3,
+            keys: { a: toGroupPresencePublicationKey(crypto)! },
+            grants: { a: PUBLISH_ONLY, ...subscribers }
+        });
+        const fixture = createGrantedFixture(crypto, snapshot);
+
+        const result = await enqueueLegAndDrain(fixture, createGrantedMulticast('receiver'), 'hand-over');
+
+        expect(result.verdict).toEqual({ kind: 'failed', detail: 'AL collection exceeds the entry limit' });
+        expect(isALDeliveryAdmissionFallbackVerdict(result.verdict)).toBe(false);
+        expect(result.entries).toEqual([]);
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
     });
 

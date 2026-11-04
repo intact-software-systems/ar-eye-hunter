@@ -586,7 +586,9 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   `refused/unsupported`, naming the bound, in every ack mode and before anything is persisted or sent
   (`computeRtcFrozenAudienceRefusal`). That is the refusal a fallback takes over: `rtc-with-ws-fallback`
   delivers over WS, whose audience travels off the wire (below), and `rtc` alone settles `rejected`
-  with the typed reason, never `failed`.
+  with the typed reason. A signed granted publication is the exception: its origin signs the frozen
+  audience before that refusal runs, so past the bound the signed message fails its own envelope
+  decode (`AL collection exceeds the entry limit`), the send ends `failed` and no carrier takes it over.
 - The WS server freezes a room message at its admission stamp from the sessions it authorizes,
   narrowed for a principal broadcast that names its room to that principal's sessions (the group
   snapshot's `activeSessions[].principalId`), for a room broadcast that carries
