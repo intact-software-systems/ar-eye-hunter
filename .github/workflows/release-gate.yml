@@ -325,6 +325,19 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload browser traces of failed specs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: game-room-traces-${{ matrix.lane }}
+          path: |
+            apps/ar-eye-hunter-v1/test-results/**/trace.zip
+            apps/ar-eye-hunter-v1/test-results/**/error-context.md
+            apps/relic-hunters-v1/test-results/**/trace.zip
+            apps/relic-hunters-v1/test-results/**/error-context.md
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Run AR Eye real-canvas reconciliation regression
         if: ${{ matrix.lane == 'ar-eye' }}
         run: |
