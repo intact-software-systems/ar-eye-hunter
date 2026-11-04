@@ -474,7 +474,13 @@ function toSafeAck(record: unknown): ApiJsonObject | undefined {
             isSafeApiTimingIdentity(record[field])
         ) ||
         !isAllowedApiTimingString(record.carrier, ['ws', 'rtc']) ||
-        !isAllowedApiTimingString(record.status, ['accepted', 'delivered', 'forwarded', 'subtree-complete']) ||
+        !isAllowedApiTimingString(record.status, [
+            'accepted',
+            'delivered',
+            'forwarded',
+            'subtree-complete',
+            'subtree-complete-not-subscribed'
+        ]) ||
         !isNonNegativeApiTimingNumber(record.observedAtEpochMs)
     ) {
         return undefined;

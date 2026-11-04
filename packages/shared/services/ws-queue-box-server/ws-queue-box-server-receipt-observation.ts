@@ -287,6 +287,6 @@ function isClosedAck(value: unknown): value is ALAckPayload {
         .every((field) => typeof fields[field] === 'string') &&
         (fields.carrier === 'ws' || fields.carrier === 'rtc') &&
         (fields.status === 'accepted' || fields.status === 'delivered' || fields.status === 'forwarded' ||
-            fields.status === 'subtree-complete') &&
+            fields.status === 'subtree-complete' || fields.status === 'subtree-complete-not-subscribed') &&
         typeof fields.observedAtEpochMs === 'number' && Number.isFinite(fields.observedAtEpochMs);
 }
