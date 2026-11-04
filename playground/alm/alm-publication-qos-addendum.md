@@ -1,9 +1,10 @@
 # ALM publication QoS and pub/sub addendum
 
-Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing) and Slice 2
-(authorized WS pub/sub, as S2-i and S2-ii) are implemented and recorded as
-applied in §7; the later outcomes remain a proposed extension, not implemented
-behavior or an adopted change to `docs/product.md`.
+Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
+(authorized WS pub/sub, as S2-i and S2-ii) and Slice 3 (restricted RTC parity,
+as S3-i and S3-ii) are implemented and recorded as applied in §7; the later
+outcomes remain a proposed extension, not implemented behavior or an adopted
+change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -407,8 +408,10 @@ immutable payload, target intent, ordering/QoS metadata, resource scope,
 session, topic, expiry, and authority generation, with bounded current
 authorization. Its issuance and verification belong to explicit existing
 auth/session and ALM boundaries; select a proven mechanism rather than invent
-cryptography. Until that proof exists, RTC returns unsupported for these
-restricted topics; an allowed WS strategy uses the validated WS path.
+cryptography. Slice 3 (§7) provides it for room multicasts: an ECDSA P-256
+signature by the publishing session, verified at every relay and receiver
+against its own room snapshot. RTC returns unsupported for every other
+restricted send, and an allowed WS strategy uses the validated WS path.
 
 Relays may inspect payload bytes unless a separate confidentiality mechanism
 protects them. Applications requiring subscriber-only byte access use a
@@ -553,9 +556,7 @@ through the room facade while keeping administration independent.
 Owners: group-state membership/governance and its AppInbox registration,
 shared group/publication contracts, browser room/message boundaries, and the
 canonical WS topic/admission/publication owners. Subscription changes do not
-replan topology. RTC restricted publications remain typed unsupported until
-the trust outcome below is proven; the final product still requires RTC parity
-where the policy permits it.
+replan topology. RTC restricted publications are Slice 3's.
 
 Acceptance: actual persisted grant/readback and event results, optimistic
 conflict/retry/idempotency/corruption behavior, principal/session/scope
@@ -597,11 +598,10 @@ leak window is one in-flight send, and a revoked recipient stays expected and
 unconfirmed in the receipt. A dispatch step whose read fails retries the row; one
 that finds no current room snapshot completes it with no recipients. The NACK is
 sent at socket admission and at `route`; a refusal at a pending replay or an inbox
-dispatch drops the message without one, as every refusal there does. RTC carries
-no granted topic: a granted browser channel sends over WS under every strategy
-but `rtc`, which it refuses `unsupported`, and refuses a send its cached room
-snapshot grants no `publish` before any carrier. api-v1 installs its granted
-topics from `grantedWsTopics` (`RALLAR_GRANTED_WS_TOPICS_JSON`). The recipes
+dispatch drops the message without one, as every refusal there does. A granted
+browser channel refuses a send its cached room snapshot grants no `publish`
+before any carrier; its RTC carriage is Slice 3's, below. api-v1 installs its
+granted topics from `grantedWsTopics` (`RALLAR_GRANTED_WS_TOPICS_JSON`). The recipes
 `api-v1-group-publication-grants.json` and its cluster twin prove persisted
 readback, idempotency, conflict, the denials and a revocation's WS refusal across
 three servers. Decisions D483–D501 are in the roadmap; S2-ii is next.
@@ -651,12 +651,67 @@ steps prove readback, idempotency, the refusals and revoke and re-grant. No
 hosted manifest carries the four-role cells. Decisions D502–D511 are in the
 roadmap, and Slice 2 is complete.
 
+### Slice 3: restricted RTC parity
+
+Deliver §5.3 for granted room multicasts: an authenticated original publisher
+across relays, bounded authority freshness, separate relay and application
+permission, and WS/RTC fallback and repair parity under role churn, with
+payload confidentiality declared outside this mode's promise.
+
+As applied (S3-i): a granted room multicast asking no receipt rides RTC under
+`rtc` and `rtc-with-ws-fallback`, signed once at RTC carrier admission with a
+detached ECDSA P-256 signature (`packages/shared/signature/`) over the
+domain-tagged, positional canonical JSON of the envelope's signed fields
+(`packages/shared/al-contracts/publication-proof/`), `payload.resource`
+included directly; the relay-mutable `forwarding`, `constraints.ttlHops` and
+`diagnostics`, and `id.traceId`, `audit` and `proof`, are excluded, and the
+envelope version stays 4. The key's public half rides the session's presence
+row as `publicationKey` and reaches members on the snapshot and its delta; it
+leaves with the session and never replans. Every relay and receiver judges a
+granted frame against its own readable room snapshot, at least as new as the
+frame's signed `targets.snapshotVersion`, before forwarding or delivering it:
+a missing proof, an invalid signature, an unbound target, a publisher without
+`publish` or no readable snapshot drop it `unauthorized` with no NACK and no
+forward, and an unknown key or a newer authority drop it `not-yet-in-sync`
+after one refresh. Relays need membership only, and a session delivers only
+with `subscribe` and an active token. A topic is granted at a page when a
+typed channel declares it or the cached snapshot grants it, which closes the
+raw `messages.rtc.send` lane. Relays may read payload bytes; no diagnostic
+carries them, and a forward-only copy never reaches an application.
+
+As applied (S3-ii): the origin freezes a granted publication to the live
+sessions whose principal holds effective `subscribe` in its cached snapshot
+before it signs, so the signed targets and the receipt's expected set are that
+audience, and receipted granted room multicasts ride RTC too. A frozen
+recipient without `subscribe` in its own snapshot or without an active token
+forwards, delivers nothing, confirms nothing for itself and answers a
+`not-subscribed` NACK naming itself as the logical recipient; relays
+re-originate it toward the origin per logical recipient, and its hop completes
+with the ACK status `subtree-complete-not-subscribed`, which confirms nobody.
+The origin records such a recipient in the receipt's
+`outsideAudiencePeerIds`, neither confirmed nor unconfirmed, and the receipt
+completes once every expected recipient is confirmed or outside and one is
+confirmed. A WS copy that reaches a recipient whose RTC copy answered
+`not-subscribed` answers the same confirms-nobody status, which the WS server
+records outside the receipt's audience; a frozen session that never subscribes
+stays expected and unconfirmed on WS. A granted `group-leader` send whose
+director holds no `subscribe` is unsupported on RTC, and `ws-then-rtc` keeps
+granted messages on WS. Repair, re-plan and dequeue of a stored signed
+publication re-check the origin's own `publish` in its snapshot, a revoke
+settling the handle `rejected` `no-publish-grant`; a responder repairs only
+toward a frozen recipient still holding `subscribe`, and nothing re-signs.
+The key pair is the session's, kept in the browser's IndexedDB and shared by
+the session's pages, and a presence change that alters only a key replans no
+topology. Receipts stay unsigned. The `granted-rtc` cells, the relay fixture and
+the four-role family over `rtc` are the evidence, and no hosted manifest carries
+the cells. Decisions D512–D523 are in the roadmap, and Slice 3 is complete.
+
 ### Later outcomes
 
-- **Restricted RTC parity:** authenticated original publisher, bounded
-  authority freshness, separate relay/application permission, and WS/RTC
-  fallback and repair parity under role churn. Confidentiality is either
-  provided by an adopted mechanism or explicitly outside that mode's promise.
+- **Restricted RTC beyond room multicast:** an encrypted publication with key
+  distribution, rotation and revocation, ACKs that authenticate their logical
+  recipient across relays, granted unicast and broadcast over RTC, and native
+  hosts' publication keys.
 - **Ordered subscription establishment:** start positions, generations,
   selective-audience omissions, snapshot/live handoff, and no replay to an
   unauthorized or newly joined historical audience.

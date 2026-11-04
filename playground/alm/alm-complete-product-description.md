@@ -143,7 +143,9 @@ byte/count bounds.
 ceilings in
 [`al-message-resource-limits.ts`](../../packages/shared/al-contracts/al-message-resource-limits.ts)
 with UTF-8 byte accounting, and validated control payloads exist since the first
-release. Authenticated RTC relay provenance remains PARTIAL (S2). R2 renamed the
+release. Authenticated RTC relay provenance remains PARTIAL (S2) for members
+frames; a granted publication carries its original publisher's signature (S3
+below). R2 renamed the
 membership-epoch field to the group-state roster version it fences on
 (`targets.rosterVersion`) and bumped the envelope to v3
 (`AL_MESSAGE_ENVELOPE_VERSION`). I1b-i made the trace required and bumped the
@@ -202,8 +204,10 @@ server-provided room authority. Diagnostics never grant authority. Browser WS
 receives only server-validated envelopes, and server WS binds new senders to the
 authenticated connection or an explicitly authorized server/system identity.
 ACK/NACK/repair identities must agree with the envelope, target, transport peer,
-and tracked message audience. Cryptographic signatures by the original sender
-are outside the approved roadmap.
+and tracked message audience. A granted room multicast over RTC also carries a
+signature by its original sender's session, which every relay and receiver
+verifies against its own room snapshot (D512–D515); a members frame carries
+none.
 
 Domain topic registries add payload schema, maximum size, authority, scope,
 fanout, and allowed QoS. Fanout is the topic's declaration, never derived from a
@@ -277,9 +281,8 @@ no granted-topic decision reads the 60 s TTL cache. A failed probe leaves the ro
 to its retry; a step that finds no current room snapshot completes the row with
 no recipients. The receipt never shrinks: a recipient revoked after admission
 stays expected and reads unconfirmed. api-v1 installs its granted topics from
-`grantedWsTopics` (D499). **Limit:** RTC carries no granted topic, and a granted
-browser channel refuses `rtc` `unsupported` (D491); restricted RTC parity is the
-addendum's first later outcome.
+`grantedWsTopics` (D499). Over RTC a granted topic rides only as a signed room
+multicast (D491; S3 below).
 
 **CURRENT — S2-ii, session subscriptions:** holding `subscribe` makes a
 principal eligible; a session receives a granted topic only after it elects to,
@@ -318,6 +321,47 @@ socket reopens and released at session end (D490, D509). **Limit:** a
 same-session WS reconnect leaves the session's room presence closed, so the
 reopened session receives no granted publication although its subscription is
 re-asserted (D506); the four-role cells run on the local lane only (D505).
+
+**CURRENT — S3, restricted RTC parity:** a granted room multicast rides RTC,
+receipted or not, under `rtc` and `rtc-with-ws-fallback`. The origin freezes it
+to the live sessions whose principal holds effective `subscribe` in its cached
+snapshot and signs it once at RTC carrier admission with a detached ECDSA P-256
+signature
+([`ecdsa-p256-signature.ts`](../../packages/shared/signature/ecdsa-p256-signature.ts))
+over the domain-tagged, positional canonical JSON of the envelope's signed
+fields
+([`al-publication-proof.ts`](../../packages/shared/al-contracts/publication-proof/al-publication-proof.ts));
+the relay-mutable `forwarding`, `constraints.ttlHops` and `diagnostics`,
+`id.traceId` and the `audit` and `proof` sections are excluded, and no stage
+after the signature may change a signed field (D514). The key pair is the
+session's, kept in the browser's IndexedDB and shared by its pages, and its
+public half rides the session's presence row as `publicationKey`, reaching members on the
+snapshot and its delta and leaving with the session; a key-only change replans
+no topology (D512, D513). Every relay and receiver judges a granted frame
+against its own readable room snapshot, at least as new as the frame's signed
+`targets.snapshotVersion`, before forwarding or delivering it
+([`compute-rtc-publication-admission.ts`](../../packages/shared/multicast/publication/compute-rtc-publication-admission.ts)):
+a missing proof, an invalid signature, an unbound target, a publisher without
+`publish` or no readable snapshot drop it `unauthorized` with no NACK and no
+forward, and an unknown key or a newer authority drop it `not-yet-in-sync`
+after one refresh. Relays need membership only; a session delivers only with
+`subscribe` and an active token (D515, D516). A topic is granted at a page when
+its typed channel declares it or its cached snapshot grants it, so a raw
+`messages.rtc.send` on it obeys the same rules (D517). A frozen recipient
+without `subscribe` or an active token forwards, delivers nothing and answers a `not-subscribed` NACK for itself,
+which relays carry to the origin per logical recipient; the receipt records it
+outside the audience, neither confirmed nor unconfirmed, and completes once
+every expected recipient is confirmed or outside and one is confirmed (D518).
+A stored granted publication is repaired, re-planned and dequeued only while
+the origin's snapshot still grants it `publish`, a revoke ending the handle
+`rejected` `no-publish-grant`, and a responder repairs only toward a frozen
+recipient still holding `subscribe`; nothing re-signs (D519). **Limit:** the
+payload is not confidential from relays (D520); receipts are unsigned; a
+granted unicast, broadcast, narrowed room send or `group-leader` send whose
+director holds no `subscribe` is RTC-`unsupported`, and `ws-then-rtc` sends
+granted messages over WS; after a hand-over the WS server keeps a frozen
+session that never subscribed expected and unconfirmed until the deadline; the
+`granted-rtc` and four-role cells run on the local lane only (D521).
 
 ## Logical audiences
 
@@ -586,9 +630,12 @@ required `access: 'members' | 'granted'`
 ([`rallar-message-contracts.ts`](../../packages/shared-web/browser/messages/rallar-message-contracts.ts));
 the room session's string binding fills `members`, and a `granted` channel names
 its `topicId` (`invalid-access` and `missing-topic-id` otherwise). A granted
-channel is WS-only: `ws-then-rtc` and `rtc-with-ws-fallback` send over WS at once,
-`sendRtc` and `strategy: 'rtc'` settle `rejected` `refused`/`unsupported`, and
-calling `onRtc` throws. Before any carrier, the dispatch reads the room's
+channel's room multicast rides RTC under `rtc` and `rtc-with-ws-fallback` (S3
+below); `ws-then-rtc` sends every granted message over WS, a send RTC cannot
+carry settles `rejected` `refused`/`unsupported` under `sendRtc` and
+`strategy: 'rtc'` and goes over WS under `rtc-with-ws-fallback`, and calling
+`onRtc` throws, since RTC copies reach `subscribe(handler)` only. Before any
+carrier, the dispatch reads the room's
 cached snapshot through `resolveGroupPublicationPermissions` and settles a send
 without effective `publish` `rejected` `refused`/`no-publish-grant`; with no
 snapshot cached the server decides, and its NACK settles the handle `rejected`

@@ -814,9 +814,12 @@ server.ws.defineTopic<{ headline: string; }>({
 await server.ws.publish({ message: feedMessage, producerId: 'feed-service' });
 ```
 
-A member without a `publish` grant is refused `no-publish-grant`, and a granted
-topic does not travel over RTC. A browser session receives a granted topic only
-after it subscribes, holding `subscribe`, on a granted channel bound to its room:
+A member without a `publish` grant is refused `no-publish-grant`. A granted room
+multicast also rides RTC, signed by its sender's session and verified at every
+hop; a frozen session that has not subscribed answers `not-subscribed`, and the
+receipt records it outside the audience. A browser session receives a granted
+topic only after it subscribes, holding `subscribe`, on a granted channel bound
+to its room:
 
 ```ts
 const room = rallar.rooms.session();

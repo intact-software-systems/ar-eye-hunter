@@ -730,7 +730,8 @@ NACK refuses the whole send whatever the receipt and ends it: a held dispatch al
 `route` re-reads the grant.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
-audience verbatim, so a session that left since reads unconfirmed (D73).
+audience verbatim, so a session that left since reads unconfirmed (D73), and a recipient whose ACK confirms nobody
+(`subtree-complete-not-subscribed`) is recorded in the receipt's `outsideAudienceRecipientPeerIds`, never confirmed.
 
 The wire `targets.groupRef` scopes every row that names a group (D101): its captured policy stores no
 `recipientScope`, `principalTargetId` or `sessionInvalidation`
@@ -1247,6 +1248,16 @@ repeat or a confirmed one, and no ACK confirms a recipient after it. The recipie
 The acknowledgement a NACK states reads its hop view from the ACK history. It ends no receipt and hands nothing over:
 the row completes once every expected recipient is confirmed or outside and one is confirmed, and a receipt whose
 every recipient is outside stays open to its deadline and ends `receipt-exhausted` (PL10, PL16).
+
+An RTC origin resends a stored granted publication only while its cached snapshot still grants it `publish` (S3-R8):
+the RTC carrier applies
+[`computeRtcRepairAuthorization`](../../multicast/publication/compute-rtc-repair-authorization.ts) before every
+repair, re-plan and dequeue of a signed message, and a re-plan it refuses `no-publish-grant` ends the message
+([`resolveALOutboundReplanRefusalSettlement`](./control/resolve-al-outbound-replan-refusal-settlement.ts)): the
+ack-timeout retry deletes the pending receipt under the version its decision read, the dequeue and the retransmit end
+it inside the dispatch's own commit, a conflicting commit decides again from a fresh read, and the handle settles
+`rejected` with nothing handed to WS. Only a revoke the snapshot shows ends it: with no readable snapshot the room's
+own planning decides, as for any stored send, and `unsupported` or `unauthorized` re-plans keep their silent drop.
 
 A receipt that a control ends -- a complete ACK or a terminal NACK -- completes the send's `ack-timeout`
 work row in the commit that ends it, so no timeout batch runs for it; a row a batch already leased is

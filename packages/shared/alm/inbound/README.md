@@ -163,6 +163,10 @@ receipted: the WS copy meets the first admission in the shared session store, is
 `not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
 its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers below)
 -- the receipt the WS leg needs from every member of the frozen audience.
+The message-owner row records whether that first admission delivered locally (`deliveredLocally`; a row written
+before the field existed reads as delivered), so a WS copy that meets the RTC admission of a frozen recipient that
+answered `not-subscribed` answers `subtree-complete-not-subscribed`, never `delivered`, and the WS server's receipt
+aggregation records that recipient in `outsideAudienceRecipientPeerIds`, never as a confirmation.
 The WS server narrows its current room to the frozen audience, so a session that left after the RTC
 freeze is absent from the WS receipt rather than read unconfirmed.
 
@@ -278,7 +282,9 @@ as the end of the subtree. A peer that delivered nothing -- local delivery
 off, or a session outside the frozen audience, which may forward but never
 delivers locally or counts as a recipient -- ends its subtree with
 `subtree-complete`, never `delivered` (R-S2c-ii-4). A frozen recipient of a granted RTC publication that may
-not subscribe or holds no active token (the publication admission's `forward-not-subscribed`) is the one peer
+not subscribe or holds no active token
+([`computeRtcPublicationAdmission`](../../multicast/publication/compute-rtc-publication-admission.ts)'s
+`forward-not-subscribed`) is the one peer
 that says why: under `receiver` and `leader` it sends its hop a `not-subscribed` NACK naming itself, and never
 confirms itself -- no `accepted`, no `delivered`, on a retried copy neither. Its hop still ends as any hop does,
 with a terminal ACK once its subtree answered (a leaf at once), but of status `subtree-complete-not-subscribed`,

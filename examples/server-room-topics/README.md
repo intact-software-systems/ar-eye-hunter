@@ -135,9 +135,11 @@ rallar.ws.defineTopic<Headline>({
 A granted topic needs `scope: 'room'`, and one `topicId` has one
 participation. The server refuses a publication without a grant with the NACK
 reason `no-publish-grant`, and a server publish whose producer the topic does
-not list with `status: 'refused'`. A granted topic does not travel over RTC, so
-the browser channel on it declares `access: 'granted'` and sends over WS. A
-browser session receives the topic once it calls the channel's
+not list with `status: 'refused'`. The browser channel on a granted topic
+declares `access: 'granted'`; its room multicasts ride RTC, signed by the
+sender's session and verified at every hop, under `rtc` and
+`rtc-with-ws-fallback`, and every other send goes over WS. A browser session
+receives the topic once it calls the channel's
 `subscribe(handler)`, which returns a `RallarTopicSubscription` token that
 renews itself, re-subscribes after a reconnect and releases on
 `unsubscribe()`; owners and admins grant with `rooms.grantTopic` and revoke with
