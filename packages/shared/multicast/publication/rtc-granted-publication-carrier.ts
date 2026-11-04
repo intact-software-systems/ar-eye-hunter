@@ -140,8 +140,8 @@ export class RtcGrantedPublicationCarrier {
     planRepair(
         msg: ALMessage,
         request: ALOutboundRepairRequest,
-        plan: (isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission) => ALOutboundRepairPlan
-    ): ALOutboundRepairPlan {
+        plan: (isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission) => RtcRepairPlan
+    ): RtcRepairPlan {
         const isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission = (peerId, receiptMode) =>
             this.isRepairTargetAdmitted({ msg, targetPeerId: peerId, receiptMode });
         return this.authorizeOwnRepair(msg).fold(
@@ -269,7 +269,7 @@ function toRtcGrantedLegRefusalDetail(refusal: RtcGrantedLegRefusal): string {
 }
 
 /** A repair plan, or none when nothing is owed. */
-type ALOutboundRepairPlan = ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined;
+type RtcRepairPlan = ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined;
 
 interface RtcRepairTargetInput {
     readonly msg: ALMessage;
@@ -279,10 +279,10 @@ interface RtcRepairTargetInput {
 
 /** A requester-targeted repair serves its requester only while the responder admits it under the receipt it tracks. */
 function toRequesterAdmittedPlan(
-    planned: ALOutboundRepairPlan,
+    planned: RtcRepairPlan,
     requesterPeerId: string | undefined,
     isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission
-): ALOutboundRepairPlan {
+): RtcRepairPlan {
     return planned === undefined || requesterPeerId === undefined ||
             isTargetAdmitted(requesterPeerId, planned.ackTracking?.mode ?? 'none')
         ? planned
