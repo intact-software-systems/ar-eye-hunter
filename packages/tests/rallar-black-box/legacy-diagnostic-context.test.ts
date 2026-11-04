@@ -7,7 +7,8 @@ import {
     beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
@@ -41,6 +42,7 @@ import {
     useRunnerShellState
 } from '../../../apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts';
 import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
+import { createBrowserTestStorage } from '../shared-test/browser-test-storage.ts';
 import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -72,6 +74,13 @@ const DRAFT_ROLLUP: ControlDistributedRunSnapshot['rollup'] = {
     },
     failures: []
 };
+
+// Node's own `localStorage` getter shadows happy-dom's and warns, so the shell's UI storage is a stubbed one.
+beforeEach(() => {
+    vi.stubGlobal('localStorage', createBrowserTestStorage());
+});
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('legacy diagnostic context parsing', () => {
     it('ignores bridge-shaped values unless the exact v1 marker is present', () => {
