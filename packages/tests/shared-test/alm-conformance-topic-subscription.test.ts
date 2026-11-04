@@ -120,7 +120,7 @@ describe('ALM topic subscription conformance', () => {
                 expect(toAlmConformanceRoleRecipe(scenario, 'publisher-b')).toBe(scenario.publisherB);
             }
             expect(scenarios.filter(({ laneFamily }) => laneFamily === 'same-context').map(({ roles }) => roles))
-                .toEqual(carrier === 'rtc' ? [] : [['sender', 'receiver', 'successor']]);
+                .toEqual(carrier === 'ws' ? [['sender', 'receiver', 'successor']] : []);
         }
     });
 

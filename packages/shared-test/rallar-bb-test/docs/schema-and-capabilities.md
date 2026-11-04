@@ -539,9 +539,9 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   new generation, the same gate that starts the `subscription-successor` page; the publication then
   reaches the receiver and not the reopened sibling.
 
-`subscription-successor` runs in the `same-context` family over `ws` and `rtc-with-ws-fallback`, not `rtc`, where
-its successor page would wait for RTC readiness while the owner page still holds the session's one RTC peer. The
-successor page opens while the
+`subscription-successor` runs in the `same-context` family over `ws` alone: the harness holds one RTC peer per
+session, so over `rtc` and `rtc-with-ws-fallback` its successor page would wait for RTC readiness while the owner page
+still holds the session's peer. The successor page opens while the
 owner page still runs, once the owner read its own generation, and its connect replaces the
 owner's socket. The successor's election moves the session's row to its generation; the owner's
 token reads `lapsed`, its release sends nothing, and an explicit unsubscribe naming the owner's

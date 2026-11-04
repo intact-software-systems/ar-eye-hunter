@@ -7,7 +7,6 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import {
-    TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toSubscriptionRowsCommand,
@@ -45,9 +44,9 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-successor',
     scenarioKey: 'subscription-successor',
     tags: FULL_TAGS,
-    // Over `rtc` the successor page's connect waits for RTC readiness while the owner page still holds the session's
-    // one RTC peer, and never reaches it.
-    carriers: TOPIC_SUBSCRIPTION_CARRIERS.filter((carrier) => carrier !== 'rtc'),
+    // The harness holds one RTC peer per session: over `rtc` and the fallback carrier the successor page's connect would
+    // wait for RTC readiness while the owner page still holds the session's peer, and never reach it.
+    carriers: ['ws'],
     roles: ['sender', 'receiver', 'successor'],
     laneFamily: 'same-context',
     principalRoles: ['receiver', 'sender'],

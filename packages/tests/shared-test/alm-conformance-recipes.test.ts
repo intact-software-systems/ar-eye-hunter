@@ -374,9 +374,10 @@ describe('alm-conformance recipe family', () => {
                     ...FOUR_ROLE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
                         ['sender', 'receiver', 'sibling', 'publisher-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
-                    ...(carrier === 'rtc'
-                        ? []
-                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)),
+                    // One RTC peer per session: the successor page runs over ws alone.
+                    ...(carrier === 'ws'
+                        ? ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)
+                        : []),
                     ...(carrier === 'rtc' ? GRANTED_RTC_THREE_AGENT_KEYS : []).flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     )
@@ -717,8 +718,7 @@ describe('alm-conformance recipe family', () => {
             ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             ...CLAIM_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             'durable-takeover',
-            ...FOUR_ROLE_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
-            'subscription-successor'
+            ...FOUR_ROLE_KEYS_BY_CARRIER['rtc-with-ws-fallback']
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
