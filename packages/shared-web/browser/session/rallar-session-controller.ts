@@ -51,7 +51,7 @@ export interface CreateRallarSessionControllerOptions {
     readonly subtle: SubtleCrypto | undefined;
     /** Where the pages of a session share its key pair. */
     readonly publicationKeyStore: PublicationKeyStore;
-    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
     readonly grantedTopics: RtcGrantedTopicReader;
     readonly topicSubscriptions: RtcTopicSubscriptionReader;
     readonly emitState: () => void;

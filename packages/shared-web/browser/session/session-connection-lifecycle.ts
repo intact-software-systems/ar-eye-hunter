@@ -65,7 +65,7 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly lifecycle: RallarLifecycleCoordinator;
         /** Read for the session each connect connects, which awaits it beside its other per-session inputs. */
         readonly publicationCrypto: Pick<SessionPublicationCrypto, 'read'>;
-        readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+        readonly publicationVerifier: RtcPublicationProofVerifierPort;
         readonly grantedTopics: RtcGrantedTopicReader;
         readonly topicSubscriptions: RtcTopicSubscriptionReader;
         readonly clearCurrentRoom: () => void;

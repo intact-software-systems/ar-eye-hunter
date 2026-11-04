@@ -38,7 +38,7 @@ const options = {
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
     publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
-    publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+    publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
     grantedTopics: NO_RTC_GRANTED_TOPICS,
     topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
     scope: { applicationId: 'ice-cache', workspaceId: 'test' }

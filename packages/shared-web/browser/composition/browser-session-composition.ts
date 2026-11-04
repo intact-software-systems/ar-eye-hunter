@@ -58,7 +58,7 @@ export interface CreateBrowserSessionCoreCompositionInput {
     readonly state: BrowserStateComposition;
     readonly grantedTopics: RtcGrantedTopicReader;
     readonly topicSubscriptions: RtcTopicSubscriptionReader;
-    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
 }
 
 export interface CreateBrowserStartupCompositionInput {

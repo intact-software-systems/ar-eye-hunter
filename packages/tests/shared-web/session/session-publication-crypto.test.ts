@@ -81,7 +81,7 @@ async function createSessionController(store: InMemoryPublicationKeyStore): Prom
         onResyncRequired: () => {},
         subtle: globalThis.crypto.subtle,
         publicationKeyStore: store,
-        publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
         grantedTopics: NO_RTC_GRANTED_TOPICS,
         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
         connectionRuntime: foundation.connectionRuntime,

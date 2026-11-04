@@ -116,7 +116,7 @@ export interface MiddlewareInitOptions {
     /** The key pair of the session this connect connects, read for it by the session controller; awaited once. */
     readonly publicationCrypto: Promise<PublicationCrypto>;
     /** Built once per page over its WebCrypto; each connect's RTC overlay verifies granted frames with it. */
-    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
     /** The page's granted topics, whose RTC publications the overlay signs with the page's key. */
     readonly grantedTopics: RtcGrantedTopicReader;
     /** The tab's held subscription tokens, which a granted RTC frame's local delivery reads. */
@@ -192,7 +192,7 @@ export interface InitialiseBrowserTransportInput {
     readonly options: BrowserConnectOptions;
 }
 
-/** The connect's publication capabilities: its session's key and the page's verifier, each awaited once. */
+/** The connect's publication capabilities: its session's key, awaited once, and the page's verifier. */
 export type BrowserTransportPublication = Pick<
     InitialiseBrowserTransportInput,
     'publicationCrypto' | 'publicationVerifier'
@@ -291,7 +291,7 @@ export async function initialiseMiddleware(
         );
         const transportInput = createBrowserTransportInput(session, options, {
             publicationCrypto: await options.publicationCrypto,
-            publicationVerifier: await options.publicationVerifier
+            publicationVerifier: options.publicationVerifier
         });
         webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
         rtcTransport = await initialiseBrowserRtcTransport({

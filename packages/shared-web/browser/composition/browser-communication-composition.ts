@@ -141,14 +141,12 @@ export function createDefaultBrowserTopicSubscriptions(): BrowserTopicSubscripti
 export function createDefaultRtcPublicationProofVerifier(
     foundation: Pick<BrowserRuntimeFoundation, 'subtle'>,
     state: BrowserStateComposition
-): Promise<RtcPublicationProofVerifier> {
-    return Promise.resolve(
-        new RtcPublicationProofVerifier({
-            crypto: toPublicationVerificationCrypto(foundation.subtle),
-            findGroupSnapshot: (groupRef) => state.roomStateStore.findGroupSnapshot(groupRef),
-            nowEpochMs: Date.now
-        })
-    );
+): RtcPublicationProofVerifier {
+    return new RtcPublicationProofVerifier({
+        crypto: toPublicationVerificationCrypto(foundation.subtle),
+        findGroupSnapshot: (groupRef) => state.roomStateStore.findGroupSnapshot(groupRef),
+        nowEpochMs: Date.now
+    });
 }
 
 export function createBrowserMessagingComposition(

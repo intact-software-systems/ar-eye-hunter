@@ -175,7 +175,7 @@ describe('implicit product acquisition of the owned connection', () => {
         await session.acquireConnection();
 
         const options = mocks.initialiseMiddleware.mock.calls[0]?.[2];
-        expect(await options?.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
+        expect(options?.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
         expect(options?.topicSubscriptions).toBe(NO_RTC_TOPIC_SUBSCRIPTIONS);
     });
 
@@ -207,7 +207,7 @@ async function createOwnedSession(): Promise<RallarSessionController> {
         onResyncRequired: () => {},
         subtle: undefined,
         publicationKeyStore: new InMemoryPublicationKeyStore(),
-        publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
         grantedTopics: NO_RTC_GRANTED_TOPICS,
         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
         connectionRuntime: foundation.connectionRuntime,
