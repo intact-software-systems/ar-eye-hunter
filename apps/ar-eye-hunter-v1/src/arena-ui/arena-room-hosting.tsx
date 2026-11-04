@@ -1,59 +1,39 @@
 import { RoomModerationPanel } from '@shared-react/room-moderation-panel.tsx';
-import { useEffect, useRef, useState, type RefObject } from 'react';
-import { ArenaRoomSharing, isCurrentArenaHost } from './arena-room-sharing.tsx';
-
+import {
+    useRoomHostingState,
+    type RoomHostingPending,
+    type RoomHostingState
+} from '@shared-react/use-room-hosting-state.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
-import { isSameGroupRef, toScopedRoomKey } from '@shared/api/api-type-utils.ts';
+import { toScopedRoomKey } from '@shared/api/api-type-utils.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type {
     GroupJoinMode,
-    GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
-import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
+import { ArenaRoomSharing, isCurrentArenaHost } from './arena-room-sharing.tsx';
 
 interface ArenaRoomHostingProps {
     readonly arena: Pick<ArenaConnection, 'session' | 'rooms' | 'roomId' | 'createArenaRoom'>;
 }
 
-interface ArenaRoomCode {
-    readonly sessionId: string;
-    readonly response: GroupJoinCodeResponse;
-}
-
-type ArenaPendingHosting =
-    | { readonly kind: 'creating'; readonly sessionId: string; }
-    | { readonly kind: 'rotating'; readonly sessionId: string; readonly room: GroupRef; };
-
-interface ArenaHostingOperation {
+interface ArenaHostingOperation
+    extends Pick<RoomHostingState, 'pendingOperation' | 'setPending' | 'setError' | 'setCode'> {
     readonly arena: ArenaRoomHostingProps['arena'];
     readonly snapshot: GroupSnapshot | undefined;
-    readonly pendingOperation: RefObject<ArenaPendingHosting | undefined>;
-    readonly setPending: (pending: ArenaPendingHosting | undefined) => void;
-    readonly setError: (error: string | undefined) => void;
-    readonly setCode: (code: ArenaRoomCode | undefined) => void;
 }
 
 export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
-    const [pending, setPending] = useState<ArenaPendingHosting | undefined>();
-    const pendingOperation = useRef<ArenaPendingHosting | undefined>(undefined);
-    const [error, setError] = useState<string | undefined>();
-    const [code, setCode] = useState<ArenaRoomCode | undefined>();
     const snapshot = arena.rooms.find((room) => room.roomId === arena.roomId)?.snapshot;
     const roomKey = snapshot ? toScopedRoomKey(snapshot.group) : null;
-    useEffect(() => {
-        setCode((current) =>
-            current && current.sessionId === arena.session?.sessionId && snapshot &&
-                isSameGroupRef(current.response.snapshot.group, snapshot.group)
-                ? current
-                : undefined
-        );
-        setError(undefined);
-    }, [roomKey, arena.session?.sessionId]);
-    const busy = pending !== undefined && pending.sessionId === arena.session?.sessionId &&
-        (pending.kind === 'creating' || (snapshot !== undefined && isSameGroupRef(pending.room, snapshot.group)));
+    const { busy, code, error, pendingOperation, setPending, setError, setCode } = useRoomHostingState({
+        session: arena.session,
+        roomId: arena.roomId,
+        snapshot
+    });
     const actions = { arena, snapshot, pendingOperation, setPending, setError, setCode };
     const create = (joinMode: GroupJoinMode, directoryListing?: GroupDirectoryListing) =>
         createArena(actions, joinMode, directoryListing);
@@ -86,7 +66,7 @@ export function ArenaRoomHosting({ arena }: ArenaRoomHostingProps) {
                 <ArenaRoomSharing
                     key={`${arena.session?.sessionId}:${roomKey}`}
                     snapshot={snapshot}
-                    code={code?.sessionId === arena.session?.sessionId ? code?.response : undefined}
+                    code={code}
                     busy={busy}
                     rotate={rotate}
                 />
@@ -106,7 +86,7 @@ async function createArena(
         return;
     }
     let room = rallar.rooms.state().currentRoomRef;
-    const pending = { kind: 'creating', sessionId: session.sessionId } as const;
+    let pending: RoomHostingPending = { kind: 'creating', sessionKey: toAuthSessionKey(session) };
     pendingOperation.current = pending;
     setPending(pending);
     setError(undefined);
@@ -118,9 +98,15 @@ async function createArena(
             pendingOperation.current === pending && snapshot && isCurrentArenaHost(session, snapshot.group) &&
             joinMode === 'code'
         ) {
+            pending = { kind: 'rotating', sessionKey: toAuthSessionKey(session), room: snapshot.group };
+            pendingOperation.current = pending;
+            setPending(pending);
             const code = await rallar.rooms.rotateJoinCode(snapshot.group);
-            if (pendingOperation.current === pending && isCurrentArenaHost(session, snapshot.group)) {
-                setCode({ sessionId: session.sessionId, response: code });
+            if (
+                pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId &&
+                rallar.session()?.clientId === session.clientId
+            ) {
+                setCode({ sessionKey: toAuthSessionKey(session), response: code });
             }
         }
     }
@@ -152,15 +138,18 @@ async function rotateArenaCode(
     if (!session) {
         return;
     }
-    const pending = { kind: 'rotating', sessionId: session.sessionId, room: snapshot.group } as const;
+    const pending = { kind: 'rotating', sessionKey: toAuthSessionKey(session), room: snapshot.group } as const;
     pendingOperation.current = pending;
     setPending(pending);
     setError(undefined);
     setCode(undefined);
     try {
         const code = await rallar.rooms.rotateJoinCode(snapshot.group);
-        if (pendingOperation.current === pending && isCurrentArenaHost(session, snapshot.group)) {
-            setCode({ sessionId: session.sessionId, response: code });
+        if (
+            pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId &&
+            rallar.session()?.clientId === session.clientId
+        ) {
+            setCode({ sessionKey: toAuthSessionKey(session), response: code });
         }
     }
     catch {
