@@ -39,6 +39,11 @@ import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
 
+/** The work identity of an inbound effect: its parts, each URI-encoded, joined by `:`. */
+export function toALInboundEffectId(parts: readonly (number | string)[]): string {
+    return parts.map((part) => encodeURIComponent(String(part))).join(':');
+}
+
 export interface ALInboundDurableEffectWrite {
     readonly entry: ResourceEntry;
     readonly effectId: string;

@@ -11,7 +11,7 @@ import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
-import { toALInboundEffectId } from './to-al-inbound-effect-id.ts';
+import { toALInboundEffectId } from './al-inbound-work-entry.ts';
 import type { ALPendingAckTransition } from './transition-al-pending-ack.ts';
 
 /**
