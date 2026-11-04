@@ -18,35 +18,35 @@ import { writeViewWatch } from '@shared-server/rallar-system/view-watch/view-wat
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
-import { createViewWatchTestRuntime, ref, scope, viewWatchCommand, type ViewWatchTestRuntime } from './view-watch-test-runtime.ts';
+import { createViewWatchTestRuntime, ref, scope, sessionWatchResource, viewWatchCommand, type ViewWatchTestRuntime } from './view-watch-test-runtime.ts';
 
 it('registers a nonmember preview through AppInbox without adding discovery, seats or membership, and fences stale clear/replay', async () => {
     const storage = await createResourceInboxTestStorage('view_watch_registration');
     try {
         const test = await createViewWatchTestRuntime(storage);
         const first = viewWatchCommand(test, 'first', null);
-        expect(await test.run(first)).toEqual({ status: 'applied', requestId: 'first', registrationId: 'first', groupId: ref.groupId });
+        expect(await test.run(first)).toEqual({ status: 'applied', requestId: 'first', registrationId: 'first', resourceId: ref.groupId });
         expect(await test.party.groups.findMember({ ...ref, principalId: 'bob' })).toBeUndefined();
         expect(await test.party.groups.findSessionIntentEntry(ref, 'bob')).toBeUndefined();
         expect(await test.party.groups.findSessionReservationsEntry(ref)).toBeUndefined();
         expect(await test.run(viewWatchCommand(test, 'replacement', 'first'))).toMatchObject({ status: 'applied', registrationId: 'replacement' });
         const stale = viewWatchCommand(test, 'stale-clear', 'first');
-        expect(await test.run({ ...stale, request: { ...stale.request, groupId: null } })).toEqual({
+        expect(await test.run({ ...stale, request: { ...stale.request, resourceId: null } })).toEqual({
             status: 'conflict',
             requestId: 'stale-clear',
             registrationId: 'replacement',
-            groupId: ref.groupId
+            resourceId: ref.groupId
         });
         expect(await test.run(first)).toMatchObject({ status: 'applied', registrationId: 'first' });
-        expect((await test.repository.readSlot({ ...scope, sessionId: 'session-bob' }))?.value.registrationId).toBe('replacement');
+        expect((await test.repository.readSlot({ ...scope, sessionId: 'session-bob', family: 'session-preview' }))?.value.registrationId).toBe('replacement');
         expect(await test.run(viewWatchCommand(test, 'restart', null))).toMatchObject({ status: 'conflict', registrationId: 'replacement' });
         const clear = viewWatchCommand(test, 'clear', 'replacement');
-        expect(await test.run({ ...clear, request: { ...clear.request, groupId: null } })).toMatchObject({
+        expect(await test.run({ ...clear, request: { ...clear.request, resourceId: null } })).toMatchObject({
             status: 'applied',
             registrationId: null,
-            groupId: null
+            resourceId: null
         });
-        expect(await test.repository.listForResource(ref)).toEqual([]);
+        expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
     }
     finally {
         await storage.close();
@@ -61,11 +61,11 @@ it('couples registration and domain mutations through the group predecessor in b
         const registration = computeViewWatch(await test.service.read(viewWatchCommand(test, 'register', null)));
         expect((await test.party.groups.updateGroup({ ...previous.value, displayName: 'Changed' }, previous.entry.revision)).status).toBe('applied');
         await expect(storage.sql.begin((transaction) => writeViewWatch(transaction, registration))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
-        expect(await test.repository.listForResource(ref)).toEqual([]);
+        expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
         const beforeWatch = (await test.party.groups.findGroupEntry(ref))!;
         await test.run(viewWatchCommand(test, 'register', null));
         expect((await test.party.groups.updateGroup({ ...beforeWatch.value, displayName: 'Stale write' }, beforeWatch.entry.revision)).status).toBe('conflict');
-        expect((await test.repository.listForResource(ref)).map(({ value }) => value.principalId)).toEqual(['bob']);
+        expect((await test.repository.listForResource(sessionWatchResource)).map(({ value }) => value.principalId)).toEqual(['bob']);
     }
     finally {
         await storage.close();
@@ -81,7 +81,7 @@ it('returns a terminal AppInbox403 for a superseded WebSocket generation', async
             status: 403,
             code: 'view-watch-authority-denied'
         });
-        expect(await test.repository.listForResource(ref)).toEqual([]);
+        expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
     }
     finally {
         await storage.close();
@@ -125,8 +125,8 @@ it('removes the current watch in the disconnect transaction and retries a concur
         await test.run(viewWatchCommand(test, 'replacement', 'first'));
         await expect(commitClientChange(storage, stale)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         await commitClientChange(storage, await prepareClientChange(test, storage, disconnect()));
-        expect(await test.repository.listForResource(ref)).toEqual([]);
-        expect(await test.repository.readSlot({ ...scope, sessionId: 'session-bob' })).toBeNull();
+        expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
+        expect(await test.repository.readSlot({ ...scope, sessionId: 'session-bob', family: 'session-preview' })).toBeNull();
     }
     finally {
         await storage.close();
@@ -148,12 +148,12 @@ it('leaves a new generation watch intact when an old close arrives and removes i
         await test.run({ ...next, request: { ...next.request, connectionGenerationId: 'new-generation' } });
         const old = await prepareClientChange(test, storage, disconnect());
         expect(old.mutation.outcome).toBe('no-op');
-        expect((await test.repository.listForResource(ref))[0].value.registrationId).toBe('new-watch');
+        expect((await test.repository.listForResource(sessionWatchResource))[0].value.registrationId).toBe('new-watch');
         const current = (await test.party.clients.findSessionEntry(previous.value))!;
         test.party.clock.now = current.value.expiresAtEpochMs + 1;
         const expiry = toExpireClientSessionMutationInput(toClientSessionExpiryCandidate(current.value));
         await commitClientChange(storage, await prepareClientChange(test, storage, expiry));
-        expect(await test.repository.listForResource(ref)).toEqual([]);
+        expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
     }
     finally {
         await storage.close();
@@ -170,7 +170,7 @@ it('rolls back watch removal and disconnected presence when the final state-sync
             'begin return null; end'`;
         await storage.sql`create trigger reject_watch_close_notice before insert on resource_inbox for each row execute function reject_watch_close_notice()`;
         await expect(commitClientChange(storage, attempt)).rejects.toThrow();
-        expect((await test.repository.listForResource(ref))[0].value.registrationId).toBe('first');
+        expect((await test.repository.listForResource(sessionWatchResource))[0].value.registrationId).toBe('first');
         expect(
             (await test.party.clients.findSessionEntry({ ...scope, principalId: 'bob', clientInstanceId: 'browser-bob', sessionId: 'session-bob' }))?.value
                 .status
@@ -249,7 +249,7 @@ it('fences an absent-slot clear against registration using one auth-and-slot obs
             return snapshot;
         });
         const clear = viewWatchCommand(test, 'absent-clear', null);
-        const request = { ...clear, request: { ...clear.request, groupId: null } };
+        const request = { ...clear, request: { ...clear.request, resourceId: null } };
         const pending = test.service.read(request);
         await captured.promise;
         await test.run(viewWatchCommand(test, 'registration', null));
@@ -269,7 +269,7 @@ it('rejects stable slot/resource corruption rather than treating it as a replace
     try {
         const test = await createViewWatchTestRuntime(storage);
         await test.run(viewWatchCommand(test, 'first', null));
-        const registration = (await test.repository.listForResource(ref))[0];
+        const registration = (await test.repository.listForResource(sessionWatchResource))[0];
         await test.party.runtime.upsert({
             namespace: 'view-watch:resources',
             key: registration.entry.key,
@@ -278,6 +278,22 @@ it('rejects stable slot/resource corruption rather than treating it as a replace
         });
         const read = await test.service.read(viewWatchCommand(test, 'next', 'first'));
         expect(() => computeViewWatch(read)).toThrow(TypeError);
+    }
+    finally {
+        await storage.close();
+    }
+});
+
+it('cleans every closed watch family for the exact disconnected session generation', async () => {
+    const storage = await createResourceInboxTestStorage('view_watch_family_cleanup');
+    try {
+        const test = await createViewWatchTestRuntime(storage);
+        await test.run(viewWatchCommand(test, 'session-watch', null));
+        const base = viewWatchCommand(test, 'tournament-watch', null);
+        await test.run({ ...base, family: 'tournament', request: { ...base.request, resourceId: 'cup' } });
+        await commitClientChange(storage, await prepareClientChange(test, storage, disconnect()));
+        expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
+        expect(await test.repository.listForResource({ ...scope, family: 'tournament', resourceId: 'cup' })).toEqual([]);
     }
     finally {
         await storage.close();

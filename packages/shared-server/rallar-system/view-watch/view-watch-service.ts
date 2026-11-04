@@ -1,5 +1,5 @@
-import type { SessionPreviewWatchResult } from '@shared/api/views/view-watch.ts';
-import { decodeSessionPreviewWatchResult } from '@shared/api/views/view-watch.ts';
+import type { ViewWatchFamily, ViewWatchResult } from '@shared/api/views/view-watch.ts';
+import { decodeViewWatchResult } from '@shared/api/views/view-watch.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app-inbox.ts';
@@ -23,14 +23,14 @@ export namespace ViewWatchService {
         readonly appInbox: RallarServerAppInbox;
         readonly repository: ViewWatchRepository;
         readonly clients: Pick<ClientStateRepository, 'listSessionsForPrincipal' | 'findSessionEntry'>;
-        readonly authorizer: ViewWatchAuthorizer;
+        readonly authorizers: Readonly<Record<ViewWatchFamily, ViewWatchAuthorizer>>;
         readonly nowEpochMs: () => number;
     }
 }
 
 /** Owns one replaceable selected-view slot; its domain authorizer never decides transport delivery. */
 export class ViewWatchService {
-    readonly mutate: RallarServerAppInbox.Operation<ViewWatchCommand, SessionPreviewWatchResult>;
+    readonly mutate: RallarServerAppInbox.Operation<ViewWatchCommand, ViewWatchResult>;
 
     private readonly dependencies: ViewWatchService.Dependencies;
 
@@ -44,26 +44,30 @@ export class ViewWatchService {
                 contextId: computeSha256CanonicalJson({
                     scope: command.scope,
                     sessionId: command.sessionId,
-                    family: 'session-preview'
+                    family: command.family
                 }),
                 resourceId: command.requestId
             }),
             toLogicalCommand: (command) => decodeJsonWireValue(command, 'Logical view watch command'),
             materialize: (command) => command,
             encodeResult: (result) => ({ ...result }),
-            decodeResult: decodeSessionPreviewWatchResult,
+            decodeResult: decodeViewWatchResult,
             handle: (command, context) => this.changeWatch(command, context)
         });
     }
 
     async read(command: ViewWatchCommand): Promise<ViewWatchRead> {
-        const { clients, repository, authorizer } = this.dependencies;
+        const { clients, repository, authorizers } = this.dependencies;
         const [{ auth, previous }, sessions, authorization] = await Promise.all([
-            repository.readSession({ ...command.scope, sessionId: command.sessionId }),
+            repository.readSession({ ...command.scope, sessionId: command.sessionId, family: command.family }),
             clients.listSessionsForPrincipal({ ...command.scope, principalId: command.principalId }),
-            command.request.groupId === null
+            command.request.resourceId === null
                 ? Promise.resolve(null)
-                : authorizer.read({ ...command.scope, groupId: command.request.groupId })
+                : authorizers[command.family].read({
+                    ...command.scope,
+                    family: command.family,
+                    resourceId: command.request.resourceId
+                }, { expiresAtEpochMs: command.sessionExpiresAtEpochMs, changeId: computeSha256CanonicalJson(command) })
         ]);
         const matching = sessions.filter((session) =>
             session.sessionId === command.sessionId && session.generationId === command.request.connectionGenerationId
@@ -88,8 +92,8 @@ export class ViewWatchService {
 
     private async changeWatch(
         command: ViewWatchCommand,
-        context: AppInboxMessageContext<SessionPreviewWatchResult>
-    ): Promise<SessionPreviewWatchResult> {
+        context: AppInboxMessageContext<ViewWatchResult>
+    ): Promise<ViewWatchResult> {
         const read = await this.read(command);
         const computed = computeViewWatch(read);
         if (!jsonEquals(computed, computeViewWatch(read))) {

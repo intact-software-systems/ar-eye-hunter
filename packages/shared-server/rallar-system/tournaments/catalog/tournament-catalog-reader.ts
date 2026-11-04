@@ -127,7 +127,7 @@ function isVisibleTournament(
         : listed && (tournament.status === 'registration' || tournament.status === 'active');
 }
 
-function toTournamentCatalogEntry(tournament: Tournament): TournamentCatalogEntry {
+export function toTournamentCatalogEntry(tournament: Tournament): TournamentCatalogEntry {
     const scheduled = tournament.matches.filter((match) => match.status === 'scheduled').map((match) =>
         match.attempt!.scheduledAtEpochMs
     );

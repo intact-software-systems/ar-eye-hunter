@@ -1,6 +1,6 @@
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ViewWatchAuthorization, ViewWatchAuthorizer } from '../../view-watch/compute-view-watch.ts';
+import type { ViewWatchResource } from '../../view-watch/view-watch-repository.ts';
 import { groupStateUpdateGroupDescriptor } from '../persistence/aggregate/group-aggregate-write-descriptors.ts';
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
 
@@ -12,11 +12,26 @@ export class GroupSessionViewWatch implements ViewWatchAuthorizer {
         this.groups = groups;
     }
 
-    async read(ref: GroupRef): Promise<ViewWatchAuthorization | null> {
+    async read(resource: ViewWatchResource): Promise<ViewWatchAuthorization | null> {
+        if (resource.family !== 'session-preview') {
+            throw new TypeError('Session preview authorizer received another family');
+        }
+        const ref = {
+            applicationId: resource.applicationId,
+            workspaceId: resource.workspaceId,
+            groupId: resource.resourceId
+        };
         const group = await this.groups.findGroupEntry(ref);
         return group === undefined || group.value.status !== 'active' ||
                 readGroupSessionSchedule(group.value.metadata) === null
             ? null
-            : { ref, guard: groupStateUpdateGroupDescriptor(group.value, group.entry.revision) };
+            : {
+                resource,
+                guard: {
+                    ...groupStateUpdateGroupDescriptor(group.value, group.entry.revision),
+                    operation: 'update-exact',
+                    expectedValue: group.entry.value
+                }
+            };
     }
 }

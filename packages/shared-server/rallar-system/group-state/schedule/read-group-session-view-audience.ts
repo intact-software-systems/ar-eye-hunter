@@ -24,7 +24,7 @@ export async function readGroupSessionViewAudience(
             keyPrefix: groupStateScopeStorageKey(ref) + ':principal=',
             keySuffix: ':group=' + encodeURIComponent(ref.groupId)
         }]),
-        readViewWatchRecipients(repository, ref, nowEpochMs)
+        readViewWatchRecipients(repository, { ...ref, family: 'session-preview', resourceId: ref.groupId }, nowEpochMs)
     ]);
     if (selections.length !== 1 || selections[0].selectorId !== 'session-intents') {
         throw new TypeError('Session view audience returned another intent selection');

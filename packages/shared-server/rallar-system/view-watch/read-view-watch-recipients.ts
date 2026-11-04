@@ -1,4 +1,3 @@
-import type { GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../auth/persistence/auth-storage-keys.ts';
@@ -12,19 +11,20 @@ import {
     VIEW_WATCH_SLOTS_NAMESPACE,
     ViewWatchRepository,
     viewWatchSlotKey,
-    type ViewWatchRegistration
+    type ViewWatchRegistration,
+    type ViewWatchResource
 } from './view-watch-repository.ts';
 
 interface ViewWatchRecipientRead {
-    readonly repository: RuntimeStateRepositoryLike;
+    readonly repository: Pick<RuntimeStateRepositoryLike, 'findEntry' | 'readRuntimeStateBatch'>;
     readonly registration: ViewWatchRegistration;
     readonly nowEpochMs: number;
 }
 
 /** Reads only the resource's registrations and their exact session/slot keys; no client or scope scan. */
 export async function readViewWatchRecipients(
-    repository: RuntimeStateRepositoryLike,
-    ref: GroupRef,
+    repository: Pick<RuntimeStateRepositoryLike, 'findEntry' | 'readRuntimeStateBatch'>,
+    ref: ViewWatchResource,
     nowEpochMs: number
 ): Promise<readonly string[]> {
     const registrations = await new ViewWatchRepository(repository).listForResource(ref);

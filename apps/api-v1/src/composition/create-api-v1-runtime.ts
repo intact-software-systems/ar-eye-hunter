@@ -48,6 +48,7 @@ import {
     RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { TournamentViewWatch } from '@shared-server/rallar-system/tournaments/tournament-view-watch.ts';
 import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
 import { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
@@ -676,7 +677,10 @@ function installSessionViews({ appInbox, runtime, mutation, input }: InstallSess
         appInbox,
         repository: new ViewWatchRepository(mutation.runtimeStateRepository),
         clients: mutation.clientsRepository,
-        authorizer: new GroupSessionViewWatch(mutation.groupsRepository),
+        authorizers: {
+            'session-preview': new GroupSessionViewWatch(mutation.groupsRepository),
+            tournament: new TournamentViewWatch(mutation.runtimeStateRepository)
+        },
         nowEpochMs: input.nowEpochMs
     });
 }

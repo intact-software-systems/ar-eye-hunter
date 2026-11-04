@@ -1,6 +1,10 @@
+import { VIEW_WATCH_FAMILIES } from '@shared/api/views/view-watch.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
-import type { RuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type {
+    RuntimeStateGuardedBatchEffect,
+    RuntimeStateGuardedBatchWrite
+} from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import type { ClientMutationCommand } from '../client-state/mutation/client-mutation-contracts.ts';
 import {
@@ -11,12 +15,16 @@ import {
     type ViewWatchRegistration
 } from './view-watch-repository.ts';
 
-export interface ViewWatchSessionCleanupRead {
+interface ViewWatchCleanupRegistration {
     readonly slot: RuntimeStateEntryValue<ViewWatchRegistration>;
     readonly resource: RuntimeStateEntryValue<ViewWatchRegistration>;
 }
 
-/** Registration CASes the same client row, so a close/expiry and replacement cannot both use the old session. */
+export interface ViewWatchSessionCleanupRead {
+    readonly registrations: readonly ViewWatchCleanupRegistration[];
+}
+
+/** Each family shares the closing client predecessor, so a new generation cannot be cleared by an old close. */
 export async function readViewWatchSessionCleanup(
     repository: ViewWatchRepository,
     command: ClientMutationCommand
@@ -27,15 +35,19 @@ export async function readViewWatchSessionCleanup(
     ) {
         return null;
     }
-    const slot = await repository.readSlot({ ...command.aggregateRef, sessionId: command.sessionId });
-    if (slot === null || slot.value.connectionGenerationId !== command.input.generationId) {
-        return null;
+    const registrations: ViewWatchCleanupRegistration[] = [];
+    for (const family of VIEW_WATCH_FAMILIES) {
+        const slot = await repository.readSlot({ ...command.aggregateRef, sessionId: command.sessionId, family });
+        if (slot === null || slot.value.connectionGenerationId !== command.input.generationId) {
+            continue;
+        }
+        const resource = await repository.readResource(slot.value);
+        if (resource === null) {
+            throw new TypeError('Session cleanup watch has no resource lookup');
+        }
+        registrations.push({ slot, resource });
     }
-    const resource = await repository.readResource(slot.value);
-    if (resource === null) {
-        throw new TypeError('Session cleanup watch has no resource lookup');
-    }
-    const read = { slot, resource };
+    const read = registrations.length === 0 ? null : { registrations };
     assertViewWatchSessionCleanup(command, read);
     return read;
 }
@@ -47,6 +59,18 @@ export function assertViewWatchSessionCleanup(
     if (read === null) {
         return;
     }
+    if (
+        read.registrations.length === 0 || read.registrations.length > VIEW_WATCH_FAMILIES.length ||
+        new Set(read.registrations.map(({ slot }) => slot.value.family)).size !== read.registrations.length
+    ) {
+        throw new TypeError('Watch cleanup must name each captured family exactly once');
+    }
+    for (const registration of read.registrations) {
+        assertCleanupRegistration(command, registration);
+    }
+}
+
+function assertCleanupRegistration(command: ClientMutationCommand, read: ViewWatchCleanupRegistration): void {
     const slot = decodeViewWatchEntry(read.slot.entry, 'slot');
     const resource = decodeViewWatchEntry(read.resource.entry, 'resource');
     if (
@@ -67,19 +91,36 @@ export function assertViewWatchSessionCleanup(
 export function computeViewWatchSessionCleanup(
     read: ViewWatchSessionCleanupRead | null
 ): RuntimeStateGuardedBatchWrite | null {
-    return read === null ? null : computeRuntimeStateGuardedBatchWrite({
-        guard: {
+    if (read === null) {
+        return null;
+    }
+    const effects: RuntimeStateGuardedBatchEffect[] = read.registrations.flatMap(({ slot, resource }) => [
+        {
+            effectId: `watch-slot:${slot.value.family}`,
             operation: 'delete',
             namespace: VIEW_WATCH_SLOTS_NAMESPACE,
-            key: read.slot.entry.key,
-            expectedRevision: read.slot.entry.revision
+            key: slot.entry.key,
+            expectedRevision: slot.entry.revision
         },
-        effects: [{
-            effectId: 'watch-resource',
+        {
+            effectId: `watch-resource:${slot.value.family}`,
             operation: 'delete',
             namespace: VIEW_WATCH_RESOURCES_NAMESPACE,
-            key: read.resource.entry.key,
-            expectedRevision: read.resource.entry.revision
-        }]
+            key: resource.entry.key,
+            expectedRevision: resource.entry.revision
+        }
+    ]);
+    const [first, ...rest] = effects;
+    if (first.operation !== 'delete') {
+        throw new TypeError('Watch cleanup requires conditional deletes');
+    }
+    return computeRuntimeStateGuardedBatchWrite({
+        guard: {
+            operation: 'delete',
+            namespace: first.namespace,
+            key: first.key,
+            expectedRevision: first.expectedRevision
+        },
+        effects: rest
     });
 }

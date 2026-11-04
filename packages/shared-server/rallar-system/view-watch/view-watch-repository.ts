@@ -4,8 +4,8 @@ import {
     requireRecord,
     requireString
 } from '@shared/api/exact-object-decoding.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeStateScope, type StateScope } from '@shared/api/state-types.ts';
+import { decodeViewWatchFamily, type ViewWatchFamily } from '@shared/api/views/view-watch.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateReadBatchKeySelector } from '../../runtime-state/read-batch/runtime-state-read-batch.ts';
@@ -15,23 +15,27 @@ import { decodeAuthSessionBySessionIdEntry } from '../auth/persistence/auth-sess
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../auth/persistence/auth-storage-keys.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import {
-    groupStateGroupStorageKey,
     groupStateScopeStorageKey
 } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 
 export interface ViewWatchIdentity extends StateScope {
     readonly sessionId: string;
+    readonly family: ViewWatchFamily;
 }
 
 /** The selected preview is interest on an issued session; no group membership or discovery intent is implied. */
+export interface ViewWatchResource extends StateScope {
+    readonly family: ViewWatchFamily;
+    readonly resourceId: string;
+}
+
 export interface ViewWatchRegistration extends ViewWatchIdentity {
-    readonly family: 'session-preview';
     readonly principalId: string;
     readonly clientInstanceId: string;
     readonly connectionGenerationId: string;
     readonly registrationId: string;
-    readonly groupId: string;
+    readonly resourceId: string;
     readonly sessionIssuedAtEpochMs: number;
     readonly expiresAtEpochMs: number;
 }
@@ -41,13 +45,15 @@ export const VIEW_WATCH_RESOURCES_NAMESPACE = 'view-watch:resources';
 
 export function viewWatchSlotKey(identity: ViewWatchIdentity): string {
     requireString(identity.sessionId, 'Watch session');
-    return `session=${encodeURIComponent(identity.sessionId)}:${
-        groupStateScopeStorageKey(identity)
-    }:family=session-preview`;
+    return `session=${encodeURIComponent(identity.sessionId)}:${groupStateScopeStorageKey(identity)}:family=${
+        decodeViewWatchFamily(identity.family)
+    }`;
 }
 
-export function viewWatchResourcePrefix(ref: GroupRef): string {
-    return `${groupStateGroupStorageKey(ref)}:family=session-preview:session=`;
+export function viewWatchResourcePrefix(ref: ViewWatchResource): string {
+    return `${groupStateScopeStorageKey(ref)}:family=${decodeViewWatchFamily(ref.family)}:resource=${
+        encodeURIComponent(ref.resourceId)
+    }:session=`;
 }
 
 export function viewWatchResourceKey(registration: ViewWatchRegistration): string {
@@ -119,7 +125,7 @@ export class ViewWatchRepository {
         return resource === undefined ? null : decodeViewWatchEntry(resource, 'resource');
     }
 
-    async listForResource(ref: GroupRef): Promise<readonly RuntimeStateEntryValue<ViewWatchRegistration>[]> {
+    async listForResource(ref: ViewWatchResource): Promise<readonly RuntimeStateEntryValue<ViewWatchRegistration>[]> {
         return await this.readPrefix(VIEW_WATCH_RESOURCES_NAMESPACE, viewWatchResourcePrefix(ref), 'resource');
     }
 
@@ -177,7 +183,7 @@ export function decodeViewWatchEntry(
         'clientInstanceId',
         'connectionGenerationId',
         'registrationId',
-        'groupId',
+        'resourceId',
         'sessionIssuedAtEpochMs',
         'expiresAtEpochMs'
     ], 'Stored view watch');
@@ -189,25 +195,25 @@ export function decodeViewWatchEntry(
             'clientInstanceId',
             'connectionGenerationId',
             'registrationId',
-            'groupId'
+            'resourceId'
         ]
     ) {
         requireString(record[key], `Watch ${key}`);
     }
     requireEpoch(record.sessionIssuedAtEpochMs, 'Watch session issued time');
     requireEpoch(record.expiresAtEpochMs, 'Watch expiry');
-    if (record.family !== 'session-preview' || record.expiresAtEpochMs <= record.sessionIssuedAtEpochMs) {
+    if (record.expiresAtEpochMs <= record.sessionIssuedAtEpochMs) {
         throw new TypeError('Stored view watch family or lifetime is invalid');
     }
     const value: ViewWatchRegistration = {
         ...scope,
-        family: record.family,
+        family: decodeViewWatchFamily(record.family),
         sessionId: record.sessionId as string,
         principalId: record.principalId as string,
         clientInstanceId: record.clientInstanceId as string,
         connectionGenerationId: record.connectionGenerationId as string,
         registrationId: record.registrationId as string,
-        groupId: record.groupId as string,
+        resourceId: record.resourceId as string,
         sessionIssuedAtEpochMs: record.sessionIssuedAtEpochMs,
         expiresAtEpochMs: record.expiresAtEpochMs
     };

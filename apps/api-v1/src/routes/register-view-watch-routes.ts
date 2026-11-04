@@ -3,11 +3,11 @@ import type { ViewWatchCommand } from '@shared-server/rallar-system/view-watch/v
 import type { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
-import { decodeSessionPreviewWatchRequest } from '@shared/api/views/view-watch.ts';
+import { decodeViewWatchFamily, decodeViewWatchRequest } from '@shared/api/views/view-watch.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
-import { toApiMutationFailureResponse, toApiMutationRouteFailure } from '../routes/api-mutation-route-failure.ts';
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
+import { toApiMutationFailureResponse, toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
 
 export interface ViewWatchRouteDependencies {
     readonly mutation: Pick<ViewWatchService['mutate'], 'submit'>;
@@ -17,12 +17,12 @@ export interface ViewWatchRouteDependencies {
 /** Uses the existing /api/state request quota; registration grants interest, never membership or My sessions intent. */
 export function registerViewWatchRoutes(app: Hono, dependencies: ViewWatchRouteDependencies): void {
     app.post(
-        '/api/state/apps/:applicationId/workspaces/:workspaceId/view-watches/session-preview/requests/:requestId',
-        (context) => changeSessionPreviewWatch(context, dependencies)
+        '/api/state/apps/:applicationId/workspaces/:workspaceId/view-watches/:family/requests/:requestId',
+        (context) => changeViewWatch(context, dependencies)
     );
 }
 
-async function changeSessionPreviewWatch(
+async function changeViewWatch(
     context: Context,
     dependencies: ViewWatchRouteDependencies
 ): Promise<Response> {
@@ -48,11 +48,12 @@ async function readViewWatchCommand(context: Context, session: IssuedAuthSession
             applicationId: assertValidRallarRouteId(context.req.param('applicationId')),
             workspaceId: assertValidRallarRouteId(context.req.param('workspaceId'))
         },
+        family: decodeViewWatchFamily(context.req.param('family')),
         principalId: session.clientId,
         sessionId: session.sessionId,
         sessionIssuedAtEpochMs: session.issuedAtEpochMs,
         sessionExpiresAtEpochMs: session.expiresAtEpochMs,
         requestId: assertApiMutationRequestId(context.req.param('requestId')),
-        request: decodeSessionPreviewWatchRequest(await context.req.json())
+        request: decodeViewWatchRequest(await context.req.json())
     };
 }

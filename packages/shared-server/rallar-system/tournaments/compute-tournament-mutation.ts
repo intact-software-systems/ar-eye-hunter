@@ -15,6 +15,7 @@ import {
     computeNewGroupCohortAdmission
 } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { GroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
+import { computeTournamentViewPublication } from './compute-tournament-view-publication.ts';
 import type { TournamentGameProfile } from './tournament-game-profile.ts';
 import { computeTournamentPublication } from './tournament-publication.ts';
 import type { TournamentRepository } from './tournament-repository.ts';
@@ -23,6 +24,10 @@ import type { TournamentService } from './tournament-service.ts';
 import { computeTournamentLifecycleSignals } from './tournament-signals.ts';
 
 export function computeTournamentMutation(read: TournamentService.Read): TournamentService.Computed {
+    return computeTournamentViewPublication(read, computeTournamentDecision(read));
+}
+
+function computeTournamentDecision(read: TournamentService.Read): TournamentService.Computed {
     const { command } = read;
     if (command.materialized === null) {
         throw new TypeError('Tournament execution lacks captured facts');

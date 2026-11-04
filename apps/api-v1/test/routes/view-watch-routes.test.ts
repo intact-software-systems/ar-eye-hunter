@@ -3,7 +3,7 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { ViewWatchCommand } from '@shared-server/rallar-system/view-watch/view-watch-command.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import assert from 'node:assert/strict';
-import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../../src/group-state/register-view-watch-routes.ts';
+import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../../src/routes/register-view-watch-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 const session: IssuedAuthSession = {
@@ -15,7 +15,7 @@ const session: IssuedAuthSession = {
     expiresAtEpochMs: 20000
 };
 const path = '/api/state/apps/game/workspaces/default/view-watches/session-preview/requests/watch-request-number-1';
-const request = { groupId: 'unlisted-room', connectionGenerationId: 'alice-generation', expectedRegistrationId: null };
+const request = { resourceId: 'unlisted-room', connectionGenerationId: 'alice-generation', expectedRegistrationId: null };
 
 function dependencies(commands: ViewWatchCommand[]): ViewWatchRouteDependencies {
     return {
@@ -24,7 +24,12 @@ function dependencies(commands: ViewWatchCommand[]): ViewWatchRouteDependencies 
             submit: ({ command }) => {
                 commands.push(command);
                 return Promise.resolve(
-                    Either.ofRight({ status: 'applied', requestId: command.requestId, registrationId: command.requestId, groupId: command.request.groupId })
+                    Either.ofRight({
+                        status: 'applied',
+                        requestId: command.requestId,
+                        registrationId: command.requestId,
+                        resourceId: command.request.resourceId
+                    })
                 );
             }
         }
@@ -42,10 +47,11 @@ Deno.test('watch route binds scope and issued authority, and returns the committ
         status: 'applied',
         requestId: 'watch-request-number-1',
         registrationId: 'watch-request-number-1',
-        groupId: 'unlisted-room'
+        resourceId: 'unlisted-room'
     });
     assert.deepEqual(commands, [{
         scope: { applicationId: 'game', workspaceId: 'default' },
+        family: 'session-preview',
         principalId: 'alice',
         sessionId: 'alice-session',
         sessionIssuedAtEpochMs: 1000,
@@ -62,7 +68,7 @@ Deno.test('watch route rejects missing auth, forged principal, malformed shape a
     assert.equal((await unauthenticated.request(path, { method: 'POST' })).status, 401);
     const app = createTracedApiTestApp();
     registerViewWatchRoutes(app, dependencies(commands));
-    for (const body of [{ ...request, principalId: 'bob' }, { groupId: 'unlisted-room' }]) {
+    for (const body of [{ ...request, principalId: 'bob' }, { resourceId: 'unlisted-room' }]) {
         const response = await app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
         assert.equal(response.status, 400);
     }
@@ -73,4 +79,15 @@ Deno.test('watch route rejects missing auth, forged principal, malformed shape a
     });
     assert.equal(response.status, 400);
     assert.deepEqual(commands, []);
+});
+
+Deno.test('watch route admits the closed tournament family and rejects an invented family before mutation', async () => {
+    const commands: ViewWatchCommand[] = [];
+    const app = createTracedApiTestApp();
+    registerViewWatchRoutes(app, dependencies(commands));
+    const options = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) };
+    assert.equal((await app.request(path.replace('session-preview', 'tournament'), options)).status, 200);
+    assert.equal(commands[0].family, 'tournament');
+    assert.equal((await app.request(path.replace('session-preview', 'private-future-family'), options)).status, 400);
+    assert.equal(commands.length, 1);
 });
