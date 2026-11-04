@@ -38,8 +38,12 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import { readOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
+import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { toOriginFrozenTargets } from './rtc-origin-overlay-fixture.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const overlayId = toScopedOverlayId(roomRef);
@@ -860,7 +864,12 @@ function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayM
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
         faultPort: createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: fixture.connection.input.sessionId
     });
     onTestFinished(() => manager.dispose());
     return manager;

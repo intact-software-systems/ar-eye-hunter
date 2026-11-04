@@ -86,6 +86,7 @@ function createPresenceSession(generationId: string, sessionId = 'reused-session
         sessionId,
         generationId,
         connectionGenerationId: generationId,
+        publicationKey: null,
         generationVersion,
         connectedAtEpochMs: generationVersion,
         lastHeartbeatAtEpochMs: 2,

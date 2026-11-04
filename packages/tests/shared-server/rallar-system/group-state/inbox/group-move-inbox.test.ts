@@ -45,6 +45,7 @@ describe('group moves through AppInbox', () => {
                         principalId: 'owner',
                         generationId: 'owner-generation',
                         connectionGenerationId: 'owner-connection',
+                        publicationKey: null,
                         connectedAtEpochMs: harness.nowEpochMs,
                         lastHeartbeatAtEpochMs: harness.nowEpochMs,
                         expiresAtEpochMs: harness.nowEpochMs + 60_000

@@ -796,6 +796,7 @@ function createGroupPresenceSession(): GroupPresenceSession {
         sessionId: 'session-alice',
         generationId: 'generation-alice',
         connectionGenerationId: 'ws-generation-alice',
+        publicationKey: null,
         generationVersion: 1,
         status: 'active',
         disconnectedAtEpochMs: null,

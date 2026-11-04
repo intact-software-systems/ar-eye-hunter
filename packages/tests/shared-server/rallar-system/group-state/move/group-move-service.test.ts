@@ -165,6 +165,7 @@ async function connectSourcePlayers(fixture: Awaited<ReturnType<typeof createGro
                     actorPrincipalId: principalId,
                     principalId,
                     generationId: `${principalId}-generation`,
+                    publicationKey: null,
                     connectionGenerationId: `${principalId}-connection`,
                     connectedAtEpochMs: fixture.nowEpochMs,
                     lastHeartbeatAtEpochMs: fixture.nowEpochMs,

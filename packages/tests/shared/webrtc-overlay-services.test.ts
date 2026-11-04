@@ -50,6 +50,10 @@ import {
     drainEngine,
     runOutboundWorkTask
 } from './alm/outbound-runtime-test-fixture.ts';
+import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcChannel extends QRtcDataChannel {
@@ -85,7 +89,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -154,7 +163,12 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connection.input.sessionId
         });
         onTestFinished(() => manager.dispose());
         const message = newALMulticastMessage(
@@ -261,7 +275,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -317,7 +336,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -366,7 +390,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -412,7 +441,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -461,7 +495,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -536,7 +575,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -614,7 +658,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -665,7 +714,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -717,7 +771,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: CircuitBreaker.create(createCircuitBreakerPolicy()),
                 rateLimiter: RateLimiter.init(1_000, 2),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -773,7 +832,12 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: circuitBreaker,
             rateLimiter: RateLimiter.init(1_000, 20),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connectionService.input.sessionId
         });
         onTestFinished(() => manager.dispose());
 
@@ -808,7 +872,12 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connectionService.input.sessionId
         });
         onTestFinished(() => manager.dispose());
         const message = createUnicastRtcMessage('sender-corrupt', 'persisted-corrupt');
@@ -851,7 +920,12 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connectionService.input.sessionId
         });
         onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
@@ -905,7 +979,12 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connectionService.input.sessionId
         });
         onTestFinished(() => manager.dispose());
         const msg = newALUnicastMessage(
@@ -964,7 +1043,12 @@ describe('WebRtc overlay services', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -1018,7 +1102,12 @@ describe('WebRtc overlay services', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connectionService.input.sessionId
         });
         onTestFinished(() => manager.dispose());
 
@@ -1276,7 +1365,12 @@ describe('RTC overlay owned outbound completion', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: createDefaultALOutboundDequeueResilience()
+            dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connection.input.sessionId
         });
         const diagnostics = vi.spyOn(console, 'error').mockImplementation(() => {});
         onTestFinished(async () => {

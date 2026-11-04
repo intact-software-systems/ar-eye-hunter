@@ -8,10 +8,13 @@ import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RtcPublicationRefusalCode } from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
 import {
     computeRtcRoomSnapshotAdmission,
+    toRtcPublicationHandlingPlan,
     toRtcRoomSnapshotHandlingPlan
 } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
@@ -359,3 +362,64 @@ function freezeRoomObservation(value: object): void {
         }
     }
 }
+
+describe('a granted publication\'s admission on its room plan', () => {
+    const plan = planALMessageHandling(message, {
+        nowMs,
+        selfPeerId: 'relay',
+        fromPeerId: 'origin',
+        connectedPeerIds: ['origin', 'receiver', 'downstream'],
+        groupMemberPeerIds: ['origin', 'relay', 'receiver', 'downstream'],
+        overlayNeighborPeerIds: ['downstream']
+    });
+
+    it.each<RtcPublicationRefusalCode>(['unknown-key', 'authority-ahead'])(
+        'drops %s as not yet in sync, the code after the head the room refresh reads, and NACKs its hop',
+        (code) => {
+            const refused = toRtcPublicationHandlingPlan(plan, Either.ofLeft({ code }), 'origin');
+
+            expect(refused).toMatchObject({
+                dropReason: `not-yet-in-sync: ${code}`,
+                dropReasonCode: 'not-yet-in-sync',
+                localDelivery: { enabled: false },
+                forwarding: { enabled: false, nextHopPeerIds: [] },
+                nack: { enabled: true, toPeerId: 'origin', reason: 'not-yet-in-sync' }
+            });
+        }
+    );
+
+    it.each<RtcPublicationRefusalCode>([
+        'no-authority',
+        'missing-proof',
+        'unbound-target',
+        'invalid-signature',
+        'no-publish-grant'
+    ])('drops %s as unauthorized with no NACK and no forward', (code) => {
+        const refused = toRtcPublicationHandlingPlan(plan, Either.ofLeft({ code }), 'origin');
+
+        expect(refused).toMatchObject({
+            dropReason: `unauthorized: ${code}`,
+            dropReasonCode: 'unauthorized',
+            localDelivery: { enabled: false },
+            forwarding: { enabled: false, nextHopPeerIds: [] },
+            ack: { enabled: false },
+            nack: { enabled: false }
+        });
+    });
+
+    it('keeps the expiry drop the ALM policy owns', () => {
+        const expired = { ...plan, dropReason: 'expired', dropReasonCode: 'expired' as const };
+
+        expect(toRtcPublicationHandlingPlan(expired, Either.ofLeft({ code: 'invalid-signature' }), 'origin'))
+            .toBe(expired);
+    });
+
+    it('forwards an admitted frame over the tree, delivering it only when admitted for delivery', () => {
+        const forwardOnly = toRtcPublicationHandlingPlan(plan, Either.ofRight({ delivery: 'forward-only' }), 'origin');
+        const delivered = toRtcPublicationHandlingPlan(plan, Either.ofRight({ delivery: 'deliver' }), 'origin');
+
+        expect(plan.localDelivery.enabled).toBe(true);
+        expect([forwardOnly.localDelivery.enabled, forwardOnly.forwarding.nextHopPeerIds]).toEqual([false, ['downstream']]);
+        expect(delivered).toBe(plan);
+    });
+});

@@ -9,6 +9,10 @@ import {
 } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
+import {
+    signALPublicationProof,
+    verifyALPublicationProof
+} from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -23,6 +27,7 @@ import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { createSigningKeyPair, importEcdsaP256PublicKey } from '@shared/signature/ecdsa-p256-signature.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
@@ -35,6 +40,10 @@ import {
     runOutboundWorkTask
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './alm/outbound-test-payload.ts';
+import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcConnection extends shared.WebRtcConnectionService {
@@ -88,7 +97,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             };
             const initial = new shared.WebRtcOverlayMulticastManager(dependencies);
             onTestFinished(() => initial.dispose());
@@ -165,7 +179,12 @@ describe('multicast QoS integration', () => {
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
             faultPort: createPassThroughTransportFaultPort(),
-            dequeueResilience: resilience
+            dequeueResilience: resilience,
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: connectionService.input.sessionId
         });
         onTestFinished(() => manager.dispose());
         const message = shared.newALMulticastMessage(
@@ -275,6 +294,42 @@ describe('multicast QoS integration', () => {
         ]);
     });
 
+    it('keeps a signed frame\'s publication proof valid on every forwarding copy', async () => {
+        const subtle = globalThis.crypto.subtle;
+        const keyPair = (await createSigningKeyPair(subtle)).fold((failure) => {
+            throw new Error(failure.message);
+        }, (pair) => pair);
+        const publicKey = (await importEcdsaP256PublicKey(subtle, keyPair.publicJwk)).fold((failure) => {
+            throw new Error(failure.message);
+        }, (key) => key);
+        const message = shared.newALMulticastMessage(
+            'sender-1',
+            { topicId: 'chat', resourceId: 'msg-1', contextId: 'group-1' },
+            groupRef('group-1'),
+            'chat.typing.v1',
+            {
+                text: 'typing'
+            },
+            { ttlHops: 2, qos: { durability: { algo: 'volatile' } } }
+        );
+        const signed = (await signALPublicationProof({ subtle, keyPair, message })).fold((failure) => {
+            throw new Error(failure.message);
+        }, (proven) => proven);
+        const service = new shared.WebRtcOverlayMulticastService('group-1', createConnectionService(['peer-1', 'peer-2', 'peer-3']));
+
+        const plan = service.createForwardingPlan(
+            signed,
+            createOverlayContext(['self', 'sender-1', 'peer-1', 'peer-2', 'peer-3'], ['peer-1', 'peer-2', 'peer-3']),
+            { fromPeerId: 'peer-1', qos: undefined }
+        );
+
+        expect(plan.transportMessages).toHaveLength(2);
+        for (const copy of plan.transportMessages) {
+            expect(copy.constraints?.ttlHops).toBe(1);
+            expect((await verifyALPublicationProof({ subtle, publicKey, message: copy })).left).toBeUndefined();
+        }
+    });
+
     it('sends volatile multicast immediately instead of queueing it', async () => {
         const connectionService = createConnectionService(['peer-1']);
 
@@ -301,7 +356,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -366,7 +426,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -428,7 +493,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -487,7 +557,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -580,7 +655,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -664,7 +744,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -720,7 +805,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());
@@ -773,7 +863,12 @@ describe('multicast QoS integration', () => {
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
                 faultPort: createPassThroughTransportFaultPort(),
-                dequeueResilience: createDefaultALOutboundDequeueResilience()
+                dequeueResilience: createDefaultALOutboundDequeueResilience(),
+                grantedTopics: NO_RTC_GRANTED_TOPICS,
+                publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+                topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+                selfPrincipalId: connectionService.input.sessionId
             })
         );
         onTestFinished(() => manager.dispose());

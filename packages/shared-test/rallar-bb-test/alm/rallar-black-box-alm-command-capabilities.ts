@@ -235,6 +235,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'congested or handed to WS under rtc-with-ws-fallback, an at-least-once send settles not-ready and retries. ' +
             'match.msgId may name a {resultCache.<commandId>.<path>} token, such as the msgId an earlier ' +
             'messages.send returned, so one message is held while every other frame of its type passes. ' +
+            'action { rewrite }, on rtc only, changes each matching frame the page writes after its origin signed it: ' +
+            'strip-proof deletes the publication proof, and { forgeSender: { principal } } writes that principal\'s one ' +
+            'live session as the sender and its registered key id into the proof, keeping the signature; the page ' +
+            'resolves the principal in its cached room snapshot at injection and fails the step when it cannot. ' +
             'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +
             'optionally match.kind: fail, quota (writes only) or a delay. ' +
             'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it. ' +

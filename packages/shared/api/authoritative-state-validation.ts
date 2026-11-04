@@ -15,8 +15,9 @@ import {
     GROUP_TRANSPORT_STATES
 } from './group-lifecycle/group-lifecycle-policy.ts';
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from './group-lifecycle/to-normalized-group-lifecycle-policy.ts';
+import { decodeGroupPresencePublicationKey } from './group-presence/decode-group-presence-publication-key.ts';
 import { decodeGroupPublicationGrantList } from './group-publication/group-publication-grants.ts';
-import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
+import { GROUP_PRESENCE_SESSION_KEYS, type GroupEvent, type GroupRef, type GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import { formatRallarValidation } from './rallar-validation.ts';
 import type { StateEventPage } from './state-event-types.ts';
@@ -129,22 +130,6 @@ const GROUP_MEMBER_KEYS = [
     'banned',
     'invitedByPrincipalId',
     'invitationExpiresAtEpochMs'
-];
-const GROUP_SESSION_KEYS = [
-    'applicationId',
-    'workspaceId',
-    'groupId',
-    'sessionId',
-    'principalId',
-    'generationId',
-    'generationVersion',
-    'connectionGenerationId',
-    'status',
-    'connectedAtEpochMs',
-    'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs',
-    'disconnectedAtEpochMs',
-    'disconnectReason'
 ];
 const CLIENT_EVENT_KEYS = [
     'applicationId',
@@ -560,40 +545,15 @@ export function validateAuthoritativeGroupSnapshot(
     const sessionIds = new Set<string>();
     const onlinePrincipalIds = new Set<string>();
     for (const item of sessions) {
-        const session = decodeRecord(item, 'GroupSnapshot.session');
-        exact(session, GROUP_SESSION_KEYS, 'GroupSnapshot.session');
-        sameGroupRef(session, ref, 'GroupSnapshot.session');
-        for (const key of ['sessionId', 'principalId', 'generationId', 'connectionGenerationId'] as const) {
-            nonEmptyString(session[key], `GroupSnapshot.session.${key}`);
-        }
-        const principalId = session.principalId;
-        nonEmptyString(principalId, 'GroupSnapshot.session.principalId');
-        nonEmptyString(session.sessionId, 'GroupSnapshot.session.sessionId');
+        const session = validateAuthoritativeActiveGroupSession(item, ref, 'GroupSnapshot.session');
         if (sessionIds.has(session.sessionId)) {
             fail('GroupSnapshot has duplicate active sessions');
         }
-        if (!activeMemberIds.has(principalId)) {
+        if (!activeMemberIds.has(session.principalId)) {
             fail('GroupSnapshot active session principal is not an active member');
         }
         sessionIds.add(session.sessionId);
-        positiveInteger(session.generationVersion, 'GroupSnapshot.session.generationVersion');
-        const connectedAt = session.connectedAtEpochMs;
-        const heartbeatAt = session.lastHeartbeatAtEpochMs;
-        const expiresAt = session.expiresAtEpochMs;
-        positiveInteger(connectedAt, 'GroupSnapshot.session.connectedAtEpochMs');
-        positiveInteger(heartbeatAt, 'GroupSnapshot.session.lastHeartbeatAtEpochMs');
-        positiveInteger(expiresAt, 'GroupSnapshot.session.expiresAtEpochMs');
-        if (heartbeatAt < connectedAt || expiresAt < heartbeatAt) {
-            fail('GroupSnapshot active session timestamps are causally inconsistent');
-        }
-        if (
-            session.status !== 'active' ||
-            session.disconnectedAtEpochMs !== null ||
-            session.disconnectReason !== null
-        ) {
-            fail('GroupSnapshot active session lifecycle is invalid');
-        }
-        onlinePrincipalIds.add(principalId);
+        onlinePrincipalIds.add(session.principalId);
     }
     nonNegativeInteger(snapshot.memberCount, 'GroupSnapshot.memberCount');
     nonNegativeInteger(snapshot.onlineMemberCount, 'GroupSnapshot.onlineMemberCount');
@@ -613,6 +573,36 @@ export function validateAuthoritativeGroupSnapshot(
     if (group.status !== 'active' && sessions.length !== 0) {
         fail('GroupSnapshot inactive group has active presence');
     }
+}
+
+/** The snapshot and the delta decoders both judge an active session here, so neither admits a shape the other refuses. */
+export function validateAuthoritativeActiveGroupSession(
+    value: WireValue,
+    ref: GroupRef,
+    label: string
+): Readonly<{ sessionId: string; principalId: string; }> {
+    const session = decodeRecord(value, label);
+    exact(session, GROUP_PRESENCE_SESSION_KEYS, label);
+    sameGroupRef(session, ref, label);
+    const { sessionId, principalId, connectedAtEpochMs, lastHeartbeatAtEpochMs, expiresAtEpochMs } = session;
+    nonEmptyString(sessionId, `${label}.sessionId`);
+    nonEmptyString(principalId, `${label}.principalId`);
+    nonEmptyString(session.generationId, `${label}.generationId`);
+    nonEmptyString(session.connectionGenerationId, `${label}.connectionGenerationId`);
+    decodeGroupPresencePublicationKey(session.publicationKey).foldLeft((issues) =>
+        fail(`${label}.publicationKey is invalid: ${formatRallarValidation(issues)}`)
+    );
+    positiveInteger(session.generationVersion, `${label}.generationVersion`);
+    positiveInteger(connectedAtEpochMs, `${label}.connectedAtEpochMs`);
+    positiveInteger(lastHeartbeatAtEpochMs, `${label}.lastHeartbeatAtEpochMs`);
+    positiveInteger(expiresAtEpochMs, `${label}.expiresAtEpochMs`);
+    if (lastHeartbeatAtEpochMs < connectedAtEpochMs || expiresAtEpochMs < lastHeartbeatAtEpochMs) {
+        fail(`${label} timestamps are causally inconsistent`);
+    }
+    if (session.status !== 'active' || session.disconnectedAtEpochMs !== null || session.disconnectReason !== null) {
+        fail(`${label} lifecycle is invalid`);
+    }
+    return { sessionId, principalId };
 }
 
 function validateGroupSnapshotPublicationGrants(

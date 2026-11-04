@@ -51,6 +51,7 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ['sender', 'receiver', 'successor'],
     laneFamily: 'same-context',
+    principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
     toSenderCommands: (page) => page.role === 'sender' ? toOwnerPageCommands(page) : toSuccessorPageCommands(page),
     toRecipientCommands: toPublisherCommands

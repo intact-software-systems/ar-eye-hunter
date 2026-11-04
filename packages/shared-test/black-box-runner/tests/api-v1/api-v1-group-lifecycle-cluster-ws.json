@@ -271,6 +271,7 @@
         },
         "body": {
           "generationId": "lcws-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "lcws-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -319,6 +320,7 @@
         },
         "body": {
           "generationId": "lcws-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "lcws-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }

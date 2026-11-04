@@ -7,7 +7,7 @@ import type {
     GroupPresenceSummary,
     GroupRef
 } from '@shared/api/group-types.ts';
-import { arrayEquals } from '@shared/repository/state-utils.ts';
+import { arrayEquals, jsonEquals } from '@shared/repository/state-utils.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
@@ -177,7 +177,7 @@ export function computeGroupPresenceSummaryContent(
 /**
  * Under damped formation the session lease fields are liveness, not content:
  * a renewed lease over an identical session set must compare equal so a pure
- * renewal never advances presenceRevision.
+ * renewal never advances presenceRevision. The publication key is content.
  */
 function groupPresenceSummaryContentEquals(
     current: GroupPresenceSummary,
@@ -205,6 +205,7 @@ function groupPresenceSessionContentEquals(
         current.generationId === content.generationId &&
         current.generationVersion === content.generationVersion &&
         current.connectedAtEpochMs === content.connectedAtEpochMs &&
+        jsonEquals(current.publicationKey, content.publicationKey) &&
         current.status === content.status &&
         current.disconnectedAtEpochMs === content.disconnectedAtEpochMs &&
         current.disconnectReason === content.disconnectReason;

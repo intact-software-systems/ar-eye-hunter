@@ -13,7 +13,7 @@ import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import { createControlHttpResponses } from '../src/http/control-http-responses.ts';
 import { ControlHttpSecurity } from '../src/http/control-http-security.ts';
 import { createControlRequestBodyReader } from '../src/http/control-request-body.ts';
-import { createRetentionPlanTokenAdapter } from '../src/retention-plan-token.ts';
+import { createDefaultRetentionPlanTokenAdapter } from '../src/retention-plan-token.ts';
 import { routeControlHttpRequest, type ControlHttpRouteDependencies } from '../src/routes/control-http-router.ts';
 import { toControlServiceInput } from './support/control-service-test-fixtures.ts';
 
@@ -150,7 +150,7 @@ function createRetentionRouteDependencies(
                 )
         },
         persistence: { persist: () => persistCalls.push('persist') },
-        retentionPlanTokens: createRetentionPlanTokenAdapter({ key: new Uint8Array(32) }),
+        retentionPlanTokens: createDefaultRetentionPlanTokenAdapter(new Uint8Array(32)),
         commandDestinations: { httpAllowedHosts: [], httpAllowedOrigins: [], wsAllowedHosts: [], wsAllowedOrigins: [] },
         retentionMaxRuns: 1,
         runTokenTtlMs: 60_000,

@@ -72,6 +72,9 @@ import { validateAuthoritativeGroupSnapshotList } from '@shared/api/authoritativ
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -85,12 +88,14 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserStartupCleanupFailure
 } from './close-browser-transport-resources.ts';
+import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
 
 import {
     browserStateCacheLifecycle,
@@ -108,6 +113,14 @@ export interface MiddlewareInitOptions {
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     /** Where both carriers' inbound runtimes hand a message they can no longer order. */
     readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
+    /** The page's one key, started by the composition root; each connect awaits it once. */
+    readonly publicationCrypto: Promise<PublicationCrypto>;
+    /** Built once per page beside its key; each connect's RTC overlay verifies granted frames with it. */
+    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+    /** The page's granted topics, whose RTC publications the overlay signs with the page's key. */
+    readonly grantedTopics: RtcGrantedTopicReader;
+    /** The tab's held subscription tokens, which a granted RTC frame's local delivery reads. */
+    readonly topicSubscriptions: RtcTopicSubscriptionReader;
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
@@ -173,8 +186,17 @@ export interface InitialiseBrowserTransportInput {
     readonly publicationStageLimits: ALPublicationStageLimits;
     /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
     readonly checkpointStores: BrowserALCheckpointStores;
+    /** The page's one key, which each group heartbeat registers and the RTC overlay signs with. */
+    readonly publicationCrypto: PublicationCrypto;
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
     readonly options: BrowserConnectOptions;
 }
+
+/** The page's publication capabilities, each started once per page and awaited by every connect. */
+export type BrowserTransportPublication = Pick<
+    InitialiseBrowserTransportInput,
+    'publicationCrypto' | 'publicationVerifier'
+>;
 
 interface BrowserWebSocketTransport {
     readonly qboxEngine: InboxOutboxEngine;
@@ -267,7 +289,10 @@ export async function initialiseMiddleware(
             options.scope ?? defaultStateScope(),
             { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
         );
-        const transportInput = createBrowserTransportInput(session, options);
+        const transportInput = createBrowserTransportInput(session, options, {
+            publicationCrypto: await options.publicationCrypto,
+            publicationVerifier: await options.publicationVerifier
+        });
         webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
         rtcTransport = await initialiseBrowserRtcTransport({
             ...transportInput,
@@ -314,7 +339,8 @@ export async function initialiseMiddleware(
 
 export function createBrowserTransportInput(
     session: AuthSession,
-    options: BrowserConnectOptions
+    options: BrowserConnectOptions,
+    publication: BrowserTransportPublication
 ): InitialiseBrowserTransportInput {
     const clientData: ClientInfo = {
         clientId: session.clientId,
@@ -339,6 +365,7 @@ export function createBrowserTransportInput(
         volatileBound,
         publicationStageLimits: options.readPublicationStageLimits?.() ?? AL_PUBLICATION_STAGE_LIMITS,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
+        ...publication,
         options,
         creation: {
             createMessage: newALUntargetedMessage,
@@ -378,14 +405,7 @@ function initialiseBrowserHeartbeat(
     input: InitialiseBrowserTransportInput,
     ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
 ): ReturnType<typeof heartbeat.initHeartbeat> {
-    return heartbeat.initHeartbeat(input.clientData, {
-        authSession: input.session,
-        scope: input.options.scope,
-        ownWsConnectionGeneration,
-        onAuthInvalid: input.options.onAuthInvalid
-            ? (caught) => input.options.onAuthInvalid?.(toError(caught))
-            : undefined
-    });
+    return heartbeat.initHeartbeat(input.clientData, toBrowserHeartbeatOptions(input, ownWsConnectionGeneration));
 }
 
 export function toCreateWsUrl(
@@ -454,7 +474,12 @@ export function toRtcOverlayMulticastManagerInput(
         durableWorkOwnership: input.options.durableWorkOwnership,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.rtc,
-        faultPort: input.options.diagnosticsPorts.transportFaultPort
+        faultPort: input.options.diagnosticsPorts.transportFaultPort,
+        grantedTopics: input.options.grantedTopics,
+        publicationCrypto: input.publicationCrypto,
+        publicationVerifier: input.publicationVerifier,
+        topicSubscriptions: input.options.topicSubscriptions,
+        selfPrincipalId: input.clientData.clientId
     };
 }
 

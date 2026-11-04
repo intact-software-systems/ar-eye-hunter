@@ -13,6 +13,10 @@ import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import type { RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
 
@@ -162,6 +166,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         const first = transport.init(options);
@@ -223,6 +231,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         try {
@@ -250,6 +262,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -293,6 +309,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -354,6 +374,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime: new BrowserFacadeRuntimeState(transport),
             transportRuntime: transport,
@@ -402,6 +426,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let reentered: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -442,6 +470,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         };
         let replacement: Promise<BrowserTransportRuntime.Connection> | undefined;
@@ -493,6 +525,10 @@ describe('immutable RTC capture on browser connections', () => {
             readVolatileSessionLimits: undefined,
             readPublicationStageLimits: undefined,
             onResyncRequired: () => {},
+            publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+            publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, transport, mocks.readSession),
             connectionRuntime,
             transportRuntime: transport,

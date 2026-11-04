@@ -14,7 +14,7 @@ import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membe
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import { timeRallarAsync, type RallarTimingSink } from '../observability/timing.ts';
 import type { PartyRepository } from '../parties/persistence/party-repository.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import {
     computeMatchmakingMutation,

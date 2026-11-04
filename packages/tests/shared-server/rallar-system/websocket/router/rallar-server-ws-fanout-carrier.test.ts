@@ -368,6 +368,7 @@ function roomSession(sessionId: string): GroupPresenceSession {
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
         connectionGenerationId: `ws-generation-${sessionId}`,
+        publicationKey: null,
         generationVersion: 3,
         status: 'active',
         connectedAtEpochMs: 1,

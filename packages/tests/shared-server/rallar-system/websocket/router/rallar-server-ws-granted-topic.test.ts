@@ -559,6 +559,7 @@ function createSnapshot(
             sessionId,
             generationId: `generation-${sessionId}`,
             connectionGenerationId: `ws-generation-${sessionId}`,
+            publicationKey: null,
             generationVersion: 1,
             status: 'active',
             connectedAtEpochMs: 1,

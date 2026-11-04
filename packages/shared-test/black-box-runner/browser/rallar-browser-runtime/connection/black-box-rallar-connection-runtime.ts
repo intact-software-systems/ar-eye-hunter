@@ -1,3 +1,4 @@
+import { resolveAlmFaultRewrite } from '@shared-test/rallar-bb-test/alm/resolve-alm-fault-rewrite.ts';
 import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -17,6 +18,7 @@ import type {
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
     BlackBoxRallarProductSocketFault,
+    BlackBoxRallarRewriteFault,
     BlackBoxRallarStorageCountersInput
 } from '../black-box-rallar-operation-contracts.ts';
 import {
@@ -148,8 +150,10 @@ export class BlackBoxRallarConnectionRuntime {
     readonly #controllers: BlackBoxRallarConnectionRuntime.Controllers;
     readonly #connectOperation: BlackBoxRallarConnectOperation;
     readonly #closeOperation: BlackBoxRallarCloseOperation;
+    readonly #clock: BlackBoxRallarConnectionRuntime.Input['clock'];
 
     constructor(input: BlackBoxRallarConnectionRuntime.Input) {
+        this.#clock = input.clock;
         this.#foundation = createConnectionFoundation(input);
         this.#controllers = createProductControllers(input, this.#foundation);
         const { crdt, director, formation, typedChannels, subscriptions } = this.#controllers;
@@ -277,10 +281,18 @@ export class BlackBoxRallarConnectionRuntime {
     }
 
     async #injectFault(
-        fault: ScriptedTransportFault | ScriptedStorageFault | BlackBoxRallarProductSocketFault
+        fault:
+            | ScriptedTransportFault
+            | BlackBoxRallarRewriteFault
+            | ScriptedStorageFault
+            | BlackBoxRallarProductSocketFault
     ): Promise<void> {
         this.#requireScriptedPorts('fault.inject');
         const { diagnostics, productSocket } = this.#foundation.rallar;
+        if ('rewrite' in fault) {
+            diagnostics.faults.inject(this.#resolveRewriteFault(fault));
+            return;
+        }
         switch (fault.carrier) {
             case 'storage':
                 diagnostics.storageFaults.inject(fault);
@@ -295,6 +307,24 @@ export class BlackBoxRallarConnectionRuntime {
             default:
                 diagnostics.faults.inject(fault);
         }
+    }
+
+    /**
+     * The forged principal is read at injection, from the room snapshot the page holds then; none fails the step. A
+     * release (`remaining: 0`) spends the held fault, which never acts again, so it reads no principal.
+     */
+    #resolveRewriteFault({ rewrite, ...fault }: BlackBoxRallarRewriteFault): ScriptedTransportFault {
+        if (fault.remaining === 0) {
+            return { ...fault, action: 'drop' };
+        }
+        const roomRef = blackBoxRallarRoomRefOf(requireConnectionConfig(this.#foundation.connectionState));
+        const snapshot = roomRef === undefined ? undefined : this.#foundation.rallar.peers.getRoomSnapshot(roomRef);
+        return resolveAlmFaultRewrite({ rewrite, snapshot, nowMs: this.#clock.now() }).fold(
+            (detail) => {
+                throw new TypeError(`fault.inject ${fault.faultId} names no forged sender: ${detail}.`);
+            },
+            (resolved) => ({ ...fault, action: { rewrite: resolved } })
+        );
     }
 
     #readStorageCounters(counters: BlackBoxRallarStorageCountersInput): IndexedDbOperationCounts {

@@ -77,6 +77,7 @@ function createPresenceSession(
         principalId: 'alice',
         generationId: 'generation-1',
         connectionGenerationId: 'ws-generation-1',
+        publicationKey: null,
         generationVersion: 2_000,
         connectedAtEpochMs: 2_000,
         lastHeartbeatAtEpochMs: 3_000,

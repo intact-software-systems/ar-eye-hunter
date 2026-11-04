@@ -87,6 +87,7 @@ export function createGroupSnapshot(
             principalId: sessionId,
             generationId: `generation-${sessionId}`,
             connectionGenerationId: `ws-generation-${sessionId}`,
+            publicationKey: null,
             generationVersion: membershipVersion,
             status: 'active',
             connectedAtEpochMs: 1,

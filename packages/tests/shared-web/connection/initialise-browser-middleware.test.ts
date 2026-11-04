@@ -1,6 +1,7 @@
 import {
     describe,
     expect,
+    expectTypeOf,
     it,
     onTestFinished,
     vi
@@ -17,9 +18,11 @@ import {
     toBrowserMiddleware,
     toBrowserWebSocketQueueBoxInput,
     toRtcOverlayMulticastManagerInput,
-    type BrowserConnectOptions
+    type BrowserConnectOptions,
+    type BrowserTransportPublication
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
 import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -28,6 +31,10 @@ import * as stateSnapshots from '@shared-web/browser/state-read/refresh-state-sn
 import * as websocketFactory from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -46,7 +53,14 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 
 import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    UNAVAILABLE_PUBLICATION_CRYPTO
+} from '../../shared/signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
@@ -59,6 +73,11 @@ const SESSION: AuthSession = {
     expiresAtEpochMs: 60_000
 };
 
+const KEYLESS_PUBLICATION: BrowserTransportPublication = {
+    publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+    publicationVerifier: KEYLESS_PUBLICATION_VERIFIER
+};
+
 const OPTIONS: BrowserConnectOptions = {
     readIceCandidates: (signal) => connectionHttp.readIceCandidates({ signal }),
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
@@ -68,6 +87,10 @@ const OPTIONS: BrowserConnectOptions = {
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
+    publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
+    publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+    grantedTopics: NO_RTC_GRANTED_TOPICS,
+    topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,
@@ -137,6 +160,60 @@ describe('native observation handoff cleanup', () => {
         await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(failure);
         expect(events).toContainEqual(expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed' }));
         expect(capture.diagnostics?.nativeObservation?.status === 'available' && capture.diagnostics.nativeObservation.scope.getActive()).toBe(false);
+    });
+});
+
+describe('the inbound stores a connect hands its two carriers', () => {
+    it('gives the WS client and the RTC receiver the one session store pair, so a second carrier\'s copy is a duplicate', async () => {
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const capture = createBrowserRtcCapture({
+            configuration: { mode: 'off', origin: 'step' },
+            connectionId: { status: 'observed', value: 'stores' },
+            record: () => {},
+            nowEpochMs: () => 1
+        });
+        const service = new WebRtcConnectionService({ connect: async () => {}, send: async () => {} }, {
+            sessionId: SESSION.sessionId,
+            token: 'test',
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 }
+        }, {
+            nowEpochMs: () => 1,
+            createOfferId: () => 'offer',
+            faultPort: createPassThroughTransportFaultPort(),
+            writeRetainedSignalsDueNow: async () => []
+        });
+        const middleware = createDefaultApiMiddlewareTestDouble({
+            middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
+        });
+        const carriers: Partial<Record<'ws' | 'rtc', readonly [ALInboundRuntimeStores, ALVolatileInboundRuntimeStores]>> = {};
+        const stop = new Error('the stores were handed over');
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' }
+        });
+        vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
+            carriers.ws = [input.inboundStores, input.inboundVolatileStores];
+            return middleware.middleware.webSocketQueueBox;
+        });
+        vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
+        vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager').mockReturnValue(middleware.middleware.webRtcOverlayMulticastManager);
+        vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockImplementation((input) => {
+            carriers.rtc = [input.inboundStores, input.inboundVolatileStores];
+            throw stop;
+        });
+
+        await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(stop);
+
+        expect(carriers.ws).toHaveLength(2);
+        expect(carriers.rtc?.[0]).toBe(carriers.ws?.[0]);
+        expect(carriers.rtc?.[1]).toBe(carriers.ws?.[1]);
     });
 });
 
@@ -216,7 +293,7 @@ describe('browser connection construction identity', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const source = vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('00000000-0000-0000-0000-000000000052');
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         expect(constructed.connectionId).toEqual({ status: 'observed', value: '00000000-0000-0000-0000-000000000052' });
         expect(constructed.creation.newConnectionRequestId()).not.toBe('00000000-0000-0000-0000-000000000052');
     });
@@ -227,7 +304,7 @@ describe('browser connection construction identity', () => {
             throw new Error('identity unavailable');
         });
         onTestFinished(() => source.mockRestore());
-        const constructed = createBrowserTransportInput(SESSION, OPTIONS);
+        const constructed = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         expect(constructed.connectionId).toEqual({ status: 'unavailable', reason: 'identity-source-failed' });
         expect(constructed.clientData).toEqual({ clientId: 'client-1', sessionId: 'session-1', isOnline: true });
         expect(constructed.options).toBe(OPTIONS);
@@ -239,7 +316,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -264,7 +341,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
 
     it('bounds the budget by the limits the session reads', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const { budget } = createBrowserTransportInput(SESSION, OPTIONS).volatileBound;
+        const { budget } = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION).volatileBound;
         const nowMs = Date.now();
 
         const admissions = [1, 2, 3, 4].map((index) =>
@@ -280,7 +357,7 @@ describe('the durable work claim a connect hands its carriers', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -302,7 +379,7 @@ describe('the transport faults a connect hands its RTC overlay', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
@@ -313,12 +390,46 @@ describe('the transport faults a connect hands its RTC overlay', () => {
     });
 });
 
+describe('the page key and granted topics a connect hands its RTC overlay', () => {
+    it('gives the RTC overlay the page\'s awaited key and the page\'s granted topics, which its granted legs sign by', async () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const publicationCrypto = await createAvailablePublicationCryptoFixture();
+        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
+
+        const rtc = toRtcOverlayMulticastManagerInput(input, {
+            qboxEngine,
+            webRtcConnectionService: createConnectionService()
+        });
+
+        expect(rtc.publicationCrypto).toBe(publicationCrypto);
+        expect(rtc.grantedTopics).toBe(OPTIONS.grantedTopics);
+    });
+
+    it('gives the RTC overlay the page\'s one verifier, the tab\'s held tokens and the session\'s principal', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
+
+        const rtc = toRtcOverlayMulticastManagerInput(input, {
+            qboxEngine,
+            webRtcConnectionService: createConnectionService()
+        });
+
+        expect(rtc.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
+        expect(rtc.topicSubscriptions).toBe(OPTIONS.topicSubscriptions);
+        expect(rtc.selfPrincipalId).toBe(SESSION.clientId);
+    });
+});
+
 describe('the checkpoint stores a connect hands its carriers', () => {
     it('gives the WS client and the RTC overlay each the checkpoint pair of its own store', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         onTestFinished(() => {
             input.checkpointStores.wsClient.checkpoint.dispose();
             input.checkpointStores.rtcOverlay.checkpoint.dispose();
@@ -386,7 +497,11 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
     it('gives the middleware the limits the session reads when the connect begins', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const limits = { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 };
-        const input = createBrowserTransportInput(SESSION, { ...OPTIONS, readPublicationStageLimits: () => limits });
+        const input = createBrowserTransportInput(
+            SESSION,
+            { ...OPTIONS, readPublicationStageLimits: () => limits },
+            KEYLESS_PUBLICATION
+        );
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
             .toBe(limits);
@@ -394,17 +509,31 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
 
     it('keeps the product defaults for a session that reads no limits', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
             .toBe(AL_PUBLICATION_STAGE_LIMITS);
     });
 });
 
+describe('the page publication crypto stays off the public middleware', () => {
+    it('keeps the awaited page crypto on the transport input and out of the middleware the advanced facade returns', async () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const publicationCrypto = await createAvailablePublicationCryptoFixture();
+        const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
+
+        expect(input.publicationCrypto).toBe(publicationCrypto);
+        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware))
+            .not.toHaveProperty('publicationCrypto');
+        expectTypeOf<ReturnType<RallarFacade['advanced']['middleware']>['middleware']>()
+            .not.toHaveProperty('publicationCrypto');
+    });
+});
+
 describe('the outbound diagnostics sink a connect hands its middleware', () => {
     it('gives the middleware the connect\'s own sink, which its carriers report to', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
 

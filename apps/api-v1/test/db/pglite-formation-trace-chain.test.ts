@@ -73,7 +73,12 @@ Deno.test({
                 path: `${GROUP_PATH}/${GROUP_REF.groupId}/sessions/${joiner.sessionId}/requests/formation-chain-presence`,
                 method: 'PUT',
                 traceId: CHAIN_TRACE_ID,
-                body: { principalId: joiner.clientId, generationId: 'joiner-generation', connectionGenerationId: 'joiner-generation' }
+                body: {
+                    principalId: joiner.clientId,
+                    generationId: 'joiner-generation',
+                    connectionGenerationId: 'joiner-generation',
+                    publicationKey: null
+                }
             });
             const activated = await waitForActivationStatus(runtime);
 

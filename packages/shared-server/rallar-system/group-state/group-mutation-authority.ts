@@ -1,4 +1,5 @@
 import type { StateScope } from '@shared/api/state-types.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
@@ -6,7 +7,7 @@ import type { AuthSessionPersistence } from '../auth/persistence/auth-session-pe
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
-import { computeSha256CanonicalJson, serializeCanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import {
     toAggregateMutationCommand,

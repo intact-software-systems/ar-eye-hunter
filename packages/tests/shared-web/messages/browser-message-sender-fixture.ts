@@ -20,6 +20,7 @@ import {
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { vi, type Mock } from 'vitest';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 interface BrowserMessageSenderFixture {
     readonly sender: BrowserRallarMessageSender;
@@ -72,7 +73,8 @@ export function createBrowserMessageSenderFixture(
             sessionDeliveries,
             publicationStages,
             nowMs: Date.now,
-            readPublicationPermissions: () => undefined
+            readPublicationPermissions: () => undefined,
+            grantedTopics: NO_RTC_GRANTED_TOPICS
         }),
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => maxPayloadBytes }),
         connect,

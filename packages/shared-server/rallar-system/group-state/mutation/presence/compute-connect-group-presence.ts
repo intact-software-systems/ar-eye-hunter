@@ -110,6 +110,7 @@ function createConnectedPresenceSession({
             generationId: command.input.generationId,
             generationVersion: timing.connectedAt,
             connectionGenerationId: command.input.connectionGenerationId,
+            publicationKey: command.input.publicationKey,
             connectedAtEpochMs: existingSession?.connectedAtEpochMs ?? timing.connectedAt,
             lastHeartbeatAtEpochMs: existingSession
                 ? Math.max(existingSession.lastHeartbeatAtEpochMs, timing.heartbeatAt)

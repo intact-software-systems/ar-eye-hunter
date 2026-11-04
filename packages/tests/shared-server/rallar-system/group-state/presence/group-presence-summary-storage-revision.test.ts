@@ -57,6 +57,7 @@ describe('group presence-summary causal identity', () => {
             await service.connectPresenceSession(SCOPE, 'heartbeat-room', `session-${index}`, {
                 principalId,
                 generationId: `generation-${index}`,
+                publicationKey: null,
                 connectionGenerationId: `ws-generation-${index}`,
                 actorPrincipalId: `member-${index}`,
                 expiresAtEpochMs: baseEpochMs + 50_000,
@@ -72,6 +73,7 @@ describe('group presence-summary causal identity', () => {
                     `session-${index}`,
                     {
                         generationId: `generation-${index}`,
+                        publicationKey: null,
                         actorPrincipalId: `member-${index}`,
                         lastHeartbeatAtEpochMs: baseEpochMs + 3_000 + index,
                         expiresAtEpochMs: baseEpochMs + 60_000 + index,
@@ -90,6 +92,7 @@ describe('group presence-summary causal identity', () => {
             'session-0',
             {
                 generationId: 'generation-0',
+                publicationKey: null,
                 actorPrincipalId: 'member-0',
                 lastHeartbeatAtEpochMs: baseEpochMs + 4_000,
                 expiresAtEpochMs: baseEpochMs + 70_000,

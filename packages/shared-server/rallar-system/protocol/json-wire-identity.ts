@@ -1,4 +1,6 @@
-import { computeSha256CanonicalJson, serializeCanonicalJson } from './canonical-json.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
+
+import { computeSha256CanonicalJson } from './compute-sha256-canonical-json.ts';
 
 export type JsonWireValue = null | boolean | number | string | readonly JsonWireValue[] | JsonWireObject;
 

@@ -4,6 +4,7 @@ import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RFC_7517_PUBLICATION_KEY } from '../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { createActiveGroupPresenceSessionFixture, createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
@@ -52,6 +53,7 @@ describe('state heartbeat HTTP workflow', () => {
                 groupSnapshot('group-2')
             ],
             {
+                publicationKey: null,
                 generationId: 'generation-1',
                 wsConnectionGenerationId: undefined,
                 clientSnapshot: undefined,
@@ -69,6 +71,31 @@ describe('state heartbeat HTTP workflow', () => {
             generationId: 'accepted-group-generation'
         });
         expect(calls.every((call) => !hasRequestId(call.body))).toBe(true);
+    });
+
+    it.each([
+        ['the page\'s key', RFC_7517_PUBLICATION_KEY],
+        ['null for a keyless page', null]
+    ])('registers %s on each group heartbeat and none on the client heartbeat', async (_case, publicationKey) => {
+        const calls: FetchCall[] = [];
+        stubFetch(calls, ({ url }) =>
+            url.includes('/clients/principal-1/')
+                ? jsonResponse(clientSnapshot('principal-1'))
+                : jsonResponse(groupSnapshot(url.includes('/groups/group-1/') ? 'group-1' : 'group-2')));
+
+        await refreshStateHeartbeat(clientData, [groupSnapshot('group-1'), groupSnapshot('group-2')], {
+            generationId: 'generation-1',
+            wsConnectionGenerationId: undefined,
+            clientSnapshot: undefined,
+            publicationKey
+        });
+
+        const groupBodies = calls.filter((call) => call.url.includes('/groups/')).map((call) => call.body);
+        expect(groupBodies).toEqual([
+            expect.objectContaining({ publicationKey }),
+            expect.objectContaining({ publicationKey })
+        ]);
+        expect(calls.find((call) => call.url.includes('/clients/'))?.body).not.toHaveProperty('publicationKey');
     });
 
     it('repairs missing client presence once after a scoped heartbeat 404', async () => {
@@ -95,6 +122,7 @@ describe('state heartbeat HTTP workflow', () => {
             clientData,
             [groupSnapshot('group-1', 'ar-eye-hunter')],
             {
+                publicationKey: null,
                 generationId: 'generation-1',
                 wsConnectionGenerationId: undefined,
                 clientSnapshot: undefined,
@@ -165,6 +193,7 @@ describe('state heartbeat HTTP workflow', () => {
         });
 
         await refreshStateHeartbeat(clientData, [groupSnapshot('group-1')], {
+            publicationKey: null,
             generationId: 'generation-1',
             wsConnectionGenerationId: undefined,
             clientSnapshot: undefined,
@@ -204,6 +233,7 @@ describe('state heartbeat HTTP workflow', () => {
         });
 
         await refreshStateHeartbeat(clientData, [], {
+            publicationKey: null,
             generationId: 'generation-1',
             wsConnectionGenerationId: undefined,
             clientSnapshot: undefined,
@@ -221,6 +251,7 @@ describe('state heartbeat HTTP workflow', () => {
         stubFetch(calls, () => jsonResponse(clientSnapshot('principal-1')));
 
         await refreshStateHeartbeat(clientData, [], {
+            publicationKey: null,
             generationId: 'generation-1',
             wsConnectionGenerationId: undefined,
             clientSnapshot: undefined,
@@ -343,6 +374,7 @@ async function repairMissingClientSession(wsConnectionGenerationId: string | und
         return notFoundResponse();
     });
     await refreshStateHeartbeat(clientData, [], {
+        publicationKey: null,
         generationId: 'generation-1',
         wsConnectionGenerationId,
         clientSnapshot: undefined,

@@ -1743,6 +1743,7 @@ function createGroupPresenceRecord(
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
         connectionGenerationId: `ws-generation-${sessionId}`,
+        publicationKey: null,
         generationVersion: snapshotVersion,
         status: 'active',
         connectedAtEpochMs: 1,

@@ -5,6 +5,7 @@ import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as roomWorkflows from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import { RFC_7517_PUBLICATION_KEY } from '../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
@@ -44,7 +45,8 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
-            connectionGenerationId: 'ws-generation-1'
+            connectionGenerationId: 'ws-generation-1',
+            publicationKey: RFC_7517_PUBLICATION_KEY
         });
 
         expect(fetchCalls).toEqual([
@@ -71,12 +73,14 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/generated-room/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
+                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","publicationKey":' +
+                    JSON.stringify(RFC_7517_PUBLICATION_KEY) + ',"expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
+                    publicationKey: RFC_7517_PUBLICATION_KEY,
                     expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
@@ -90,6 +94,7 @@ describe('room group-state workflows', () => {
         stubSuccessfulGroupFetch(fetchCalls);
 
         await roomWorkflows.createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'Rallar',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -140,12 +145,14 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/app-1/workspaces/workspace-1/groups/rallar/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
+                rawBody:
+                    '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","publicationKey":null,"expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
+                    publicationKey: null,
                     expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
@@ -164,6 +171,7 @@ describe('room group-state workflows', () => {
         stubTransientGroupFetch(fetchCalls, '/groups', '/sessions/session-1');
 
         await roomWorkflows.createAndJoinStateGroup({
+            publicationKey: null,
             displayName: 'Retry Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -187,6 +195,7 @@ describe('room group-state workflows', () => {
         stubSuccessfulGroupFetch(fetchCalls);
 
         await roomWorkflows.joinStateGroup({
+            publicationKey: null,
             groupId: 'group-1',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -213,12 +222,14 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
+                rawBody:
+                    '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","publicationKey":null,"expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
+                    publicationKey: null,
                     expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
@@ -232,6 +243,7 @@ describe('room group-state workflows', () => {
         stubTransientGroupFetch(fetchCalls, '/join', '/sessions/session-1');
 
         await roomWorkflows.joinStateGroup({
+            publicationKey: null,
             groupId: 'group-1',
             principalId: 'principal-1',
             sessionId: 'session-1',

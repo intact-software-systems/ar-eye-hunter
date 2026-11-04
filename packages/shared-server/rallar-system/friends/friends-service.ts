@@ -5,7 +5,7 @@ import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app
 import type { AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { computeFriendsMutation, validateFriendsMutation } from './compute-friends-mutation.ts';
 import type { FriendsAccountDirectory } from './friends-account-directory.ts';

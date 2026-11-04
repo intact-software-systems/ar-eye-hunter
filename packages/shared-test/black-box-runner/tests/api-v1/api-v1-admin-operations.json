@@ -1140,6 +1140,7 @@
         },
         "body": {
           "generationId": "adminops-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "adminops-connection-generation-{runId}",
           "principalId": "{scopeClientId}"
         }

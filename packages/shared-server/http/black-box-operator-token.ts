@@ -1,3 +1,5 @@
+import { decodeBase64Any, toBase64Url } from '@shared/encoding/base64url.ts';
+
 import {
     decodeJsonWireValue,
     type JsonWireObject,
@@ -93,12 +95,12 @@ export async function signRallarBlackBoxOperatorToken(
         exp: input.expiresAtEpochMs,
         jti: input.tokenId ?? randomTokenId()
     };
-    const encodedHeader = base64UrlEncodeJson(HEADER);
-    const encodedClaims = base64UrlEncodeJson(claims);
+    const encodedHeader = toBase64UrlJson(HEADER);
+    const encodedClaims = toBase64UrlJson(claims);
     const unsignedToken = `${encodedHeader}.${encodedClaims}`;
     const signature = await hmacSha256(secret, unsignedToken);
 
-    return `${unsignedToken}.${base64UrlEncodeBytes(signature)}`;
+    return `${unsignedToken}.${toBase64Url(signature)}`;
 }
 
 export async function verifyRallarBlackBoxOperatorToken(
@@ -170,13 +172,19 @@ function decodeSignedOperatorToken(
     }
 
     const [encodedHeader, encodedClaims, encodedSignature] = parts;
+    const headerBytes = decodeBase64Any(encodedHeader).right;
+    const claimsBytes = decodeBase64Any(encodedClaims).right;
+    const signature = decodeBase64Any(encodedSignature).right;
+    if (headerBytes === undefined || claimsBytes === undefined || signature === undefined) {
+        return undefined;
+    }
     try {
         return {
             encodedHeader,
             encodedClaims,
-            header: decodeBase64UrlJson(encodedHeader),
-            claims: decodeBase64UrlJson(encodedClaims),
-            signature: base64UrlDecodeBytes(encodedSignature)
+            header: decodeOperatorTokenJson(headerBytes),
+            claims: decodeOperatorTokenJson(claimsBytes),
+            signature
         };
     }
     catch (_error) {
@@ -307,43 +315,17 @@ async function importHmacKey(
     );
 }
 
-function base64UrlEncodeJson(
+function toBase64UrlJson(
     value: TokenHeader | RallarBlackBoxOperatorTokenClaims
 ): string {
-    return base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify(value)));
+    return toBase64Url(new TextEncoder().encode(JSON.stringify(value)));
 }
 
-function decodeBase64UrlJson(value: string): JsonWireValue {
+function decodeOperatorTokenJson(bytes: Uint8Array): JsonWireValue {
     return decodeJsonWireValue(
-        JSON.parse(new TextDecoder().decode(base64UrlDecodeBytes(value))),
+        JSON.parse(new TextDecoder().decode(bytes)),
         'Black-box operator token JSON'
     );
-}
-
-function base64UrlEncodeBytes(bytes: Uint8Array): string {
-    let binary = '';
-    for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-    }
-
-    return btoa(binary)
-        .replaceAll('+', '-')
-        .replaceAll('/', '_')
-        .replace(/=+$/u, '');
-}
-
-function base64UrlDecodeBytes(value: string): Uint8Array {
-    const normalized = value.replaceAll('-', '+').replaceAll('_', '/');
-    const padded = normalized.padEnd(
-        normalized.length + ((4 - normalized.length % 4) % 4),
-        '='
-    );
-    const binary = atob(padded);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-        bytes[index] = binary.charCodeAt(index);
-    }
-    return bytes;
 }
 
 function arrayBufferFromBytes(bytes: Uint8Array): ArrayBuffer {
@@ -356,7 +338,7 @@ function arrayBufferFromBytes(bytes: Uint8Array): ArrayBuffer {
 function randomTokenId(): string {
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
-    return base64UrlEncodeBytes(bytes);
+    return toBase64Url(bytes);
 }
 
 function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {

@@ -92,7 +92,12 @@ async function writeGroupWithPresence(server: PGliteTracedRallarServer): Promise
         path: `${DELTA_GROUP_PATH}/${DELTA_GROUP_REF.groupId}/sessions/${owner.sessionId}/requests/delta-sender-presence-connect`,
         method: 'PUT',
         traceId: 'trace-delta-sender-presence',
-        body: { principalId: owner.clientId, generationId: 'delta-sender-generation', connectionGenerationId: 'delta-sender-generation' }
+        body: {
+            principalId: owner.clientId,
+            generationId: 'delta-sender-generation',
+            connectionGenerationId: 'delta-sender-generation',
+            publicationKey: null
+        }
     });
     return await waitFor('the group and its presence to write group-state deltas', () => readGroupDeltaRows(server.sql));
 }

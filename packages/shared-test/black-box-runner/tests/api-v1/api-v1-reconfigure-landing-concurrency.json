@@ -250,6 +250,7 @@
         },
         "body": {
           "generationId": "reconfigland-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "reconfigland-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -271,6 +272,7 @@
         },
         "body": {
           "generationId": "reconfigland-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "reconfigland-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }

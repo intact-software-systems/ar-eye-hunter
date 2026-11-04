@@ -29,6 +29,8 @@ import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-de
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
+import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
+import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
 
@@ -127,7 +129,8 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
                 hold: () => {
                     throw new Error('No channel in this test subscribes.');
                 }
-            }
+            },
+            grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
         });
         const intents = channels.room<{ intent: string; }>({
             topicId: 'room.director.intent',
@@ -457,7 +460,8 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
             sessionDeliveries,
             publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
             nowMs: Date.now,
-            readPublicationPermissions: () => undefined
+            readPublicationPermissions: () => undefined,
+            grantedTopics: NO_RTC_GRANTED_TOPICS
         }),
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 }),
         connect: async () => context,

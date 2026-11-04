@@ -196,6 +196,7 @@ describe('room group-state mutation workflows', () => {
         });
 
         await expect(acceptStateGroupInvite({
+            publicationKey: null,
             groupId: 'group-1',
             actorPrincipalId: 'principal-1',
             sessionId: 'session-1',

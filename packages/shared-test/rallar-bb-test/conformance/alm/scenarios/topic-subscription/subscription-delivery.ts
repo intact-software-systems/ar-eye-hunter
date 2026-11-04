@@ -33,6 +33,7 @@ export const subscriptionDelivery: AlmConformanceScenarioDefinition = {
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
+    principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
     toSenderCommands: toProducerCommands,
     toRecipientCommands: (recipient) =>

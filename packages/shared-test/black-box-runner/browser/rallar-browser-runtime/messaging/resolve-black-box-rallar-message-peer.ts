@@ -1,3 +1,4 @@
+import { isLiveRoomSession } from '@shared/api/group-presence/is-live-room-session.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -103,6 +104,6 @@ function toOtherLiveSessions(
     own: Readonly<{ ownSessionId: string | undefined; nowMs: number; }>
 ): readonly GroupPresenceSession[] {
     return roomSessions.filter((session) =>
-        session.status === 'active' && session.expiresAtEpochMs > own.nowMs && session.sessionId !== own.ownSessionId
+        isLiveRoomSession(session, own.nowMs) && session.sessionId !== own.ownSessionId
     );
 }

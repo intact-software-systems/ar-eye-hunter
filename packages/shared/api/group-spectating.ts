@@ -1,4 +1,5 @@
 import type { ApiJsonObject } from './api-json-value.ts';
+import { isLiveRoomSession } from './group-presence/is-live-room-session.ts';
 import type { GroupMember, GroupRole, GroupSnapshot } from './group-types.ts';
 
 export const GROUP_SPECTATOR_CAPACITY_METADATA_KEY = 'rallarSpectatorCapacity';
@@ -41,8 +42,7 @@ export function readActiveGroupSessionRole(
         return undefined;
     }
     const session = snapshot.activeSessions.find((entry) =>
-        entry.sessionId === sessionId &&
-        entry.status === 'active' && entry.expiresAtEpochMs > nowEpochMs
+        entry.sessionId === sessionId && isLiveRoomSession(entry, nowEpochMs)
     );
     return session
         ? snapshot.members.find((member) => member.principalId === session.principalId && member.status === 'active')

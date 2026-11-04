@@ -148,6 +148,7 @@ describe('GroupStateService guarded batch atomicity', () => {
                 {
                     principalId: 'alice',
                     generationId: 'generation-admission-retry',
+                    publicationKey: null,
                     connectionGenerationId: 'ws-generation-admission-retry',
                     expiresAtEpochMs: nowEpochMs + 30_000,
                     requestId: 'admission-retry-request'
@@ -168,6 +169,7 @@ describe('GroupStateService guarded batch atomicity', () => {
             {
                 principalId: 'alice',
                 generationId: 'generation-admission-retry',
+                publicationKey: null,
                 connectionGenerationId: 'ws-generation-admission-retry',
                 expiresAtEpochMs: nowEpochMs + 30_000,
                 requestId: 'admission-retry-request'

@@ -2,11 +2,11 @@ import { Temporal } from '@js-temporal/polyfill';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 import { fnv1a64, toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
-import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { toExactJsonWireObject, toJsonWireObject } from '../protocol/to-json-wire-object.ts';
 

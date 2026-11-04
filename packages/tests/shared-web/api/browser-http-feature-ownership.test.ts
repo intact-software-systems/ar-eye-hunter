@@ -271,6 +271,7 @@ describe('browser HTTP feature ownership characterization', () => {
             { clientId: 'owner-1', sessionId: 'session-1', isOnline: true },
             [group],
             {
+                publicationKey: null,
                 generationId: 'generation-1',
                 wsConnectionGenerationId: undefined,
                 clientSnapshot: undefined,
@@ -452,6 +453,7 @@ function connectGroupPresenceBody() {
     return {
         generationId: 'generation-1',
         connectionGenerationId: 'ws-generation-1',
+        publicationKey: null,
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
         actorSessionId: 'session-1',

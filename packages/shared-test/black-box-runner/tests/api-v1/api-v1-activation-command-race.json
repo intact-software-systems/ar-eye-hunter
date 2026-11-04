@@ -317,6 +317,7 @@
         },
         "body": {
           "generationId": "activationrace-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "activationrace-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -338,6 +339,7 @@
         },
         "body": {
           "generationId": "activationrace-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "activationrace-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }

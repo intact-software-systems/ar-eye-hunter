@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     describe,
@@ -20,15 +21,22 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
+import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
@@ -878,6 +886,95 @@ describe('Rallar typed message channel', () => {
         expect(subscribeUrls).toHaveLength(1);
     });
 
+    it('a granted subscribe handler receives the RTC copy too, and unsubscribe detaches it from both carriers', async () => {
+        const wsCallbacks = captureWsInboxCallbacks();
+        const rtcCallbacks = captureRtcInboxCallbacks();
+        stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition());
+        const received: string[] = [];
+        const token = channel.subscribe((_payload, event) => {
+            received.push(event.transport);
+        });
+        await token.wait();
+
+        await deliverRtcFeed(rtcCallbacks, 'rtc-feed-1');
+        await token.unsubscribe();
+        await deliverRtcFeed(rtcCallbacks, 'rtc-feed-2');
+        await deliverWsFeed(wsCallbacks, 'ws-feed-2');
+
+        expect(received).toEqual(['rtc']);
+    });
+
+    it('a granted subscribe handler never receives an RTC unicast on its topic, nor another room\'s multicast', async () => {
+        const rtcCallbacks = captureRtcInboxCallbacks();
+        stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const rooms = ['room-1', 'room-2'] as const;
+        const received: string[] = [];
+        for (const groupId of rooms) {
+            const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition(groupId));
+            await channel.subscribe((_payload, event) => {
+                received.push(`${groupId}:${event.resourceId}`);
+            }).wait();
+        }
+        const unicast = newALUnicastMessage('peer-1', newALRoute('room.feed', 'room-1', 'unicast-1'), 'session-1', 'room.feed.v1', {
+            text: 'feed'
+        });
+
+        for (const message of [unicast, createGrantedFeedMulticast('room-2-feed', 'room-2')]) {
+            for (const callback of rtcCallbacks.values()) {
+                await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
+            }
+        }
+
+        expect(received).toEqual(['room-2:room-2-feed']);
+    });
+
+    it('a granted subscribe handler never receives another room\'s WS delivery on its topic', async () => {
+        const wsCallbacks = captureWsInboxCallbacks();
+        stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const received: string[] = [];
+        for (const groupId of ['room-1', 'room-2'] as const) {
+            const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition(groupId));
+            await channel.subscribe((_payload, event) => {
+                received.push(`${groupId}:${event.resourceId}`);
+            }).wait();
+        }
+
+        await deliverWsFeed(wsCallbacks, 'room-2-feed', 'room-2');
+
+        expect(received).toEqual(['room-2:room-2-feed']);
+    });
+
+    it('a granted subscribe handler sees one delivery when the RTC and WS copies of one publication both arrive', async () => {
+        const wsCallbacks = captureWsInboxCallbacks();
+        const rtcCallbacks = captureRtcInboxCallbacks();
+        stubTopicSubscriptionFetch();
+        const facade = createFacade();
+        await facade.connect();
+        const channel = facade.messages.room<ChatMessage>(toGrantedFeedDefinition());
+        const received: string[] = [];
+        await channel.subscribe((_payload, event) => {
+            received.push(event.transport);
+        }).wait();
+        const carriers = createSharedInboundCarriers({ ws: wsCallbacks, rtc: rtcCallbacks });
+        const publication = createGrantedFeedMulticast('feed-both');
+
+        const overRtc = await carriers.rtc.admitIncomingMessage(publication, { kind: 'rtc-peer', peerId: 'peer-1' });
+        const overWs = await carriers.ws.admitIncomingMessage(publication, { kind: 'trusted-server' });
+        await expect.poll(() => received).toEqual(['rtc']);
+        await carriers.idle();
+
+        // Both carriers admit into the session's one inbound store pair, so the second copy is a duplicate there.
+        expect([overRtc.right, overWs.right]).toEqual([{ kind: 'admitted' }, { kind: 'duplicate' }]);
+        expect(received).toEqual(['rtc']);
+    });
+
     it('subscribe on a members channel or a room-less channel throws unsupported', () => {
         const facade = createFacade();
         const members = facade.messages.room<ChatMessage>({ ...toGrantedFeedDefinition(), access: 'members' });
@@ -892,11 +989,11 @@ describe('Rallar typed message channel', () => {
     });
 });
 
-function toGrantedFeedDefinition(): RallarRoomMessageChannelDefinition {
+function toGrantedFeedDefinition(groupId = 'room-1'): RallarRoomMessageChannelDefinition {
     return {
         topicId: 'room.feed',
         typeId: 'room.feed.v1',
-        roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+        roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId },
         purpose: 'notification',
         access: 'granted'
     };
@@ -914,13 +1011,89 @@ function captureWsInboxCallbacks(): Map<string, WsInboxCallback> {
     return wsCallbacks;
 }
 
-async function deliverWsFeed(wsCallbacks: Map<string, WsInboxCallback>, msgId: string): Promise<void> {
-    const message = newALBroadcastMessage('peer-1', newALRoute('room.feed', 'room-1', msgId), 'room', 'room.feed.v1', {
+/** A granted room publication as the server delivers it over WS: a broadcast to its room. */
+async function deliverWsFeed(wsCallbacks: Map<string, WsInboxCallback>, msgId: string, groupId = 'room-1'): Promise<void> {
+    const message = newALBroadcastMessage('peer-1', newALRoute('room.feed', groupId, msgId), 'room', 'room.feed.v1', {
         text: 'feed'
-    });
+    }, { groupRef: toGrantedFeedDefinition(groupId).roomRef! });
     for (const callback of wsCallbacks.values()) {
         await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
     }
+}
+
+type RtcInboxCallback = Parameters<typeof rtcRxStreamer.onInboxMessageDo>[1];
+
+function captureRtcInboxCallbacks(): Map<string, RtcInboxCallback> {
+    const rtcCallbacks = new Map<string, RtcInboxCallback>();
+    rtcRxStreamer.onInboxMessageDo.mockImplementation((id, callback) => {
+        rtcCallbacks.set(id, callback);
+        return rtcRxStreamer;
+    });
+    rtcRxStreamer.removeInboxMessageCallback.mockImplementation((id) => rtcCallbacks.delete(id));
+    return rtcCallbacks;
+}
+
+async function deliverRtcFeed(rtcCallbacks: Map<string, RtcInboxCallback>, msgId: string): Promise<void> {
+    const message = createGrantedFeedMulticast(msgId);
+    for (const callback of rtcCallbacks.values()) {
+        await callback.onMessage(message, toResourceEntry('room.feed.v1', { text: 'feed' }));
+    }
+}
+
+/** A granted room publication as its origin admits it: frozen to the room's audience. */
+function createGrantedFeedMulticast(msgId: string, groupId = 'room-1'): ALMessage {
+    const roomRef = toGrantedFeedDefinition(groupId).roomRef!;
+    const message = newALMulticastMessage('peer-1', newALRoute('room.feed', groupId, msgId), roomRef, 'room.feed.v1', {
+        text: 'feed'
+    });
+    return {
+        ...message,
+        targets: { mode: 'multicast', groupRef: roomRef, recipientPeerIds: ['peer-1', 'session-1'], snapshotVersion: 1 }
+    };
+}
+
+interface SharedInboundCarriers {
+    readonly ws: ALInboundMessageRuntime;
+    readonly rtc: ALInboundMessageRuntime;
+    idle(): Promise<void>;
+}
+
+/** The session's WS and RTC inbound runtimes over its one store pair, each dispatching to its carrier's callbacks. */
+function createSharedInboundCarriers(callbacks: {
+    readonly ws: Map<string, WsInboxCallback>;
+    readonly rtc: Map<string, RtcInboxCallback>;
+}): SharedInboundCarriers {
+    const stores = createDefaultInMemoryALInboundRuntimeStores();
+    const [ws, rtc] = (['ws', 'rtc'] as const).map((carrier) => {
+        const runtime = createDefaultALInboundMessageRuntime({
+            selfPeerId: 'session-1',
+            stores,
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
+            carrier,
+            planIncomingMessage: (msg, _source, observations) =>
+                planALMessageHandling(msg, {
+                    ...observations,
+                    selfPeerId: 'session-1',
+                    groupMemberPeerIds: ['peer-1', 'session-1']
+                }),
+            dispatchInboxEntry: async (entry) => {
+                for (const callback of callbacks[carrier].values()) {
+                    await callback.onMessage(decodePersistedALMessage(entry.resource), entry);
+                }
+            },
+            sendControlMessages: async () => {},
+            diagnostics: undefined
+        });
+        onTestFinished(() => runtime.dispose());
+        return runtime;
+    });
+    return {
+        ws: ws!,
+        rtc: rtc!,
+        idle: async () => {
+            await waitForOwnedQueueWork(stores.workQueue);
+        }
+    };
 }
 
 /** Answers every topic subscription request `subscribed` and records the subscribe URLs it was sent. */

@@ -1,18 +1,6 @@
+import assert from 'node:assert/strict';
+
 import { createRetentionPlanTokenAdapter } from '../src/retention-plan-token.ts';
-
-function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
-    if (!condition) {
-        throw new Error(message);
-    }
-}
-
-function assertEquals<T>(actual: T, expected: T): void {
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error(
-            `Expected ${JSON.stringify(expected, null, 2)}, got ${JSON.stringify(actual, null, 2)}`
-        );
-    }
-}
 
 const KEY_A = new Uint8Array(32).fill(0x11);
 const KEY_B = new Uint8Array(32).fill(0x22);
@@ -22,34 +10,37 @@ Deno.test('retention plan tokens are bounded process-bound and consequence-bound
     const adapter = createRetentionPlanTokenAdapter({
         key: KEY_A,
         now: () => nowEpochMs,
-        ttlMs: 5_000
+        ttlMs: 5_000,
+        subtle: crypto.subtle
     });
     const otherProcess = createRetentionPlanTokenAdapter({
         key: KEY_B,
         now: () => nowEpochMs,
-        ttlMs: 5_000
+        ttlMs: 5_000,
+        subtle: crypto.subtle
     });
 
     const token = await adapter.issue('candidate-content-a');
 
-    assert(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token));
-    assert(token.length <= 512);
-    assertEquals(await adapter.verify(token, 'candidate-content-a'), true);
-    assertEquals(await adapter.verify(token, 'candidate-content-b'), false);
-    assertEquals(await otherProcess.verify(token, 'candidate-content-a'), false);
+    assert.ok(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token));
+    assert.ok(token.length <= 512);
+    assert.deepEqual(await adapter.verify(token, 'candidate-content-a'), true);
+    assert.deepEqual(await adapter.verify(token, 'candidate-content-b'), false);
+    assert.deepEqual(await otherProcess.verify(token, 'candidate-content-a'), false);
 
     const tampered = `${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`;
-    assertEquals(await adapter.verify(tampered, 'candidate-content-a'), false);
+    assert.deepEqual(await adapter.verify(tampered, 'candidate-content-a'), false);
 
     nowEpochMs = 6_001;
-    assertEquals(await adapter.verify(token, 'candidate-content-a'), false);
+    assert.deepEqual(await adapter.verify(token, 'candidate-content-a'), false);
 });
 
 Deno.test('retention plan token verification rejects malformed and oversized values', async () => {
     const adapter = createRetentionPlanTokenAdapter({
         key: KEY_A,
         now: () => 10_000,
-        ttlMs: 1_000
+        ttlMs: 1_000,
+        subtle: crypto.subtle
     });
 
     for (
@@ -63,7 +54,7 @@ Deno.test('retention plan token verification rejects malformed and oversized val
             `v1.${'a'.repeat(513)}.def`
         ]
     ) {
-        assertEquals(await adapter.verify(token, 'candidate-content'), false);
+        assert.deepEqual(await adapter.verify(token, 'candidate-content'), false);
     }
 });
 
@@ -71,19 +62,47 @@ Deno.test('retention plan token verification rejects noncanonical equivalent sig
     const adapter = createRetentionPlanTokenAdapter({
         key: KEY_A,
         now: () => 10_000,
-        ttlMs: 1_000
+        ttlMs: 1_000,
+        subtle: crypto.subtle
     });
     const token = await adapter.issue('candidate-content');
     const segments = token.split('.');
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
     const signature = segments[2]!;
     const canonicalIndex = alphabet.indexOf(signature.at(-1)!);
-    assertEquals(canonicalIndex & 0b11, 0);
+    assert.deepEqual(canonicalIndex & 0b11, 0);
     const equivalentLast = alphabet[canonicalIndex | 0b01]!;
     const noncanonical = `${segments[0]}.${segments[1]}.${signature.slice(0, -1)}${equivalentLast}`;
 
-    assert(noncanonical !== token);
-    assertEquals(await adapter.verify(noncanonical, 'candidate-content'), false);
+    assert.ok(noncanonical !== token);
+    assert.deepEqual(await adapter.verify(noncanonical, 'candidate-content'), false);
+});
+
+Deno.test('retention plan token verification accepts only the unpadded base64url form of a 32-byte signature', async () => {
+    const adapter = createRetentionPlanTokenAdapter({
+        key: KEY_A,
+        now: () => 10_000,
+        ttlMs: 1_000,
+        subtle: crypto.subtle
+    });
+    const token = await adapter.issue('candidate-content');
+    const [version, expiry, signature] = token.split('.');
+    const standard = signature!.replaceAll('-', '+').replaceAll('_', '/');
+
+    assert.deepEqual(signature!.length, 43);
+    assert.deepEqual(await adapter.verify(token, 'candidate-content'), true);
+    for (
+        const candidate of [
+            `${signature}=`,
+            standard === signature ? `${signature!.slice(0, -1)}+` : standard,
+            `${signature!.slice(0, -1)}*`,
+            '',
+            signature!.slice(0, -2),
+            `${signature}AAAA`
+        ]
+    ) {
+        assert.deepEqual(await adapter.verify(`${version}.${expiry}.${candidate}`, 'candidate-content'), false);
+    }
 });
 
 Deno.test('retention plan token verification rechecks expiry after async crypto', async () => {
@@ -106,5 +125,5 @@ Deno.test('retention plan token verification rechecks expiry after async crypto'
     });
 
     const token = await adapter.issue('candidate-content');
-    assertEquals(await adapter.verify(token, 'candidate-content'), false);
+    assert.deepEqual(await adapter.verify(token, 'candidate-content'), false);
 });

@@ -5,14 +5,21 @@ import {
     AL_CONTROL_REPAIR_TYPE_ID,
     isALControlTypeId
 } from '../al-contracts/al-control-type-ids.ts';
-import type { ApiJsonObject } from '../api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject } from '../api/api-json-value.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';
 
+/** A forged sender keeps the origin's signature, so only a verifier that reads the named key can tell. */
+export type TransportFaultRewrite =
+    | Readonly<{ kind: 'forge-sender'; senderId: string; keyId: string; }>
+    | Readonly<{ kind: 'strip-proof'; }>;
+
+/** Only an RTC send meets `rewrite`: injection refuses a rewriting fault on any other carrier. */
 export type TransportFaultDecision =
     | Readonly<{ kind: 'pass'; }>
     | Readonly<{ kind: 'drop'; faultId: string; }>
-    | Readonly<{ kind: 'delay'; faultId: string; delayMs: number; }>;
+    | Readonly<{ kind: 'delay'; faultId: string; delayMs: number; }>
+    | Readonly<{ kind: 'rewrite'; faultId: string; serialized: string; }>;
 
 export interface TransportFaultPort {
     decideSend(carrier: TransportFaultCarrier, serialized: string): TransportFaultDecision;
@@ -35,14 +42,19 @@ export interface ScriptedTransportFault {
     readonly faultId: string;
     readonly carrier: TransportFaultCarrier;
     readonly match: TransportFaultMatch;
-    readonly action: 'drop' | 'not-ready' | 'backpressure' | Readonly<{ delayMs: number; }>;
+    readonly action:
+        | 'drop'
+        | 'not-ready'
+        | 'backpressure'
+        | Readonly<{ delayMs: number; }>
+        | Readonly<{ rewrite: TransportFaultRewrite; }>;
     readonly remaining: number | 'until-cleared';
 }
 
 export interface TransportFaultObservation {
     readonly faultId: string;
     readonly carrier: TransportFaultCarrier;
-    readonly decision: 'drop' | 'delay' | 'not-ready' | 'backpressure';
+    readonly decision: 'drop' | 'delay' | 'rewrite' | 'not-ready' | 'backpressure';
 }
 
 export interface ScriptedTransportFaultPort extends TransportFaultPort, WebSocketSubmissionReadinessFaultPort {
@@ -88,6 +100,7 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
     private readonly observations: TransportFaultObservation[] = [];
 
     inject(fault: ScriptedTransportFault): void {
+        assertTransportFaultCarrierAction(fault);
         this.faults.set(fault.faultId, fault);
     }
 
@@ -111,15 +124,13 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
 
     decideSend(carrier: TransportFaultCarrier, serialized: string): TransportFaultDecision {
         const fault = this.findMatchingFault(carrier, toSerializedFrameFacts(serialized), 'frame');
-        if (fault?.action === 'drop') {
-            this.consumeFault(fault, 'drop');
-            return { kind: 'drop', faultId: fault.faultId };
+        const decision: TransportFaultDecision = fault === undefined
+            ? { kind: 'pass' }
+            : toFrameFaultDecision(fault, serialized);
+        if (fault !== undefined && decision.kind !== 'pass') {
+            this.consumeFault(fault, decision.kind);
         }
-        if (fault === undefined || typeof fault.action === 'string') {
-            return { kind: 'pass' };
-        }
-        this.consumeFault(fault, 'delay');
-        return { kind: 'delay', faultId: fault.faultId, delayMs: fault.action.delayMs };
+        return decision;
     }
 
     decideBackpressure(carrier: TransportFaultCarrier, message: ALMessage): boolean {
@@ -156,6 +167,38 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
         }
         this.observations.push({ faultId: fault.faultId, carrier: fault.carrier, decision });
     }
+}
+
+function assertTransportFaultCarrierAction(fault: ScriptedTransportFault): void {
+    if (fault.carrier !== 'rtc' && typeof fault.action === 'object' && 'rewrite' in fault.action) {
+        throw new TypeError(`Transport fault ${fault.faultId} rewrites frames, which only the rtc carrier offers.`);
+    }
+}
+
+function toFrameFaultDecision(fault: ScriptedTransportFault, serialized: string): TransportFaultDecision {
+    const { faultId, action } = fault;
+    if (action === 'drop') {
+        return { kind: 'drop', faultId };
+    }
+    if (typeof action === 'string') {
+        return { kind: 'pass' };
+    }
+    return 'rewrite' in action
+        ? { kind: 'rewrite', faultId, serialized: toRewrittenFrame(serialized, action.rewrite) }
+        : { kind: 'delay', faultId, delayMs: action.delayMs };
+}
+
+/** The frame matched as an AL envelope, so it parses to a record; every field the rewrite does not name stays. */
+function toRewrittenFrame(serialized: string, rewrite: TransportFaultRewrite): string {
+    const { proof, ...unsigned }: ApiJsonObject = JSON.parse(serialized);
+    if (rewrite.kind === 'strip-proof') {
+        return JSON.stringify(unsigned);
+    }
+    return JSON.stringify({
+        ...unsigned,
+        id: { ...(isApiJsonObject(unsigned.id) ? unsigned.id : {}), senderId: rewrite.senderId },
+        ...(proof === undefined ? {} : { proof: isApiJsonObject(proof) ? { ...proof, keyId: rewrite.keyId } : proof })
+    });
 }
 
 function toTransportFaultStage(action: ScriptedTransportFault['action']): TransportFaultStage {
@@ -195,11 +238,11 @@ function toSerializedFrameFacts(serialized: string): SerializedFrameFacts | unde
 }
 
 function decodeSerializedFrameFacts(value: unknown): SerializedFrameFacts | undefined {
-    if (!isRecord(value)) {
+    if (!isApiJsonObject(value)) {
         return undefined;
     }
-    const id: ApiJsonObject = isRecord(value.id) ? value.id : {};
-    const payload: ApiJsonObject = isRecord(value.payload) ? value.payload : {};
+    const id: ApiJsonObject = isApiJsonObject(value.id) ? value.id : {};
+    const payload: ApiJsonObject = isApiJsonObject(value.payload) ? value.payload : {};
     const typeId = typeof payload.typeId === 'string' ? payload.typeId : undefined;
     return {
         typeId,
@@ -217,7 +260,7 @@ function decodeReferencedMsgId(resource: unknown): string | undefined {
     }
     try {
         const control = JSON.parse(resource);
-        if (!isRecord(control)) {
+        if (!isApiJsonObject(control)) {
             return undefined;
         }
         if (typeof control.ackedMsgId === 'string') {
@@ -228,8 +271,4 @@ function decodeReferencedMsgId(resource: unknown): string | undefined {
     catch {
         return undefined;
     }
-}
-
-function isRecord(value: unknown): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

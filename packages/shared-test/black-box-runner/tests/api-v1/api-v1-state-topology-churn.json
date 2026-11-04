@@ -235,6 +235,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{ownerClientId}"
         }
@@ -258,6 +259,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{ownerClientId}"
         }
@@ -400,6 +402,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{primaryClientId}"
                     },
@@ -428,6 +431,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{primaryClientId}"
                     }
@@ -473,6 +477,7 @@
                     },
                     "body": {
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "reconnect-connection-generation-{loop.iteration}-{runId}",
                       "principalId": "{primaryClientId}"
                     },
@@ -618,6 +623,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     },
@@ -646,6 +652,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
@@ -691,6 +698,7 @@
                     },
                     "body": {
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "reconnect-connection-generation-{loop.iteration}-{runId}",
                       "principalId": "{secondaryClientId}"
                     },
@@ -836,6 +844,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{tertiaryClientId}"
                     },
@@ -864,6 +873,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{tertiaryClientId}"
                     }
@@ -909,6 +919,7 @@
                     },
                     "body": {
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "publicationKey": null,
                       "connectionGenerationId": "reconnect-connection-generation-{loop.iteration}-{runId}",
                       "principalId": "{tertiaryClientId}"
                     },

@@ -598,6 +598,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                             principalId: 'bob',
                             generationId: 'matrix-generation',
                             connectionGenerationId: 'matrix-ws-generation',
+                            publicationKey: null,
                             connectedAtEpochMs: harness.nowEpochMs,
                             lastHeartbeatAtEpochMs: harness.nowEpochMs,
                             expiresAtEpochMs: harness.nowEpochMs + 60_000,
@@ -637,6 +638,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                         request: {
                             principalId: 'bob',
                             generationId: 'matrix-generation',
+                            publicationKey: null,
                             lastHeartbeatAtEpochMs: harness.nowEpochMs + 1_000,
                             expiresAtEpochMs: harness.nowEpochMs + 61_000,
                             ...bobActor,

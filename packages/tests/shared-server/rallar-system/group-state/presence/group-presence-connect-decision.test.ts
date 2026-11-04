@@ -274,6 +274,7 @@ function connectCommand(): GroupStateMutationCommand {
                 principalId: 'owner',
                 generationId: 'generation-1',
                 connectionGenerationId: 'ws-generation-1',
+                publicationKey: null,
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 1_000,
                 expiresAtEpochMs: 61_000,

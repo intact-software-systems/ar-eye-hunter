@@ -1,14 +1,18 @@
-import { AL_MESSAGE_ENVELOPE_VERSION } from '@shared/al-contracts/al-contract.ts';
-import {
-    decodeALMessageValue,
-    decodePersistedALMessage,
-    decodePersistedALMessageValue
-} from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     describe,
     expect,
     it
 } from 'vitest';
+
+import { AL_MESSAGE_ENVELOPE_VERSION, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    decodeALMessage,
+    decodeALMessageValue,
+    decodePersistedALMessage,
+    decodePersistedALMessageValue
+} from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import type { ALPublicationProof } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 
 interface MutablePersistedALMessageFixture {
     id: {
@@ -311,6 +315,82 @@ describe('persisted AL message decoding', () => {
         expect(() => decodePersistedALMessageValue(sparseAudience)).toThrow(TypeError);
     });
 });
+
+const WELL_FORMED_PROOF: ALPublicationProof = { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 'S'.repeat(85) + 'A' };
+
+describe('the persisted publication proof section', () => {
+    it('decodes a v4 frame without a proof unchanged', () => {
+        const current = currentPersistedALMessage();
+
+        expect(decodeALMessageValue(current).right).toEqual(current);
+    });
+
+    it('round-trips a well-formed proof through the serialized envelope', () => {
+        const proven = toProvenPersistedALMessage(WELL_FORMED_PROOF);
+
+        expect(decodeALMessage(JSON.stringify(proven)).right).toEqual(proven);
+    });
+
+    it.each([
+        { label: 'an ES384 algorithm', proof: { ...WELL_FORMED_PROOF, alg: 'ES384' } },
+        { label: 'an extra proof member', proof: { ...WELL_FORMED_PROOF, kid: 'key-1' } },
+        { label: 'a missing proof member', proof: { alg: 'ES256', keyId: WELL_FORMED_PROOF.keyId } },
+        { label: 'a short signature', proof: { ...WELL_FORMED_PROOF, signature: 'S'.repeat(84) } },
+        { label: 'a signature outside the base64url alphabet', proof: { ...WELL_FORMED_PROOF, signature: '+'.repeat(86) } },
+        { label: 'a signature with non-canonical trailing bits', proof: { ...WELL_FORMED_PROOF, signature: 'S'.repeat(86) } },
+        { label: 'a short key id', proof: { ...WELL_FORMED_PROOF, keyId: 'K'.repeat(42) } },
+        { label: 'a numeric key id', proof: { ...WELL_FORMED_PROOF, keyId: 43 } },
+        { label: 'a proof that is not a record', proof: 'ES256' }
+    ])('refuses $label as malformed', ({ proof }) => {
+        expect(decodeALMessageValue(toProvenPersistedALMessage(proof)).left?.code).toBe('malformed');
+    });
+
+    it('refuses a proof on a frame that binds no expiry: the signed message carries the expiry its receivers keep', () => {
+        expect(decodeALMessageValue({ ...currentPersistedALMessage(), proof: WELL_FORMED_PROOF }).left).toEqual({
+            code: 'malformed',
+            message: 'A publication proof binds its message expiry'
+        });
+    });
+
+    it('still refuses an unknown section as malformed', () => {
+        expect(decodeALMessageValue({ ...currentPersistedALMessage(), signature: WELL_FORMED_PROOF }).left).toEqual({
+            code: 'malformed',
+            message: 'Persisted AL section has unknown fields'
+        });
+    });
+
+    it('decodes a proof-carrying members frame on an ungranted topic and plans it like the same frame without a proof', () => {
+        const groupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+        const membersFrame = newALMulticastMessage('session-a', { topicId: 'room.chat', contextId: 'room-1', resourceId: 'line-1' }, groupRef, 'chat.v1', {
+            text: 'hello'
+        }, { reliability: 'at-least-once', ack: 'receiver' });
+        const context = {
+            nowMs: membersFrame.id.ts,
+            selfPeerId: 'self',
+            fromPeerId: 'session-a',
+            groupMemberPeerIds: ['session-a', 'self', 'next'],
+            connectedPeerIds: ['session-a', 'next'],
+            overlayNeighborPeerIds: ['next']
+        };
+
+        const bound = { ...membersFrame, constraints: { ...membersFrame.constraints, expiresAtMs: membersFrame.id.ts + 30_000 } };
+        const decoded = decodeALMessage(JSON.stringify({ ...bound, proof: WELL_FORMED_PROOF }));
+
+        expect(decoded.right?.proof).toEqual(WELL_FORMED_PROOF);
+        expect(decoded.fold(() => undefined, (message) => planALMessageHandling(message, context)))
+            .toEqual(planALMessageHandling(bound, context));
+    });
+});
+
+/** A frame whose proof binds its expiry, as every signing origin's admitted message does. */
+function toProvenPersistedALMessage<TProof>(proof: TProof):
+    & MutablePersistedALMessageFixture
+    & Readonly<{
+        constraints: { expiresAtMs: number; };
+        proof: TProof;
+    }> {
+    return { ...currentPersistedALMessage(), constraints: { expiresAtMs: 1_800_000_000_000 }, proof };
+}
 
 function currentPersistedALMessage(): MutablePersistedALMessageFixture {
     return {

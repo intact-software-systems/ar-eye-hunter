@@ -40,6 +40,7 @@ export namespace ALInboundMessageAdmission {
             | 'clock'
             | 'effectPreparation'
             | 'planIncomingMessage'
+            | 'verifyPublicationProof'
             | 'forwardMessage'
             | 'canForwardMessage'
             | 'isRoomPeerPresent'
@@ -91,6 +92,7 @@ export class ALInboundMessageAdmission {
         planner: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageAdmission.Attempt>> {
         const { admissionStore, clock, effectPreparation } = this.dependencies;
+        await this.dependencies.verifyPublicationProof?.(msg);
         const nowMs = clock.nowMs();
         const prePlan = planner(msg, source, { nowMs });
         const initialDeadline = resolveALMessageExpireAtMs(msg, prePlan.effective);
@@ -99,6 +101,7 @@ export class ALInboundMessageAdmission {
         if (decoded.left) {
             return Either.ofLeft(decoded.left);
         }
+        await this.dependencies.verifyPublicationProof?.(admitted);
         const facts = readALInboundEffectFacts(nowMs, effectPreparation);
         const read = await admissionStore.readIncomingMessage({ msg: admitted, source, nowMs, prePlan });
         if (this.shutdown.signal.aborted) {
@@ -163,6 +166,7 @@ export class ALInboundMessageAdmission {
         source: ALInboundMessageRuntime.Source,
         planner: ALInboundPlanner
     ): Promise<ALInboundMessageRuntime.Acceptance> {
+        await this.dependencies.verifyPublicationProof?.(msg);
         const nowMs = this.dependencies.clock.nowMs();
         const plan = planner(msg, source, { nowMs });
         const deadline = resolveALMessageExpireAtMs(msg, plan.effective) ??

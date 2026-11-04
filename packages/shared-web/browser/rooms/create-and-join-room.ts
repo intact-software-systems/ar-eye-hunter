@@ -7,6 +7,7 @@ import {
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
@@ -28,6 +29,7 @@ export interface CreateAndJoinRoomInput {
     readonly stateStore: RallarRoomStateStorePort;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(
         options: T
     ) => T & RallarOperationOptions;
@@ -55,6 +57,7 @@ async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<G
         sessionId: session.sessionId,
         generationId: context.middleware.heartbeat.generationId,
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, operationOptions.signal),
+        publicationKey: await input.readPublicationKey(),
         scope,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
         requestedGroupId: createInput.groupId,

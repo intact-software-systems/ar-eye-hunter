@@ -37,6 +37,9 @@ import type {
     OverlayId
 } from '@shared/api/api-config.ts';
 import type { WebRtcOverlayMulticaster } from '@shared/multicast/overlay-multicast-contracts.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -57,6 +60,7 @@ import {
     WebRtcRxStreamerService
 } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     disposeRtcNativeObservationScope,
@@ -80,6 +84,14 @@ export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     /** The session's transport faults, the same port its data channels decide their frames by. */
     readonly faultPort: TransportFaultPort;
+    readonly grantedTopics: RtcGrantedTopicReader;
+    /** The page's one key, which signs each granted RTC publication. */
+    readonly publicationCrypto: PublicationCrypto;
+    /** The page's one verifier, which each granted RTC frame is verified by before it is forwarded or delivered. */
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
+    readonly topicSubscriptions: RtcTopicSubscriptionReader;
+    /** The session's principal, whose subscribe grant a granted frame's delivery reads. */
+    readonly selfPrincipalId: string;
 }
 
 export function initialiseRtcOverlayMulticastManager(
@@ -112,7 +124,12 @@ export function initialiseRtcOverlayMulticastManager(
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
-        faultPort: input.faultPort
+        faultPort: input.faultPort,
+        grantedTopics: input.grantedTopics,
+        publicationCrypto: input.publicationCrypto,
+        publicationVerifier: input.publicationVerifier,
+        topicSubscriptions: input.topicSubscriptions,
+        selfPrincipalId: input.selfPrincipalId
     });
 
     return webRtcOverlayMulticastManager;

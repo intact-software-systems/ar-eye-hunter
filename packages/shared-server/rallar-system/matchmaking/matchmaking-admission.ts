@@ -7,7 +7,7 @@ import type { GroupMutationCommand, GroupMutationFacts } from '../group-state/mu
 import type { NewGroupCohortAdmissionInput } from '../group-state/mutation/membership/compute-new-group-cohort-admission.ts';
 import { readGroupMutation } from '../group-state/mutation/read/read-group-mutation.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
-import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import type { MatchmakingCommand } from './matchmaking-command.ts';
 import type { MatchmakingActor, MatchmakingProposal } from './matchmaking-pool.ts';

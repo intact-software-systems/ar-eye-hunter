@@ -62,9 +62,9 @@ export namespace BlackBoxRallarTopicSubscriptions {
 }
 
 /**
- * The tokens `messages.subscribe` takes on the connect's granted selector topic. Their handler does nothing: the
- * connect's own subscription records every delivery, so the inbound ledger stays the one evidence of arrival. A
- * subscriptionId names one election: subscribing it again once its token was refused or lapsed takes a new token.
+ * The tokens `messages.subscribe` takes on the connect's granted selector topic; each token's handler records the RTC
+ * copies only an election hears. A subscriptionId names one election: subscribing it again once its token was refused
+ * or lapsed takes a new token.
  */
 export class BlackBoxRallarTopicSubscriptions {
     readonly #input: BlackBoxRallarTopicSubscriptions.Input;
@@ -85,7 +85,8 @@ export class BlackBoxRallarTopicSubscriptions {
         }
         const config = this.#input.requireConfig();
         const route = toGrantedTopicRoute(config);
-        const token = this.#input.typedChannels.open(config, route).subscribe(() => undefined);
+        const { typedChannels } = this.#input;
+        const token = typedChannels.open(config, route).subscribe(typedChannels.toElectionHandler(config));
         this.#input.resources.setTopicSubscription(subscriptionId, { topicId: route.topicId, token });
         await Promise.race([token.wait(), this.#input.delay(subscribe.timeoutMs)]);
         return { subscriptionId, status: token.status() };

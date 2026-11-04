@@ -150,6 +150,7 @@ try {
                             principalId: principal,
                             generationId: crypto.randomUUID(),
                             connectionGenerationId: crypto.randomUUID(),
+                            publicationKey: null,
                             connectedAtEpochMs: now,
                             lastHeartbeatAtEpochMs: now,
                             expiresAtEpochMs: now + 120000

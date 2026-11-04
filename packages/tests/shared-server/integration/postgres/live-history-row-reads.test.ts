@@ -310,6 +310,7 @@ function presenceSession(ref: GroupRef, sessionId: string, expiresAtEpochMs: num
         sessionId,
         generationId: `${sessionId}-generation`,
         connectionGenerationId: `${sessionId}-ws-generation`,
+        publicationKey: null,
         generationVersion: 1,
         status: 'active',
         disconnectedAtEpochMs: null,

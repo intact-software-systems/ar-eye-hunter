@@ -38,6 +38,7 @@ function presenceSession(ref: GroupRef): GroupPresenceSession {
         principalId: 'alice',
         generationId: 'generation-1',
         connectionGenerationId: 'ws-generation-1',
+        publicationKey: null,
         generationVersion: 1_000,
         connectedAtEpochMs: 1_000,
         lastHeartbeatAtEpochMs: 1_000,

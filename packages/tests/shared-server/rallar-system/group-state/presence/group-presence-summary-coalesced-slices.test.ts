@@ -209,6 +209,7 @@ async function connect(runtime: GroupBarrierRepository, step: PresenceSessionSte
     await createService(runtime, nowEpochMs).connectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
         principalId,
         generationId,
+        publicationKey: null,
         connectionGenerationId: `ws-${generationId}`,
         actorPrincipalId: principalId,
         expiresAtEpochMs: nowEpochMs + 60_000,

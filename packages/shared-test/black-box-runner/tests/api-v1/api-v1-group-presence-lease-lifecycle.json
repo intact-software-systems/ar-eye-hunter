@@ -279,6 +279,7 @@
         },
         "body": {
           "generationId": "presencelease-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "presencelease-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
@@ -300,6 +301,7 @@
         },
         "body": {
           "generationId": "presencelease-generation-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "presencelease-connection-generation-{runId}",
           "principalId": "{bobClientId}",
           "connectedAtEpochMs": "{leaseStartEpochMs}",
@@ -781,6 +783,7 @@
         },
         "body": {
           "generationId": "presencelease-generation-two-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "presencelease-connection-generation-two-{runId}",
           "principalId": "{bobClientId}"
         }

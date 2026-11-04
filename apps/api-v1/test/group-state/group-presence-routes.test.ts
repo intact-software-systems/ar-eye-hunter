@@ -45,6 +45,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
             request: {
                 generationId: 'generation-connect',
                 connectionGenerationId: 'ws-generation-connect',
+                publicationKey: null,
                 principalId: 'alice',
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
@@ -68,6 +69,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
             sessionId: 'alice-session',
             request: {
                 generationId: 'generation-heartbeat',
+                publicationKey: null,
                 principalId: 'alice',
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
@@ -123,6 +125,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
             request: {
                 generationId: 'generation-connect',
                 connectionGenerationId: 'ws-generation-connect',
+                publicationKey: null,
                 ...forgedActor,
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: 1,
@@ -135,6 +138,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
             ...commandBase,
             request: {
                 generationId: 'generation-heartbeat',
+                publicationKey: null,
                 ...forgedActor,
                 lastHeartbeatAtEpochMs: 2,
                 expiresAtEpochMs: 3,
@@ -250,6 +254,7 @@ Deno.test(
             await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
                 generationId: 'generation-connect',
                 connectionGenerationId: 'ws-generation-connect',
+                publicationKey: null,
                 principalId: 'forged-principal',
                 actorPrincipalId: 'forged-actor',
                 actorSessionId: 'forged-session',
@@ -260,6 +265,7 @@ Deno.test(
             }),
             await requestPresenceMutation(runtime.app, PRESENCE_HEARTBEAT_ROUTE, {
                 generationId: 'generation-heartbeat',
+                publicationKey: null,
                 principalId: 'forged-principal',
                 actorPrincipalId: 'forged-actor',
                 actorSessionId: 'forged-session',
@@ -294,6 +300,7 @@ Deno.test('a presence connect that names no WebSocket connection generation is r
 
     const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
         generationId: 'generation-connect',
+        publicationKey: null,
         principalId: 'alice',
         requestId: 'group-route-connect-without-connection-generation'
     });
@@ -303,6 +310,45 @@ Deno.test('a presence connect that names no WebSocket connection generation is r
         decodeApiMutationFailure(await response.json())?.message ?? '',
         /connectionGenerationId must be a non-empty string/
     );
+    assert.equal(enqueued.length, 0);
+});
+
+Deno.test('a presence body without a public publication key is rejected before it is enqueued', async () => {
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
+    const privateKey = {
+        keyId: 'cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s',
+        publicJwk: {
+            kty: 'EC',
+            crv: 'P-256',
+            x: 'MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4',
+            y: '4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM',
+            d: '870MB6gfuTJ4HtUnUvYMyJpr5eUZNP4Bk43bVdj3eAE'
+        }
+    };
+    const connect = {
+        generationId: 'generation-connect',
+        connectionGenerationId: 'ws-generation-connect',
+        principalId: 'alice',
+        requestId: 'group-route-connect-without-key'
+    };
+
+    const responses = [
+        await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, connect),
+        await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, { ...connect, publicationKey: privateKey }),
+        await requestPresenceMutation(runtime.app, PRESENCE_HEARTBEAT_ROUTE, {
+            generationId: 'generation-heartbeat',
+            requestId: 'group-route-heartbeat-without-key'
+        })
+    ];
+
+    const messages = await Promise.all(responses.map(async (response) => {
+        assert.equal(response.status, 400);
+        return decodeApiMutationFailure(await response.json())?.message ?? '';
+    }));
+    assert.match(messages[0], /publicationKey is invalid: \$: publicationKey is required/);
+    assert.match(messages[1], /publicationKey is invalid: \$\.publicJwk\.d/);
+    assert.match(messages[2], /publicationKey is invalid: \$: publicationKey is required/);
     assert.equal(enqueued.length, 0);
 });
 
@@ -367,6 +413,7 @@ Deno.test('inactive group presence returns the current snapshot as a no-op', asy
     const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
         generationId: inactiveResult.generationId,
         connectionGenerationId: 'ws-generation-connect',
+        publicationKey: null,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 2,
@@ -399,6 +446,7 @@ Deno.test('group presence route rejects a receipt before its cleanup read', asyn
     const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
         generationId: 'generation-1',
         connectionGenerationId: 'ws-generation-connect',
+        publicationKey: null,
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
         connectedAtEpochMs: 1,
@@ -551,7 +599,7 @@ async function verifyMalformedPresenceRequests(
         {
             method: 'POST',
             path: `${sessionPath}/heartbeat`,
-            body: { generationId: 'generation-1', lastHeartbeatAtEpochMs: -1 }
+            body: { generationId: 'generation-1', publicationKey: null, lastHeartbeatAtEpochMs: -1 }
         },
         {
             method: 'POST',
@@ -598,6 +646,7 @@ async function verifyValidPresenceRequests(
                     lastHeartbeatAtEpochMs: 1,
                     expiresAtEpochMs: 1,
                     ...(testCase.method === 'PUT' ? { connectionGenerationId: 'ws-generation-1' } : {}),
+                    ...(testCase.path.endsWith('/disconnect') ? {} : { publicationKey: null }),
                     ...(testCase.path.endsWith('/disconnect') ? { disconnectedAtEpochMs: 1 } : {})
                 })
             }

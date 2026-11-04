@@ -450,6 +450,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-alpha-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "{alphaFirstSocketGenerationId}",
           "principalId": "{alphaClientId}"
         }
@@ -476,6 +477,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-beta-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-reconnect-beta-{runId}",
           "principalId": "{betaClientId}"
         }
@@ -666,6 +668,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-alpha-second-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-reconnect-alpha-second-{runId}",
           "principalId": "{alphaClientId}"
         }
@@ -987,6 +990,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-alpha-second-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "{alphaSecondSocketGenerationId}",
           "principalId": "{alphaClientId}"
         }

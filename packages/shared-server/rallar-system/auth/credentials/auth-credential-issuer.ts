@@ -1,8 +1,10 @@
-export type AuthCredentialIssuer = Readonly<{
-    issueAccessToken(sessionId: string): Promise<string>;
-    issueWebSocketTicket(requestId: string, sessionId: string): Promise<string>;
-    issueAgentTicket(requestId: string, agentId: string, sessionId: string): Promise<string>;
-}>;
+import { toBase64Url } from '@shared/encoding/base64url.ts';
+
+export interface AuthCredentialIssuer {
+    readonly issueAccessToken: (sessionId: string) => Promise<string>;
+    readonly issueWebSocketTicket: (requestId: string, sessionId: string) => Promise<string>;
+    readonly issueAgentTicket: (requestId: string, agentId: string, sessionId: string) => Promise<string>;
+}
 
 export function createHmacAuthCredentialIssuer(secret: string): AuthCredentialIssuer {
     if (!isValidAuthCredentialSecret(secret)) {
@@ -46,12 +48,4 @@ async function signCredential(
         )
     );
     return toBase64Url(new Uint8Array(signature));
-}
-
-function toBase64Url(bytes: Uint8Array): string {
-    let binary = '';
-    for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-    }
-    return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
 }

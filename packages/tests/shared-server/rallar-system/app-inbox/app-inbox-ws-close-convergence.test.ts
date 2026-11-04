@@ -438,6 +438,7 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
                 principalId: facts.authSession.clientId,
                 generationId: presence.generationId,
                 connectionGenerationId: facts.generationId,
+                publicationKey: null,
                 connectedAtEpochMs: presence.connectedAtEpochMs,
                 lastHeartbeatAtEpochMs: presence.connectedAtEpochMs,
                 expiresAtEpochMs: presence.expiresAtEpochMs,

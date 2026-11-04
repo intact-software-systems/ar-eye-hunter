@@ -25,6 +25,10 @@ import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-vol
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarSessionConnectionInput {
@@ -59,6 +63,10 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
+        readonly publicationCrypto: Promise<PublicationCrypto>;
+        readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+        readonly grantedTopics: RtcGrantedTopicReader;
+        readonly topicSubscriptions: RtcTopicSubscriptionReader;
         readonly clearCurrentRoom: () => void;
     }
 }
@@ -128,6 +136,10 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
             readPublicationStageLimits: this.input.readPublicationStageLimits,
             deliverySettlements: this.input.sessionDeliveries.observers,
+            publicationCrypto: this.input.publicationCrypto,
+            publicationVerifier: this.input.publicationVerifier,
+            grantedTopics: this.input.grantedTopics,
+            topicSubscriptions: this.input.topicSubscriptions,
             onResyncRequired: (resync: ALInboundResyncRequired) => this.input.onResyncRequired(resync, storage)
         };
         const generation = this.connectionGeneration;
@@ -257,6 +269,10 @@ function toMiddlewareOptions(
     | 'readVolatileSessionLimits'
     | 'readPublicationStageLimits'
     | 'onResyncRequired'
+    | 'publicationCrypto'
+    | 'publicationVerifier'
+    | 'grantedTopics'
+    | 'topicSubscriptions'
 > {
     return {
         ...toRallarOperationOptions(input.operationOptions),

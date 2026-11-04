@@ -405,6 +405,7 @@ async function runMeasuredPresenceConnect(
             principalId: command.principalId,
             generationId: command.generationId,
             connectionGenerationId: command.generationId,
+            publicationKey: null,
             connectedAtEpochMs: command.timestamp,
             lastHeartbeatAtEpochMs: command.timestamp,
             expiresAtEpochMs: command.timestamp + 60_000,
@@ -428,6 +429,7 @@ async function runMeasuredPresenceHeartbeat(
         request: {
             principalId: command.principalId,
             generationId: command.generationId,
+            publicationKey: null,
             lastHeartbeatAtEpochMs: command.timestamp + 1_000,
             expiresAtEpochMs: command.timestamp + 61_000,
             actorPrincipalId: command.principalId,

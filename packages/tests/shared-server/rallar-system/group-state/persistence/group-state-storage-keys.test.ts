@@ -152,6 +152,7 @@ describe('GroupStateRepository persistence', () => {
             principalId: 'alice',
             generationId: 'generation',
             connectionGenerationId: 'ws-generation',
+            publicationKey: null,
             generationVersion: 1,
             connectedAtEpochMs: 1_000,
             lastHeartbeatAtEpochMs: 1_000,

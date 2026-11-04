@@ -332,6 +332,7 @@ class PresenceConvergenceFixture {
             principalId: sessionId,
             actorPrincipalId: sessionId,
             generationId,
+            publicationKey: null,
             connectionGenerationId: `ws-${generationId}`,
             expiresAtEpochMs: this.now + 60_000,
             requestId: `connect-${generationId}`

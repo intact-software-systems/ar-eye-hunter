@@ -682,6 +682,7 @@ const descriptorCases: readonly DescriptorCase[] = [
                 request: {
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
+                    publicationKey: null,
                     principalId: 'member',
                     expiresAtEpochMs: 9_000,
                     ...actor,
@@ -698,6 +699,7 @@ const descriptorCases: readonly DescriptorCase[] = [
             request: {
                 generationId: 'generation-1',
                 connectionGenerationId: 'ws-generation-1',
+                publicationKey: null,
                 principalId: 'member',
                 expiresAtEpochMs: 9_000,
                 ...actor,
@@ -718,7 +720,7 @@ const descriptorCases: readonly DescriptorCase[] = [
                 scope: SCOPE,
                 groupId,
                 sessionId: 'presence-session',
-                request: { generationId: 'generation-1', ...actor, requestId: 'presence-heartbeat' }
+                request: { generationId: 'generation-1', publicationKey: null, ...actor, requestId: 'presence-heartbeat' }
             }
         },
         descriptor: {
@@ -727,7 +729,7 @@ const descriptorCases: readonly DescriptorCase[] = [
             groupId,
             targetPrincipalId: null,
             sessionId: 'presence-session',
-            request: { generationId: 'generation-1', ...actor, requestId: 'presence-heartbeat' }
+            request: { generationId: 'generation-1', publicationKey: null, ...actor, requestId: 'presence-heartbeat' }
         }
     },
     {

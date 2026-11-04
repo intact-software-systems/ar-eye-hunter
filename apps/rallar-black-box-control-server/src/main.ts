@@ -16,7 +16,7 @@ import { toDistributedRunRollup } from './distributed/distributed-run-evaluation
 import { createControlHttpResponses } from './http/control-http-responses.ts';
 import { ControlHttpSecurity } from './http/control-http-security.ts';
 import { createControlRequestBodyReader } from './http/control-request-body.ts';
-import { createRetentionPlanTokenAdapter } from './retention-plan-token.ts';
+import { createDefaultRetentionPlanTokenAdapter } from './retention-plan-token.ts';
 import { routeControlHttpRequest } from './routes/control-http-router.ts';
 import {
     ControlCompletedRunArchive,
@@ -92,7 +92,7 @@ const routeDependencies = {
     artifactRecorder,
     completedRuns,
     persistence: snapshotPersistence,
-    retentionPlanTokens: createRetentionPlanTokenAdapter({ key: crypto.getRandomValues(new Uint8Array(32)) }),
+    retentionPlanTokens: createDefaultRetentionPlanTokenAdapter(crypto.getRandomValues(new Uint8Array(32))),
     commandDestinations: security,
     retentionMaxRuns: security.retentionMaxRuns,
     runTokenTtlMs: security.runTokenTtlMs,

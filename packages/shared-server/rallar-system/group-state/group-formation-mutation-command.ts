@@ -1,7 +1,7 @@
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
 
-import { serializeCanonicalJson } from '../protocol/canonical-json.ts';
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 
 /**

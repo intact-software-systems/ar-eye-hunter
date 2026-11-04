@@ -26,6 +26,10 @@ import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
+import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
+import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
@@ -202,6 +206,59 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(plan.nack).toMatchObject({ enabled: true, toPeerId: fromPeerId, reason: 'not-yet-in-sync' });
     });
 
+    it('drops a frame carrying a proof on a topic its current snapshot does not grant', () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        groupCache.accept('room-1', createSnapshot());
+        const manager = createDefaultSnapshotAdmissionManager(groupCache);
+        const proven: ALMessage = {
+            ...createRoomMessage('multicast'),
+            proof: { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
+        };
+
+        const plan = manager.planIncomingMessage(proven, { kind: 'rtc-peer', peerId: 'peer-1' });
+
+        // Unauthorized, so no NACK asks the sender for a resend, and nothing is delivered or forwarded.
+        expect(plan.dropReason).toBe('unauthorized: proof-on-ungranted-topic');
+        expect(plan.dropReasonCode).toBe('unauthorized');
+        expect(plan.localDelivery.enabled).toBe(false);
+        expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
+        expect(plan.nack.enabled).toBe(false);
+    });
+
+    it('holds a frame carrying a proof on a topic it cannot judge yet not-yet-in-sync: no snapshot of its room is readable', () => {
+        const manager = createDefaultSnapshotAdmissionManager(new LatestRepository<string, GroupSnapshot>());
+        const proven: ALMessage = {
+            ...createRoomMessage('multicast'),
+            proof: { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
+        };
+
+        const plan = manager.planIncomingMessage(proven, { kind: 'rtc-peer', peerId: 'peer-1' });
+
+        expect(plan.dropReason).toBe('not-yet-in-sync: authority-ahead');
+        expect(plan.localDelivery.enabled).toBe(false);
+        expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
+    });
+
+    it('keeps its room\'s unauthorized refusal of a proof frame frozen at a newer snapshot: it holds nothing for a refresh', () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const snapshot = createSnapshot();
+        // The room is closed by the outbound clock (1 000): its admission refuses every frame unauthorized.
+        groupCache.accept('room-1', { ...snapshot, group: { ...snapshot.group, expiresAtEpochMs: 999 } });
+        const manager = createDefaultSnapshotAdmissionManager(groupCache);
+        const message = createRoomMessage('multicast');
+        const proven: ALMessage = {
+            ...message,
+            targets: { mode: 'multicast', groupRef: roomRef, recipientPeerIds: ['peer-1', 'self'], snapshotVersion: 5 },
+            proof: { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) }
+        };
+
+        const plan = manager.planIncomingMessage(proven, { kind: 'rtc-peer', peerId: 'peer-1' });
+
+        expect(plan.dropReason).toBe('unauthorized');
+        expect(plan.nack.enabled).toBe(false);
+        expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
+    });
+
     it('requires authority for unversioned and originating room plans', () => {
         const manager = createDefaultSnapshotAdmissionManager(new LatestRepository());
         const versioned = createRoomMessage('multicast');
@@ -240,7 +297,12 @@ function createDefaultSnapshotAdmissionManager(
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
         faultPort: createPassThroughTransportFaultPort(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
+        dequeueResilience: createDefaultALOutboundDequeueResilience(),
+        grantedTopics: NO_RTC_GRANTED_TOPICS,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+        topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+        selfPrincipalId: 'self'
     });
     onTestFinished(() => manager.dispose());
     return manager;

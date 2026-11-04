@@ -296,6 +296,7 @@ describe('spectator admission and promotion', () => {
             principalId: 'bob',
             actorPrincipalId: 'bob',
             generationId: 'bob-generation',
+            publicationKey: null,
             connectionGenerationId: 'bob-connection',
             expiresAtEpochMs: now + 60_000,
             requestId: 'connect-bob'
@@ -341,6 +342,7 @@ describe('spectator admission and promotion', () => {
                 generationId: 'bob-generation',
                 generationVersion: 1,
                 connectionGenerationId: 'connection',
+                publicationKey: null,
                 status: 'active' as const,
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 1_000,

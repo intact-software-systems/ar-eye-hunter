@@ -114,6 +114,7 @@ async function seedConnectedGroup(groupId: string, now: number): Promise<GroupBa
     await service.connectPresenceSession(SCOPE, groupId, 'session-alice', {
         principalId: 'alice',
         generationId: 'generation-alice',
+        publicationKey: null,
         connectionGenerationId: 'ws-generation-alice',
         actorPrincipalId: 'alice',
         expiresAtEpochMs: now + 60_000,

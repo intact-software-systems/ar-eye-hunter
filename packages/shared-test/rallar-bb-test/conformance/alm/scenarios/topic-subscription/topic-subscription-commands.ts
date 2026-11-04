@@ -21,7 +21,10 @@ import {
     toResultFact
 } from './topic-subscription-polls.ts';
 
-/** Every cell is a granted-topic proof, which a granted channel carries over WS only. */
+/**
+ * Every cell is a granted-topic proof of the WS path: a granted topic rides RTC only as a signed `ack: 'none'` room
+ * multicast with a verified publisher proof, delivered to `subscribe(handler)`; every other granted send goes over WS.
+ */
 export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];
 
 /** Every cell's connects listen on the granted topic and open their room channel there as granted. */

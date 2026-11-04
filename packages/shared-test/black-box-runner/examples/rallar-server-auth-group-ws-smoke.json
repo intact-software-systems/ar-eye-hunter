@@ -181,7 +181,10 @@
           "x-client-id": "{clientId}"
         },
         "body": {
-          "principalId": "{clientId}"
+          "principalId": "{clientId}",
+          "generationId": "smoke-generation-{sessionId}",
+          "publicationKey": null,
+          "connectionGenerationId": "smoke-connection-generation-{sessionId}"
         }
       },
       "expect": {
@@ -378,7 +381,8 @@
           "x-client-id": "{clientId}"
         },
         "body": {
-          "principalId": "{clientId}"
+          "principalId": "{clientId}",
+          "generationId": "smoke-generation-{sessionId}"
         }
       },
       "expect": {

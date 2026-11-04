@@ -4,6 +4,7 @@ import {
     type GroupDirectoryOrder
 } from '@shared/api/group-directory/group-directory-types.ts';
 import type { Group } from '@shared/api/group-types.ts';
+import { decodeBase64Any, toBase64Url } from '@shared/encoding/base64url.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 export interface GroupDirectoryCursor {
@@ -28,11 +29,7 @@ export function encodeGroupDirectoryCursor(cursor: GroupDirectoryCursor): string
     const tuple = cursor.order === 'online-members'
         ? [cursor.onlineMemberCount, cursor.groupId]
         : [cursor.order, cursor.onlineMemberCount, cursor.peerRttMs, cursor.groupId];
-    const bytes = new TextEncoder().encode(JSON.stringify(tuple));
-    return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))
-        .replaceAll('+', '-')
-        .replaceAll('/', '_')
-        .replaceAll('=', '');
+    return toBase64Url(new TextEncoder().encode(JSON.stringify(tuple)));
 }
 
 export function decodeGroupDirectoryQuery(
@@ -109,7 +106,7 @@ function decodeCursor(
     if (value === null) {
         return null;
     }
-    const cursor = parseCursor(value);
+    const cursor = decodeCursorText(value);
     if (!cursor || cursor.order !== order) {
         issues.push('cursor is not a cursor issued for this directory order');
         return null;
@@ -117,13 +114,13 @@ function decodeCursor(
     return cursor;
 }
 
-function parseCursor(value: string): GroupDirectoryCursor | null {
+function decodeCursorText(value: string): GroupDirectoryCursor | null {
+    const bytes = decodeBase64Any(value).right;
+    if (bytes === undefined) {
+        return null;
+    }
     try {
-        const padded = value.replaceAll('-', '+').replaceAll('_', '/');
-        const binary = atob(padded + '='.repeat((4 - padded.length % 4) % 4));
-        const json = new TextDecoder('utf-8', { fatal: true })
-            .decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
-        return decodeCursorTuple(JSON.parse(json));
+        return decodeCursorTuple(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)));
     }
     catch {
         return null;

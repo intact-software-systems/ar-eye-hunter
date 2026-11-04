@@ -198,6 +198,10 @@ Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async 
         assert.ok(schemas[name]?.required?.includes('generationId'), name);
         assert.ok(schemas[name]?.properties?.generationId, name);
     }
+    for (const name of ['ConnectGroupPresenceSessionRequest', 'HeartbeatGroupPresenceSessionRequest', 'GroupPresenceSession']) {
+        assert.ok(schemas[name]?.required?.includes('publicationKey'), name);
+        assert.ok(schemas[name]?.properties?.publicationKey, name);
+    }
 });
 
 Deno.test('OpenAPI JSON exposes point-read floors, headers, and status boundaries', async () => {

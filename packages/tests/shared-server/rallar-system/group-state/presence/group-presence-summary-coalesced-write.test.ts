@@ -66,6 +66,7 @@ async function connect(runtime: GroupBarrierRepository, principalId: string, now
     await service.connectPresenceSession(SCOPE, GROUP_ID, `${principalId}-session`, {
         principalId,
         generationId: `${principalId}-generation`,
+        publicationKey: null,
         connectionGenerationId: `${principalId}-ws-generation`,
         actorPrincipalId: principalId,
         expiresAtEpochMs: nowEpochMs + 60_000,

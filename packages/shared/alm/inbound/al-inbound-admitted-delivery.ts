@@ -57,6 +57,7 @@ export namespace ALInboundAdmittedDelivery {
             ALInboundMessageRuntime.Dependencies,
             | 'admissionStore'
             | 'planIncomingMessage'
+            | 'verifyPublicationProof'
             | 'dispatchInboxEntry'
             | 'canDispatchMessage'
             | 'forwardMessage'
@@ -83,6 +84,7 @@ export class ALInboundAdmittedDelivery {
         this.orderedDelivery = new ALInboundOrderedDelivery({
             admissionStore: dependencies.admissionStore,
             planIncomingMessage: dependencies.planIncomingMessage,
+            verifyPublicationProof: dependencies.verifyPublicationProof,
             clock: dependencies.clock,
             effectPreparation: dependencies.effectPreparation,
             onResyncRequired: dependencies.onResyncRequired,
@@ -134,6 +136,7 @@ export class ALInboundAdmittedDelivery {
         if (!isAuthorizedStoredWsClientDelivery(read.snapshot.msg, read.source)) {
             return READY_WITHOUT_OBSERVATION;
         }
+        await this.dependencies.verifyPublicationProof?.(read.snapshot.msg);
         const plan = this.dependencies.planIncomingMessage(
             read.snapshot.msg,
             read.source,
@@ -169,6 +172,7 @@ export class ALInboundAdmittedDelivery {
         const source = retriedFromPeerId === undefined || read.source.kind === 'trusted-server'
             ? read.source
             : { ...read.source, peerId: retriedFromPeerId };
+        await this.dependencies.verifyPublicationProof?.(read.msg);
         return {
             msg: read.msg,
             source,

@@ -23,6 +23,9 @@ import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
+import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
+import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 
 import type { BrowserMessagingComposition } from './browser-communication-composition.ts';
 import type { BrowserPeopleStatsComposition, BrowserRoomsComposition } from './browser-product-composition.ts';
@@ -53,6 +56,9 @@ export interface CreateBrowserSessionCoreCompositionInput {
     readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
+    readonly grantedTopics: RtcGrantedTopicReader;
+    readonly topicSubscriptions: RtcTopicSubscriptionReader;
+    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
 }
 
 export interface CreateBrowserStartupCompositionInput {
@@ -86,6 +92,10 @@ export function createBrowserSessionCoreComposition(
         authRuntime: input.foundation.authRuntime,
         stateRuntime: input.foundation.runtime,
         lifecycle: input.foundation.lifecycle,
+        publicationCrypto: input.foundation.publicationCrypto,
+        publicationVerifier: input.publicationVerifier,
+        grantedTopics: input.grantedTopics,
+        topicSubscriptions: input.topicSubscriptions,
         emitState: () => input.state.stateStore.emit(),
         closeDataScopes: async (authSession) => {
             await Promise.all([

@@ -157,6 +157,7 @@
         },
         "body": {
           "generationId": "generation-ryw-{runId}",
+          "publicationKey": null,
           "connectionGenerationId": "connection-generation-ryw-{runId}",
           "principalId": "{aliceClientId}"
         },

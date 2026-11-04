@@ -19,6 +19,7 @@ import {
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { describe, expect, it, vi } from 'vitest';
 
+import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/browser-granted-topics.ts';
 import {
     createDefaultOutboundTestRuntime,
     createIndexedDbOutboundTestStores
@@ -116,7 +117,8 @@ function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDire
             hold: () => {
                 throw new Error('No channel in this test subscribes.');
             }
-        }
+        },
+        grantedTopics: new BrowserGrantedTopics({ findGroupSnapshot: () => undefined })
     });
     return new BrowserDirectorRelayTransport({
         messages: {

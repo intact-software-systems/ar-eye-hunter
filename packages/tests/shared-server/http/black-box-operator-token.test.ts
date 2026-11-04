@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -7,6 +8,7 @@ import {
     verifyRallarBlackBoxOperatorToken
 } from '@shared-server/http/black-box-operator-token.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { toBase64Url } from '@shared/encoding/base64url.ts';
 
 describe('black-box operator token', () => {
     const issuedAtEpochMs = 1_700_000_000_000;
@@ -178,6 +180,32 @@ describe('black-box operator token', () => {
         ).resolves.toEqual({ ok: false, reason: 'malformed' });
     });
 
+    it('decodes token segments in either base64 alphabet and refuses a segment that is not base64', async () => {
+        const token = await signRallarBlackBoxOperatorToken({
+            secret: 'shared-secret',
+            subject: 'alice',
+            sessionId: 'session-1',
+            issuedAtEpochMs,
+            expiresAtEpochMs,
+            tokenId: 'token-1'
+        });
+        const [encodedHeader, encodedClaims, encodedSignature] = token.split('.');
+        const standardSignature = Buffer.from(encodedSignature ?? '', 'base64url').toString('base64');
+        const verify = (candidate: string) =>
+            verifyRallarBlackBoxOperatorToken({
+                token: candidate,
+                secret: 'shared-secret',
+                nowEpochMs: issuedAtEpochMs + 1_000
+            });
+
+        expect(standardSignature).toMatch(/=$/u);
+        expect((await verify(`${encodedHeader}.${encodedClaims}.${standardSignature}`)).ok).toBe(true);
+        await expect(verify(`${encodedHeader}.${encodedClaims}.${encodedSignature}*`))
+            .resolves.toEqual({ ok: false, reason: 'malformed' });
+        await expect(verify(`${encodedHeader}*.${encodedClaims}.${encodedSignature}`))
+            .resolves.toEqual({ ok: false, reason: 'malformed' });
+    });
+
     it('refuses to sign invalid current claims', async () => {
         await expect(
             signRallarBlackBoxOperatorToken({
@@ -217,22 +245,11 @@ async function signTestOperatorToken(
         new TextEncoder().encode(unsignedToken)
     );
 
-    return `${unsignedToken}.${encodeTestTokenBytes(new Uint8Array(signature))}`;
+    return `${unsignedToken}.${toBase64Url(new Uint8Array(signature))}`;
 }
 
 function encodeTestTokenJson(value: JsonWireValue): string {
-    return encodeTestTokenBytes(
+    return toBase64Url(
         new TextEncoder().encode(JSON.stringify(value))
     );
-}
-
-function encodeTestTokenBytes(bytes: Uint8Array): string {
-    let binary = '';
-    for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-    }
-    return btoa(binary)
-        .replaceAll('+', '-')
-        .replaceAll('/', '_')
-        .replace(/=+$/u, '');
 }

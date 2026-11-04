@@ -50,6 +50,11 @@ const dataFrame = JSON.stringify(newALUntargetedMessage(
     'chat',
     { text: 'hello' }
 ));
+const signedFrame = JSON.stringify({
+    ...JSON.parse(dataFrame),
+    proof: { alg: 'ES256', keyId: 'origin-key', signature: 'origin-signature' }
+});
+const chatMatch = { controlType: undefined, typeId: 'chat', msgId: undefined };
 
 describe('transport fault port', () => {
     it.each(['ws', 'rtc'] as const)('holds matching %s traffic until explicit replacement or clear', (carrier) => {
@@ -225,5 +230,67 @@ describe('transport fault port', () => {
         expect(port.decideSend('rtc', JSON.stringify({ id: { msgId: 'm' }, typeId: 'chat' })))
             .toEqual({ kind: 'pass' });
         expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'drop', faultId: 'drop-chat' });
+    });
+});
+
+describe('transport fault rewrite', () => {
+    it('forges the sender: only id.senderId and proof.keyId change, the signature stays', () => {
+        const port = createScriptedTransportFaultPort();
+        const rewrite = { kind: 'forge-sender', senderId: 'forged-session', keyId: 'forged-key' } as const;
+        port.inject({ faultId: 'forge', carrier: 'rtc', match: chatMatch, action: { rewrite }, remaining: 'until-cleared' });
+
+        const decision = port.decideSend('rtc', signedFrame);
+        const original = JSON.parse(signedFrame);
+        expect(decision).toEqual({ kind: 'rewrite', faultId: 'forge', serialized: expect.any(String) });
+        expect(decision.kind === 'rewrite' && JSON.parse(decision.serialized)).toEqual({
+            ...original,
+            id: { ...original.id, senderId: 'forged-session' },
+            proof: { ...original.proof, keyId: 'forged-key' }
+        });
+        // An unsigned frame of the matched type has no proof to rename, and gains none.
+        const unsigned = port.decideSend('rtc', dataFrame);
+        expect(unsigned.kind === 'rewrite' && JSON.parse(unsigned.serialized)).toEqual({
+            ...JSON.parse(dataFrame),
+            id: { ...JSON.parse(dataFrame).id, senderId: 'forged-session' }
+        });
+        expect(port.decideSend('rtc', ackFrame)).toEqual({ kind: 'pass' });
+        expect(port.decideSend('ws', signedFrame)).toEqual({ kind: 'pass' });
+        expect(port.getObservations()).toEqual([
+            { faultId: 'forge', carrier: 'rtc', decision: 'rewrite' },
+            { faultId: 'forge', carrier: 'rtc', decision: 'rewrite' }
+        ]);
+    });
+
+    it('strips the proof and leaves every other field as it was', () => {
+        const port = createScriptedTransportFaultPort();
+        port.inject({
+            faultId: 'strip',
+            carrier: 'rtc',
+            match: chatMatch,
+            action: { rewrite: { kind: 'strip-proof' } },
+            remaining: 1
+        });
+
+        const decision = port.decideSend('rtc', signedFrame);
+        const { proof: _proof, ...unsigned } = JSON.parse(signedFrame);
+        expect(decision.kind === 'rewrite' && JSON.parse(decision.serialized)).toEqual(unsigned);
+        expect(port.decideSend('rtc', signedFrame)).toEqual({ kind: 'pass' });
+    });
+
+    it('refuses a rewrite on the ws carrier at injection, so a WS send never meets one', () => {
+        const port = createScriptedTransportFaultPort();
+
+        expect(() =>
+            port.inject({
+                faultId: 'strip-ws',
+                carrier: 'ws',
+                match: chatMatch,
+                action: { rewrite: { kind: 'strip-proof' } },
+                remaining: 'until-cleared'
+            })
+        ).toThrow('Transport fault strip-ws rewrites frames, which only the rtc carrier offers.');
+        expect(port.decideSend('ws', signedFrame)).toEqual({ kind: 'pass' });
+        expect(createPassThroughTransportFaultPort().decideSend('rtc', signedFrame)).toEqual({ kind: 'pass' });
+        expect(port.getObservations()).toEqual([]);
     });
 });

@@ -133,6 +133,11 @@ export namespace ALInboundMessageRuntime {
         /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
         readonly carrier: ALDeliveryCarrier;
         readonly planIncomingMessage: ALInboundPlanner;
+        /**
+         * Awaited on each message object before this runtime plans it, so a carrier's synchronous planner reads
+         * that object's publication proof verdict. Absence means the carrier's planner reads no proof verdict.
+         */
+        readonly verifyPublicationProof?: (msg: ALMessage) => Promise<boolean>;
         /** Rechecks asynchronous ingress authority before pending data enters conditional admission. */
         readonly readPendingAdmissionAuthority?: (msg: ALMessage, source: Source) => Promise<PendingAuthority>;
         readonly dispatchInboxEntry: (

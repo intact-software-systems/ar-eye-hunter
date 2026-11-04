@@ -495,6 +495,7 @@ function groupWithSessionsIn(
         sessionId,
         generationId: `generation-${sessionId}`,
         connectionGenerationId: `ws-generation-${sessionId}`,
+        publicationKey: null,
         generationVersion: 1,
         status: 'active' as const,
         connectedAtEpochMs: 1,

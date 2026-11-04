@@ -2,11 +2,15 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { toVerdictCommands, type AlmConformanceVerdictFact } from '../../alm-conformance-message-commands.ts';
+import {
+    toVerdictCommands,
+    type AlmConformanceVerdictFact
+} from '../../alm-conformance-message-commands.ts';
 import { toAudienceSendCommand, type AlmConformanceSendClaim } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
-import { RTC_REFUSAL_FACTS, WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
+import { WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
 
 /** Only the WS server arbitrates a claim; a strategy that allows WS routes an exclusive send there at once. */
 export const CLAIM_WS_ROUTE_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];
@@ -40,7 +44,7 @@ export function toHeldByOtherVerdictCommands(step: AlmConformanceStepInput): rea
 /** An exclusive send takes the route a world send takes: WS at once where the strategy allows it, refused on RTC. */
 export function toClaimRouteCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return step.input.carrier === 'rtc'
-        ? toVerdictCommands(step, 'rejected', RTC_REFUSAL_FACTS)
+        ? toVerdictCommands(step, 'rejected', toRtcRefusalFacts('unsupported'))
         : toVerdictCommands(step, 'acknowledged', WS_ROUTE_FACTS);
 }
 

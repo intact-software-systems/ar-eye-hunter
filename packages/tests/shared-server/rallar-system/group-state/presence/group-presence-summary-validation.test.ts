@@ -30,6 +30,7 @@ describe('group presence summary validation', () => {
         await service.connectPresenceSession(SCOPE, 'inactive-summary-filter', 'filter-bob-session', {
             principalId: 'bob',
             generationId: 'filter-bob-generation',
+            publicationKey: null,
             connectionGenerationId: 'filter-bob-ws-generation',
             actorPrincipalId: 'bob',
             expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
@@ -129,6 +130,7 @@ describe('group presence summary validation', () => {
             {
                 principalId: 'alice',
                 generationId: 'alice-corrupt-generation',
+                publicationKey: null,
                 connectionGenerationId: 'alice-corrupt-ws-generation',
                 actorPrincipalId: 'alice',
                 expiresAtEpochMs: BASE_EPOCH_MS + 60_000,

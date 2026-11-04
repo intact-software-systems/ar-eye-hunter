@@ -1,4 +1,5 @@
-import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
+import { serializeCanonicalJson } from '@shared/encoding/canonical-json.ts';
+
 import { requireNonEmptyString, requireOneOf } from '../../group-state-validation-primitives.ts';
 import { validateStoredMember } from '../../persistence/validate-persisted-group.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
