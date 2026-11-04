@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateGroupPresenceMutationRequest } from '@shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts';
+import type { GroupPresenceSummaryComputedWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -59,11 +60,29 @@ describe('the publication key on the presence row', () => {
 
         expect(receipt.outboxIds).toHaveLength(1);
         expect((await readStoredSession(scenario)).publicationKey).toEqual(ROTATED_PUBLICATION_KEY);
-        const envelope = await computeHeartbeatDelta(scenario);
+        const envelope = toDeltaEnvelope(await computeHeartbeatSummaryWork(scenario));
         expect(envelope.sessions.map((session) => session.publicationKey)).toEqual([ROTATED_PUBLICATION_KEY]);
         await converge(scenario, 'key-rotate-heartbeat-converge');
         expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION, BASE_EPOCH_MS))
             .toEqual(ROTATED_PUBLICATION_KEY);
+    });
+
+    it('bumps presenceRevision and fans the delta out for a key-only heartbeat, but queues no topology replan', async () => {
+        const scenario = await createConnectedScenario('key-only-replan', RFC_7517_PUBLICATION_KEY);
+        await converge(scenario, 'key-only-replan-converge');
+        const converged = (await requireSnapshot(scenario.runtime, scenario.groupId)).causalRevision;
+
+        await heartbeat(scenario, ROTATED_PUBLICATION_KEY, 1);
+        const computed = await computeHeartbeatSummaryWork(scenario);
+
+        expect(computed.summary.summary.causalRevision).toEqual({
+            groupRevision: converged.groupRevision,
+            presenceRevision: converged.presenceRevision + 1
+        });
+        expect(toDeltaEnvelope(computed).sessions.map((session) => session.publicationKey)).toEqual([
+            ROTATED_PUBLICATION_KEY
+        ]);
+        expect(computed.topologyReplan).toEqual({ decision: 'no-topology-change' });
     });
 
     it('renews the lease without summary work when the heartbeat names the same key', async () => {
@@ -283,7 +302,7 @@ async function converge(scenario: ConnectedScenario, commandId: string, nowEpoch
     });
 }
 
-async function computeHeartbeatDelta(scenario: ConnectedScenario): Promise<GroupStateDeltaEnvelope> {
+async function computeHeartbeatSummaryWork(scenario: ConnectedScenario): Promise<GroupPresenceSummaryComputedWork> {
     const ref = groupRef(scenario.groupId);
     const event = (await createTestGroupStateRepository(scenario.runtime).listEvents(ref)).findLast(
         (candidate: GroupEvent) => candidate.eventType === 'session-heartbeat'
@@ -302,7 +321,11 @@ async function computeHeartbeatDelta(scenario: ConnectedScenario): Promise<Group
     };
     const work = createSummaryWork(scenario.runtime, BASE_EPOCH_MS + 1_000);
     const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
-    const entry = work.compute(toSummaryExpansion(command, read)).downstreamOutboxWrites[0]?.entry;
+    return work.compute(toSummaryExpansion(command, read));
+}
+
+function toDeltaEnvelope(computed: GroupPresenceSummaryComputedWork): GroupStateDeltaEnvelope {
+    const entry = computed.downstreamOutboxWrites[0]?.entry;
     if (entry === undefined) {
         throw new Error('Expected emitted group state event row');
     }

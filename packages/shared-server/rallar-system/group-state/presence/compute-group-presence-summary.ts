@@ -41,6 +41,8 @@ export type GroupPresenceSummaryComputed =
         evaluatedAtEpochMs: number;
         operation: 'update';
         expectedRevision: number;
+        /** Only session publication keys differ from the stored summary: members adopt them, no topology input moved. */
+        publicationKeysOnly: boolean;
         summary: GroupPresenceSummary;
     }>;
 
@@ -76,8 +78,9 @@ export function computeGroupPresenceSummary(
     }
 
     const content = computeGroupPresenceSummaryContent(read, nowEpochMs);
-    const currentContentMatches = current !== undefined &&
-        groupPresenceSummaryContentEquals(current, content);
+    const topologyInputsMatch = current !== undefined && groupPresenceSummaryTopologyInputsEqual(current, content);
+    const currentContentMatches = current !== undefined && topologyInputsMatch &&
+        groupPresenceSummaryPublicationKeysEqual(current, content);
     if (
         current &&
         current.causalRevision.groupRevision === groupRevision &&
@@ -106,6 +109,8 @@ export function computeGroupPresenceSummary(
             evaluatedAtEpochMs: nowEpochMs,
             operation: 'update',
             expectedRevision: read.current.entry.revision,
+            publicationKeysOnly: current?.causalRevision.groupRevision === groupRevision && topologyInputsMatch &&
+                !currentContentMatches,
             summary
         }
         : {
@@ -177,9 +182,10 @@ export function computeGroupPresenceSummaryContent(
 /**
  * Under damped formation the session lease fields are liveness, not content:
  * a renewed lease over an identical session set must compare equal so a pure
- * renewal never advances presenceRevision. The publication key is content.
+ * renewal never advances presenceRevision. The publication key is content, but
+ * no topology input, so it is compared apart.
  */
-function groupPresenceSummaryContentEquals(
+function groupPresenceSummaryTopologyInputsEqual(
     current: GroupPresenceSummary,
     content: GroupPresenceSummaryContent
 ): boolean {
@@ -189,11 +195,20 @@ function groupPresenceSummaryContentEquals(
         arrayEquals(current.activeSessionIds, content.activeSessionIds) &&
         current.activeSessions.length === content.activeSessions.length &&
         current.activeSessions.every((session, index) =>
-            groupPresenceSessionContentEquals(session, content.activeSessions[index]!)
+            groupPresenceSessionTopologyInputsEqual(session, content.activeSessions[index]!)
         );
 }
 
-function groupPresenceSessionContentEquals(
+function groupPresenceSummaryPublicationKeysEqual(
+    current: GroupPresenceSummary,
+    content: GroupPresenceSummaryContent
+): boolean {
+    return current.activeSessions.every((session, index) =>
+        jsonEquals(session.publicationKey, content.activeSessions[index]?.publicationKey)
+    );
+}
+
+function groupPresenceSessionTopologyInputsEqual(
     current: GroupPresenceSession,
     content: GroupPresenceSession
 ): boolean {
@@ -205,7 +220,6 @@ function groupPresenceSessionContentEquals(
         current.generationId === content.generationId &&
         current.generationVersion === content.generationVersion &&
         current.connectedAtEpochMs === content.connectedAtEpochMs &&
-        jsonEquals(current.publicationKey, content.publicationKey) &&
         current.status === content.status &&
         current.disconnectedAtEpochMs === content.disconnectedAtEpochMs &&
         current.disconnectReason === content.disconnectReason;
