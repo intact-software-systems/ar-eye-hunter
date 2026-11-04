@@ -10,7 +10,11 @@ import {
     computeRtcRoomSnapshotAdmission,
     type RtcRoomSnapshotAdmission
 } from './rtc-room-snapshot-admission.ts';
-import { isRtcUnfrozenRoomMessage, toRtcFrozenRoomMessage } from './web-rtc-overlay-frozen-audience.ts';
+import {
+    isRtcUnfrozenRoomMessage,
+    toRtcFrozenRoomMessage,
+    type RtcFreezingOrigin
+} from './web-rtc-overlay-frozen-audience.ts';
 
 export type RtcCarrierGapAdmission = 'hand-over' | 'hold';
 
@@ -83,15 +87,15 @@ export function toAcceptedOverlayContext(
 export function toRtcCarrierGapFrozenMessage(
     message: ALMessage,
     availability: RtcOutboundCarrierAvailability,
-    selfPeerId: string
+    origin: RtcFreezingOrigin
 ): ALMessage | undefined {
     if (
         availability.kind !== 'unavailable' || availability.admission.kind !== 'authorized' ||
-        message.id.senderId !== selfPeerId || !isRtcUnfrozenRoomMessage(message)
+        message.id.senderId !== origin.selfPeerId || !isRtcUnfrozenRoomMessage(message)
     ) {
         return undefined;
     }
-    return toRtcFrozenRoomMessage(message, availability.admission, selfPeerId);
+    return toRtcFrozenRoomMessage(message, availability.admission, origin);
 }
 
 export interface IsRtcCarrierGapHeldInput {

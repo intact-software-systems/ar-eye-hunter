@@ -14,6 +14,8 @@ import type { PublicationCrypto } from '../../signature/publication-crypto.ts';
 import { readRtcGroupSnapshotByRef } from '../read-rtc-outbound-observation.ts';
 import { toRtcPublicationHandlingPlan, type RtcRoomSnapshotAdmission } from '../rtc-room-snapshot-admission.ts';
 import { toRtcOutboundMessage } from '../to-rtc-outbound-message.ts';
+import { computeRtcLeaderRefusal } from '../web-rtc-overlay-frozen-audience.ts';
+import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';
 import {
     computeRtcGrantedPublicationRefusal,
     resolveRtcGrantedPublicationShapeRefusal
@@ -24,7 +26,7 @@ import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-ve
 import type { RtcTopicSubscriptionReader } from './rtc-topic-subscription-reader.ts';
 import { signRtcPublication, type RtcPublicationSigningFailure } from './sign-rtc-publication.ts';
 
-/** Why a granted leg is not carried: a shape RTC cannot carry, or its origin could not sign it. */
+/** Why a granted leg is not signed: a shape RTC cannot carry (not a room multicast), or its origin could not sign it. */
 type RtcGrantedLegRefusal = Readonly<{ kind: 'unsupported-shape'; message: string; }> | RtcPublicationSigningFailure;
 
 export namespace RtcGrantedPublicationCarrier {
@@ -76,24 +78,35 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * A granted leg is refused for the shape its sender gave before any freezing or signing work, else signed as
-     * `toAdmittedMessage` carries it. Left: the refusal's detail, which a fallback carrier takes over.
+     * A granted leg is refused for the shape its sender gave before any freezing or signing work, else frozen to the
+     * live sessions whose principal holds `subscribe` on its topic and signed as `toAdmittedMessage` carries it: the
+     * signed audience is already the narrowed one. A `group-leader` leg whose leader is outside that audience has no
+     * leader to confirm it. Left: the refusal's detail, which a fallback carrier takes over.
      */
     async signLeg(
         msg: ALMessage,
-        toAdmittedMessage: (msg: ALMessage) => ALMessage
+        toAdmittedMessage: (msg: ALMessage, subscribeHolders: ReadonlySet<string>) => ALMessage
     ): Promise<Either<string, ALMessage>> {
         const shapeRefusal = resolveRtcGrantedPublicationShapeRefusal(msg);
         if (shapeRefusal !== undefined) {
             return Either.ofLeft(toRtcGrantedLegRefusalDetail({ kind: 'unsupported-shape', message: shapeRefusal }));
         }
-        const admitted = toAdmittedMessage(msg);
-        const groupRef = readALTargetGroupRef(admitted);
+        const groupRef = readALTargetGroupRef(msg);
+        const snapshot = (groupRef && readRtcGroupSnapshotByRef(this.#dependencies.groupCache, groupRef)) ?? null;
+        const nowEpochMs = this.#dependencies.clock.nowMs();
+        const subscribeHolders = snapshot === null
+            ? new Set<string>()
+            : computeGrantedSubscribeHolders(snapshot, msg.route.topicId, nowEpochMs);
+        const admitted = toAdmittedMessage(msg, subscribeHolders);
+        const leaderRefusal = computeRtcLeaderRefusal(admitted, msg).left?.dropReason;
+        if (leaderRefusal !== undefined) {
+            return Either.ofLeft(leaderRefusal);
+        }
         const signed = await signRtcPublication({
             crypto: this.#publicationCrypto,
-            snapshot: (groupRef && readRtcGroupSnapshotByRef(this.#dependencies.groupCache, groupRef)) ?? null,
+            snapshot,
             selfSessionId: this.#dependencies.selfSessionId,
-            nowEpochMs: this.#dependencies.clock.nowMs(),
+            nowEpochMs,
             message: admitted
         });
         return signed.mapLeft(toRtcGrantedLegRefusalDetail);

@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RallarTopicSubscription } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage, newALNackControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
@@ -14,12 +15,13 @@ import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { createDefaultOutboundTestRuntime, enqueueOutboundOrThrow } from '../alm/outbound-runtime-test-fixture.ts';
 import { createAvailablePublicationCryptoFixture, type AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
-import { ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
+import { createRtcOriginOverlayFixture, ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
 import {
     createFrozenGrantedMulticast,
     createPublicationRoomSnapshot,
     PUBLICATION_TOPIC_ID,
     PUBLISH_AND_SUBSCRIBE,
+    PUBLISH_ONLY,
     signPublication,
     SUBSCRIBE_ONLY
 } from './rtc-publication-proof-fixtures.ts';
@@ -228,6 +230,58 @@ describe('a receipted granted publication at a frozen recipient that is not subs
     });
 });
 
+describe('a receipted granted send its own RTC origin signs', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('freezes to the subscribe holders, and a holder whose token is pending receives nothing while the sender\'s receipt records it outside', async () => {
+        const chain = await createRelayChain(['a', 'b', 'c', 'd'], { a: PUBLISH_ONLY, b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY });
+        const origin = createRtcOriginOverlayFixture({
+            snapshot: chain.snapshot,
+            nextHopPeerIds: ['b', 'c', 'd'],
+            grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
+            publicationCrypto: chain.keys.a
+        });
+        const subscribed = createChainHop(chain, { selfPeerId: 'b', neighbourPeerIds: ['a'], topicSubscriptions: ACTIVE_TOKEN });
+        const tokens = createPendingTopicSubscriptions();
+        const pending = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'], topicSubscriptions: tokens.reader });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
+            ORIGIN_ROOM,
+            'room.granted-feed.v1',
+            { text: 'feed' },
+            { ack: 'receiver', reliability: 'at-least-once', ttlMs: 30_000, traceId: 'trace-origin-signed' }
+        );
+
+        const admitted = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(0);
+        await subscribed.receive(origin.channels.b!.sent[0]!, 'a');
+        await pending.receive(origin.channels.c!.sent[0]!, 'a');
+        for (const control of [...await subscribed.readSent('a'), ...await pending.readSent('a')]) {
+            await origin.manager.acceptControlMessage(control);
+        }
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.targets).toMatchObject({ recipientPeerIds: ['b', 'c'] });
+        expect(subscribed.delivered.map((delivered) => delivered.id.msgId)).toEqual([message.id.msgId]);
+        expect([tokens.token.status(), pending.delivered]).toEqual(['pending', []]);
+        expect(toDeliveryReceiptStatement(origin.settlements)).toEqual({
+            expected: ['b', 'c'],
+            confirmed: ['b'],
+            outside: ['c'],
+            complete: true
+        });
+    });
+});
+
 async function createRelayChain(
     sessionIds: readonly string[],
     grants: Readonly<Record<string, GroupPublicationTopicPermissions>>
@@ -256,7 +310,7 @@ function createChainHop(chain: RelayChain, input: ChainHopInput): RtcRelayOverla
     });
 }
 
-/** A receipted granted frame as the origin `a` signs it: its receipted send is refused until S3-ii's lift. */
+/** A receipted granted frame as the origin `a` signs it. */
 async function signReceiptedPublication(chain: RelayChain, input: ReceiptedPublicationInput): Promise<ALMessage> {
     const frozen = createFrozenGrantedMulticast({
         senderId: 'a',
@@ -311,6 +365,18 @@ async function deliverEach(messages: readonly ALMessage[], to: RtcRelayOverlayFi
     for (const message of messages) {
         await to.receive(message, fromPeerId);
     }
+}
+
+function toDeliveryReceiptStatement(settlements: readonly ALDeliverySettlement[]) {
+    const last = settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1);
+    return last?.kind === 'acknowledgement'
+        ? {
+            expected: last.expectedRecipientPeerIds,
+            confirmed: last.confirmedRecipientPeerIds,
+            outside: last.outsideAudienceRecipientPeerIds,
+            complete: last.complete
+        }
+        : undefined;
 }
 
 function toReceiptStatement(facts: readonly ALOutboundSettlementFact[]) {

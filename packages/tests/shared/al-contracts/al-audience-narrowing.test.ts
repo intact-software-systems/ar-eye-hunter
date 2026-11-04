@@ -104,6 +104,12 @@ function computeRtcFrozenRecipients(message: ALMessage, snapshot: GroupSnapshot)
     if (admission.kind !== 'authorized') {
         throw new Error('The origin must be authorized in its own room');
     }
-    return computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: toRtcAudienceNarrowing(message), leader: undefined })
+    return computeFrozenAudience({
+        admission,
+        selfPeerId: 'a',
+        narrowing: toRtcAudienceNarrowing(message),
+        leader: undefined,
+        subscribeHolders: null
+    })
         .recipientPeerIds;
 }

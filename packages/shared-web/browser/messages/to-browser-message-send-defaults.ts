@@ -53,14 +53,12 @@ export interface BrowserWsOnlySendInput {
         & RallarRoomAudienceInput
         & Pick<RallarWsSendInput<never>, 'peerId'>;
     readonly channel: BrowserTypedChannelPolicy | undefined;
-    /** The ack `toBrowserMessageSendDefaults` resolves for the send. */
-    readonly ack: ALAckMode;
     readonly strategy: RallarTypedMessageSendStrategy;
 }
 
 /**
  * Only the WS server arbitrates a claim, so RTC carries no exclusive send. RTC carries a granted publication only
- * as a signed room multicast without a receipt, the one a strategy that starts on RTC sends there.
+ * as a signed room multicast, the one a strategy that starts on RTC sends there, with or without a receipt.
  */
 export function isBrowserWsOnlySend(input: BrowserWsOnlySendInput): boolean {
     if (isExclusiveSendInput(input.send)) {
@@ -70,7 +68,7 @@ export function isBrowserWsOnlySend(input: BrowserWsOnlySendInput): boolean {
 }
 
 function isBrowserRtcGrantedPublication(input: BrowserWsOnlySendInput): boolean {
-    return (input.strategy === 'rtc' || input.strategy === 'rtc-with-ws-fallback') && input.ack === 'none' &&
+    return (input.strategy === 'rtc' || input.strategy === 'rtc-with-ws-fallback') &&
         isBrowserRoomMulticastSend(input.send);
 }
 

@@ -552,6 +552,13 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   room. RTC carries no `world` or `all` audience, nor a principal broadcast that names no room: such a broadcast is refused at admission as
   `refused/unsupported` (D157), and the browser sender routes a `world` send to WS first whenever
   the strategy allows it.
+- A granted publication narrows that audience at the same freeze to the live sessions whose principal holds
+  effective `subscribe` on its topic in the origin's cached snapshot
+  ([`computeGrantedSubscribeHolders`](../../multicast/publication/compute-granted-subscribe-holders.ts), passed as
+  `subscribeHolders`; `null` for any other send), before the origin signs it, so the signed targets and the receipt
+  row's expected set are the narrowed audience, receipted or not. A granted `group-leader` send that freezes to no
+  session (no leader, or a leader that holds no `subscribe`) is refused before admission as `refused/unsupported`,
+  which a fallback carrier takes over.
 - A `group-leader` room send narrows that audience to the room's leader (D164, D165, D166). The narrowing
   comes from the message, its `delivery.ack` on a room-bounded target, never from a side input, and its
   `sessionId` is resolved at admission from the room snapshot the carrier holds by

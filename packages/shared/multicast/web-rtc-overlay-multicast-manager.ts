@@ -339,7 +339,10 @@ export class WebRtcOverlayMulticastManager {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
             return await this.enqueueCarriedLegIfAbsent(msg, carrierGap);
         }
-        const signed = await this.#publications.signLeg(msg, (leg) => this.toRtcOriginAdmittedMessage(leg).message);
+        const signed = await this.#publications.signLeg(
+            msg,
+            (leg, subscribeHolders) => this.toRtcOriginAdmittedMessage(leg, subscribeHolders).message
+        );
         return await signed.fold(
             async (detail) =>
                 WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
@@ -640,7 +643,10 @@ export class WebRtcOverlayMulticastManager {
         ) {
             return false;
         }
-        const frozen = toRtcOriginFrozenMessage(msg, availability.context, this.connectionService.input.sessionId);
+        const frozen = toRtcOriginFrozenMessage(msg, availability.context, {
+            selfPeerId: this.connectionService.input.sessionId,
+            subscribeHolders: null
+        });
         const ownedChildPeerIds = resolveALOwnedChildPeerIds(frozen, {
             nowMs: availability.context.nowMs,
             selfPeerId: this.connectionService.input.sessionId,
@@ -701,7 +707,7 @@ export class WebRtcOverlayMulticastManager {
         original: ALMessage,
         stage: RtcOutgoingPlanStage
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        const { availability, policy, message: msg } = this.toRtcOriginAdmittedMessage(original);
+        const { availability, policy, message: msg } = this.toRtcOriginAdmittedMessage(original, null);
         const plan = this.computeOriginRefusal(msg, original, policy)
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
         const planned = toRtcFrozenAudienceDispatchPlan(
@@ -713,12 +719,15 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /** The origin freezes its room send at the first plan whose room authority admits it, then normalizes it. */
-    private toRtcOriginAdmittedMessage(original: ALMessage): RtcOriginAdmittedMessage {
-        const selfPeerId = this.connectionService.input.sessionId;
+    private toRtcOriginAdmittedMessage(
+        original: ALMessage,
+        subscribeHolders: ReadonlySet<string> | null
+    ): RtcOriginAdmittedMessage {
+        const origin = { selfPeerId: this.connectionService.input.sessionId, subscribeHolders };
         const availability = this.readCarrierAvailability(original);
         const context = availability.kind === 'available' ? availability.context : undefined;
-        const frozen = toRtcCarrierGapFrozenMessage(original, availability, selfPeerId) ??
-            toRtcOriginFrozenMessage(original, context, selfPeerId);
+        const frozen = toRtcCarrierGapFrozenMessage(original, availability, origin) ??
+            toRtcOriginFrozenMessage(original, context, origin);
         const policy = this.readOutgoingQosPolicy(frozen, context);
         return { availability, policy, message: toRtcOutboundMessage(frozen, policy.effective) };
     }

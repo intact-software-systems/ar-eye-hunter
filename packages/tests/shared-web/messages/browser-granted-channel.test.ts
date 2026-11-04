@@ -11,7 +11,10 @@ import {
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
-import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
+import type {
+    GroupPublicationGrant,
+    GroupPublicationTopicPermissions
+} from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcCarrierGapAdmission } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
@@ -21,7 +24,8 @@ import {
     createOriginOverlay,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
-    ORIGIN_ROOM
+    ORIGIN_ROOM,
+    type RtcOriginOverlayFixture
 } from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
 import {
     createAvailablePublicationCryptoFixture,
@@ -61,6 +65,7 @@ const ROOM_REF = ORIGIN_ROOM;
 const SESSION_ID = 'a';
 const GRANTED_TOPIC_ID = 'room.granted-feed';
 const PUBLISHER: GroupPublicationTopicPermissions = { publish: true, subscribe: false };
+const SUBSCRIBER: GroupPublicationTopicPermissions = { publish: false, subscribe: true };
 
 const mocks = getRallarFacadeMocks();
 let admissions: CarrierAdmission[] = [];
@@ -141,29 +146,33 @@ describe('a granted typed channel', () => {
         }]);
     });
 
-    it('an ack: receiver room send under rtc settles rejected with refused/unsupported and reaches no carrier', async () => {
-        const crypto = await createAvailablePublicationCryptoFixture();
-        wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
-        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+    it.each<RallarTypedMessageSendStrategy>(['rtc', 'rtc-with-ws-fallback'])(
+        'an ack: receiver room send under %s is admitted on RTC first, carrying its origin\'s proof and frozen to the subscribers',
+        async (strategy) => {
+            const crypto = await createAvailablePublicationCryptoFixture();
+            wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
+            const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
 
-        const handle = await channel.send({ text: 'receipt' }, { strategy: 'rtc', ack: 'receiver' });
+            const handle = await channel.send({ text: 'receipt' }, { strategy, ack: 'receiver' });
 
-        expect((await handle.wait()).lifecycle).toMatchObject({
-            state: 'rejected',
-            evidence: { failure: { kind: 'refused', reason: 'unsupported' } }
-        });
-        expect(admissions).toEqual([]);
-    });
+            expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+            expect(admissions).toMatchObject([{
+                carrier: 'rtc',
+                verdict: 'admitted',
+                message: {
+                    delivery: { ack: 'receiver' },
+                    targets: { mode: 'multicast', recipientPeerIds: ['b', 'c'] },
+                    proof: { alg: 'ES256', keyId: crypto.keyPair.keyId }
+                }
+            }]);
+        }
+    );
 
-    it.each<[RallarTypedMessageSendStrategy, ALAckMode]>([
-        ['rtc-with-ws-fallback', 'receiver'],
-        ['ws-then-rtc', 'none'],
-        ['ws-then-rtc', 'receiver']
-    ])('a room send under %s with ack: %s is admitted on WS only', async (strategy, ack) => {
+    it.each<ALAckMode>(['none', 'receiver'])('a room send under ws-then-rtc with ack: %s is admitted on WS only', async (ack) => {
         setRallarFacadeRoomSnapshots([createRoomSnapshot(PUBLISHER, undefined)]);
         const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
 
-        const handle = await channel.send({ text: strategy }, { strategy, ack });
+        const handle = await channel.send({ text: 'ws-then-rtc' }, { strategy: 'ws-then-rtc', ack });
 
         expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
         expect(admissions.map(({ carrier, message }) => [carrier, message.route.topicId])).toEqual([
@@ -232,44 +241,40 @@ describe('a granted typed channel', () => {
         expect(admissions.map(({ carrier, verdict }) => [carrier, verdict])).toEqual([['rtc', 'refused']]);
     });
 
-    it.each<[string, string, ALAckMode, GroupPublicationTopicPermissions]>([
-        ['without publish', 'no-publish-grant', 'none', { publish: false, subscribe: true }],
-        ['with a receipt', 'unsupported', 'receiver', PUBLISHER]
-    ])('messages.rtc.send on a topic the snapshot grants, %s, settles rejected with refused/%s', async (_name, reason, ack, permissions) => {
-        setRallarFacadeRoomSnapshots([createRoomSnapshot(permissions, undefined)]);
+    it('messages.rtc.send on a topic the snapshot grants, without publish, settles rejected with refused/no-publish-grant', async () => {
+        setRallarFacadeRoomSnapshots([createRoomSnapshot({ publish: false, subscribe: true }, undefined)]);
 
-        const handle = await createRallarTestFacade().messages.rtc.send({
-            typeId: 'room.granted-feed.v1',
-            topicId: GRANTED_TOPIC_ID,
-            roomRef: ROOM_REF,
-            payload: { text: 'lane' },
-            ack
-        });
+        const handle = await createRallarTestFacade().messages.rtc.send(toLaneSend('none'));
 
         expect((await handle.wait()).lifecycle).toMatchObject({
             state: 'rejected',
-            evidence: { failure: { kind: 'refused', reason } }
+            evidence: { failure: { kind: 'refused', reason: 'no-publish-grant' } }
         });
         expect(admissions).toEqual([]);
     });
 
-    it('messages.rtc.send on a topic a granted channel declared, asking a receipt, settles rejected with refused/unsupported', async () => {
+    it('messages.rtc.send on a topic the snapshot grants, asking a receipt, is admitted on RTC carrying its origin\'s proof', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
+
+        const handle = await createRallarTestFacade().messages.rtc.send(toLaneSend('receiver'));
+
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        expect(admissions).toMatchObject([{
+            carrier: 'rtc',
+            verdict: 'admitted',
+            message: { delivery: { ack: 'receiver' }, proof: { alg: 'ES256', keyId: crypto.keyPair.keyId } }
+        }]);
+    });
+
+    it('messages.rtc.send on a topic a granted channel declared, asking a receipt, reaches the RTC carrier', async () => {
         const facade = createRallarTestFacade();
         facade.messages.room<FeedItem>(toGrantedDefinition());
 
-        const handle = await facade.messages.rtc.send({
-            typeId: 'room.granted-feed.v1',
-            topicId: GRANTED_TOPIC_ID,
-            roomRef: ROOM_REF,
-            payload: { text: 'lane' },
-            ack: 'receiver'
-        });
+        const handle = await facade.messages.rtc.send(toLaneSend('receiver'));
 
-        expect((await handle.wait()).lifecycle).toMatchObject({
-            state: 'rejected',
-            evidence: { failure: { kind: 'refused', reason: 'unsupported' } }
-        });
-        expect(admissions).toEqual([]);
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        expect(admissions.map(({ carrier, message }) => [carrier, message.delivery?.ack])).toEqual([['rtc', 'receiver']]);
     });
 
     it('a send without a cached publish grant settles rejected with refused/no-publish-grant before any leg', async () => {
@@ -352,17 +357,26 @@ describe('a granted typed channel', () => {
         }]);
     });
 
-    it('with no cached snapshot the send goes to the server', async () => {
+    it('with no cached snapshot the RTC carrier cannot sign the send and the server decides over WS', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const overlay = wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
+        overlay.groups.delete('room');
+        setRallarFacadeRoomSnapshots([]);
         const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
 
         const handle = await channel.send({ text: 'server decides' });
 
         expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
-        expect(admissions.map(({ carrier, message }) => [carrier, message.route.topicId])).toEqual([
-            ['ws', GRANTED_TOPIC_ID]
+        expect(admissions.map(({ carrier, verdict, message }) => [carrier, verdict, message.route.topicId])).toEqual([
+            ['rtc', 'refused', GRANTED_TOPIC_ID],
+            ['ws', 'admitted', GRANTED_TOPIC_ID]
         ]);
     });
 });
+
+function toLaneSend(ack: ALAckMode) {
+    return { typeId: 'room.granted-feed.v1', topicId: GRANTED_TOPIC_ID, roomRef: ROOM_REF, payload: { text: 'lane' }, ack };
+}
 
 function toGrantedDefinition(): RallarRoomMessageChannelDefinition {
     return {
@@ -375,8 +389,8 @@ function toGrantedDefinition(): RallarRoomMessageChannelDefinition {
 }
 
 /**
- * The room of `a`, `b` and `c`; `permissions` is `a`'s grant row on the granted topic, or none, and `registered` the
- * page key `a`'s presence row attests, or none.
+ * The room of `a`, `b` and `c`, where `b` and `c` may subscribe to the granted topic; `permissions` is `a`'s grant row
+ * on it, or none, and `registered` the page key `a`'s presence row attests, or none.
  */
 function createRoomSnapshot(
     permissions: GroupPublicationTopicPermissions | undefined,
@@ -390,22 +404,23 @@ function createRoomSnapshot(
                 ? { ...session, publicationKey: toGroupPresencePublicationKey(registered) }
                 : session
         ),
-        publicationGrants: permissions === undefined
-            ? []
-            : [{
-                ...ROOM_REF,
-                principalId: SESSION_ID,
-                topics: { [GRANTED_TOPIC_ID]: permissions },
-                updated: createAuditStampFixture(2, 'creator')
-            }]
+        publicationGrants: [
+            ...(permissions === undefined ? [] : [toGrantRow(SESSION_ID, permissions)]),
+            toGrantRow('b', SUBSCRIBER),
+            toGrantRow('c', SUBSCRIBER)
+        ]
     };
+}
+
+function toGrantRow(principalId: string, permissions: GroupPublicationTopicPermissions): GroupPublicationGrant {
+    return { ...ROOM_REF, principalId, topics: { [GRANTED_TOPIC_ID]: permissions }, updated: createAuditStampFixture(2, 'creator') };
 }
 
 /**
  * The page's RTC overlay over the cached room, signing with `publicationCrypto`; its admissions join the log. Its
  * accepted overlay is the one the browser's room send names.
  */
-function wireRtcOverlay(publicationCrypto: PublicationCrypto, snapshot: GroupSnapshot): void {
+function wireRtcOverlay(publicationCrypto: PublicationCrypto, snapshot: GroupSnapshot): RtcOriginOverlayFixture {
     setRallarFacadeRoomSnapshots([snapshot]);
     const overlay = createRtcOriginOverlayFixture({
         snapshot,
@@ -420,6 +435,7 @@ function wireRtcOverlay(publicationCrypto: PublicationCrypto, snapshot: GroupSna
         admissions.push({ carrier: 'rtc', message: result.message, verdict: result.verdict.kind });
         return result;
     };
+    return overlay;
 }
 
 /** Both carriers' admission ports, admitting every send and logging it in the order the sends reached them. */

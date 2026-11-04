@@ -317,7 +317,7 @@ export class BrowserRallarMessageDispatch {
 
     /**
      * A granted delivery names its room. The cached snapshot's publish refusal is advisory and spares either carrier;
-     * without one the server decides (D500). RTC carries it only as the room multicast without a receipt its origin signs.
+     * without one the server decides (D500). RTC carries it only as the room multicast its origin signs.
      */
     private readPublicationRefusal(
         delivery: BrowserRallarMessageDispatch.Delivery

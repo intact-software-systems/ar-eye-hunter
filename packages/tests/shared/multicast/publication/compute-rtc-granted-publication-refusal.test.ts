@@ -19,8 +19,8 @@ const ROUTE = { topicId: 'room.granted-feed', resourceId: 'feed-1', contextId: O
 const PROOF = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 's'.repeat(86) } as const;
 
 describe('computeRtcGrantedPublicationRefusal', () => {
-    it('carries a signed room multicast without a receipt unchanged', () => {
-        const message = { ...createMulticast('none'), proof: PROOF };
+    it.each<ALAckMode>(['none', 'receiver', 'group-leader'])('carries a signed room multicast asking ack %s unchanged', (ack) => {
+        const message = { ...createMulticast(ack), proof: PROOF };
 
         expect(computeRtcGrantedPublicationRefusal(message, message).right).toBe(message);
     });
@@ -28,7 +28,6 @@ describe('computeRtcGrantedPublicationRefusal', () => {
     it.each<[string, ALMessage, string]>([
         ['a unicast', { ...createUnicast(), proof: PROOF }, RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
         ['a room broadcast', { ...createRoomBroadcast(), proof: PROOF }, RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
-        ['a multicast asking a receipt', { ...createMulticast('receiver'), proof: PROOF }, RTC_GRANTED_PUBLICATION_REFUSALS.receipt],
         ['a multicast without a proof', createMulticast('none'), RTC_GRANTED_PUBLICATION_REFUSALS.unsigned]
     ])('refuses %s as unsupported on the volatile lane with no copies', (_name, message, detail) => {
         expect(computeRtcGrantedPublicationRefusal(message, message).left).toEqual({
@@ -56,12 +55,8 @@ describe('resolveRtcGrantedPublicationShapeRefusal', () => {
         ['a multicast without a receipt', createMulticast('none'), undefined],
         ['a unicast', createUnicast(), RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
         ['a room broadcast', createRoomBroadcast(), RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
-        ['a multicast asking every logical recipient', createMulticast('all-logical-recipients'), RTC_GRANTED_PUBLICATION_REFUSALS.receipt],
-        [
-            'a multicast whose quality of service asks a receipt',
-            { ...createMulticast('none'), qos: { ack: { algo: 'receiver' } } },
-            RTC_GRANTED_PUBLICATION_REFUSALS.receipt
-        ],
+        ['a multicast asking every logical recipient', createMulticast('all-logical-recipients'), undefined],
+        ['a multicast whose quality of service asks a receipt', { ...createMulticast('none'), qos: { ack: { algo: 'receiver' } } }, undefined],
         ['a multicast whose quality of service asks hop acknowledgements', { ...createMulticast('none'), qos: { ack: { algo: 'hop' } } }, undefined]
     ])('answers for %s, whatever its proof', (_name, message, expected) => {
         expect(resolveRtcGrantedPublicationShapeRefusal(message)).toBe(expected);
