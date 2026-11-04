@@ -36,7 +36,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         command: fullStackEnabled
             ? 'npm run build && npm run preview -- --host 127.0.0.1 --port 5186 --strictPort'
             : 'npm run dev -- --host 127.0.0.1 --port 5186',
-        env: { API_BASE_URL: 'http://127.0.0.1:8080' },
+        env: { API_BASE_URL: 'http://127.0.0.1:8080', VITE_ARENA_TOURNAMENTS: 'true' },
         url: 'http://127.0.0.1:5186',
         reuseExistingServer: !fullStackEnabled && !process.env.CI,
         timeout: fullStackEnabled ? 120_000 : 60_000

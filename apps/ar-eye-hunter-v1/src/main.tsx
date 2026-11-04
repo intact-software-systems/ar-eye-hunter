@@ -7,6 +7,7 @@ import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 
 import App from './app.tsx';
 import { GAME_COMBAT_LANE_ID } from './game/arena-contracts.ts';
+import { ArenaTournamentsEnabled } from './game/tournament/arena-tournaments-enabled.ts';
 import './styles.css';
 
 (globalThis as { Temporal?: typeof Temporal; }).Temporal ??= Temporal;
@@ -45,6 +46,8 @@ if (!root) {
 
 createRoot(root).render(
     <React.StrictMode>
-        <App />
+        <ArenaTournamentsEnabled value={env['VITE_ARENA_TOURNAMENTS'] === 'true'}>
+            <App />
+        </ArenaTournamentsEnabled>
     </React.StrictMode>
 );

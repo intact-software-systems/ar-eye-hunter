@@ -70,3 +70,13 @@ Production API profiles no longer carry application deployment origins. An empty
 allowlist grants no cross-origin access; the hardened profile refuses startup
 until an explicit nonempty HTTPS allowlist is supplied. This is a deployment
 configuration requirement, not an instruction to change live infrastructure.
+
+## Optional tournaments
+
+Tournaments are disabled by default. The browser runs casual rooms against
+`apps/api-v1` without tournament classification requests or tournament controls.
+To enable tournaments, set `VITE_ARENA_TOURNAMENTS=true` when starting Vite or
+building the app, and use `apps/ar-eye-hunter-server-v1`, which composes API-v1
+with the AR Eye tournament routes. With tournaments enabled, classification
+failures remain blocking; they never silently select casual authority.
+The existing full-stack Playwright fixture explicitly enables tournaments.

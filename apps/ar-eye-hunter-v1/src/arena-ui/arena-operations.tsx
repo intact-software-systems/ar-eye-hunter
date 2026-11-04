@@ -96,7 +96,9 @@ function ArenaSocialControls({ arena }: Pick<ArenaOperationsProps, 'arena'>) {
     );
     return (
         <>
-            {arena.session && <TournamentPanel scope={ARENA_ROOM_SCOPE} createOwner={createTournament} />}
+            {arena.session && arena.tournament.enabled && (
+                <TournamentPanel scope={ARENA_ROOM_SCOPE} createOwner={createTournament} />
+            )}
             {arena.session && <PartyPanel owner={party} friends={friends} />}
             {arena.session && <MatchmakingPanel party={party} owner={matchmaking} findLabel="Find a game" />}
             {arena.session && (
