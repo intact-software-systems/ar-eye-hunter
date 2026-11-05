@@ -10,9 +10,9 @@ import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
-import { Command } from '@shared/cache/Command.ts';
+import { Command, CommandTimedOutError } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
+import { TryWithExhaustedError, TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 
 import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
@@ -357,7 +357,7 @@ async function disconnectRoomSession(
     return undefined;
 }
 
-export interface RoomSessionPresenceInput {
+interface RoomSessionPresenceInput {
     readonly snapshot: GroupSnapshot;
     readonly sessionId: string;
     readonly generationId: string;
@@ -411,6 +411,12 @@ export async function readRoomSessionPresence(input: RoomSessionPresenceInput): 
 }
 
 class RoomPresencePendingError extends Error {}
+
+/** True when the arrival wait ran out with every read answering that the session had not arrived yet. */
+export function isRoomPresenceWaitExhausted(error: Error): boolean {
+    return error instanceof RoomPresencePendingError || error instanceof CommandTimedOutError ||
+        (error instanceof TryWithExhaustedError && error.context.error instanceof RoomPresencePendingError);
+}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;

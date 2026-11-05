@@ -4,6 +4,7 @@ import type { RallarLifecycleParticipant } from '@shared-web/browser/session/ral
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
@@ -35,11 +36,18 @@ export namespace BrowserRoomPresenceReassertion {
     export interface PresencePort {
         /** The room snapshot the connect answered; an HTTP refusal throws. */
         connectPresence(request: PresenceRequest): Promise<GroupSnapshot | undefined>;
-        /** True once a read of the room lists the session under the request's presence generation. */
-        readSessionPresent(snapshot: GroupSnapshot, request: PresenceRequest): Promise<boolean>;
+        /** Whether the session arrived under the request's presence generation, or the failure of a read that could not tell. */
+        readSessionArrival(snapshot: GroupSnapshot, request: PresenceRequest): Promise<Either<Error, SessionArrival>>;
+        /** Hands the arrived snapshot to the room state cache, so the heartbeat renews the room at once. */
+        adoptRoomSnapshot(snapshot: GroupSnapshot, request: PresenceRequest): Promise<void>;
     }
 
-    export type Outcome = 'reasserted' | 'inactive' | 'refused';
+    /** `absent`: the arrival wait ran out without a snapshot that lists the session under the generation. */
+    export type SessionArrival =
+        | Readonly<{ status: 'arrived'; snapshot: GroupSnapshot; }>
+        | Readonly<{ status: 'absent'; }>;
+
+    export type Outcome = 'reasserted' | 'inactive' | 'refused' | 'read-failed';
 }
 
 interface EnteredRoom {
@@ -52,8 +60,15 @@ interface AttachedConnection {
     currentOpen: object;
 }
 
-/** `unchanged`: nothing is known yet, so the room stays remembered for the next open. */
-type PresenceAnswer = 'present' | 'missing' | 'refused' | 'unchanged';
+/**
+ * `unchanged`: nothing is known yet, so the room stays remembered for the next open. `read-failed`: the connect was
+ * answered but no read could tell whether it arrived, so the room stays remembered too.
+ */
+type PresenceAttempt =
+    | Readonly<{ answer: 'present'; arrived: GroupSnapshot; request: BrowserRoomPresenceReassertion.PresenceRequest; }>
+    | Readonly<{ answer: 'missing' | 'read-failed' | 'refused' | 'unchanged'; }>;
+
+type PresenceAnswer = PresenceAttempt['answer'];
 
 const SOCKET_CALLBACK_ID = 'rallar:room-presence-reassertion';
 
@@ -115,27 +130,32 @@ export class BrowserRoomPresenceReassertion
     async #reassert(attempt: ReassertAttempt): Promise<void> {
         const startedAtMs = Date.now();
         const first = await this.#connectOnce(attempt);
-        const answer = first === 'missing' && this.#isCurrent(attempt) ? await this.#connectOnce(attempt) : first;
-        if (!this.#isCurrent(attempt) || answer === 'unchanged') {
+        const settled = first.answer === 'missing' && this.#isCurrent(attempt)
+            ? await this.#connectOnce(attempt)
+            : first;
+        if (!this.#isCurrent(attempt) || settled.answer === 'unchanged') {
             return;
         }
-        if (answer !== 'present') {
+        if (settled.answer === 'present') {
+            await this.#input.presence.adoptRoomSnapshot(settled.arrived, settled.request);
+        }
+        else if (settled.answer !== 'read-failed') {
             this.#entered.delete(attempt.key);
         }
         emitBrowserStateReadDiagnostic({
             name: 'rallar.browser.state-read',
             feature: 'group',
             operation: 'room-presence-reassertion',
-            result: toReassertionOutcome(answer),
+            result: toReassertionOutcome(settled.answer),
             durationMs: Date.now() - startedAtMs
         });
     }
 
-    async #connectOnce(attempt: ReassertAttempt): Promise<PresenceAnswer> {
+    async #connectOnce(attempt: ReassertAttempt): Promise<PresenceAttempt> {
         const { context } = attempt.connection;
         const generation = await context.middleware.ownWsConnectionGeneration.read();
         if (generation.right === undefined) {
-            return 'unchanged';
+            return { answer: 'unchanged' };
         }
         const request: BrowserRoomPresenceReassertion.PresenceRequest = {
             roomRef: attempt.room.roomRef,
@@ -154,11 +174,18 @@ export class BrowserRoomPresenceReassertion
             snapshot = await this.#input.presence.connectPresence(request);
         }
         catch (error) {
-            return toRefusedPresenceAnswer(toError(error));
+            return { answer: toRefusedPresenceAnswer(toError(error)) };
         }
-        return snapshot !== undefined && await this.#input.presence.readSessionPresent(snapshot, request)
-            ? 'present'
-            : 'missing';
+        if (snapshot === undefined) {
+            return { answer: 'missing' };
+        }
+        return (await this.#input.presence.readSessionArrival(snapshot, request)).fold<PresenceAttempt>(
+            () => ({ answer: 'read-failed' }),
+            (arrival) =>
+                arrival.status === 'absent'
+                    ? { answer: 'missing' }
+                    : { answer: 'present', arrived: arrival.snapshot, request }
+        );
     }
 
     #isCurrent({ connection, open, key, room }: ReassertAttempt): boolean {
@@ -177,7 +204,7 @@ interface ReassertAttempt {
  * A 400, 403 or 404 is the server's refusal, except `stale-generation`: a newer socket opened while this connect was in
  * flight, and that open re-asserts. Any other failure leaves the room for the next open.
  */
-function toRefusedPresenceAnswer(error: Error): PresenceAnswer {
+function toRefusedPresenceAnswer(error: Error): Extract<PresenceAnswer, 'refused' | 'unchanged'> {
     if (!(error instanceof ApiHttpError) || ![400, 403, 404].includes(error.status)) {
         return 'unchanged';
     }
@@ -193,5 +220,7 @@ function toReassertionOutcome(answer: Exclude<PresenceAnswer, 'unchanged'>): Bro
             return 'inactive';
         case 'refused':
             return 'refused';
+        case 'read-failed':
+            return 'read-failed';
     }
 }
