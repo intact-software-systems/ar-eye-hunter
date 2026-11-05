@@ -30,11 +30,14 @@ repair hint that retransmits the missing ranges along that hop. The WS server re
 publications through its repair planner instead: a WS client's gap NACK on a track whose sequences
 the server minted pages the missing sequences from the server's ordering index and resends each to
 that requester alone, and only when the requester is in the audience the resent message was admitted
-to and still expected by the receipt of the message whose NACK revealed the gap, so a session that
-joined later is never served and a keyed server publication asks `ack: 'receiver'` (an `ack: 'none'`
-one gets no ranged repair) (D43, D153). The budget is per message: the first requester spends
+to: a peer the receipt expects, or a session of the row's captured `admittedAudience`
+([`isALOutboundExpectedRepairPeer`](./control/is-al-outbound-expected-repair-peer.ts)), so a session that joined
+later is never served (D43, D153). The same rule serves a WS session's gap NACK on a browser-origin track the server
+relayed, which names the track's origin: the server's inbound authorization admits it for a requester inside that
+row's `admittedAudience` and refuses one outside. The budget is per message: the first requester spends
 `maxRepairs` and another requester of the same sequence falls back to the receipt's retries. Only
-the `outbox` fan-out mints; a keyed publish without a sequence at `live-only` or `none` is refused.
+the `outbox` fan-out mints on the server; a keyed publish without a sequence at `live-only` or `none` is refused.
+Each browser carrier mints its own keyed room sends ("Server-minted sequences" below).
 Application consumers select an ordering key for each independent stream and advance its epoch when the stream restarts.
 [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners share.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
@@ -860,6 +863,19 @@ record or a proof is refused; a retained request, an admitted copy and a canonic
 the request without what its admission added (`toALOutboundRequestComparableMessage`: a minted sequence, and the record
 and the proof the request did not carry).
 
+On WS the server records at the first dequeue of a tracked row its own outbound admitted -- a relayed browser-origin
+row or its own publication; a row a producer wrote straight to the outbox records nothing -- for the audience the
+dequeue re-check narrowed, less the sender, and an immediate (live-only) send records nothing. The read records
+whenever the stored row holds no positions yet, and stamps nothing on the stored canonical: the full priors live on
+the sent row (`ALStoredOutboundMessage.sentPositions`, `null` when nothing was recorded, which a row written before
+reads as) and on every `send-prepared` payload, and the WS server derives each recipient's copy from them
+([`toWsQueueBoxServerRecipientCopy`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-recipient-copy.ts):
+that recipient's entry and no proof, or nothing when its position is already past the sequence). Members of one
+dequeue group that record on one track chain their reads in sequence order, so each recipient's row is written once
+per group, at the highest sequence
+([`compute-al-outbound-group-sent-positions.ts`](./lane/compute-al-outbound-group-sent-positions.ts)). In a cluster
+the server records only sessions connected to the dequeuing instance.
+
 Known limitations:
 
 - An origin whose socket was half-open when its receipt was written to it never gets that receipt; a
@@ -1040,9 +1056,10 @@ rate.
 its last message, its ordering snapshot while it is one of the store's 256 (D191, inbound README) and its delivered
 marker, which the cap leaves, and each sending origin keeps one outbound version row (`versionTtlMs`, 1 h). The long-run test
 sends on the application's own sequences, as the browser does: only the browser builds the volatile outbound pair, and
-the browser never mints. A volatile pair that did mint would drop a track's ordering head with its last sent row, after
-the deadline plus the receipt grace, while a receiver keeps the track for the hour, so a track silent for longer than
-that would restart at sequence 1.
+the browser's volatile pair never mints: a send that asks its outbound for a sequence is admitted on the durable pair.
+A volatile pair that did mint would drop a track's ordering head with its last sent row, after the deadline plus the
+receipt grace, while a receiver keeps the track for the hour, so a track silent for longer than that would restart at
+sequence 1.
 
 ### Grouped control sends
 

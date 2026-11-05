@@ -905,8 +905,9 @@ The age limit bounds the messages the bound counts, not the ordering state a
 session keeps (D181). An ordering track stays known for an hour after its last
 message unless the snapshot cap below evicts it first, so a sender that resumes
 a track within the hour is read in order rather than as a gap. An evicted
-track is not: its next arrival reads as a gap from sequence 1, and a buffered
-release on it reads `resync-required`. What the session keeps per message, track or peer is
+track is not: its next recorded copy enters it again at that copy, an
+unrecorded one reads as a gap from sequence 1, and a buffered release on it
+reads `resync-required`. What the session keeps per message, track or peer is
 bounded rather than held for its lifetime: the ids of cancelled and handed-over
 sends for 60 minutes, as long as a durable message's own rows, so a cancelled
 message picked up late within that hour still does not send; the browser's
@@ -935,8 +936,9 @@ empty within the age limit. The browser's resync record leaves its first
 recorded track first, even when that track resynchronized again since.
 
 **Limit:** a receiver holding more than 256 live ordered tracks in one store
-thrashes: each new track evicts a live one, whose next arrival then reads as a
-gap from sequence 1 and is repaired or resynchronized, and a buffered release
+thrashes: each new track evicts a live one, whose next arrival then enters it
+again when recorded, or reads as a gap from sequence 1 and is repaired or
+resynchronized when not, and a buffered release
 on it reads `resync-required`. Keep the live ordered tracks a session receives
 per store under 256.
 
@@ -1163,7 +1165,11 @@ active members holding effective `subscribe` whose subscription their current
 connection generation asserted and whose lease holds, narrowed by the send's
 targeting and leader. A dispatch step drops a recipient whose connection
 generation changed since admission, and an empty audience is admitted with no
-recipients. A send asking `ack: 'group-leader'` whose leader has not
+recipients. A session a dispatch step drops, when it is connected to the
+server instance that sends, is recorded in the receipt's
+`outsideAudienceRecipientPeerIds` of a session's publication rather than left
+unconfirmed; a session connected to another instance stays expected, and a
+server publication records no outside class. A send asking `ack: 'group-leader'` whose leader has not
 subscribed is NACKed `no-leader`, and a room unicast to an unsubscribed session
 `unauthorized`.
 
@@ -1317,8 +1323,10 @@ a restored message has no handle. Receivers keep it in memory, as they keep
   restores the checkpoint. A waiting tab's `local-checkpoint` sends dispatch from
   that tab's memory, are lost with it, and read `admittedDurable: false`.
 - **No positions.** A send that states a `seq` is refused `unsupported`, since a
-  restored copy could reuse a position the receiver already saw; the ordering
-  key alone and latest-wins sends are admitted.
+  restored copy could reuse a position the receiver already saw, and so is a
+  room send that names its ordering key alone, which would ask the session's
+  outbound for a position from a head the checkpoint lane does not keep; the
+  ordering key alone outside a room and latest-wins sends are admitted.
 - **Lag follows `onStorageUnavailable`.** A checkpoint store's `health` reads
   `delayed` once a checkpoint write failed or its oldest unsaved change is two
   interval targets old (a throttled timer); beyond the recovery-lag bound (10 s)
@@ -1852,17 +1860,90 @@ if (failure?.kind === 'relay-rejected' && failure.rejection.reason === 'held-by-
 
 ### Ordering, Repair And Resynchronization
 
-A browser send states its position with `orderingKey` and `seq` together, or
-neither (`RallarRtcSendInput`, `RallarWsSendInput`): a browser's sequence is
-client-assigned; a server publication's is minted by the server (below). The
-receiver keeps one ordering track per ordering key, sender and epoch, delivers
-its messages in sequence from the last contiguous one and buffers what arrives
-early; a new epoch is a new track. No browser send sets the epoch: a browser
-sender's track ends by its TTL or by the receiver's resynchronization. Three
-limits bound the buffer (`AL_MESSAGE_RESOURCE_LIMITS`): a sequence more than
-`repairWindow` (256) past the expected one, or a track already holding
-`bufferedMessages` (256) or `bufferedBytes` (1 MiB), is refused
-`resync-required`. It is not buffered, and the sender is NACKed.
+A send's position on its track is its `seq`, and the receiver keeps one ordering
+track per ordering key, sender and epoch; a new epoch is a new track. No browser
+send sets the epoch: a browser sender's track ends by its TTL or by the
+receiver's resynchronization. A server publication's sequence is minted by the
+server (below).
+
+A browser room send -- an RTC multicast, or a WS room or principal broadcast
+that names its room -- that names `orderingKey` without `seq` asks its own
+outbound for the next sequence (`RallarRtcSendInput`, `RallarWsSendInput`). The
+session keeps one head per track, shared by its RTC and WS carriers, so a
+fallback send's two legs never take one sequence twice; each head write checks
+the head its admission read, and a moved head retries the admission. Such a
+send is admitted on the session's IndexedDB lane whatever its durability, so the
+head outlives the page and a reload continues the track where it stood; it is
+never downgraded to memory, and a `local-checkpoint` room send that names its
+key alone is refused `unsupported`, since the checkpoint lane keeps no head. A
+send that states `seq` keeps it while it lies above the head, which moves to
+it; one at or below the head would reuse a position the track already sent, so
+it is refused before any carrier with
+`failure: { kind: 'refused', reason: 'unsupported' }`. A copy handed over to WS
+after its RTC admission keeps the sequence that admission fixed. An RTC room
+send that states `seq` without a key orders on the room's default key; a WS
+send states its key beside a `seq` (`missing-ordering-key`), and a WS send
+outside a room, which no outbound sequences, states both or neither
+(`missing-seq`).
+
+The receiver delivers a track's messages in sequence from the last contiguous
+one and buffers what arrives early. Three limits bound the buffer
+(`AL_MESSAGE_RESOURCE_LIMITS`): a sequence more than `repairWindow` (256) past
+the expected one, or a track already holding `bufferedMessages` (256) or
+`bufferedBytes` (1 MiB), is refused `resync-required`. It is not buffered, and
+the sender is NACKed.
+
+**Entry and omissions.** The authority that fixes a room copy's audience -- the
+RTC origin for its frozen multicast, the WS server for each copy it sends a
+session -- records, per track and recipient, the last sequence it sent, and
+states it on the copy as `ordering.priorSeqByRecipient`: recipient session to
+prior sequence, listing only the recipients whose prior is below `seq - 1`, `0`
+for one never sent, so a track's first frame carries `{}`. The RTC origin
+records and signs it in the admission that mints or guards the sequence, the
+signature covering it; the WS server records at the first dequeue of a row its
+outbound admitted (a relayed browser-origin row or its own publication), for
+the audience the dequeue re-check narrowed, and sends each recipient a copy that
+carries only that recipient's entry and no `proof`, the server's own word. A
+recipient reads its prior from the record, or `seq - 1` when the record lists
+it not:
+
+- **No position yet**: it enters the track at that copy (`entered`), whatever
+  the sequence, and asks for nothing below it. The application's own state read
+  supplies the past; a session is never sent a sequence admitted before the
+  authority first sent it one.
+- **Prior equal to its position**: the sequences between were never meant for
+  it, so the copy delivers in order (`omitted`), and a buffered copy whose own
+  prior meets the position is released the same way.
+- **Prior ahead of its position**: a gap that ends at the prior.
+- **Prior behind its position, `0` on a track it holds, or no record**: the
+  rule from its own position, a gap from the next sequence it expects.
+
+A frozen recipient that may not deliver -- a granted session without an active
+token -- witnesses the copy: its position moves, nothing is buffered and no gap
+is asked, so on activation it neither delivers nor asks for what it witnessed.
+A peer outside the frozen audience and a pure relay observe nothing and forward
+whatever the track. A recipient that receives a frozen copy below its position
+answers a `before-entry` NACK for itself and asks no repair; relays carry it
+toward the origin as they carry `not-subscribed`, and the receipt records the
+recipient in `outsideAudienceRecipientPeerIds`, never failing the message.
+
+The WS server sends nothing to a recipient whose recorded position is past the
+copy's sequence (a later row of the track already reached it) and resends a
+copy to one at that sequence. A tracked row it admitted waits at dequeue until
+the row before it on the track recorded, unless that row is in the same dequeue
+batch, whose rows of one track commit and are sent in sequence order. The
+inbound diagnostics state every `entered`, `omitted`, `witnessed` and
+`before-entry` as an `ordering-position` event.
+
+**Limits:** a row a server producer writes straight to the outbox (Relic's
+round transitions, state-sync) records no positions, so its copies carry no
+record and its receivers keep the rule from their own position; a live-only
+send records none; in a cluster positions are recorded only for sessions
+connected to the dequeuing instance; a receiver whose entry frame is lost and
+whose next frame arrives first enters past it, and the lost frame answers
+`before-entry` if it arrives; the WS dequeue wait checks the immediate
+predecessor only, and a predecessor that ends without recording holds its
+track's later rows until its own deadline.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the
@@ -1877,8 +1958,9 @@ snapshots (the WS server's are not capped): right after the message that opens
 a 257th track is admitted, the least recently updated snapshot is evicted, in
 a second write, so the store holds 257 snapshots between the two writes. The
 eviction is best-effort: if it fails, the next new track evicts. A later
-message on an evicted track is read as it would be on a new track, from
-sequence 1, and a buffered release on that track reads `resync-required`.
+message on an evicted track is read as it would be on a new track: a recorded
+copy enters it again at that copy, an unrecorded one reads a gap from sequence
+1, and a buffered release on that track reads `resync-required`.
 
 An in-window gap is repaired by the sender. The hop that keeps a browser
 sender's ordering track -- the receiver over RTC, the WS server over WS -- NACKs
@@ -1891,7 +1973,12 @@ it); a report of the same gap once that budget is spent settles the message
 `skipped` with reason `repair-exhausted`, once, so its handle reads `failed`
 with `failure: { kind: 'skipped', reason: 'repair-exhausted' }`. The
 receiver's later sequences stay buffered behind the missing one until the
-track expires or the sender's next epoch opens a new track.
+track expires or the sender's next epoch opens a new track. Repair never serves
+below a recipient's entry: a responder serves only the audience the message was
+frozen or admitted to, and a requester asks only above its own position. A WS
+session's gap NACK on a browser-origin track the server relayed is served by
+the server to a requester inside the audience it admitted that row to, and
+refused for one outside it.
 
 A typed channel may declare the application's owner of resynchronization:
 
@@ -1944,29 +2031,32 @@ when absent); its first message gets `seq` 1 and each later one the next number,
 assigned in the same commit that admits the message, so the sequence stays
 contiguous whichever server instance publishes and continues after a server
 restart. Publishing the same `msgId` again keeps the sequence it was first
-given, and a server publication that states its own `seq` keeps it.
+given, and a server publication that states its own `seq` keeps it. Like a
+relayed browser row, an `outbox` publication records each recipient's position
+at its first dequeue, and its copies carry their recipient's entry; a recipient
+skipped below its position, or dropped by the dequeue re-check, stays expected
+and unconfirmed in the receipt of a server publication, which records no
+outside class of its own.
 
 The server repairs its own publications from its sent copies. A WS client admits
 every server frame as the trusted server's, orders a server track like any other
 with the server peer id as its sender, and NACKs a gap in an at-least-once
-publication to the server. The server serves a requester that is inside the
-audience the message was admitted to and that the receipt of the message
-revealing the gap still expects, so a sequenced server publication asks
-`ack: 'receiver'`; one with `ack: 'none'` gets no ranged repair, and a session
-that joined after a message was published is never sent it. The server
-retransmits the missing sequences to that requester alone, `repairPageMessages`
-(32) per round, until the message's deadline. The repair budget is per message
-and shared by every requester: the first receiver to NACK a sequence spends
-`maxRepairs` (1 by default), and another receiver missing the same sequence gets
-it from the receipt's retries instead. A report of a gap once the budget is
-spent settles the publication `skipped` with reason `repair-exhausted`, once.
-Sequences follow commit order, so under contention a publication fenced out by
-the server's sender version takes the next sequence when its replay commits and
-two publications of one track can commit out of publish order; and since a
-receiver's ordering-track TTL defaults to the repository TTL (60 minutes), the
-lifetime of the server's head, a track silent for over an hour restarts at `seq`
-1 on both sides. A `resync-required` NACK from a receiver settles the
-publication `relay-rejected`
+publication to the server. The server serves a requester inside the audience
+the message was admitted to (a session its receipt expects, or one of the
+audience it captured at admission), so a session that joined after a message
+was published is never sent it. The server retransmits the missing sequences to that requester alone,
+`repairPageMessages` (32) per round, until the message's deadline. The repair
+budget is per message and shared by every requester: the first receiver to NACK
+a sequence spends `maxRepairs` (1 by default), and another receiver missing the
+same sequence gets it from the receipt's retries instead. A report of a gap once
+the budget is spent settles the publication `skipped` with reason
+`repair-exhausted`, once. Sequences follow commit order, so under contention a
+publication fenced out by the server's sender version takes the next sequence
+when its replay commits and two publications of one track can commit out of
+publish order; and since a receiver's ordering-track TTL defaults to the
+repository TTL (60 minutes), the lifetime of the server's head and of a
+browser's, a track silent for over an hour restarts at `seq` 1 on both sides. A
+`resync-required` NACK from a receiver settles the publication `relay-rejected`
 (`{ relay: 'peer', peerId, reason: 'resync-required' }`) and removes its whole
 pending receipt, so no recipient is retried after it. The receiver invokes the
 recovery owner of the typed channel whose topic and type the publication names;
@@ -1974,38 +2064,30 @@ the cursor's `senderId` is the server peer id. The epoch is the server
 application's to choose: a new epoch is a new track at every receiver and
 re-arms the owner.
 
-Relic Hunters publishes its round transitions this way. Each `relic.event.v1` on
-`room.relic.event` is a receipted room notification whose ordering key names the
-game's incarnation (its id and creation time, since a reset keeps the id) and
-whose epoch is the round the transition enters, the finish entering the round
-past the last, so every round is a new track and no track spans a review:
+Relic Hunters orders its round transitions on such a server track, but states
+each sequence itself and writes the publication to the WS outbox inside the
+game mutation's own transaction rather than through `ws.publish`. Each
+`relic.event.v1` on `room.relic.event` is a receipted room notification whose
+ordering key names the game's incarnation (its id and creation time, since a
+reset keeps the id) and whose epoch is the round the transition enters, the
+finish entering the round past the last, so every round is a new track and no
+track spans a review; a round's start is `seq` 1 and its resolution `seq` 2:
 
 ```ts
-const message = newALBroadcastMessage(
-    rallarServer.ws.serverPeerId,
-    newALRoute(RELIC_TOPICS.event, roomId, `${gameId}:${round}`),
-    'room',
-    RELIC_TYPES.event,
-    event,
-    {
-        groupRef,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: RELIC_EVENT_TTL_MS,
-        ordering: {
-            orderingKey: `${gameId}:${createdAtEpochMs}`,
-            epoch: event.transition === 'finished' ? round + 1 : round
-        }
-    }
-);
-await rallarServer.ws.publish({ message, fanout: 'outbox' });
+const ordering = {
+    orderingKey: `${gameId}:${createdAtEpochMs}`,
+    epoch: transition.transition === 'finished' ? transition.round + 1 : transition.round,
+    seq: transition.transition === 'round-resolved' ? 2 : 1
+};
 ```
 
-The browser reads the stream through `messages.room<T>(...)` on that topic and
-type with purpose `notification` and a `recovery` owner that re-reads the game
-over REST (`GET /api/relic/games/:gameId`). A browser that joins during a round
-reads that round's state from the snapshot and its first ordered transition at
-the next round.
+A row written straight to the outbox records no positions, so a Relic receiver
+orders these copies from its own position. The browser reads the stream through
+`messages.room<T>(...)` on that topic and type with purpose `notification` and
+a `recovery` owner that re-reads the game over REST
+(`GET /api/relic/games/:gameId`). A browser that joins during a round reads that
+round's state from the snapshot and its first ordered transition at the next
+round.
 
 ### Membership Fencing
 
