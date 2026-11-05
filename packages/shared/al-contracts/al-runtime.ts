@@ -103,7 +103,7 @@ export function resolveALOrderingPriorSeq(msg: ALMessage, recipientPeerId: strin
     return record === undefined || seq === undefined ? undefined : record[recipientPeerId] ?? seq - 1;
 }
 
-/** The track a message names a key on but no sequence for: the WS server's outbound mints the next one there. */
+/** The track a message names a key on but no sequence for: the outbound owning the track mints the next one there. */
 export function toALSequenceMintTrackKey(msg: ALMessage): string | undefined {
     const orderingKey = msg.ordering?.orderingKey;
 

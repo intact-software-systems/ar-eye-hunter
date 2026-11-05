@@ -11,7 +11,11 @@ import {
     AL_WS_CLIENT_CAPABILITIES,
     toALCarrierQosInputProvider
 } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, type ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { computeALOutboundOrderingRefusal } from '@shared/alm/outbound/admission/sequencing/compute-al-outbound-ordering-refusal.ts';
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
@@ -85,6 +89,19 @@ describe('the checkpointed tier refuses a client sequence and a request for one'
             preparedMessages: []
         });
         expect(refusal.left?.dropReason).toContain('local-checkpoint');
+    });
+
+    it('passes a local-checkpoint key alone outside a room, which no outbound sequences', () => {
+        const msg = newALBroadcastMessage(
+            'a',
+            { topicId: 'app.state', resourceId: 'world-keyed', contextId: 'world' },
+            'world',
+            'app.state.v1',
+            {},
+            { qos: { durability: { algo: 'local-checkpoint' } }, ordering: { orderingKey: 'track' } }
+        );
+
+        expect(computeALOutboundOrderingRefusal({ msg, policy: normalizeALQosPolicy(msg) }).right).toBe(msg);
     });
 
     it.each([

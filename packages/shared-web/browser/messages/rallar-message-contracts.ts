@@ -111,7 +111,7 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T>, RallarRo
     readonly minSnapshotVersion?: number;
     /** The one session or server a send addresses; absent, the send reaches its scope. */
     readonly peerId?: string;
-    /** Stated only beside `orderingKey`, kept above the track's head; absent beside a key, the outbound mints one. */
+    /** Stated only beside `orderingKey`; on a room send kept above the track's head, and absent there it is minted. */
     readonly seq?: number;
     /** The track the broadcast is ordered on; absent, the broadcast is unordered. */
     readonly orderingKey?: string;

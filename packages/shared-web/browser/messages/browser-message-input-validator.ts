@@ -129,10 +129,11 @@ export class BrowserMessageInputValidator {
     }
 
     /**
-     * A broadcast has no group track to default its ordering key from, so a WS send states its key beside a sequence;
-     * a key alone asks the session's outbound for the track's next sequence.
+     * A broadcast has no group track to default its ordering key from, so a WS send states its key beside a sequence.
+     * A room send's key alone asks the session's outbound for the track's next sequence; a send outside a room has no
+     * outbound that sequences it, so it states both halves or neither.
      */
-    public validateWsOrdering<T>(input: RallarWsSendInput<T>): readonly RallarValidationIssue[] {
+    public validateWsOrdering<T>({ input, scope }: ResolvedWsMessageInput<T>): readonly RallarValidationIssue[] {
         const issues: RallarValidationIssue[] = [];
         this.pushOptionalRouteId({
             value: input.orderingKey,
@@ -146,6 +147,13 @@ export class BrowserMessageInputValidator {
                 path: '$.orderingKey',
                 code: 'missing-ordering-key',
                 message: 'An ordered WS send states its orderingKey beside its seq.'
+            });
+        }
+        if (input.orderingKey !== undefined && input.seq === undefined && scope === 'world') {
+            issues.push({
+                path: '$.seq',
+                code: 'missing-seq',
+                message: 'An ordered WS send outside a room states its seq beside its orderingKey.'
             });
         }
         return issues;

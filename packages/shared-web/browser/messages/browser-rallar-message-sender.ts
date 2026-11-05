@@ -208,7 +208,7 @@ export class BrowserRallarMessageSender {
 
         throwIfMessageIssues([
             ...this.input.inputValidator.validateWs(resolved),
-            ...this.input.inputValidator.validateWsOrdering(send),
+            ...this.input.inputValidator.validateWsOrdering(resolved),
             ...validateBrowserPeerInput({ send, roomRef })
         ]);
 

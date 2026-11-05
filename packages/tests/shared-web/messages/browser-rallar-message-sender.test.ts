@@ -387,12 +387,13 @@ describe('Rallar message send', () => {
         });
     });
 
-    it('carries a WS send\'s ordering on its broadcast envelope: a stated sequence, a key alone that asks for one, or none', async () => {
+    it('carries a WS send\'s ordering on its broadcast envelope: a stated sequence, a room key alone that asks for one, or none', async () => {
+        const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
         const facade = createRallarTestFacade();
         const send = { scope: 'world', topicId: 'app.chat', typeId: 'chat.message.v1' } as const;
 
         await facade.messages.ws.send({ ...send, payload: { text: 'ordered' }, orderingKey: 'k', seq: 7 });
-        await facade.messages.ws.send({ ...send, payload: { text: 'minted' }, orderingKey: 'k' });
+        await facade.messages.ws.send({ roomRef, topicId: 'room.chat', typeId: 'chat.message.v1', payload: { text: 'minted' }, orderingKey: 'k' });
         await facade.messages.ws.send({ ...send, payload: { text: 'unordered' } });
 
         const [ordered, minted, unordered] = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
@@ -401,13 +402,17 @@ describe('Rallar message send', () => {
         expect(unordered.ordering).toBeUndefined();
     });
 
-    it('rejects a WS send that states a sequence without its ordering key', async () => {
+    it('rejects a WS send that states a sequence without its ordering key, or a key alone outside a room', async () => {
         const facade = createRallarTestFacade();
         const send = { scope: 'world', topicId: 'app.chat', typeId: 'chat.message.v1', payload: { text: 'half' } } as const;
 
         await expect(facade.messages.ws.send({ ...send, seq: 7 })).rejects.toMatchObject({
             name: 'RallarValidationError',
             issues: [expect.objectContaining({ path: '$.orderingKey', code: 'missing-ordering-key' })]
+        });
+        await expect(facade.messages.ws.send({ ...send, orderingKey: 'k' })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [expect.objectContaining({ path: '$.seq', code: 'missing-seq' })]
         });
     });
 
