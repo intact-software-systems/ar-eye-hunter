@@ -15,8 +15,18 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
  */
 export const SUBSCRIPTION_PHASE_MS = 90_000;
 
+/** How long a role listens, after its positive witness, for a message or event it must not see. */
+export const SUBSCRIPTION_ABSENCE_MS = 5_000;
+
 /** One command of a cell: a request, a token change or read, or a send's admission. */
 export const SUBSCRIPTION_COMMAND_TIMEOUT_MS = 5_000;
+
+/**
+ * Lets a grant, revoke or election's delta reach every member page's snapshot before the next send that must meet it:
+ * a sender's own check judges a grant first, and no recipient refuses a copy as `not-yet-in-sync`, whose resend is a
+ * repair dispatch of its own.
+ */
+export const GRANT_DELTA_MARGIN_MS = 2_000;
 
 const SUBSCRIPTION_POLL_INTERVAL_MS = 250;
 

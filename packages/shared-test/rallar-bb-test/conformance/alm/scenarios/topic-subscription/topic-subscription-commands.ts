@@ -69,6 +69,25 @@ export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestC
     return toPollCommand(step, name, [request]);
 }
 
+/**
+ * The receiver owns the room of a four-role cell: it elects itself before it grants the others, so it is subscribed
+ * before they are. Both producers hold `publish` and `subscribe`; the sibling shares the sender's principal.
+ */
+export function toFourRoleGrantCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
+        toSubscribeCommand(owner, 'receiver'),
+        toTopicGrantCommand({
+            step: owner,
+            operation: 'grant',
+            grantee: 'publisher-b',
+            publish: true,
+            subscribe: true
+        }),
+        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: true })
+    ];
+}
+
 /** Elects the page's session to receive the granted topic under `subscriptionId`, retrying a refusal until active. */
 export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId: string): RallarBlackBoxTestCommand {
     const name = `subscribe-${subscriptionId}`;

@@ -1,10 +1,13 @@
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALInboundOrderingPosition } from '@shared/alm/inbound/admission/to-al-inbound-ordering-position.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type { RallarBlackBoxTestWaitCommand } from '../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
+import { SUBSCRIPTION_ABSENCE_MS } from './scenarios/topic-subscription/topic-subscription-polls.ts';
 
 /** The page's runtime diagnostics topics; an event's `data` is the runtime event itself, in its emitted key order. */
 export const ALM_OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
@@ -22,6 +25,22 @@ interface AlmConformanceDiagnosticWaitInput {
     readonly topic: AlmConformanceDiagnosticsTopic;
     /** A substring of the event's serialised `data`, so it must follow the emitted key order. */
     readonly contains: string;
+    /** Exact values at paths of the event, whatever their key order; `data.kind` names the event. */
+    readonly payloadFields?: Readonly<Record<string, ApiJsonValue>>;
+    /** The page states no such event before the wait or within `SUBSCRIPTION_ABSENCE_MS` of its start. */
+    readonly absent?: boolean;
+}
+
+interface AlmConformanceOrderingPositionWaitInput {
+    readonly name: string;
+    readonly status: ALInboundOrderingPosition['status'];
+    readonly priorSeq: number | null;
+    /**
+     * The track's key up to its epoch, `<ordering key>:<sender peer id>`. The peer id is unknown when the recipe is
+     * authored, so it is a result reference to an arrival the page received from that sender.
+     */
+    readonly track: string;
+    readonly absent?: boolean;
 }
 
 interface AlmConformanceControlAdmissionWaitInput {
@@ -40,14 +59,39 @@ interface AlmConformanceControlAdmissionWaitInput {
  * the text must scope the match itself. The wait starts before the other role's sends, so it owns the verdict budget.
  */
 export function toDiagnosticWait(
-    { step, name, topic, contains }: AlmConformanceDiagnosticWaitInput
+    { step, name, topic, contains, payloadFields, absent }: AlmConformanceDiagnosticWaitInput
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
         commandId: toCommandId(step, name),
-        match: { kind: 'diagnostic', topic, payloadPath: 'data', contains },
-        timeoutMs: toVerdictTimeoutMs(step.input.deadlineMs)
+        match: {
+            kind: 'diagnostic',
+            topic,
+            payloadPath: 'data',
+            contains,
+            ...(payloadFields === undefined ? {} : { payloadFields })
+        },
+        ...(absent === true ? { absent: true } : {}),
+        timeoutMs: absent === true ? SUBSCRIPTION_ABSENCE_MS : toVerdictTimeoutMs(step.input.deadlineMs)
     };
+}
+
+/**
+ * The `ordering-position` event the page's inbound admission states after its commit, for one sender's track. Its
+ * `workerId` names the inbound lane's worker, not the arrival, so the track and the position identify the event.
+ */
+export function toOrderingPositionWait(
+    step: AlmConformanceStepInput,
+    { name, status, priorSeq, track, absent }: AlmConformanceOrderingPositionWaitInput
+): RallarBlackBoxTestWaitCommand {
+    return toDiagnosticWait({
+        step,
+        name,
+        topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+        contains: `"trackKey":"${track}:`,
+        payloadFields: { 'data.kind': 'ordering-position', 'data.status': status, 'data.priorSeq': priorSeq },
+        absent
+    });
 }
 
 /**
@@ -82,8 +126,23 @@ export function toRepairDispatchWait(
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
-        contains: `"msgId":"${toSentMsgIdReference(step)}","typeId":"${toScenarioTypeId(step)}","origin":"repair"`
+        contains: `"msgId":"${toSentMsgIdReference(step)}",${toRepairDispatchText(step)}`
     });
+}
+
+/** No repair dispatched any message of the cell's type from this page: a minted send names no index to pin it by. */
+export function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
+    return toDiagnosticWait({
+        step,
+        name,
+        topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        contains: toRepairDispatchText(step),
+        absent: true
+    });
+}
+
+function toRepairDispatchText(step: AlmConformanceStepInput): string {
+    return `"typeId":"${toScenarioTypeId(step)}","origin":"repair"`;
 }
 
 /** The message id the send of `step.index` returned, resolved from the result cache when the wait is armed. */
