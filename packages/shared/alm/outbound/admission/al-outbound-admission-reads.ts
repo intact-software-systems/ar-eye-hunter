@@ -81,6 +81,7 @@ import { computeALOrderingPriorSeqRecord } from './compute-al-ordering-prior-seq
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import { decodeALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
 import { computeALOutboundSequenceMint } from './sequencing/compute-al-outbound-sequence-mint.ts';
+import { toALOutboundSentPositionPriors } from './to-al-outbound-sent-position-priors.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 
@@ -546,10 +547,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 )
             )
         ]);
-        return Object.fromEntries(recipientPeerIds.map((recipientPeerId, index) => [
-            recipientPeerId,
-            Math.max(positions[index]?.seq ?? 0, roomPosition?.seq ?? 0)
-        ]));
+        return toALOutboundSentPositionPriors({ recipientPeerIds, positions, roomPosition });
     }
 
     /** Without a known origin there is no receipt row to address; the rest is keyed by the message alone. */
