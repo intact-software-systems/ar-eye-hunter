@@ -119,10 +119,22 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return admitted;
     }
 
-    /** A retained control admission owes the same post-commit retry schedule the direct path writes. */
+    /**
+     * A retained control admission owes the same post-commit retry schedule the direct path writes, and states its
+     * verdict as the direct path does: a control whose first admission lost its commit is admitted here.
+     */
     async replayControlAdmission(payload: ALOutboundPendingControl): Promise<ALWorkOutcome> {
         const replayed = await this.dependencies.controlAdmission.replay(payload);
-        if (replayed.committed) {
+        const control = decodeALPeerControlMessage(payload.msg).right;
+        if (replayed.admitted !== null && control !== undefined) {
+            writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
+                control: payload.msg,
+                targetMsgId: controlTargetMsgId(control),
+                receiptPhase: undefined,
+                admitted: replayed.admitted
+            });
+        }
+        if (replayed.admitted?.kind === 'committed') {
             await this.scheduleNotYetInSyncRetryIfRequired(payload.msg);
         }
         return replayed.outcome;
