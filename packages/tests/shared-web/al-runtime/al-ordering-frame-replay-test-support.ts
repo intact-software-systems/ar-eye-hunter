@@ -14,6 +14,9 @@ export interface KeyedRoomSendInput {
     readonly resourceId: string;
 }
 
+/** A frame a fixture's native RTC channel or WebSocket recorded as sent. */
+export type SentFrame = string | Blob | ArrayBuffer | ArrayBufferView;
+
 export interface ALOrderingFrameReplay {
     readonly statuses: readonly ALOrderingObservationStatus[];
     readonly missingRanges: readonly ALSeqRange[];
@@ -30,7 +33,7 @@ export function createKeyedRoomSend(senderId: string, roomRef: GroupRef, input: 
     );
 }
 
-export function decodeSentOrderingSeqs(frames: readonly unknown[]): readonly number[] {
+export function decodeSentOrderingSeqs(frames: readonly SentFrame[]): readonly number[] {
     return decodeSentFrames(frames).map((message) => {
         const seq = message.ordering?.seq;
         if (seq === undefined) {
@@ -41,7 +44,7 @@ export function decodeSentOrderingSeqs(frames: readonly unknown[]): readonly num
 }
 
 /** The frames as one recipient observes them in send order, each observation applied before the next. */
-export function replayALOrderingObservation(frames: readonly unknown[], recipientPeerId: string): ALOrderingFrameReplay {
+export function replayALOrderingObservation(frames: readonly SentFrame[], recipientPeerId: string): ALOrderingFrameReplay {
     let snapshot: ALOrderingTrackSnapshot | undefined;
     const statuses: ALOrderingObservationStatus[] = [];
     const missingRanges: ALSeqRange[] = [];
@@ -63,6 +66,11 @@ export function replayALOrderingObservation(frames: readonly unknown[], recipien
     return { statuses, missingRanges };
 }
 
-function decodeSentFrames(frames: readonly unknown[]): readonly ALMessage[] {
-    return frames.map((frame) => decodePersistedALMessage(String(frame)));
+function decodeSentFrames(frames: readonly SentFrame[]): readonly ALMessage[] {
+    return frames.map((frame) => {
+        if (typeof frame !== 'string') {
+            throw new Error('An AL carrier sends each frame as JSON text');
+        }
+        return decodePersistedALMessage(frame);
+    });
 }
