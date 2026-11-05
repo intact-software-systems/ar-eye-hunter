@@ -2,7 +2,9 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALControlMessage,
     toALControlRecipientPeerId,
-    type ALAckPayload
+    type ALAckPayload,
+    type ALNackPayload,
+    type ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -20,6 +22,14 @@ export interface ALInboundReceiver {
         ack: ALAckPayload,
         controlIdentity?: ALMessage['id']
     ) => ALMessageRejection | undefined;
+    /**
+     * Why a session's NACK or repair addressed to another session, the origin of a track this receiver relays, may
+     * not be admitted here for that origin's row; undefined admits it. The WS server answers for the rows it relays.
+     */
+    readonly readRelayedRepairRequestRejection: (
+        request: ALNackPayload | ALRepairPayload,
+        requesterPeerId: string
+    ) => Promise<ALMessageRejection | undefined>;
 }
 
 const NOT_THIS_RECEIVER: ALMessageRejection = {
@@ -29,16 +39,22 @@ const NOT_THIS_RECEIVER: ALMessageRejection = {
 
 export function toALInboundReceiver(
     selfPeerId: string,
-    readRelayedAckRejection: ALInboundReceiver['readRelayedAckRejection'] | undefined
+    readRelayedAckRejection: ALInboundReceiver['readRelayedAckRejection'] | undefined,
+    readRelayedRepairRequestRejection: ALInboundReceiver['readRelayedRepairRequestRejection'] | undefined
 ): ALInboundReceiver {
-    return { selfPeerId, readRelayedAckRejection: readRelayedAckRejection ?? (() => NOT_THIS_RECEIVER) };
+    return {
+        selfPeerId,
+        readRelayedAckRejection: readRelayedAckRejection ?? (() => NOT_THIS_RECEIVER),
+        readRelayedRepairRequestRejection: readRelayedRepairRequestRejection ??
+            (() => Promise.resolve(NOT_THIS_RECEIVER))
+    };
 }
 
-export function readALInboundMessageAuthorization(
+export async function readALInboundMessageAuthorization(
     msg: ALMessage,
     source: ALInboundMessageRuntime.Source,
     receiver: ALInboundReceiver
-): Either<ALMessageRejection, ALMessage> {
+): Promise<Either<ALMessageRejection, ALMessage>> {
     if (
         source.kind !== 'trusted-server' &&
         (source.kind === 'ws-client' || msg.targets?.mode === 'unicast') &&
@@ -59,7 +75,7 @@ export function readALInboundMessageAuthorization(
         return Either.ofLeft({ code: 'malformed', message: 'RTC room multicast carries no frozen audience' });
     }
     if (msg.payload.typeId.startsWith('al.control.')) {
-        const rejection = readALInboundControlRejection(msg, source, receiver);
+        const rejection = await readALInboundControlRejection(msg, source, receiver);
         if (rejection) {
             return Either.ofLeft(rejection);
         }
@@ -70,13 +86,13 @@ export function readALInboundMessageAuthorization(
 /**
  * A receipt is the server's word, so only the trusted server speaks one. A WS session never relays, so
  * its ACK or NACK speaks only for itself, whoever it is addressed to. Any other control is for this receiver,
- * or a receiver ACK a relaying WS server admits for the origin it names.
+ * or a session's receiver ACK, NACK or repair a relaying WS server admits for the origin it names.
  */
-function readALInboundControlRejection(
+async function readALInboundControlRejection(
     msg: ALMessage,
     source: ALInboundMessageRuntime.Source,
     receiver: ALInboundReceiver
-): ALMessageRejection | undefined {
+): Promise<ALMessageRejection | undefined> {
     const decoded = decodeALControlMessage(msg);
     if (decoded.left) {
         return decoded.left;
@@ -98,7 +114,10 @@ function readALInboundControlRejection(
     if (toALControlRecipientPeerId(control) === receiver.selfPeerId) {
         return undefined;
     }
-    return control.type === 'ack' && source.kind === 'ws-client'
+    if (source.kind !== 'ws-client' || control.type === 'receipt') {
+        return NOT_THIS_RECEIVER;
+    }
+    return control.type === 'ack'
         ? receiver.readRelayedAckRejection(control.payload, msg.id)
-        : NOT_THIS_RECEIVER;
+        : await receiver.readRelayedRepairRequestRejection(control.payload, msg.id.senderId);
 }

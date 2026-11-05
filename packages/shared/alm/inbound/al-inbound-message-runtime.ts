@@ -168,6 +168,8 @@ export namespace ALInboundMessageRuntime {
         readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
+        /** Absence means this runtime relays no session's NACK or repair to the origin it names. */
+        readonly readRelayedRepairRequestRejection?: ALInboundReceiver['readRelayedRepairRequestRejection'];
         /**
          * Receives each message this runtime admits `resync-required`, or rejects at its ordered release, after
          * its NACK commits. Absence means no recovery owner exists anywhere: the server's case.
@@ -323,12 +325,13 @@ export class ALInboundMessageRuntime {
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Admission>> {
-        const authorization = readALInboundMessageAuthorization(
+        const authorization = await readALInboundMessageAuthorization(
             msg,
             source,
             toALInboundReceiver(
                 this.dependencies.effectPreparation.selfPeerId,
-                this.dependencies.readRelayedAckRejection
+                this.dependencies.readRelayedAckRejection,
+                this.dependencies.readRelayedRepairRequestRejection
             )
         );
         if (authorization.left) {

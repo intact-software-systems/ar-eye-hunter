@@ -46,6 +46,7 @@ export namespace ALInboundMessageAdmission {
             | 'isRoomPeerPresent'
             | 'readPendingAdmissionAuthority'
             | 'readRelayedAckRejection'
+            | 'readRelayedRepairRequestRejection'
             | 'onResyncRequired'
         > {
         readonly workPort: ALWorkQueuePort;
@@ -231,12 +232,13 @@ export class ALInboundMessageAdmission {
                 wroteWork: false
             };
         }
-        const authorization = readALInboundMessageAuthorization(
+        const authorization = await readALInboundMessageAuthorization(
             pending.msg,
             authority.source,
             toALInboundReceiver(
                 this.dependencies.effectPreparation.selfPeerId,
-                this.dependencies.readRelayedAckRejection
+                this.dependencies.readRelayedAckRejection,
+                this.dependencies.readRelayedRepairRequestRejection
             )
         );
         if (authorization.left) {

@@ -6,7 +6,7 @@ import {
     readALTargetGroupRef,
     type ALMessage
 } from '../../al-contracts/al-contract.ts';
-import type { ALAckPayload } from '../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessageRow,
@@ -374,6 +374,8 @@ export class WsQueueBoxServerService {
             targetResolution: this.targetResolution,
             controlDelivery: this.controlDelivery,
             ackRelay: this.ackRelay,
+            readRelayedRepairRequestRejection: (request, requesterPeerId) =>
+                this.readRelayedRepairRequestRejection(request, requesterPeerId),
             authorizeInboundMessage: dependencies.authorizeInboundMessage,
             readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
         });
@@ -480,6 +482,8 @@ export class WsQueueBoxServerService {
             },
             readRelayedAckRejection: (ack, controlIdentity) =>
                 this.readRuntimeProtocolAckRejection(ack, controlIdentity),
+            readRelayedRepairRequestRejection: (request, requesterPeerId) =>
+                this.readRelayedRepairRequestRejection(request, requesterPeerId),
             forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
             canForwardMessage: (message) =>
                 this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
@@ -495,6 +499,24 @@ export class WsQueueBoxServerService {
             ack,
             this.receiptObserver === undefined ? undefined : { stage: 'runtime-protocol', controlIdentity }
         );
+    }
+
+    /**
+     * A session asks for repair of another session's track only on a row this server relays from that origin and
+     * admitted the session to (P2, D498); the outbound owner then serves it as it serves an expected repair peer.
+     */
+    private async readRelayedRepairRequestRejection(
+        request: ALNackPayload | ALRepairPayload,
+        requesterPeerId: string
+    ): Promise<ALMessageRejection | undefined> {
+        const stored = await this.admissionStore.readStoredMessage(request.msgId);
+        const admitted = stored !== undefined && stored.reference.senderId === request.toPeerId &&
+            request.fromPeerId === requesterPeerId &&
+            stored.policy.admittedAudience?.includes(requesterPeerId) === true;
+        return admitted ? undefined : {
+            code: 'unauthorized',
+            message: 'AL repair request names no relayed message admitted to its sender'
+        };
     }
 
     private registerSocketIngress(): void {
