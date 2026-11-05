@@ -48,7 +48,11 @@ wire and the rows. A NACK and a repair request naming the same gap are one hint:
 requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names the hint's
 effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never the control
 that reported it, so the second control is absorbed by the write-if-absent effect store rather than
-filed again. One execution of a hint retransmits at most
+filed again. A relay's gap NACK for a recipient below it also names that recipient
+(`logicalRecipientPeerId`, absent when the requester is the recipient): the origin admits it from a next hop
+for a recipient the receipt still owes, the responder admits the copy on that recipient while sending it to the
+relay, and the recipient joins the hint's identity, so each recipient a relay reports one gap for is its own
+hint and a hint without one keeps its identity. One execution of a hint retransmits at most
 `AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages` (32) sequences, ascending across its ranges, and
 re-commits the remaining ranges as one follow-up hint whose identity is those ranges, so a wide gap
 costs a bounded page of indexed reads and dispatch commits per execution and no page is served

@@ -293,10 +293,13 @@ which completes the hop and confirms no recipient: no relay passes it upward and
 (PL11). Such a recipient witnesses the copy's ordering track: its position moves to the copy, nothing is buffered
 and no gap is ever asked for, so a copy past where a gap would have been is answered the same way. A recipient
 that receives a recorded frozen copy below the position it entered the track at answers `before-entry` for itself,
-which places it outside the audience as `not-subscribed` does. A relay admits a child's outside-audience NACK
-(`not-subscribed`, `before-entry`) -- the NACKs inbound control admission handles; every other NACK stays its
-outbound owner's -- from a child hop its row waits on and for a recipient of the frozen audience whose
-confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`, and
+which places it outside the audience as `not-subscribed` does. A relay admits a child's relayed NACK
+(`not-subscribed`, `before-entry`, `gap` -- the NACKs inbound control admission handles; every other NACK stays its
+outbound owner's) from a child hop its row waits on and for a recipient of the frozen audience it has neither
+recorded outside nor relayed a confirmation for. A `gap` NACK must carry its `orderingKey`, `expectedSeq` and
+`missingRanges` (else it is refused as malformed); the relay writes no row for it and re-originates it to its
+parent from itself, naming the same recipient and ordering hints, so the origin repairs that recipient through the
+relay (S4ii-R3). An outside-audience NACK the relay records in the row's `outsideAudiencePeerIds`, and
 re-originates it to its parent from itself naming the same recipient and reason, once per recipient, and as
 `not-subscribed` in its answer to a retried copy, since the row records who is outside, not why (the origin
 records the recipient outside under either reason); the NACK completes no hop, and no confirming ACK for that recipient is admitted after
