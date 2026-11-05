@@ -69,6 +69,9 @@ const MULTICAST: ALMessage = {
 /** The multicast with the prior-sequence record an authority stamped on it. */
 const RECORDED: ALMessage = { ...MULTICAST, ordering: { ...MULTICAST.ordering, priorSeqByRecipient: { 'session-c': 4 } } };
 
+/** The first frame of a track an authority recorded: its record is present and empty. */
+const EMPTY_RECORDED: ALMessage = { ...MULTICAST, ordering: { ...MULTICAST.ordering, priorSeqByRecipient: {} } };
+
 /** `MULTICAST`'s signing input as the v1 classification, before the record existed, wrote it. */
 const V1_SIGNING_INPUT = '["rallar-alm-publication-proof-v1",4,"message-1",1700000000000,"session-a",null,' +
     '"room.chat","resource-1","room-1",' +
@@ -139,6 +142,16 @@ const SIGNED_FIELD_CHANGES: readonly ALPublicationProofFieldChange[] = [
     {
         field: 'ordering.priorSeqByRecipient presence',
         signed: RECORDED,
+        change: (message) => ({ ...message, ordering: MULTICAST.ordering })
+    },
+    {
+        field: 'ordering.priorSeqByRecipient added to an unrecorded frame',
+        signed: MULTICAST,
+        change: (message) => ({ ...message, ordering: RECORDED.ordering })
+    },
+    {
+        field: 'ordering.priorSeqByRecipient empty record dropped',
+        signed: EMPTY_RECORDED,
         change: (message) => ({ ...message, ordering: MULTICAST.ordering })
     },
     {
@@ -330,6 +343,18 @@ describe('ALM publication proof signing and verification', () => {
         const proven = await sign(keyPair, signed);
 
         expect(await verify(await importPublicKey(keyPair), change(proven))).toBe('verified');
+    });
+
+    it('signs an empty record as present, and verifies the frame that carries it', async () => {
+        const keyPair = await createKeyPair();
+
+        const signed = await sign(keyPair, EMPTY_RECORDED);
+
+        expect(toALPublicationProofSigningInput(EMPTY_RECORDED)).toBe(
+            `${V1_SIGNING_INPUT.slice(0, -1)},["ordering.priorSeqByRecipient",{}]]`
+        );
+        expect(signed.ordering?.priorSeqByRecipient).toEqual({});
+        expect(await verify(await importPublicKey(keyPair), signed)).toBe('verified');
     });
 
     it('verifies an unrecorded frame an older build signed over the v1 signing input', async () => {
