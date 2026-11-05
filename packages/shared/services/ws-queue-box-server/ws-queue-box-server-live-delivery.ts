@@ -5,6 +5,7 @@ import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/a
 import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
+import { Either } from '../../resilience/Either.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { resolveWsQueueBoxServerProvenScope } from './scope/resolve-ws-queue-box-server-recipient-scope.ts';
@@ -124,12 +125,13 @@ export class WsQueueBoxServerLiveDelivery {
         const sent = copies.map((copy) => copy.recipient);
         // Read before encoding: a connection replaced while the frame encodes must not receive it.
         const generations = this.readGenerations(sent);
-        const encodedAttempt = this.toEncodedCopies(copies);
-        if (typeof encodedAttempt === 'string') {
-            return encodingFailureResult(message, recipients, encodedAttempt);
+        const encoded = this.toEncodedCopies(copies);
+        if (encoded.left !== undefined) {
+            return encodingFailureResult(message, recipients, encoded.left);
         }
+        const encodedByConnectionId = encoded.right!;
         const sendAttempt = this.sendEncodedToRecipients({
-            encodedByConnectionId: encodedAttempt,
+            encodedByConnectionId,
             invalidatedSessionId: input.sessionInvalidation?.sessionId,
             recipients: sent,
             expiresAtMs,
@@ -144,29 +146,29 @@ export class WsQueueBoxServerLiveDelivery {
             topicId: message.route.topicId,
             recipientCount: recipients.length,
             sentCount: sendAttempt.sentCount,
-            payloadBytes: [...encodedAttempt.values()][0]?.text.length ?? 0
+            payloadBytes: [...encodedByConnectionId.values()][0]?.text.length ?? 0
         });
         return { ...toLiveSendResult(message, sent, sendAttempt), belowPositionPeerIds };
     }
 
-    /** Each copy encoded once per distinct entry; the reason the first copy that cannot be encoded fails. */
+    /** Each copy encoded once per distinct entry, by connection; Left: why the first copy that cannot encode fails. */
     private toEncodedCopies(
         copies: WsQueueBoxServerRecipientCopies['copies']
-    ): ReadonlyMap<string, EncodedJsonWebSocketMessage> | string {
+    ): Either<string, ReadonlyMap<string, EncodedJsonWebSocketMessage>> {
         const byEntry = new Map<string, EncodedJsonWebSocketMessage>();
         const byConnectionId = new Map<string, EncodedJsonWebSocketMessage>();
         for (const { recipient, message } of copies) {
             const entryKey = JSON.stringify(message.ordering?.priorSeqByRecipient ?? null);
             const attempt = byEntry.has(entryKey) ? undefined : this.toEncodedAttempt(message);
             if (attempt !== undefined && !attempt.encoded) {
-                return attempt.failureReason!;
+                return Either.ofLeft(attempt.failureReason!);
             }
             if (attempt?.encoded) {
                 byEntry.set(entryKey, attempt.encoded);
             }
             byConnectionId.set(recipient.connectionId, byEntry.get(entryKey)!);
         }
-        return byConnectionId;
+        return Either.ofRight(byConnectionId);
     }
 
     private readGenerations(recipients: readonly WsServerResolvedRecipient[]): ReadonlyMap<string, string | undefined> {
