@@ -293,7 +293,8 @@ describe('captured outbound audience read', () => {
             message: fixture.message,
             key: fixture.entry.key,
             policy,
-            eligibleSessionIds: undefined
+            eligibleSessionIds: undefined,
+            sentPositions: null
         }));
         expect(send).toMatchObject({ status: 'expired', sentCount: 0 });
         expect(recipient.sent).toEqual([]);

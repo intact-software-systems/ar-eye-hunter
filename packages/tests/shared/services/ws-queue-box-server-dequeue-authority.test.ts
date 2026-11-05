@@ -46,10 +46,10 @@ describe('the audience one dequeue attempt finds for a row', () => {
         expect(audience).toEqual({ eligible: ['b', 'd'], dropped: ['c'] });
     });
 
-    it('drops every admitted session when no re-check is wired', async () => {
+    it('sends nobody and declares no exclusion when no re-check is wired: its sessions stay expected', async () => {
         const audience = await createAuthority(true, undefined).readCurrentAudience(feedEvent(), ADMITTED);
 
-        expect(audience).toEqual({ eligible: [], dropped: ['b', 'c', 'd'] });
+        expect(audience).toEqual({ eligible: [], dropped: [] });
     });
 
     it('keeps the captured audience of a row that is not frozen, dropping nobody', async () => {

@@ -1404,6 +1404,8 @@ function createTestQueueBoxPubSubWsService(
             return service;
         },
         requiresFrozenAudience: (message) => input.requiresFrozenAudience?.(message) ?? false,
+        readSentPositions: () => Promise.resolve(null),
+        writeOutsideAudience: () => Promise.resolve(),
         sendToTargetsWithResult(send) {
             input.sends?.push(send);
             const { message, recipientSessionIds, admittedPeerIds } = send;
@@ -1439,7 +1441,8 @@ function sentLiveResult(message: ALMessage): WsServerLiveSendResult {
         recipientCount: 1,
         sentCount: 1,
         failedCount: 0,
-        failures: []
+        failures: [],
+        belowPositionPeerIds: []
     };
 }
 
@@ -1452,7 +1455,8 @@ function failedLiveSendResult(message: ALMessage): WsServerLiveSendResult {
         recipientCount: 1,
         sentCount: 0,
         failedCount: 1,
-        failures: [{ ...recipient, reason: 'connection closed before the frame left' }]
+        failures: [{ ...recipient, reason: 'connection closed before the frame left' }],
+        belowPositionPeerIds: []
     };
 }
 
@@ -1464,7 +1468,8 @@ function noRecipientLiveSendResult(message: ALMessage): WsServerLiveSendResult {
         recipientCount: 0,
         sentCount: 0,
         failedCount: 0,
-        failures: []
+        failures: [],
+        belowPositionPeerIds: []
     };
 }
 

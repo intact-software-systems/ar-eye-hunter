@@ -18,6 +18,7 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
@@ -185,6 +186,7 @@ export namespace WsQueueBoxServerService {
         readonly message: ALMessage;
         readonly entry: ResourceEntry;
         readonly policy: ALOutboundCapturedPolicy;
+        readonly sentPositions: Readonly<Record<string, number>> | null;
     }
 
     export interface EnqueueAuthority {
@@ -445,11 +447,14 @@ export class WsQueueBoxServerService {
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
-            planRepairMessage: async (message, request) =>
-                this.outboundPlanning.planRepairMessage(message, {
+            planRepairMessage: async (message, request) => {
+                const audience = await this.dequeueAuthority.readCurrentAudience(message, request);
+                await this.writeOutsideAudience(message, audience.dropped);
+                return this.outboundPlanning.planRepairMessage(message, {
                     ...request,
-                    admittedAudience: await this.readCurrentAudience(message, request)
-                })
+                    admittedAudience: audience.eligible
+                });
+            }
         });
     }
 
@@ -815,6 +820,7 @@ export class WsQueueBoxServerService {
             return;
         }
         const policy = await this.dequeueAuthority.readCapturedPolicy(message, entry, committedPolicy);
+        const sentPositions = await this.readSentPositions(message);
         const awaited = this.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
             expiresAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
             send: (sessionId) => {
@@ -825,7 +831,8 @@ export class WsQueueBoxServerService {
                         this.sendHeldRow({
                             message,
                             entry,
-                            policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId)
+                            policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId),
+                            sentPositions
                         })
                 ).catch((error) => console.error('Held WebSocket send failed:', error));
             }
@@ -838,34 +845,41 @@ export class WsQueueBoxServerService {
         }
     }
 
-    /** A held send re-checks its one session when the session's socket opens, as every other attempt does (D498). */
+    /**
+     * A held send re-checks its one session when the session's socket opens, as every other attempt does (D498), and
+     * sends it its own copy; a session the re-check drops, or one a later row of the track reached, is recorded outside.
+     */
     private async sendHeldRow(
-        { message, entry, policy }: WsQueueBoxServerService.HeldRowSend
+        { message, entry, policy, sentPositions }: WsQueueBoxServerService.HeldRowSend
     ): Promise<void> {
-        const admittedAudience = await this.readCurrentAudience(message, policy);
-        this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
+        const audience = await this.dequeueAuthority.readCurrentAudience(message, policy);
+        await this.writeOutsideAudience(message, audience.dropped);
+        const sent = this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
             message,
             key: entry.key,
-            policy: { ...policy, admittedAudience },
-            eligibleSessionIds: undefined
+            policy: { ...policy, admittedAudience: audience.eligible },
+            eligibleSessionIds: undefined,
+            sentPositions
         }));
+        await this.writeOutsideAudience(message, sent.belowPositionPeerIds);
     }
 
-    /** The sessions this attempt may send; each one the re-check dropped is recorded outside the audience. */
-    private async readCurrentAudience(
-        message: ALMessage,
-        authority: WsQueueBoxServerDequeueAuthority.AudienceAuthority
-    ): Promise<readonly string[] | undefined> {
-        const audience = await this.dequeueAuthority.readCurrentAudience(message, authority);
-        await this.writeOutsideAudience(message, audience.dropped);
-        return audience.eligible;
+    /**
+     * The positions a tracked row's first dequeue recorded, which every live copy of the row takes its entry from;
+     * read once per send of the row, `null` for a row with no track or nothing recorded.
+     */
+    async readSentPositions(message: ALMessage): Promise<Readonly<Record<string, number>> | null> {
+        if (toALOrderingTrackKey(message) === undefined) {
+            return null;
+        }
+        return (await this.admissionStore.readStoredMessage(message.id.msgId))?.sentPositions ?? null;
     }
 
     /**
      * Records each session the server sent its origin's row nothing outside the audience of the receipt the origin
      * awaits (S4-R9); the server's own rows and rows no receipt counts recipients of have none to record in.
      */
-    private async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
+    async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
         const originPeerId = message.id.senderId;
         if (
             originPeerId === this.name ||

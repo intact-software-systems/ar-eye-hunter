@@ -42,6 +42,8 @@ export interface WsServerLiveSendResult {
     readonly sentCount: number;
     readonly failedCount: number;
     readonly failures: readonly WsServerLiveSendFailure[];
+    /** The recipients a later row of the message's track already reached: sent nothing, so outside its audience. */
+    readonly belowPositionPeerIds: readonly string[];
 }
 
 export interface WsServerLiveSendInputDto {
@@ -58,6 +60,11 @@ export interface WsServerLiveSendInputDto {
     readonly recipientPrincipalId?: string;
     /** Broad notices still require a current authenticated connection, without inventing a scope. */
     readonly requireAuthenticatedRecipient?: boolean;
+    /**
+     * The positions the row's first dequeue recorded, from which each recipient's copy takes its entry; absent for a
+     * send no recording covers, which every recipient receives as it is.
+     */
+    readonly sentPositions?: Readonly<Record<string, number>>;
 }
 
 export interface WsServerTargetResolver {

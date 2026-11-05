@@ -8,6 +8,10 @@ import type { StateScope } from '../../api/state-types.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { resolveWsQueueBoxServerProvenScope } from './scope/resolve-ws-queue-box-server-recipient-scope.ts';
+import {
+    toWsQueueBoxServerRecipientCopies,
+    type WsQueueBoxServerRecipientCopies
+} from './scope/to-ws-queue-box-server-recipient-copies.ts';
 import type {
     WsServerInboundConnectionScopeReader,
     WsServerLiveSendFailure,
@@ -42,7 +46,8 @@ export namespace WsQueueBoxServerLiveDelivery {
     }
 
     export interface SendInput {
-        readonly encoded: EncodedJsonWebSocketMessage;
+        /** Each recipient's encoded copy, by connection. */
+        readonly encodedByConnectionId: ReadonlyMap<string, EncodedJsonWebSocketMessage>;
         readonly recipients: readonly WsServerResolvedRecipient[];
         readonly expiresAtMs: number | undefined;
         readonly scope: StateScope | undefined;
@@ -111,19 +116,22 @@ export class WsQueueBoxServerLiveDelivery {
     ): WsServerLiveSendResult {
         const { message } = input;
         const provenScope = resolveWsQueueBoxServerProvenScope(message, input.inboundScope);
-        const generations = new Map(recipients.map((recipient) => [
-            recipient.connectionId,
-            this.#socket.connections.get(recipient.connectionId)?.generationId
-        ]));
-        const encodedAttempt = this.toEncodedAttempt(message);
-        if (!encodedAttempt.encoded) {
-            return encodingFailureResult(message, recipients, encodedAttempt.failureReason!);
-        }
-
-        const sendAttempt = this.sendEncodedToRecipients({
-            encoded: encodedAttempt.encoded,
-            invalidatedSessionId: input.sessionInvalidation?.sessionId,
+        const { copies, belowPositionPeerIds } = toWsQueueBoxServerRecipientCopies(
+            message,
             recipients,
+            input.sentPositions ?? null
+        );
+        const sent = copies.map((copy) => copy.recipient);
+        // Read before encoding: a connection replaced while the frame encodes must not receive it.
+        const generations = this.readGenerations(sent);
+        const encodedAttempt = this.toEncodedCopies(copies);
+        if (typeof encodedAttempt === 'string') {
+            return encodingFailureResult(message, recipients, encodedAttempt);
+        }
+        const sendAttempt = this.sendEncodedToRecipients({
+            encodedByConnectionId: encodedAttempt,
+            invalidatedSessionId: input.sessionInvalidation?.sessionId,
+            recipients: sent,
             expiresAtMs,
             scope: input.recipientScope ?? provenScope ?? undefined,
             principalId: input.recipientPrincipalId,
@@ -136,9 +144,36 @@ export class WsQueueBoxServerLiveDelivery {
             topicId: message.route.topicId,
             recipientCount: recipients.length,
             sentCount: sendAttempt.sentCount,
-            payloadBytes: encodedAttempt.encoded.text.length
+            payloadBytes: [...encodedAttempt.values()][0]?.text.length ?? 0
         });
-        return toLiveSendResult(message, recipients, sendAttempt);
+        return { ...toLiveSendResult(message, sent, sendAttempt), belowPositionPeerIds };
+    }
+
+    /** Each copy encoded once per distinct entry; the reason the first copy that cannot be encoded fails. */
+    private toEncodedCopies(
+        copies: WsQueueBoxServerRecipientCopies['copies']
+    ): ReadonlyMap<string, EncodedJsonWebSocketMessage> | string {
+        const byEntry = new Map<string, EncodedJsonWebSocketMessage>();
+        const byConnectionId = new Map<string, EncodedJsonWebSocketMessage>();
+        for (const { recipient, message } of copies) {
+            const entryKey = JSON.stringify(message.ordering?.priorSeqByRecipient ?? null);
+            const attempt = byEntry.has(entryKey) ? undefined : this.toEncodedAttempt(message);
+            if (attempt !== undefined && !attempt.encoded) {
+                return attempt.failureReason!;
+            }
+            if (attempt?.encoded) {
+                byEntry.set(entryKey, attempt.encoded);
+            }
+            byConnectionId.set(recipient.connectionId, byEntry.get(entryKey)!);
+        }
+        return byConnectionId;
+    }
+
+    private readGenerations(recipients: readonly WsServerResolvedRecipient[]): ReadonlyMap<string, string | undefined> {
+        return new Map(recipients.map((recipient) => [
+            recipient.connectionId,
+            this.#socket.connections.get(recipient.connectionId)?.generationId
+        ]));
     }
 
     sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
@@ -159,17 +194,13 @@ export class WsQueueBoxServerLiveDelivery {
             : resolved.filter((recipient) =>
                 provenScope !== null && this.#recipientSelection.isCurrentAuthorized(recipient, provenScope)
             );
-        const generations = new Map(
-            recipients.map((
-                recipient
-            ) => [recipient.connectionId, this.#socket.connections.get(recipient.connectionId)?.generationId])
-        );
+        const generations = this.readGenerations(recipients);
         const encodedMessage = encoded ?? this.tryEncodeDirectMessage(message);
         if (!encodedMessage) {
             return 0;
         }
         return this.sendEncodedToRecipients({
-            encoded: encodedMessage,
+            encodedByConnectionId: new Map(recipients.map((recipient) => [recipient.connectionId, encodedMessage])),
             invalidatedSessionId: undefined,
             recipients,
             expiresAtMs,
@@ -199,8 +230,7 @@ export class WsQueueBoxServerLiveDelivery {
     private sendEncodedToRecipients(
         input: WsQueueBoxServerLiveDelivery.SendInput
     ): WsQueueBoxServerLiveDelivery.SendAttempt {
-        const { encoded, recipients, expiresAtMs, scope, principalId, requireAuthenticatedRecipient, generations } =
-            input;
+        const { recipients, expiresAtMs, scope, principalId, requireAuthenticatedRecipient, generations } = input;
         let sentCount = 0;
         const failures: WsServerLiveSendFailure[] = [];
         for (const recipient of recipients) {
@@ -223,7 +253,10 @@ export class WsQueueBoxServerLiveDelivery {
                 continue;
             }
             try {
-                this.#socket.sendEncoded(recipient.connectionId, encoded);
+                this.#socket.sendEncoded(
+                    recipient.connectionId,
+                    input.encodedByConnectionId.get(recipient.connectionId)!
+                );
                 sentCount += 1;
             }
             catch (error) {
@@ -281,7 +314,8 @@ function noRecipientResult(message: ALMessage): WsServerLiveSendResult {
         recipientCount: 0,
         sentCount: 0,
         failedCount: 0,
-        failures: []
+        failures: [],
+        belowPositionPeerIds: []
     };
 }
 
@@ -301,7 +335,8 @@ function encodingFailureResult(
             peerId: recipient.peerId,
             connectionId: recipient.connectionId,
             reason
-        }))
+        })),
+        belowPositionPeerIds: []
     };
 }
 
@@ -322,7 +357,8 @@ function toLiveSendResult(
         recipientCount: recipients.length,
         sentCount: attempt.sentCount,
         failedCount: attempt.failures.length,
-        failures: attempt.failures
+        failures: attempt.failures,
+        belowPositionPeerIds: []
     };
 }
 

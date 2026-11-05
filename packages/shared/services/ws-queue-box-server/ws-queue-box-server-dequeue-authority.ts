@@ -140,8 +140,9 @@ export class WsQueueBoxServerDequeueAuthority {
     /**
      * The row's admitted audience as this attempt finds it (D498): a frozen-audience row's sessions the re-check still
      * finds eligible, rejecting when the re-check cannot read so the row waits for its retry, and nobody when no
-     * re-check is wired; any other row's as captured. A session the re-check drops is sent nothing, and the receipt
-     * its admission wrote records it outside the audience (S4-R9).
+     * re-check is wired; any other row's as captured. A session the re-check drops is sent nothing, and its caller
+     * records it outside the audience of the receipt its admission wrote (S4-R9). A composition with no re-check
+     * declares no exclusion: its sessions stay expected.
      */
     async readCurrentAudience(
         message: ALMessage,
@@ -155,15 +156,16 @@ export class WsQueueBoxServerDequeueAuthority {
         ) {
             return { eligible: admittedAudience, dropped: [] };
         }
-        const eligible = filterEligibleCapturedSessionIds === undefined
-            ? []
-            : await readWsQueueBoxServerEligibleAudience({
-                message,
-                admittedAudience,
-                admittedConnectionGenerationIds: authority.admittedConnectionGenerationIds,
-                provenScope: authority.recipientScope,
-                filterEligibleCapturedSessionIds
-            });
+        if (filterEligibleCapturedSessionIds === undefined) {
+            return { eligible: [], dropped: [] };
+        }
+        const eligible = await readWsQueueBoxServerEligibleAudience({
+            message,
+            admittedAudience,
+            admittedConnectionGenerationIds: authority.admittedConnectionGenerationIds,
+            provenScope: authority.recipientScope,
+            filterEligibleCapturedSessionIds
+        });
         return { eligible, dropped: admittedAudience.filter((sessionId) => !eligible.includes(sessionId)) };
     }
 

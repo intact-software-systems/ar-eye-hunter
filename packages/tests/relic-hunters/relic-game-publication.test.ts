@@ -145,7 +145,8 @@ describe('Relic committed notifications', () => {
                 for (const transition of delivered.filter((message) => message.payload.typeId === 'relic.event.v1')) {
                     const committed = transitions.find((message) => message.id.msgId === transition.id.msgId);
                     expect(transition.payload).toEqual(committed?.payload);
-                    expect(transition.ordering).toEqual(committed?.ordering);
+                    // The server's own entry on its copy: each peer was sent the track from its first sequence on.
+                    expect(transition.ordering).toEqual({ ...committed?.ordering, priorSeqByRecipient: {} });
                 }
                 const snapshots = delivered.filter((message) => message.payload.typeId === 'relic.snapshot.v1');
                 expect(snapshots.length).toBeGreaterThan(0);

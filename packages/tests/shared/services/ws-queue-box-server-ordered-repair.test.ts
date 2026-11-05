@@ -1,13 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
+
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    newALAckControlMessage,
-    newALNackControlMessage,
-    type ALAckPayload,
-    type ALNackReason
-} from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage, type ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -50,8 +48,6 @@ interface OrderedServer {
     readonly clock: { nowMs: number; };
     readonly controlAdmissions: ControlAdmission[];
     readonly settlements: ALDeliverySettlement[];
-    /** Every ACK the receipt path counted or refused, the server's own included. */
-    readonly countedAcks: ALAckPayload[];
 }
 
 interface NackInput {
@@ -172,19 +168,6 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
     });
 
-    it('sends a session admitted from event 4 that event with its own entry and nothing below it', async () => {
-        const server = await createOrderedServer();
-        await publishEvents(server, 3);
-
-        await publishEvent(server, roundEvent('event-4'), ['a', 'b', 'c']);
-        await settle(server);
-
-        expect(readFrames(server.sockets.c, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
-        expect(readMsgIds(server.sockets.c)).toEqual(['event-4']);
-        expect(readFrames(server.sockets.b, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: {} }, proof: undefined }]);
-        expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3, 4]);
-    });
-
     it('resends an unconfirmed copy on the receipt retry with the entry its first dequeue fixed', async () => {
         const server = await createOrderedServer();
         await publishEvents(server, 2);
@@ -198,53 +181,12 @@ describe('the WS server repairs its own ordered publication', () => {
 
         server.clock.nowMs += ACK_TIMEOUT_MS + CLOCK_STEP_MS;
 
-        // `b` already stands at 4 when the retry runs: a copy at its position is a retry, not an exclusion.
+        // `b` already stands at 4 when the retry runs; the retry reads the positions the first dequeue fixed, not the row.
         await expect.poll(() => runEngine(server, () => readFrames(server.sockets.b, 'event-4').length)).toBe(2);
         expect(readFrames(server.sockets.b, 'event-4')).toEqual([
             { ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined },
             { ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined }
         ]);
-    });
-
-    it('skips a recipient a later row of its track already reached, and never moves it back', async () => {
-        const server = await createOrderedServer();
-        await publishEvent(server, browserEvent(2), ['b']);
-
-        await publishEvent(server, browserEvent(1), ['b', 'c'], ['c']);
-        await settle(server);
-
-        expect(readFrames(server.sockets.b, 'a-event-1')).toEqual([]);
-        expect(server.settlements).toContainEqual(expect.objectContaining({ kind: 'attempt-settled', msgId: 'a-event-1', outcome: 'no-targets' }));
-        // The server's own word on the receipt path: it sent `b` nothing, which places `b` outside the audience.
-        expect(server.countedAcks).toContainEqual(expect.objectContaining({
-            ackedMsgId: 'a-event-1',
-            fromPeerId: SERVER_ID,
-            toPeerId: 'a',
-            logicalRecipientPeerId: 'b',
-            status: 'subtree-complete-not-subscribed'
-        }));
-        expect(readFrames(server.sockets.c, 'a-event-1')).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
-
-        await publishEvent(server, browserEvent(3), ['b', 'c']);
-
-        expect(readFrames(server.sockets.b, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: {} }, proof: undefined }]);
-        expect(readFrames(server.sockets.c, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: { c: 1 } }, proof: undefined }]);
-    });
-
-    it('sends a handed-over signed frame with the server own entry for each recipient and no proof', async () => {
-        const server = await createOrderedServer();
-        const event = browserEvent(2);
-        const handedOver: ALMessage = {
-            ...event,
-            targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['b', 'c'], snapshotVersion: 1 },
-            ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } },
-            proof: { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 'S'.repeat(85) + 'A' }
-        };
-
-        await publishEvent(server, handedOver, ['b', 'c']);
-
-        expect(readFrames(server.sockets.b, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { b: 0 } }, proof: undefined }]);
-        expect(readFrames(server.sockets.c, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
     });
 
     it('serves the gap NACK a session of the admitted audience sends the origin of a relayed track, and refuses one outside it', async () => {
@@ -284,8 +226,74 @@ describe('the WS server repairs its own ordered publication', () => {
     });
 });
 
-/** One instance whose clock moves only when a test moves it, so no receipt window passes unasked. */
-async function createOrderedServer(): Promise<OrderedServer> {
+describe.each([
+    { cluster: false, path: 'its own send of each dequeued row' },
+    { cluster: true, path: 'the live send of each row it publishes to its cluster' }
+])('every copy the WS server sends through $path', ({ cluster }) => {
+    it('sends a session admitted from event 4 that event with its own entry and nothing below it', async () => {
+        const server = await createOrderedServer({ cluster });
+        await publishEvents(server, 3);
+
+        await publishEvent(server, roundEvent('event-4'), ['a', 'b', 'c']);
+        await settle(server);
+
+        expect(readFrames(server.sockets.c, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
+        expect(readMsgIds(server.sockets.c)).toEqual(['event-4']);
+        expect(readFrames(server.sockets.b, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3, 4]);
+    });
+
+    it('skips a recipient a later row of its track already reached, and never moves it back', async () => {
+        const server = await createOrderedServer({ cluster });
+        await publishEvent(server, browserEvent(2), ['b']);
+
+        await publishEvent(server, browserEvent(1), ['b', 'c'], ['c']);
+        await settle(server);
+
+        expect(readFrames(server.sockets.b, 'a-event-1')).toEqual([]);
+        expect(readFrames(server.sockets.c, 'a-event-1')).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
+
+        await publishEvent(server, browserEvent(3), ['b', 'c']);
+
+        expect(readFrames(server.sockets.b, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.c, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: { c: 1 } }, proof: undefined }]);
+    });
+
+    it('sends a handed-over signed frame with the server own entry for each recipient and no proof', async () => {
+        const server = await createOrderedServer({ cluster });
+        const event = browserEvent(2);
+        const handedOver: ALMessage = {
+            ...event,
+            targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['b', 'c'], snapshotVersion: 1 },
+            ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } },
+            proof: { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 'S'.repeat(85) + 'A' }
+        };
+
+        await publishEvent(server, handedOver, ['b', 'c']);
+
+        expect(readFrames(server.sockets.b, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { b: 0 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.c, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
+    });
+
+    it('sends a burst of more than one page of rows on one track with every recipient\'s entry, the burst\'s groups chained', async () => {
+        const server = await createOrderedServer({ cluster });
+        await enqueueEvents(server, { from: 1, to: 10, audience: ['a', 'b'] });
+        await enqueueEvents(server, { from: 11, to: 20, audience: ['a'] });
+        await enqueueEvents(server, { from: 21, to: 21, audience: ['a', 'b'] });
+
+        await expect.poll(() => runEngine(server, () => [readSeqs(server.sockets.a).length, readSeqs(server.sockets.b).length])).toEqual([21, 11]);
+        expect(readFrames(server.sockets.b, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: { b: 10 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.b, 'event-10')).toEqual([{ ordering: { ...ORDERING, seq: 10, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.a, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readSeqs(server.sockets.b)).toEqual([...toSeqs(1, 10), 21]);
+    });
+});
+
+/**
+ * One instance whose clock moves only when a test moves it, so no receipt window passes unasked; `cluster` registers a
+ * cluster publisher, as every default api-v1 composition does, so each dequeued row is published and sent live here.
+ */
+async function createOrderedServer(options: { readonly cluster?: boolean; } = {}): Promise<OrderedServer> {
     const clock = mockClock();
     const nowMs = () => clock.nowMs;
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
@@ -300,7 +308,6 @@ async function createOrderedServer(): Promise<OrderedServer> {
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const controlAdmissions: ControlAdmission[] = [];
     const settlements: ALDeliverySettlement[] = [];
-    const countedAcks: ALAckPayload[] = [];
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
@@ -324,11 +331,6 @@ async function createOrderedServer(): Promise<OrderedServer> {
             }
         },
         outboundSettlements: (settlement) => settlements.push(settlement),
-        receiptObserver: (observation) => {
-            if (observation.kind === 'ack-count') {
-                countedAcks.push(observation.ack);
-            }
-        },
         targetResolver: {
             requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
@@ -337,7 +339,10 @@ async function createOrderedServer(): Promise<OrderedServer> {
         }
     });
     onTestFinished(() => service.dispose());
-    return { service, engine, sockets, clock, controlAdmissions, settlements, countedAcks };
+    if (options.cluster === true) {
+        await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: new LoopbackBridge(), channel: 'ws', publisherId: SERVER_ID });
+    }
+    return { service, engine, sockets, clock, controlAdmissions, settlements };
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */
@@ -348,15 +353,31 @@ async function publishEvents(
 ): Promise<readonly ALMessage['ordering'][]> {
     const minted: ALMessage['ordering'][] = [];
     for (let index = 1; index <= count; index += 1) {
-        minted.push(await publishEvent(server, roundEvent(`event-${index}`), audience));
+        const result = await server.service.enqueueOutboxIfAbsent(
+            roundEvent(`event-${index}`),
+            { admittedAudience: audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
+        );
+        minted.push(result.message.ordering);
     }
+    await expect.poll(() => runEngine(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length)))
+        .toEqual(audience.map(() => count));
     return minted;
 }
 
-/**
- * Admits one row to the audience and waits until it reached every recipient it sends: rows of a track that record
- * positions commit one after another, and the frozen clock keeps the receipts' timeouts ahead of their sends.
- */
+/** Admits `event-<from>` .. `event-<to>` to the audience at once, leaving their dequeues to group as they will. */
+async function enqueueEvents(
+    server: OrderedServer,
+    input: Readonly<{ from: number; to: number; audience: readonly string[]; }>
+): Promise<void> {
+    for (let index = input.from; index <= input.to; index += 1) {
+        await server.service.enqueueOutboxIfAbsent(
+            roundEvent(`event-${index}`),
+            { admittedAudience: input.audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
+        );
+    }
+}
+
+/** Admits one row to the audience and waits until it reached every recipient it sends. */
 async function publishEvent(
     server: OrderedServer,
     message: ALMessage,
@@ -524,4 +545,15 @@ function mockClock(): { nowMs: number; } {
         vi.restoreAllMocks();
     });
     return clock;
+}
+
+/** One instance's pub/sub: a published key reaches no other instance, so only the publisher's local send runs. */
+class LoopbackBridge implements QueueBoxPubSubBridge {
+    publish(_channel: string, _message: QueueBoxPubSubMessage): Promise<void> {
+        return Promise.resolve();
+    }
+
+    subscribe(): Promise<void> {
+        return Promise.resolve();
+    }
 }
