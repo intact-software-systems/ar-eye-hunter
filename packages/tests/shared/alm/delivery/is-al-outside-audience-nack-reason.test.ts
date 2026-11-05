@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
-import { isALOutsideAudienceNackReason } from '@shared/al-contracts/is-al-outside-audience-nack-reason.ts';
+import { isALOutsideAudienceNackReason } from '@shared/alm/delivery/is-al-outside-audience-nack-reason.ts';
 
 /** Every NACK reason, keyed so a new reason fails to compile here until it states whether it speaks for the audience. */
 const OUTSIDE_AUDIENCE_BY_REASON = {

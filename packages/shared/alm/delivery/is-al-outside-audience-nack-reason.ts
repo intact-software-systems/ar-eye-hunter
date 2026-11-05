@@ -1,4 +1,4 @@
-import type { ALNackReason } from './al-control.ts';
+import type { ALNackReason } from '../../al-contracts/al-control.ts';
 
 /**
  * A NACK that speaks for one recipient and places it outside the message's audience: `not-subscribed`, or
