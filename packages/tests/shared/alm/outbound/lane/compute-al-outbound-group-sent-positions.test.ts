@@ -2,14 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundAdmissionMutation } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundMessageReadDto,
-    ALOutboundSentPositions
-} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundCommitBundle, ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     computeALOutboundGroupChainedReads,
-    toALOutboundGroupPositionWrites
+    toALOutboundGroupPositionWrites,
+    type ALOutboundGroupMemberRead
 } from '@shared/alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 
 const TRACK_KEY = 'game-1:a:1';
@@ -21,17 +18,17 @@ function message(seq: number, priorSeqByRecipient?: Readonly<Record<string, numb
 }
 
 /** A member read: its positions as the group's shared turn read them, and whether its admission stamped its copy. */
-function memberRead(positions: ALOutboundSentPositions | undefined, stamped = false): ALOutboundMessageReadDto<never> {
+function memberRead(positions: ALOutboundSentPositions | undefined, stamped = false): ALOutboundGroupMemberRead {
     const original = message(positions?.seq ?? 1);
     return {
-        storedMessage: stamped ? undefined : { sentPositions: null },
+        storedMessage: stamped ? undefined : {},
         originalMsg: original,
         msg: stamped ? message(original.ordering!.seq!, {}) : original,
         sentPositions: positions
-    } as unknown as ALOutboundMessageReadDto<never>;
+    };
 }
 
-function positionsOf(read: ALOutboundMessageReadDto<never>): Readonly<Record<string, number>> | undefined {
+function positionsOf(read: ALOutboundGroupMemberRead): Readonly<Record<string, number>> | undefined {
     return read.sentPositions?.priorSeqByRecipient;
 }
 

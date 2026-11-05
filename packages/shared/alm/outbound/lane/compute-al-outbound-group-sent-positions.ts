@@ -4,6 +4,11 @@ import type {
     ALOutboundSentPositions
 } from '../admission/al-outbound-admission-store.ts';
 
+/** What chaining reads of a group member's read: its positions, and whether its admission stamped its copy. */
+export type ALOutboundGroupMemberRead =
+    & Pick<ALOutboundMessageReadDto<unknown>, 'originalMsg' | 'msg' | 'sentPositions'>
+    & Readonly<{ storedMessage: object | undefined; }>;
+
 /**
  * The members' reads of one commit group, each recorded position taken past what a member at an earlier sequence of the
  * same track sends that recipient, as one-by-one commits in sequence order would have read it: a group never skips a
@@ -11,9 +16,9 @@ import type {
  * Undefined when a member whose read stamped its copy would read differently: its stamped (and possibly signed) record
  * cannot change, so the group commits its members one by one.
  */
-export function computeALOutboundGroupChainedReads<TPrepared>(
-    reads: readonly ALOutboundMessageReadDto<TPrepared>[]
-): readonly ALOutboundMessageReadDto<TPrepared>[] | undefined {
+export function computeALOutboundGroupChainedReads<TRead extends ALOutboundGroupMemberRead>(
+    reads: readonly TRead[]
+): readonly TRead[] | undefined {
     const reached = new Map<string, number>();
     const chained = [...reads];
     for (const index of toSequenceOrder(reads)) {
@@ -29,7 +34,7 @@ export function computeALOutboundGroupChainedReads<TPrepared>(
 }
 
 /** The indexes of the members that record positions, by ascending sequence. */
-function toSequenceOrder<TPrepared>(reads: readonly ALOutboundMessageReadDto<TPrepared>[]): readonly number[] {
+function toSequenceOrder(reads: readonly ALOutboundGroupMemberRead[]): readonly number[] {
     return reads.flatMap((read, index) => read.sentPositions === undefined ? [] : [index])
         .sort((left, right) => reads[left]!.sentPositions!.seq - reads[right]!.sentPositions!.seq);
 }
@@ -72,7 +77,7 @@ function computeChainedPriorSeqs(
 }
 
 /** A first admission that stamped its record on its copy. */
-function isALOutboundStampedRead<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
+function isALOutboundStampedRead(read: ALOutboundGroupMemberRead): boolean {
     return read.storedMessage === undefined && read.originalMsg.ordering?.priorSeqByRecipient === undefined &&
         read.msg.ordering?.priorSeqByRecipient !== undefined;
 }
