@@ -540,6 +540,17 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   lane starts on the sender's agent once the sibling's token reads `active` after its row names the
   new generation, the same gate that starts the `subscription-successor` page; the publication then
   reaches the receiver and not the reopened sibling.
+- `subscription-ordered-entry` (`ws`, `rtc`, `rtc-with-ws-fallback`): a late subscriber enters each
+  producer's track at its first copy. Both producers publish `p1` and `p2` on a page-minted track keyed by the
+  cell (no `seq`) that the receiver alone confirms; the receiver relays that both were confirmed, and only then
+  does the unelected sibling elect and receive `p3` of each, never `p1` or `p2`. Its inbound `ordering-position`
+  event reads `entered` with prior `0` per track over `ws`, and `witnessed` for `p1` and `p2` over the RTC
+  carriers, which freeze it into those copies. No producer dispatches a repair.
+- `subscription-ordered-omission` (`ws`, `rtc`, `rtc-with-ws-fallback`): an exclusion reads as an omission. The
+  sibling receives `p1` and `p2`; the receiver revokes the sender principal's `subscribe` alone, so `p3` and
+  `p4` reach the receiver and never the sibling, then grants it back; the sibling releases its first election,
+  elects anew and receives `p5`, whose `ordering-position` event reads `omitted` with prior `2` per track, with
+  no gap NACK and no repair dispatch.
 
 `subscription-successor` runs in the `same-context` family over `ws` alone: the harness holds one RTC peer per
 session, so over `rtc` and `rtc-with-ws-fallback` its successor page would wait for RTC readiness while the owner page
@@ -736,15 +747,21 @@ arrivals' own 30 s counted lifetime instead of each waiting out an ACK. Arrivals
 the bound, so its own room send, which asks for a receiver receipt, is admitted only under the share: it is
 `acknowledged`, and its `stats`, read once the receiver has counted all 20 arrivals, reads
 `rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then
-reconnects without the field. `buffered-track-drains` (`ws`, `rtc`) sends seq 2 to 65 on one ordering key as 64 literal
-bare send commands (a loop index counts from 0 and a sequence is not substituted), each followed by a 75 ms absence wait
-as the pause, and then seq 1, which alone is observed admitted; all carry `ack: 'none'`, since the receiver cannot
-acknowledge a buffered sequence before seq 1 arrives, and a 90 s `ttlMs`, and the receiver receives all 65 in a 90 s
-window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real runtime). Over `rtc` the
-receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190):
-a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per iteration, against
-the page's event history. Over `ws` the relay buffers and releases the track out of the page's sight, as in
-`ordering-gap-repair`. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
+reconnects without the field. `buffered-track-drains` (`rtc` alone) sends seq 1 on one ordering key and observes it
+`transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the message id its send returned (the
+type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare send commands (a loop index counts
+from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as the pause, and releases seq 2, which
+alone is observed admitted. The sends leave in sequence order, since a stated sequence at or below the track's head is
+refused `unsupported`; the hold reorders their arrival. A receiver enters a recorded track at its first copy, so seq 1
+goes first: holding it instead would make the receiver enter at seq 2 and refuse seq 1. All carry `ack: 'none'`,
+since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and a 90 s `ttlMs`, and the receiver
+receives all 66 in a 90 s window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real
+runtime). The receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted` count is
+above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per
+iteration, against the page's event history. The cell does not run over `ws`, a stated S4-i limit: the WS server NACKs
+the gap at each later frame's arrival, and the sender's repairs of the held seq 2 spend its one retransmit on the hold,
+so it settles `repair-exhausted` before its release.
+`churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
 sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
 in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of
 256 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the receiver
