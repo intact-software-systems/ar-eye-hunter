@@ -23,7 +23,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '../decode-al-admission-resource-entry-key.ts';
-import { toALOutboundRequestComparableMessage } from './to-al-outbound-request-comparable-message.ts';
+import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
 
 export interface ALOutboundMessageReference {
     readonly key: Key;

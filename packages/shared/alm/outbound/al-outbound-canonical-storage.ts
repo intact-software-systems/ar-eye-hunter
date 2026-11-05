@@ -7,6 +7,7 @@ import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
 import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
@@ -16,7 +17,6 @@ import {
     toALOutboundIdentityKey,
     toALOutboundMessageReference
 } from './al-outbound-canonical-message.ts';
-import { toALOutboundRequestComparableMessage } from './to-al-outbound-request-comparable-message.ts';
 
 export interface ALOutboundCanonicalReadInput {
     readonly nowMs: () => number;

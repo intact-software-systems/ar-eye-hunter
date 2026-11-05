@@ -29,6 +29,7 @@ import type {
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
 import { toALOutboundCanonicalKey, toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import {
@@ -56,7 +57,6 @@ import {
 } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-admission.ts';
 import { recordALOutboundDequeueTiming } from './lane/record-al-outbound-dequeue-timing.ts';
-import { toALOutboundRequestComparableMessage } from './to-al-outbound-request-comparable-message.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
 /** What one dispatch decided before its write: a result already, or a bundle its commit writes. */

@@ -1,5 +1,5 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../../al-contracts/al-runtime.ts';
 
 /**
  * The candidate as its request would compare to it: what an admission adds to a request is removed -- a sequence
