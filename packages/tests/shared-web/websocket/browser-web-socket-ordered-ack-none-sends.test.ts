@@ -29,7 +29,7 @@ import { createDefaultVolatileSessionBudget } from '../default-volatile-session-
 
 const TYPE_ID = 'alm.conformance.ws.buffered-track-drains';
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-/** The lane's buffered-track cell: seq 1 opens the track, seq 2 is held at the transport while 3 to 66 leave. */
+/** One ordered ack-none track the browser WS client submits in sequence order, none waiting on a receipt. */
 const SEQS = Array.from({ length: 66 }, (_, offset) => offset + 1);
 
 interface OrderedSender {
@@ -49,16 +49,18 @@ describe('ordered ack-none room sends on the browser WS client', () => {
         });
     });
 
-    it('submits all 66 sends of a track sent seq 1 to 66, none waiting on a receipt the receiver cannot give', async () => {
+    it('submits all 66 sends of a track sent seq 1 to 66 in order, none waiting on a receipt, and refuses seq 2 below its head', async () => {
         const sender = await openOrderedSender(60_000);
 
         for (const seq of SEQS) {
             expect((await sender.service.enqueueOutboxIfAbsent(createOrderedSend(sender.sessionId, seq))).verdict.kind)
                 .toBe('admitted');
         }
+        const below = await sender.service.enqueueOutboxIfAbsent(createOrderedSend(sender.sessionId, 2));
 
         await vi.waitFor(() => expect(readSentSeqs(sender.socket)).toHaveLength(SEQS.length), { timeout: 20_000, interval: 20 });
-        expect([...readSentSeqs(sender.socket)].sort((left, right) => left - right)).toEqual(SEQS);
+        expect(below.verdict).toMatchObject({ kind: 'refused', reason: 'unsupported' });
+        expect(readSentSeqs(sender.socket)).toEqual(SEQS);
     }, 30_000);
 
     it('holds every send not-ready once its own room presence lease in the snapshot has lapsed', async () => {

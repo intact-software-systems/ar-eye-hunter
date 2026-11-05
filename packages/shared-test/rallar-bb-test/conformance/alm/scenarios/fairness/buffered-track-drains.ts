@@ -1,7 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { ALM_INBOUND_DIAGNOSTICS_TOPIC } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
@@ -26,8 +25,8 @@ const HELD_SEQ = 2;
 const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /**
  * The cell's own lifetime for the sends and the receive window. A slow runner may take longer than the default 30 s
- * to put 65 sends on the wire and deliver them; that a 64-message buffer drains within the default lifetime is
- * proven on the real runtime, and this cell proves the promotion and the 65 arrivals.
+ * to put 66 sends on the wire and deliver them; that a 64-message buffer drains within the default lifetime is
+ * proven on the real runtime, and this cell proves the promotion and the 66 arrivals.
  */
 const BUFFERED_TRACK_TTL_MS = 90_000;
 /** A count above zero starts with a digit from 1 to 9, and `promoted` is the last key `effect-drain` emits. */
@@ -39,15 +38,16 @@ const NONZERO_LEADING_DIGITS = 9;
  * is held by its message id, seq 3 to 66 pass, then seq 2 is released. A receiver with no position enters a recorded
  * track at its first copy, so seq 1 goes first: an entry at seq 3 would leave seq 2 below it. The sends ask for no
  * receipt: the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives, so a receipted send would wait out its
- * ACK retries one after the other. They are bare, without an admission observation each, and paced. Over `rtc` the
- * receiver is the hop that buffered them, so one of its inbound batches states a release it ran by promotion. Over
- * `ws` the relay buffers and releases them out of the page's sight, as in `ordering-gap-repair`.
+ * ACK retries one after the other. They are bare, without an admission observation each, and paced. The receiver is
+ * the hop that buffered them, so one of its inbound batches states a release it ran by promotion. The cell runs over
+ * `rtc` alone, a stated S4-i limit: over `ws` the server NACKs the gap at each later frame's arrival, and the sender's
+ * repairs of the held seq 2 spend its one retransmit on the hold, so it settles `repair-exhausted` before its release.
  */
 export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     scenarioId: 'buffered-track-drains',
     scenarioKey: 'buffered-track-drains',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
+    carriers: ['rtc'],
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [
@@ -63,7 +63,7 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     ],
     toRecipientCommands: (receiver) => [
         toTrackArrivalsCommand(receiver),
-        ...(receiver.input.carrier === 'rtc' ? [toPromotionWait(receiver)] : [])
+        toPromotionWait(receiver)
     ]
 };
 

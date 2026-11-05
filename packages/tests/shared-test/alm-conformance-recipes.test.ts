@@ -234,8 +234,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'paced-isolation-resources',
         'paced-isolation-lists',
         'backpressure-deferred',
-        'own-share-under-inbound',
-        'buffered-track-drains'
+        'own-share-under-inbound'
     ],
     rtc: [
         'volatile-default',
