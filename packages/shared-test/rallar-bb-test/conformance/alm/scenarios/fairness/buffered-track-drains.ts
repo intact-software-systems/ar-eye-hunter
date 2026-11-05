@@ -3,8 +3,9 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { ALM_INBOUND_DIAGNOSTICS_TOPIC } from '../../alm-conformance-diagnostic-waits.ts';
+import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
-import { toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
+import { toOrderingKey, toSentCommands } from '../../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
@@ -16,12 +17,13 @@ import { toPauseCommand } from '../../to-pause-command.ts';
 import { FAIRNESS_SEND_INTERVAL_MS } from './to-send-loop-command.ts';
 
 /**
- * Sequences 2 to 65, sent ahead of seq 1, so seq 1's arrival releases 64 buffered messages at once. A loop cannot
- * name them: its index counts from 0 with no offset, a sequence is a number a loop does not substitute, and an outer
- * loop fixes an inner loop's index before it runs. So each is a literal send with a pause after it.
+ * Sequences 3 to 66, which arrive ahead of seq 2, so seq 2's arrival releases 64 buffered messages at once. A loop
+ * cannot name them: its index counts from 0 with no offset, a sequence is a number a loop does not substitute, and an
+ * outer loop fixes an inner loop's index before it runs. So each is a literal send with a pause after it.
  */
-const BUFFERED_SEQS = Array.from({ length: 64 }, (_, offset) => offset + 2);
-const TRACK_LENGTH = BUFFERED_SEQS.length + 1;
+const BUFFERED_SEQS = Array.from({ length: 64 }, (_, offset) => offset + 3);
+const HELD_SEQ = 2;
+const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /**
  * The cell's own lifetime for the sends and the receive window. A slow runner may take longer than the default 30 s
  * to put 65 sends on the wire and deliver them; that a 64-message buffer drains within the default lifetime is
@@ -32,12 +34,14 @@ const BUFFERED_TRACK_TTL_MS = 90_000;
 const NONZERO_LEADING_DIGITS = 9;
 
 /**
- * D190: the sender sends seq 2 to 65 on one ordering key, then seq 1; the receiver delivers all 65. The sends ask for
- * no receipt: the receiver cannot acknowledge seq 2 to 65 before seq 1 arrives, so a receipted send would wait out
- * its ACK retries one after the other. They are bare, without an admission observation each, and paced; only seq 1
- * is observed admitted. Over `rtc` the receiver is the hop that buffered them, so one of its inbound batches states a
- * release it ran by promotion. Over `ws` the relay buffers and releases them out of the page's sight, as in
- * `ordering-gap-repair`.
+ * D190: seq 2 arrives after seq 3 to 66 of one ordering key, and the receiver delivers all 66. The sender's head only
+ * moves forward, so the sends leave in order and the transport reorders them: seq 1 opens the receiver's track, seq 2
+ * is held by its message id, seq 3 to 66 pass, then seq 2 is released. A receiver with no position enters a recorded
+ * track at its first copy, so seq 1 goes first: an entry at seq 3 would leave seq 2 below it. The sends ask for no
+ * receipt: the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives, so a receipted send would wait out its
+ * ACK retries one after the other. They are bare, without an admission observation each, and paced. Over `rtc` the
+ * receiver is the hop that buffered them, so one of its inbound batches states a release it ran by promotion. Over
+ * `ws` the relay buffers and releases them out of the page's sight, as in `ordering-gap-repair`.
  */
 export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     scenarioId: 'buffered-track-drains',
@@ -47,12 +51,15 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [
+        toTrackSend(sender, 1),
+        ...toSentCommands({ ...sender, index: 1 }),
+        ...toHeldSendCommands({ ...sender, index: HELD_SEQ }, [toTrackSend(sender, HELD_SEQ)]),
         ...BUFFERED_SEQS.flatMap((seq) => [
             toTrackSend(sender, seq),
             toPauseCommand(sender, `pause-${seq}`, FAIRNESS_SEND_INTERVAL_MS)
         ]),
-        toTrackSend(sender, 1),
-        ...toAdmissionCommands({ ...sender, index: 1 })
+        ...toHeldMessageFaultCommands({ ...sender, index: HELD_SEQ }, `release-message-${HELD_SEQ}`, 0),
+        ...toAdmissionCommands({ ...sender, index: HELD_SEQ })
     ],
     toRecipientCommands: (receiver) => [
         toTrackArrivalsCommand(receiver),

@@ -3,14 +3,14 @@ import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-id
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
 import { toControlAdmissionWait } from './alm-conformance-diagnostic-waits.ts';
-import { toHeldFaultCommands, toHeldMessageFaultCommands } from './alm-conformance-fault-commands.ts';
+import { toHeldSendCommands } from './alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
     toObserveCommand,
     toResultAssertion,
     toSendCommand
 } from './alm-conformance-message-commands.ts';
-import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
+import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 
 /** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */
 export function toOrderedSendCommands(
@@ -28,32 +28,35 @@ export function toOrderedSendCommands(
     ];
 }
 
+/** The send of `step.index` left the page: its carrier took it, or its recipients already answered it. */
+export function toSentCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...step, state: 'transport-accepted' }),
+        toResultAssertion({
+            step,
+            name: `assert-sent-${step.index}`,
+            resultName: `observe-transport-accepted-${step.index}`,
+            field: 'state',
+            operator: 'matches',
+            expected: '^(transport-accepted|acknowledged)$'
+        })
+    ];
+}
+
 export function toOrderingKey(sender: AlmConformanceStepInput): string {
     return `alm-${sender.input.carrier}-${sender.scenarioId}`;
 }
 
 /**
  * Three ordered sends whose second frame alone is held, then the range NACK the third reveals, admitted at the
- * sender. The hold of the type covers the second send until its message id is known; the message hold then takes
- * over, so the third send passes while the second stays held across every retransmission. Over `ws` the relay is
- * the hop that NACKs; over the RTC carriers the receiver is; the sender admits either as `committed`.
+ * sender. The third send passes while the second stays held across every retransmission. Over `ws` the relay is the
+ * hop that NACKs; over the RTC carriers the receiver is; the sender admits either as `committed`.
  */
 export function toHeldSecondSendCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toOrderedSendCommands(sender, 1),
-        toObserveCommand({ ...sender, index: 1, state: 'transport-accepted' }),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-sent-1',
-            resultName: 'observe-transport-accepted-1',
-            field: 'state',
-            operator: 'matches',
-            expected: '^(transport-accepted|acknowledged)$'
-        }),
-        ...toHeldFaultCommands(sender, 'hold', 'until-cleared'),
-        ...toOrderedSendCommands(sender, 2),
-        ...toHeldMessageFaultCommands({ ...sender, index: 2 }, 'hold-message-2', 'until-cleared'),
-        ...toHeldFaultCommands(sender, 'release', 0),
+        ...toSentCommands({ ...sender, index: 1 }),
+        ...toHeldSendCommands({ ...sender, index: 2 }, toOrderedSendCommands(sender, 2)),
         ...toOrderedSendCommands(sender, 3),
         toControlAdmissionWait({
             step: { ...sender, index: 3 },
