@@ -28,7 +28,9 @@ import {
     BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX,
     BROWSER_AL_RUNTIME_STORE_NAME,
     toBrowserALRuntimeDbName,
-    toBrowserSessionALRuntimeEntryKeyPrefixes,
+    toBrowserALRuntimeEntryKeyPrefix,
+    toBrowserSessionALOrderingHeadNamespace,
+    toBrowserSessionALRuntimeStoreIds,
     toBrowserSessionALRuntimeWorkNamespaces
 } from './browser-al-runtime-identity.ts';
 import {
@@ -143,6 +145,14 @@ export async function deleteBrowserALRuntimeEntriesForSession(
         deletionPolicy: { kind: 'all' },
         storage: options.storage
     });
+}
+
+/** Every key prefix of the session's admission rows: each store's, and the ordering heads its carriers share. */
+function toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId: string): readonly string[] {
+    return [
+        ...toBrowserSessionALRuntimeStoreIds(sessionId).map(toBrowserALRuntimeEntryKeyPrefix),
+        `${toBrowserSessionALOrderingHeadNamespace(sessionId)}:`
+    ];
 }
 
 /**

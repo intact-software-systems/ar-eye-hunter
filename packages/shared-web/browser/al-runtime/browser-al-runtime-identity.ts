@@ -46,7 +46,7 @@ export function toBrowserRtcOverlayALRuntimeStoreId(
  * session's database and object store, so either carrier's commit reaches the same row (S4-R6).
  */
 export function toBrowserSessionALOrderingHeadNamespace(sessionId: string): string {
-    return toBrowserALRuntimeNamespace(toBrowserSessionALOrderingHeadName(sessionId));
+    return toBrowserALRuntimeNamespace(`browser-session-ordering-heads:${sessionId}`);
 }
 
 export function toBrowserALRuntimeEntryKeyPrefix(name: string): string {
@@ -57,13 +57,6 @@ export function toBrowserSessionALRuntimeStoreIds(
     sessionId: string
 ): readonly ALRuntimeStoreId<ALOutboundTransportMessage>[] {
     return [toBrowserSessionALInboundRuntimeStoreId(sessionId), ...toBrowserSessionALOutboundStoreIds(sessionId)];
-}
-
-export function toBrowserSessionALRuntimeEntryKeyPrefixes(
-    sessionId: string
-): readonly string[] {
-    return [...toBrowserSessionALRuntimeStoreIds(sessionId), toBrowserSessionALOrderingHeadName(sessionId)]
-        .map(toBrowserALRuntimeEntryKeyPrefix);
 }
 
 /** The namespace an admission store built from this store id actually enqueues work under. */
@@ -81,10 +74,6 @@ export function toBrowserSessionALRuntimeWorkNamespaces(
             `${toBrowserALRuntimeNamespace(storeId)}:outbound:admission`
         )
     ];
-}
-
-function toBrowserSessionALOrderingHeadName(sessionId: string): string {
-    return `browser-session-ordering-heads:${sessionId}`;
 }
 
 /** Both carriers' durable and checkpoint stores. */
