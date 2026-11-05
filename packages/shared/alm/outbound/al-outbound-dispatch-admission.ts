@@ -97,8 +97,8 @@ export namespace ALOutboundDispatchAdmission {
     export interface Input<TPrepared> {
         readonly msg: ALMessage;
         readonly dequeueAuthority?: ALOutboundDequeueAuthority;
-        /** A dequeued row admitted only behind its predecessor its batch claimed (T3-R5); absent outside a batch. */
-        readonly followsBatchPredecessor?: boolean;
+        /** A dequeued row admitted only behind its predecessor its batch claimed; false for every other admission. */
+        readonly followsBatchPredecessor: boolean;
         readonly planner: ALOutboundPlanner<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;

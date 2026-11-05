@@ -775,6 +775,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const lane = await this.readLaneForMessage(retransmission.msg.id.msgId);
         const computed = await lane.commit({
             msg: retransmission.msg,
+            followsBatchPredecessor: false,
             planner: () => retransmission.plan,
             intent: 'repair',
             phase: 'immediate',
@@ -935,6 +936,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     ): ALOutboundDispatchAdmission.Input<TPrepared> {
         return {
             msg,
+            followsBatchPredecessor: false,
             planner,
             intent: 'enqueue',
             phase: 'immediate',

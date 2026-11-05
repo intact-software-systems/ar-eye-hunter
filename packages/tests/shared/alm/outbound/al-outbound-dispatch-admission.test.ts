@@ -139,7 +139,7 @@ function recordDecisionStoreRounds(backend: InMemoryAdmissionBackend, isCommitti
 }
 
 function toDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
-    return { msg, planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
+    return { msg, followsBatchPredecessor: false, planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
 }
 
 it('reads every member of a burst at once before committing in input order and admitting a late send', async () => {

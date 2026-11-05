@@ -38,21 +38,21 @@ export function computeALOutboundGroupChainedReads<TRead extends ALOutboundGroup
     return chained;
 }
 
-/** A dispatch of a dequeued batch, and whether its carrier admits it only behind its batch predecessor (T3-R5). */
+/** A dispatch of a dequeued batch, and whether its carrier admits it only behind its batch predecessor. */
 export interface ALOutboundBatchFollowerCandidate {
     readonly msg: ALMessage;
-    readonly followsBatchPredecessor?: boolean;
+    readonly followsBatchPredecessor: boolean;
 }
 
 /**
  * Whether a dispatch that follows its batch predecessor is left to the next pass: its predecessor is not among the
- * messages admitted ahead of it, so committing it now would record positions out of sequence order (T3-R5).
+ * messages admitted ahead of it, so committing it now would record positions out of sequence order.
  */
 export function isALOutboundLeftBehindPredecessor(
     dispatch: ALOutboundBatchFollowerCandidate,
     admittedAhead: readonly ALMessage[]
 ): boolean {
-    return dispatch.followsBatchPredecessor === true &&
+    return dispatch.followsBatchPredecessor &&
         !isALOrderingPredecessorInBatch(dispatch.msg, toALOrderingBatchSequences(admittedAhead));
 }
 

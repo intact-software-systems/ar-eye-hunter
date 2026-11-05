@@ -82,6 +82,7 @@ export class ALOutboundMessageEffects<TPrepared> {
         evidence?.recordStage('pending-commit');
         const result = await this.dependencies.dispatchAdmission.commit({
             msg,
+            followsBatchPredecessor: false,
             planner: () => toALOutboundRetainedDispatchPlan(msg, pending),
             intent: 'enqueue',
             phase: 'immediate',
