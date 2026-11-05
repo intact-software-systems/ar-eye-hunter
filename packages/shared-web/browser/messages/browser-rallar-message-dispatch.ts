@@ -70,6 +70,8 @@ export namespace BrowserRallarMessageDispatch {
         readonly carrier: ALDeliveryCarrier;
         readonly message: ALMessage;
         readonly canFallback: boolean;
+        /** The leg takes over a copy another carrier already admitted (D56), with the sequence that admission fixed. */
+        readonly admittedCopy: boolean;
         readonly payloadIssues: readonly RallarValidationIssue[];
         /** A lane send's is `members`; a granted delivery is checked against the room's cached grants before its leg. */
         readonly access: RallarTypedMessageChannelDefinition['access'];
@@ -266,7 +268,8 @@ export class BrowserRallarMessageDispatch {
             ...delivery,
             carrier: 'ws',
             message: result.message,
-            canFallback: false
+            canFallback: false,
+            admittedCopy: true
         };
         this.input.deliveries.watchFallback({
             message: result.message,
@@ -453,6 +456,8 @@ function isCarrierOwnedVerdict(verdict: ALDeliveryAdmissionVerdict): boolean {
 export interface CarrierOutboxLeg {
     readonly carrier: ALDeliveryCarrier;
     readonly canFallback: boolean;
+    /** The WS leg of a post-admission hand-over (D56): its copy's sequence is fixed and never guarded. */
+    readonly admittedCopy: boolean;
 }
 
 /** One carrier's own outbound admission of an envelope: the call a first send and its fallback both make. */
@@ -461,11 +466,14 @@ export async function writeCarrierOutboxAdmission(
     leg: CarrierOutboxLeg,
     message: ALMessage
 ): Promise<ALOutboundEnqueueResult> {
-    return leg.carrier === 'rtc'
-        ? await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(
+    if (leg.carrier === 'rtc') {
+        return await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(
             message,
             leg.canFallback ? 'hand-over' : 'hold'
-        )
+        );
+    }
+    return leg.admittedCopy
+        ? await context.middleware.webSocketQueueBox.enqueueHandedOverIfAbsent(message)
         : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
 }
 

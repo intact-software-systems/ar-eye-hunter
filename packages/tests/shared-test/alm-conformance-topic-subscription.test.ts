@@ -19,6 +19,9 @@ import type {
     RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    createDefaultRallarBlackBoxTestRuntime
+} from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -28,7 +31,9 @@ const FOUR_ROLE_IDS = [
     'subscription-delivery',
     'subscription-token-count',
     'subscription-revoke-disconnected',
-    'subscription-reconnect'
+    'subscription-reconnect',
+    'subscription-ordered-entry',
+    'subscription-ordered-omission'
 ] as const;
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
@@ -386,5 +391,396 @@ describe('ALM topic subscription conformance', () => {
             sender: { ...toSender([], []), result: undefined },
             sibling
         })).toEqual(['sender: missing, mismatched or failed recipe envelope.']);
+    });
+});
+
+type OrderedScenarioId = 'subscription-ordered-entry' | 'subscription-ordered-omission';
+type ProducerRole = 'sender' | 'publisher-b';
+
+/** Each producer's own track: `a` names the sender's publications, `c` publisher-b's. */
+const PRODUCER_TRACKS: readonly (readonly [ProducerRole, 'a' | 'c'])[] = [['sender', 'a'], ['publisher-b', 'c']];
+
+function findOrderedScenario(
+    carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number],
+    scenarioId: OrderedScenarioId
+): AlmConformanceScenario {
+    const scenario = toTopicSubscriptionScenarios(carrier).find((candidate) => candidate.scenarioId === scenarioId);
+    if (scenario === undefined) {
+        throw new Error(`${carrier} creates no ${scenarioId} cell.`);
+    }
+    return scenario;
+}
+
+function requireRoleRecipe(scenario: AlmConformanceScenario, role: ProducerRole | 'receiver' | 'sibling'): RallarBlackBoxTestRecipe {
+    const recipe = toAlmConformanceRoleRecipe(scenario, role);
+    if (recipe === undefined) {
+        throw new Error(`${scenario.scenarioKey} has no ${role} recipe.`);
+    }
+    return recipe;
+}
+
+/** The steps a role runs between its connect and its stats read, named without the recipe's prefix. */
+function toStepNames(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+    const prefix = `${recipe.recipeId}-`;
+    const connect = recipe.commands.findIndex(({ kind }) => kind === 'rtc.connect');
+    return recipe.commands.slice(connect + 1)
+        .map(({ commandId }) => (commandId ?? '').replace(prefix, ''))
+        .filter((name) => name !== 'storage-counters-connected' && name !== 'stats');
+}
+
+function findStep(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand {
+    const command = recipe.commands.find(({ commandId }) => commandId === `${recipe.recipeId}-${name}`);
+    if (command === undefined) {
+        throw new Error(`${recipe.recipeId} has no ${name}.`);
+    }
+    return command;
+}
+
+/** The expected, confirmed and outside counts a publish loop ends on, in the order it asserts them. */
+function toLoopCounts(recipe: RallarBlackBoxTestRecipe, name: string): readonly (RallarBlackBoxTestJsonValue | undefined)[] {
+    const loop = findStep(recipe, name);
+    return (loop.kind === 'loop' ? loop.commands : []).flatMap((command) => command.kind === 'assert' ? [command.expected] : []);
+}
+
+function toLoopSend(recipe: RallarBlackBoxTestRecipe, name: string): RallarBlackBoxTestCommand | undefined {
+    const loop = findStep(recipe, name);
+    return (loop.kind === 'loop' ? loop.commands : []).find(({ kind }) => kind === 'messages.send');
+}
+
+/** One publish loop, its confirmed cue and the cue's leaving. */
+function toPublishSteps(name: string): readonly string[] {
+    return [name, `cue-${name}-confirmed`, `cue-${name}-confirmed-sent`];
+}
+
+function toPublicationSteps(state: 'received' | 'absent', track: 'a' | 'c', publications: readonly number[]): readonly string[] {
+    return publications.map((publication) => `${state}-${track}-p${publication}`);
+}
+
+function toConfirmedCueSteps(publication: number): readonly string[] {
+    return PRODUCER_TRACKS.map(([, track]) => `cue-${track}-p${publication}-confirmed-received`);
+}
+
+function toCounts(confirmations: number, outsideAudience: number): readonly number[] {
+    return [confirmations + outsideAudience, confirmations, outsideAudience];
+}
+
+/** Runs `commands` on a page whose history already holds `events`; each wait gets 1 ms, the history being complete. */
+async function runAfterEvents(
+    commands: readonly RallarBlackBoxTestCommand[],
+    events: readonly Parameters<ReturnType<typeof createDefaultRallarBlackBoxTestRuntime>['recordEvent']>[0][]
+): Promise<boolean> {
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    for (const event of events) {
+        runtime.recordEvent(event);
+    }
+    const recipe: RallarBlackBoxTestRecipe = {
+        schemaVersion: 1,
+        recipeId: 'ordering-position-probe',
+        commands: commands.map((command) => ({ ...command, timeoutMs: 1 }))
+    };
+    return (await runtime.execute({ kind: 'recipe.run', recipe })).ok;
+}
+
+describe('ALM ordered subscription entry conformance', () => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('names each producer\'s track by the cell and mints every ordered send over %s', (carrier) => {
+        for (const scenarioId of ['subscription-ordered-entry', 'subscription-ordered-omission'] as const) {
+            const scenario = findOrderedScenario(carrier, scenarioId);
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(scenario, role);
+                const ordered = toStepNames(producer).filter((name) => name.startsWith(`${track}-p`));
+
+                expect(ordered.length, producer.recipeId).toBeGreaterThan(0);
+                for (const name of ordered) {
+                    const send = toLoopSend(producer, name);
+                    expect(send, `${producer.recipeId} ${name}`).toMatchObject({ orderingKey: scenarioId, ack: 'all-logical-recipients' });
+                    expect(send, `${producer.recipeId} ${name}`).not.toHaveProperty('seq');
+                }
+                // The readiness probe rides no track, so it moves no recipient's position.
+                expect(toLoopSend(producer, 'probe-ready'), producer.recipeId).not.toHaveProperty('orderingKey');
+            }
+        }
+    });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'subscribes the sibling over %s once the receiver relays both producers\' p2, then publishes p3',
+        (carrier) => {
+            const scenario = findOrderedScenario(carrier, 'subscription-ordered-entry');
+            const sibling = requireRoleRecipe(scenario, 'sibling');
+            const positions = carrier === 'ws'
+                ? ['entered-a-p3', 'entered-c-p3']
+                : ['witnessed-a-p1', 'witnessed-a-p2', 'witnessed-c-p1', 'witnessed-c-p2'];
+
+            for (const [role, track] of PRODUCER_TRACKS) {
+                expect(toStepNames(requireRoleRecipe(scenario, role)), role).toEqual([
+                    'cue-listen',
+                    'cue-listen-sent',
+                    ...toPublishSteps('probe-ready'),
+                    ...toPublishSteps(`${track}-p1`),
+                    ...toPublishSteps(`${track}-p2`),
+                    'cue-entered-received',
+                    ...toPublishSteps(`${track}-p3`),
+                    'no-repair-dispatch',
+                    'no-gap-nack'
+                ]);
+            }
+            // Publisher-b may publish both before the sibling listens, so the receiver, listening first, relays them.
+            expect(toStepNames(sibling)).toEqual([
+                'cue-listen',
+                'cue-listen-sent',
+                'cue-published-2-received',
+                'subscribe-sibling',
+                'subscribe-delta-margin',
+                'cue-entered',
+                'cue-entered-sent',
+                ...toPublicationSteps('received', 'a', [3]),
+                ...toPublicationSteps('received', 'c', [3]),
+                ...positions,
+                ...toPublicationSteps('absent', 'a', [1, 2]),
+                ...toPublicationSteps('absent', 'c', [1, 2]),
+                ...toConfirmedCueSteps(3),
+                'unsubscribe-sibling',
+                'assert-unsubscribe-sibling-lapsed'
+            ]);
+            expect(toStepNames(requireRoleRecipe(scenario, 'receiver'))).toEqual([
+                'cue-listen',
+                'cue-listen-sent',
+                'grant-receiver-s',
+                'subscribe-receiver',
+                'grant-publisher-b-ps',
+                'grant-sender-ps',
+                ...toPublicationSteps('received', 'a', [1, 2]),
+                ...toPublicationSteps('received', 'c', [1, 2]),
+                ...toConfirmedCueSteps(2),
+                'cue-published-2',
+                'cue-published-2-sent',
+                ...toPublicationSteps('received', 'a', [3]),
+                ...toPublicationSteps('received', 'c', [3]),
+                ...toConfirmedCueSteps(3),
+                'unsubscribe-receiver',
+                'assert-unsubscribe-receiver-lapsed'
+            ]);
+        }
+    );
+
+    it.each(
+        [
+            { carrier: 'ws', unelected: 0, frozenOut: 0 },
+            { carrier: 'rtc', unelected: 1, frozenOut: 2 },
+            { carrier: 'rtc-with-ws-fallback', unelected: 1, frozenOut: 2 }
+        ] as const
+    )(
+        'counts the unelected sibling and other producer outside the first two publications over $carrier, the other producer alone after',
+        ({ carrier, unelected, frozenOut }) => {
+            const scenario = findOrderedScenario(carrier, 'subscription-ordered-entry');
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(scenario, role);
+
+                expect(toLoopCounts(producer, 'probe-ready'), role).toEqual(toCounts(1, frozenOut));
+                expect(toLoopCounts(producer, `${track}-p1`), role).toEqual(toCounts(1, frozenOut));
+                expect(toLoopCounts(producer, `${track}-p2`), role).toEqual(toCounts(1, frozenOut));
+                expect(toLoopCounts(producer, `${track}-p3`), role).toEqual(toCounts(2, unelected));
+            }
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)('omits the sibling\'s revoked stretch over %s and re-admits it under a new election', (carrier) => {
+        const scenario = findOrderedScenario(carrier, 'subscription-ordered-omission');
+        const receiver = requireRoleRecipe(scenario, 'receiver');
+
+        for (const [role, track] of PRODUCER_TRACKS) {
+            expect(toStepNames(requireRoleRecipe(scenario, role)), role).toEqual([
+                'cue-listen',
+                'cue-listen-sent',
+                ...toPublishSteps('probe-ready'),
+                ...toPublishSteps(`${track}-p1`),
+                ...toPublishSteps(`${track}-p2`),
+                'cue-revoked-received',
+                ...toPublishSteps(`${track}-p3`),
+                ...toPublishSteps(`${track}-p4`),
+                'cue-resubscribed-received',
+                ...toPublishSteps(`${track}-p5`),
+                'no-repair-dispatch',
+                'no-gap-nack'
+            ]);
+        }
+        expect(toStepNames(receiver)).toEqual([
+            'cue-listen',
+            'cue-listen-sent',
+            'grant-receiver-s',
+            'subscribe-receiver',
+            'grant-publisher-b-ps',
+            'grant-sender-ps',
+            ...toPublicationSteps('received', 'a', [1, 2]),
+            ...toPublicationSteps('received', 'c', [1, 2]),
+            ...toConfirmedCueSteps(2),
+            'revoke-sender-s',
+            'revoke-delta-margin',
+            'cue-revoked',
+            'cue-revoked-sent',
+            ...toPublicationSteps('received', 'a', [3, 4]),
+            ...toPublicationSteps('received', 'c', [3, 4]),
+            ...toConfirmedCueSteps(4),
+            'grant-sender-s',
+            'cue-regranted',
+            'cue-regranted-sent',
+            ...toPublicationSteps('received', 'a', [5]),
+            ...toPublicationSteps('received', 'c', [5]),
+            ...toConfirmedCueSteps(5),
+            'unsubscribe-receiver',
+            'assert-unsubscribe-receiver-lapsed'
+        ]);
+        expect(toStepNames(requireRoleRecipe(scenario, 'sibling'))).toEqual([
+            'cue-listen',
+            'cue-listen-sent',
+            'subscribe-sibling',
+            ...toPublicationSteps('received', 'a', [1, 2]),
+            ...toPublicationSteps('received', 'c', [1, 2]),
+            'cue-regranted-received',
+            'unsubscribe-sibling',
+            'assert-unsubscribe-sibling-lapsed',
+            'subscribe-sibling-regranted',
+            'subscribe-delta-margin',
+            'cue-resubscribed',
+            'cue-resubscribed-sent',
+            ...toPublicationSteps('received', 'a', [5]),
+            ...toPublicationSteps('received', 'c', [5]),
+            'omitted-a-p5',
+            'omitted-c-p5',
+            ...toPublicationSteps('absent', 'a', [3, 4]),
+            ...toPublicationSteps('absent', 'c', [3, 4]),
+            ...toConfirmedCueSteps(5),
+            'unsubscribe-sibling-regranted',
+            'assert-unsubscribe-sibling-regranted-lapsed'
+        ]);
+        // D492: the revoke takes the sender principal's `subscribe` alone, and the re-grant gives exactly it back.
+        expect(toGrantRequests(receiver).map(({ path, body }) => ({ operation: path?.split('/')[11], body })).slice(3)).toEqual([
+            { operation: 'revoke', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } },
+            { operation: 'grant', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } }
+        ]);
+        expect(findStep(receiver, 'revoke-delta-margin')).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
+    });
+
+    it.each(
+        [
+            { carrier: 'ws', unelected: 0 },
+            { carrier: 'rtc', unelected: 1 },
+            { carrier: 'rtc-with-ws-fallback', unelected: 1 }
+        ] as const
+    )('counts the revoked sibling in no audience over $carrier, and publisher-b, which keeps subscribe, outside the sender\'s', ({ carrier, unelected }) => {
+        const scenario = findOrderedScenario(carrier, 'subscription-ordered-omission');
+        for (const [role, track] of PRODUCER_TRACKS) {
+            const producer = requireRoleRecipe(scenario, role);
+            const revokedOutside = role === 'sender' ? unelected : 0;
+
+            expect(toLoopCounts(producer, 'probe-ready'), role).toEqual(toCounts(2, unelected));
+            for (const publication of [1, 2, 5]) {
+                expect(toLoopCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(2, unelected));
+            }
+            for (const publication of [3, 4]) {
+                expect(toLoopCounts(producer, `${track}-p${publication}`), `${role} p${publication}`).toEqual(toCounts(1, revokedOutside));
+            }
+        }
+    });
+
+    it('waits on the ordering-position event of each producer\'s track, read from the sibling\'s own arrival', () => {
+        const entered = findStep(requireRoleRecipe(findOrderedScenario('ws', 'subscription-ordered-entry'), 'sibling'), 'entered-a-p3');
+        const omitted = findStep(requireRoleRecipe(findOrderedScenario('rtc', 'subscription-ordered-omission'), 'sibling'), 'omitted-c-p5');
+        const witnessed = findStep(requireRoleRecipe(findOrderedScenario('rtc', 'subscription-ordered-entry'), 'sibling'), 'witnessed-c-p2');
+
+        expect(entered).toMatchObject({
+            kind: 'wait',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                payloadPath: 'data',
+                contains: '"trackKey":"subscription-ordered-entry:' +
+                    '{resultCache.alm-ws-subscription-ordered-entry-sibling-received-a-p3.value.event.payload.senderId}:',
+                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 0 }
+            }
+        });
+        expect(entered).not.toHaveProperty('absent');
+        expect(omitted).toMatchObject({
+            match: {
+                contains: '"trackKey":"subscription-ordered-omission:' +
+                    '{resultCache.alm-rtc-subscription-ordered-omission-sibling-received-c-p5.value.event.payload.senderId}:',
+                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'omitted', 'data.priorSeq': 2 }
+            }
+        });
+        expect(witnessed).toMatchObject({
+            match: { payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'witnessed', 'data.priorSeq': 1 } }
+        });
+    });
+
+    it('matches the emitted entry of the arrival\'s own track and nothing of the other producer\'s', async () => {
+        const sibling = requireRoleRecipe(findOrderedScenario('ws', 'subscription-ordered-entry'), 'sibling');
+        const steps = [findStep(sibling, 'received-a-p3'), findStep(sibling, 'entered-a-p3')];
+        const arrival = {
+            kind: 'message' as const,
+            topic: 'rallar.browser.messages.ws.message',
+            connection: 'receiver',
+            payload: {
+                senderId: 'peer-a',
+                data: { payload: { marker: 'subscription-ordered-entry', carrier: 'ws', publication: 'a-p3' } }
+            }
+        };
+        // The inbound admission's event, in its emitted key order.
+        const toPosition = (trackKey: string, status: string) => ({
+            kind: 'diagnostic' as const,
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: { kind: 'ordering-position', workerId: 'w', trackKey, seq: 3, priorSeq: 0, status, carrier: 'ws', traceId: 't', corrId: 'c' }
+            }
+        });
+
+        expect(await runAfterEvents(steps, [arrival, toPosition('subscription-ordered-entry:peer-a:0', 'entered')])).toBe(true);
+        expect(await runAfterEvents(steps, [arrival, toPosition('subscription-ordered-entry:peer-c:0', 'entered')])).toBe(false);
+        expect(await runAfterEvents(steps, [arrival, toPosition('subscription-ordered-entry:peer-a:0', 'omitted')])).toBe(false);
+    });
+
+    it('listens one window for a late copy of any absent publication, the later absences reading the history alone', () => {
+        const sibling = requireRoleRecipe(findOrderedScenario('ws', 'subscription-ordered-omission'), 'sibling');
+        const absences = toStepNames(sibling).filter((name) => name.startsWith('absent-')).map((name) => findStep(sibling, name));
+
+        expect(absences.map((wait) => wait.kind === 'wait' ? [wait.absent, wait.timeoutMs] : [])).toEqual([
+            [true, 5_000],
+            [true, 0],
+            [true, 0],
+            [true, 0]
+        ]);
+    });
+
+    it.each(['subscription-ordered-entry', 'subscription-ordered-omission'] as const)(
+        'asserts in %s that no gap NACK about the cell\'s tracks reached either producer, from the history the repair wait kept',
+        (cell) => {
+            const scenario = findOrderedScenario('rtc', cell);
+            for (const [role] of PRODUCER_TRACKS) {
+                expect(findStep(requireRoleRecipe(scenario, role), 'no-gap-nack')).toMatchObject({
+                    kind: 'wait',
+                    absent: true,
+                    timeoutMs: 0,
+                    match: {
+                        kind: 'diagnostic',
+                        topic: 'rallar.browser.alm.outbound_diagnostics',
+                        contains: `"nackReason":"gap","nackOrderingKey":"${cell}:`
+                    }
+                });
+            }
+        }
+    );
+
+    it('asserts no repair dispatch of the cell\'s type on either producer', () => {
+        const scenario = findOrderedScenario('rtc-with-ws-fallback', 'subscription-ordered-omission');
+        for (const [role] of PRODUCER_TRACKS) {
+            expect(findStep(requireRoleRecipe(scenario, role), 'no-repair-dispatch')).toMatchObject({
+                kind: 'wait',
+                absent: true,
+                timeoutMs: 5_000,
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    contains: '"typeId":"alm.conformance.rtc-with-ws-fallback.subscription-ordered-omission","origin":"repair"'
+                }
+            });
+        }
     });
 });

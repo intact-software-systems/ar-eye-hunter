@@ -13,6 +13,7 @@ import type { ALAdmissionReadSession } from '@shared/alm/al-admission-work-backe
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -50,6 +51,7 @@ function createDispatchFixture(): DispatchFixture {
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,
+        signAdmittedMessage: undefined,
         diagnostics: (event) => diagnostics.push(event),
         settlements: () => {}
     });
@@ -137,7 +139,7 @@ function recordDecisionStoreRounds(backend: InMemoryAdmissionBackend, isCommitti
 }
 
 function toDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
-    return { msg, planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
+    return { msg, followsBatchPredecessor: false, planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
 }
 
 it('reads every member of a burst at once before committing in input order and admitting a late send', async () => {
@@ -203,6 +205,53 @@ it('reads every member of a burst at once before committing in input order and a
         admission.dispose();
     }
 });
+
+/** The sender's row at `seq` of track `k`, which a dequeued batch may admit only behind its predecessor. */
+function toTrackedDispatch(seq: number, followsBatchPredecessor: boolean): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
+    const message = createOutboundMessage(`tracked-${seq}`);
+    return { ...toDispatch({ ...message, ordering: { orderingKey: 'k', seq } }), followsBatchPredecessor };
+}
+
+it('leaves a row that follows its batch predecessor to the next pass, unread, when the predecessor is not among the dispatches', async () => {
+    const { admission, store } = createDispatchFixture();
+    const readsBefore = store.getReadOperationCount();
+
+    const [left] = await admission.commitAllSettled([toTrackedDispatch(2, true)]);
+
+    expect(left).toMatchObject({ status: 'rejected', reason: expect.any(NotReadyException) });
+    expect(store.getReadOperationCount()).toBe(readsBefore);
+    admission.dispose();
+});
+
+it.each(
+    [
+        { predecessor: 'commits', reads: [1, 2, 3], committed: [true, true, true] },
+        { predecessor: 'fails', reads: [1], committed: [false, false, false] }
+    ] as const
+)(
+    'commits a track\'s rows alone by ascending sequence when the group falls back, its followers only once the predecessor $predecessor',
+    async ({ predecessor, reads, committed }) => {
+        const { admission, store } = createDispatchFixture();
+        const dispatches = [toTrackedDispatch(3, true), toTrackedDispatch(1, false), toTrackedDispatch(2, true)];
+        vi.spyOn(store, 'readOutgoingMessage').mockRejectedValueOnce(new Error('group read failed'));
+        const readOutgoingDecision = store.readOutgoingDecision.bind(store);
+        const decisionReads = vi.spyOn(store, 'readOutgoingDecision').mockImplementation(async (input, decide) => {
+            if (predecessor === 'fails' && input.msg.ordering?.seq === 1) {
+                throw new Error('predecessor failed');
+            }
+            return await readOutgoingDecision(input, decide);
+        });
+
+        const results = await admission.commitAllSettled(dispatches);
+
+        expect(decisionReads.mock.calls.map(([input]) => input.msg.ordering?.seq)).toEqual(reads);
+        expect(results.map((result) => result.status === 'fulfilled' && result.value.committed)).toEqual(committed);
+        if (predecessor === 'fails') {
+            expect(results.map((result) => result.status === 'rejected' && result.reason instanceof NotReadyException)).toEqual([true, false, true]);
+        }
+        admission.dispose();
+    }
+);
 
 it.each(['rejected', 'settled'] as const)(
     'waits for every group read after a %s member before fresh ordered fallback, preserving individual results',

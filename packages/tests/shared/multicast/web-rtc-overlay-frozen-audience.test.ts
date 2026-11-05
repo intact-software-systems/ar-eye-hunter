@@ -576,3 +576,61 @@ function createSnapshotWithRefusedSessions(): GroupSnapshot {
 function toRemovedMember(member: GroupMember): GroupMember {
     return { ...member, status: 'removed', left: null, removed: member.updated, banned: null };
 }
+
+describe('the sent positions an RTC origin records for its frozen audience', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('records nothing when the origin re-plans a stored keyed frame', () => {
+        const fixture = createFixture();
+        const stored = toKeyedFrame({ ...createOriginReceiverMulticast('stored'), targets: toOriginFrozenTargets(['b', 'c'], 4) });
+
+        // The stage planner is the manager's own; element access reaches it without widening its type.
+        expect(fixture.manager['planOutgoingMessage'](stored, 'replan').recordsSentPositions).toBeUndefined();
+        expect(fixture.manager['planOutgoingMessage'](stored, 'admission').recordsSentPositions).toEqual(['b', 'c']);
+    });
+
+    it('stamps a keyed members-topic multicast with its record, carried unsigned to every frozen recipient', async () => {
+        const fixture = createFixture();
+
+        const admitted = await enqueueLegAndDrain(fixture, toKeyedFrame(createOriginReceiverMulticast('members-keyed')));
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.ordering).toEqual({ orderingKey: 'chat', epoch: 1, seq: 1, priorSeqByRecipient: {} });
+        expect(admitted.message.proof).toBeUndefined();
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent].map((sent) => sent.ordering)).toEqual([
+            admitted.message.ordering,
+            admitted.message.ordering
+        ]);
+    });
+
+    it('mints the next sequence of an own room send that names its key alone, from its durable lane, and records it', async () => {
+        const fixture = createFixture();
+
+        const first = await enqueueLegAndDrain(fixture, toMintingFrame(createOriginReceiverMulticast('minted-1')));
+        const second = await enqueueLegAndDrain(fixture, toMintingFrame(createOriginReceiverMulticast('minted-2')));
+
+        expect(first.verdict, first.reason).toMatchObject({ kind: 'admitted', durable: true });
+        expect(second.verdict, second.reason).toMatchObject({ kind: 'admitted', durable: true });
+        expect([first.message.ordering, second.message.ordering]).toEqual([
+            { orderingKey: 'chat', seq: 1, priorSeqByRecipient: {} },
+            { orderingKey: 'chat', seq: 2, priorSeqByRecipient: {} }
+        ]);
+        expect(fixture.channels.b!.sent.map((sent) => sent.ordering?.seq)).toEqual([1, 2]);
+    });
+});
+
+function toMintingFrame(message: ALMessage): ALMessage {
+    return { ...message, ordering: { orderingKey: 'chat' } };
+}
+
+function toKeyedFrame(message: ALMessage): ALMessage {
+    return { ...message, ordering: { orderingKey: 'chat', epoch: 1, seq: 1 } };
+}

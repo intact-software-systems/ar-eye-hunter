@@ -348,15 +348,14 @@ describe('Rallar group public contracts', () => {
             principalId: 'bob',
             topicId: 'room.feed',
             connectionGenerationId: 'bob-generation',
-            leaseExpiresAtEpochMs: 120_000,
-            admittedAtGroupRevision: 3
+            leaseExpiresAtEpochMs: 120_000
         };
         expectComplete('GroupTopicSubscription', subscription);
         const validate = createSchemaValidator('GroupTopicSubscription');
         expect(validate({ ...subscription, connectionGenerationId: '' })).toBe(false);
         expect(validate({ ...subscription, topicId: 'rallar.state' })).toBe(false);
         expect(validate({ ...subscription, leaseExpiresAtEpochMs: 0 })).toBe(false);
-        expect(validate({ ...subscription, admittedAtGroupRevision: 0 })).toBe(false);
+        expect(validate({ ...subscription, groupRevision: 3 })).toBe(false);
         expectComplete('GroupTopicSubscriptionList', { subscriptions: [subscription] });
         expect(createSchemaValidator('GroupTopicSubscriptionList')({ subscriptions: [{}] })).toBe(false);
         for (const schemaName of ['SubscribeGroupTopicRequest', 'UnsubscribeGroupTopicRequest']) {

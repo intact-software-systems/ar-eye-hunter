@@ -93,6 +93,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -125,6 +126,7 @@ describe('inbound durable effect worker lifecycle', () => {
             new ALAdmissionCorruptionError('queuebox:page', new TypeError('invalid stored queue metadata'))
         );
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -172,6 +174,7 @@ describe('inbound durable effect worker lifecycle', () => {
             })]
         });
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -224,6 +227,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -274,6 +278,7 @@ describe('inbound durable effect worker lifecycle', () => {
         await resources.workQueue.enqueueIfAbsent(work.entry);
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -331,6 +336,7 @@ describe('inbound durable effect worker lifecycle', () => {
             );
         }
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -361,6 +367,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const dependencies = {
             ...resources,
             carrier: 'ws' as const,
+            orderingObserver: 'addressed' as const,
             planIncomingMessage,
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -440,6 +447,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
             planIncomingMessage,
@@ -469,6 +477,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const dispatchStarted = Promise.withResolvers<void>();
         const releaseDispatch = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
             planIncomingMessage,
@@ -500,6 +509,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const sendStarted = Promise.withResolvers<void>();
         const releaseSend = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
             planIncomingMessage,
@@ -575,6 +585,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
             planIncomingMessage,
@@ -662,6 +673,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const batches = new ALWorkBatchTestObserver();
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
             planIncomingMessage,
@@ -762,6 +774,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
             planIncomingMessage,
@@ -826,6 +839,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -864,6 +878,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -902,6 +917,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -1022,6 +1038,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         let attempts = 0;
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
 
@@ -1101,6 +1118,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const dependencies = {
             ...resources,
             carrier: 'ws' as const,
+            orderingObserver: 'addressed' as const,
             planIncomingMessage,
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -1286,6 +1304,8 @@ async function readAdmission(store: ALInboundAdmissionStore, message: ALMessage)
     };
     const nowMs = Date.now();
     return await store.readIncomingMessage({
+        selfPeerId: 'receiver',
+        orderingObserver: 'addressed',
         msg: message,
         source,
         nowMs,

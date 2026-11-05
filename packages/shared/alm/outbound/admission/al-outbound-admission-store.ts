@@ -81,6 +81,12 @@ export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
     readonly canonicalScope: string;
     readonly namespace: string;
+    /**
+     * Where the heads of the sender's ordering tracks live when several carrier pairs of one session share them over
+     * one store, so one track takes each sequence once whichever carrier mints it, and where the track's room-wide sent
+     * position lives beside each head. Absent, the pair's own namespace: no other pair sequences its sender's tracks.
+     */
+    readonly orderingHeadNamespace?: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
@@ -175,10 +181,26 @@ export interface ALOutboundSupersedenceReadState {
     readonly replacesReplacement?: ALReplacementSupersedenceValue;
 }
 
-/** The sequence one admission minted on its track: the head its commit writes under the sender fence. */
+/**
+ * The sequence one admission minted or guarded on its track: the head its commit writes, only over the head this read
+ * saw (`observedSeq`, undefined for none), since another carrier pair of the session may move the same head.
+ */
 export interface ALOutboundOrderingHead {
     readonly trackKey: string;
     readonly seq: number;
+    readonly observedSeq: number | undefined;
+    /**
+     * The session's carriers share the head and this admission records none of its recipients: the commit also moves
+     * the track's room-wide sent position to `seq`, so a carrier that records never states a recipient behind it.
+     */
+    readonly movesRoomSentPosition: boolean;
+}
+
+/** The positions one admission read on its track: each planned recipient's prior sequence, `0` for none. */
+export interface ALOutboundSentPositions {
+    readonly trackKey: string;
+    readonly seq: number;
+    readonly priorSeqByRecipient: Readonly<Record<string, number>>;
 }
 
 export interface ALOutboundMessageReadDto<TPrepared> {
@@ -192,8 +214,10 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
-    /** The sequence `msg` was minted on this read; undefined when the read minted none. */
+    /** The head this read moves its owned track to: a minted sequence or a stated one above it; undefined for none. */
     readonly orderingHead: ALOutboundOrderingHead | undefined;
+    /** The recipients' positions `msg` was recorded against on this read; undefined when the read recorded none. */
+    readonly sentPositions: ALOutboundSentPositions | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;
@@ -247,6 +271,11 @@ export type ALOutboundDurableEffect<TPrepared> =
         preparedFingerprint: string;
         attemptIdentity: string;
         phase: ALOutboundDispatchPhase;
+        /**
+         * The positions the message's recording read, from which each copy's entry is derived; `null` when nothing
+         * recorded them. The row omits a `null` (`toALOutboundStoredEffectPayload`), as an older build wrote it.
+         */
+        sentPositions: Readonly<Record<string, number>> | null;
     }>
     | Readonly<{
         kind: 'ack-timeout';
@@ -379,6 +408,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
+    /** The sent row -- its owner, captured policy and recorded positions -- in its own session. */
+    readonly readStoredMessage: (msgId: string) => Promise<ALStoredOutboundMessage | undefined>;
+
     readonly readSentMessageByOrdering: (
         trackKey: string,
         seq: number
@@ -475,15 +507,19 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             retention: input.retention,
             decodePrepared: input.decodePrepared
         });
+        const orderingHeadNamespace = input.orderingHeadNamespace ?? input.namespace;
         this.reads = new ALOutboundAdmissionReads({
             nowMs: input.nowMs,
             namespace: input.namespace,
+            orderingHeadNamespace,
+            sharesOrderingHead: input.orderingHeadNamespace !== undefined,
             canonicalScope: input.canonicalScope,
             backend: input.backend,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs
         });
         this.mutations = new ALOutboundAdmissionMutations({
             namespace: input.namespace,
+            orderingHeadNamespace,
             canonicalScope: input.canonicalScope,
             retention: input.retention,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
@@ -591,6 +627,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
         return await this.backend.readWithin((session) => this.reads.readSentMessage(session, msgId));
+    }
+
+    async readStoredMessage(msgId: string): Promise<ALStoredOutboundMessage | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readStoredMessage(session, msgId));
     }
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {
@@ -811,16 +851,16 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
     }
 
-    /** One bundle's pending-admission row, observed effect rows, shared supersedence observation and message identity. */
+    /** One bundle's pending-admission row, observed effect rows, guarded shared rows and message identity. */
     private async readBundleFenceError(
         tx: ALAdmissionWorkWriteContext,
         candidate: ALOutboundCommitCandidate<TPrepared>
     ): Promise<Error | undefined> {
         const { bundle, effects, mutations } = candidate;
-        const [pending, issues, observationConflict, identityConflict] = await Promise.all([
+        const [pending, issues, guardConflict, identityConflict] = await Promise.all([
             bundle.pendingAdmission ? tx.readWork(bundle.pendingAdmission.key) : undefined,
             this.effectStore.validateObservedWork(tx, effects),
-            this.mutations.readCurrentObservationConflict(tx, mutations),
+            this.mutations.readGuardConflict(tx, mutations),
             this.mutations.readMessageIdentityConflict(tx, bundle.mutations)
         ]);
         if (bundle.pendingAdmission && (!pending || !hasSameResourceEntryValue(pending, bundle.pendingAdmission))) {
@@ -829,7 +869,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         if (issues.length > 0) {
             return new ALAdmissionBackendConflictError(issues.map((issue) => issue.message).join('; '));
         }
-        const fenced = observationConflict ?? identityConflict;
+        const fenced = guardConflict ?? identityConflict;
         if (fenced === undefined) {
             return undefined;
         }

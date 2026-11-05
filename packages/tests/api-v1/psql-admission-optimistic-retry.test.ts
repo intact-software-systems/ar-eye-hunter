@@ -319,6 +319,7 @@ function createInboundTestRuntime(
     controls: ALMessage[]
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',
         stores,
@@ -405,6 +406,8 @@ function createInboundMessage(msgId: string): ALMessage {
 
 async function readIncoming(store: ALInboundAdmissionStore, msg: ALMessage, nowMs: number): Promise<ALInboundAdmissionRead> {
     return await store.readIncomingMessage({
+        selfPeerId: 'self',
+        orderingObserver: 'addressed',
         msg,
         source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: AUTHENTICATED_SCOPE },
         nowMs,

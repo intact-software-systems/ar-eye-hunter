@@ -11,6 +11,7 @@ import {
     toTopicGrantCommand,
     toUnsubscribeCommands
 } from '../topic-subscription/topic-subscription-commands.ts';
+import { GRANT_DELTA_MARGIN_MS } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
@@ -21,11 +22,6 @@ import {
     toRejectedPublishCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { toGrantedRtcOwnerCommands } from './granted-rtc-commands.ts';
-
-/**
- * Lets the revoke's delta reach both pages' snapshots after the owner's cue, so the sender's own check refuses first.
- */
-const REVOKE_DELTA_MARGIN_MS = 2_000;
 
 /**
  * The receiver revokes the sender's `publish` once `publication-1` was confirmed, and `publication-2` settles
@@ -57,7 +53,7 @@ function toRevokedPublisherCommands(sender: AlmConformanceStepInput): readonly R
             kind: 'publication'
         }),
         toCueWait(sender, 'revoked'),
-        toPauseCommand(sender, 'revoke-delta-margin', REVOKE_DELTA_MARGIN_MS),
+        toPauseCommand(sender, 'revoke-delta-margin', GRANT_DELTA_MARGIN_MS),
         ...toRejectedPublishCommands(sender, 'publication-2', 'no-publish-grant')
     ];
 }

@@ -6,7 +6,7 @@ them. It does not copy them.
 
 Historical implementation plans are not product documentation.
 [plans/README.md](../plans/README.md) says where a written plan belongs. ALM's
-delivery roadmap (Releases 1 to 10, `playground/alm/alm-improvement-plan.md`) is
+delivery roadmap (Releases 1 to 11, `playground/alm/alm-improvement-plan.md`) is
 complete. The ALM design that continues is the publication QoS and pub/sub
 addendum, `playground/alm/alm-publication-qos-addendum.md`, and the product
 contract is `playground/alm/alm-complete-product-description.md`.

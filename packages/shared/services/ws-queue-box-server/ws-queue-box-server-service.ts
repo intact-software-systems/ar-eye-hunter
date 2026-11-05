@@ -6,7 +6,7 @@ import {
     readALTargetGroupRef,
     type ALMessage
 } from '../../al-contracts/al-contract.ts';
-import type { ALAckPayload } from '../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessageRow,
@@ -18,7 +18,9 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import {
     ALInboundMessageRuntime,
@@ -47,6 +49,10 @@ import {
     createALOutboundReceiptWorkEvidence,
     toALOutboundReceiptFacts
 } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
+import {
+    isALOrderingPredecessorInBatch,
+    type ALOrderingBatchSequences
+} from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -65,6 +71,8 @@ import {
     toWsQueueBoxServerCapturedSendInput,
     toWsQueueBoxServerHeldSessionPolicy
 } from './scope/to-ws-queue-box-server-captured-send-input.ts';
+import { toWsQueueBoxServerOutsideAudienceAck } from './scope/to-ws-queue-box-server-outside-audience-ack.ts';
+import { toWsQueueBoxServerRecipientCopy } from './scope/to-ws-queue-box-server-recipient-copy.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -87,6 +95,7 @@ import { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-
 import { WsQueueBoxServerInboundDelivery } from './ws-queue-box-server-inbound-delivery.ts';
 import { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import {
+    isWsQueueBoxServerUnrecordedRow,
     WsQueueBoxServerOutboundPlanning,
     type WsQueueBoxServerOutboundPhase,
     type WsQueueBoxServerPreparedMessage
@@ -182,6 +191,7 @@ export namespace WsQueueBoxServerService {
         readonly message: ALMessage;
         readonly entry: ResourceEntry;
         readonly policy: ALOutboundCapturedPolicy;
+        readonly sentPositions: Readonly<Record<string, number>> | null;
     }
 
     export interface EnqueueAuthority {
@@ -263,6 +273,7 @@ export class WsQueueBoxServerService {
     public readonly socket: JsonWebSocketServer;
     public readonly name: string;
     private readonly inboundNamespace: string;
+    private readonly newControlId: () => string;
 
     constructor(dependencies: WsQueueBoxServerService.Dependencies) {
         this.clock = dependencies.outboundRuntime.clock;
@@ -273,6 +284,7 @@ export class WsQueueBoxServerService {
         this.socket = dependencies.socket;
         this.name = dependencies.name;
         this.inboundNamespace = dependencies.inboundRuntime.admissionStore.namespace;
+        this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
         this.readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
         this.forwardsRoomScopedMessages = dependencies.forwardsRoomScopedMessages;
         const liveDeliveryOwners = this.createLiveDeliveryOwners(dependencies);
@@ -374,6 +386,8 @@ export class WsQueueBoxServerService {
             targetResolution: this.targetResolution,
             controlDelivery: this.controlDelivery,
             ackRelay: this.ackRelay,
+            readRelayedRepairRequestRejection: (request, requesterPeerId) =>
+                this.readRelayedRepairRequestRejection(request, requesterPeerId),
             authorizeInboundMessage: dependencies.authorizeInboundMessage,
             readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
         });
@@ -425,7 +439,13 @@ export class WsQueueBoxServerService {
                     this.creationNow()
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
-            readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
+            readDequeuedAdmissionAuthority: async (message, batch) =>
+                await this.readTrackOrderAuthority(message, batch),
+            readDequeueAuthority: async (message, entry) => {
+                const read = await this.dequeueAuthority.readDequeueAuthority(message, entry);
+                await this.writeOutsideAudience(message, read.dropped);
+                return read.authority;
+            },
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
             planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
             afterDequeueAdmission: async (message, entry, committedPolicy) => {
@@ -434,11 +454,14 @@ export class WsQueueBoxServerService {
             },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
-            planRepairMessage: async (message, request) =>
-                this.outboundPlanning.planRepairMessage(message, {
+            planRepairMessage: async (message, request) => {
+                const audience = await this.dequeueAuthority.readCurrentAudience(message, request);
+                await this.writeOutsideAudience(message, audience.dropped);
+                return this.outboundPlanning.planRepairMessage(message, {
                     ...request,
-                    admittedAudience: await this.dequeueAuthority.readCurrentAudience(message, request)
-                })
+                    admittedAudience: audience.eligible
+                });
+            }
         });
     }
 
@@ -467,6 +490,7 @@ export class WsQueueBoxServerService {
         return new ALInboundMessageRuntime({
             ...dependencies.inboundRuntime,
             carrier: 'ws',
+            orderingObserver: 'every-track',
             readPendingAdmissionAuthority: (message, source) =>
                 this.inboundAuthority.readPendingAdmissionAuthority(message, source),
             planIncomingMessage: (message, fromPeerId, runtime) =>
@@ -480,6 +504,8 @@ export class WsQueueBoxServerService {
             },
             readRelayedAckRejection: (ack, controlIdentity) =>
                 this.readRuntimeProtocolAckRejection(ack, controlIdentity),
+            readRelayedRepairRequestRejection: (request, requesterPeerId) =>
+                this.readRelayedRepairRequestRejection(request, requesterPeerId),
             forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
             canForwardMessage: (message) =>
                 this.forwardsRoomScopedMessages || (!isRoomScopedALMessage(message) && !isALWorldBroadcast(message)),
@@ -495,6 +521,24 @@ export class WsQueueBoxServerService {
             ack,
             this.receiptObserver === undefined ? undefined : { stage: 'runtime-protocol', controlIdentity }
         );
+    }
+
+    /**
+     * A session asks for repair of another session's track only on a row this server relays from that origin and
+     * admitted the session to (P2, D498); the outbound owner then serves it as it serves an expected repair peer.
+     */
+    private async readRelayedRepairRequestRejection(
+        request: ALNackPayload | ALRepairPayload,
+        requesterPeerId: string
+    ): Promise<ALMessageRejection | undefined> {
+        const stored = await this.admissionStore.readStoredMessage(request.msgId);
+        const admitted = stored !== undefined && stored.reference.senderId === request.toPeerId &&
+            request.fromPeerId === requesterPeerId &&
+            stored.policy.admittedAudience?.includes(requesterPeerId) === true;
+        return admitted ? undefined : {
+            code: 'unauthorized',
+            message: 'AL repair request names no relayed message admitted to its sender'
+        };
     }
 
     private registerSocketIngress(): void {
@@ -784,6 +828,7 @@ export class WsQueueBoxServerService {
             return;
         }
         const policy = await this.dequeueAuthority.readCapturedPolicy(message, entry, committedPolicy);
+        const sentPositions = await this.readSentPositions(message);
         const awaited = this.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
             expiresAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
             send: (sessionId) => {
@@ -794,7 +839,8 @@ export class WsQueueBoxServerService {
                         this.sendHeldRow({
                             message,
                             entry,
-                            policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId)
+                            policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId),
+                            sentPositions
                         })
                 ).catch((error) => console.error('Held WebSocket send failed:', error));
             }
@@ -807,17 +853,102 @@ export class WsQueueBoxServerService {
         }
     }
 
-    /** A held send re-checks its one session when the session's socket opens, as every other attempt does (D498). */
+    /**
+     * A held send re-checks its one session when the session's socket opens, as every other attempt does (D498), and
+     * sends it its own copy; a session the re-check drops, or one a later row of the track reached, is recorded
+     * outside.
+     */
     private async sendHeldRow(
-        { message, entry, policy }: WsQueueBoxServerService.HeldRowSend
+        { message, entry, policy, sentPositions }: WsQueueBoxServerService.HeldRowSend
     ): Promise<void> {
-        const admittedAudience = await this.dequeueAuthority.readCurrentAudience(message, policy);
-        this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
+        const audience = await this.dequeueAuthority.readCurrentAudience(message, policy);
+        await this.writeOutsideAudience(message, audience.dropped);
+        const sent = this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
             message,
             key: entry.key,
-            policy: { ...policy, admittedAudience },
-            eligibleSessionIds: undefined
+            policy: { ...policy, admittedAudience: audience.eligible },
+            eligibleSessionIds: undefined,
+            sentPositions
         }));
+        await this.writeOutsideAudience(message, sent.belowPositionPeerIds);
+    }
+
+    /**
+     * A dequeued row that will record positions on its track follows its predecessor there when its batch claimed it
+     * too, and otherwise waits while that predecessor is admitted here and not yet recorded, so the track's positions
+     * are written in sequence order: a predecessor never admitted here, already sent or expired holds nothing. A held
+     * row's re-check reads the predecessor's row alone: the row's own answer and its predecessor's id hold while it
+     * is held.
+     */
+    private async readTrackOrderAuthority(
+        message: ALMessage,
+        batch: ALOrderingBatchSequences
+    ): Promise<ALOutboundMessageRuntime.DequeuedAdmissionAuthority> {
+        const trackKey = toALOrderingTrackKey(message);
+        const seq = message.ordering?.seq;
+        const nowMs = this.clock.nowMs();
+        if (
+            trackKey === undefined || seq === undefined || seq <= 1 ||
+            !isWsQueueBoxServerUnrecordedRow(await this.admissionStore.readStoredMessage(message.id.msgId), nowMs)
+        ) {
+            return { status: 'authorized' };
+        }
+        if (isALOrderingPredecessorInBatch(message, batch)) {
+            return { status: 'follows-batch-predecessor' };
+        }
+        const predecessor = await this.admissionStore.readSentMessageByOrdering(trackKey, seq - 1);
+        const readPredecessorUnrecorded = async () =>
+            predecessor !== undefined &&
+            isWsQueueBoxServerUnrecordedRow(
+                await this.admissionStore.readStoredMessage(predecessor.msgId),
+                this.clock.nowMs()
+            );
+        return await readPredecessorUnrecorded()
+            ? {
+                status: 'held',
+                reason: `WS row waits for sequence ${seq - 1} of its track to record first`,
+                readReleased: async () => !await readPredecessorUnrecorded()
+            }
+            : { status: 'authorized' };
+    }
+
+    /**
+     * The positions a tracked row's first dequeue recorded, which every live copy of the row takes its entry from;
+     * read once per send of the row, `null` for a row with no track or nothing recorded.
+     */
+    async readSentPositions(message: ALMessage): Promise<Readonly<Record<string, number>> | null> {
+        if (toALOrderingTrackKey(message) === undefined) {
+            return null;
+        }
+        return (await this.admissionStore.readStoredMessage(message.id.msgId))?.sentPositions ?? null;
+    }
+
+    /**
+     * Records each session the server sent its origin's row nothing outside the audience of the receipt the origin
+     * awaits (S4-R9); the server's own rows and rows no receipt counts recipients of have none to record in. Only a
+     * session connected here is this instance's to judge: its re-check sees every other instance's session as not
+     * here, which is no exclusion, so that session stays expected and its own instance answers for it.
+     */
+    async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
+        const originPeerId = message.id.senderId;
+        if (
+            originPeerId === this.name ||
+            !isALLogicalReceiptMode(this.outboundPlanning.resolvePolicy(message).effective.ack.algo)
+        ) {
+            return;
+        }
+        const judged = sessionIds.filter((sessionId) =>
+            sessionId !== originPeerId && this.socket.connections.get(sessionId)?.isOpen === true
+        );
+        for (const recipientPeerId of judged) {
+            await this.ackRelay.writeServerAck(toWsQueueBoxServerOutsideAudienceAck({
+                message,
+                recipientPeerId,
+                serverPeerId: this.name,
+                controlId: this.newControlId(),
+                nowMs: this.clock.nowMs()
+            }));
+        }
     }
 
     private async sendPreparedMessage(
@@ -840,7 +971,23 @@ export class WsQueueBoxServerService {
         >,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
-        const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
+        const canonical = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
+        const copy = toWsQueueBoxServerRecipientCopy({
+            message: canonical,
+            recipientPeerId: prepared.peerId,
+            sentPositions: lifecycle.sentPositions
+        });
+        if (copy.right === undefined) {
+            await this.writeOutsideAudience(canonical, [prepared.peerId]);
+            return { status: 'no-targets', submissionAttempted: false, reason: 'A later row of the track reached it' };
+        }
+        return this.sendRecipientCopy({ prepared, lifecycle, message: copy.right });
+    }
+
+    /** One recipient's copy on its socket, with the transport evidence a receipt observer asks for. */
+    private sendRecipientCopy(
+        { prepared, lifecycle, message }: Omit<WsQueueBoxServerPreparedRecipientInput, 'transport'>
+    ): ALOutboundSettledSendResult {
         const facts = this.receiptObserver === undefined ? undefined : toALOutboundReceiptFacts(message);
         const transport: JsonWebSocketServer.SendEvidence | undefined = facts === undefined
             ? undefined

@@ -73,6 +73,20 @@ export namespace WsQueueBoxServerDequeueAuthority {
         ALOutboundCapturedPolicy,
         'admittedAudience' | 'admittedConnectionGenerationIds' | 'recipientScope' | 'sessionInvalidation'
     >;
+
+    /** The row's admitted audience as one attempt finds it. */
+    export interface CurrentAudience {
+        /** The sessions the attempt may send; undefined for a row admitted to no audience. */
+        readonly eligible: readonly string[] | undefined;
+        /** The admitted sessions the re-check no longer finds eligible: the attempt sends them nothing. */
+        readonly dropped: readonly string[];
+    }
+
+    /** A dequeued row's authority, and the admitted sessions its attempt sends nothing. */
+    export interface DequeueRead {
+        readonly authority: ALOutboundDequeueAuthority;
+        readonly dropped: readonly string[];
+    }
 }
 
 /**
@@ -87,7 +101,10 @@ export class WsQueueBoxServerDequeueAuthority {
         this.dependencies = dependencies;
     }
 
-    async readDequeueAuthority(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundDequeueAuthority> {
+    async readDequeueAuthority(
+        message: ALMessage,
+        entry: ResourceEntry
+    ): Promise<WsQueueBoxServerDequeueAuthority.DequeueRead> {
         const { admissionStore, readProducerProvenance } = this.dependencies;
         if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
             throw toDequeueCorruption(entry, 'Unexpected WS outbox row type');
@@ -95,11 +112,15 @@ export class WsQueueBoxServerDequeueAuthority {
         const facts = await admissionStore.readDequeueAdmissionFacts(message, entry);
         if (facts.sentAdmission) {
             const policy = await this.readCapturedPolicy(message, entry, undefined);
+            const audience = await this.readCurrentAudience(message, policy);
             return {
-                admittedAudience: await this.readCurrentAudience(message, policy),
-                recipientScope: policy.recipientScope,
-                principalTargetId: policy.principalTargetId,
-                sessionInvalidation: policy.sessionInvalidation
+                authority: {
+                    admittedAudience: audience.eligible,
+                    recipientScope: policy.recipientScope,
+                    principalTargetId: policy.principalTargetId,
+                    sessionInvalidation: policy.sessionInvalidation
+                },
+                dropped: audience.dropped
             };
         }
         if (entry.key.topicId === 'AL_OUTBOUND_MESSAGE' || facts.canonicalIdentity) {
@@ -112,36 +133,40 @@ export class WsQueueBoxServerDequeueAuthority {
         if (validateWsQueueBoxServerProducerAuthority(message, authority, entry.key).length > 0) {
             throw toDequeueCorruption(entry, 'Producer authority differs from final WS target');
         }
-        return { ...authority, admittedAudience: await this.readCurrentAudience(message, authority) };
+        const audience = await this.readCurrentAudience(message, authority);
+        return { authority: { ...authority, admittedAudience: audience.eligible }, dropped: audience.dropped };
     }
 
     /**
      * The row's admitted audience as this attempt finds it (D498): a frozen-audience row's sessions the re-check still
      * finds eligible, rejecting when the re-check cannot read so the row waits for its retry, and nobody when no
-     * re-check is wired; any other row's as captured. A session the re-check drops stays expected in the receipt its
-     * admission wrote.
+     * re-check is wired; any other row's as captured. A session the re-check drops is sent nothing, and its caller
+     * records it outside the audience of the receipt its admission wrote (S4-R9). A composition with no re-check
+     * declares no exclusion: its sessions stay expected.
      */
     async readCurrentAudience(
         message: ALMessage,
         authority: WsQueueBoxServerDequeueAuthority.AudienceAuthority
-    ): Promise<readonly string[] | undefined> {
+    ): Promise<WsQueueBoxServerDequeueAuthority.CurrentAudience> {
         const { targetResolution, filterEligibleCapturedSessionIds } = this.dependencies;
+        const admittedAudience = authority.admittedAudience;
         if (
-            authority.admittedAudience === undefined || authority.sessionInvalidation !== undefined ||
+            admittedAudience === undefined || authority.sessionInvalidation !== undefined ||
             !targetResolution.requiresFrozenAudience(message)
         ) {
-            return authority.admittedAudience;
+            return { eligible: admittedAudience, dropped: [] };
         }
         if (filterEligibleCapturedSessionIds === undefined) {
-            return [];
+            return { eligible: [], dropped: [] };
         }
-        return await readWsQueueBoxServerEligibleAudience({
+        const eligible = await readWsQueueBoxServerEligibleAudience({
             message,
-            admittedAudience: authority.admittedAudience,
+            admittedAudience,
             admittedConnectionGenerationIds: authority.admittedConnectionGenerationIds,
             provenScope: authority.recipientScope,
             filterEligibleCapturedSessionIds
         });
+        return { eligible, dropped: admittedAudience.filter((sessionId) => !eligible.includes(sessionId)) };
     }
 
     /**

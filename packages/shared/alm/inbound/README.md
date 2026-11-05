@@ -117,8 +117,8 @@ WS server and Node keep the always-owned default.
   this early release; the durable and checkpoint pairs keep their existing policy.
 - **The age limit bounds counted admissions, not tracks.** Every pair keeps an ordering
   track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
-  (D181): a receiver that forgot a track would read the sender's next sequence as a gap
-  from 1 and stall the track on a repair. Each of the browser's inbound stores keeps at most
+  (D181): a receiver that forgot an unrecorded track would read the sender's next sequence as a
+  gap from 1 and stall the track on a repair. Each of the browser's inbound stores keeps at most
   `AL_INBOUND_MAX_ORDERING_TRACKS` (256) ordering snapshots, though (D191, below), and at most
   `AL_INBOUND_MAX_DELIVERED_MARKERS` (256) delivered markers. The server's stores are uncapped
   for both: every WS client's tracks share one store, so a cap there would evict live tracks of
@@ -290,13 +290,16 @@ that says why: under `receiver` and `leader` it sends its hop a `not-subscribed`
 confirms itself -- no `accepted`, no `delivered`, on a retried copy neither. Its hop still ends as any hop does,
 with a terminal ACK once its subtree answered (a leaf at once), but of status `subtree-complete-not-subscribed`,
 which completes the hop and confirms no recipient: no relay passes it upward and the origin counts nobody for it
-(PL11). A copy that arrives past an ordering gap is answered the same way: its gap NACK, which would ask for
-history the session is not entitled to, gives way to the `not-subscribed` NACK, and its hop ends with that status.
-A relay admits a child's `not-subscribed` NACK -- the one NACK inbound control admission handles; every
-other NACK stays its outbound owner's -- from a child hop its row waits on and for a recipient of the frozen
-audience whose confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`,
-and re-originates it to its parent from itself naming the same recipient, once per recipient and again in its
-answer to a retried copy; the NACK completes no hop, and no confirming ACK for that recipient is admitted after
+(PL11). Such a recipient witnesses the copy's ordering track: its position moves to the copy, nothing is buffered
+and no gap is ever asked for, so a copy past where a gap would have been is answered the same way. A recipient
+that receives a recorded frozen copy below the position it entered the track at answers `before-entry` for itself,
+which places it outside the audience as `not-subscribed` does. A relay admits a child's outside-audience NACK
+(`not-subscribed`, `before-entry`) -- the NACKs inbound control admission handles; every other NACK stays its
+outbound owner's -- from a child hop its row waits on and for a recipient of the frozen audience whose
+confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`, and
+re-originates it to its parent from itself naming the same recipient and reason, once per recipient, and as
+`not-subscribed` in its answer to a retried copy, since the row records who is outside, not why (the origin
+records the recipient outside under either reason); the NACK completes no hop, and no confirming ACK for that recipient is admitted after
 it (PL9, PL16). A row stored before `outsideAudiencePeerIds` existed reads none. The row stays until it
 expires, so a child ACK that arrives after completion is still relayed, and a
 retried copy of the message is answered from it
@@ -516,6 +519,35 @@ TTL (60 minutes) that also bounds the server's head, so a track silent for over 
 `seq` 1 on both sides, and since the server's sequences follow commit order, two publications of one
 track can commit out of publish order under contention.
 
+**Entry, omission and witness.** A copy an ordering authority recorded carries
+`ordering.priorSeqByRecipient`, the last sequence that authority sent each listed recipient before this one
+(outbound README, "Sent positions"); a recipient it lists not had `seq - 1`
+([`resolveALOrderingPriorSeq`](../../al-contracts/al-runtime.ts)). The runtime's required `orderingObserver` input
+says whose tracks it keeps: `addressed` (the RTC receiver and the WS client) keeps a track only for a copy addressed
+to it, `every-track` (the WS server, its clients' ordering hop) every track it admits.
+[`resolveALOrderingObserverRole`](./admission/resolve-al-ordering-observer-role.ts) reads the planner snapshot's
+`selfPeerId`: an `every-track` runtime or a delivering admission is a `recipient`, a frozen recipient that may not
+deliver a `witness`, and any other peer, a pure relay included, `none`, which observes nothing and forwards a
+recorded track it never saw. A recipient with no snapshot enters a recorded track at its copy (`entered`, no window
+check); one whose position `L` the copy's prior meets, with the sequence past `L + 1`, delivers it `omitted`; a
+prior ahead of `L` is a gap that ends at the prior; a prior behind `L`, `0` on a held track, or a copy without a
+record reads the rule above. `entered` and `omitted` deliver as `in-order` does, a buffered copy whose own prior
+equals `L` is released as its successor, and delivery progress jumps to a delivered sequence once its predecessor
+completed ([`al-inbound-delivery-progress.ts`](./admission/al-inbound-delivery-progress.ts)). A witness moves its
+position to the copy and buffers, asks and releases nothing; its progress passes the copy only when nothing below is
+pending delivery, so a session that witnessed while its own deliveries were pending, and is a recipient again,
+resyncs its next delivered copy. A recorded frozen copy below a recipient's position is `stale` and answers a
+`before-entry` NACK (above, under the relay); an unrecorded stale copy is dropped with no NACK, as before recorded
+tracks, and so is a WS copy, which carries no frozen audience: over `ws` the server skips a copy below a recorded
+position before it is sent. After each committed admission, replays included,
+[`toALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
+diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
+refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
+carrier. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it; the lost
+copy, arriving later, answers `before-entry` on a recorded frozen copy; a live-only hand-over copy carries no
+record and is dropped silently (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with no NACK
+and stays unconfirmed in the origin's receipt.
+
 **Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
 releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release
 of a track and defers the rest. A batch whose `release-buffered` claim of track T at seq k completed promotes T's
@@ -545,13 +577,14 @@ snapshot whose removal finds it changed, or whose write conflicts, is left to th
 as still held until then, while one that a rival pass already removed counts as gone. The pass is
 best-effort: the admission has committed, so a snapshot that does not decode, a failed removal write or a
 throwing reporter ends the pass without a count, the commit still answers `committed`, and the next new
-track evicts. The evicted track's next arrival is read as a new track's, from sequence 1, and
+track evicts. The evicted track's next arrival is read as a new track's: a recorded copy enters it again, an
+unrecorded one reads from sequence 1, and
 the release of a message buffered on a track evicted beyond its delivered head reads `resync-required`. Only
 the snapshot leaves: the track's `delivered` marker has its own cap. A store that
 names a reporter (`reportOrderingTracks`) is told the number of snapshots it holds after each such pass; the
 browser states it on the `storage` diagnostics port as `ordering-tracks`. **Limit:** a receiver holding
-more than 256 live ordered tracks in one store thrashes: each new track evicts a live one, whose next arrival
-reads as a gap from sequence 1 and goes to repair or resynchronization.
+more than 256 live ordered tracks in one store thrashes: each new track evicts a live one, whose next unrecorded
+arrival reads as a gap from sequence 1 and goes to repair or resynchronization.
 
 **The browser's delivered-marker cap.** Each of the browser's inbound stores, the session's IndexedDB pair and
 its volatile memory pair alike, keeps at most `AL_INBOUND_MAX_DELIVERED_MARKERS` (256) delivered markers

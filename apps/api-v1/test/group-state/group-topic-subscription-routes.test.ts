@@ -58,8 +58,7 @@ function createSubscription(sessionId: string, topicId: string): GroupTopicSubsc
         principalId: sessionId.replace('-session', ''),
         topicId,
         connectionGenerationId: `${sessionId}-generation`,
-        leaseExpiresAtEpochMs: 120_000,
-        admittedAtGroupRevision: 3
+        leaseExpiresAtEpochMs: 120_000
     };
 }
 

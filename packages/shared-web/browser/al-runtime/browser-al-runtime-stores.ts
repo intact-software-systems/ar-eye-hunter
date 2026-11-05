@@ -53,6 +53,7 @@ import {
     toBrowserALRuntimeDbName,
     toBrowserRtcOverlayALRuntimeStoreId,
     toBrowserSessionALInboundRuntimeStoreId,
+    toBrowserSessionALOrderingHeadNamespace,
     toBrowserWsClientALRuntimeStoreId
 } from './browser-al-runtime-identity.ts';
 import {
@@ -113,7 +114,8 @@ function toBrowserRuntimeStoreScopes(
         toBrowserOutboundStoreScope(
             {
                 id: toBrowserWsClientALRuntimeStoreId(sessionId),
-                checkpointId: toBrowserWsClientALCheckpointRuntimeStoreId(sessionId)
+                checkpointId: toBrowserWsClientALCheckpointRuntimeStoreId(sessionId),
+                orderingHeadNamespace: toBrowserSessionALOrderingHeadNamespace(sessionId)
             },
             options,
             reporting
@@ -121,7 +123,8 @@ function toBrowserRuntimeStoreScopes(
         toBrowserOutboundStoreScope(
             {
                 id: toBrowserRtcOverlayALRuntimeStoreId(sessionId),
-                checkpointId: toBrowserRtcOverlayALCheckpointRuntimeStoreId(sessionId)
+                checkpointId: toBrowserRtcOverlayALCheckpointRuntimeStoreId(sessionId),
+                orderingHeadNamespace: toBrowserSessionALOrderingHeadNamespace(sessionId)
             },
             options,
             reporting
@@ -132,6 +135,8 @@ function toBrowserRuntimeStoreScopes(
 interface BrowserOutboundStoreIds {
     readonly id: ALRuntimeStoreId<ALOutboundTransportMessage>;
     readonly checkpointId: ALRuntimeStoreId<ALOutboundTransportMessage>;
+    /** The session's ordering heads, which both carriers' durable pairs share; the checkpoint pairs mint nothing. */
+    readonly orderingHeadNamespace: string;
 }
 
 /** An outbound carrier's durable pair and its checkpoint pair, each under its own store id and health. */
@@ -140,7 +145,10 @@ function toBrowserOutboundStoreScope(
     options: BrowserALRuntimeOptions,
     reporting: BrowserRuntimeStoreReporting
 ): ALRuntimeStoreScope<ALOutboundTransportMessage> {
-    const outboundOptions = createBrowserStoreOptions(ids.id, options, reporting.storage);
+    const outboundOptions = {
+        ...createBrowserStoreOptions(ids.id, options, reporting.storage),
+        orderingHeadNamespace: ids.orderingHeadNamespace
+    };
     const checkpointOptions = createBrowserStoreOptions(ids.checkpointId, options, reporting.checkpointStorage);
     return {
         id: ids.id,

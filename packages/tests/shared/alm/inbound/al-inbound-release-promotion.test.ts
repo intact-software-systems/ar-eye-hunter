@@ -3,6 +3,7 @@ import '../../../setup-browser-indexeddb.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_INBOUND_WORK_PAGE_SIZE } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -11,6 +12,7 @@ import {
     createInboundTestMessage,
     createInboundTestRuntime,
     createInboundTestStores,
+    INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SOURCE,
     type CreateInboundTestRuntimeInput,
     type InboundTestRuntime
@@ -27,6 +29,7 @@ const BUFFERED_64_DRAIN_BATCHES = 5;
 const BUFFERED_64_PROMOTED_PER_BATCH = [0, 15, 15, 15, 15];
 const DRAIN_TIMEOUT_MS = 20_000;
 const TEST_TIMEOUT_MS = 30_000;
+const WAIT = { timeout: DRAIN_TIMEOUT_MS, interval: 5 };
 
 describe('promotion of a buffered track\'s next release', () => {
     it('delivers a buffered track in sequence order, each release promoted only after its predecessor delivered', async () => {
@@ -109,6 +112,70 @@ describe('promotion of a buffered track\'s next release', () => {
         expect(failedRunOrder).not.toContain(6);
     });
 });
+
+describe('delivery progress on a recorded track', () => {
+    // A completion that loses its commit to a concurrent admission is dispatched again (at least once), so each pin
+    // reads the order of first deliveries.
+    it('opens its progress at the entry, so the entered copy and its successor deliver in order', async () => {
+        const deliveredSeqs: (number | undefined)[] = [];
+        const fixture = await startInboundRuntime('progress-entry', {
+            gateDispatch: async (msg) => {
+                deliveredSeqs.push(msg.ordering?.seq);
+            }
+        });
+
+        await admitRecorded(fixture, 300, {});
+        await vi.waitFor(() => expect(new Set(deliveredSeqs)).toEqual(new Set([300])), WAIT);
+        await admitRecorded(fixture, 301, {});
+
+        await vi.waitFor(() => expect([...new Set(deliveredSeqs)]).toEqual([300, 301]), WAIT);
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 301)).toBe(301), WAIT);
+    }, TEST_TIMEOUT_MS);
+
+    it('jumps its progress over an omission, the omitted copy waiting for its own prior\'s delivery', async () => {
+        const deliveredSeqs: (number | undefined)[] = [];
+        let releaseSecond: () => void = () => {};
+        const secondHeld = new Promise<void>((resolve) => {
+            releaseSecond = resolve;
+        });
+        const fixture = await startInboundRuntime('progress-omission', {
+            gateDispatch: async (msg) => {
+                if (msg.ordering?.seq === 2) {
+                    await secondHeld;
+                }
+                deliveredSeqs.push(msg.ordering?.seq);
+            }
+        });
+
+        await admitRecorded(fixture, 1, {});
+        await vi.waitFor(() => expect(new Set(deliveredSeqs)).toEqual(new Set([1])), WAIT);
+        await admitRecorded(fixture, 2, {});
+        await admitRecorded(fixture, 5, { [INBOUND_TEST_SELF_PEER_ID]: 2 });
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 5)).toBe(1), WAIT);
+        expect([...new Set(deliveredSeqs)]).toEqual([1]);
+        releaseSecond();
+
+        await vi.waitFor(() => expect([...new Set(deliveredSeqs)]).toEqual([1, 2, 5]), WAIT);
+        await vi.waitFor(async () => expect(await readCompletedThrough(fixture, 5)).toBe(5), WAIT);
+    }, TEST_TIMEOUT_MS);
+});
+
+async function admitRecorded(
+    fixture: InboundTestRuntime,
+    seq: number,
+    priorSeqByRecipient: Readonly<Record<string, number>>
+): Promise<void> {
+    const message = createInboundTestMessage({ msgId: `recorded-${seq}`, seq });
+    await fixture.runtime.admitIncomingMessage(
+        { ...message, ordering: { ...message.ordering, priorSeqByRecipient } },
+        INBOUND_TEST_SOURCE
+    );
+}
+
+async function readCompletedThrough(fixture: InboundTestRuntime, seq: number): Promise<number> {
+    const trackKey = toALOrderingTrackKey(createInboundTestMessage({ msgId: 'track', seq }))!;
+    return (await fixture.stores.admissionStore.readOrderedDelivery(trackKey, seq)).completedThrough;
+}
 
 async function startInboundRuntime(
     namespace: string,

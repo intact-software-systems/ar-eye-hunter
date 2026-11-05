@@ -71,6 +71,8 @@ interface ReceiptFixtureOptions {
     readonly origin: 'local' | 'remote';
     /** The room authority's audience for a room message; the whole room `a`, `b` and `c` when absent. */
     readonly authorizedPeerIds?: readonly string[];
+    /** The audience the router admits an outbox-fanned message to, which its dequeue records; none when absent. */
+    readonly admittedAudience?: readonly string[];
 }
 
 describe('WS server receipt aggregation for receiver acknowledgements', () => {
@@ -309,6 +311,30 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
     });
 
+    it.each(['local', 'remote'] as const)(
+        'records outside the audience a recipient a later row of the track already reached (%s origin)',
+        async (origin) => {
+            const fixture = await createReceiptFixture({ fanout: 'outbox', origin, admittedAudience: ['b', 'c'] });
+            // A later row of `a`'s track reached `b` first, as another instance's dequeue of it would.
+            const later = trackedRoomMessage('room-message-2', 2, fixture.clock.nowMs);
+            await fixture.service.enqueueOutboxIfAbsent(later, toRouterAuthority(['b']));
+            await expect.poll(() => fixture.sockets.b.sent.some((frame) => decodePersistedALMessage(frame).id.msgId === later.id.msgId))
+                .toBe(true);
+
+            const accepted = await fixture.service.acceptIncomingMessage(trackedRoomMessage('room-message-1', 1, fixture.clock.nowMs), 'a');
+            await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
+            await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
+
+            expect(accepted.right?.kind).toBe('admitted');
+            await expect.poll(async () => (await readReceiptRows(fixture)).find((receipt) => receipt.phase === 'complete')).toMatchObject({
+                expectedRecipientPeerIds: ['b', 'c'],
+                confirmedRecipientPeerIds: ['c'],
+                outsideAudienceRecipientPeerIds: ['b']
+            });
+            expect(readRoomMessageCopies(fixture.sockets.b)).toBe(0);
+        }
+    );
+
     it('retains a terminal receipt the server pending row could not take as work, and completes the row when its replay commits', async () => {
         const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local' });
         await admitRoomMessage(fixture);
@@ -403,6 +429,37 @@ describe('WS server receipt aggregate', () => {
             confirmedRecipientPeerIds: ['b'],
             outsideAudienceRecipientPeerIds: ['c']
         }]);
+    });
+
+    it('records a session the server sent nothing outside the audience from the server own ACK, expected set unchanged', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
+        aggregation.recordAdmission(admission());
+
+        await aggregation.acceptControlMessage(
+            aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' }))
+        );
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))).toMatchObject([{
+            phase: 'complete',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b'],
+            outsideAudienceRecipientPeerIds: ['c']
+        }]);
+    });
+
+    it('refuses a server ACK that would confirm a recipient: the server speaks for one only to say it sent it nothing', () => {
+        const aggregation = createAggregation();
+        aggregation.recordAdmission(admission());
+
+        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c' }))?.message)
+            .toBe('AL acknowledgement speaks for another recipient than its sender');
+        expect(
+            aggregation.readRelayedAckRejection(
+                aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' })
+            )?.message
+        ).toBe('AL acknowledgement speaks for another recipient than its sender');
     });
 
     it('keeps a receipt whose every recipient answered outside open until its deadline, as it confirmed nobody', async () => {
@@ -668,10 +725,24 @@ function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options
     service.onAnyInboxMessageDo('router', {
         onMessage: async (message) => {
             if (options.fanout === 'outbox') {
-                await service.enqueueOutboxIfAbsent(message);
+                await service.enqueueOutboxIfAbsent(message, toRouterAuthority(options.admittedAudience));
             }
         }
     });
+}
+
+function toRouterAuthority(
+    admittedAudience: readonly string[] | undefined
+): WsQueueBoxServerService.EnqueueAuthority | undefined {
+    return admittedAudience === undefined
+        ? undefined
+        : { admittedAudience, admittedConnectionGenerationIds: undefined, recipientScope: undefined };
+}
+
+/** `a`'s room message at a sequence of its `game-1` track. */
+function trackedRoomMessage(msgId: string, seq: number, nowMs: number): ALMessage {
+    const message = roomMessage(nowMs);
+    return { ...message, id: { ...message.id, msgId }, ordering: { orderingKey: 'game-1', epoch: 1, seq } };
 }
 
 /** A second instance holding the origin's live socket; both instances share durable outbox and admission state. */

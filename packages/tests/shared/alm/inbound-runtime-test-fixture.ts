@@ -186,6 +186,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
     const sequence: InboundTestEffectCall[] = [];
     const controlSends: (readonly ALMessage[])[] = [];
     const runtime = new ALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: INBOUND_TEST_SELF_PEER_ID,
             stores: input.stores,
@@ -279,6 +280,8 @@ export async function readInboundTestDecisionSurface(
     nowMs = Date.now()
 ): Promise<ALInboundAdmissionRead> {
     return await admissionStore.readIncomingMessage({
+        selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+        orderingObserver: 'addressed',
         msg,
         source: INBOUND_TEST_SOURCE,
         nowMs,
@@ -305,6 +308,9 @@ export async function readInboundTestAdmission(
 /** The admission the runtime composes, over the caller's own stores, so a pin can drive it directly. */
 export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALInboundMessageAdmission {
     const admission = new ALInboundMessageAdmission({
+        orderingObserver: 'addressed',
+        diagnostics: undefined,
+        effectWorkerId: 'al-inbound:test',
         admissionStore: stores.admissionStore,
         clock: { nowMs: Date.now },
         effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,

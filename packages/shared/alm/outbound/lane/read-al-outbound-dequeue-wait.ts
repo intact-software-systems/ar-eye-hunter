@@ -6,17 +6,21 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
+import type { ALOrderingBatchSequences } from './compute-al-outbound-group-sent-positions.ts';
 
 export const AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS = 50;
 
-type ALOutboundAuthorityReader<TPrepared> = NonNullable<
-    ALOutboundMessageRuntime.Dependencies<TPrepared>['readPendingAdmissionAuthority']
->;
+/** Where a dequeued row's front leaves it: held, with the attempt its claim states, or passed on to its read. */
+export type ALOutboundDequeueFront =
+    | Readonly<{ kind: 'held'; attempt: ALWorkAttemptResult; }>
+    | Readonly<{ kind: 'passed'; followsBatchPredecessor: boolean; }>;
 
 export interface ReadALOutboundDequeueWaitInput<TPrepared> {
     readonly effect: ALOutboundEffectSnapshot<TPrepared>;
+    /** The sequences the row's batch claimed beside it. */
+    readonly batch: ALOrderingBatchSequences;
     /** The carrier's authority read; a carrier without one never waits here. */
-    readonly readAuthority: ALOutboundMessageRuntime.Dependencies<TPrepared>['readPendingAdmissionAuthority'];
+    readonly readAuthority: ALOutboundMessageRuntime.Dependencies<TPrepared>['readDequeuedAdmissionAuthority'];
     readonly settlements: ALOutboundSettlementEmitter;
     readonly clock: ALOutboundMessageRuntime.Clock;
     readonly signal: AbortSignal;
@@ -24,26 +28,30 @@ export interface ReadALOutboundDequeueWaitInput<TPrepared> {
 
 interface ALOutboundDequeueHold<TPrepared> {
     readonly input: ReadALOutboundDequeueWaitInput<TPrepared>;
-    readonly msg: ALMessage;
-    readonly readAuthority: ALOutboundAuthorityReader<TPrepared>;
+    /** Whether the held row may go: the fact a held authority names, else a whole new authority read. */
+    readonly readReleased: () => Promise<boolean>;
 }
 
 /**
  * A held message whose carrier authority is not ready: the claim states one retrying `not-ready` attempt, under the
- * row's own identity, and stays reserved while it re-reads the authority in memory. It releases once -- ready at once
- * when the authority returns or the owner goes away, at the lease or deadline otherwise -- so a gap writes to storage
- * once per claim, never once per re-check.
+ * row's own identity, and stays reserved while it re-reads the authority, or only the one fact a `held` authority
+ * names. It releases once -- ready at once when the authority returns or the owner goes away, at the lease or deadline
+ * otherwise -- so a gap writes to storage once per claim, never once per re-check. Any other answer passes the row on
+ * to its read.
  */
 export async function readALOutboundDequeueWait<TPrepared>(
     input: ReadALOutboundDequeueWaitInput<TPrepared>
-): Promise<ALWorkAttemptResult | undefined> {
+): Promise<ALOutboundDequeueFront> {
     const msg = input.effect.canonicalMessage;
     const readAuthority = input.readAuthority;
     const authority = msg === undefined || readAuthority === undefined
         ? undefined
-        : await readAuthority(msg, []);
-    if (msg === undefined || readAuthority === undefined || authority?.status !== 'not-ready') {
-        return undefined;
+        : await readAuthority(msg, input.batch);
+    if (
+        msg === undefined || readAuthority === undefined ||
+        (authority?.status !== 'not-ready' && authority?.status !== 'held')
+    ) {
+        return { kind: 'passed', followsBatchPredecessor: authority?.status === 'follows-batch-predecessor' };
     }
     input.settlements({
         kind: 'attempt-settled',
@@ -55,10 +63,18 @@ export async function readALOutboundDequeueWait<TPrepared>(
         detail: authority.reason,
         willRetry: true
     });
+    const readReleased = authority.status === 'held'
+        ? authority.readReleased
+        : async () => (await readAuthority(msg, input.batch)).status !== 'not-ready';
     return {
-        status: 'retained',
-        settled: holdALOutboundDequeueClaim({ input, msg, readAuthority })
+        kind: 'held',
+        attempt: { status: 'retained', settled: holdALOutboundDequeueClaim({ input, readReleased }) }
     };
+}
+
+/** The outcome a front's timing records: the held attempt's status, or `ready` for a row passed on to its read. */
+export function toALOutboundDequeueFrontOutcome(front: ALOutboundDequeueFront): string {
+    return front.kind === 'held' ? front.attempt.status : 'ready';
 }
 
 async function holdALOutboundDequeueClaim<TPrepared>(
@@ -68,7 +84,7 @@ async function holdALOutboundDequeueClaim<TPrepared>(
     const endAtMs = Math.min(effect.leaseUntilMs ?? clock.nowMs(), effect.expireAtTimestamp);
     while (!signal.aborted && clock.nowMs() + AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS < endAtMs) {
         await waitForALOutboundRecheck(signal);
-        if ((await hold.readAuthority(hold.msg, [])).status !== 'not-ready') {
+        if (await hold.readReleased()) {
             return { status: 'not-ready', readyAtMs: clock.nowMs() };
         }
     }

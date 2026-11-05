@@ -46,6 +46,17 @@ export function toALOutboundWorkKey(namespace: string, effectId: string) {
     });
 }
 
+/** The payload as stored: a send keeps its positions only once a recording read them, as an older build wrote it. */
+function toALOutboundStoredEffectPayload<TPrepared>(
+    payload: ALOutboundDurableEffect<TPrepared>
+): ALOutboundDurableEffect<TPrepared> | Omit<ALOutboundDurableEffect<TPrepared>, 'sentPositions'> {
+    if (payload.kind !== 'send-prepared' || payload.sentPositions !== null) {
+        return payload;
+    }
+    const { sentPositions: _sentPositions, ...stored } = payload;
+    return stored;
+}
+
 export function computeALOutboundWorkEntry<TPrepared>(input: ALOutboundWorkEntryInput<TPrepared>): ResourceEntry {
     const createdTs = Temporal.Instant.fromEpochMilliseconds(input.observedAtMs).toZonedDateTimeISO('UTC');
     return {
@@ -54,7 +65,7 @@ export function computeALOutboundWorkEntry<TPrepared>(input: ALOutboundWorkEntry
         resource: JSON.stringify({
             namespace: input.namespace,
             effectId: input.effectId,
-            payload: input.payload
+            payload: toALOutboundStoredEffectPayload(input.payload)
         }),
         audit: {
             createdBy: 'ALM',

@@ -90,6 +90,7 @@ function toMembersDelivery(
         requestedConfiguration: undefined,
         rtcCapture: { status: 'unavailable', reason: 'absent' },
         canFallback: false,
+        admittedCopy: false,
         payloadIssues: [],
         access: 'members',
         onStorageUnavailable: 'refuse',

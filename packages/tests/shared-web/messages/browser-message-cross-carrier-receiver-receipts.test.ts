@@ -489,6 +489,7 @@ async function createReceiptLoopReceiver(
         }
     });
     const rtc = new ALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: peerId,
             stores: peer.inboundStores,
@@ -566,6 +567,7 @@ function createReceiptLoopOrigin(
         carrier: 'rtc',
         message,
         canFallback: true,
+        admittedCopy: false,
         payloadIssues: [],
         access: 'members',
         onStorageUnavailable: 'refuse',

@@ -11,6 +11,7 @@ import {
 import type { ALStoreDurability } from '../../al-contracts/al-policy.ts';
 import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { NotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -29,11 +30,8 @@ import type {
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
-import {
-    toALOutboundCanonicalKey,
-    toALOutboundMessageReference,
-    toALSequenceMintComparableMessage
-} from './al-outbound-canonical-message.ts';
+import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
+import { toALOutboundCanonicalKey, toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
@@ -59,6 +57,13 @@ import {
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-admission.ts';
+import {
+    computeALOutboundGroupChainedReads,
+    isALOutboundLeftBehindPredecessor,
+    toALOutboundFollowerOrder,
+    toALOutboundGroupPositionWrites,
+    toALOutboundLeftBehindPredecessors
+} from './lane/compute-al-outbound-group-sent-positions.ts';
 import { recordALOutboundDequeueTiming } from './lane/record-al-outbound-dequeue-timing.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
@@ -73,6 +78,9 @@ interface ALOutboundCommitDecision<TPrepared> {
     readonly computed: ALOutboundComputedDto<TPrepared>;
     readonly bundle: ALOutboundCommitBundle<TPrepared>;
 }
+
+/** A row left behind its batch predecessor is due again at the next pass, where it joins or waits for it. */
+const AL_OUTBOUND_LEFT_BEHIND_RETRY_MS = 1;
 
 /** One dispatch of a group, with the phases its one `commit-phases` event reports. */
 interface ALOutboundGroupMember<TPrepared> {
@@ -89,6 +97,8 @@ export namespace ALOutboundDispatchAdmission {
     export interface Input<TPrepared> {
         readonly msg: ALMessage;
         readonly dequeueAuthority?: ALOutboundDequeueAuthority;
+        /** A dequeued row admitted only behind its predecessor its batch claimed; false for every other admission. */
+        readonly followsBatchPredecessor: boolean;
         readonly planner: ALOutboundPlanner<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
@@ -125,6 +135,8 @@ export namespace ALOutboundDispatchAdmission {
         readonly browserLocks: ALBrowserLocks | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly dequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
+        /** The carrier's signer of a first admission's frame; `undefined` commits the frame as read. */
+        readonly signAdmittedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['signAdmittedMessage'];
         readonly settlements: ALOutboundSettlementEmitter;
     }
 }
@@ -163,7 +175,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
      * settles before its write (it fails validation, finds its pending admission, has nothing to
      * commit), the store answers the group with anything but `committed`, or the group attempt throws,
      * every member commits again alone, one after another: a fresh read, compute and conflict
-     * handling, as a single send gets. Each member keeps its own answer there.
+     * handling, as a single send gets. Each member keeps its own answer there. A dispatch that follows its batch
+     * predecessor commits only behind it, so its positions are recorded in sequence order: whether in the group or
+     * alone, it is left to the next pass when its predecessor did not reach the commit ahead of it. The members of a
+     * track that holds a follower commit by ascending sequence, so their sends are written in that order too.
      */
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
@@ -179,6 +194,22 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     /** `commitAll` with each member's own answer: a member whose single commit threw rejects alone. */
     async commitAllSettled(
+        dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
+    ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
+        const left = toALOutboundLeftBehindPredecessors(dispatches);
+        const committing = toALOutboundFollowerOrder(
+            dispatches.filter((dispatch) => !left.has(dispatch)),
+            (dispatch) => dispatch
+        );
+        const settled = await this.commitAdmittedSettled(committing);
+        return dispatches.map((dispatch) =>
+            left.has(dispatch)
+                ? toALOutboundLeftBehindPredecessorOutcome<TPrepared>()
+                : settled[committing.indexOf(dispatch)]!
+        );
+    }
+
+    private async commitAdmittedSettled(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
     ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
         if (dispatches.length < 2) {
@@ -249,13 +280,23 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
     }
 
-    /** Every member commits alone, one after another, whatever an earlier one answered; each keeps its own answer. */
+    /**
+     * Every member commits alone, one after another in the order given (a follower after its predecessor), whatever
+     * an earlier one answered; each keeps its own answer. A member that follows its batch predecessor commits only
+     * once its predecessor committed.
+     */
     private async commitEachAlone(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
         const outcomes: PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
+        const committed: ALMessage[] = [];
         for (const { dispatch, phases } of members) {
-            const [outcome] = await Promise.allSettled([this.commitWithPhases(dispatch, phases)]);
+            const [outcome] = isALOutboundLeftBehindPredecessor(dispatch, committed)
+                ? [toALOutboundLeftBehindPredecessorOutcome<TPrepared>()]
+                : await Promise.allSettled([this.commitWithPhases(dispatch, phases)]);
+            if (outcome!.status === 'fulfilled' && outcome!.value.committed) {
+                committed.push(dispatch.msg);
+            }
             outcomes.push(outcome!);
         }
         return outcomes;
@@ -317,25 +358,59 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     /**
      * Every member reads in the same turn, so a backend that batches one turn's reads answers the whole group in one
      * statement per store on its own connection. All reads settle before a group write or fresh single-member
-     * fallback may start.
+     * fallback may start. Members that record positions on one track decide on chained reads and write each
+     * position row once, as one-by-one commits would; a group that cannot chain commits its members alone.
      */
     private async readGroupDecisions(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
-        const reads = await Promise.allSettled(
-            members.map(({ dispatch, phases }) => this.readMemberDispatchDecision(dispatch, phases))
+        const reads = toALOutboundGroupSettledValues(
+            await Promise.allSettled(
+                members.map(({ dispatch, phases }) => this.readMemberDispatchRead(dispatch, phases))
+            )
         );
-        const decisions: ALOutboundCommitDecision<TPrepared>[] = [];
-        for (const read of reads) {
-            if (read.status === 'rejected') {
-                throw toError(read.reason);
-            }
-            if (read.value.kind === 'settled') {
-                return undefined;
-            }
-            decisions.push(read.value);
+        const read = reads.filter((member): member is ALOutboundMessageReadDto<TPrepared> => member !== undefined);
+        const chained = read.length === reads.length ? computeALOutboundGroupChainedReads(read) : undefined;
+        if (chained === undefined) {
+            return undefined;
         }
-        return decisions;
+        const decided = toALOutboundGroupSettledValues(
+            await Promise.allSettled(
+                members.map(({ dispatch, phases }, index) =>
+                    phases.withReadPhase(() =>
+                        this.readDispatchDecision(
+                            dispatch,
+                            this.toDispatchInput(dispatch, chained[index]!, this.readNowMs())
+                        )
+                    )
+                )
+            )
+        );
+        const decisions = decided.flatMap((decision) => decision.kind === 'commit' ? [decision] : []);
+        if (decisions.length < decided.length) {
+            return undefined;
+        }
+        const bundles = toALOutboundGroupPositionWrites(decisions.map((decision) => decision.bundle));
+        return decisions.map((decision, index) => ({
+            ...decision,
+            bundle: bundles[index]!,
+            computed: { ...decision.computed, bundle: bundles[index]! }
+        }));
+    }
+
+    /** One group member's read, signed when its admission signs; undefined once the owner is disposed. */
+    private async readMemberDispatchRead(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundMessageReadDto<TPrepared> | undefined> {
+        if (this.disposed) {
+            return undefined;
+        }
+        return await phases.withReadPhase(async () =>
+            await this.signAdmittedRead(
+                await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch))
+            )
+        );
     }
 
     private async commitDispatchOnce(
@@ -378,23 +453,49 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return await phases.withReadPhase(() =>
             this.admissionStore.readOutgoingDecision(
                 this.toOutgoingReadInput(dispatch),
-                (read) => this.readDispatchDecision(dispatch, this.toDispatchInput(dispatch, read, this.readNowMs()))
+                async (read) => {
+                    const signed = await this.signAdmittedRead(read);
+                    return await this.readDispatchDecision(
+                        dispatch,
+                        this.toDispatchInput(dispatch, signed, this.readNowMs())
+                    );
+                }
             )
         );
     }
 
-    /** One group member's decision; the group reads the observation of every bundle in its own commit. */
-    private async readMemberDispatchDecision(
-        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
-        phases: ALOutboundCommitPhases
-    ): Promise<ALOutboundDispatchDecision<TPrepared>> {
-        if (this.disposed) {
-            return { kind: 'settled', result: ALOutboundDispatchAdmission.toDisposedResult() };
+    /**
+     * A first admission signs its frame after the read stamped it, so the canonical row every later stage resends
+     * already carries the proof (D519); a re-admission keeps the envelope its row holds and a dropping plan signs
+     * nothing. A signer's refusal is the plan's `unsupported` drop of the request: the sequence and record this read
+     * added belong to positions it never committed, so a carrier that takes the refusal over gets the request alone.
+     */
+    private async signAdmittedRead(
+        read: ALOutboundMessageReadDto<TPrepared>
+    ): Promise<ALOutboundMessageReadDto<TPrepared>> {
+        const sign = this.dependencies.signAdmittedMessage;
+        if (sign === undefined || read.storedMessage !== undefined || read.plan.dropReasonCode !== undefined) {
+            return read;
         }
-        return await phases.withReadPhase(async () => {
-            const read = await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch));
-            return await this.readDispatchDecision(dispatch, this.toDispatchInput(dispatch, read, this.readNowMs()));
-        });
+        return (await sign(read.msg)).fold(
+            (detail): ALOutboundMessageReadDto<TPrepared> => {
+                const requested = toALOutboundRequestedMessage(read);
+                return {
+                    ...read,
+                    msg: requested,
+                    orderingHead: undefined,
+                    sentPositions: undefined,
+                    plan: {
+                        msg: requested,
+                        dropReason: detail,
+                        dropReasonCode: 'unsupported',
+                        lane: 'volatile',
+                        preparedMessages: []
+                    }
+                };
+            },
+            (msg) => ({ ...read, msg, plan: { ...read.plan, msg } })
+        );
     }
 
     /** Everything one dispatch decides on its read: its retained pending admission (read), compute and validate. */
@@ -593,9 +694,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         read: ALOutboundMessageReadDto<TPrepared>,
         dispatchAtMs: number
     ): ComputeALOutboundDispatchInput<TPrepared> {
-        // A replay that minted replaces the request its retained canonical row holds; a plan that froze a held
-        // row's audience replaces the row.
-        const entry = read.orderingHead === undefined && read.canonicalEntry &&
+        // A replay whose admission added to its request replaces the request its retained canonical row holds; a plan
+        // that froze a held row's audience replaces the row.
+        const entry = !hasALOutboundAdmissionAdditions(read) && read.canonicalEntry &&
                 !isALOutboundCanonicalRowFrozenBy(read.canonicalEntry, read.msg)
             ? read.canonicalEntry
             : this.dependencies.toOutboxEntry(read.msg);
@@ -748,9 +849,37 @@ export function isALOutboundCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, 
     return isALFreezeOfMessage(canonical, msg);
 }
 
-/** The message as its sender asked for it: a sequence this read minted is not part of it until a commit lands. */
+/**
+ * The message as its sender asked for it: what this admission added -- a minted sequence, a recorded record, a proof
+ * -- is not part of it until a commit lands.
+ */
 function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): ALMessage {
-    return read.orderingHead === undefined ? read.msg : toALSequenceMintComparableMessage(read.originalMsg, read.msg);
+    return hasALOutboundAdmissionAdditions(read)
+        ? toALOutboundRequestComparableMessage(read.originalMsg, read.msg)
+        : read.msg;
+}
+
+/**
+ * Whether a first admission added to its request: it minted a sequence, stamped a record or signed the frame. A
+ * recording that stamps nothing, a dequeue's, adds nothing to the message: its copy stays the row as admitted.
+ */
+function hasALOutboundAdmissionAdditions<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
+    const { originalMsg, msg } = read;
+    return read.storedMessage === undefined && (
+        (originalMsg.ordering?.seq === undefined && msg.ordering?.seq !== undefined) ||
+        (originalMsg.ordering?.priorSeqByRecipient === undefined && msg.ordering?.priorSeqByRecipient !== undefined) ||
+        (originalMsg.proof === undefined && msg.proof !== undefined)
+    );
+}
+
+/** Each member's value in member order; the first member that threw rethrows, as a lone commit would. */
+function toALOutboundGroupSettledValues<T>(settled: readonly PromiseSettledResult<T>[]): readonly T[] {
+    return settled.map((outcome) => {
+        if (outcome.status === 'rejected') {
+            throw toError(outcome.reason);
+        }
+        return outcome.value;
+    });
 }
 
 /** Independent reads must agree on the sender version before their bundles can share one commit fence. */
@@ -759,4 +888,17 @@ function hasOneALOutboundSenderVersion<TPrepared>(decisions: readonly ALOutbound
     return decisions.every(({ bundle }) =>
         bundle.senderId === first?.bundle.senderId && bundle.expectedVersion === first.bundle.expectedVersion
     );
+}
+
+/** A row left behind its batch predecessor: not ready, so its claim is due again at the next pass, uncharged. */
+function toALOutboundLeftBehindPredecessorOutcome<TPrepared>(): PromiseSettledResult<
+    ALOutboundDispatchAdmission.Result<TPrepared>
+> {
+    return {
+        status: 'rejected',
+        reason: new NotReadyException(
+            AL_OUTBOUND_LEFT_BEHIND_RETRY_MS,
+            'Outbound row follows its batch predecessor, which did not commit ahead of it'
+        )
+    };
 }

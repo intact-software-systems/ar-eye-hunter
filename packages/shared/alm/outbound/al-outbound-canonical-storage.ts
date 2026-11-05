@@ -7,6 +7,7 @@ import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
 import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
@@ -14,8 +15,7 @@ import {
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
-    toALOutboundMessageReference,
-    toALSequenceMintComparableMessage
+    toALOutboundMessageReference
 } from './al-outbound-canonical-message.ts';
 
 export interface ALOutboundCanonicalReadInput {
@@ -94,7 +94,7 @@ function validateCanonicalReuse(
         : original;
     return jsonEquals(
             observed,
-            toALFreezeComparableMessage(observed, toALSequenceMintComparableMessage(observed, canonical))
+            toALFreezeComparableMessage(observed, toALOutboundRequestComparableMessage(observed, canonical))
         )
         ? Either.ofRight(canonical)
         : Either.ofLeft(new TypeError('Canonical identity has conflicting content'));

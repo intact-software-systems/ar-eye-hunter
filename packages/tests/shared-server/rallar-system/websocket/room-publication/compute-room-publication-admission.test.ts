@@ -344,8 +344,7 @@ function subscribedAuthority(
             principalId: candidate.principalId,
             topicId: TOPIC_ID,
             connectionGenerationId: `live-generation-${candidate.sessionId}`,
-            leaseExpiresAtEpochMs: NOW + 120_000,
-            admittedAtGroupRevision: snapshot.group.snapshotVersion
+            leaseExpiresAtEpochMs: NOW + 120_000
         })),
         liveSessionGenerations: Object.fromEntries(
             sessions.map((candidate) => [candidate.sessionId, [`live-generation-${candidate.sessionId}`]])

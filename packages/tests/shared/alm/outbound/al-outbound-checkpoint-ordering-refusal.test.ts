@@ -11,9 +11,13 @@ import {
     AL_WS_CLIENT_CAPABILITIES,
     toALCarrierQosInputProvider
 } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, type ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
-import { computeALOutboundOrderingRefusal } from '@shared/alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
+import { computeALOutboundOrderingRefusal } from '@shared/alm/outbound/admission/sequencing/compute-al-outbound-ordering-refusal.ts';
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
 import {
@@ -58,7 +62,7 @@ function roomSend(resourceId: string, input: RoomSendInput): ALMessage {
     );
 }
 
-describe('the checkpointed tier refuses a client sequence', () => {
+describe('the checkpointed tier refuses a client sequence and a request for one', () => {
     it('refuses a local-checkpoint send that carries a seq as unsupported, kept in memory', () => {
         const msg = roomSend('sequenced', { durability: 'local-checkpoint', seq: 4 });
 
@@ -73,8 +77,34 @@ describe('the checkpointed tier refuses a client sequence', () => {
         expect(refusal.left?.dropReason).toContain('local-checkpoint');
     });
 
+    it('refuses a local-checkpoint room send that names a key alone, asking its outbound for a sequence', () => {
+        const msg = roomSend('minting', { durability: 'local-checkpoint', orderingKey: 'track' });
+
+        const refusal = computeALOutboundOrderingRefusal({ msg, policy: normalizeALQosPolicy(msg) });
+
+        expect(refusal.left).toMatchObject({
+            msg,
+            dropReasonCode: 'unsupported',
+            lane: 'volatile',
+            preparedMessages: []
+        });
+        expect(refusal.left?.dropReason).toContain('local-checkpoint');
+    });
+
+    it('passes a local-checkpoint key alone outside a room, which no outbound sequences', () => {
+        const msg = newALBroadcastMessage(
+            'a',
+            { topicId: 'app.state', resourceId: 'world-keyed', contextId: 'world' },
+            'world',
+            'app.state.v1',
+            {},
+            { qos: { durability: { algo: 'local-checkpoint' } }, ordering: { orderingKey: 'track' } }
+        );
+
+        expect(computeALOutboundOrderingRefusal({ msg, policy: normalizeALQosPolicy(msg) }).right).toBe(msg);
+    });
+
     it.each([
-        { name: 'an ordering key alone', input: { durability: 'local-checkpoint' as const, orderingKey: 'track' } },
         { name: 'latest-wins supersedence', input: { durability: 'local-checkpoint' as const, latestWins: true } },
         { name: 'a seq on local-outbox', input: { durability: 'local-outbox' as const, seq: 4 } },
         { name: 'a seq on volatile', input: { durability: 'volatile' as const, seq: 4 } }
@@ -99,6 +129,15 @@ describe('the WS client plan of a checkpointed send', () => {
     it('refuses a sequenced send before it plans a copy', () => {
         const plan = toWsQueueBoxClientDispatchPlan(
             roomSend('sequenced', { durability: 'local-checkpoint', seq: 1 }),
+            WS_CONTEXT
+        );
+
+        expect(plan).toMatchObject({ dropReasonCode: 'unsupported', lane: 'volatile', preparedMessages: [] });
+    });
+
+    it('refuses a room send that asks for a sequence before it plans a copy', () => {
+        const plan = toWsQueueBoxClientDispatchPlan(
+            roomSend('minting', { durability: 'local-checkpoint', orderingKey: 'track' }),
             WS_CONTEXT
         );
 
@@ -146,6 +185,21 @@ describe('the RTC origin plan of a checkpointed send', () => {
             reason: 'unsupported',
             detail: 'A local-checkpoint send cannot carry sequence 1'
         });
+        expect(fixture.channels.b!.sent).toEqual([]);
+    });
+
+    it('refuses a room send that asks for a sequence as unsupported and sends nothing', async () => {
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 1),
+            nextHopPeerIds: ['b']
+        });
+
+        const refused = await enqueueAndDrain(
+            fixture.manager,
+            roomSend('minting', { durability: 'local-checkpoint', orderingKey: 'track' })
+        );
+
+        expect(refused.verdict).toMatchObject({ kind: 'refused', reason: 'unsupported' });
         expect(fixture.channels.b!.sent).toEqual([]);
     });
 });

@@ -41,6 +41,7 @@ import {
     evictALInboundOrderingTracksPastCap,
     type ALInboundOrderingTracksReport
 } from './admission/evict-al-inbound-ordering-tracks-past-cap.ts';
+import type { ALOrderingObserver } from './admission/resolve-al-ordering-observer-role.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import {
     readALInboundStoredMessage,
@@ -176,6 +177,8 @@ export interface ReadALInboundMessageInput {
     readonly source: ALInboundMessageRuntime.Source;
     readonly nowMs: number;
     readonly prePlan: ALMessageHandlingPlan;
+    readonly selfPeerId: string;
+    readonly orderingObserver: ALOrderingObserver;
 }
 
 export interface ALInboundAdmissionRead extends ALInboundPlannerSnapshot {
@@ -1066,11 +1069,13 @@ interface ToALInboundAdmissionReadInput {
 }
 
 function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALInboundAdmissionRead {
-    const { msg, source, nowMs, prePlan } = observed.request;
+    const { msg, source, nowMs, prePlan, selfPeerId, orderingObserver } = observed.request;
     const { ordering, supersedence, dedupExpiresAt, claim, pendingAck, acks, controlOwners } = observed;
     return {
         namespace: observed.namespace,
         msg,
+        selfPeerId,
+        orderingObserver,
         fromPeerId: source.kind === 'trusted-server' ? msg.id.senderId : source.peerId,
         source,
         prePlan,

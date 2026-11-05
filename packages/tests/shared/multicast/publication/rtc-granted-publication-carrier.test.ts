@@ -32,18 +32,40 @@ const GRANTED = createFrozenGrantedMulticast({
 const MEMBERS: ALMessage = { ...GRANTED, route: { ...GRANTED.route, topicId: 'room.chat' } };
 
 describe('RtcGrantedPublicationCarrier', () => {
-    it('refuses a granted leg for the shape its sender gave before it asks for the admitted message', async () => {
+    it('refuses a granted leg for the shape its sender gave before it asks for the admitted message', () => {
         const unicast = newALUnicastMessage('a', GRANTED.route, 'b', GRANTED.payload.typeId, {});
 
-        const signed = await createKeylessCarrier().signLeg(unicast, () => {
+        const admitted = createKeylessCarrier().admitLeg(unicast, () => {
             throw new Error('A shape refusal admits nothing.');
         });
 
-        expect(signed.left).toBe(RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast);
+        expect(admitted.left).toBe(RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast);
     });
 
-    it('names a signing failure by its kind first', async () => {
-        const signed = await createKeylessCarrier().signLeg(GRANTED, (msg) => msg);
+    it('refuses a leg its origin could not sign before it asks for the admitted message, naming the failure first', () => {
+        const admitted = createKeylessCarrier().admitLeg(GRANTED, () => {
+            throw new Error('A signing refusal admits nothing.');
+        });
+
+        expect(admitted.left).toMatch(/^signing-unavailable: /);
+    });
+
+    it('passes a frame of a topic that is not granted through its admission signing unchanged', async () => {
+        const signed = await createKeylessCarrier().signAdmitted(MEMBERS);
+
+        expect(signed.right).toBe(MEMBERS);
+    });
+
+    it('passes a granted frame another session originated through its admission signing with the origin\'s proof', async () => {
+        const relayed = { ...GRANTED, id: { ...GRANTED.id, senderId: 'b' }, proof: PROOF };
+
+        const signed = await createKeylessCarrier().signAdmitted(relayed);
+
+        expect(signed.right).toBe(relayed);
+    });
+
+    it('answers a granted frame of its own it cannot sign at admission with the failure, named by its kind first', async () => {
+        const signed = await createKeylessCarrier().signAdmitted(GRANTED);
 
         expect(signed.left).toMatch(/^signing-unavailable: /);
     });

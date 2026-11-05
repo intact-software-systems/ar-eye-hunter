@@ -180,6 +180,8 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage):
     const nowMs = Date.now();
     const context = { selfPeerId: 'receiver', fromPeerId: message.id.senderId, nowMs };
     const read = await store.readIncomingMessage({
+        selfPeerId: 'receiver',
+        orderingObserver: 'addressed',
         msg: message,
         source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
         nowMs,

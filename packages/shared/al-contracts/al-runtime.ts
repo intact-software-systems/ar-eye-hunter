@@ -10,7 +10,17 @@ export type ALOrderingObservationStatus =
     | 'gap'
     | 'resync-required'
     | 'duplicate'
-    | 'stale';
+    | 'stale'
+    | 'entered'
+    | 'omitted'
+    | 'witnessed';
+
+/**
+ * How one admission observes a track: a `recipient` advances its position and delivers in order, a `witness` (a frozen
+ * recipient that delivers nothing) only moves its position, and `none` (a peer outside the frozen audience, or a pure
+ * relay) observes nothing.
+ */
+export type ALOrderingObserverRole = 'recipient' | 'witness' | 'none';
 
 /** An inclusive run of ordering sequences, `from <= to`; the unit a receiver asks a sender to repair. */
 export interface ALSeqRange {
@@ -27,6 +37,8 @@ export interface ALOrderingObservation {
     /** Sorted, disjoint; the sequences between `expectedSeq` and `seq` that neither arrived nor are buffered. */
     readonly missingRanges: readonly ALSeqRange[];
     readonly releasableSeqs: readonly number[];
+    /** The prior sequence this copy's record named for the receiver, or `seq - 1` when it listed none. */
+    readonly priorSeq?: number;
 }
 
 export interface ALSupersedenceInput {
@@ -81,7 +93,17 @@ export function toALOrderingTrackKey(msg: ALMessage): string | undefined {
     return toTrackKey(orderingKey, msg);
 }
 
-/** The track a message names a key on but no sequence for: the WS server's outbound mints the next one there. */
+/**
+ * The prior a copy's record names for `recipientPeerId`, `seq - 1` when the record lists it not; `undefined` for a
+ * copy no authority recorded.
+ */
+export function resolveALOrderingPriorSeq(msg: ALMessage, recipientPeerId: string): number | undefined {
+    const seq = msg.ordering?.seq;
+    const record = msg.ordering?.priorSeqByRecipient;
+    return record === undefined || seq === undefined ? undefined : record[recipientPeerId] ?? seq - 1;
+}
+
+/** The track a message names a key on but no sequence for: the outbound owning the track mints the next one there. */
 export function toALSequenceMintTrackKey(msg: ALMessage): string | undefined {
     const orderingKey = msg.ordering?.orderingKey;
 

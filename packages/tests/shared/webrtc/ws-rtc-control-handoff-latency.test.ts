@@ -329,6 +329,8 @@ class RtcControlHandoffFixture {
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const admission = new ALInboundMessageAdmission({
+            orderingObserver: 'addressed',
+            diagnostics: undefined,
             ...resources,
             planIncomingMessage,
             workPort: createTestALInboundWorkPort({

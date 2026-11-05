@@ -144,7 +144,11 @@ describe('WS retained-work faults', () => {
 
     it('holds original durable work before every callback and releases it exactly once without retry charges', async () => {
         const sessionId = crypto.randomUUID();
-        configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        // Its own database: the outbox read below must see this session's work only, not an earlier test's durable rows.
+        configureBrowserALRuntimeStores(sessionId, {
+            scope: { ...defaultStateScope(), workspaceId: sessionId },
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
+        });
         const faults = createScriptedTransportFaultPort();
         const fault = {
             faultId: 'hold-original',

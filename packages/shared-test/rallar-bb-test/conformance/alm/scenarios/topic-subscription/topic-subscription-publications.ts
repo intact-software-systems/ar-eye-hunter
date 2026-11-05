@@ -15,15 +15,13 @@ import {
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
 import {
+    SUBSCRIPTION_ABSENCE_MS,
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
     SUBSCRIPTION_PHASE_MS,
     toPollCommand,
     toPollResult,
     toResultFact
 } from './topic-subscription-polls.ts';
-
-/** How long a role listens, after its positive witness, for a publication it must not receive. */
-export const SUBSCRIPTION_ABSENCE_MS = 5_000;
 
 /** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
 const CONFIRMATION_WAIT_MS = 3_000;
@@ -47,6 +45,8 @@ export interface TopicPublicationInput {
     readonly outsideAudience: number;
     /** A probe's payload names the probe, so no publication wait or absence matches it. */
     readonly kind: 'publication' | 'probe';
+    /** The track the publication rides, whose sequence the page mints; absent, it rides none. */
+    readonly orderingKey?: string;
 }
 
 interface PayloadWaitInput {
@@ -73,6 +73,15 @@ export function toPublishUntilConfirmedCommands(
     ];
 }
 
+/**
+ * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
+ * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
+ * `unelected` ones among them answer `not-subscribed` and end outside its audience.
+ */
+export function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
+    return step.input.carrier === 'ws' ? 0 : unelected;
+}
+
 /** The producer's loop `name` ended: every recipient it waited for confirmed one copy. */
 export function toConfirmedCueWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
     return toCueWait(step, toConfirmedCue(name));
@@ -85,7 +94,7 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
     const receipt = toPollResult({ step, name, index: 2, childId: observe });
     return toPollCommand(step, name, [
         {
-            ...toGrantedSend(step, toPublicationPayload(step, name, publication.kind)),
+            ...toGrantedSend(step, toPublicationPayload(step, name, publication.kind), publication.orderingKey),
             commandId: toCommandId(step, `${name}-send`),
             handleId
         },
@@ -243,9 +252,11 @@ function toPayloadWait({ step, name, payload, absent }: PayloadWaitInput): Ralla
     };
 }
 
+/** A minted track names its key and no `seq`: the page's outbound allocates the next sequence of its own track. */
 function toGrantedSend(
     step: AlmConformanceStepInput,
-    payload: Readonly<Record<string, string>>
+    payload: Readonly<Record<string, string>>,
+    orderingKey?: string
 ): Omit<RallarBlackBoxTestMessagesSendCommand, 'commandId'> {
     return {
         kind: 'messages.send',
@@ -258,7 +269,8 @@ function toGrantedSend(
         reliability: 'at-least-once',
         ack: 'all-logical-recipients',
         ttlMs: NON_EXPIRING_TTL_MS,
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        ...(orderingKey === undefined ? {} : { orderingKey })
     };
 }
 

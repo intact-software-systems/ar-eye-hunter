@@ -1,6 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
+
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, newALNackControlMessage, type ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -29,6 +32,8 @@ const ACK_TIMEOUT_MS = 2_000;
 const CLOCK_STEP_MS = 250;
 const ORDERING = { orderingKey: 'game-1', epoch: 1 };
 const TRACK_KEY = 'game-1:server:1';
+/** Client `a`'s track on the same key, which the server relays. */
+const A_TRACK_KEY = 'game-1:a:1';
 /** `a` and `b` were in the room when the events were published; `c` joined afterwards. */
 const ADMITTED_AUDIENCE = ['a', 'b'];
 /** A retransmit's attempt id names the repair hint that asked for it: requester `b`, then the hint's ranges. */
@@ -43,6 +48,22 @@ interface OrderedServer {
     readonly clock: { nowMs: number; };
     readonly controlAdmissions: ControlAdmission[];
     readonly settlements: ALDeliverySettlement[];
+    /** The member count of each dequeue group that committed under one fence. */
+    readonly groupCommits: number[];
+    /** The rows each dequeue handed on after its admission, in the order it handed them. */
+    readonly orderedDispatches: string[];
+}
+
+interface OrderedServerOptions {
+    /** Registers a cluster publisher, as every default api-v1 composition does. */
+    readonly cluster?: boolean;
+    /** Re-checks every frozen audience, and cannot read the one of this message the first time, so its row retries. */
+    readonly unreadableOnceMsgId?: string;
+    /**
+     * Re-checks every frozen audience, and holds the re-check of this message's audience until released, so the claim
+     * that reads it stays running.
+     */
+    readonly recheckGate?: Readonly<{ msgId: string; released: Promise<void>; }>;
 }
 
 interface NackInput {
@@ -50,6 +71,9 @@ interface NackInput {
     readonly msgId: string;
     readonly reason: ALNackReason;
     readonly missingRanges: readonly ALSeqRange[];
+    /** The origin of the track the NACK names; the server unless named. */
+    readonly toPeerId?: string;
+    readonly trackKey?: string;
 }
 
 /** The retransmits one repair hint produced, in the order they were sent. */
@@ -160,19 +184,62 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
     });
 
-    it('does not handle a gap NACK from a session that joined after the publication, and sends it nothing', async () => {
+    it('resends an unconfirmed copy on the receipt retry with the entry its first dequeue fixed', async () => {
         const server = await createOrderedServer();
-        await publishEvents(server, 3);
+        await publishEvents(server, 2);
+        await publishEvent(server, roundEvent('event-3'), ['a']);
+        await publishEvent(server, roundEvent('event-4'), ['a', 'b']);
+        for (const msgId of ['event-1', 'event-2', 'event-3', 'event-4']) {
+            await receiveAck(server, msgId, 'a');
+        }
+        await receiveAck(server, 'event-1', 'b');
+        await receiveAck(server, 'event-2', 'b');
 
-        await receiveNack(server, { fromPeerId: 'c', msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 1, to: 2 }] });
+        server.clock.nowMs += ACK_TIMEOUT_MS + CLOCK_STEP_MS;
 
-        await expect.poll(() => runEngine(server, () => server.controlAdmissions)).toEqual([
-            expect.objectContaining({ targetMsgId: 'event-3', outcome: 'not-handled' })
+        // `b` already stands at 4 when the retry runs; the retry reads the positions the first dequeue fixed, not the row.
+        await expect.poll(() => runEngine(server, () => readFrames(server.sockets.b, 'event-4').length)).toBe(2);
+        expect(readFrames(server.sockets.b, 'event-4')).toEqual([
+            { ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined },
+            { ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined }
         ]);
+    });
+
+    it('serves the gap NACK a session of the admitted audience sends the origin of a relayed track, and refuses one outside it', async () => {
+        const server = await createOrderedServer();
+        for (const seq of [1, 2, 3]) {
+            await publishEvent(server, browserEvent(seq), ['b']);
+        }
+        const gap = { msgId: 'a-event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }], toPeerId: 'a', trackKey: A_TRACK_KEY } as const;
+
+        const served = await server.service.acceptIncomingMessage(toNack(server, { ...gap, fromPeerId: 'b' }), 'b');
+        const refused = await server.service.acceptIncomingMessage(toNack(server, { ...gap, fromPeerId: 'c' }), 'c');
+
+        expect(served.left).toBeUndefined();
+        expect(refused.left).toEqual({ code: 'unauthorized', message: 'AL repair request names no relayed message admitted to its sender' });
+        await expect.poll(() => runEngine(server, () => readMsgIds(server.sockets.b))).toEqual(['a-event-1', 'a-event-2', 'a-event-3', 'a-event-2']);
         await settle(server);
-        expect(readSeqs(server.sockets.c)).toEqual([]);
+        expect(readMsgIds(server.sockets.c)).toEqual([]);
+    });
+
+    it('serves a ranged repair of a keyed publication no receipt tracks to a requester of its audience, and refuses one outside', async () => {
+        const server = await createOrderedServer();
+        for (const seq of [1, 2, 3]) {
+            await publishEvent(server, roundEvent(`event-${seq}`, 'none'), ADMITTED_AUDIENCE);
+        }
+        const gap = { msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }] } as const;
+
+        await receiveNack(server, { ...gap, fromPeerId: 'c' });
+        await receiveNack(server, { ...gap, fromPeerId: 'b' });
+
+        await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.b))).toEqual([1, 2, 3, 2]);
+        await settle(server);
+        expect(server.controlAdmissions.map(({ msgId, outcome }) => [msgId, outcome])).toEqual([
+            ['nack-event-3-c', 'not-handled'],
+            ['nack-event-3-b', 'committed']
+        ]);
         expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
-        expect(readSeqs(server.sockets.b)).toEqual([1, 2, 3]);
+        expect(readSeqs(server.sockets.c)).toEqual([]);
     });
 
     it('ends the whole receipt of a message one receiver NACKs resync-required, so no recipient is retried', async () => {
@@ -195,8 +262,159 @@ describe('the WS server repairs its own ordered publication', () => {
     });
 });
 
-/** One instance whose clock moves only when a test moves it, so no receipt window passes unasked. */
-async function createOrderedServer(): Promise<OrderedServer> {
+describe.each([
+    { cluster: false, path: 'its own send of each dequeued row' },
+    { cluster: true, path: 'the live send of each row it publishes to its cluster' }
+])('every copy the WS server sends through $path', ({ cluster }) => {
+    it('sends a session admitted from event 4 that event with its own entry and nothing below it', async () => {
+        const server = await createOrderedServer({ cluster });
+        await publishEvents(server, 3);
+
+        await publishEvent(server, roundEvent('event-4'), ['a', 'b', 'c']);
+        await settle(server);
+
+        expect(readFrames(server.sockets.c, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
+        expect(readMsgIds(server.sockets.c)).toEqual(['event-4']);
+        expect(readFrames(server.sockets.b, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3, 4]);
+    });
+
+    it('skips a recipient a later row of its track already reached, and never moves it back', async () => {
+        const server = await createOrderedServer({ cluster });
+        await publishEvent(server, browserEvent(2), ['b']);
+
+        await publishEvent(server, browserEvent(1), ['b', 'c'], ['c']);
+        await settle(server);
+
+        expect(readFrames(server.sockets.b, 'a-event-1')).toEqual([]);
+        expect(readFrames(server.sockets.c, 'a-event-1')).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
+
+        await publishEvent(server, browserEvent(3), ['b', 'c']);
+
+        expect(readFrames(server.sockets.b, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.c, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: { c: 1 } }, proof: undefined }]);
+    });
+
+    it('sends a handed-over signed frame with the server own entry for each recipient and no proof', async () => {
+        const server = await createOrderedServer({ cluster });
+        const event = browserEvent(2);
+        const handedOver: ALMessage = {
+            ...event,
+            targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['b', 'c'], snapshotVersion: 1 },
+            ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } },
+            proof: { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 'S'.repeat(85) + 'A' }
+        };
+
+        await publishEvent(server, handedOver, ['b', 'c']);
+
+        expect(readFrames(server.sockets.b, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { b: 0 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.c, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
+    });
+
+    it('holds a row claimed without its track\'s earlier row, admitted first but dequeued later, until it records; both deliver in order', async () => {
+        const first = browserEvent(1);
+        const second = browserEvent(2);
+        const server = await createOrderedServer({ cluster, unreadableOnceMsgId: first.id.msgId });
+        // Sequence 1's first dequeue cannot read its audience and retries; sequence 2 is admitted and claimed meanwhile.
+        await server.service.enqueueOutboxIfAbsent(first, toAudienceAuthority(['b']));
+        await runEngine(server, () => undefined);
+        await server.service.enqueueOutboxIfAbsent(second, toAudienceAuthority(['b']));
+
+        await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.b).slice(0, 2)), { timeout: 10_000 })
+            .toEqual([first.id.msgId, second.id.msgId]);
+        expect(readHeldMsgIds(server)).toEqual([second.id.msgId]);
+        expect(readFrames(server.sockets.b, first.id.msgId)[0]).toEqual({ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined });
+        expect(readFrames(server.sockets.b, second.id.msgId)[0]).toEqual({ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined });
+    });
+
+    it('leaves a row whose earlier row in the same batch fails its admission to a later pass; both deliver, none skipped', async () => {
+        const first = browserEvent(1);
+        const second = browserEvent(2);
+        const lead = roundEvent('event-1');
+        const released = Promise.withResolvers<void>();
+        const server = await createOrderedServer({
+            cluster,
+            unreadableOnceMsgId: first.id.msgId,
+            recheckGate: { msgId: lead.id.msgId, released: released.promise }
+        });
+        // The server's own row holds its claim at its re-check while both rows of `a`'s track commit, so the follow-up
+        // claim takes them together, and sequence 1's dequeue there cannot read its audience.
+        await server.service.enqueueOutboxIfAbsent(lead, toAudienceAuthority(['c']));
+        await server.service.enqueueOutboxIfAbsent(first, toAudienceAuthority(['b']));
+        await server.service.enqueueOutboxIfAbsent(second, toAudienceAuthority(['b']));
+        released.resolve();
+
+        await expect.poll(() => runEngineAdvancing(server, () => new Set(readMsgIds(server.sockets.b)).size), { timeout: 3_000 }).toBe(2);
+        await settle(server);
+        expect(readFrames(server.sockets.b, first.id.msgId)).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.b, second.id.msgId)).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readHeldMsgIds(server)).toEqual([]);
+        expect(server.groupCommits).toEqual([2]);
+    });
+
+    it('sends a track\'s rows claimed in one batch against their sequence in sequence order to each recipient', async () => {
+        const first = browserEvent(1);
+        const second = browserEvent(2);
+        const lead = roundEvent('event-1');
+        const released = Promise.withResolvers<void>();
+        const server = await createOrderedServer({ cluster, recheckGate: { msgId: lead.id.msgId, released: released.promise } });
+        // The server's own row holds its claim at its re-check while `a`'s sequence 2 and then its sequence 1 are
+        // admitted, so the follow-up claim takes them together in that order.
+        await server.service.enqueueOutboxIfAbsent(lead, toAudienceAuthority(['c']));
+        await server.service.enqueueOutboxIfAbsent(second, toAudienceAuthority(['b']));
+        await server.service.enqueueOutboxIfAbsent(first, toAudienceAuthority(['b']));
+        released.resolve();
+
+        await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.b).length), { timeout: 3_000 }).toBe(2);
+        await settle(server);
+        expect(server.groupCommits).toEqual([2]);
+        expect(readHeldMsgIds(server)).toEqual([]);
+        expect(readMsgIds(server.sockets.b)).toEqual([first.id.msgId, second.id.msgId]);
+        expect(server.orderedDispatches.filter((msgId) => msgId !== lead.id.msgId)).toEqual([first.id.msgId, second.id.msgId]);
+        expect(readFrames(server.sockets.b, second.id.msgId)).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined }]);
+    });
+
+    it('commits an in-order run of one track claimed in one batch as one chained group, every recipient its entry', async () => {
+        const server = await createOrderedServer({ cluster });
+        // The first admission's commit starts a claim at once; the other three commit while it runs, and the follow-up
+        // claim takes them together, ahead of `b`'s recorded position at sequence 1.
+        await Promise.all(
+            [['a', 'b'], ['a', 'b'], ['a'], ['a', 'b']].map((audience, index) =>
+                server.service.enqueueOutboxIfAbsent(roundEvent(`event-${index + 1}`), toAudienceAuthority(audience))
+            )
+        );
+
+        await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.a).length)).toBe(4);
+        await settle(server);
+        expect(server.groupCommits).toEqual([3]);
+        expect(readHeldMsgIds(server)).toEqual([]);
+        expect(readSeqs(server.sockets.b)).toEqual([1, 2, 4]);
+        expect(readFrames(server.sockets.b, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.a, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: {} }, proof: undefined }]);
+    });
+
+    it('sends a burst of more than one page of rows on one track with every recipient\'s entry, the burst\'s groups chained', async () => {
+        const server = await createOrderedServer({ cluster });
+        await enqueueEvents(server, { from: 1, to: 10, audience: ['a', 'b'] });
+        await enqueueEvents(server, { from: 11, to: 20, audience: ['a'] });
+        await enqueueEvents(server, { from: 21, to: 21, audience: ['a', 'b'] });
+
+        await expect.poll(() => runEngineTicking(server, () => [readSeqs(server.sockets.a).length, readSeqs(server.sockets.b).length]))
+            .toEqual([21, 11]);
+        expect(readFrames(server.sockets.b, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: { b: 10 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.b, 'event-10')).toEqual([{ ordering: { ...ORDERING, seq: 10, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.a, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readSeqs(server.sockets.b)).toEqual([...toSeqs(1, 10), 21]);
+        expect(Math.max(...server.groupCommits)).toBeGreaterThan(1);
+        expect(readHeldMsgIds(server)).toEqual([]);
+    });
+});
+
+/**
+ * One instance whose clock moves only when a test moves it, so no receipt window passes unasked; `cluster` registers a
+ * cluster publisher, as every default api-v1 composition does, so each dequeued row is published and sent live here.
+ */
+async function createOrderedServer(options: OrderedServerOptions = {}): Promise<OrderedServer> {
     const clock = mockClock();
     const nowMs = () => clock.nowMs;
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
@@ -211,8 +429,26 @@ async function createOrderedServer(): Promise<OrderedServer> {
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const controlAdmissions: ControlAdmission[] = [];
     const settlements: ALDeliverySettlement[] = [];
+    const groupCommits: number[] = [];
+    const orderedDispatches: string[] = [];
     const engine = new InboxOutboxEngine();
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        nowMs,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
+    });
+    const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
+    const rechecksAudience = options.unreadableOnceMsgId !== undefined || options.recheckGate !== undefined;
     const service = createDefaultWsQueueBoxServerService({
+        filterEligibleCapturedSessionIds: !rechecksAudience ? undefined : async (captured) => {
+            if (captured.message.id.msgId === options.recheckGate?.msgId) {
+                await options.recheckGate.released;
+            }
+            if (unreadable.delete(captured.message.id.msgId)) {
+                throw new Error('Re-check could not read');
+            }
+            return captured.candidateSessionIds;
+        },
         inboundVolatileStores: undefined,
         outbox,
         socket: socketServer,
@@ -223,25 +459,33 @@ async function createOrderedServer(): Promise<OrderedServer> {
             socketServer.connections.get(connection.id) === connection
                 ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
-        outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
-            nowMs,
-            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-            outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
-        }),
+        outboundStores,
         outboundDiagnostics: (event) => {
             if (event.kind === 'control-admission') {
                 controlAdmissions.push(event);
             }
         },
         outboundSettlements: (settlement) => settlements.push(settlement),
+        dequeueTiming: (observation) => {
+            if (observation.kind === 'admission-group' && observation.outcome === 'committed') {
+                groupCommits.push(observation.memberCount);
+            }
+            if (observation.kind === 'admission-stage' && observation.stage === 'ordered-dispatch-start') {
+                orderedDispatches.push(decodePersistedALMessage(observation.member.effect.entry.resource).id.msgId);
+            }
+        },
         targetResolver: {
-            requiresFrozenAudience: () => false,
+            requiresFrozenAudience: () => rechecksAudience,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
+            resolveGroupRecipients: recipients,
             resolveBroadcastRecipients: recipients
         }
     });
     onTestFinished(() => service.dispose());
-    return { service, engine, sockets, clock, controlAdmissions, settlements };
+    if (options.cluster === true) {
+        await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: new LoopbackBridge(), channel: 'ws', publisherId: SERVER_ID });
+    }
+    return { service, engine, sockets, clock, controlAdmissions, settlements, groupCommits, orderedDispatches };
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */
@@ -258,25 +502,82 @@ async function publishEvents(
         );
         minted.push(result.message.ordering);
     }
-    await expect.poll(() => runEngine(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length))).toEqual(audience.map(() => count));
+    // A claim takes the run's rows in admission order: rows that follow their predecessor in the same claim commit with
+    // it, and a row claimed without its unrecorded predecessor waits for it.
+    await expect.poll(
+        () => runEngineTicking(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length))
+    ).toEqual(audience.map(() => count));
     return minted;
 }
 
-function roundEvent(msgId: string): ALMessage {
+/** Admits `event-<from>` .. `event-<to>` to the audience at once, leaving their dequeues to group as they will. */
+async function enqueueEvents(
+    server: OrderedServer,
+    input: Readonly<{ from: number; to: number; audience: readonly string[]; }>
+): Promise<void> {
+    for (let index = input.from; index <= input.to; index += 1) {
+        await server.service.enqueueOutboxIfAbsent(
+            roundEvent(`event-${index}`),
+            { admittedAudience: input.audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
+        );
+    }
+}
+
+function toAudienceAuthority(admittedAudience: readonly string[]): WsQueueBoxServerService.EnqueueAuthority {
+    return { admittedAudience, admittedConnectionGenerationIds: undefined, recipientScope: undefined };
+}
+
+/** Admits one row to the audience and waits until it reached every recipient it sends. */
+async function publishEvent(
+    server: OrderedServer,
+    message: ALMessage,
+    audience: readonly string[],
+    recipients: readonly string[] = audience
+): Promise<ALMessage['ordering']> {
+    const result = await server.service.enqueueOutboxIfAbsent(
+        message,
+        { admittedAudience: audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
+    );
+    await expect.poll(
+        () => runEngine(server, () => recipients.every((peerId) => readMsgIds(server.sockets[peerId]!).includes(message.id.msgId))),
+        { interval: 5 }
+    ).toBe(true);
+    return result.message.ordering;
+}
+
+/** Client `a`'s keyed room event at the sequence `a` stated, as the server relays it. */
+function browserEvent(seq: number, msgId = `a-event-${seq}`): ALMessage {
+    const message = newALBroadcastMessage(
+        'a',
+        newALRoute('room.round.event', ROOM.groupId, msgId),
+        'room',
+        'round.event.v1',
+        { msgId },
+        { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: { ...ORDERING, seq } }
+    );
+    return { ...message, id: { ...message.id, msgId } };
+}
+
+/** The server's own keyed round event; `ack: 'none'` asks no receipt of its recipients. */
+function roundEvent(msgId: string, ack: 'receiver' | 'none' = 'receiver'): ALMessage {
     const message = newALBroadcastMessage(
         SERVER_ID,
         newALRoute('room.round.event', ROOM.groupId, msgId),
         'room',
         'round.event.v1',
         { msgId },
-        { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: ORDERING }
+        { groupRef: ROOM, reliability: 'at-least-once', ack, ttlMs: EVENT_TTL_MS, ordering: ORDERING }
     );
     return { ...message, id: { ...message.id, msgId } };
 }
 
 /** The receiver's NACK as its WS client sends it: addressed to the server, naming the server's track. */
 async function receiveNack(server: OrderedServer, input: NackInput): Promise<void> {
-    const nack = newALNackControlMessage(
+    await server.sockets[input.fromPeerId]!.receive(JSON.stringify(toNack(server, input)));
+}
+
+function toNack(server: OrderedServer, input: NackInput): ALMessage {
+    return newALNackControlMessage(
         {
             v: 4,
             msgId: `nack-${input.msgId}-${input.fromPeerId}`,
@@ -288,15 +589,23 @@ async function receiveNack(server: OrderedServer, input: NackInput): Promise<voi
             msgId: input.msgId,
             fromPeerId: input.fromPeerId,
             logicalRecipientPeerId: input.fromPeerId,
-            toPeerId: SERVER_ID,
+            toPeerId: input.toPeerId ?? SERVER_ID,
             reason: input.reason,
             observedAtEpochMs: server.clock.nowMs,
-            ...(input.missingRanges.length === 0
-                ? {}
-                : { orderingKey: TRACK_KEY, expectedSeq: input.missingRanges[0]!.from, missingRanges: input.missingRanges })
+            ...(input.missingRanges.length === 0 ? {} : {
+                orderingKey: input.trackKey ?? TRACK_KEY,
+                expectedSeq: input.missingRanges[0]!.from,
+                missingRanges: input.missingRanges
+            })
         }
     );
-    await server.sockets[input.fromPeerId]!.receive(JSON.stringify(nack));
+}
+
+/** The frames of the track a socket received, as sent: each copy's ordering and proof. */
+function readFrames(socket: SimulatedWebSocket, msgId: string): readonly Pick<ALMessage, 'ordering' | 'proof'>[] {
+    return socket.sent.map((frame) => decodePersistedALMessage(frame))
+        .filter((message) => message.id.msgId === msgId)
+        .map((message) => ({ ordering: message.ordering, proof: message.proof }));
 }
 
 async function receiveAck(server: OrderedServer, ackedMsgId: string, recipient: string): Promise<void> {
@@ -322,6 +631,21 @@ async function runEngine<T>(server: OrderedServer, observe: () => T): Promise<T>
     return observe();
 }
 
+/**
+ * One engine pass a millisecond on: a row a track's order held is due again at the instant it was released, and the
+ * engine runs a row only once the clock has reached past it, so a frozen clock would keep it waiting.
+ */
+async function runEngineTicking<T>(server: OrderedServer, observe: () => T): Promise<T> {
+    server.clock.nowMs += 1;
+    return await runEngine(server, observe);
+}
+
+/** One engine pass a step of the clock on, so a row that retries after a backoff falls due within a few passes. */
+async function runEngineAdvancing<T>(server: OrderedServer, observe: () => T): Promise<T> {
+    server.clock.nowMs += CLOCK_STEP_MS;
+    return await runEngine(server, observe);
+}
+
 /** Further passes after the awaited outcome, so a send that should not happen has had its chance to. */
 async function settle(server: OrderedServer): Promise<void> {
     for (let pass = 0; pass < 5; pass += 1) {
@@ -340,6 +664,16 @@ function readMsgIds(socket: SimulatedWebSocket): readonly string[] {
     return socket.sent.map((frame) => decodePersistedALMessage(frame))
         .filter((message) => message.ordering?.orderingKey === ORDERING.orderingKey)
         .map((message) => message.id.msgId);
+}
+
+/** The rows a track's order held at dequeue, each time it held one, while an earlier row of the track recorded first. */
+function readHeldMsgIds(server: OrderedServer): readonly string[] {
+    return server.settlements
+        .filter((settlement) =>
+            settlement.kind === 'attempt-settled' && settlement.outcome === 'not-ready' &&
+            settlement.detail?.includes('of its track to record first') === true
+        )
+        .map((settlement) => settlement.msgId);
 }
 
 /** The messages whose repair budget a requester found spent; each is stated once. */
@@ -386,4 +720,15 @@ function mockClock(): { nowMs: number; } {
         vi.restoreAllMocks();
     });
     return clock;
+}
+
+/** One instance's pub/sub: a published key reaches no other instance, so only the publisher's local send runs. */
+class LoopbackBridge implements QueueBoxPubSubBridge {
+    publish(_channel: string, _message: QueueBoxPubSubMessage): Promise<void> {
+        return Promise.resolve();
+    }
+
+    subscribe(): Promise<void> {
+        return Promise.resolve();
+    }
 }

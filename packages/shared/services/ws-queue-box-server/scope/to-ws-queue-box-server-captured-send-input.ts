@@ -12,6 +12,8 @@ export interface ToWsQueueBoxServerCapturedSendInput {
     readonly policy: ALOutboundCapturedPolicy | undefined;
     /** The captured sessions a caller already found eligible here; undefined resolves them from the targets. */
     readonly eligibleSessionIds: readonly string[] | undefined;
+    /** The positions the row's first dequeue recorded, from which each copy takes its entry; `null`: none recorded. */
+    readonly sentPositions: Readonly<Record<string, number>> | null;
 }
 
 /** The live send a dequeued row makes to this instance's sockets, bounded by the audience its producer captured. */
@@ -20,12 +22,13 @@ export function toWsQueueBoxServerCapturedSendInput(
 ): WsServerLiveSendInputDto {
     const { message, key, policy } = input;
     if (policy?.sessionInvalidation !== undefined) {
-        return { message, sessionInvalidation: policy.sessionInvalidation };
+        return { message, sessionInvalidation: policy.sessionInvalidation, sentPositions: null };
     }
     const recipientScope = resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope);
     const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, key);
     return {
         message,
+        sentPositions: input.sentPositions,
         recipientSessionIds: input.eligibleSessionIds,
         admittedPeerIds: policy?.admittedAudience,
         inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,

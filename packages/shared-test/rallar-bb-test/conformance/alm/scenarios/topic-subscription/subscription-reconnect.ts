@@ -21,9 +21,8 @@ import {
     toGenerationChangePollCommand,
     toRowsGenerationPollCommand
 } from './topic-subscription-generation-polls.ts';
-import { toResultFact } from './topic-subscription-polls.ts';
+import { SUBSCRIPTION_ABSENCE_MS, toResultFact } from './topic-subscription-polls.ts';
 import {
-    SUBSCRIPTION_ABSENCE_MS,
     toConfirmedCueWait,
     toCueListenCommands,
     toPublicationWait,

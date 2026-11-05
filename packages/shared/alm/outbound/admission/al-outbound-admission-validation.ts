@@ -22,6 +22,7 @@ import {
     decodeALSessionInvalidationAuthority,
     type ALSessionInvalidationAuthority
 } from './al-session-invalidation-authority.ts';
+import { decodeALOutboundSentPositionRecord } from './decode-al-outbound-track-position-row.ts';
 
 export interface ALStoredOutboundMessage {
     readonly msgId: string;
@@ -30,9 +31,22 @@ export interface ALStoredOutboundMessage {
     readonly unicastPeerId: string | null;
     readonly orderingTrackKey: string | null;
     readonly orderingSeq: number | null;
+    /**
+     * Each recorded recipient's position on the track as the row's first recording read it, `0` for one never sent
+     * the track; every later copy of the row derives that recipient's entry from it. `null`: nothing recorded.
+     */
+    readonly sentPositions: Readonly<Record<string, number>> | null;
     readonly policy: ALOutboundCapturedPolicy;
     readonly creationExpiry: string;
 }
+
+/**
+ * The sent row as it is written: positions only once a recording kept them, so a row without them reads as one an
+ * older build wrote, and an older build still reads every row that recorded nothing.
+ */
+export type ALStoredOutboundMessageRow = Omit<ALStoredOutboundMessage, 'sentPositions'> & {
+    readonly sentPositions?: Readonly<Record<string, number>>;
+};
 
 export interface ALOutboundCapturedPolicy {
     /** Whether the copy outlives the volatile lane; the row keeps no finer lane. */
@@ -41,8 +55,10 @@ export interface ALOutboundCapturedPolicy {
     readonly retryTracking: NonNullable<ALOutboundDispatchPlan<never>['retryTracking']> | null;
     readonly repairTracking: NonNullable<ALOutboundDispatchPlan<never>['repairTracking']> | null;
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
-    /** Kept only for a WS server publication whose admission mints its sequence, so a retained replay mints too. */
+    /** Kept only for an admission whose outbound owns its track's sequence, so a retained replay owns it too. */
     readonly mintsSequence?: true;
+    /** Kept only for an admission that records its recipients' sent positions, so a retained replay records too. */
+    readonly recordsSentPositions?: readonly string[];
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
     /**
@@ -64,6 +80,7 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         repairTracking: plan.repairTracking ?? null,
         supersedenceTracking: plan.supersedenceTracking ?? null,
         ...(plan.mintsSequence ? { mintsSequence: true } : {}),
+        ...(plan.recordsSentPositions === undefined ? {} : { recordsSentPositions: plan.recordsSentPositions }),
         ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
         ...(plan.admittedConnectionGenerationIds === undefined
             ? {}
@@ -138,7 +155,7 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
         'orderingSeq',
         'policy',
         'creationExpiry'
-    ], ['supersedenceKey']);
+    ], ['supersedenceKey', 'sentPositions']);
     const reference = decodeALOutboundMessageReference(snapshot.reference);
     if (snapshot.msgId !== expectedMsgId || reference.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL outbound message identity does not match its slot');
@@ -151,7 +168,11 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
     }
     requirePersistedALNonEmptyString(snapshot.creationExpiry, 'outbound creation expiry observation');
     decodeALOutboundCapturedPolicy(snapshot.policy);
-    return { ...value as ALStoredOutboundMessage, reference };
+    return {
+        ...value as ALStoredOutboundMessage,
+        reference,
+        sentPositions: decodeALOutboundSentPositionRecord(snapshot.sentPositions)
+    };
 }
 
 export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCapturedPolicy {
@@ -163,6 +184,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'supersedenceTracking'
     ], [
         'mintsSequence',
+        'recordsSentPositions',
         'admittedAudience',
         'admittedConnectionGenerationIds',
         'recipientScope',
@@ -178,6 +200,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             throw new TypeError('Session-global authority cannot carry a scoped authority');
         }
     }
+    requireOptionalPersistedALUniqueStringArray(policy.recordsSentPositions, 'captured recorded recipients');
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
     if (policy.admittedConnectionGenerationIds !== undefined) {
         decodeALOutboundCapturedConnectionGenerations(policy.admittedConnectionGenerationIds, policy.admittedAudience);

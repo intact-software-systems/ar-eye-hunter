@@ -791,6 +791,7 @@ function createObservedAuthority(
         targetResolution: new WsQueueBoxServerTargetResolution({ socket, targetResolver: { requiresFrozenAudience: () => false } }),
         controlDelivery,
         ackRelay,
+        readRelayedRepairRequestRejection: () => Promise.resolve({ code: 'unauthorized', message: 'No relayed track' }),
         authorizeInboundMessage,
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: 30000 })
     });

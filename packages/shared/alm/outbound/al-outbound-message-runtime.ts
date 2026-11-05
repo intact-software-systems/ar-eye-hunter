@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
-import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
+import { decodeALControlMessage, type ALNackPayload, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput,
@@ -20,6 +20,7 @@ import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import type { QRtcDataChannel } from '../../webrtc/qrtc-data-channel.ts';
 import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
@@ -58,6 +59,7 @@ import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-ad
 import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
+import type { ALOrderingBatchSequences } from './lane/compute-al-outbound-group-sent-positions.ts';
 
 export type {
     ALOutboundControlAdmission,
@@ -193,11 +195,18 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
     /**
-     * The sender asks its own outbound for the sequence: a first admission of a message that names an
-     * ordering key without one takes the next sequence of that track. Only the WS server plans it, and only
-     * for a message it publishes itself; absent, a keyed message without a sequence stays unsequenced.
+     * The sender's own outbound owns the message's track: a first admission of a message that names an ordering key
+     * without a sequence takes the next one, and one that states a sequence must lie above the head and moves it there.
+     * The WS server plans it for a message it publishes itself without a sequence; a browser carrier for its own room
+     * send that names a key (`toALOutboundMintingPlan`). Absent, a keyed message without a sequence stays unsequenced.
      */
     readonly mintsSequence?: true;
+    /**
+     * The recipients whose sent positions this admission records on the message's track: a first admission reads
+     * each one's prior sequence, stamps the copy's `ordering.priorSeqByRecipient` and moves each to the copy's
+     * sequence in its commit. Stated only by a planner that finalizes the audience; absent, nothing is recorded.
+     */
+    readonly recordsSentPositions?: readonly string[];
     /**
      * The audience a server admitted the message to, carried beside the message rather than on the wire,
      * where a large room would exceed the collection limit. The owner keeps it with the captured policy and
@@ -383,6 +392,10 @@ export type ALOutboundRuntimeDiagnosticsEvent =
              * so absence means "not a receipt" rather than a missing phase.
              */
             phase?: ALReceiptPayload['phase'];
+            /** The NACK's own reason, present exactly when the control is a NACK. */
+            nackReason?: ALNackPayload['reason'];
+            /** The track a NACK asks about, present exactly when the NACK names one (a gap's). */
+            nackOrderingKey?: string;
         }>
         /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
         & ALMessageTrace
@@ -478,9 +491,19 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'authorized'; }>
         | Readonly<{ status: 'rejected'; reason: string; }>
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
+    /**
+     * A dequeued row's authority, which may also admit it only after its predecessor its batch claimed, or hold it
+     * until one fact changes: `readReleased` re-reads that fact alone, so a held claim's re-check costs one read.
+     */
+    export type DequeuedAdmissionAuthority =
+        | PendingAdmissionAuthority
+        | Readonly<{ status: 'follows-batch-predecessor'; }>
+        | Readonly<{ status: 'held'; reason: string; readReleased: () => Promise<boolean>; }>;
     export interface SendLifecycle {
         readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;
+        /** The positions the message's recording read, from which each copy's entry is derived; `null`: none. */
+        readonly sentPositions: Readonly<Record<string, number>> | null;
         /** This message's own signal: `cancel(msgId, traceId)` aborts it directly; disposal aborts every live one. */
         readonly signal: AbortSignal;
         readonly expiresAtMs: number | undefined;
@@ -529,15 +552,26 @@ export namespace ALOutboundMessageRuntime {
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
-        /** Read before a retained admission replays (with its prepared copies) and before a dequeued message plans (with none). */
+        /** Read before a retained admission replays, with its prepared copies. */
         readonly readPendingAdmissionAuthority?: (
             msg: ALMessage,
             preparedMessages: readonly TPrepared[]
         ) => Promise<PendingAdmissionAuthority>;
+        /** Read before a dequeued message plans, with the sequences its batch claimed beside it. */
+        readonly readDequeuedAdmissionAuthority?: (
+            msg: ALMessage,
+            batch: ALOrderingBatchSequences
+        ) => Promise<DequeuedAdmissionAuthority>;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
+        /**
+         * Signs a first admission's frame after its read stamped it, once: every later stage resends the stored signed
+         * canonical. Left: why it could not, which drops the frame `unsupported`. Absent (WS client and server), the
+         * frame is committed as read.
+         */
+        readonly signAdmittedMessage?: (msg: ALMessage) => Promise<Either<string, ALMessage>>;
         readonly readDequeueAuthority?: ALOutboundDequeueAuthorityReader;
         /** Runs in global row order once the row committed, with the captured policy that commit wrote. */
         readonly afterDequeueAdmission:
@@ -750,6 +784,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const lane = await this.readLaneForMessage(retransmission.msg.id.msgId);
         const computed = await lane.commit({
             msg: retransmission.msg,
+            followsBatchPredecessor: false,
             planner: () => retransmission.plan,
             intent: 'repair',
             phase: 'immediate',
@@ -910,6 +945,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     ): ALOutboundDispatchAdmission.Input<TPrepared> {
         return {
             msg,
+            followsBatchPredecessor: false,
             planner,
             intent: 'enqueue',
             phase: 'immediate',

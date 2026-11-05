@@ -39,6 +39,7 @@ import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@s
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundDispatchPlan, ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -155,6 +156,35 @@ describe('typed message fallback identity', () => {
         expect(lifecycle.state).toBe(state);
         expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(carriers);
         // Alone, the refusal is the verdict; with a fallback it is the evidence row of the refused RTC leg.
+        expect(lifecycle.evidence).toMatchObject(
+            state === 'rejected'
+                ? { reason: detail }
+                : { attempts: [{ carrier: 'rtc', outcome: 'refused', refusalReason: 'unsupported', detail }] }
+        );
+    });
+
+    it.each(
+        [
+            ['rtc-with-ws-fallback', ['rtc', 'ws'], 'queued'],
+            ['rtc', ['rtc'], 'rejected']
+        ] as const
+    )('settles a frame its RTC admission cannot sign on %s, handing over only the request it was given', async (strategy, carriers, state) => {
+        const detail = 'sign-failed: the page key refused to sign';
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReasonCode: undefined, recordsSentPositions: ['b'] }),
+            firstSigner: async () => Either.ofLeft(detail)
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { strategy, seq: 1, orderingKey: 'ready-order' });
+
+        const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(lifecycle.state).toBe(state);
+        expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(carriers);
+        // The fallback carries the request: no record, sequence or proof of the RTC admission that committed nothing.
+        expect(fixture.attempts.map((attempt) => attempt.message)).toEqual(carriers.map(() => fixture.attempts[0].message));
+        expect(fixture.attempts[0].message.ordering).toEqual({ orderingKey: 'ready-order', seq: 1 });
+        expect(fixture.attempts[0].message.proof).toBeUndefined();
         expect(lifecycle.evidence).toMatchObject(
             state === 'rejected'
                 ? { reason: detail }
@@ -536,6 +566,8 @@ interface ChannelInput {
     readonly firstDurationMs?: number;
     readonly selectedLifetimeMs?: number;
     readonly firstPlanner?: (message: ALMessage) => ALOutboundDispatchPlan<never>;
+    /** The first carrier's signer of a first admission; absent, it commits the frame as read. */
+    readonly firstSigner?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['signAdmittedMessage'];
 }
 
 const CACHED_ROSTER_VERSION = 4;
@@ -655,6 +687,7 @@ class ChannelAdmission {
         this.firstRuntime = input.firstPlanner
             ? createDefaultOutboundTestRuntime({
                 planOutgoingMessage: input.firstPlanner,
+                signAdmittedMessage: input.firstSigner,
                 sendPreparedMessage: async () => {
                     throw new Error('No-route planner must not transmit');
                 }

@@ -54,7 +54,7 @@ describe('public WS unicast scope', () => {
             ? service.sendToTargets(message)
             : entry === 'resolved'
             ? live.sendToResolvedPeer({ peerId: 'peer', message })
-            : service.sendToTargetsWithResult({ message });
+            : service.sendToTargetsWithResult({ message, sentPositions: null });
         expect(result).toEqual(entry === 'result' ? expect.objectContaining({ status: 'no-recipients', sentCount: 0 }) : 0);
         expect(native.sent).toEqual([]);
     });
@@ -79,10 +79,10 @@ describe('public WS unicast scope', () => {
         const { native, live } = createLiveDelivery(Number.MAX_SAFE_INTEGER);
         const message = newALBroadcastMessage('sender', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', {});
 
-        expect(live.sendToTargetsWithResult({ message })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
+        expect(live.sendToTargetsWithResult({ message, sentPositions: null })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
         expect(native.sent).toEqual([]);
-        expect(live.sendToTargetsWithResult({ message, inboundScope: SCOPE })).toMatchObject({ sentCount: 1 });
-        expect(live.sendToTargetsWithResult({ message, recipientScope: SCOPE })).toMatchObject({ sentCount: 1 });
+        expect(live.sendToTargetsWithResult({ message, sentPositions: null, inboundScope: SCOPE })).toMatchObject({ sentCount: 1 });
+        expect(live.sendToTargetsWithResult({ message, sentPositions: null, recipientScope: SCOPE })).toMatchObject({ sentCount: 1 });
     });
 
     it('refuses an admitted world row that captured no scope, as it refuses an unscoped unicast row', async () => {
@@ -120,7 +120,7 @@ describe('public WS unicast scope', () => {
         const { native, live } = createLiveDelivery();
         const message = createMessage();
         const forged = { ...message, payload: { ...message.payload, typeId: 'al.control.ack.v2' } };
-        expect(live.sendToTargetsWithResult({ message: forged })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
+        expect(live.sendToTargetsWithResult({ message: forged, sentPositions: null })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
         expect(live.sendToResolvedPeer({ peerId: 'peer', message: forged })).toBe(0);
         expect(native.sent).toEqual([]);
     });
@@ -319,7 +319,7 @@ describe('public WS unicast scope', () => {
             return encode(message);
         });
 
-        const result = service.sendToTargetsWithResult({ message: createMessage(), inboundScope: SCOPE });
+        const result = service.sendToTargetsWithResult({ message: createMessage(), sentPositions: null, inboundScope: SCOPE });
 
         expect(result).toMatchObject({ status: 'no-recipients', sentCount: 0, recipientCount: 0 });
         expect(original.sent).toEqual([]);

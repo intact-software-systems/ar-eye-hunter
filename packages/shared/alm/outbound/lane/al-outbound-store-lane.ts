@@ -575,6 +575,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 payload,
                 lifecycle: {
                     canonicalMessage,
+                    sentPositions: payload.sentPositions,
                     deferReceiptObservation,
                     signal,
                     expiresAtMs: effect.expireAtTimestamp,
@@ -720,6 +721,7 @@ function createALOutboundLaneAdmissions<TPrepared>(
         browserLocks: input.browserLocks,
         diagnostics: runtime.diagnostics,
         dequeueTiming: runtime.dequeueTiming,
+        signAdmittedMessage: runtime.signAdmittedMessage,
         settlements
     });
     const controlAdmission = stores.admissionStore.createControlAdmission({

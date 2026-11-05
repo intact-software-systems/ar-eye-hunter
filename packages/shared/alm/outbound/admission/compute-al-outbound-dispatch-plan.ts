@@ -1,9 +1,13 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { isALFreezeOfMessage } from '../../../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isKeysEqual } from '../../../queuebox/ResourceEntry.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
-import { validateALOutboundPlannedMessage } from '../validate-al-outbound-dispatch.ts';
+import {
+    validateALOutboundAdmittedMessage,
+    validateALOutboundPlannedMessage
+} from '../validate-al-outbound-dispatch.ts';
 import type { ALOutboundOutgoingReadInput } from './al-outbound-admission-store.ts';
 import { applyALOutboundCapturedPolicy, type ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
 
@@ -32,7 +36,7 @@ export function computeALOutboundDispatchPlan<TPrepared>(
         ? { ...selected, msg: canonical }
         : selected;
     const plan = intent !== 'repair' && stored ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;
-    requireALOutboundPlannedMessage(msg, plan.msg);
+    requireALOutboundAdmittedMessage(msg, plan.msg);
     return plan;
 }
 
@@ -63,7 +67,15 @@ function toAttemptAudience(
 }
 
 export function requireALOutboundPlannedMessage(source: ALMessage, planned: ALMessage): void {
-    const issues = validateALOutboundPlannedMessage(source, planned);
+    throwALOutboundMessageRejections(validateALOutboundPlannedMessage(source, planned));
+}
+
+/** The plan's message against the request: it may be the stored copy, carrying what its admission added. */
+function requireALOutboundAdmittedMessage(request: ALMessage, admitted: ALMessage): void {
+    throwALOutboundMessageRejections(validateALOutboundAdmittedMessage(request, admitted));
+}
+
+function throwALOutboundMessageRejections(issues: readonly ALMessageRejection[]): void {
     if (issues.length > 0) {
         throw new NonRetryableException(issues.map((issue) => issue.message).join('; '));
     }

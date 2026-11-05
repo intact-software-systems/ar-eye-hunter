@@ -55,8 +55,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         const admitted = await this.admitReceipt(control, decoded.payload);
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control,
-            targetMsgId: decoded.payload.msgId,
-            receiptPhase: decoded.payload.phase,
+            parsed: decoded,
             admitted
         });
         return admitted;

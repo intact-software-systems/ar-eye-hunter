@@ -708,15 +708,67 @@ relay fixture and the four-role family over `rtc` are the evidence, and no
 hosted manifest carries the cells. Decisions D512–D523 are in the roadmap, and
 Slice 3 is complete.
 
+### Slice 4: ordered subscription entry
+
+Deliver the live half of §5.4 for frozen-audience ordered room tracks: a
+session entering a track starts at the first sequence its ordering authority
+sends it, without a stall and without history; a staying subscriber reads a
+later exclusion as a validated omission, not loss; repair never serves below a
+recipient's entry; and the browser outbound allocates the positions it signs.
+Over `ws`, `rtc` and `rtc-with-ws-fallback`, granted and `members` topics
+alike. It lands as S4-i and S4-ii.
+
+As applied (S4-i): the authority that finalizes a copy's audience keeps, per
+track and recipient, the last sequence it sent, beside the track's ordering
+head in its admission store, and states it on the copy as
+`ordering.priorSeqByRecipient`, listing only the recipients whose prior is below
+`seq − 1` (`0` for none), so a track's first frame carries `{}`. The RTC origin
+records the frozen recipients of its own frame and signs the record in its first
+admission, the record entering the proof's signing input only when present. The
+WS server records at the first dequeue of a tracked row its outbound admitted, a
+relayed browser-origin row or its own publication, for the audience its re-check
+narrowed, and sends each recipient a copy carrying only that recipient's entry
+and no proof; a row whose unrecorded track predecessor is outside its dequeue
+batch waits until that predecessor records. A recipient with no position enters
+a recorded track at its first copy, delivers a copy whose record names its
+position as `omitted`, asks a gap only up to a prior ahead of it, and answers a
+recorded frozen copy below its position with a `before-entry` NACK, which
+relays carry like `not-subscribed` and the origin records outside the
+audience. A frozen recipient that may not deliver witnesses: its position
+moves, nothing is buffered and no gap is asked. A relay observes nothing and
+forwards a track it never saw. The WS server sends nothing to a recipient whose recorded position is
+past the copy's sequence, and, on a relayed browser-origin row with a logical
+receipt, records that recipient, and a session its dequeue re-check dropped,
+outside the receipt's audience, never unconfirmed, when the session is
+connected to the dequeuing instance. A browser room send that names
+its ordering key without `seq` is sequenced by its outbound on the durable lane,
+from one head per track that both carriers of a session share, so a reload
+continues the track; a stated `seq` at or below the head is refused
+`unsupported`. The inbound `ordering-position` diagnostic states each entry,
+omission, witness and `before-entry`. Rows a producer writes straight to the
+outbox (Relic's round transitions, state-sync) record no positions and keep the
+earlier behaviour; the server's own publications record no outside class, so a
+skipped recipient of one stays unconfirmed; in a cluster, positions and the
+outside class cover sessions on the dequeuing instance only; a receiver whose entry frame is lost and whose
+next frame arrives first enters past it. The cells `subscription-ordered-entry`
+and `subscription-ordered-omission` pass over the three carriers on the local
+lane. S4-ii re-asserts a reopened socket's room presence (D506), so a reconnect
+reads as an omission on a lane, and has relays re-originate gap NACKs toward the
+origin. Decisions D524–D537 are in the roadmap.
+Under `rtc-with-ws-fallback` a recipient the WS server left out of a WS-leg send
+reads a gap the RTC origin cannot serve and its track stalls until resync or
+expiry, instead of losing the frame (D525); S4-ii closes it.
+
 ### Later outcomes
 
 - **Restricted RTC beyond room multicast:** an encrypted publication with key
   distribution, rotation and revocation, ACKs that authenticate their logical
   recipient across relays, granted unicast and broadcast over RTC, and native
   hosts' publication keys.
-- **Ordered subscription establishment:** start positions, generations,
-  selective-audience omissions, snapshot/live handoff, and no replay to an
-  unauthorized or newly joined historical audience.
+- **Ordered subscription history:** a latest-state snapshot with a fenced
+  live cursor (the snapshot/live hand-off), and an authorized replay of
+  retained history, with no replay to an unauthorized or newly joined
+  historical audience. Live entry and omissions are Slice 4's.
 - **Broader QoS:** non-conflating reliable pacing with bounded rejection or
   backpressure; coherent checkpoint recovery where allowed; receiver last-N
   history; requested/effective negotiation for publishers, subscribers, and

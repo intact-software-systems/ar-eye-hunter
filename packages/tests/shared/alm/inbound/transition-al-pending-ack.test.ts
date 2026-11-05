@@ -177,6 +177,8 @@ async function computeDirectorAdmission(): Promise<ALInboundCommitBundle> {
 async function computeDirectorArrival(admissionStore: ALInboundAdmissionStore, msg: ALMessage): Promise<ALInboundCommitBundle> {
     const nowMs = Date.now();
     const read = await admissionStore.readIncomingMessage({
+        selfPeerId: 'director',
+        orderingObserver: 'addressed',
         msg,
         source: DIRECTOR_SOURCE,
         nowMs,

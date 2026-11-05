@@ -232,10 +232,12 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
 }
 
 /**
- * The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence.
+ * The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence on a
+ * track of its own, since the sender's durable store keeps a track's head across the cases that share it.
  * It opts into `local-outbox`, since the scenario reads its receipt row back from the carrier's durable store.
  */
 function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string, ttlMs: number) => ALMessage {
+    const orderingKey = `lifecycle-${crypto.randomUUID()}`;
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
@@ -245,6 +247,7 @@ function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resource
             ack: 'receiver',
             reliability: 'at-least-once',
             seq,
+            orderingKey,
             ttlMs,
             qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
         });

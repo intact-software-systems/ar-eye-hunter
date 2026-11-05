@@ -392,6 +392,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
                 overlayNeighborPeerIds: ['relay']
             });
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
                 stores: durableStores,
@@ -435,6 +436,8 @@ describe('volatile inbound canonical envelope reclamation', () => {
         ).toBe(original.payload.resource);
         const nowMs = Date.now();
         const read = await volatileStores.admissionStore.readIncomingMessage({
+            selfPeerId: 'receiver',
+            orderingObserver: 'addressed',
             msg: original,
             source: INBOUND_TEST_SOURCE,
             nowMs,

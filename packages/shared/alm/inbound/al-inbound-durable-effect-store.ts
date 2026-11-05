@@ -8,13 +8,15 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../al-admission-work-backend.ts';
+import { computeALOrderingDeliveryPredecessorSeq } from './admission/al-inbound-delivery-progress.ts';
 import type { ALInboundDeliveryPredecessor, ALInboundOrderedDeliveryRead } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {
     assertALInboundDeliveryOwner,
     decodeALInboundBufferedSnapshot,
     readALInboundBufferedMessage,
-    type ALInboundOrderedDeliverySnapshot
+    type ALInboundOrderedDeliverySnapshot,
+    type ALStoredInboundBufferedSnapshot
 } from './al-inbound-ordering-validation.ts';
 import {
     decodeALInboundWorkEntry,
@@ -39,6 +41,11 @@ export class ALInboundDurableEffectStore {
         this.namespace = dependencies.namespace;
     }
 
+    /**
+     * A delivery waits on the slot after the completed progress when one exists. Without one, it waits on its own
+     * slot's predecessor: `seq - 1`, or the prior its admission read past an omission or at an entry, so the sequences
+     * between that predecessor and `beforeSeq` were never this session's to deliver.
+     */
     async readOrderedDelivery(trackKey: string, beforeSeq: number): Promise<ALInboundOrderedDeliveryRead> {
         return await this.backend.readWithin(async (session): Promise<ALInboundOrderedDeliveryRead> => {
             const progress = await session.read(
@@ -52,23 +59,45 @@ export class ALInboundDurableEffectStore {
             if (beforeSeq <= completedThrough + 1) {
                 return { completedThrough, predecessor: undefined };
             }
-            const expectedSeq = completedThrough + 1;
-            const prefix = `${this.namespace}:buffered:${trackKey}:`;
-            const stored = await session.read(
-                `${prefix}${expectedSeq}`,
-                (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
-            );
-            if (stored === undefined) {
-                const predecessor = await this.readOrderingPredecessor(session, trackKey, expectedSeq);
-                return { completedThrough, predecessor };
+            const next = await this.readSlot(session, trackKey, completedThrough + 1);
+            if (next !== undefined) {
+                return { completedThrough, predecessor: await this.readSlotPredecessor(session, next) };
             }
-            const snapshot = await readALInboundBufferedMessage({
-                database: session,
-                namespace: this.namespace,
-                stored
-            });
-            return { completedThrough, predecessor: await this.readDeliveryPredecessor(session, snapshot) };
+            const own = await this.readSlot(session, trackKey, beforeSeq);
+            const predecessorSeq = own === undefined
+                ? beforeSeq - 1
+                : computeALOrderingDeliveryPredecessorSeq(own.plan.orderingRuntime) ?? beforeSeq - 1;
+            if (predecessorSeq <= completedThrough) {
+                return { completedThrough, predecessor: undefined };
+            }
+            const predecessor = await this.readSlot(session, trackKey, predecessorSeq);
+            return {
+                completedThrough,
+                predecessor: predecessor === undefined
+                    ? await this.readOrderingPredecessor(session, trackKey, predecessorSeq)
+                    : await this.readSlotPredecessor(session, predecessor)
+            };
         });
+    }
+
+    private async readSlot(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        seq: number
+    ): Promise<ALStoredInboundBufferedSnapshot | undefined> {
+        const prefix = `${this.namespace}:buffered:${trackKey}:`;
+        return await session.read(
+            `${prefix}${seq}`,
+            (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
+        );
+    }
+
+    private async readSlotPredecessor(
+        session: ALAdmissionReadSession,
+        stored: ALStoredInboundBufferedSnapshot
+    ): Promise<ALInboundDeliveryPredecessor> {
+        const snapshot = await readALInboundBufferedMessage({ database: session, namespace: this.namespace, stored });
+        return await this.readDeliveryPredecessor(session, snapshot);
     }
 
     private async readOrderingPredecessor(

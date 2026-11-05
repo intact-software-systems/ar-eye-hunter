@@ -1,11 +1,14 @@
 import { decodeALAdmissionControlValue } from '../../al-admission-value-validation.ts';
 import type {
     ALInboundAdmissionMutation,
-    ALInboundAdmissionObservations,
     ALInboundCommitBundle
 } from '../al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress } from '../al-inbound-ordering-validation.ts';
 import { decodeALInboundControlOwnerIndex, decodeALInboundSource } from '../al-inbound-source-validation.ts';
+import {
+    canALInboundDeliveryComplete,
+    computeALInboundWitnessedCompletedThrough
+} from './al-inbound-delivery-progress.ts';
 
 /** Every reason one mutation may not be committed, in the order the bundle rejects them. */
 export function validateALInboundAdmissionMutation(
@@ -13,7 +16,7 @@ export function validateALInboundAdmissionMutation(
     bundle: ALInboundCommitBundle
 ): readonly string[] {
     const issues: string[] = [];
-    if (!matchesOriginalObservation(mutation, bundle.observations)) {
+    if (!matchesOriginalObservation(mutation, bundle)) {
         issues.push('Inbound admission candidate writes outside its original observations');
     }
     if ('expireAtTimestamp' in mutation && !Number.isSafeInteger(mutation.expireAtTimestamp)) {
@@ -61,10 +64,8 @@ export function validateALInboundAdmissionMutation(
     return issues;
 }
 
-function matchesOriginalObservation(
-    mutation: ALInboundAdmissionMutation,
-    observed: ALInboundAdmissionObservations
-): boolean {
+function matchesOriginalObservation(mutation: ALInboundAdmissionMutation, bundle: ALInboundCommitBundle): boolean {
+    const observed = bundle.observations;
     switch (mutation.kind) {
         case 'set-msg-owner':
         case 'set-inbound-message':
@@ -88,12 +89,7 @@ function matchesOriginalObservation(
         case 'set-delivery-progress':
             return mutation.trackKey === observed.deliveryProgress?.trackKey &&
                 mutation.value.expireAtTimestamp >= (observed.deliveryProgress.value?.expireAtTimestamp ?? 0) &&
-                (
-                    (mutation.value.completedThrough === (observed.deliveryProgress.value?.completedThrough ?? 0) &&
-                        mutation.trackKey === observed.ordering?.trackKey) ||
-                    (mutation.value.completedThrough === (observed.deliveryProgress.value?.completedThrough ?? 0) + 1 &&
-                        mutation.value.completedThrough === observed.buffered?.seq)
-                );
+                isObservedProgressStep(mutation.value.completedThrough, bundle);
         case 'set-buffered':
         case 'delete-buffered': {
             const position = mutation.kind === 'set-buffered' ? mutation.snapshot : mutation;
@@ -101,4 +97,32 @@ function matchesOriginalObservation(
                 (observed.buffered?.trackKey === position.trackKey && observed.buffered.seq === position.seq);
         }
     }
+}
+
+/**
+ * The progress an admission retains as it stands, or moves past the copies it witnessed; a completed delivery moves it
+ * to its own sequence once that delivery's predecessor, past any omission, had completed.
+ */
+function isObservedProgressStep(completedThrough: number, bundle: ALInboundCommitBundle): boolean {
+    const observed = bundle.observations;
+    const observedCompletedThrough = observed.deliveryProgress?.value?.completedThrough ?? 0;
+    if (observed.buffered !== undefined && completedThrough === observed.buffered.seq) {
+        return canALInboundDeliveryComplete({
+            completedThrough: observedCompletedThrough,
+            seq: completedThrough,
+            observation: observed.buffered.plan.orderingRuntime
+        });
+    }
+    if (observed.ordering === undefined || observed.deliveryProgress?.trackKey !== observed.ordering.trackKey) {
+        return false;
+    }
+    const witnessedPosition = bundle.mutations.find((candidate) => candidate.kind === 'set-ordering')?.snapshot;
+    // Of the admissions that move a track, only a witness retains no slot for its copy.
+    const witnessed = !bundle.mutations.some((candidate) => candidate.kind === 'set-buffered');
+    return completedThrough === observedCompletedThrough || (witnessedPosition !== undefined && witnessed &&
+        completedThrough === computeALInboundWitnessedCompletedThrough({
+                completedThrough: observedCompletedThrough,
+                previousPosition: observed.ordering.snapshot?.lastContiguousSeq ?? 0,
+                witnessedPosition: witnessedPosition.lastContiguousSeq
+            }));
 }

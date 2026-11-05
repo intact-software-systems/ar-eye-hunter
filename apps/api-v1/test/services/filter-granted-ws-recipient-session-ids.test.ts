@@ -132,8 +132,7 @@ function grantedAuthority(overrides: Readonly<Record<string, Permissions>> = {})
             principalId: sessionId,
             topicId: GRANTED_TOPIC,
             connectionGenerationId: `client-generation-${sessionId}`,
-            leaseExpiresAtEpochMs: Date.now() + 120_000,
-            admittedAtGroupRevision: snapshot.group.snapshotVersion
+            leaseExpiresAtEpochMs: Date.now() + 120_000
         })),
         liveSessionGenerations: Object.fromEntries(PRINCIPAL_IDS.map((sessionId) => [sessionId, [`client-generation-${sessionId}`]]))
     };

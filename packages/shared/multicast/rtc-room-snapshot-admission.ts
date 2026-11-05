@@ -143,29 +143,23 @@ function toRtcPublicationDeliveryPlan(
 }
 
 /**
- * A frozen recipient that delivers nothing tells its hop so, toward the origin that counts it; its hop still ends
- * with an ACK, one that confirms no recipient, even when an ordering gap held back the ACK of a copy it would have
- * delivered. Only a receipt that counts recipients asks; a plan that drops with a NACK of its own keeps that NACK,
- * while a gap's NACK, which asks for history this session is not entitled to, gives way to `not-subscribed`.
+ * A frozen recipient that delivers nothing tells its hop so, toward the origin that counts it, and ends its hop with
+ * an ACK that confirms no recipient. Only a receipt that counts recipients asks; a plan that drops with a NACK of its
+ * own keeps that NACK.
  */
 function toNotSubscribedHandlingPlan(
     plan: ALMessageHandlingPlan,
     fromPeerId: string | undefined
 ): ALMessageHandlingPlan {
     const forwardOnly = toForwardOnlyHandlingPlan(plan);
-    if (!isALLogicalReceiptMode(plan.ack.algo) || fromPeerId === undefined) {
+    if (!isALLogicalReceiptMode(plan.ack.algo) || fromPeerId === undefined || (plan.dropReason && plan.nack.enabled)) {
         return forwardOnly;
     }
-    const notSubscribed: ALMessageHandlingPlan['nack'] = {
-        enabled: true,
-        toPeerId: fromPeerId,
-        reason: 'not-subscribed',
-        missingRanges: []
+    return {
+        ...forwardOnly,
+        ack: plan.dropReason === undefined ? { ...plan.ack, enabled: true } : plan.ack,
+        nack: { enabled: true, toPeerId: fromPeerId, reason: 'not-subscribed', missingRanges: [] }
     };
-    if (plan.dropReason !== undefined) {
-        return plan.nack.enabled ? forwardOnly : { ...forwardOnly, nack: notSubscribed };
-    }
-    return { ...forwardOnly, ack: { ...plan.ack, enabled: true }, nack: notSubscribed };
 }
 
 function toRtcRefusedHandlingPlan(

@@ -8,6 +8,7 @@ import type {
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
+import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
@@ -169,16 +170,19 @@ export function toALInboundNegativeControlEffects(
 }
 
 /**
- * An authority refusal is about the receiver's roster, a claim or its own subscription, never the ordering track, so it
- * asks for no repair.
+ * An authority refusal is about the receiver's roster, a claim or its place in the audience, never a gap in the
+ * ordering track, so it asks for no repair.
  */
 function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
     return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other' ||
-        reason === 'not-subscribed';
+        isALOutsideAudienceNackReason(reason);
 }
 
-/** A relay's `not-subscribed` NACK again for a recipient below it, answering a retried copy as it answers ACKs. */
-export function toALInboundRelayedNotSubscribedEffect(
+/**
+ * A relay's NACK again for a recipient below it that its row records outside, answering a retried copy as it answers
+ * ACKs. The row records who is outside, not why, so it repeats the outside class as `not-subscribed`.
+ */
+export function toALInboundRelayedOutsideAudienceEffect(
     input: ALInboundControlEffectInput,
     relayed: Readonly<{ toPeerId: string; peerId: string; }>
 ): ALInboundEffectIntent {
@@ -289,6 +293,7 @@ function toNackReason(reason: ALInboundNackPlanReason): ALNackReason {
         case 'membership-fenced':
         case 'unauthorized':
         case 'not-subscribed':
+        case 'before-entry':
             return reason;
     }
 }

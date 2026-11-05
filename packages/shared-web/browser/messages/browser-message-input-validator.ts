@@ -128,8 +128,12 @@ export class BrowserMessageInputValidator {
         return issues;
     }
 
-    /** A broadcast has no group track to default its ordering key from, so a WS send states both halves or neither. */
-    public validateWsOrdering<T>(input: RallarWsSendInput<T>): readonly RallarValidationIssue[] {
+    /**
+     * A broadcast has no group track to default its ordering key from, so a WS send states its key beside a sequence.
+     * A room send's key alone asks the session's outbound for the track's next sequence, and a sequence it states
+     * starts at 1; a send outside a room has no outbound that sequences it, so it states both halves or neither.
+     */
+    public validateWsOrdering<T>({ input, scope }: ResolvedWsMessageInput<T>): readonly RallarValidationIssue[] {
         const issues: RallarValidationIssue[] = [];
         this.pushOptionalRouteId({
             value: input.orderingKey,
@@ -137,7 +141,12 @@ export class BrowserMessageInputValidator {
             label: 'Ordering key',
             issues
         });
-        this.pushOptionalNonNegativeInteger(input.seq, '$.seq', issues);
+        if (scope === 'world') {
+            this.pushOptionalNonNegativeInteger(input.seq, '$.seq', issues);
+        }
+        else {
+            this.pushTrackedRoomSeqIssue(input.seq, issues);
+        }
         if (input.seq !== undefined && input.orderingKey === undefined) {
             issues.push({
                 path: '$.orderingKey',
@@ -145,11 +154,11 @@ export class BrowserMessageInputValidator {
                 message: 'An ordered WS send states its orderingKey beside its seq.'
             });
         }
-        if (input.orderingKey !== undefined && input.seq === undefined) {
+        if (input.orderingKey !== undefined && input.seq === undefined && scope === 'world') {
             issues.push({
                 path: '$.seq',
                 code: 'missing-seq',
-                message: 'An ordered WS send states its seq beside its orderingKey.'
+                message: 'An ordered WS send outside a room states its seq beside its orderingKey.'
             });
         }
         return issues;
@@ -216,8 +225,15 @@ export class BrowserMessageInputValidator {
         issues: RallarValidationIssue[]
     ): void {
         this.pushOptionalNonNegativeInteger(input.minSnapshotVersion, '$.minSnapshotVersion', issues);
-        this.pushOptionalNonNegativeInteger(input.seq, '$.seq', issues);
+        this.pushTrackedRoomSeqIssue(input.seq, issues);
         this.pushOptionalNonNegativeInteger(input.fanoutLimit, '$.fanoutLimit', issues);
+    }
+
+    /** A room send's track starts at 1, so a sequence it states is a safe integer from 1, as its outbound mints. */
+    private pushTrackedRoomSeqIssue(seq: number | undefined, issues: RallarValidationIssue[]): void {
+        if (seq !== undefined && !(Number.isSafeInteger(seq) && seq >= 1)) {
+            issues.push({ path: '$.seq', code: 'invalid-track-seq', message: 'A room send states its seq from 1.' });
+        }
     }
 
     private pushBaseIssues<T>(

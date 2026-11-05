@@ -74,6 +74,23 @@ export function toHeldMessageFaultCommands(
     );
 }
 
+/**
+ * The message of `step.index`, sent by `send`, leaves held while later sends pass: the hold of the scenario's type
+ * covers it until its message id is known, then the message hold takes over and the type's is released. The message
+ * hold keeps it held across every retransmission until the same ids with `remaining: 0` release it.
+ */
+export function toHeldSendCommands(
+    step: AlmConformanceMessageStepInput,
+    send: readonly RallarBlackBoxTestCommand[]
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        ...toHeldFaultCommands(step, 'hold', 'until-cleared'),
+        ...send,
+        ...toHeldMessageFaultCommands(step, `hold-message-${step.index}`, 'until-cleared'),
+        ...toHeldFaultCommands(step, 'release', 0)
+    ];
+}
+
 function toHoldAction(carrier: AlmConformanceFaultCarrier): 'drop' | 'not-ready' {
     return carrier === 'ws' ? 'not-ready' : 'drop';
 }

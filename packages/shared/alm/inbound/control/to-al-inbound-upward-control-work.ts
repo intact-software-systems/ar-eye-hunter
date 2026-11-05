@@ -6,6 +6,7 @@ import {
 } from '../../../al-contracts/al-control.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
+import type { ALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALInboundMessageOwner } from '../al-inbound-admission-store.ts';
 import type { ALInboundUpwardAck } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
@@ -33,7 +34,7 @@ export interface ALInboundUpwardControlContext {
 /** One control a relay sends toward the origin: an ACK it relays or ends its hop with, or a NACK it relays. */
 export type ALInboundUpwardControl =
     | Readonly<{ kind: 'ack'; ack: ALInboundUpwardAck; }>
-    | Readonly<{ kind: 'nack'; logicalRecipientPeerId: string; }>;
+    | Readonly<{ kind: 'nack'; logicalRecipientPeerId: string; reason: ALOutsideAudienceNackReason; }>;
 
 /** The relay re-originates each control to its row's parent, over the carrier the message arrived on (D40). */
 export function toALInboundUpwardControlWork(
@@ -85,7 +86,7 @@ function toUpwardControlMessage(
             ...route,
             msgId: context.msgId,
             logicalRecipientPeerId: control.logicalRecipientPeerId,
-            reason: 'not-subscribed'
+            reason: control.reason
         });
     }
     return newALAckControlMessage(id, {

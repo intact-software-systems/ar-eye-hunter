@@ -84,7 +84,7 @@ describe('CRDT principal fanout from a cold cache', () => {
         onTestFinished(() => service.dispose());
         const message = principalMessage();
 
-        expect(service.sendToTargetsWithResult({ message, inboundScope: scope }).sentCount).toBe(0);
+        expect(service.sendToTargetsWithResult({ message, sentPositions: null, inboundScope: scope }).sentCount).toBe(0);
         expect(sockets.get('alice')).toEqual([]);
 
         await cache.findOrLoadByRef({
@@ -93,7 +93,7 @@ describe('CRDT principal fanout from a cold cache', () => {
             principalId: 'alice'
         });
 
-        expect(service.sendToTargetsWithResult({ message, inboundScope: scope }).recipients).toEqual([
+        expect(service.sendToTargetsWithResult({ message, sentPositions: null, inboundScope: scope }).recipients).toEqual([
             { peerId: 'session-a', connectionId: 'session-a' },
             { peerId: 'session-b', connectionId: 'session-b' }
         ]);
@@ -103,7 +103,7 @@ describe('CRDT principal fanout from a cold cache', () => {
 
         const replacementSends: string[] = [];
         webSocketServer.addConnection(new ConnectionContext({ id: 'session-a', socket: new RecordingWebSocket(replacementSends) }));
-        expect(service.sendToTargetsWithResult({ message, inboundScope: scope }).recipients).toEqual([
+        expect(service.sendToTargetsWithResult({ message, sentPositions: null, inboundScope: scope }).recipients).toEqual([
             { peerId: 'session-b', connectionId: 'session-b' }
         ]);
         expect(replacementSends).toEqual([]);

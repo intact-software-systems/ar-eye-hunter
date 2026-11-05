@@ -1,13 +1,12 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
-    toALOutboundOrderingHeadMutations,
+    toALOutboundOrderingTrackMutations,
     type ALOutboundAdmissionMutation
 } from './admission/al-outbound-admission-mutations.ts';
 import type {
@@ -16,6 +15,7 @@ import type {
     ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundRecordedSentPositions } from './admission/to-al-outbound-recorded-sent-positions.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
     ALOutboundDispatchPhase,
@@ -194,16 +194,7 @@ function computeMessageMutations<TPrepared>(
         },
         toSentMessageMutation(read, canonicalEntry)
     ];
-    const trackKey = toALOrderingTrackKey(read.msg);
-    if (trackKey && read.msg.ordering?.seq !== undefined && expiresAtMs !== undefined) {
-        mutations.push({
-            kind: 'set-ordering-message',
-            trackKey,
-            seq: read.msg.ordering.seq,
-            msgId: read.msg.id.msgId,
-            expireAtTimestamp: expiresAtMs
-        }, ...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs));
-    }
+    mutations.push(...toALOutboundOrderingTrackMutations(read, expiresAtMs));
     appendSupersedenceMutations(mutations, read);
     return mutations;
 }
@@ -215,6 +206,7 @@ function computePreparedEffects<TPrepared>(
     const { read, options, phase } = input;
     const reference = toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg);
     const attemptIdentity = toALOutboundAttemptIdentity(options);
+    const sentPositions = toALOutboundRecordedSentPositions(read);
     return read.plan.preparedMessages.map((prepared, index) => {
         const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
         return {
@@ -232,7 +224,8 @@ function computePreparedEffects<TPrepared>(
                 prepared,
                 preparedFingerprint,
                 attemptIdentity,
-                phase
+                phase,
+                sentPositions
             }
         };
     });
@@ -471,6 +464,7 @@ function toSentMessageMutation<TPrepared>(
         kind: 'set-sent-message',
         reference: toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg),
         policy: toALOutboundSentPolicy(read.storedMessage?.policy, read.plan),
+        sentPositions: toALOutboundRecordedSentPositions(read),
         creationExpiry: read.creationExpiry,
         snapshot: {
             msgId: read.msg.id.msgId,

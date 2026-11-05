@@ -510,8 +510,7 @@ function toSubscribedAuthority(
             principalId: SESSIONS[sessionId],
             topicId,
             connectionGenerationId: `client-generation-${sessionId}`,
-            leaseExpiresAtEpochMs: Date.now() + 120_000,
-            admittedAtGroupRevision: snapshot.group.snapshotVersion
+            leaseExpiresAtEpochMs: Date.now() + 120_000
         })),
         liveSessionGenerations: Object.fromEntries(sessionIds.map((sessionId) => [sessionId, [`client-generation-${sessionId}`]]))
     };

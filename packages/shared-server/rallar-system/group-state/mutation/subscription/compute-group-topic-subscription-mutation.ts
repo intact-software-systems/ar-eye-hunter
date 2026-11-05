@@ -49,7 +49,6 @@ function computeSubscribe(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    const group = requireGroup(read, command.aggregateRef).value;
     const denial = resolveSubscribeDenial(command, read, facts);
     if (denial !== null) {
         return rejectedByGroupPolicy({ command, read, facts, denial });
@@ -62,8 +61,7 @@ function computeSubscribe(
         principalId: read.targetMember.principalId,
         topicId: command.input.topicId,
         connectionGenerationId: command.input.connectionGenerationId,
-        leaseExpiresAtEpochMs: facts.attemptAtEpochMs + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS,
-        admittedAtGroupRevision: group.snapshotVersion
+        leaseExpiresAtEpochMs: facts.attemptAtEpochMs + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS
     };
     const current = read.targetTopicSubscription;
     const ref = command.aggregateRef;

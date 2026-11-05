@@ -74,10 +74,13 @@ export interface ALOutboundPendingControl {
     readonly expiresAtMs: number;
 }
 
-/** A replay that commits owes its caller the same post-commit follow-up the inline admission ran. */
+/**
+ * A replay that commits owes its caller the same post-commit follow-up the inline admission ran, and its verdict the
+ * statement the inline admission made; `null` when the deadline passed before any admission ran.
+ */
 export interface ALOutboundControlReplayResult {
     readonly outcome: ALWorkOutcome;
-    readonly committed: boolean;
+    readonly admitted: ALOutboundControlAdmissionResult | null;
 }
 
 export interface CreateALOutboundControlAdmissionInput<TPrepared> {
@@ -185,13 +188,10 @@ export class ALOutboundControlAdmission<TPrepared> {
     /** A retained control admission is replayed until it commits or its deadline passes. */
     async replay(payload: ALOutboundPendingControl): Promise<ALOutboundControlReplayResult> {
         if (payload.expiresAtMs <= this.clock.nowMs()) {
-            return { outcome: { status: 'completed' }, committed: false };
+            return { outcome: { status: 'completed' }, admitted: null };
         }
-        const result = await this.admit(payload.msg, payload.source);
-        return {
-            outcome: { status: result.kind === 'pending-control' ? 'retry' : 'completed' },
-            committed: result.kind === 'committed'
-        };
+        const admitted = await this.admit(payload.msg, payload.source);
+        return { outcome: { status: admitted.kind === 'pending-control' ? 'retry' : 'completed' }, admitted };
     }
 
     async scheduleNotYetInSyncRetry(

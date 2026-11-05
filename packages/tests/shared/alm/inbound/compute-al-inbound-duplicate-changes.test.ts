@@ -137,6 +137,8 @@ async function computeArrival(
     const source = SOURCES[arrival.carrier];
     const nowMs = Date.now();
     const read = await store.readIncomingMessage({
+        selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+        orderingObserver: 'addressed',
         msg,
         source,
         nowMs,

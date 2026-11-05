@@ -28,6 +28,7 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
+ * The buffered track drains over rtc alone: over ws the server's gap NACKs spend the held frame's one retransmit.
  * The topic subscription cells run on every carrier, the successor's over ws alone; a granted topic rides RTC as a
  * signed room multicast, whose cells run over rtc, the revoked publisher over the fallback carrier too.
  */
@@ -36,6 +37,8 @@ const TOPIC_SUBSCRIPTION_IDS = [
     'subscription-token-count',
     'subscription-revoke-disconnected',
     'subscription-reconnect',
+    'subscription-ordered-entry',
+    'subscription-ordered-omission',
     'subscription-successor'
 ] as const;
 
@@ -73,7 +76,6 @@ const CARRIER_SCENARIO_IDS = {
         'paced-isolation-lists',
         'backpressure-deferred',
         'own-share-under-inbound',
-        'buffered-track-drains',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const),
         'fenced-delivery',
         'fenced-catch-up',

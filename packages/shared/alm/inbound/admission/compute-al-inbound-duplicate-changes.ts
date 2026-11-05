@@ -13,7 +13,7 @@ import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
 import {
     toALInboundAckEffect,
-    toALInboundRelayedNotSubscribedEffect,
+    toALInboundRelayedOutsideAudienceEffect,
     type ALInboundAckRecipient,
     type ALInboundEffectIntent
 } from '../al-inbound-effect-intent.ts';
@@ -253,7 +253,7 @@ function toRepeatedNotSubscribed(
     toPeerId: string,
     peerId: string
 ): ALInboundEffectIntent {
-    const nack = toALInboundRelayedNotSubscribedEffect(
+    const nack = toALInboundRelayedOutsideAudienceEffect(
         { msg: read.msg, plan: read.plan, carrier: toALDeliveryCarrier(read.source), fromPeerId: read.fromPeerId },
         { toPeerId, peerId }
     );

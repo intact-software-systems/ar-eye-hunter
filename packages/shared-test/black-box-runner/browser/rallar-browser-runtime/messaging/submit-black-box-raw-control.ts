@@ -43,7 +43,7 @@ export async function submitBlackBoxRawControl(
     }
     const result = await writeCarrierOutboxAdmission(
         context,
-        { carrier: control.carrier, canFallback: false },
+        { carrier: control.carrier, canFallback: false, admittedCopy: false },
         toRawControlMessage(input, sessionId)
     );
     wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, result);

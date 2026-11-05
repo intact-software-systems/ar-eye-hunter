@@ -7,13 +7,14 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import {
+    toFourRoleGrantCommands,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
+    computeUnelectedOutsideCount,
     toConfirmedCueWait,
     toCueListenCommands,
     toPublicationWait,
@@ -57,20 +58,10 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
     ];
 }
 
-/** The receiver owns the room: it elects itself before it grants the others, so it is subscribed before they are. */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
-        toSubscribeCommand(owner, 'receiver'),
-        toTopicGrantCommand({
-            step: owner,
-            operation: 'grant',
-            grantee: 'publisher-b',
-            publish: true,
-            subscribe: true
-        }),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: true }),
+        ...toFourRoleGrantCommands(owner),
         ...toReceivedPublicationCommands(owner)
     ];
 }
@@ -91,13 +82,4 @@ function toReceivedPublicationCommands(subscriber: AlmConformanceStepInput): rea
         toConfirmedCueWait(subscriber, 'publication-c'),
         ...toUnsubscribeCommands(subscriber, subscriber.role)
     ];
-}
-
-/**
- * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
- * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
- * `unelected` ones among them answer `not-subscribed` and end outside its audience.
- */
-function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
-    return step.input.carrier === 'ws' ? 0 : unelected;
 }

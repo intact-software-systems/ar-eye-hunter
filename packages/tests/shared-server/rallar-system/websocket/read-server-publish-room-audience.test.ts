@@ -70,8 +70,7 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
                     principalId: session.principalId,
                     topicId,
                     connectionGenerationId: `client-generation-${session.sessionId}`,
-                    leaseExpiresAtEpochMs: Date.now() + 120_000,
-                    admittedAtGroupRevision: 3
+                    leaseExpiresAtEpochMs: Date.now() + 120_000
                 })),
                 liveSessionGenerations: Object.fromEntries(
                     snapshot.activeSessions.map((session) => [session.sessionId, [`client-generation-${session.sessionId}`]])

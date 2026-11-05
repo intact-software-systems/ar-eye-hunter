@@ -33,6 +33,7 @@ import {
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundRetryTrackingPlan,
+    ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundSettlementFact
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -505,7 +506,7 @@ describe('outbound control admission identity', () => {
         // The replay finds the new owner and terminalizes the work instead of retrying forever.
         expect(await control.replay(toPendingControl(retained[0]!))).toEqual({
             outcome: { status: 'completed' },
-            committed: false
+            admitted: { kind: 'rejected', reason: 'AL control has no retained outbound message obligation' }
         });
         expect(state.data.has('outbound-control:control:acks:message')).toBe(false);
     });
@@ -535,6 +536,38 @@ describe('outbound control admission identity', () => {
 
         // The replayed admission owes the same retry the direct path writes; without it the nack is lost.
         await expect.poll(async () => (await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind)).toContain('nack-retry');
+    });
+
+    it('states the committed outcome of a gap NACK whose conflicted admission its replay commits', async () => {
+        const { backend, admissionStore, workQueue } = createFixture();
+        await seedOrderedObligation(admissionStore);
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const runtime = createOutboundTestRuntimeFor<ALOutboundTransportMessage>({
+            stores: { admissionStore, workQueue },
+            diagnostics: (event) => diagnostics.push(event),
+            decodePreparedMessage: decodeALOutboundTransportMessage,
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'durable',
+                preparedMessages: []
+            }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+        });
+        await runtime.ready();
+        // A receipt of the same send committing between the NACK's read and its write: the owner's fence moved.
+        vi.spyOn(backend, 'write').mockImplementationOnce(() => {
+            throw new ALAdmissionBackendConflictError('simulated concurrent receipt commit');
+        });
+        const nack = orderedGapNack('stream:sender:7', [{ from: 2, to: 2 }]);
+
+        expect(await runtime.acceptControlMessage(nack, 'peer')).toEqual({ kind: 'pending-control' });
+        await runOutboundWorkTask(runtime);
+
+        // The replay is the admission that commits; without its outcome the control's verdict is never kept.
+        await expect.poll(() => diagnostics.flatMap((event) => event.kind === 'control-admission' && event.msgId === nack.id.msgId ? [event.outcome] : []))
+            .toEqual(['pending-control', 'committed']);
+        await runtime.dispose();
     });
 
     it('starts a work batch only for a control admission that wrote', async () => {

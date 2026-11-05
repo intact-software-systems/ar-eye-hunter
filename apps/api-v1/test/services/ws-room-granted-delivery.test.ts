@@ -155,7 +155,7 @@ Deno.test('a revoke between enqueue and dequeue skips the revoked session at rep
     });
 });
 
-Deno.test('a revoke between enqueue and dequeue keeps the revoked session expected and unconfirmed in the receipt', async () => {
+Deno.test('a revoke between enqueue and dequeue records the revoked session outside the audience, expected set unchanged', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         harness.reads.push(...grantedReads(3), revokedReads());
@@ -164,12 +164,9 @@ Deno.test('a revoke between enqueue and dequeue keeps the revoked session expect
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => readDelivered(frames.bob, message) > 0);
         await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
-        await settle();
+        await waitFor(() => readReceipts(frames.alice).some((receipt) => receipt.phase === 'complete'));
 
-        const receipts = readReceipts(frames.alice);
-        assert.deepEqual(receipts[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
-        assert.equal(receipts.some((receipt) => receipt.phase === 'complete'), false);
-        assert.equal(receipts.some((receipt) => receipt.confirmedRecipientPeerIds.includes('carol')), false);
+        assertOutsideAudienceReceipt(readReceipts(frames.alice), { confirmed: ['bob'], outside: ['carol'] });
         assert.equal(readDelivered(frames.carol, message), 0);
     });
 });
@@ -534,11 +531,27 @@ Deno.test('a granted outbox row without captured generations sends nobody', asyn
     });
 });
 
-Deno.test('the receipt keeps the frozen expected set when the re-check drops a session', async () => {
+Deno.test('an unsubscribe the re-check finds records the dropped session outside the audience, expected set unchanged', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         harness.reads.push(...grantedReads(3), subscriptionReads(UNSUBSCRIBED_CAROL));
         const message = feedMessage({ senderId: 'alice', msgId: 'receipted-unsubscribe' });
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) > 0);
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await waitFor(() => readReceipts(frames.alice).some((receipt) => receipt.phase === 'complete'));
+
+        assertOutsideAudienceReceipt(readReceipts(frames.alice), { confirmed: ['bob'], outside: ['carol'] });
+        assert.equal(readDelivered(frames.carol, message), 0);
+    });
+});
+
+Deno.test('a subscribed session connected to another instance is never recorded outside by this instance', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        // Carol's live session is on another instance: this instance's re-check finds no socket of hers, which excludes nothing.
+        const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
+        const message = feedMessage({ senderId: 'alice', msgId: 'receipted-elsewhere' });
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => readDelivered(frames.bob, message) > 0);
@@ -548,8 +561,7 @@ Deno.test('the receipt keeps the frozen expected set when the re-check drops a s
         const receipts = readReceipts(frames.alice);
         assert.deepEqual(receipts[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
         assert.equal(receipts.some((receipt) => receipt.phase === 'complete'), false);
-        assert.equal(receipts.some((receipt) => receipt.confirmedRecipientPeerIds.includes('carol')), false);
-        assert.equal(readDelivered(frames.carol, message), 0);
+        assert.equal(receipts.some((receipt) => receipt.outsideAudienceRecipientPeerIds.includes('carol')), false);
     });
 });
 
@@ -701,8 +713,7 @@ function createAuthority(grants: Grants, options: CreateAuthorityOptions = {}): 
             principalId: sessionId,
             topicId: FEED,
             connectionGenerationId,
-            leaseExpiresAtEpochMs: Date.now() + 120_000,
-            admittedAtGroupRevision: snapshot.group.snapshotVersion
+            leaseExpiresAtEpochMs: Date.now() + 120_000
         })),
         liveSessionGenerations: Object.fromEntries(
             subscriptions.map(([sessionId, generation]) => [sessionId, [options.reopenedGenerations?.[sessionId] ?? generation]])
@@ -832,6 +843,18 @@ function readReceipts(frames: readonly string[]): readonly ALReceiptPayload[] {
         .map((frame) => decodePersistedALMessage(frame))
         .filter((frame) => frame.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
         .map((frame) => decodeALReceiptPayload(JSON.parse(frame.payload.resource)));
+}
+
+/** The receipt the origin reads: Bob and Carol expected from admission to completion, each confirmed or outside. */
+function assertOutsideAudienceReceipt(
+    receipts: readonly ALReceiptPayload[],
+    expected: Readonly<{ confirmed: readonly string[]; outside: readonly string[]; }>
+): void {
+    const complete = receipts.find((receipt) => receipt.phase === 'complete');
+    assert.deepEqual(receipts[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
+    assert.deepEqual(complete?.expectedRecipientPeerIds, ['bob', 'carol']);
+    assert.deepEqual(complete?.confirmedRecipientPeerIds, expected.confirmed);
+    assert.deepEqual(complete?.outsideAudienceRecipientPeerIds, expected.outside);
 }
 
 async function readRelayRows(harness: GrantedDeliveryHarness, message: ALMessage) {

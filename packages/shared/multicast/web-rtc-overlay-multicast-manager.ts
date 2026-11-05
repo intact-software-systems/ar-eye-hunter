@@ -23,9 +23,11 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
+import { isALDeliveryAdmissionFallbackVerdict } from '../alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
-import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
+import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/sequencing/compute-al-outbound-ordering-refusal.ts';
+import { toALOutboundMintingPlan } from '../alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundDispatchPlan,
@@ -94,6 +96,7 @@ import {
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
+import { RTC_GRANTED_PUBLICATION_REFUSALS } from './publication/compute-rtc-granted-publication-refusal.ts';
 import { RtcGrantedPublicationCarrier } from './publication/rtc-granted-publication-carrier.ts';
 import type { RtcGrantedTopicReader } from './publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './publication/rtc-publication-proof-verifier-port.ts';
@@ -113,6 +116,7 @@ import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-dro
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import { toRtcControlHandoffError } from './to-rtc-control-handoff-error.ts';
 import { toRtcOutboundMessage } from './to-rtc-outbound-message.ts';
+import { toRtcSentPositionRecordingPlan } from './to-rtc-sent-position-recording-plan.ts';
 import {
     computeRtcBroadcastScopeRefusal,
     computeRtcFrozenAudienceRefusal,
@@ -281,9 +285,11 @@ export class WebRtcOverlayMulticastManager {
                 planOutgoingMessage: (msg, authority) =>
                     this.planOutgoingMessage(msg, authority === undefined ? 'admission' : 'replan'),
                 planDequeuedMessage: (msg) => this.planOutgoingMessage(msg, 'dequeue'),
+                signAdmittedMessage: async (msg) => await this.#publications.signAdmitted(msg),
                 afterDequeueAdmission: undefined,
                 readPendingAdmissionAuthority: async (message, prepared) =>
                     this.readPendingAdmissionAuthority(message, prepared),
+                readDequeuedAdmissionAuthority: async (message) => this.readPendingAdmissionAuthority(message, []),
                 sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                     await this.sendPreparedMessage(
                         reconstructALOutboundTransportMessage(prepared, lifecycle.canonicalMessage),
@@ -334,6 +340,17 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /**
+     * A granted publication enters only as a leg (`enqueueLegIfAbsent`), frozen to its subscribers before its admission
+     * signs it: one carrying no proof is refused here as unsupported, before admission. Every other message is carried.
+     */
+    async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
+        const refusals = msgs.map((msg) => this.toUnsignedPublicationRefusal(msg));
+        const carried = (await this.enqueueCarriedIfAbsent(msgs.filter((_, index) => refusals[index] === undefined)))
+            .values();
+        return msgs.map((_, index) => refusals[index] ?? carried.next().value!);
+    }
+
+    /**
      * Translates control admission into the inbound worker's exception-based handoff protocol. A control answers
      * an inbound message its admission already bounded, so it passes the circuit breaker but spends no send quota.
      */
@@ -348,25 +365,30 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /**
-     * One sender carrier leg. A granted publication is signed once as its admission carries it, or refused as
-     * unsupported before admission, the refusal a fallback carrier takes over.
+     * One sender carrier leg. A granted publication is frozen to its subscribers and signed once, in its first
+     * admission, after that admission's read stamped it; or refused as unsupported before admission, the refusal a
+     * fallback carrier takes over. Every fallback verdict its carried leg reaches (a signer that cannot sign in the
+     * admission among them) names the leg its sender gave, as those refusals do.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
             return await this.enqueueCarriedLegIfAbsent(msg, carrierGap);
         }
-        const signed = await this.#publications.signLeg(
+        const admitted = this.#publications.admitLeg(
             msg,
             (leg, subscribeHolders) => this.toRtcOriginAdmittedMessage(leg, subscribeHolders).message
         );
-        return await signed.fold(
+        return await admitted.fold(
             async (detail) =>
                 WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
                     kind: 'refused',
                     reason: 'unsupported',
                     detail
                 }),
-            async (carried) => await this.enqueueCarriedLegIfAbsent(carried, carrierGap)
+            async (carried) => {
+                const result = await this.enqueueCarriedLegIfAbsent(carried, carrierGap);
+                return isALDeliveryAdmissionFallbackVerdict(result.verdict) ? { ...result, message: msg } : result;
+            }
         );
     }
 
@@ -392,7 +414,8 @@ export class WebRtcOverlayMulticastManager {
             }
         }
         if (availability?.kind !== 'unavailable') {
-            return await this.enqueueIfAbsent(msg);
+            const [result] = await this.enqueueCarriedIfAbsent([msg]);
+            return result!;
         }
         return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
             kind: 'unroutable',
@@ -402,7 +425,10 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /** An already-open circuit spends no quota token; local quota refusals never enter failure accounting. */
-    async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
+    private async enqueueCarriedIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
+        if (msgs.length === 0) {
+            return [];
+        }
         const closed = this.refuseIfCarrierClosed(msgs);
         if (closed !== undefined) {
             return closed;
@@ -412,6 +438,16 @@ export class WebRtcOverlayMulticastManager {
             return this.refuseHandoff(msgs, 'rate-limited');
         }
         return await this.enqueueThroughCircuitBreaker(msgs);
+    }
+
+    private toUnsignedPublicationRefusal(msg: ALMessage): ALOutboundEnqueueResult | undefined {
+        return this.#publications.isGrantedPublication(msg) && msg.proof === undefined
+            ? WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                kind: 'refused',
+                reason: 'unsupported',
+                detail: RTC_GRANTED_PUBLICATION_REFUSALS.unsigned
+            })
+            : undefined;
     }
 
     private refuseIfCarrierClosed(msgs: readonly ALMessage[]): readonly ALOutboundEnqueueResult[] | undefined {
@@ -726,10 +762,12 @@ export class WebRtcOverlayMulticastManager {
         const { availability, policy, message: msg } = this.toRtcOriginAdmittedMessage(original, null);
         const plan = this.computeOriginRefusal({ msg, original, policy, storedSend: RTC_STORED_SEND_STAGES.has(stage) })
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
-        const planned = toRtcFrozenAudienceDispatchPlan(
+        const selfPeerId = this.connectionService.input.sessionId;
+        const frozen = toRtcFrozenAudienceDispatchPlan(
             toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
-            this.connectionService.input.sessionId
+            selfPeerId
         );
+        const planned = toRtcSentPositionRecordingPlan(toALOutboundMintingPlan(frozen, stage, selfPeerId));
         this.#publications.assertSignedPlanKept(original, planned);
         return planned;
     }

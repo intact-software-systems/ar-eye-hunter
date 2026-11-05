@@ -190,6 +190,8 @@ describe('the volatile inbound pair\'s ordering track', () => {
         const first = createInboundTestMessage({ msgId: 'track-ttl-1', seq: 1 });
         expect((await fixture.runtime.admitIncomingMessage(first, INBOUND_TEST_SOURCE)).right)
             .toEqual({ kind: 'admitted' });
+        // The next copy is sent at the end of the pause, so its own deadline is not what the read judges.
+        vi.setSystemTime(SESSION_START_MS + DEFAULT_AL_REPOSITORY_TTL_MS - 1);
         const next = createInboundTestMessage({ msgId: 'track-ttl-2', seq: 2 });
 
         expect(await readOrderingStatus(volatileStores.admissionStore, next, SESSION_START_MS + DEFAULT_AL_REPOSITORY_TTL_MS - 1))

@@ -136,8 +136,7 @@ export function subscriptionRowFor(principalId: string, sessionId: string, topic
         principalId,
         topicId,
         connectionGenerationId: `${sessionId}-ws-generation-1`,
-        leaseExpiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS,
-        admittedAtGroupRevision: 1
+        leaseExpiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS
     };
 }
 

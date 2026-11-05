@@ -862,7 +862,67 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
     });
+
+    it('sends a room send that names its ordering key alone with the track\'s next sequence, from its durable lane', async () => {
+        const socket = createFakeWsSocket();
+        const volatileStores = createVolatileALOutboundRuntimeStores(
+            { decodePrepared: decodeALOutboundTransportMessage },
+            undefined
+        );
+        const service = createOutboundRuntimeWithWorkTask(() =>
+            shared.createDefaultWsQueueBoxClientService({
+                outbox: new shared.InMemoryQueueBox(new Map()),
+                socket: socket.client,
+                inboundDiagnostics: socket.inboundDiagnostics,
+                sessionId: 'self',
+                serverPeerId: 'server',
+                outboundVolatileStores: volatileStores
+            }).enableDefaultCallbacks()
+        );
+        onTestFinished(() => service.close());
+
+        const first = await enqueueOutboxAndDrain(service, createKeyedRoomSend('keyed-1', {}));
+        const second = await enqueueOutboxAndDrain(service, createKeyedRoomSend('keyed-2', {}));
+
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(second.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(socket.sentJsonStrings.map((sent) => decodePersistedALMessage(sent).ordering?.seq)).toEqual([1, 2]);
+    });
+
+    it('admits a handed-over copy below the head: the sequence another carrier\'s admission fixed is never guarded', async () => {
+        const socket = createFakeWsSocket();
+        const service = createOutboundRuntimeWithWorkTask(() =>
+            shared.createDefaultWsQueueBoxClientService({
+                outbox: new shared.InMemoryQueueBox(new Map()),
+                socket: socket.client,
+                inboundDiagnostics: socket.inboundDiagnostics,
+                sessionId: 'self',
+                serverPeerId: 'server'
+            }).enableDefaultCallbacks()
+        );
+        onTestFinished(() => service.close());
+
+        const later = await enqueueOutboxAndDrain(service, createKeyedRoomSend('keyed-2', { seq: 2 }));
+        const handedOver = await service.enqueueHandedOverIfAbsent(createKeyedRoomSend('keyed-1', { seq: 1 }));
+        await runOutboundWorkTask(service);
+
+        expect(later.verdict).toMatchObject({ kind: 'admitted' });
+        expect(handedOver.verdict).toMatchObject({ kind: 'admitted' });
+        expect(socket.sentJsonStrings.map((sent) => decodePersistedALMessage(sent).ordering?.seq)).toEqual([2, 1]);
+    });
 });
+
+/** A room broadcast of `self` on the ordering key `chat`, with the sequence it states, if any. */
+function createKeyedRoomSend(resourceId: string, ordering: Readonly<{ seq?: number; }>): shared.ALMessage {
+    return shared.newALBroadcastMessage(
+        'self',
+        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+        'room',
+        'chat.message.v1',
+        { resourceId },
+        { groupRef: groupRef('room-1'), ttlMs: 30_000, ordering: { orderingKey: 'chat', ...ordering } }
+    );
+}
 
 interface WsQosSocketFixture {
     readonly client: shared.JsonWebSocketClient;

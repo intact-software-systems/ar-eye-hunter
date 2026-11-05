@@ -94,6 +94,8 @@ export type AlmConformanceScenarioId =
     | 'server-originated'
     | 'storage-unavailable'
     | 'subscription-delivery'
+    | 'subscription-ordered-entry'
+    | 'subscription-ordered-omission'
     | 'subscription-reconnect'
     | 'subscription-revoke-disconnected'
     | 'subscription-successor'

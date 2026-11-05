@@ -11,6 +11,7 @@ import {
     newALUntargetedMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import {
     normalizeALQosPolicy,
     planALMessageHandling,
@@ -22,6 +23,7 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationInput
 } from '@shared/al-contracts/al-policy.ts';
+import type { ALOrderingObservation } from '@shared/al-contracts/al-runtime.ts';
 
 describe('AL QoS policy', () => {
     it('requires resynchronization without delivery, forwarding, ACKs or sequence repair', () => {
@@ -759,6 +761,45 @@ function groupRef(groupId: string) {
         groupId
     };
 }
+
+describe('a frozen copy below the recipient\'s position', () => {
+    const below = toALFrozenMulticastMessage(
+        newALMulticastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'below' }, groupRef('room'), 'chat.v1', {}, {
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            orderingKey: 'chat',
+            seq: 3
+        }),
+        { recipientPeerIds: ['self'], snapshotVersion: 1 }
+    );
+    const stale = { status: 'stale', seq: 3, expectedSeq: 6, lastContiguousSeq: 5, missingRanges: [], releasableSeqs: [] } as const;
+
+    function planBelow(orderingObservation: ALOrderingObservation) {
+        return planALMessageHandling(below, {
+            nowMs: below.id.ts,
+            selfPeerId: 'self',
+            fromPeerId: 'sender',
+            groupMemberPeerIds: ['sender', 'self'],
+            connectedPeerIds: ['sender'],
+            overlayNeighborPeerIds: [],
+            orderingObservation
+        });
+    }
+
+    it('is answered before-entry when the copy is recorded: its track is one the recipient entered', () => {
+        const plan = planBelow({ ...stale, priorSeq: 0 });
+
+        expect(plan.dropReasonCode).toBe('ordering-rejected');
+        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'sender', reason: 'before-entry', missingRanges: [] });
+    });
+
+    it('is dropped with no NACK when no authority recorded the copy, as before recorded tracks', () => {
+        const plan = planBelow(stale);
+
+        expect(plan.dropReasonCode).toBe('ordering-rejected');
+        expect(plan.nack).toEqual({ enabled: false, missingRanges: [] });
+    });
+});
 
 describe('durability decoupled from retry (S3a)', () => {
     const route = { topicId: 'chat', resourceId: 'decoupled', contextId: 'room' };

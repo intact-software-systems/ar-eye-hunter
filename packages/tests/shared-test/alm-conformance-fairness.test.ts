@@ -29,7 +29,7 @@ type FairnessScenarioId = (typeof FAIRNESS_SCENARIO_IDS)[number];
 
 const FAIRNESS_CARRIERS: Readonly<Record<FairnessScenarioId, readonly AlmConformanceCarrier[]>> = {
     'own-share-under-inbound': ['ws', 'rtc'],
-    'buffered-track-drains': ['ws', 'rtc'],
+    'buffered-track-drains': ['rtc'],
     'churn-bounded-tracks': ['rtc']
 };
 
@@ -243,23 +243,37 @@ describe('own-share-under-inbound', () => {
 
 describe('buffered-track-drains', () => {
     it.each(FAIRNESS_CARRIERS['buffered-track-drains'])(
-        'sends seq 2 to 65 bare and paced on one %s track before seq 1, and the receiver delivers all 65',
+        'holds seq 2 at the %s transport while seq 3 to 66 leave bare and paced behind it, and the receiver delivers all 66',
         (carrier) => {
             const scenario = findScenario(carrier, 'buffered-track-drains');
-            const bufferedSeqs = Array.from({ length: 64 }, (_, offset) => offset + 2);
+            const bufferedSeqs = Array.from({ length: 64 }, (_, offset) => offset + 3);
 
-            // Seq 2 to 65 are bare sends with a 75 ms quiet wait after each; only seq 1 is observed admitted.
+            // Seq 1 opens the receiver's track; seq 2 is held by its message id once its send returned it, so the
+            // track's head stays monotonic while its arrival comes after seq 3 to 66.
             expect(toCommandNames(scenario.sender)).toEqual([
                 ...SENDER_PROLOGUE,
-                ...bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]),
                 'send-1',
-                'observe-admitted-1',
-                'assert-admitted-1',
+                'observe-transport-accepted-1',
+                'assert-sent-1',
+                `hold-${carrier}`,
+                'send-2',
+                `hold-message-2-${carrier}`,
+                `release-${carrier}`,
+                ...bufferedSeqs.flatMap((seq) => [`send-${seq}`, `pause-${seq}`]),
+                `release-message-2-${carrier}`,
+                'observe-admitted-2',
+                'assert-admitted-2',
                 'stats'
             ]);
-            // No receipt is asked for (the receiver cannot acknowledge seq 2 to 65 before seq 1 arrives), and the
+            expect(findCommand(scenario.sender, `hold-message-2-${carrier}`)).toMatchObject({
+                kind: 'fault.inject',
+                match: { msgId: `{resultCache.alm-${carrier}-buffered-track-drains-sender-send-2.value.msgId}` },
+                remaining: 'until-cleared'
+            });
+            expect(findCommand(scenario.sender, `release-message-2-${carrier}`)).toMatchObject({ kind: 'fault.inject', remaining: 0 });
+            // No receipt is asked for (the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives), and the
             // sends outlive the cell's own 90 s window; the 30 s lifetime is proven on the real runtime.
-            for (const seq of [...bufferedSeqs, 1]) {
+            for (const seq of [1, 2, ...bufferedSeqs]) {
                 expect(findCommand(scenario.sender, `send-${seq}`)).toMatchObject({
                     reliability: 'at-least-once',
                     ack: 'none',
@@ -271,7 +285,7 @@ describe('buffered-track-drains', () => {
             for (const seq of bufferedSeqs) {
                 expect(findCommand(scenario.sender, `pause-${seq}`)).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 75 });
             }
-            expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 65, absent: false, windowMs: 89_000, timeoutMs: 90_000 });
+            expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 66, absent: false, windowMs: 89_000, timeoutMs: 90_000 });
         }
     );
 
@@ -284,7 +298,6 @@ describe('buffered-track-drains', () => {
         expect(await runAfterDrains(promotion, [0, 0, 12, 0])).toBe(true);
         expect(await runAfterDrains(promotion, [0, 9])).toBe(true);
         expect(await runAfterDrains(promotion, [0, 0])).toBe(false);
-        expect(toCommandNames(findScenario('ws', 'buffered-track-drains').receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
     });
 });
 

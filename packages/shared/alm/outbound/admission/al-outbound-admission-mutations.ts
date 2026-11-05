@@ -20,27 +20,53 @@ import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-rec
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import {
     toALOutboundMessageOwnerKey,
-    toALOutboundOrderingHeadKey,
-    toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
-import type { ALOutboundOrderingHead } from './al-outbound-admission-store.ts';
+import type {
+    ALOutboundMessageReadDto,
+    ALOutboundOrderingHead,
+    ALOutboundSentPositions
+} from './al-outbound-admission-store.ts';
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
-    type ALStoredOutboundMessage
+    type ALStoredOutboundMessageRow
 } from './al-outbound-admission-validation.ts';
-import type { ALOutboundOrderingHeadRow } from './decode-al-outbound-ordering-head.ts';
+import {
+    toALOutboundOrderingHeadKey,
+    toALOutboundOrderingMessageKey,
+    toALOutboundRoomSentPositionKey,
+    toALOutboundSentPositionKey
+} from './al-outbound-ordering-track-keys.ts';
+import {
+    decodeALOutboundTrackPositionRow,
+    type ALOutboundTrackPositionRow
+} from './decode-al-outbound-track-position-row.ts';
 
 export type ALOutboundAdmissionMutation =
     | Readonly<
         { kind: 'set-ordering-message'; trackKey: string; seq: number; msgId: string; expireAtTimestamp: number; }
     >
-    | Readonly<{ kind: 'set-ordering-head'; trackKey: string; seq: number; expireAtTimestamp: number; }>
+    | Readonly<{
+        kind: 'set-ordering-head';
+        trackKey: string;
+        seq: number;
+        /** The head the admission read; the commit writes only while the row still holds it. */
+        observedSeq: number | undefined;
+        expireAtTimestamp: number;
+    }>
+    | Readonly<{
+        kind: 'set-sent-position';
+        trackKey: string;
+        recipientPeerId: string;
+        seq: number;
+        expireAtTimestamp: number;
+    }>
+    | Readonly<{ kind: 'set-room-sent-position'; trackKey: string; seq: number; expireAtTimestamp: number; }>
     | Readonly<{
         kind: 'set-msg-owner';
         msgId: string;
@@ -51,6 +77,7 @@ export type ALOutboundAdmissionMutation =
         kind: 'set-sent-message';
         reference: ALOutboundMessageReference;
         policy: ALOutboundCapturedPolicy;
+        sentPositions: Readonly<Record<string, number>> | null;
         creationExpiry: string;
         snapshot: ALOutboundSentMessageSnapshot;
         expireAtTimestamp?: number;
@@ -98,19 +125,27 @@ export interface ALOutboundStateWrite {
     readonly key: string;
     readonly value:
         | string
-        | ALStoredOutboundMessage
+        | ALStoredOutboundMessageRow
         | ALOutboundPendingAckSnapshot
         | ALOutboundRepairAttemptSnapshot
-        | ALOutboundOrderingHeadRow
+        | ALOutboundTrackPositionRow
         | ALLatestSupersedenceValue
         | ALReplacementSupersedenceValue
         | undefined;
     readonly expireAtTimestamp: number | undefined;
-    readonly supersedenceGuard: { readonly expected: ALLatestSupersedenceValue | undefined; } | undefined;
+    /** Present for a row other writers share: the commit writes it only while it still holds `expected`. */
+    readonly guard: ALOutboundStateWriteGuard | undefined;
 }
+
+/** What a shared row must still hold for a commit to write it: compare-and-set inside the fenced commit. */
+export type ALOutboundStateWriteGuard =
+    | Readonly<{ kind: 'supersedence-latest'; expected: ALLatestSupersedenceValue | undefined; }>
+    | Readonly<{ kind: 'ordering-head'; expected: ALOutboundTrackPositionRow | undefined; }>;
 
 export interface CreateALOutboundAdmissionMutationsInput {
     readonly namespace: string;
+    /** Where the sender's ordering-track heads live: this pair's namespace, or the one its session's pairs share. */
+    readonly orderingHeadNamespace: string;
     readonly canonicalScope: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly supersedenceTrackTtlMs: number;
@@ -122,18 +157,65 @@ export type ALOutboundCommitFenceIssue =
     | Readonly<{ kind: 'conflict'; message: string; }>
     | Readonly<{ kind: 'corruption'; key: string; message: string; }>;
 
-export function toALOutboundOrderingHeadMutations(
+/**
+ * The track rows a sequenced message's admission writes: the row naming its sequence's message, and the head and the
+ * sent positions this read minted or recorded. A message with no track or no deadline writes none.
+ */
+export function toALOutboundOrderingTrackMutations<TPrepared>(
+    read: Pick<ALOutboundMessageReadDto<TPrepared>, 'msg' | 'orderingHead' | 'sentPositions'>,
+    expiresAtMs: number | undefined
+): readonly ALOutboundAdmissionMutation[] {
+    const trackKey = toALOrderingTrackKey(read.msg);
+    const seq = read.msg.ordering?.seq;
+    if (!trackKey || seq === undefined || expiresAtMs === undefined) {
+        return [];
+    }
+    return [
+        { kind: 'set-ordering-message', trackKey, seq, msgId: read.msg.id.msgId, expireAtTimestamp: expiresAtMs },
+        ...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs),
+        ...toALOutboundSentPositionMutations(read.sentPositions, expiresAtMs)
+    ];
+}
+
+function toALOutboundOrderingHeadMutations(
     head: ALOutboundOrderingHead | undefined,
     expireAtTimestamp: number
 ): readonly ALOutboundAdmissionMutation[] {
-    return head === undefined
-        ? []
-        : [{ kind: 'set-ordering-head', trackKey: head.trackKey, seq: head.seq, expireAtTimestamp }];
+    if (head === undefined) {
+        return [];
+    }
+    const { trackKey, seq } = head;
+    return [
+        { kind: 'set-ordering-head', trackKey, seq, observedSeq: head.observedSeq, expireAtTimestamp },
+        ...(head.movesRoomSentPosition
+            ? [{ kind: 'set-room-sent-position', trackKey, seq, expireAtTimestamp } as const]
+            : [])
+    ];
+}
+
+/** Moves each recorded recipient to the sequence it was sent; one already at or past it keeps its position. */
+export function toALOutboundSentPositionMutations(
+    positions: ALOutboundSentPositions | undefined,
+    expireAtTimestamp: number
+): readonly ALOutboundAdmissionMutation[] {
+    if (positions === undefined) {
+        return [];
+    }
+    return Object.entries(positions.priorSeqByRecipient)
+        .filter(([, priorSeq]) => priorSeq < positions.seq)
+        .map(([recipientPeerId]) => ({
+            kind: 'set-sent-position',
+            trackKey: positions.trackKey,
+            recipientPeerId,
+            seq: positions.seq,
+            expireAtTimestamp
+        }));
 }
 
 /** Owns the outbound mutation vocabulary: the state write each mutation names, its guards, and its apply. */
 export class ALOutboundAdmissionMutations {
     private readonly namespace: string;
+    private readonly orderingHeadNamespace: string;
     private readonly canonicalScope: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly supersedenceTrackTtlMs: number;
@@ -141,6 +223,7 @@ export class ALOutboundAdmissionMutations {
 
     constructor(input: CreateALOutboundAdmissionMutationsInput) {
         this.namespace = input.namespace;
+        this.orderingHeadNamespace = input.orderingHeadNamespace;
         this.canonicalScope = input.canonicalScope;
         this.retention = input.retention;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
@@ -155,23 +238,30 @@ export class ALOutboundAdmissionMutations {
     }
 
     /**
-     * The first moved supersedence observation, or undefined: the commit fence owns the throw. Every
-     * guard is read at once, so the fence costs one round trip; the first in order still decides.
+     * The first guarded row another commit moved since the admission read it, or undefined: the commit fence owns the
+     * throw, and the conflict retries the admission from a fresh read. Every guard is read at once, so the fence costs
+     * one round trip; the first in order still decides.
      */
-    async readCurrentObservationConflict(
+    async readGuardConflict(
         transaction: ALAdmissionWorkWriteContext,
         writes: readonly ALOutboundStateWrite[]
     ): Promise<ALOutboundCommitFenceIssue | undefined> {
-        const moved = await Promise.all(writes.map(async (write) =>
-            write.supersedenceGuard !== undefined &&
-            !jsonEquals(
-                await transaction.read(write.key, (value) => decodeALAdmissionSupersedenceValue(value, 'latest')),
-                write.supersedenceGuard.expected
+        const moved = await Promise.all(
+            writes.map(async ({ key, guard }) =>
+                guard !== undefined &&
+                !jsonEquals(await readALOutboundGuardedValue(transaction, key, guard), guard.expected)
             )
-        ));
-        return moved.includes(true)
-            ? { kind: 'conflict', message: 'Outbound shared supersedence observation changed' }
-            : undefined;
+        );
+        const guard = writes[moved.indexOf(true)]?.guard;
+        if (guard === undefined) {
+            return undefined;
+        }
+        return {
+            kind: 'conflict',
+            message: guard.kind === 'ordering-head'
+                ? 'Outbound ordering head moved'
+                : 'Outbound shared supersedence observation changed'
+        };
     }
 
     /** The first message id another sender or scope already owns, or undefined; every owner row is read at once. */
@@ -231,19 +321,12 @@ export class ALOutboundAdmissionMutations {
                     key: toALOutboundOrderingMessageKey(this.namespace, mutation.trackKey, mutation.seq),
                     value: mutation.msgId,
                     expireAtTimestamp: mutation.expireAtTimestamp,
-                    supersedenceGuard: undefined
+                    guard: undefined
                 };
             case 'set-ordering-head':
-                return {
-                    key: toALOutboundOrderingHeadKey(this.namespace, mutation.trackKey),
-                    value: { seq: mutation.seq },
-                    expireAtTimestamp: this.computeMessageRowExpiryMs(
-                        mutation.expireAtTimestamp,
-                        nowMs,
-                        this.retention.sentMessageTtlMs
-                    ),
-                    supersedenceGuard: undefined
-                };
+            case 'set-sent-position':
+            case 'set-room-sent-position':
+                return this.computeTrackPositionWrite(mutation, nowMs);
             case 'set-msg-owner':
                 return this.computeMessageOwnerWrite(mutation, nowMs);
             case 'set-sent-message':
@@ -258,12 +341,58 @@ export class ALOutboundAdmissionMutations {
                     key: this.toDeletedMutationKey(mutation),
                     value: undefined,
                     expireAtTimestamp: undefined,
-                    supersedenceGuard: undefined
+                    guard: undefined
                 };
             case 'set-supersedence-latest':
             case 'set-supersedence-replacement':
                 return this.computeSupersedenceWrite(mutation);
         }
+    }
+
+    /**
+     * The track's head and each recipient's sent position share the receivers' track retention, the repository TTL,
+     * so a durable pair continues a track across a reload or a quiet hour for as long as a receiver keeps its position.
+     * The sender-version fence serializes this pair's writers, so a position is a plain set; the head may be shared
+     * with another carrier pair of the session, so it is written only over the head the admission read. The room-wide
+     * sent position moves only with that guarded head, in the same commit, so it needs no guard of its own.
+     */
+    private computeTrackPositionWrite(
+        mutation: Extract<
+            ALOutboundAdmissionMutation,
+            { kind: 'set-ordering-head' | 'set-sent-position' | 'set-room-sent-position'; }
+        >,
+        nowMs: number
+    ): ALOutboundStateWrite {
+        const expireAtTimestamp = this.computeMessageRowExpiryMs(
+            mutation.expireAtTimestamp,
+            nowMs,
+            this.retention.repositoryTtlMs
+        );
+        if (mutation.kind === 'set-sent-position') {
+            return {
+                key: toALOutboundSentPositionKey(this.namespace, mutation.trackKey, mutation.recipientPeerId),
+                value: { seq: mutation.seq },
+                expireAtTimestamp,
+                guard: undefined
+            };
+        }
+        if (mutation.kind === 'set-room-sent-position') {
+            return {
+                key: toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, mutation.trackKey),
+                value: { seq: mutation.seq },
+                expireAtTimestamp,
+                guard: undefined
+            };
+        }
+        return {
+            key: toALOutboundOrderingHeadKey(this.orderingHeadNamespace, mutation.trackKey),
+            value: { seq: mutation.seq },
+            expireAtTimestamp,
+            guard: {
+                kind: 'ordering-head',
+                expected: mutation.observedSeq === undefined ? undefined : { seq: mutation.observedSeq }
+            }
+        };
     }
 
     /** The owner row answers control that arrives after the message itself is gone, so it outlives both. */
@@ -279,7 +408,7 @@ export class ALOutboundAdmissionMutations {
                 nowMs,
                 this.retention.msgOwnerTtlMs
             ),
-            supersedenceGuard: undefined
+            guard: undefined
         };
     }
 
@@ -292,7 +421,7 @@ export class ALOutboundAdmissionMutations {
                 key: toALOutboundRepairAttemptKey(this.namespace, mutation.snapshot.msgId),
                 value: mutation.snapshot,
                 expireAtTimestamp: mutation.expireAtTimestamp ?? nowMs + this.retention.repairAttemptTtlMs,
-                supersedenceGuard: undefined
+                guard: undefined
             }
             : {
                 key: toALOutboundPendingAckKey({
@@ -302,7 +431,7 @@ export class ALOutboundAdmissionMutations {
                 }),
                 value: mutation.snapshot,
                 expireAtTimestamp: mutation.expireAtTimestamp,
-                supersedenceGuard: undefined
+                guard: undefined
             };
     }
 
@@ -341,6 +470,7 @@ export class ALOutboundAdmissionMutations {
                     : null,
                 orderingTrackKey: toALOrderingTrackKey(mutation.snapshot.msg) ?? null,
                 orderingSeq: mutation.snapshot.msg.ordering?.seq ?? null,
+                ...(mutation.sentPositions === null ? {} : { sentPositions: mutation.sentPositions }),
                 policy: mutation.policy,
                 creationExpiry: mutation.creationExpiry
             },
@@ -349,7 +479,7 @@ export class ALOutboundAdmissionMutations {
                 nowMs,
                 this.retention.sentMessageTtlMs
             ),
-            supersedenceGuard: undefined
+            guard: undefined
         };
     }
 
@@ -382,15 +512,26 @@ export class ALOutboundAdmissionMutations {
                     key: toALOutboundSupersedenceLatestKey(this.namespace, mutation.supersedenceKey),
                     value: mutation.value,
                     expireAtTimestamp: mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
-                    supersedenceGuard: { expected: mutation.expected }
+                    guard: { kind: 'supersedence-latest', expected: mutation.expected }
                 };
             case 'set-supersedence-replacement':
                 return {
                     key: toALOutboundSupersedenceReplacementKey(this.namespace, mutation.msgId),
                     value: mutation.value,
                     expireAtTimestamp: mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
-                    supersedenceGuard: undefined
+                    guard: undefined
                 };
         }
     }
+}
+
+/** The guarded row as the commit's transaction holds it now, read as the admission read it. */
+async function readALOutboundGuardedValue(
+    transaction: ALAdmissionWorkWriteContext,
+    key: string,
+    guard: ALOutboundStateWriteGuard
+): Promise<ALOutboundTrackPositionRow | ALLatestSupersedenceValue | undefined> {
+    return guard.kind === 'ordering-head'
+        ? await transaction.read(key, decodeALOutboundTrackPositionRow)
+        : await transaction.read(key, (value) => decodeALAdmissionSupersedenceValue(value, 'latest'));
 }

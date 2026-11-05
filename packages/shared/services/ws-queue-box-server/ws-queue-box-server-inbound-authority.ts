@@ -12,7 +12,8 @@ import type { ALMessageRejection } from '../../al-contracts/al-message-persisten
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import {
     readALInboundMessageAuthorization,
-    toALInboundReceiver
+    toALInboundReceiver,
+    type ALInboundReceiver
 } from '../../alm/inbound/read-al-inbound-message-authorization.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -54,6 +55,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly controlDelivery: WsQueueBoxServerControlDelivery;
         readonly ackRelay: WsQueueBoxServerAckRelay;
+        readonly readRelayedRepairRequestRejection: ALInboundReceiver['readRelayedRepairRequestRejection'];
         readonly authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
@@ -122,6 +124,7 @@ export class WsQueueBoxServerInboundAuthority {
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #controlDelivery: WsQueueBoxServerControlDelivery;
     readonly #ackRelay: WsQueueBoxServerAckRelay;
+    readonly #readRelayedRepairRequestRejection: ALInboundReceiver['readRelayedRepairRequestRejection'];
     readonly #authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
     readonly #readAuthenticatedConnectionScope:
         WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
@@ -138,6 +141,7 @@ export class WsQueueBoxServerInboundAuthority {
         this.#targetResolution = dependencies.targetResolution;
         this.#controlDelivery = dependencies.controlDelivery;
         this.#ackRelay = dependencies.ackRelay;
+        this.#readRelayedRepairRequestRejection = dependencies.readRelayedRepairRequestRejection;
         this.#authorizeInboundMessage = dependencies.authorizeInboundMessage;
         this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
     }
@@ -287,12 +291,13 @@ export class WsQueueBoxServerInboundAuthority {
                 socketFacts
             };
         }
-        const protocolAuthorization = readALInboundMessageAuthorization(
+        const protocolAuthorization = await readALInboundMessageAuthorization(
             message,
             { kind: 'ws-client', peerId: fromPeerId, authenticatedScope: scope.authorization.proof.scope },
             toALInboundReceiver(
                 this.#serverPeerId,
-                (ack, controlIdentity) => this.readIngressProtocolAckRejection(ack, controlIdentity)
+                (ack, controlIdentity) => this.readIngressProtocolAckRejection(ack, controlIdentity),
+                this.#readRelayedRepairRequestRejection
             )
         );
         if (protocolAuthorization.left) {

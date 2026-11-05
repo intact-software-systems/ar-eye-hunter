@@ -277,6 +277,7 @@ it.each(['page-read', 'reservation'] as const)(
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
         });
         const runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             ...resources,
             carrier: 'ws',
             planIncomingMessage: planInboundTestMessage,

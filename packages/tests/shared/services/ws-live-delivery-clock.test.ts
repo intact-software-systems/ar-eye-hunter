@@ -46,7 +46,7 @@ it('uses the service clock for live admission and rechecks message expiry before
         vi.restoreAllMocks();
     });
 
-    const result = service.sendToTargetsWithResult({ message: createMessage(2000), inboundScope: SCOPE });
+    const result = service.sendToTargetsWithResult({ message: createMessage(2000), sentPositions: null, inboundScope: SCOPE });
 
     expect(result).toMatchObject({ status: 'expired', sentCount: 1, failedCount: 0 });
     expect(fixture.first.sent).toHaveLength(1);
@@ -66,7 +66,7 @@ it('uses a fresh service-clock observation for authenticated lease expiry after 
         vi.restoreAllMocks();
     });
 
-    const result = service.sendToTargetsWithResult({ message: createMessage(3000), inboundScope: SCOPE });
+    const result = service.sendToTargetsWithResult({ message: createMessage(3000), sentPositions: null, inboundScope: SCOPE });
 
     expect(result).toMatchObject({ status: 'no-recipients', sentCount: 0, failedCount: 0 });
     expect(fixture.first.sent).toEqual([]);

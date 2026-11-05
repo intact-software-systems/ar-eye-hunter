@@ -116,12 +116,7 @@ function readOwner(
 function readIncoming(store: ALInboundAdmissionStore, candidate: ALMessage) {
     const source = { kind: 'ws-client' as const, peerId: candidate.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
     const nowMs = Date.now();
-    return store.readIncomingMessage({
-        msg: candidate,
-        source,
-        nowMs,
-        prePlan: planMessage(candidate)
-    });
+    return store.readIncomingMessage({ selfPeerId: 'receiver', orderingObserver: 'addressed', msg: candidate, source, nowMs, prePlan: planMessage(candidate) });
 }
 
 function createBufferedSnapshot(): ALStoredInboundBufferedSnapshot {

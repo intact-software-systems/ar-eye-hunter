@@ -67,7 +67,11 @@ interface ResolvedRtcMessageTarget {
 
 /** A send's first leg before its channel decides its access, what storage may refuse and, on a live channel, its publication. */
 interface BrowserDeliveryStart
-    extends Omit<BrowserRallarMessageDispatch.Delivery, 'access' | 'onStorageUnavailable' | 'publication'> {
+    extends
+        Omit<
+            BrowserRallarMessageDispatch.Delivery,
+            'access' | 'onStorageUnavailable' | 'publication' | 'admittedCopy'
+        > {
     readonly channel: BrowserTypedChannelPolicy | undefined;
 }
 
@@ -204,7 +208,7 @@ export class BrowserRallarMessageSender {
 
         throwIfMessageIssues([
             ...this.input.inputValidator.validateWs(resolved),
-            ...this.input.inputValidator.validateWsOrdering(send),
+            ...this.input.inputValidator.validateWsOrdering(resolved),
             ...validateBrowserPeerInput({ send, roomRef })
         ]);
 
@@ -387,7 +391,8 @@ export class BrowserRallarMessageSender {
             ...leg,
             ...toBrowserPublicationDelivery(leg.message, channel),
             access: resolveBrowserChannelAccess(channel),
-            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
+            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel),
+            admittedCopy: false
         };
         const handle = this.input.deliveries.open(delivery.message, delivery.carrier, delivery.rtcCapture);
         this.input.dispatch.send(delivery);
@@ -493,9 +498,7 @@ export class BrowserRallarMessageSender {
             ack: defaults.ack,
             ownership: input.ownership ?? 'shared',
             qos: defaults.qos,
-            ordering: input.orderingKey !== undefined && input.seq !== undefined
-                ? { orderingKey: input.orderingKey, seq: input.seq }
-                : undefined,
+            ordering: input.orderingKey === undefined ? undefined : { orderingKey: input.orderingKey, seq: input.seq },
             traceId: input.traceId
         };
     }
@@ -524,7 +527,8 @@ export class BrowserRallarMessageSender {
                 ttlHops: input.ttlHops,
                 ttlMs: defaults.ttlMs,
                 seq: input.seq,
-                orderingKey: input.orderingKey ?? toALGroupTargetKey(target.roomRef),
+                orderingKey: input.orderingKey ??
+                    (input.seq === undefined ? undefined : toALGroupTargetKey(target.roomRef)),
                 reliability: defaults.reliability,
                 ack: defaults.ack,
                 ownership: input.ownership ?? 'shared',

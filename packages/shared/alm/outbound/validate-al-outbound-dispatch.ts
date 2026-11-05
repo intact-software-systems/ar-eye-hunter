@@ -10,7 +10,10 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundCommitBundle, ALOutboundMessageReadDto } from './admission/al-outbound-admission-store.ts';
-import { toALSequenceMintComparableMessage } from './al-outbound-canonical-message.ts';
+import {
+    toALOutboundRequestComparableMessage,
+    toALOutboundUnmintedMessage
+} from './admission/to-al-outbound-request-comparable-message.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 
 /** Checks the candidate against its captured read; never repairs or rewrites it. */
@@ -18,7 +21,7 @@ export function validateALOutboundDispatch<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
     computed: ALOutboundComputedDto<TPrepared>
 ): Either<readonly ALMessageRejection[], ALOutboundComputedDto<TPrepared>> {
-    const issues = [...validateALOutboundPlannedMessage(read.originalMsg, read.msg)];
+    const issues = [...validateALOutboundAdmittedMessage(read.originalMsg, read.msg)];
     const bundle = computed.bundle;
     if (!bundle) {
         return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(computed);
@@ -48,9 +51,26 @@ export function validateALOutboundDispatch<TPrepared>(
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(computed);
 }
 
+/** A planner's message against its source: it may freeze a held audience, never add what only an admission adds. */
 export function validateALOutboundPlannedMessage(
     original: ALMessage,
     planned: ALMessage
+): readonly ALMessageRejection[] {
+    return validateALOutboundMessageAuthority(original, planned, toALOutboundUnmintedMessage);
+}
+
+/** An admitted copy against its request: it may also carry the sequence, record and proof its admission added. */
+export function validateALOutboundAdmittedMessage(
+    request: ALMessage,
+    admitted: ALMessage
+): readonly ALMessageRejection[] {
+    return validateALOutboundMessageAuthority(request, admitted, toALOutboundRequestComparableMessage);
+}
+
+function validateALOutboundMessageAuthority(
+    original: ALMessage,
+    planned: ALMessage,
+    toComparable: (original: ALMessage, candidate: ALMessage) => ALMessage
 ): readonly ALMessageRejection[] {
     const decoded = decodeALMessageValue(planned);
     if (decoded.left) {
@@ -63,7 +83,9 @@ export function validateALOutboundPlannedMessage(
         (original.constraints?.expiresAtMs !== undefined && deadline! > original.constraints.expiresAtMs) ||
         !jsonEquals(
             toMessageAuthority(original),
-            toMessageAuthority(toALFreezeComparableMessage(original, toALSequenceMintComparableMessage(original, msg)))
+            toMessageAuthority(
+                toALFreezeComparableMessage(original, toComparable(original, msg))
+            )
         ) ||
         !(original.diagnostics?.visitedPeerIds ?? []).every((peerId, index) =>
             msg.diagnostics?.visitedPeerIds?.[index] === peerId

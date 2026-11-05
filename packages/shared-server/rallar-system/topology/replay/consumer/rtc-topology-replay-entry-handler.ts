@@ -123,7 +123,7 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
         let delivered = false;
         for (const message of messages) {
             throwIfAborted(signal);
-            const result = this.#sender.sendToTargetsWithResult({ message });
+            const result = this.#sender.sendToTargetsWithResult({ message, sentPositions: null });
             if (result.status === 'no-recipients') {
                 continue;
             }

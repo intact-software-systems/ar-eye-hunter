@@ -435,6 +435,7 @@ function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatch
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,
+        signAdmittedMessage: undefined,
         diagnostics: undefined,
         settlements: () => {}
     });
@@ -445,6 +446,7 @@ function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatch
 function toFenceSendDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
     return {
         msg,
+        followsBatchPredecessor: false,
         planner: (planned) => ({
             msg: planned,
             dropReasonCode: undefined,

@@ -52,7 +52,8 @@ export type ALNackReason =
     | 'held-by-other'
     | 'unsupported'
     | 'no-publish-grant'
-    | 'not-subscribed';
+    | 'not-subscribed'
+    | 'before-entry';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
 
 export interface ALAckPayload {

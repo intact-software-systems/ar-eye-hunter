@@ -80,6 +80,21 @@ function toRelayedNack(msg: ALMessage, logicalRecipientPeerId: string, fromPeerI
     );
 }
 
+/** A recipient's own `before-entry` NACK: the frozen copy reached it below the position it entered the track at. */
+function toBeforeEntryNack(msg: ALMessage, logicalRecipientPeerId: string): ALMessage {
+    return newALNackControlMessage(
+        { v: 4, msgId: `before-entry-${logicalRecipientPeerId}`, ts: Date.now(), senderId: logicalRecipientPeerId, traceId: 'trace-outside' },
+        {
+            msgId: msg.id.msgId,
+            fromPeerId: logicalRecipientPeerId,
+            toPeerId: 'self',
+            logicalRecipientPeerId,
+            reason: 'before-entry',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
+
 interface OwnAck {
     readonly fromPeerId: string;
     readonly status: ALAckStatus;
@@ -249,5 +264,93 @@ describe('a not-subscribed NACK at the origin (PL10, PL16)', () => {
                 complete: true
             });
         });
+    });
+});
+
+describe('a before-entry NACK at the origin', () => {
+    it('records the recipient outside the audience as a not-subscribed NACK does, without ending the receipt', async () => {
+        const origin = await createOriginFixture('before-entry-recorded');
+
+        expect(await origin.accept(toBeforeEntryNack(origin.msg, 'r2'))).toBe('committed');
+
+        expect(toAcknowledgements(origin.facts)).toEqual([{ confirmed: [], unconfirmed: ['r1'], outside: ['r2'], confirmedHops: [], complete: false }]);
+        expect(origin.facts.map((fact) => fact.kind)).toEqual(['acknowledgement']);
+    });
+
+    it('ignores a repeated before-entry NACK, and one for a recipient already recorded outside by a not-subscribed NACK', async () => {
+        const origin = await createOriginFixture('before-entry-repeated');
+        await origin.accept(toBeforeEntryNack(origin.msg, 'r2'));
+        await origin.accept(toRelayedNack(origin.msg, 'r1'));
+
+        expect([
+            await origin.accept(toBeforeEntryNack(origin.msg, 'r2')),
+            await origin.accept(toBeforeEntryNack(origin.msg, 'r1'))
+        ]).toEqual([
+            'AL control was already admitted; AL before-entry NACK names no recipient the receipt still owes',
+            'AL before-entry NACK names no recipient the receipt still owes'
+        ]);
+        expect(toAcknowledgements(origin.facts).at(-1)?.outside).toEqual(['r1', 'r2']);
+    });
+
+    it('refuses a before-entry NACK naming a recipient the receipt never expected', async () => {
+        const origin = await createOriginFixture('before-entry-unknown');
+
+        expect(await origin.accept(toBeforeEntryNack(origin.msg, 'stranger')))
+            .toContain('AL before-entry NACK names no recipient the receipt still owes');
+        expect(origin.facts).toEqual([]);
+    });
+});
+
+describe('a gap NACK on a track the server relays to the audience it admitted (P2)', () => {
+    /** Sequence 3 of the owner's track, relayed with no receipt to the audience a server admitted: `b` alone. */
+    async function createRelayedTrack(): Promise<{ readonly msg: ALMessage; accept(control: ALMessage): Promise<string>; }> {
+        const runtime = createDefaultOutboundTestRuntime({
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                admittedAudience: ['b']
+            })
+        });
+        const msg: ALMessage = { ...createOutboundMessage('relayed-track'), ordering: { orderingKey: 'game-1', epoch: 1, seq: 3 } };
+        await enqueueOutboundOrThrow(runtime, msg);
+        return {
+            msg,
+            accept: async (control) => {
+                const result = await runtime.acceptControlMessage(control, 'peer');
+                return result.kind === 'rejected' ? result.reason : result.kind;
+            }
+        };
+    }
+
+    function toGapNack(msg: ALMessage, fromPeerId: string): ALMessage {
+        return newALNackControlMessage(
+            { v: 4, msgId: `gap-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-relayed-track' },
+            {
+                msgId: msg.id.msgId,
+                fromPeerId,
+                toPeerId: 'self',
+                logicalRecipientPeerId: fromPeerId,
+                reason: 'gap',
+                observedAtEpochMs: Date.now(),
+                orderingKey: 'game-1:self:1',
+                expectedSeq: 2,
+                missingRanges: [{ from: 2, to: 2 }]
+            }
+        );
+    }
+
+    it('admits the gap NACK of a session inside the admitted audience as it admits an expected repair peer', async () => {
+        const origin = await createRelayedTrack();
+
+        expect(await origin.accept(toGapNack(origin.msg, 'b'))).toBe('committed');
+    });
+
+    it('refuses the gap NACK of a session outside the admitted audience', async () => {
+        const origin = await createRelayedTrack();
+
+        expect(await origin.accept(toGapNack(origin.msg, 'c'))).toBe('AL repair sender has no retained outbound obligation');
     });
 });

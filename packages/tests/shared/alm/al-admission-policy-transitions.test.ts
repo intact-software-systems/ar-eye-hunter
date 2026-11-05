@@ -10,6 +10,9 @@ import {
 describe('AL admission policy transitions', () => {
     it('reports only the newly contiguous sequence while peeking buffered releases', () => {
         const observation = computeALOrderingObservation({
+            role: 'recipient',
+            selfPeerId: 'receiver',
+            bufferedPriorSeqs: {},
             snapshot: {
                 lastContiguousSeq: 0,
                 bufferedSeqs: [2],

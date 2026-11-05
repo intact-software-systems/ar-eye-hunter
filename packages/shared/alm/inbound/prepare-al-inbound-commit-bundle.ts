@@ -8,6 +8,7 @@ import {
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { computeALInboundWitnessedCompletedThrough } from './admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
@@ -324,11 +325,19 @@ function computeDeliveryProgressRetention(
     if (buffered.length === 0 && !mutations.some((mutation) => mutation.kind === 'set-ordering')) {
         return [];
     }
+    const completedThrough = observed.value?.completedThrough ?? 0;
+    const witnessed = read.orderingAcceptance.observation.status === 'witnessed'
+        ? read.orderingAcceptance.nextSnapshot
+        : undefined;
     return [{
         kind: 'set-delivery-progress',
         trackKey: observed.trackKey,
         value: {
-            completedThrough: observed.value?.completedThrough ?? 0,
+            completedThrough: witnessed === undefined ? completedThrough : computeALInboundWitnessedCompletedThrough({
+                completedThrough,
+                previousPosition: read.observations.ordering?.snapshot?.lastContiguousSeq ?? 0,
+                witnessedPosition: witnessed.lastContiguousSeq
+            }),
             expireAtTimestamp: Math.max(
                 observed.value?.expireAtTimestamp ?? 0,
                 read.nowMs + read.orderingTrackTtlMs,

@@ -122,6 +122,7 @@ function sendRtcSignalHere(
 ): WsServerLiveSendResult {
     const sent = relay.service.sendToTargetsWithResult({
         message: relay.message,
+        sentPositions: null,
         expiresAtMs,
         recipientSessionIds: [relay.recipientSessionId],
         inboundScope: scope,

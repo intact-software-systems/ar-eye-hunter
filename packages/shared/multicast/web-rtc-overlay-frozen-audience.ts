@@ -192,9 +192,12 @@ export function computeRtcLeaderRefusal(
         });
 }
 
-/** A refusal names the targets its sender gave; a signed message keeps the audience its origin signed. */
+/**
+ * A refusal names the targets its sender gave: an audience this plan froze is undone, one its sender gave frozen -- a
+ * granted leg's, or a signed stored copy's -- is kept.
+ */
 function toUnfrozenRoomMessage(msg: ALMessage, original: ALMessage): ALMessage {
-    if (msg.proof !== undefined) {
+    if (resolveALFrozenMulticastAudience(original.targets) !== undefined) {
         return msg;
     }
     return original.targets?.mode === 'broadcast'

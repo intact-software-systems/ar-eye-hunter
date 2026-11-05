@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, type ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { canALInboundDeliveryComplete } from './admission/al-inbound-delivery-progress.ts';
 import {
     computeALInboundBufferedRelease,
     type ALInboundBufferedRelease
@@ -213,7 +214,12 @@ export class ALInboundOrderedDelivery {
         if (seq <= completedThrough) {
             return 'completed';
         }
-        if (seq !== completedThrough + 1 || this.dependencies.signal.aborted) {
+        const completes = canALInboundDeliveryComplete({
+            completedThrough,
+            seq,
+            observation: read.snapshot.plan.orderingRuntime
+        });
+        if (!completes || this.dependencies.signal.aborted) {
             return 'retry';
         }
         const status = await this.dependencies.admissionStore.commitMutations({

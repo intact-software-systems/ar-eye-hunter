@@ -66,6 +66,10 @@ export interface QueueBoxPubSubWsService {
     ): Promise<ALOutboundCapturedPolicy>;
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
     requiresFrozenAudience(message: ALMessage): boolean;
+    /** The positions the row's first dequeue recorded, from which each local copy takes its entry. */
+    readSentPositions(message: ALMessage): Promise<Readonly<Record<string, number>> | null>;
+    /** Records each session a send reached nothing of outside the audience of the receipt its origin awaits. */
+    writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void>;
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
@@ -138,6 +142,7 @@ interface SendToCapturedLocalTargetsInput {
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
     readonly policy: ALOutboundCapturedPolicy | undefined;
+    readonly sentPositions: Readonly<Record<string, number>> | null;
 }
 
 interface QueueBoxOutboxPublication {
@@ -249,10 +254,11 @@ async function writeQueueBoxOutboxPublication(
         const policy = options.timing === undefined
             ? await readCapturedPublicationPolicy(options.wsQBoxServerService, publication)
             : await readLocalPublicationPolicy(publication, envelope, options);
+        const sentPositions = await options.wsQBoxServerService.readSentPositions(message);
         directCall = 'invoked';
-        result = await sendToCapturedLocalTargets({ message, entry, policy }, options);
+        result = await sendToCapturedLocalTargets({ message, entry, policy, sentPositions }, options);
         directCall = 'returned';
-        observeCapturedLocalSend({ message, entry, policy, result, envelope }, options);
+        observeCapturedLocalSend({ message, entry, policy, sentPositions, result, envelope }, options);
         if (result.failedCount > 0) {
             throw new Error(`Failed ${result.failedCount} local WS outbox sends`);
         }
@@ -307,8 +313,8 @@ function observeCapturedLocalSend(
     input: ObserveCapturedLocalSendInput,
     options: RegisterQueueBoxOutboxPublisherInput
 ): void {
-    const { message, entry, policy, result, envelope } = input;
-    const awaited = deferAwaitedCapturedRecipients({ message, entry, policy }, result, options);
+    const { message, entry, policy, sentPositions, result, envelope } = input;
+    const awaited = deferAwaitedCapturedRecipients({ message, entry, policy, sentPositions }, result, options);
     recordPubSubTiming({
         timing: options.timing,
         operation: 'outbox-direct-send',
@@ -426,8 +432,14 @@ async function sendRemoteQueueBoxOutboxEntry(
             options.wsQBoxServerService,
             { message: remoteMessage, entry, committedPolicy: undefined }
         );
-        result = await sendToCapturedLocalTargets({ message: remoteMessage, entry, policy }, options);
-        awaited = deferAwaitedCapturedRecipients({ message: remoteMessage, entry, policy }, result, options);
+        const local = {
+            message: remoteMessage,
+            entry,
+            policy,
+            sentPositions: await options.wsQBoxServerService.readSentPositions(remoteMessage)
+        };
+        result = await sendToCapturedLocalTargets(local, options);
+        awaited = deferAwaitedCapturedRecipients(local, result, options);
     }
     catch (error) {
         if (error instanceof ALAdmissionCorruptionError) {
@@ -545,9 +557,15 @@ async function sendToCapturedLocalTargets(
         );
     }
     const eligible = await readCapturedEligibleSessionIds(input, options);
-    return options.wsQBoxServerService.sendToTargetsWithResult(
-        toWsQueueBoxServerCapturedSendInput({ message, key: entry.key, policy, eligibleSessionIds: eligible })
-    );
+    const result = options.wsQBoxServerService.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
+        message,
+        key: entry.key,
+        policy,
+        eligibleSessionIds: eligible,
+        sentPositions: input.sentPositions
+    }));
+    await options.wsQBoxServerService.writeOutsideAudience(message, result.belowPositionPeerIds);
+    return result;
 }
 
 /**

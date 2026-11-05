@@ -30,6 +30,7 @@ import {
 import {
     createSigningKeyPair,
     importEcdsaP256PublicKey,
+    signDetached,
     type SigningKeyPair
 } from '@shared/signature/ecdsa-p256-signature.ts';
 
@@ -64,6 +65,24 @@ const MULTICAST: ALMessage = {
     audit: { createdBy: 'session-a', createdTs: 1_700_000_000_000 },
     diagnostics: { visitedPeerIds: ['session-a'] }
 };
+
+/** The multicast with the prior-sequence record an authority stamped on it. */
+const RECORDED: ALMessage = { ...MULTICAST, ordering: { ...MULTICAST.ordering, priorSeqByRecipient: { 'session-c': 4 } } };
+
+/** The first frame of a track an authority recorded: its record is present and empty. */
+const EMPTY_RECORDED: ALMessage = { ...MULTICAST, ordering: { ...MULTICAST.ordering, priorSeqByRecipient: {} } };
+
+/** `MULTICAST`'s signing input as the v1 classification, before the record existed, wrote it. */
+const V1_SIGNING_INPUT = '["rallar-alm-publication-proof-v1",4,"message-1",1700000000000,"session-a",null,' +
+    '"room.chat","resource-1","room-1",' +
+    '"multicast",{"applicationId":"app-1","groupId":"room-1","workspaceId":"workspace-1"},null,null,' +
+    '["session-b","session-c"],5,3,4,null,null,' +
+    '1700000060000,' +
+    '"room-1",1,7,' +
+    '"shared","at-least-once","receiver",' +
+    '"corr-1","message-0",' +
+    'null,null,null,null,null,null,null,null,{"algo":"limit","opts":{"limit":2}},null,{"algo":"volatile"},null,' +
+    '"chat.message.v1","application/json","{\\"text\\":\\"hello\\"}"]';
 
 const UNICAST: ALMessage = {
     ...MULTICAST,
@@ -115,6 +134,26 @@ const SIGNED_FIELD_CHANGES: readonly ALPublicationProofFieldChange[] = [
     { field: 'ordering.orderingKey', signed: MULTICAST, change: (message) => ({ ...message, ordering: { ...message.ordering, orderingKey: 'room-2' } }) },
     { field: 'ordering.epoch', signed: MULTICAST, change: (message) => ({ ...message, ordering: { ...message.ordering, epoch: 2 } }) },
     { field: 'ordering.seq', signed: MULTICAST, change: (message) => ({ ...message, ordering: { ...message.ordering, seq: 8 } }) },
+    {
+        field: 'ordering.priorSeqByRecipient entry',
+        signed: RECORDED,
+        change: (message) => ({ ...message, ordering: { ...message.ordering, priorSeqByRecipient: { 'session-c': 6 } } })
+    },
+    {
+        field: 'ordering.priorSeqByRecipient presence',
+        signed: RECORDED,
+        change: (message) => ({ ...message, ordering: MULTICAST.ordering })
+    },
+    {
+        field: 'ordering.priorSeqByRecipient added to an unrecorded frame',
+        signed: MULTICAST,
+        change: (message) => ({ ...message, ordering: RECORDED.ordering })
+    },
+    {
+        field: 'ordering.priorSeqByRecipient empty record dropped',
+        signed: EMPTY_RECORDED,
+        change: (message) => ({ ...message, ordering: MULTICAST.ordering })
+    },
     {
         field: 'delivery.ownership',
         signed: MULTICAST,
@@ -203,17 +242,12 @@ function withBroadcastTargets(message: ALMessage, changes: Partial<Extract<ALTar
 describe('ALM publication proof signing input', () => {
     it('is the canonical JSON array of the signed fields in their pinned order, the domain tag first and absent values null', () => {
         expect(AL_PUBLICATION_PROOF_DOMAIN_TAG).toBe('rallar-alm-publication-proof-v1');
-        expect(toALPublicationProofSigningInput(MULTICAST)).toBe(
-            '["rallar-alm-publication-proof-v1",4,"message-1",1700000000000,"session-a",null,' +
-                '"room.chat","resource-1","room-1",' +
-                '"multicast",{"applicationId":"app-1","groupId":"room-1","workspaceId":"workspace-1"},null,null,' +
-                '["session-b","session-c"],5,3,4,null,null,' +
-                '1700000060000,' +
-                '"room-1",1,7,' +
-                '"shared","at-least-once","receiver",' +
-                '"corr-1","message-0",' +
-                'null,null,null,null,null,null,null,null,{"algo":"limit","opts":{"limit":2}},null,{"algo":"volatile"},null,' +
-                '"chat.message.v1","application/json","{\\"text\\":\\"hello\\"}"]'
+        expect(toALPublicationProofSigningInput(MULTICAST)).toBe(V1_SIGNING_INPUT);
+    });
+
+    it('appends a present later field after every v1 slot, named by its path, so an unrecorded frame keeps the v1 bytes', () => {
+        expect(toALPublicationProofSigningInput(RECORDED)).toBe(
+            `${V1_SIGNING_INPUT.slice(0, -1)},["ordering.priorSeqByRecipient",{"session-c":4}]]`
         );
     });
 
@@ -281,6 +315,7 @@ describe('ALM publication proof signing input', () => {
             proof: 'excluded'
         });
         expect(classes.id.traceId).toBe('excluded');
+        expect(classes.ordering.priorSeqByRecipient).toBe('signed-when-present');
         expect(classes.constraints.ttlHops).toBe('excluded');
     });
 });
@@ -308,6 +343,26 @@ describe('ALM publication proof signing and verification', () => {
         const proven = await sign(keyPair, signed);
 
         expect(await verify(await importPublicKey(keyPair), change(proven))).toBe('verified');
+    });
+
+    it('signs an empty record as present, and verifies the frame that carries it', async () => {
+        const keyPair = await createKeyPair();
+
+        const signed = await sign(keyPair, EMPTY_RECORDED);
+
+        expect(toALPublicationProofSigningInput(EMPTY_RECORDED)).toBe(
+            `${V1_SIGNING_INPUT.slice(0, -1)},["ordering.priorSeqByRecipient",{}]]`
+        );
+        expect(signed.ordering?.priorSeqByRecipient).toEqual({});
+        expect(await verify(await importPublicKey(keyPair), signed)).toBe('verified');
+    });
+
+    it('verifies an unrecorded frame an older build signed over the v1 signing input', async () => {
+        const keyPair = await createKeyPair();
+        const signature = (await signDetached(subtle, keyPair.privateKey, new TextEncoder().encode(V1_SIGNING_INPUT))).right!;
+        const signedByOlderBuild: ALMessage = { ...MULTICAST, proof: { alg: 'ES256', keyId: keyPair.keyId, signature } };
+
+        expect(await verify(await importPublicKey(keyPair), signedByOlderBuild)).toBe('verified');
     });
 
     it('refuses a frame signed by another key as invalid-signature', async () => {

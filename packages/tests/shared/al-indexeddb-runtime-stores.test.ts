@@ -211,6 +211,7 @@ describe('IndexedDB AL runtime stores', () => {
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             carrier: 'ws',
             selfPeerId: 'self',
 
@@ -426,6 +427,8 @@ describe('IndexedDB AL runtime stores', () => {
         const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
         const beforeReadAtMs = Date.now();
         const beforeExpiry = await stores.admissionStore.readIncomingMessage({
+            selfPeerId: 'self',
+            orderingObserver: 'addressed',
             msg,
             source,
             nowMs: beforeReadAtMs,
@@ -455,6 +458,8 @@ describe('IndexedDB AL runtime stores', () => {
 
         const afterReadAtMs = Date.now();
         const afterExpiry = await stores.admissionStore.readIncomingMessage({
+            selfPeerId: 'self',
+            orderingObserver: 'addressed',
             msg,
             source,
             nowMs: afterReadAtMs,
@@ -805,6 +810,7 @@ interface IndexedDbInboundFixtureInput {
 function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput): ALInboundMessageRuntime {
     const { dbName, namespace, dispatchedMsgIds } = input;
     const runtime = createDefaultALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',
 
@@ -967,6 +973,8 @@ async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessa
     const source = { kind: 'ws-client' as const, peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
     const nowMs = Date.now();
     return await store.readIncomingMessage({
+        selfPeerId: 'self',
+        orderingObserver: 'addressed',
         msg,
         source,
         nowMs,

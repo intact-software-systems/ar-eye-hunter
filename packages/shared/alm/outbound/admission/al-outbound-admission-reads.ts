@@ -44,8 +44,6 @@ import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fing
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 import {
     toALOutboundControlHistoryKey,
-    toALOutboundOrderingHeadKey,
-    toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
@@ -72,15 +70,31 @@ import {
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-captured-policy-timing.ts';
+import {
+    toALOutboundOrderingHeadKey,
+    toALOutboundOrderingMessageKey,
+    toALOutboundRoomSentPositionKey,
+    toALOutboundSentPositionKey
+} from './al-outbound-ordering-track-keys.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
+import { computeALOrderingPriorSeqRecord } from './compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
-import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';
+import { decodeALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
+import { computeALOutboundSequenceMint } from './sequencing/compute-al-outbound-sequence-mint.ts';
+import { toALOutboundSentPositionPriors } from './to-al-outbound-sent-position-priors.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 
 export interface CreateALOutboundAdmissionReadsInput {
     readonly nowMs: () => number;
     readonly namespace: string;
+    /** Where the sender's ordering-track heads live: this pair's namespace, or the one its session's pairs share. */
+    readonly orderingHeadNamespace: string;
+    /**
+     * Another carrier pair of the session mints on these heads: a sequence one of them sent to an audience it did not
+     * record is one any recipient may hold, so this pair's records never state a recipient behind it.
+     */
+    readonly sharesOrderingHead: boolean;
     readonly canonicalScope: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
@@ -109,11 +123,32 @@ interface ALOutboundAdmissionFenceReadInput<TPrepared> {
     readonly nowMs: number;
 }
 
+/** Whether a read records its plan's recipients' positions, and whether it also stamps the record on its copy. */
+interface ALOutboundSentPositionRecording {
+    /** The row holds no positions yet. */
+    readonly unrecorded: boolean;
+    /** A first admission that is no dequeue: its copy carries the record. */
+    readonly stampsCopy: boolean;
+}
+
+/** A row records until it holds positions; only a first admission that is no dequeue stamps its copy too. */
+function toALOutboundSentPositionRecording<TPrepared>(
+    input: ALOutboundOutgoingReadInput<TPrepared>,
+    stored: ALStoredOutboundMessage | undefined
+): ALOutboundSentPositionRecording {
+    return {
+        unrecorded: stored === undefined || stored.sentPositions === null,
+        stampsCopy: stored === undefined && input.intent !== 'dequeue'
+    };
+}
+
 /** Assembles outbound decisions in a caller-owned read session; the write owner re-reads its fences. */
 export class ALOutboundAdmissionReads<TPrepared> {
     private readOperationCount = 0;
     private readonly nowMs: () => number;
     private readonly namespace: string;
+    private readonly orderingHeadNamespace: string;
+    private readonly sharesOrderingHead: boolean;
     private readonly canonicalScope: string;
     private readonly backend: ALAdmissionWorkBackend;
     private readonly supersedenceTrackTtlMs: number;
@@ -121,6 +156,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
     constructor(input: CreateALOutboundAdmissionReadsInput) {
         this.nowMs = input.nowMs;
         this.namespace = input.namespace;
+        this.orderingHeadNamespace = input.orderingHeadNamespace;
+        this.sharesOrderingHead = input.sharesOrderingHead;
         this.canonicalScope = input.canonicalScope;
         this.backend = input.backend;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
@@ -154,11 +191,13 @@ export class ALOutboundAdmissionReads<TPrepared> {
             stored,
             observedEntry: observedCanonicalEntry
         });
-        const { plan, orderingHead } = await this.readSequenceMint(
+        const minted = await this.readSequenceMint(
             session,
             computeALOutboundDispatchPlan(input, canonical, stored),
             stored === undefined
         );
+        const recording = toALOutboundSentPositionRecording(input, stored);
+        const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, recording);
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
 
         return {
@@ -172,7 +211,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
             nowMs,
             clientRecord,
             plan,
-            orderingHead,
+            orderingHead: minted.orderingHead,
+            sentPositions,
             sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
             repairs,
@@ -426,30 +466,88 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     /**
-     * An admission whose plan asks for a sequence takes the next one on its track: the head this session
-     * read, plus one. Only a message with no sent row is minted -- a first attempt, or the replay of the
-     * request a lost commit retained -- so a re-admission keeps the sequence its row holds. The commit
-     * writes the head under the sender version this session read.
+     * An admission whose plan owns its track reads the head it reached: a message naming no sequence takes the next
+     * one, and a stated one must lie above it (`computeALOutboundSequenceMint`). Only a message with no sent row
+     * reads it -- a first attempt, or the replay of the request a lost commit retained -- so a re-admission keeps the
+     * sequence its row holds. The commit writes the head under the sender version this session read.
      */
     private async readSequenceMint(
         session: ALAdmissionReadSession,
         plan: ALOutboundDispatchPlan<TPrepared>,
         unadmitted: boolean
     ): Promise<Pick<ALOutboundMessageReadDto<TPrepared>, 'plan' | 'orderingHead'>> {
-        const trackKey = toALSequenceMintTrackKey(plan.msg);
+        const trackKey = toALSequenceMintTrackKey(plan.msg) ?? toALOrderingTrackKey(plan.msg);
         if (!plan.mintsSequence || !unadmitted || trackKey === undefined) {
             return { plan, orderingHead: undefined };
         }
         const head = await this.readValue(
             session,
-            toALOutboundOrderingHeadKey(this.namespace, trackKey),
-            decodeALOutboundOrderingHead
+            toALOutboundOrderingHeadKey(this.orderingHeadNamespace, trackKey),
+            decodeALOutboundTrackPositionRow
         );
-        const seq = (head?.seq ?? 0) + 1;
-        return {
-            plan: { ...plan, msg: { ...plan.msg, ordering: { ...plan.msg.ordering, seq } } },
-            orderingHead: { trackKey, seq }
+        return computeALOutboundSequenceMint({ plan, trackKey, head, sharesHead: this.sharesOrderingHead });
+    }
+
+    /**
+     * An admission whose plan names the recipients it records reads their positions on its track, after the sequence
+     * is known; the commit keeps them on the sent row and moves each recipient to the copy's sequence under the sender
+     * version this session read. Only a row that holds no positions yet records -- a first attempt, the replay of the
+     * request a lost commit retained, or a WS row's first dequeue -- so a re-admission keeps what its row holds. A
+     * first admission stamps its copy with the record (`computeALOrderingPriorSeqRecord`); a dequeue's copy is the row
+     * as admitted, and its carrier derives each copy's entry from the kept positions.
+     */
+    private async readSentPositionRecord(
+        session: ALAdmissionReadSession,
+        plan: ALOutboundDispatchPlan<TPrepared>,
+        recording: ALOutboundSentPositionRecording
+    ): Promise<Pick<ALOutboundMessageReadDto<TPrepared>, 'plan' | 'sentPositions'>> {
+        const trackKey = toALOrderingTrackKey(plan.msg);
+        const seq = plan.msg.ordering?.seq;
+        if (
+            plan.recordsSentPositions === undefined || !recording.unrecorded || trackKey === undefined ||
+            seq === undefined
+        ) {
+            return { plan, sentPositions: undefined };
+        }
+        const sentPositions = {
+            trackKey,
+            seq,
+            priorSeqByRecipient: await this.readSentPositions(session, trackKey, plan.recordsSentPositions)
         };
+        if (!recording.stampsCopy) {
+            return { plan, sentPositions };
+        }
+        const ordering = { ...plan.msg.ordering, priorSeqByRecipient: computeALOrderingPriorSeqRecord(sentPositions) };
+        return { plan: { ...plan, msg: { ...plan.msg, ordering } }, sentPositions };
+    }
+
+    /**
+     * Each recipient's last sequence sent on the track, `0` for one never sent it: one indexed read per recipient. On a
+     * shared head, a recipient behind the track's room-wide sent position is read at it: another carrier sent the room
+     * that sequence, to an audience only the server knows.
+     */
+    private async readSentPositions(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        recipientPeerIds: readonly string[]
+    ): Promise<Readonly<Record<string, number>>> {
+        const [roomPosition, ...positions] = await Promise.all([
+            this.sharesOrderingHead
+                ? this.readValue(
+                    session,
+                    toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, trackKey),
+                    decodeALOutboundTrackPositionRow
+                )
+                : undefined,
+            ...recipientPeerIds.map((recipientPeerId) =>
+                this.readValue(
+                    session,
+                    toALOutboundSentPositionKey(this.namespace, trackKey, recipientPeerId),
+                    decodeALOutboundTrackPositionRow
+                )
+            )
+        ]);
+        return toALOutboundSentPositionPriors({ recipientPeerIds, positions, roomPosition });
     }
 
     /** Without a known origin there is no receipt row to address; the rest is keyed by the message alone. */

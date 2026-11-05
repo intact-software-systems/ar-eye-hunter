@@ -819,9 +819,9 @@ declared recovery owner is invoked with a bounded cursor (D142, under "Repair
 and resynchronization"). The lane's `ordering-gap-repair` and `repair-exhausted`
 cells prove the repair and its end.
 
-**CURRENT — R2b, server-sequenced tracks:** A browser's sequence is
-client-assigned; a server publication's is minted by the server (D24 narrowed,
-D150). A server publication that names an ordering key and no sequence is
+**CURRENT — R2b, server-sequenced tracks:** A server publication's sequence is
+minted by the server (D150); a browser's own keyed room send is minted by its
+outbound since S4-i (D529, below). A server publication that names an ordering key and no sequence is
 sequenced by the WS server's outbound admission from one ordering-head row per
 track (ordering key, server peer id, epoch), advanced in the same commit that
 admits the message under the server's sender-version fence, so the sequence is
@@ -830,12 +830,12 @@ is not reassigned when the same `msgId` is admitted again. The server repairs
 its own tracks from its sent copies: a receiving WS client NACKs a gap to the
 server, which retransmits the missing sequences to that requester alone, 32 per
 page, until the message's deadline and only to a requester inside the audience
-the message was admitted to that the triggering message's receipt still
-expects, so a keyed server publication asks `ack: 'receiver'` and is published
-to the `outbox` (a keyed publish without a sequence at `live-only` or `none` is
-refused, and an `ack: 'none'` one gets no ranged repair). The repair budget is
+the message was admitted to (a peer its receipt expects, or a session of its
+captured audience), and a keyed server publication is published to the
+`outbox` (a keyed publish without a sequence at `live-only` or `none` is
+refused). The repair budget is
 per message and shared: the first receiver to NACK a sequence spends it, the
-others fall back to receipt retries; exhausted repair settles
+others fall back to receipt retries when the publication keeps a receipt; exhausted repair settles
 `skipped`/`repair-exhausted` once (D141, D153). Sequences follow commit order,
 so under contention two publications of one track can commit out of publish
 order (a first-in-first-out mint per track is a follow-up), and since a
@@ -851,6 +851,38 @@ though not its ordering, in the local lane: the receiver's ACK of a
 receiver-receipted group-state delta, caused by an HTTP membership write under
 its `x-request-id`, records the receipt entry the admin realtime read lists
 under that trace.
+
+**CURRENT — S4-i, ordered subscription entry:** A browser room send that names
+its ordering key without a sequence is sequenced by its own outbound, on the
+durable lane whatever its durability, from one head per track that the
+session's RTC and WS carriers share, so a reload continues the track; a stated
+sequence at or below the head is refused `unsupported` (D529). The authority
+that fixes a copy's audience records per track and recipient the last sequence
+it sent and states it on the copy as `ordering.priorSeqByRecipient`, listing
+only the recipients whose prior is below `seq − 1` (D524, D525): the RTC origin
+signs it in its first admission, and the WS server records at the first dequeue
+of a row its outbound admitted and sends each recipient its own entry, without
+the proof. A recipient with no position enters a recorded track at its first
+copy without asking for history; a copy whose record meets its position
+delivers as an omission; a frozen recipient that may not deliver witnesses the
+copy; a relay observes nothing and forwards (D526–D528). A recorded frozen
+copy below a recipient's position answers a `before-entry` NACK that relays
+carry and the origin records outside the audience; over `ws`, whose copies
+carry no frozen audience, the WS server sends nothing below a
+recorded position and, on a relayed browser-origin row with a logical receipt,
+records a skipped or re-check-dropped session outside the receipt's audience
+(D530, D532). The inbound `ordering-position` diagnostic
+states each entry, omission, witness and `before-entry`. The cells
+`subscription-ordered-entry` and `subscription-ordered-omission` prove entry
+and omission over `ws`, `rtc` and `rtc-with-ws-fallback` on the local lane.
+**Limit:** rows a server producer writes straight to the outbox (Relic's round
+transitions, state-sync) record no positions; the server's own publications
+record no outside class, so a skipped recipient of one stays unconfirmed; in a
+cluster positions and the
+outside class cover sessions on the dequeuing instance only; a receiver whose
+entry frame is lost and whose next frame arrives first enters past it. A
+reopened socket's room presence (D506) and relay re-origination of gap NACKs
+are S4-ii's.
 
 ## Deduplication and supersedence
 
@@ -959,8 +991,8 @@ browser's resync record holds at most 256 tracks; the WS server holds at most
 4 096 receipt aggregates, ending the oldest at the cap as its deadline would.
 Three two-agent lane cells prove the share, the promotion and the snapshot cap
 (D192). **Limit:** a receiver holding more than 256 live ordered tracks in one
-store thrashes: each new track evicts a live one, whose next arrival reads as a
-gap from sequence 1 and goes to repair or resynchronization. **Limit:** an
+store thrashes: each new track evicts a live one, whose next unrecorded arrival
+reads as a gap from sequence 1 and goes to repair or resynchronization. **Limit:** an
 at-least-once `ack: 'receiver'` send can be reported delivered although no
 channel handler saw it: in one lane run the message arrived 131 ms before the
 receiving page's channel subscribed, and it was admitted and acknowledged with
@@ -1339,7 +1371,8 @@ page's one end-of-cell reading, and the `capacity-tracks` cell's reading at the
 track bound (D180). The age limit bounds the messages the bound counts, not ordering
 state: an ordering track stays known for an hour after its last message unless
 the snapshot cap (D191, above) evicts it first, so a resumed track is not read as
-a gap; an evicted track's next arrival reads as a gap from sequence 1, and a
+a gap; an evicted track's next recorded copy enters it again, an unrecorded one
+reads as a gap from sequence 1, and a
 buffered release on it reads `resync-required`. What a session keeps per
 message, track or peer is bounded rather than held for its lifetime: the ids of
 cancelled and handed-over sends for 60 minutes, the browser's record of

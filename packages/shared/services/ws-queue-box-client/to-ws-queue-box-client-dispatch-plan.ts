@@ -10,7 +10,7 @@ import {
     type ALQosNormalizationInput
 } from '../../al-contracts/al-policy.ts';
 import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
-import { computeALOutboundOrderingRefusal } from '../../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
+import { computeALOutboundOrderingRefusal } from '../../alm/outbound/admission/sequencing/compute-al-outbound-ordering-refusal.ts';
 import {
     toALOutboundCongestionDrop,
     type ALOutboundDispatchPlan,

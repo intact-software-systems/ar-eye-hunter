@@ -1,3 +1,5 @@
+import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { validateALInboundAdmissionMutation } from '@shared/alm/inbound/admission/validate-al-inbound-admission-mutation.ts';
 import {
     type ALInboundAdmissionMutation,
@@ -8,6 +10,7 @@ import type { AcksControlValue } from '@shared/alm/inbound/control/al-inbound-co
 import { describe, expect, it } from 'vitest';
 
 const MSG_ID = 'msg-invalid-control-value';
+const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const SENDER_ID = 'sender-1';
 
 function toBundle(): ALInboundCommitBundle {
@@ -137,5 +140,53 @@ describe('validateALInboundAdmissionMutation claim', () => {
                 observed
             )
         ).toEqual([]);
+    });
+});
+
+describe('validateALInboundAdmissionMutation delivery progress', () => {
+    const trackKey = 'chat:sender:0';
+    const moved: ALInboundAdmissionMutation = {
+        kind: 'set-ordering',
+        trackKey,
+        snapshot: { lastContiguousSeq: 5, bufferedSeqs: [], updatedAtMs: 1 }
+    };
+    const progress: ALInboundAdmissionMutation = {
+        kind: 'set-delivery-progress',
+        trackKey,
+        value: { completedThrough: 5, expireAtTimestamp: 1_000 }
+    };
+
+    /** An admission that read the track at 2 with every delivery through 2 complete, then moved it as `mutations`. */
+    function toMovingBundle(mutations: readonly ALInboundAdmissionMutation[]): ALInboundCommitBundle {
+        const bundle = toBundle();
+        return {
+            ...bundle,
+            mutations,
+            observations: {
+                ...bundle.observations,
+                ordering: { trackKey, snapshot: { lastContiguousSeq: 2, bufferedSeqs: [], updatedAtMs: 0 }, buffered: [] },
+                deliveryProgress: { trackKey, value: { completedThrough: 2, expireAtTimestamp: 1_000 } }
+            }
+        };
+    }
+
+    it('moves the progress past a copy its admission witnessed', () => {
+        expect(validateALInboundAdmissionMutation(progress, toMovingBundle([moved, progress]))).toEqual([]);
+    });
+
+    it('refuses that step beside a buffered slot: an admission that retains its copy witnessed nothing', () => {
+        const msg = newALMulticastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'copy-9' }, ROOM, 'chat.v1', {}, {
+            orderingKey: 'chat',
+            seq: 9
+        });
+        const plan = planALMessageHandling(msg, { nowMs: msg.id.ts, selfPeerId: 'self', fromPeerId: 'sender' });
+        const slot: ALInboundAdmissionMutation = {
+            kind: 'set-buffered',
+            snapshot: { trackKey, seq: 9, msg, plan, carrier: 'rtc' },
+            expireAtTimestamp: 1_000
+        };
+
+        expect(validateALInboundAdmissionMutation(progress, toMovingBundle([moved, slot, progress])))
+            .toEqual(['Inbound admission candidate writes outside its original observations']);
     });
 });

@@ -122,6 +122,7 @@ function toLiveDelivery(
         carrier: 'rtc',
         message: live.message,
         canFallback: false,
+        admittedCopy: false,
         payloadIssues: [],
         access: 'members',
         onStorageUnavailable: 'refuse',

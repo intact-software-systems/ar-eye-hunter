@@ -56,6 +56,12 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
                 hopPeerId: 'relay-session',
                 nackReason: 'not-subscribed'
             },
+            {
+                kind: 'receipt-exhausted',
+                cause: 'hop-refused',
+                hopPeerId: 'relay-session',
+                nackReason: 'before-entry'
+            },
             { kind: 'expired' }
         ] satisfies readonly ALDeliveryFailure[]
     )('reads a $kind failure as the page stated it', (failure) => {

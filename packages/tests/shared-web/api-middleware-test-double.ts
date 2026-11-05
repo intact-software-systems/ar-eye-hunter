@@ -136,6 +136,8 @@ function createWebSocketQueueBoxDouble(
             entries: [],
             trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         })),
+        // A handed-over copy is admitted as the double admits every send, through whichever port a test replaced.
+        enqueueHandedOverIfAbsent: vi.fn(async (message: ALMessage) => await queueBox.enqueueOutboxIfAbsent(message)),
         readHealth: vi.fn(() => ({
             sessionId,
             url: 'ws://localhost/ws',

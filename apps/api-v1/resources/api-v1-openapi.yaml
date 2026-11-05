@@ -8184,7 +8184,6 @@ components:
         - topicId
         - connectionGenerationId
         - leaseExpiresAtEpochMs
-        - admittedAtGroupRevision
       properties:
         sessionId:
           type: string
@@ -8202,10 +8201,6 @@ components:
           type: integer
           minimum: 1
           description: The write instant plus the 120 second lease.
-        admittedAtGroupRevision:
-          type: integer
-          minimum: 1
-          description: The group's snapshotVersion the write read.
 
     GroupTopicSubscriptionResult:
       type: object

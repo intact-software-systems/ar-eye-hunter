@@ -21,6 +21,7 @@ import type {
     ALOutboundRepairHint
 } from './admission/al-outbound-admission-store.ts';
 import { decodeALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
+import { decodeALOutboundSentPositionRecord } from './admission/decode-al-outbound-track-position-row.ts';
 import { decodeALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import {
     toALOutboundPendingAdmissionId,
@@ -101,6 +102,7 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         'preparedFingerprint',
         'attemptIdentity',
         'phase',
+        'sentPositions',
         'entry',
         'replaceExisting',
         'msgId',
@@ -199,8 +201,9 @@ function decodeALOutboundSendEffect<TPrepared>(
         'preparedFingerprint',
         'attemptIdentity',
         'phase'
-    ]);
+    ], ['sentPositions']);
     const message = decodeALOutboundMessageReference(payload.message);
+    const sentPositions = decodeALOutboundSentPositionRecord(payload.sentPositions);
     const msg = preparedRead.message;
     if (
         !msg || msg.id.msgId !== message.msgId || msg.id.senderId !== message.senderId ||
@@ -229,7 +232,8 @@ function decodeALOutboundSendEffect<TPrepared>(
         prepared: preparedRead.decodePrepared(payload.prepared, msg, message.key),
         preparedFingerprint: payload.preparedFingerprint,
         attemptIdentity: payload.attemptIdentity as string,
-        phase: payload.phase
+        phase: payload.phase,
+        sentPositions
     };
 }
 

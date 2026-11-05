@@ -217,6 +217,7 @@ function createFixture(carrier: ALDeliveryCarrier): InboundIngressFixture {
         maxDeliveredMarkers: undefined
     });
     const runtime = new ALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier,
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',

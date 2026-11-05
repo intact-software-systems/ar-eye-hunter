@@ -259,6 +259,7 @@ async function installSubscriber(
         sendToTargetsWithResult: ({ message, recipientSessionIds, notice }) => {
             fixture.service.sendToTargetsWithResult({
                 message,
+                sentPositions: null,
                 expiresAtMs: notice.expiresAtMs,
                 recipientSessionIds,
                 inboundScope: notice.scope,

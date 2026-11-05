@@ -7,7 +7,6 @@ import {
 } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
@@ -24,6 +23,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '../decode-al-admission-resource-entry-key.ts';
+import { toALOutboundRequestComparableMessage } from './admission/to-al-outbound-request-comparable-message.ts';
 
 export interface ALOutboundMessageReference {
     readonly key: Key;
@@ -182,9 +182,10 @@ export function decodeALOutboundCanonicalMessage(
 }
 
 /**
- * Whether a candidate may replace the canonical row it differs from: a replay that minted its sequence, activating
- * a pending row that still holds the message as its sender asked for it and differing from it by the minted
- * sequence alone; or a plan that froze the audience of a room send the row holds without one.
+ * Whether a candidate may replace the canonical row it differs from: a replay whose admission added to its request,
+ * activating a pending row that still holds the message as its sender asked for it and differing from it by what that
+ * admission added alone (a minted sequence, a recorded record, a proof); or a plan that froze the audience of a room
+ * send the row holds without one.
  */
 export function isALOutboundCanonicalReplacement(
     activatesPendingRow: boolean,
@@ -196,14 +197,13 @@ export function isALOutboundCanonicalReplacement(
     }
     const candidate = decodePersistedALMessageRow(entry);
     const freezes = resolveALFrozenMulticastAudience(candidate.targets) !== undefined;
-    const mints = activatesPendingRow && expected.status === EntityStatus.COMPLETED &&
-        candidate.ordering?.seq !== undefined;
-    if (!freezes && !mints) {
+    const admits = activatesPendingRow && expected.status === EntityStatus.COMPLETED;
+    if (!freezes && !admits) {
         return false;
     }
     const requested = decodeALOutboundRetainedMessage(expected);
     return (freezes && isALFreezeOfMessage(requested, candidate)) ||
-        (mints && jsonEquals(requested, toALSequenceMintComparableMessage(requested, candidate)));
+        (admits && jsonEquals(requested, toALOutboundRequestComparableMessage(requested, candidate)));
 }
 
 function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
@@ -213,22 +213,6 @@ function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
     catch (cause) {
         throw new ALAdmissionCorruptionError(JSON.stringify(retained.key), toError(cause));
     }
-}
-
-/**
- * The candidate as the original would compare to it: a sequence minted on the track its original named
- * without one is removed, so a minted copy matches its request while a copy that changes the key, the epoch
- * or a stated sequence still differs.
- */
-export function toALSequenceMintComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
-    if (
-        toALSequenceMintTrackKey(original) === undefined || candidate.ordering?.seq === undefined ||
-        toALOrderingTrackKey(candidate) !== toALSequenceMintTrackKey(original)
-    ) {
-        return candidate;
-    }
-    const { seq: _seq, ...ordering } = candidate.ordering;
-    return { ...candidate, ordering };
 }
 
 function outboundMessageIdentity(message: ALMessage): string {

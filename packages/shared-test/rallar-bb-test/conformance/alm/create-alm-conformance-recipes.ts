@@ -98,6 +98,8 @@ import { serverCommand } from './scenarios/server-command.ts';
 import { serverOriginated } from './scenarios/server-originated.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { subscriptionDelivery } from './scenarios/topic-subscription/subscription-delivery.ts';
+import { subscriptionOrderedEntry } from './scenarios/topic-subscription/subscription-ordered-entry.ts';
+import { subscriptionOrderedOmission } from './scenarios/topic-subscription/subscription-ordered-omission.ts';
 import { subscriptionReconnect } from './scenarios/topic-subscription/subscription-reconnect.ts';
 import { subscriptionRevokeDisconnected } from './scenarios/topic-subscription/subscription-revoke-disconnected.ts';
 import { subscriptionSuccessor } from './scenarios/topic-subscription/subscription-successor.ts';
@@ -247,6 +249,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     subscriptionTokenCount,
     subscriptionRevokeDisconnected,
     subscriptionReconnect,
+    subscriptionOrderedEntry,
+    subscriptionOrderedOmission,
     subscriptionSuccessor,
     grantedRtcForgedSender,
     grantedRtcNotSubscribed,

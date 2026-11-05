@@ -94,12 +94,14 @@ describe('outbound dispatch value ownership', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
+            signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });
 
         const result = await admission.commit({
             msg: message,
+            followsBatchPredecessor: false,
             planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
@@ -185,11 +187,13 @@ describe('outbound dispatch value ownership', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
+            signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });
         const result = await admission.commit({
             msg: message,
+            followsBatchPredecessor: false,
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,

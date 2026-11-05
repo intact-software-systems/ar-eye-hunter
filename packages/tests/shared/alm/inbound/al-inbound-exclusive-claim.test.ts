@@ -291,6 +291,8 @@ async function readClaimDecision(
     const fromPeerId = source.kind === 'trusted-server' ? message.id.senderId : source.peerId;
     const context = { selfPeerId: 'server-1', fromPeerId, nowMs };
     const read = await fixture.store.readIncomingMessage({
+        selfPeerId: 'server-1',
+        orderingObserver: 'addressed',
         msg: message,
         source,
         nowMs,

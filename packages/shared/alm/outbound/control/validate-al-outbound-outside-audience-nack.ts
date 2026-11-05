@@ -5,11 +5,12 @@ import { isALOutboundExpectedRepairPeer } from './is-al-outbound-expected-repair
 import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts';
 
 /**
- * A `not-subscribed` NACK speaks for its logical recipient, as an ACK does, whichever hop relayed it: it moves a
- * recipient the receipt still owes outside the audience, and is refused for anyone else (PL9, PL16). It comes from
- * a peer a repair may come from, or from a next hop of the message, the relay that re-sends a recipient's NACK.
+ * An outside-audience NACK (`not-subscribed`, `before-entry`) speaks for its logical recipient, as an ACK does,
+ * whichever hop relayed it: it moves a recipient the receipt still owes outside the audience, and is refused for
+ * anyone else (PL9, PL16). It comes from a peer a repair may come from, or from a next hop of the message, the relay
+ * that re-sends a recipient's NACK.
  */
-export function validateALOutboundNotSubscribedNack(
+export function validateALOutboundOutsideAudienceNack(
     read: ALControlAdmissionRead,
     nack: ALNackPayload
 ): readonly ALMessageRejection[] {
@@ -23,16 +24,16 @@ export function validateALOutboundNotSubscribedNack(
             ? []
             : [{
                 code: 'unauthorized' as const,
-                message: 'AL not-subscribed NACK comes from no hop or recipient of this message'
+                message: `AL ${nack.reason} NACK comes from no hop or recipient of this message`
             }]),
         ...(owed
             ? []
             : [{
                 code: 'unauthorized' as const,
-                message: 'AL not-subscribed NACK names no recipient the receipt still owes'
+                message: `AL ${nack.reason} NACK names no recipient the receipt still owes`
             }]),
         ...(read.sent !== undefined && read.sent.reference.expiresAtMs <= read.nowMs
-            ? [{ code: 'unauthorized' as const, message: 'AL not-subscribed NACK arrived after its message deadline' }]
+            ? [{ code: 'unauthorized' as const, message: `AL ${nack.reason} NACK arrived after its message deadline` }]
             : [])
     ];
 }

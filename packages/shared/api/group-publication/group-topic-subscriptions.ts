@@ -20,8 +20,6 @@ export interface GroupTopicSubscription {
     readonly connectionGenerationId: string;
     /** The write instant plus GROUP_TOPIC_SUBSCRIPTION_LEASE_MS; the row's store expiry. */
     readonly leaseExpiresAtEpochMs: number;
-    /** The group's snapshotVersion the write read. */
-    readonly admittedAtGroupRevision: number;
 }
 
 export const GROUP_TOPIC_SUBSCRIPTION_LEASE_MS = 120_000;
@@ -42,8 +40,7 @@ const SUBSCRIPTION_KEYS = [
     'principalId',
     'topicId',
     'connectionGenerationId',
-    'leaseExpiresAtEpochMs',
-    'admittedAtGroupRevision'
+    'leaseExpiresAtEpochMs'
 ] as const;
 
 export function decodeGroupTopicSubscription(
@@ -71,10 +68,7 @@ function toSubscriptionIssues(subscription: ApiJsonObject): readonly RallarValid
         ...toNonEmptyStringIssues(subscription, ['connectionGenerationId'], '$'),
         ...presentKeys(subscription, ['leaseExpiresAtEpochMs'])
             .filter((key) => !isSafeIntegerAtLeast(subscription[key], 1))
-            .map((key) => toIssue(`$.${key}`, 'invalid-timestamp', `${key} must be a positive integer.`)),
-        ...presentKeys(subscription, ['admittedAtGroupRevision'])
-            .filter((key) => !isSafeIntegerAtLeast(subscription[key], 1))
-            .map((key) => toIssue(`$.${key}`, 'invalid-revision', `${key} must be a positive integer.`))
+            .map((key) => toIssue(`$.${key}`, 'invalid-timestamp', `${key} must be a positive integer.`))
     ];
 }
 

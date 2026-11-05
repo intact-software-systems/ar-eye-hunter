@@ -33,6 +33,7 @@ import {
     type ALInboundRuntimeDiagnosticsSink
 } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { toALOutboundMintingPlan } from '../alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundMessageRuntime,
@@ -198,6 +199,8 @@ export class WsQueueBoxClientService {
 
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
+    /** The messages `enqueueHandedOverIfAbsent` is admitting now: each is planned at stage `hand-over`. */
+    private readonly handedOverMsgIds = new Set<string>();
     private closed = false;
 
     private readonly reconnectOwner: WsClientReconnect;
@@ -242,7 +245,7 @@ export class WsQueueBoxClientService {
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 // A plan without authority is a new admission's; a retained message is planned with its captured one.
                 planOutgoingMessage: (msg, authority) =>
-                    this.planOutgoingMessage(msg, authority === undefined ? 'admission' : 'replan'),
+                    this.planOutgoingMessage(msg, authority === undefined ? this.resolveAdmissionStage(msg) : 'replan'),
                 planDequeuedMessage: (msg) => this.planOutgoingMessage(msg, 'replan'),
                 afterDequeueAdmission: undefined,
                 planRepairMessage: undefined,
@@ -267,6 +270,7 @@ export class WsQueueBoxClientService {
             {
                 ...resources,
                 carrier: 'ws',
+                orderingObserver: 'addressed',
                 planIncomingMessage: (msg, source, observations) => this.planIncomingMessage(msg, source, observations),
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),
@@ -292,13 +296,18 @@ export class WsQueueBoxClientService {
         }
     }
 
+    /** A copy another carrier already admitted (D56) is a hand-over; any other new message is a first admission. */
+    private resolveAdmissionStage(msg: ALMessage): 'admission' | 'hand-over' {
+        return this.handedOverMsgIds.has(msg.id.msgId) ? 'hand-over' : 'admission';
+    }
+
     /** Only a new admission of this session's own data reads backpressure, never a control or a replan (D184). */
     private planOutgoingMessage(
         msg: ALMessage,
-        stage: 'admission' | 'replan'
+        stage: 'admission' | 'hand-over' | 'replan'
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        const readsBackpressure = stage === 'admission' && !isALControlTypeId(msg.payload.typeId);
-        return toWsQueueBoxClientDispatchPlan(msg, {
+        const readsBackpressure = stage !== 'replan' && !isALControlTypeId(msg.payload.typeId);
+        const plan = toWsQueueBoxClientDispatchPlan(msg, {
             sessionId: this.sessionId,
             serverPeerId: this.serverPeerId,
             socketOpen: this.isSocketOpen(),
@@ -306,6 +315,7 @@ export class WsQueueBoxClientService {
             backpressured: readsBackpressure && this.decideBackpressure(msg),
             qosProvider: this.dependencies.qosProvider
         });
+        return toALOutboundMintingPlan(plan, stage, this.sessionId);
     }
 
     private planIncomingMessage(
@@ -504,6 +514,20 @@ export class WsQueueBoxClientService {
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
         const [result] = await this.enqueueOutboxAllIfAbsent([message]);
         return result!;
+    }
+
+    /**
+     * A copy another carrier already admitted, handed over after its admission (D56): it carries the sequence that
+     * admission fixed, so it is admitted as it is and its sequence is never guarded against this carrier's head.
+     */
+    async enqueueHandedOverIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
+        this.handedOverMsgIds.add(message.id.msgId);
+        try {
+            return await this.enqueueOutboxIfAbsent(message);
+        }
+        finally {
+            this.handedOverMsgIds.delete(message.id.msgId);
+        }
     }
 
     /** The messages of one sender admitted as one outbound commit; one result per message, in order. */

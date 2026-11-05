@@ -42,21 +42,30 @@ export function resolveRtcGrantedPublicationShapeRefusal(msg: ALMessage): string
     return msg.targets?.mode === 'multicast' ? undefined : RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast;
 }
 
+/** The message an origin carries, the one its sender gave, and whether the plan re-sends a stored copy. */
+export interface RtcGrantedPublicationRefusalInput {
+    readonly carried: ALMessage;
+    readonly original: ALMessage;
+    /** A re-plan or dequeue of a stored own message, which carries it only signed and re-reads `publish` (S3-R8). */
+    readonly storedSend: boolean;
+}
+
 /**
- * RTC carries a granted publication only as a signed room multicast; any other is refused as unsupported, the refusal
+ * RTC carries a granted publication only as a room multicast, and a stored one only signed: a first admission carries
+ * it unsigned, since its admission signs it after the read stamped it. Any other is refused as unsupported, the refusal
  * a fallback carrier takes over. Its shape is judged, and the refusal named, by the targets its sender gave, never by
  * the multicast the origin froze them to.
  */
 export function computeRtcGrantedPublicationRefusal(
-    msg: ALMessage,
-    original: ALMessage
+    input: RtcGrantedPublicationRefusalInput
 ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
+    const { carried, original } = input;
     const refusal = resolveRtcGrantedPublicationShapeRefusal(original) ??
-        (msg.proof === undefined ? RTC_GRANTED_PUBLICATION_REFUSALS.unsigned : undefined);
+        (input.storedSend && carried.proof === undefined ? RTC_GRANTED_PUBLICATION_REFUSALS.unsigned : undefined);
     return refusal === undefined
-        ? Either.ofRight(msg)
+        ? Either.ofRight(carried)
         : Either.ofLeft({
-            msg: { ...msg, targets: original.targets },
+            msg: { ...carried, targets: original.targets },
             dropReason: refusal,
             dropReasonCode: 'unsupported',
             lane: 'volatile',

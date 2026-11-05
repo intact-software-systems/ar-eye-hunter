@@ -16,6 +16,7 @@ import type { ALStorageRecoveryLane, ALStorageRecoveryReporter } from '../storag
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
+import type { ALOrderingObserver } from './admission/resolve-al-ordering-observer-role.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import type { ALInboundResyncRequired } from './al-inbound-resync-required.ts';
 import {
@@ -132,6 +133,8 @@ export namespace ALInboundMessageRuntime {
     export interface Dependencies extends Resources {
         /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
         readonly carrier: ALDeliveryCarrier;
+        /** Which tracks this runtime observes: a session's own copies, or every track it orders as its clients' hop. */
+        readonly orderingObserver: ALOrderingObserver;
         readonly planIncomingMessage: ALInboundPlanner;
         /**
          * Awaited on each message object before this runtime plans it, so a carrier's synchronous planner reads
@@ -168,6 +171,8 @@ export namespace ALInboundMessageRuntime {
         readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
+        /** Absence means this runtime relays no session's NACK or repair to the origin it names. */
+        readonly readRelayedRepairRequestRejection?: ALInboundReceiver['readRelayedRepairRequestRejection'];
         /**
          * Receives each message this runtime admits `resync-required`, or rejects at its ordered release, after
          * its NACK commits. Absence means no recovery owner exists anywhere: the server's case.
@@ -323,12 +328,13 @@ export class ALInboundMessageRuntime {
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Admission>> {
-        const authorization = readALInboundMessageAuthorization(
+        const authorization = await readALInboundMessageAuthorization(
             msg,
             source,
             toALInboundReceiver(
                 this.dependencies.effectPreparation.selfPeerId,
-                this.dependencies.readRelayedAckRejection
+                this.dependencies.readRelayedAckRejection,
+                this.dependencies.readRelayedRepairRequestRejection
             )
         );
         if (authorization.left) {

@@ -245,6 +245,38 @@ describe('WS server outbound planning', () => {
         expect(planAt('immediate').mintsSequence).toBe(true);
     });
 
+    it('records the positions of a row it admitted at its dequeue, and none of a row a producer wrote', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'server',
+            { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'tracked' },
+            ROOM,
+            'app.event.v1',
+            {},
+            { ttlMs: 30_000, orderingKey: 'game-1', seq: 3 }
+        );
+        const planFor = (referenceKey: { topicId: string; resourceId: string; contextId: string; }) =>
+            planning.planOutboundMessage({
+                message,
+                phase: 'dequeue',
+                clusterPublisherRegistered: false,
+                admittedAudience: ['b'],
+                admittedConnectionGenerationIds: undefined,
+                referenceKey
+            });
+
+        expect(planFor({ topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'scope', contextId: 'message' }).recordsSentPositions).toEqual(['b']);
+        expect(planFor(message.route).recordsSentPositions).toBeUndefined();
+    });
+
     it('normalizes the expiry of a message carrying a publication proof as it does any other', () => {
         const planning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: 'server',

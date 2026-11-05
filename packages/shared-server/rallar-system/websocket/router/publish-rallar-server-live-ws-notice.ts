@@ -105,6 +105,7 @@ function sendLocalPublishedLiveWsNotice(
     try {
         const result = input.service.sendToTargetsWithResult({
             message: input.message,
+            sentPositions: null,
             expiresAtMs: notice.expiresAtMs,
             recipientSessionIds: notice.audience.mode === 'broad' ? undefined : notice.audience.recipientSessionIds,
             inboundScope: notice.scope,

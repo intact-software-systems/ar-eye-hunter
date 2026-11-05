@@ -121,6 +121,23 @@ export type ALInboundRuntimeDiagnosticsEvent =
         }>
         & ALMessageTrace
     )
+    | (
+        & Readonly<{
+            /**
+             * A recipient's position event on a recorded track: entry, omission, witness, or a copy below it. The
+             * admission emits it after its commit, so a replayed pending admission reports its position too.
+             */
+            kind: 'ordering-position';
+            workerId: string;
+            trackKey: string;
+            seq: number;
+            /** The prior sequence the copy's record named for this recipient; null when the copy carried no record. */
+            priorSeq: number | null;
+            status: 'entered' | 'omitted' | 'witnessed' | 'before-entry';
+            carrier: ALDeliveryCarrier;
+        }>
+        & ALMessageTrace
+    )
     | Readonly<{
         /** A value that never decoded as an AL envelope, so it has no message identity, only its source. */
         kind: 'undecoded-rejection';

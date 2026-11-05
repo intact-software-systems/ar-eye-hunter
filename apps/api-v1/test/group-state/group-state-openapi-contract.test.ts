@@ -289,6 +289,16 @@ Deno.test('publication grant requests name every permission field and admit no o
     }
 });
 
+Deno.test('a topic subscription row names its session, principal, topic, asserting generation and lease, and nothing else', async () => {
+    const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
+    const row = (await response.json() as OpenApiDocument).components.schemas.GroupTopicSubscription;
+    const keys = ['sessionId', 'principalId', 'topicId', 'connectionGenerationId', 'leaseExpiresAtEpochMs'];
+
+    assert.equal(row.additionalProperties, false);
+    assert.deepEqual(row.required, keys);
+    assert.deepEqual(Object.keys(row.properties ?? {}), keys);
+});
+
 Deno.test('topic subscription requests name the topic and the asserting generation and admit no other', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const document = await response.json() as OpenApiDocument;

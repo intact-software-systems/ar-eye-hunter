@@ -3,6 +3,7 @@ import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-c
 import { decodeALControlMessage, type ALAckPayload } from '../../../al-contracts/al-control.ts';
 import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
+import { isALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALWorkBatchObservations } from '../../work/al-work-batch-observations.ts';
 import type { ALWorkObservationDeferral } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkOutcome } from '../../work/al-work-queue-port.ts';
@@ -360,7 +361,7 @@ function toControlIdentity(
             producerObservedAtEpochMs: ack.observedAtEpochMs
         });
     }
-    if (control?.type === 'nack' && control.payload.reason === 'not-subscribed') {
+    if (control?.type === 'nack' && isALOutsideAudienceNackReason(control.payload.reason)) {
         const nack = control.payload;
         return Object.freeze({
             control: 'nack',

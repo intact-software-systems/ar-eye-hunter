@@ -642,6 +642,7 @@ function createEffect(msg: ALMessage): OutboundEffectFixture {
             kind: 'send-prepared' as const,
             message: reference,
             attemptIdentity: 'initial',
+            sentPositions: null,
             prepared,
             preparedFingerprint,
             phase: 'immediate' as const

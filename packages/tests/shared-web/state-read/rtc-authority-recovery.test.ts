@@ -33,7 +33,7 @@ import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-rea
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALRepairControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -551,32 +551,14 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
             const controls = receiver.messages().map(parseALControlMessage);
             if (scenario === 'ordered-latest') {
-                expect(receiver.delivered).toEqual([]);
-                expect(controls).toContainEqual({
-                    type: 'nack',
-                    payload: expect.objectContaining({
-                        msgId: replacement.id.msgId,
-                        reason: 'gap',
-                        orderingKey: '["app","workspace","room"]:sender:0',
-                        expectedSeq: 1,
-                        missingRanges: [{ from: 1, to: 1 }]
-                    })
-                });
-                expect(controls).toContainEqual({
-                    type: 'repair',
-                    payload: expect.objectContaining({
-                        msgId: replacement.id.msgId,
-                        orderingKey: '["app","workspace","room"]:sender:0',
-                        expectedSeq: 1,
-                        missingRanges: [{ from: 1, to: 1 }]
-                    })
-                });
-            }
-            const settlementsBeforeRepair = sender.settlements.length;
-            await receiver.transferTo(sender);
-            await vi.advanceTimersByTimeAsync(100);
-            await sender.transferTo(receiver);
-            if (scenario === 'ordered-latest') {
+                // The origin recorded the superseded sequence as sent, and the receiver holds no position on the
+                // track, so the replacement opens it there: nothing below it is a gap to ask for.
+                expect(controls.filter((control) => control?.type === 'nack' || control?.type === 'repair')).toEqual([]);
+                // A receiver that held a position below the replacement would ask for seq 1: the repair of the
+                // superseded message commits as a repair and settles superseded, sending nothing.
+                const settlementsBeforeRepair = sender.settlements.length;
+                await sender.native.receive(JSON.stringify(toSupersededSeqRepair(replacement.id.msgId)));
+                await vi.advanceTimersByTimeAsync(100);
                 expect(sender.outboundDiagnostics).toContainEqual(expect.objectContaining({
                     kind: 'commit-phases',
                     msgId: old.id.msgId,
@@ -592,10 +574,9 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                     willRetry: false
                 }));
             }
-            if (scenario === 'ordered-latest') {
-                expect(receiver.delivered).toEqual([]);
-                return;
-            }
+            await receiver.transferTo(sender);
+            await vi.advanceTimersByTimeAsync(100);
+            await sender.transferTo(receiver);
             expect(receiver.admissions).toContainEqual(expect.objectContaining({
                 kind: 'admission-outcome',
                 msgId: replacement.id.msgId,
@@ -1043,6 +1024,23 @@ namespace NativeAuthorityEndpoint {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly outboundSettlements: ALDeliverySettlementSink | undefined;
     }
+}
+
+/** The receiver's request for seq 1 on the sender's track, as it asks on the copy that revealed the gap. */
+function toSupersededSeqRepair(revealingMsgId: string): ALMessage {
+    return newALRepairControlMessage(
+        { v: 4, msgId: 'repair-superseded-seq', senderId: 'receiver', ts: Date.now(), traceId: 'trace-repair-superseded-seq' },
+        {
+            msgId: revealingMsgId,
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            reason: 'missing-seq',
+            observedAtEpochMs: Date.now(),
+            orderingKey: '["app","workspace","room"]:sender:0',
+            expectedSeq: 1,
+            missingRanges: [{ from: 1, to: 1 }]
+        }
+    );
 }
 
 class NativeAuthorityEndpoint {

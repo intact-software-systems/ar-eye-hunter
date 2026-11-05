@@ -50,6 +50,13 @@ describe('AL control value codec', () => {
         expect(decodeALControlMessage(message).right).toEqual({ type: 'nack', payload: notSubscribedNack });
     });
 
+    it('round-trips a before-entry NACK, which a receiver sends for a copy below its track position', () => {
+        const beforeEntryNack: ALNackPayload = { ...notSubscribedNack, logicalRecipientPeerId: 'relay', reason: 'before-entry' };
+        const message = newALNackControlMessage(controlId, beforeEntryNack);
+
+        expect(decodeALControlMessage(message).right).toEqual({ type: 'nack', payload: beforeEntryNack });
+    });
+
     // An older peer's NACK names no logical recipient: it speaks for its sender.
     it('reads a NACK that names no logical recipient as speaking for its sender', () => {
         const { logicalRecipientPeerId: _omitted, ...withoutRecipient } = notSubscribedNack;

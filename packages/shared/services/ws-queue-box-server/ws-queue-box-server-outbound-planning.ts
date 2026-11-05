@@ -11,8 +11,9 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
-import { toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
+import type { ALStoredOutboundMessage } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
@@ -27,6 +28,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../../alm/outbound/al-outbound-transport-message.ts';
+import { isALOutboundRowUnrecorded } from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
@@ -179,18 +181,10 @@ export class WsQueueBoxServerOutboundPlanning {
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
         const { phase, clusterPublisherRegistered, admittedAudience } = request;
         const recipientScope = request.recipientScope === undefined ? undefined : { ...request.recipientScope };
-        const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey);
         const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
         const awaitsRoute = shouldAwaitALRoute(normalized.effective);
         const resolveRecipients = phase === 'dequeue' || !awaitsRoute;
-        const resolved = this.readRecipients(message, {
-            resolveRecipients,
-            representNoCurrentRecipient: phase === 'dequeue',
-            allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered,
-            audience,
-            capturedSessions: directBroadcast || request.principalTargetId !== undefined ||
-                request.sessionInvalidation !== undefined || this.#targetResolution.requiresFrozenAudience(message)
-        });
+        const resolved = this.readRecipients(message, this.toRecipientResolution(request, resolveRecipients, audience));
         if (resolved.right === undefined) {
             return toNoRouteDispatchPlan(
                 message,
@@ -198,6 +192,7 @@ export class WsQueueBoxServerOutboundPlanning {
             );
         }
         const recipients = resolved.right;
+        const sentPositionRecipients = toSentPositionRecipients(message, request);
         return {
             msg: message,
             dropReasonCode: undefined,
@@ -213,13 +208,25 @@ export class WsQueueBoxServerOutboundPlanning {
             ),
             repairTracking: toRepairTrackingPlan(normalized.effective),
             supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
-            ...(admittedAudience === undefined ? {} : { admittedAudience }),
-            admittedConnectionGenerationIds: request.admittedConnectionGenerationIds,
-            ...(request.sessionInvalidation === undefined
-                ? {}
-                : { sessionInvalidation: request.sessionInvalidation }),
-            ...(recipientScope === undefined ? {} : { recipientScope }),
-            ...(request.principalTargetId === undefined ? {} : { principalTargetId: request.principalTargetId })
+            ...(sentPositionRecipients === undefined ? {} : { recordsSentPositions: sentPositionRecipients }),
+            ...toCapturedAuthority({ ...request, recipientScope })
+        };
+    }
+
+    private toRecipientResolution(
+        request: WsQueueBoxServerOutboundPlanning.Request,
+        resolveRecipients: boolean,
+        audience: readonly string[] | undefined
+    ): WsQueueBoxServerOutboundPlanning.RecipientResolution {
+        const { message, phase } = request;
+        return {
+            resolveRecipients,
+            representNoCurrentRecipient: phase === 'dequeue',
+            allowClusterRecipients: phase === 'dequeue' && request.clusterPublisherRegistered,
+            audience,
+            capturedSessions: isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey) ||
+                request.principalTargetId !== undefined || request.sessionInvalidation !== undefined ||
+                this.#targetResolution.requiresFrozenAudience(message)
         };
     }
 
@@ -346,6 +353,45 @@ export class WsQueueBoxServerOutboundPlanning {
             )
         );
     }
+}
+
+/**
+ * The dequeue sends the audience the re-check narrowed (D498), so it fixes those recipients' positions on a tracked
+ * row this outbound admitted (S4-R1); an immediate send is live-only and records nothing (D508), and neither does a
+ * producer-written row, whose copies carry no entry and skip no recipient.
+ */
+function toSentPositionRecipients(
+    message: ALMessage,
+    { phase, admittedAudience, referenceKey }: WsQueueBoxServerOutboundPlanning.Request
+): readonly string[] | undefined {
+    return phase === 'dequeue' && admittedAudience !== undefined && toALOrderingTrackKey(message) !== undefined &&
+            isWsQueueBoxServerAdmittedRow(referenceKey)
+        ? admittedAudience.filter((peerId) => peerId !== message.id.senderId)
+        : undefined;
+}
+
+/** A row the WS outbound admitted, named by its canonical key, as opposed to a row a producer wrote to the outbox. */
+function isWsQueueBoxServerAdmittedRow(referenceKey: Key | undefined): boolean {
+    return referenceKey?.topicId === 'AL_OUTBOUND_MESSAGE';
+}
+
+/** A stored row the WS outbound admitted that still has to record its recipients' positions at its dequeue. */
+export function isWsQueueBoxServerUnrecordedRow(stored: ALStoredOutboundMessage | undefined, nowMs: number): boolean {
+    return stored !== undefined && isWsQueueBoxServerAdmittedRow(stored.reference.key) &&
+        isALOutboundRowUnrecorded(stored, nowMs);
+}
+
+/** The authority a dispatch carries on to its captured policy, each field only when the request names it. */
+function toCapturedAuthority(
+    request: WsQueueBoxServerOutboundPlanning.Request
+): Partial<ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage>> {
+    return {
+        ...(request.admittedAudience === undefined ? {} : { admittedAudience: request.admittedAudience }),
+        admittedConnectionGenerationIds: request.admittedConnectionGenerationIds,
+        ...(request.sessionInvalidation === undefined ? {} : { sessionInvalidation: request.sessionInvalidation }),
+        ...(request.recipientScope === undefined ? {} : { recipientScope: request.recipientScope }),
+        ...(request.principalTargetId === undefined ? {} : { principalTargetId: request.principalTargetId })
+    };
 }
 
 function toNoResolvedRecipientsReason(

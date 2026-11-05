@@ -82,7 +82,14 @@ async function computeArrival(
     peer: ReceivingPeer
 ): Promise<ALInboundCommitBundle> {
     const nowMs = Date.now();
-    const read = await store.readIncomingMessage({ msg, source: RTC_SOURCE, nowMs, prePlan: peer.planner(msg, RTC_SOURCE, { nowMs }) });
+    const read = await store.readIncomingMessage({
+        selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+        orderingObserver: 'addressed',
+        msg,
+        source: RTC_SOURCE,
+        nowMs,
+        prePlan: peer.planner(msg, RTC_SOURCE, { nowMs })
+    });
     return computeALInboundAdmission({
         read,
         plan: peer.planner(msg, RTC_SOURCE, computeALInboundPlanningObservations(read)),

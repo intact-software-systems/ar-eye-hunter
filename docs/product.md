@@ -257,7 +257,7 @@ Shared packages are the reusable surface. Apps are consumers.
   distributed runs. See `apps/rallar-black-box/docs/README.md`.
 - `apps/rallar-black-box-control-server` and `apps/rallar-black-box-headless`
   run and host those distributed browser agents.
-- ALM is the message protocol. Its delivery roadmap (Releases 1 to 10,
+- ALM is the message protocol. Its delivery roadmap (Releases 1 to 11,
   `playground/alm/alm-improvement-plan.md`) is complete; the design that
   continues is the publication QoS and pub/sub addendum,
   `playground/alm/alm-publication-qos-addendum.md`. The product contract is

@@ -278,8 +278,7 @@ describe('createGroupRoomWsAuthorizer', () => {
                     principalId: 'session-b',
                     topicId,
                     connectionGenerationId: 'client-generation-b',
-                    leaseExpiresAtEpochMs: Date.now() + 120_000,
-                    admittedAtGroupRevision: 2
+                    leaseExpiresAtEpochMs: Date.now() + 120_000
                 }],
                 liveSessionGenerations: { 'session-b': ['client-generation-b'] }
             })

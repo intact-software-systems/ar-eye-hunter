@@ -37,7 +37,6 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
-    toALOutboundOrderingHeadKey,
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundVersionKey
@@ -48,6 +47,7 @@ import {
     type ALOutboundCommitBundle,
     type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundOrderingHeadKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
@@ -436,6 +436,8 @@ async function readInboundDecision(store: ALInboundAdmissionStore, message: ALMe
     const nowMs = Date.now();
     const context = toInboundPlanningContext(message, nowMs);
     const read = await store.readIncomingMessage({
+        selfPeerId: 'receiver',
+        orderingObserver: 'addressed',
         msg: message,
         source: {
             kind: 'ws-client',

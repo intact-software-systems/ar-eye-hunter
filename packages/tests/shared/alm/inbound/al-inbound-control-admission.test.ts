@@ -115,6 +115,8 @@ async function seedRelayRow(admissionStore: ALInboundAdmissionStore, seeded: See
     const expireAtTimestamp = Date.now() + 60_000;
     const nowMs = Date.now();
     const read = await admissionStore.readIncomingMessage({
+        selfPeerId: 'self',
+        orderingObserver: 'addressed',
         msg: message,
         source,
         nowMs,
