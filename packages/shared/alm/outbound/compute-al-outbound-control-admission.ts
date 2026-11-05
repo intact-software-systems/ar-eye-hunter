@@ -1,10 +1,11 @@
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
-import type {
-    ALAckPayload,
-    ALNackPayload,
-    ALParsedControlMessage,
-    ALPeerControlMessage,
-    ALRepairPayload
+import {
+    isALOutsideAudienceNackReason,
+    type ALAckPayload,
+    type ALNackPayload,
+    type ALParsedControlMessage,
+    type ALPeerControlMessage,
+    type ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
@@ -293,9 +294,12 @@ export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairP
 
 /**
  * A `resync-required`, `held-by-other`, `unsupported` or `no-publish-grant` refusal ends the receipt too: the hop will
- * refuse every resend of the message. A `not-subscribed` NACK speaks for one recipient only, so it never ends one.
+ * refuse every resend of the message. An outside-audience NACK speaks for one recipient only, so it never ends one.
  */
 function isTerminalNack(nack: ALNackPayload): boolean {
+    if (isALOutsideAudienceNackReason(nack.reason)) {
+        return false;
+    }
     return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale' ||
         nack.reason === 'resync-required' || nack.reason === 'membership-fenced' || nack.reason === 'held-by-other' ||
         nack.reason === 'unsupported' || nack.reason === 'no-publish-grant';

@@ -324,7 +324,8 @@ export type ALDeliveryCarrier = 'rtc' | 'ws';
 export const AL_DELIVERY_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
 
 /**
- * Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and `not-subscribed`.
+ * Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and the two that place
+ * the receiver outside the audience, `not-subscribed` and `before-entry`.
  */
 export const AL_INBOUND_NACK_PLAN_REASONS = [
     'resync-required',
@@ -335,7 +336,8 @@ export const AL_INBOUND_NACK_PLAN_REASONS = [
     'not-yet-in-sync',
     'membership-fenced',
     'unauthorized',
-    'not-subscribed'
+    'not-subscribed',
+    'before-entry'
 ] as const;
 
 export type ALInboundNackPlanReason = typeof AL_INBOUND_NACK_PLAN_REASONS[number];
@@ -346,7 +348,7 @@ function decodeNackReason(value: unknown): ALNackReason {
         value !== 'unauthorized' && value !== 'no-route' && value !== 'overloaded' && value !== 'stale' &&
         value !== 'not-yet-in-sync' && value !== 'membership-fenced' && value !== 'no-leader' &&
         value !== 'held-by-other' && value !== 'unsupported' && value !== 'no-publish-grant' &&
-        value !== 'not-subscribed'
+        value !== 'not-subscribed' && value !== 'before-entry'
     ) {
         throw new TypeError('Control NACK reason is invalid');
     }

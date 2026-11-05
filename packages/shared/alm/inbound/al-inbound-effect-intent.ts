@@ -1,9 +1,10 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier, ALInboundNackPlanReason } from '../../al-contracts/al-control-value-codec.ts';
-import type {
-    ALAckStatus,
-    ALNackReason,
-    ALRepairReason
+import {
+    isALOutsideAudienceNackReason,
+    type ALAckStatus,
+    type ALNackReason,
+    type ALRepairReason
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
@@ -169,12 +170,12 @@ export function toALInboundNegativeControlEffects(
 }
 
 /**
- * An authority refusal is about the receiver's roster, a claim or its own subscription, never the ordering track, so it
- * asks for no repair.
+ * An authority refusal is about the receiver's roster, a claim or its place in the audience, never a gap in the
+ * ordering track, so it asks for no repair.
  */
 function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
     return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other' ||
-        reason === 'not-subscribed';
+        isALOutsideAudienceNackReason(reason);
 }
 
 /** A relay's `not-subscribed` NACK again for a recipient below it, answering a retried copy as it answers ACKs. */
@@ -289,6 +290,7 @@ function toNackReason(reason: ALInboundNackPlanReason): ALNackReason {
         case 'membership-fenced':
         case 'unauthorized':
         case 'not-subscribed':
+        case 'before-entry':
             return reason;
     }
 }

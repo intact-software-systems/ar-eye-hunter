@@ -97,7 +97,8 @@ const ALM_NACK_REASONS: Readonly<Record<ALNackReason, true>> = {
     'held-by-other': true,
     unsupported: true,
     'no-publish-grant': true,
-    'not-subscribed': true
+    'not-subscribed': true,
+    'before-entry': true
 };
 
 /** Keyed by every failure kind, so a new kind fails to compile here instead of decoding as invalid. */
