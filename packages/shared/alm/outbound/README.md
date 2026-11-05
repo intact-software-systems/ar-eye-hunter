@@ -35,9 +35,9 @@ to: a peer the receipt expects, or a session of the row's captured `admittedAudi
 later is never served (D43, D153). The same rule serves a WS session's gap NACK on a browser-origin track the server
 relayed, which names the track's origin: the server's inbound authorization admits it for a requester inside that
 row's `admittedAudience` and refuses one outside. The budget is per message: the first requester spends
-`maxRepairs` and another requester of the same sequence falls back to the receipt's retries. Only
-the `outbox` fan-out mints on the server; a keyed publish without a sequence at `live-only` or `none` is refused.
-Each browser carrier mints its own keyed room sends ("Server-minted sequences" below).
+`maxRepairs` and another requester of the same sequence falls back to the receipt's retries, when the message keeps
+a receipt. Only the `outbox` fan-out mints on the server; a keyed publish without a sequence at `live-only` or `none` is
+refused. Each browser carrier mints its own keyed room sends ("Server-minted sequences" below).
 Application consumers select an ordering key for each independent stream and advance its epoch when the stream restarts.
 [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners share.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at

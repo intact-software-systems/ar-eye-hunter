@@ -1907,7 +1907,7 @@ carries only that recipient's entry and no `proof`, the server's own word. A
 recipient reads its prior from the record, or `seq - 1` when the record lists
 it not:
 
-- **No position yet**: it enters the track at that copy (`entered`), whatever
+- **No position yet, on a recorded copy**: it enters the track at that copy (`entered`), whatever
   the sequence, and asks for nothing below it. The application's own state read
   supplies the past; a session is never sent a sequence admitted before the
   authority first sent it one.
@@ -2048,7 +2048,8 @@ was published is never sent it. The server retransmits the missing sequences to 
 `repairPageMessages` (32) per round, until the message's deadline. The repair
 budget is per message and shared by every requester: the first receiver to NACK
 a sequence spends `maxRepairs` (1 by default), and another receiver missing the
-same sequence gets it from the receipt's retries instead. A report of a gap once
+same sequence gets it from the receipt's retries instead, when the publication
+keeps a receipt. A report of a gap once
 the budget is spent settles the publication `skipped` with reason
 `repair-exhausted`, once. Sequences follow commit order, so under contention a
 publication fenced out by the server's sender version takes the next sequence

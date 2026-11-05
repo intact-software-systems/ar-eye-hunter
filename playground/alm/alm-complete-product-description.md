@@ -835,7 +835,7 @@ captured audience), and a keyed server publication is published to the
 `outbox` (a keyed publish without a sequence at `live-only` or `none` is
 refused). The repair budget is
 per message and shared: the first receiver to NACK a sequence spends it, the
-others fall back to receipt retries; exhausted repair settles
+others fall back to receipt retries when the publication keeps a receipt; exhausted repair settles
 `skipped`/`repair-exhausted` once (D141, D153). Sequences follow commit order,
 so under contention two publications of one track can commit out of publish
 order (a first-in-first-out mint per track is a follow-up), and since a
@@ -868,13 +868,16 @@ delivers as an omission; a frozen recipient that may not deliver witnesses the
 copy; a relay observes nothing and forwards (D526–D528). A copy below a
 recipient's position answers a `before-entry` NACK that relays carry and the
 origin records outside the audience; the WS server sends nothing below a
-recorded position and records a skipped or re-check-dropped session outside the
-receipt's audience (D530, D532). The inbound `ordering-position` diagnostic
+recorded position and, on a relayed browser-origin row with a logical receipt,
+records a skipped or re-check-dropped session outside the receipt's audience
+(D530, D532). The inbound `ordering-position` diagnostic
 states each entry, omission, witness and `before-entry`. The cells
 `subscription-ordered-entry` and `subscription-ordered-omission` prove entry
 and omission over `ws`, `rtc` and `rtc-with-ws-fallback` on the local lane.
 **Limit:** rows a server producer writes straight to the outbox (Relic's round
-transitions, state-sync) record no positions; in a cluster positions and the
+transitions, state-sync) record no positions; the server's own publications
+record no outside class, so a skipped recipient of one stays unconfirmed; in a
+cluster positions and the
 outside class cover sessions on the dequeuing instance only; a receiver whose
 entry frame is lost and whose next frame arrives first enters past it. A
 reopened socket's room presence (D506) and relay re-origination of gap NACKs

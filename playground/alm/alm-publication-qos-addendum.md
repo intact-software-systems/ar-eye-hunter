@@ -737,17 +737,19 @@ like `not-subscribed` and the origin records outside the audience. A frozen
 recipient that may not deliver witnesses: its position moves, nothing is
 buffered and no gap is asked. A relay observes nothing and forwards a track it
 never saw. The WS server sends nothing to a recipient whose recorded position is
-past the copy's sequence, and records that recipient, and a session its dequeue
-re-check dropped, outside the receipt's audience, never unconfirmed, when the
-session is connected to the dequeuing instance. A browser room send that names
+past the copy's sequence, and, on a relayed browser-origin row with a logical
+receipt, records that recipient, and a session its dequeue re-check dropped,
+outside the receipt's audience, never unconfirmed, when the session is
+connected to the dequeuing instance. A browser room send that names
 its ordering key without `seq` is sequenced by its outbound on the durable lane,
 from one head per track that both carriers of a session share, so a reload
 continues the track; a stated `seq` at or below the head is refused
 `unsupported`. The inbound `ordering-position` diagnostic states each entry,
 omission, witness and `before-entry`. Rows a producer writes straight to the
 outbox (Relic's round transitions, state-sync) record no positions and keep the
-earlier behaviour; in a cluster, positions and the outside class cover sessions
-on the dequeuing instance only; a receiver whose entry frame is lost and whose
+earlier behaviour; the server's own publications record no outside class, so a
+skipped recipient of one stays unconfirmed; in a cluster, positions and the
+outside class cover sessions on the dequeuing instance only; a receiver whose entry frame is lost and whose
 next frame arrives first enters past it. The cells `subscription-ordered-entry`
 and `subscription-ordered-omission` pass over the three carriers on the local
 lane. S4-ii re-asserts a reopened socket's room presence (D506), so a reconnect
