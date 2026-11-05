@@ -67,7 +67,11 @@ interface ResolvedRtcMessageTarget {
 
 /** A send's first leg before its channel decides its access, what storage may refuse and, on a live channel, its publication. */
 interface BrowserDeliveryStart
-    extends Omit<BrowserRallarMessageDispatch.Delivery, 'access' | 'onStorageUnavailable' | 'publication'> {
+    extends
+        Omit<
+            BrowserRallarMessageDispatch.Delivery,
+            'access' | 'onStorageUnavailable' | 'publication' | 'admittedCopy'
+        > {
     readonly channel: BrowserTypedChannelPolicy | undefined;
 }
 
@@ -387,7 +391,8 @@ export class BrowserRallarMessageSender {
             ...leg,
             ...toBrowserPublicationDelivery(leg.message, channel),
             access: resolveBrowserChannelAccess(channel),
-            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
+            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel),
+            admittedCopy: false
         };
         const handle = this.input.deliveries.open(delivery.message, delivery.carrier, delivery.rtcCapture);
         this.input.dispatch.send(delivery);

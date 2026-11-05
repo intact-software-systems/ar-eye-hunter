@@ -31,6 +31,8 @@ const ADMITTED: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: false,
 
 interface FallbackAdmission {
     readonly carrier: ALDeliveryCarrier;
+    /** `hand-over`: the carrier took a copy another carrier already admitted, whose sequence it never guards. */
+    readonly entry: 'send' | 'hand-over';
     readonly message: ALMessage;
 }
 
@@ -94,6 +96,7 @@ function createFallbackFixture(
                 carrier: firstCarrier,
                 message,
                 canFallback,
+                admittedCopy: false,
                 payloadIssues: [],
                 access: 'members',
                 onStorageUnavailable: 'refuse',
@@ -120,13 +123,14 @@ function createFallbackCarrierDoubles(
     const handedOver: string[] = [];
     const admit = async (
         carrier: ALDeliveryCarrier,
-        message: ALMessage
+        message: ALMessage,
+        entry: FallbackAdmission['entry'] = 'send'
     ): Promise<ALOutboundEnqueueResult> => {
         // The RTC admission freezes the room, as the overlay planner does; WS takes the envelope it is handed.
         const admitted = carrier === 'rtc'
             ? toALFrozenMulticastMessage(message, FROZEN_AUDIENCE)
             : message;
-        admissions.push({ carrier, message: admitted });
+        admissions.push({ carrier, entry, message: admitted });
         return {
             verdict: carrier === 'rtc' ? ADMITTED : wsVerdict,
             message: admitted,
@@ -145,7 +149,10 @@ function createFallbackCarrierDoubles(
                     }
                 }
             },
-            webSocketQueueBox: { enqueueOutboxIfAbsent: (message) => admit('ws', message) }
+            webSocketQueueBox: {
+                enqueueOutboxIfAbsent: (message) => admit('ws', message),
+                enqueueHandedOverIfAbsent: (message) => admit('ws', message, 'hand-over')
+            }
         }
     });
     return { context, admissions, handedOver };
@@ -241,6 +248,7 @@ describe('post-admission fallback within the deadline (D56)', () => {
         expect(fixture.handedOver).toEqual([handle.msgId]);
         // Same msgId, frozen audience and `expiresAtMs`: the WS leg is the envelope the RTC admission returned.
         expect(fixture.admissions[1]!.message).toEqual(fixture.admissions[0]!.message);
+        expect(fixture.admissions.map((admission) => admission.entry)).toEqual(['send', 'hand-over']);
         expect(handle.lifecycle().evidence.carrierFallback).toMatchObject({
             from: 'rtc',
             to: 'ws',

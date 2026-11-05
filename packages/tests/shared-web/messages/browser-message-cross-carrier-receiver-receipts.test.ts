@@ -567,6 +567,7 @@ function createReceiptLoopOrigin(
         carrier: 'rtc',
         message,
         canFallback: true,
+        admittedCopy: false,
         payloadIssues: [],
         access: 'members',
         onStorageUnavailable: 'refuse',

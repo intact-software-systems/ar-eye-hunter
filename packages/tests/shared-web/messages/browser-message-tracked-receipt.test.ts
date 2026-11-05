@@ -665,6 +665,7 @@ function createDispatchHarness({ registry, carrier, admits, publication }: Dispa
                 carrier,
                 message,
                 canFallback,
+                admittedCopy: false,
                 payloadIssues: [],
                 access: publication.access,
                 onStorageUnavailable: 'refuse',

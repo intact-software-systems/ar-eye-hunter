@@ -47,7 +47,11 @@ export async function replayBlackBoxCapturedMessage(
                 `is retained to replay on ${carrier}.`
         );
     }
-    const result = await writeCarrierOutboxAdmission(context, { carrier, canFallback: false }, captured.msg);
+    const result = await writeCarrierOutboxAdmission(
+        context,
+        { carrier, canFallback: false, admittedCopy: false },
+        captured.msg
+    );
     wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, result);
     return result.verdict;
 }

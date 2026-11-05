@@ -133,6 +133,7 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
                 carrier: 'rtc',
                 message,
                 canFallback,
+                admittedCopy: false,
                 payloadIssues: [],
                 access: 'members',
                 onStorageUnavailable: 'refuse',
