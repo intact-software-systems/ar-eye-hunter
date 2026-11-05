@@ -6,7 +6,7 @@ import type {
     ALOrderingTrackSnapshot,
     ALSeqRange
 } from '../al-contracts/al-runtime.ts';
-import { toALOrderingTrackKey } from '../al-contracts/al-runtime.ts';
+import { resolveALOrderingPriorSeq, toALOrderingTrackKey } from '../al-contracts/al-runtime.ts';
 
 export interface ComputeALOrderingObservationInput {
     readonly snapshot: ALOrderingTrackSnapshot | undefined;
@@ -52,14 +52,13 @@ export function computeALOrderingObservation(input: ComputeALOrderingObservation
     const snapshot = input.snapshot && input.snapshot.updatedAtMs + input.trackTtlMs > input.nowMs
         ? input.snapshot
         : undefined;
-    const record = input.msg.ordering?.priorSeqByRecipient;
     const track: ALOrderingTrackInput = {
         input,
         trackKey,
         seq,
         snapshot,
         expectedSeq: snapshot ? Math.min(Number.MAX_SAFE_INTEGER, snapshot.lastContiguousSeq + 1) : 1,
-        priorSeq: record === undefined ? undefined : record[input.selfPeerId] ?? seq - 1
+        priorSeq: resolveALOrderingPriorSeq(input.msg, input.selfPeerId)
     };
     if (input.role === 'witness') {
         return computeWitnessedOrdering(track);

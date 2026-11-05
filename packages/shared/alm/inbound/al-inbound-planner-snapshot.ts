@@ -1,7 +1,11 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
-import type { ALOrderingObservationStatus, ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
+import {
+    resolveALOrderingPriorSeq,
+    type ALOrderingObservationStatus,
+    type ALOrderingTrackSnapshot
+} from '../../al-contracts/al-runtime.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
 import { computeALOrderingObservation, type ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
 import {
@@ -167,9 +171,9 @@ const RETAINED_ORDERING_STATUSES: ReadonlySet<ALOrderingObservationStatus> = new
 function toBufferedPriorSeqs(read: ALInboundPlannerSnapshot): Readonly<Record<number, number>> {
     const priorSeqs: Record<number, number> = {};
     for (const buffered of read.bufferedSnapshots) {
-        const record = buffered.msg.ordering?.priorSeqByRecipient;
-        if (record !== undefined) {
-            priorSeqs[buffered.seq] = record[read.selfPeerId] ?? buffered.seq - 1;
+        const priorSeq = resolveALOrderingPriorSeq(buffered.msg, read.selfPeerId);
+        if (priorSeq !== undefined) {
+            priorSeqs[buffered.seq] = priorSeq;
         }
     }
     return priorSeqs;

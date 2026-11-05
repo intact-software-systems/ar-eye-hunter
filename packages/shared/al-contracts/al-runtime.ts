@@ -93,6 +93,16 @@ export function toALOrderingTrackKey(msg: ALMessage): string | undefined {
     return toTrackKey(orderingKey, msg);
 }
 
+/**
+ * The prior a copy's record names for `recipientPeerId`, `seq - 1` when the record lists it not; `undefined` for a
+ * copy no authority recorded.
+ */
+export function resolveALOrderingPriorSeq(msg: ALMessage, recipientPeerId: string): number | undefined {
+    const seq = msg.ordering?.seq;
+    const record = msg.ordering?.priorSeqByRecipient;
+    return record === undefined || seq === undefined ? undefined : record[recipientPeerId] ?? seq - 1;
+}
+
 /** The track a message names a key on but no sequence for: the WS server's outbound mints the next one there. */
 export function toALSequenceMintTrackKey(msg: ALMessage): string | undefined {
     const orderingKey = msg.ordering?.orderingKey;
