@@ -1,13 +1,13 @@
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundMessageReadDto,
-    ALOutboundSentPositions
-} from '../admission/al-outbound-admission-store.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALOutboundCommitBundle, ALOutboundSentPositions } from '../admission/al-outbound-admission-store.ts';
 
 /** What chaining reads of a group member's read: its positions, and whether its admission stamped its copy. */
-export type ALOutboundGroupMemberRead =
-    & Pick<ALOutboundMessageReadDto<unknown>, 'originalMsg' | 'msg' | 'sentPositions'>
-    & Readonly<{ storedMessage: object | undefined; }>;
+export interface ALOutboundGroupMemberRead {
+    readonly storedMessage: object | undefined;
+    readonly originalMsg: ALMessage;
+    readonly msg: ALMessage;
+    readonly sentPositions: ALOutboundSentPositions | undefined;
+}
 
 /**
  * The members' reads of one commit group, each recorded position taken past what a member at an earlier sequence of the
