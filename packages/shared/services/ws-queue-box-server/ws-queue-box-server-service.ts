@@ -875,8 +875,8 @@ export class WsQueueBoxServerService {
 
     /**
      * A dequeued row that will record positions on its track follows its predecessor there when its batch claimed it
-     * too (T3-R5), and otherwise waits while that predecessor is admitted here and not yet recorded (T3-R2): a
-     * predecessor never admitted here, already sent or expired holds nothing.
+     * too, and otherwise waits while that predecessor is admitted here and not yet recorded, so the track's positions
+     * are written in sequence order: a predecessor never admitted here, already sent or expired holds nothing.
      */
     private async readTrackOrderAuthority(
         message: ALMessage,

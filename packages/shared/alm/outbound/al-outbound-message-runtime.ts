@@ -486,7 +486,7 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'authorized'; }>
         | Readonly<{ status: 'rejected'; reason: string; }>
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
-    /** A dequeued row's authority, which may also admit it only after its predecessor its batch claimed (T3-R5). */
+    /** A dequeued row's authority, which may also admit it only after its predecessor its batch claimed. */
     export type DequeuedAdmissionAuthority =
         | PendingAdmissionAuthority
         | Readonly<{ status: 'follows-batch-predecessor'; }>;

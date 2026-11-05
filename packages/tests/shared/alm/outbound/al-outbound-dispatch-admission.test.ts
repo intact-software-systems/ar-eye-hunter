@@ -206,7 +206,7 @@ it('reads every member of a burst at once before committing in input order and a
     }
 });
 
-/** The sender's row at `seq` of track `k`, which a dequeued batch may admit only behind its predecessor (T3-R5). */
+/** The sender's row at `seq` of track `k`, which a dequeued batch may admit only behind its predecessor. */
 function toTrackedDispatch(seq: number, followsBatchPredecessor: boolean): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
     const message = createOutboundMessage(`tracked-${seq}`);
     return { ...toDispatch({ ...message, ordering: { orderingKey: 'k', seq } }), followsBatchPredecessor };

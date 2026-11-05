@@ -450,8 +450,8 @@ async function publishEvents(
         );
         minted.push(result.message.ordering);
     }
-    // A claim takes the run's rows in key order: rows that follow their predecessor in the same claim commit with it
-    // (T3-R5), and a row claimed without its unrecorded predecessor waits for it (T3-R2).
+    // A claim takes the run's rows in admission order: rows that follow their predecessor in the same claim commit with
+    // it, and a row claimed without its unrecorded predecessor waits for it.
     await expect.poll(
         () => runEngineTicking(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length))
     ).toEqual(audience.map(() => count));

@@ -358,7 +358,7 @@ export class WsQueueBoxServerOutboundPlanning {
 /**
  * The dequeue sends the audience the re-check narrowed (D498), so it fixes those recipients' positions on a tracked
  * row this outbound admitted (S4-R1); an immediate send is live-only and records nothing (D508), and neither does a
- * producer-written row (T3-R4).
+ * producer-written row, whose copies carry no entry and skip no recipient.
  */
 function toSentPositionRecipients(
     message: ALMessage,

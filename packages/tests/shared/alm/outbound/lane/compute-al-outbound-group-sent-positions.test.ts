@@ -106,7 +106,7 @@ describe('the sent positions of one commit group', () => {
     });
 });
 
-describe('the rows of a dequeued batch that follow their predecessor on the track (T3-R5)', () => {
+describe('the rows of a dequeued batch that follow their predecessor on the track', () => {
     it('leaves a follower whose predecessor the batch did not admit, and its own follower with it', () => {
         const dispatches = [follower(4), follower(3), leader(1), follower(5)];
 

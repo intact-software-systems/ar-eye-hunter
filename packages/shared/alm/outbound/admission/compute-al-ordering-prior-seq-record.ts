@@ -18,8 +18,8 @@ export function computeALOrderingPriorSeqRecord(positions: ALOutboundSentPositio
 
 /**
  * Whether a durable row admitted to an audience still has to record its recipients' positions: unexpired and not yet
- * recorded. Its successor on the track waits for it, so positions are written in sequence order and "last sent" keeps
- * its meaning (T3-R2).
+ * recorded. Its successor on the track waits for it unless the same batch claimed both, so positions are written in
+ * sequence order and "last sent" keeps its meaning.
  */
 export function isALOutboundRowUnrecorded(stored: ALStoredOutboundMessage, nowMs: number): boolean {
     return stored.sentPositions === null && stored.policy.persist && stored.policy.admittedAudience !== undefined &&
@@ -28,7 +28,7 @@ export function isALOutboundRowUnrecorded(stored: ALStoredOutboundMessage, nowMs
 
 /**
  * Whether a tracked row's predecessor (`seq - 1` of its track) is claimed in the same batch: the batch admits the two
- * in sequence order and chains their positions, so the row follows it there and is never held for it (T3-R5).
+ * in sequence order and chains their positions, so the row follows it there and is never held for it.
  */
 export function isALOrderingPredecessorInBatch(message: ALMessage, batch: ALOrderingBatchSequences): boolean {
     const trackKey = toALOrderingTrackKey(message);
