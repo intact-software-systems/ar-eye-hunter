@@ -480,6 +480,38 @@
           }
         },
         {
+          "name": "readClient{i}SocketGeneration",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{client{i}ClientId}",
+            "headers": {
+              "Authorization": "{client{i}AuthHeader}",
+              "x-client-id": "{client{i}ClientId}"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "activeSessions": [
+                {
+                  "sessionId": "{client{i}SessionId}",
+                  "transport": "ws"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "captureClient{i}SocketGenerationId",
+          "type": "set",
+          "output": "client{i}SocketGenerationId",
+          "transform": {
+            "path": "resultsByName.readClient{i}SocketGeneration.0.actual.body.activeSessions.0.generationId"
+          }
+        },
+        {
           "name": "connectClient{i}Presence",
           "type": "http",
           "connection": "api",
@@ -493,7 +525,7 @@
             "body": {
               "generationId": "generation-{runId}",
               "publicationKey": null,
-              "connectionGenerationId": "connection-generation-{runId}",
+              "connectionGenerationId": "{client{i}SocketGenerationId}",
               "principalId": "{client{i}ClientId}"
             },
             "retry": {

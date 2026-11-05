@@ -438,6 +438,33 @@
       }
     },
     {
+      "name": "captureBetaSocketGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{betaClientId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "outputs": {
+          "betaSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{betaSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "connectAlphaPresence",
       "type": "http",
       "connection": "api",
@@ -478,7 +505,7 @@
         "body": {
           "generationId": "generation-reconnect-beta-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-reconnect-beta-{runId}",
+          "connectionGenerationId": "{betaSocketGenerationId}",
           "principalId": "{betaClientId}"
         }
       },
@@ -652,6 +679,32 @@
           "group": {
             "displayName": "Reconnect group updated {runId}"
           }
+        }
+      }
+    },
+    {
+      "name": "theClosedSocketLeavesAlphaWithNoLiveClientSession",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{alphaClientId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "activeSessions": []
         }
       }
     },
@@ -978,18 +1031,18 @@
       }
     },
     {
-      "name": "relabelAlphaPresenceForTheSecondSocket",
+      "name": "reassertAlphaPresenceForTheReopenedSocket",
       "type": "http",
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/presence-reconnect-alpha-relabel-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/presence-reconnect-alpha-reassert-{runId}",
         "headers": {
           "Authorization": "{alphaAuthHeader}",
           "x-client-id": "{alphaClientId}"
         },
         "body": {
-          "generationId": "generation-reconnect-alpha-second-{runId}",
+          "generationId": "generation-reconnect-alpha-reasserted-{runId}",
           "publicationKey": null,
           "connectionGenerationId": "{alphaSecondSocketGenerationId}",
           "principalId": "{alphaClientId}"
@@ -1000,6 +1053,81 @@
         "body": {
           "group": {
             "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theReassertedSessionIsActiveUnderTheReopenedSocket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "onlineMemberCount": 2,
+          "activeSessions": [
+            {
+              "sessionId": "{alphaSessionId}",
+              "principalId": "{alphaClientId}",
+              "generationId": "generation-reconnect-alpha-reasserted-{runId}",
+              "connectionGenerationId": "{alphaSecondSocketGenerationId}",
+              "status": "active"
+            },
+            {
+              "sessionId": "{betaSessionId}",
+              "principalId": "{betaClientId}",
+              "generationId": "generation-reconnect-beta-{runId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "aConnectNamingTheClosedSocketGenerationIsStale",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/presence-reconnect-alpha-dead-generation-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "generationId": "generation-reconnect-alpha-dead-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "{alphaFirstSocketGenerationId}",
+          "principalId": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "stale-generation",
+          "status": 403,
+          "denial": {
+            "code": "stale-generation"
           }
         }
       }
