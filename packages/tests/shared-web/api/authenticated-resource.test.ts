@@ -250,10 +250,9 @@ describe('authenticated resource error lifetime', () => {
         await test.owner.start();
         test.api.change.mockResolvedValueOnce('This invitation is no longer available.');
         await test.owner.act({ name: 'join' });
-        const reads = test.api.read.mock.calls.length;
+        test.api.read.mockResolvedValueOnce({ name: 'after-push' });
         test.invalidate();
-        await vi.waitFor(() => expect(test.api.read.mock.calls.length).toBeGreaterThan(reads));
-        await vi.waitFor(() => expect(test.owner.getState().busy).toBe(false));
+        await vi.waitFor(() => expect(test.owner.getState().view).toEqual({ name: 'after-push' }));
         expect(test.owner.getState().error).toBe('This invitation is no longer available.');
         await test.owner.refresh();
         expect(test.owner.getState().error).toBeNull();
