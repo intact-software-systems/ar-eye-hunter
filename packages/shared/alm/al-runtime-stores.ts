@@ -64,7 +64,7 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly nowMs: () => number;
     readonly namespace: string;
     readonly canonicalScope?: string;
-    /** The ordering-head namespace the session's carrier pairs share over one backend; absent, the pair's own. */
+    /** The ordering-head namespace the session's carrier pairs share over one store; absent, the pair's own. */
     readonly orderingHeadNamespace?: string;
     /** Absent, each inbound resolve builds its own backend; present, every resolve shares it. */
     readonly inboundBackend?: ALAdmissionWorkBackend;
@@ -110,7 +110,7 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly nowMs?: () => number;
     readonly namespace?: string;
     readonly canonicalScope?: string;
-    /** The ordering-head namespace the session's carrier pairs share over one backend; absent, the pair's own. */
+    /** The ordering-head namespace the session's carrier pairs share over one store; absent, the pair's own. */
     readonly orderingHeadNamespace?: string;
     /** Absent, each inbound resolve builds its own backend; present, every resolve shares it. */
     readonly inboundBackend?: ALAdmissionWorkBackend;

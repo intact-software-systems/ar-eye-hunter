@@ -18,8 +18,11 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { computeALOrderingObservation } from '@shared/alm/compute-al-ordering-observation.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type {
     ALOutboundCommitBundle,
     ALOutboundPlanner
@@ -34,9 +37,11 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createInMemoryALAdmissionState } from '@shared/mod.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
+import '../../../setup-browser-indexeddb.ts';
 import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
@@ -89,20 +94,23 @@ describe('one ordering head per session track, whichever carrier mints on it', (
         expect(seqs).toEqual([1, 2, 3]);
     });
 
-    it('never mints one sequence twice when both carriers read the head at once: the later commit conflicts', async () => {
-        const stores = createSessionCarrierStores();
-        const wsSend = createRoomBroadcast('ws-read-first');
-        const overlaySend = createRoomBroadcast('overlay-read-second');
-        const wsRead = await readMintingAdmission(stores.ws, wsSend);
-        const overlayRead = await readMintingAdmission(stores.rtc, overlaySend);
+    it.each(['memory', 'indexeddb'] as const)(
+        'never mints one sequence twice when both carriers read the head at once over %s: the later commit conflicts',
+        async (kind) => {
+            const stores = createSessionCarrierStores(kind === 'memory' ? createMemoryBackend() : createIndexedDbBackend());
+            const wsSend = createRoomBroadcast('ws-read-first');
+            const overlaySend = createRoomBroadcast('overlay-read-second');
+            const wsRead = await readMintingAdmission(stores.ws, wsSend);
+            const overlayRead = await readMintingAdmission(stores.rtc, overlaySend);
 
-        expect(await stores.rtc.admissionStore.commitBundle(overlayRead)).toBe('committed');
-        expect(await stores.ws.admissionStore.commitBundle(wsRead)).toBe('conflict');
+            expect(await stores.rtc.admissionStore.commitBundle(overlayRead)).toBe('committed');
+            expect(await stores.ws.admissionStore.commitBundle(wsRead)).toBe('conflict');
 
-        const retried = await readMintingAdmission(stores.ws, wsSend);
-        expect(await stores.ws.admissionStore.commitBundle(retried)).toBe('committed');
-        expect([await readSentSeq(stores.rtc, overlaySend), await readSentSeq(stores.ws, wsSend)]).toEqual([1, 2]);
-    });
+            const retried = await readMintingAdmission(stores.ws, wsSend);
+            expect(await stores.ws.admissionStore.commitBundle(retried)).toBe('committed');
+            expect([await readSentSeq(stores.rtc, overlaySend), await readSentSeq(stores.ws, wsSend)]).toEqual([1, 2]);
+        }
+    );
 
     it('continues on RTC at k + 1 after a fallback send\'s WS leg minted 1 to k in the start-up gap', async () => {
         const stores = createSessionCarrierStores();
@@ -165,8 +173,7 @@ describe('one ordering head per session track, whichever carrier mints on it', (
 });
 
 /** Both carriers' durable pairs of one session: their own namespaces over one store, one namespace for heads. */
-function createSessionCarrierStores(): SessionCarrierStores {
-    const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(new InMemoryQueueBox(new Map())), Date.now);
+function createSessionCarrierStores(backend: ALAdmissionWorkBackend = createMemoryBackend()): SessionCarrierStores {
     const createCarrierStores = (carrier: string) =>
         createDefaultInMemoryALOutboundRuntimeStores({
             outboundBackend: backend,
@@ -176,6 +183,23 @@ function createSessionCarrierStores(): SessionCarrierStores {
             decodePrepared: decodeALOutboundTransportMessage
         });
     return { ws: createCarrierStores('ws-client'), rtc: createCarrierStores('rtc-overlay') };
+}
+
+function createMemoryBackend(): ALAdmissionWorkBackend {
+    return new InMemoryAdmissionBackend(createInMemoryALAdmissionState(new InMemoryQueueBox(new Map())), Date.now);
+}
+
+/** The session's one IndexedDB store, as the browser opens it for both carriers' pairs. */
+function createIndexedDbBackend(): ALAdmissionWorkBackend {
+    return new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName: `shared-ordering-head-${crypto.randomUUID()}`,
+        storeName: 'entries',
+        nowMs: Date.now,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
 }
 
 function createCarrierRuntime(
