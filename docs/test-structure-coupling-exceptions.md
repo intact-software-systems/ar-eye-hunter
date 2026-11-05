@@ -6006,21 +6006,6 @@ moved or changed test.
         "requiredConstraint": "Initial hidden startup sends zero requests. Replacing Alice with Bob while hidden issues no request using Bob credentials before foreground restoration.",
         "failureRationale": "An empty displayed view alone cannot prove private network requests were suppressed for the hidden account."
       }
-    },
-    {
-      "id": "move-history-authorized-notice-and-recovery",
-      "domain": "Move together browser ownership",
-      "owner": "Rallar browser maintainers",
-      "summary": "Move changes wake canonical history reads only through the exact current account and scope, authenticated recovery, or valid server subscriber resync.",
-      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers account-owned moves from validated notices, reconnect and subscriber resync",
-      "coverageRelation": "The fixture delivers the scoped principal message, rejected variants, reconnect and resync, then repeats signals after logout and subscription disposal. Each observation is at the owner-facing refresh callback.",
-      "interactionRequirement": {
-        "interactionKind": "count",
-        "ownedPort": "subscribeRoomMoveChanges changed callback",
-        "observableEffect": "An accepted WS message or recovery event requests an authenticated Move view refresh.",
-        "requiredConstraint": "The own-account notice, reconnect and valid resync each deliver one callback. Wrong transport, recipient, context or claim scope deliver none, as do signed-out or disposed subscriptions.",
-        "failureRationale": "Checking final visible history cannot expose rejected notifications incorrectly triggering canonical requests or a lost reconnect recovery. "
-      }
     }
   ],
   "entries": [
@@ -12788,61 +12773,6 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The absence of a request specifically carrying Bob’s credentials proves hidden account replacement defers its canonical read.",
       "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#defers hidden reads and fences the previous account across foreground recovery"
-    },
-    {
-      "id": "test-structure-coupling-070c5c521b51348a",
-      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "move-history-authorized-notice-and-recovery",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "The exact scoped own-account Move envelope delivers one refresh.",
-      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers account-owned moves from validated notices, reconnect and subscriber resync"
-    },
-    {
-      "id": "test-structure-coupling-274d27fa99936592",
-      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "move-history-authorized-notice-and-recovery",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "RTC, foreign principal, wrong route context and mismatched source scope deliver no extra callback.",
-      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers account-owned moves from validated notices, reconnect and subscriber resync"
-    },
-    {
-      "id": "test-structure-coupling-e02c2ef3a51c822b",
-      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "move-history-authorized-notice-and-recovery",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "Reconnect and valid subscriber resync each add one recovery callback.",
-      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers account-owned moves from validated notices, reconnect and subscriber resync"
-    },
-    {
-      "id": "test-structure-coupling-7fa4809da7e1b066",
-      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "move-history-authorized-notice-and-recovery",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "Signed-out delivery, reopen and resync add no recovery work.",
-      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers account-owned moves from validated notices, reconnect and subscriber resync"
-    },
-    {
-      "id": "test-structure-coupling-aec143f93f5410fa",
-      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "move-history-authorized-notice-and-recovery",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "Restoring login after unsubscribe cannot cause new message or lifecycle callbacks.",
-      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers account-owned moves from validated notices, reconnect and subscriber resync"
     }
   ]
 }

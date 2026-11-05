@@ -22,13 +22,13 @@ import {
     selectRoomMoveEntry
 } from './room-move-recovery.ts';
 
+import { subscribeViewInvalidations } from '../../api/subscribe-view-invalidations.ts';
 import type { SubscribeViewRecovery } from '../../api/subscribe-view-recovery.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../../browser-activity.ts';
 import type { RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
-import { subscribeRoomMoveChanges } from './subscribe-room-move-changes.ts';
 
 export namespace RallarRoomMove {
     export interface State {
@@ -110,7 +110,8 @@ export class RallarRoomMove {
                 await browser.rooms.session(move.source).refresh({ signal, timeoutMs: 10000 });
                 await browser.rooms.session(move.destination).refresh({ signal, timeoutMs: 10000 });
             },
-            onChanged: (changed) => subscribeRoomMoveChanges({ browser, scope: config.scope, changed }),
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'room-move', changed }),
             withEligibility
         }, config);
     }

@@ -97,10 +97,10 @@ describe('group moves through AppInbox', () => {
             await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         }
         await deliver('first-retirement');
-        const notices = [...harness.database.outboxEntries.values()].filter((entry) => entry.key.topicId === 'group-move.changed');
+        const notices = [...harness.database.outboxEntries.values()].filter((entry) => entry.key.topicId === 'view.invalidated');
         expect(notices).toHaveLength(1);
         await deliver('retry-after-restart');
-        expect([...harness.database.outboxEntries.values()].filter((entry) => entry.key.topicId === 'group-move.changed')).toEqual(notices);
+        expect([...harness.database.outboxEntries.values()].filter((entry) => entry.key.topicId === 'view.invalidated')).toEqual(notices);
     });
 
     it('keeps the exact actor session in logical command identity', () => {

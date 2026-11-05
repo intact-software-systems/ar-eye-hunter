@@ -8,11 +8,6 @@ import {
     type ALOutboundScopeAuthority
 } from '../../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
-import { AppTopics } from '../../../api/api-config.ts';
-import {
-    hasGroupMoveChangedTopic,
-    matchesGroupMoveChangedRecipient
-} from '../../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { hasServerRoomSnapshotTopic } from '../../../api/views/server-room-snapshot.ts';
 import { hasViewInvalidatedTopic } from '../../../api/views/view-invalidation.ts';
@@ -83,13 +78,6 @@ export function validateWsQueueBoxServerRecipientAuthority(
         return resolved.left;
     }
     const scope = resolved.right!;
-    if (hasGroupMoveChangedTopic(message)) {
-        return scope.kind === 'recipient-scope' && referenceKey?.topicId === AppTopics.groupMoveChanged &&
-                authority.admittedAudience !== undefined &&
-                matchesGroupMoveChangedRecipient(message, scope.recipientScope, scope.principalTargetId)
-            ? []
-            : ['Move Together requires its exact scoped account authority and committed queue row'];
-    }
     switch (scope.kind) {
         case 'account-view':
             return authority.admittedAudience === undefined

@@ -2,7 +2,6 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import { hasGroupMoveChangedTopic } from '../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import { hasServerPushedViewTopic } from '../../api/views/view-invalidation.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -186,7 +185,7 @@ export class WsQueueBoxServerLiveDelivery {
 
     sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
         const { peerId, message, encoded, inboundScope } = input;
-        if (hasServerPushedViewTopic(message) || hasGroupMoveChangedTopic(message)) {
+        if (hasServerPushedViewTopic(message)) {
             return 0;
         }
         if (

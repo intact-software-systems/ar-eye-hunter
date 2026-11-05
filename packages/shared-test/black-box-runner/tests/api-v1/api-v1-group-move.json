@@ -1087,17 +1087,18 @@
             "traceId": "bb-move-commit-change-{runId}"
           },
           "route": {
-            "topicId": "group-move.changed"
+            "topicId": "view.invalidated"
           },
           "payload": {
-            "typeId": "group-move.changed",
+            "typeId": "view.invalidated",
             "resource": {
-              "source": {
+              "version": 1,
+              "resource": "room-move",
+              "scope": {
                 "applicationId": "{applicationId}",
-                "workspaceId": "{workspaceId}",
-                "groupId": "{sourceId}"
+                "workspaceId": "{workspaceId}"
               },
-              "moveId": "target-move-{runId}"
+              "principalId": "{bobObserverClientId}"
             }
           },
           "targets": {
@@ -1114,7 +1115,7 @@
       }
     },
     {
-      "name": "otherScopeNeverReceivesMoveClaim",
+      "name": "otherScopeNeverReceivesMoveInvalidation",
       "type": "ws.wait",
       "connection": "bobOtherScopeSocket",
       "expect": {
@@ -1128,24 +1129,24 @@
             "traceId": "bb-move-commit-change-{runId}"
           },
           "route": {
-            "topicId": "group-move.changed"
+            "topicId": "view.invalidated"
           },
           "payload": {
-            "typeId": "group-move.changed",
+            "typeId": "view.invalidated",
             "resource": {
-              "source": {
+              "version": 1,
+              "resource": "room-move",
+              "scope": {
                 "applicationId": "{applicationId}",
-                "workspaceId": "{workspaceId}",
-                "groupId": "{sourceId}"
-              },
-              "moveId": "target-move-{runId}"
+                "workspaceId": "{workspaceId}"
+              }
             }
           }
         }
       }
     },
     {
-      "name": "coMemberNeverReceivesMoveClaim",
+      "name": "coMemberNeverReceivesMoveInvalidation",
       "type": "ws.wait",
       "connection": "spectatorSocket",
       "expect": {
@@ -1159,17 +1160,17 @@
             "traceId": "bb-move-commit-change-{runId}"
           },
           "route": {
-            "topicId": "group-move.changed"
+            "topicId": "view.invalidated"
           },
           "payload": {
-            "typeId": "group-move.changed",
+            "typeId": "view.invalidated",
             "resource": {
-              "source": {
+              "version": 1,
+              "resource": "room-move",
+              "scope": {
                 "applicationId": "{applicationId}",
-                "workspaceId": "{workspaceId}",
-                "groupId": "{sourceId}"
-              },
-              "moveId": "target-move-{runId}"
+                "workspaceId": "{workspaceId}"
+              }
             }
           }
         }

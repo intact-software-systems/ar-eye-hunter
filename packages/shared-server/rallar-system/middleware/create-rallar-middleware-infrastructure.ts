@@ -1,7 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
-import { hasGroupMoveChangedTopic } from '@shared/api/mutation/group-move-changed.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
 import { hasServerPushedViewTopic } from '@shared/api/views/view-invalidation.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -230,7 +229,7 @@ function installMiddlewareLiveWsNoticeSubscriber(
 }
 
 function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
-    if (hasServerPushedViewTopic(message) || hasGroupMoveChangedTopic(message)) {
+    if (hasServerPushedViewTopic(message)) {
         return Either.ofLeft({ code: 'unauthorized', message: 'Account view notices are server publications only' });
     }
     if (

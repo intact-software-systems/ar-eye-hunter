@@ -1,6 +1,12 @@
 import { requireEpoch, requireExactKeys, requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { decodeGroupMoveClaim, moveIdentifier, type GroupMoveClaim } from '@shared/api/mutation/decode-group-move.ts';
 import { GROUP_MOVE_MAX_SESSIONS, type GroupMove } from '@shared/api/mutation/group-move.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
+import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+
+export const GROUP_MOVE_DEADLINE_TOPIC = 'group-move.deadline';
 
 export interface GroupMoveProposalDeadline extends GroupMoveClaim {
     readonly expiresAtEpochMs: number;
@@ -86,6 +92,14 @@ export function toGroupMoveDeadline(
         });
     }
     return null;
+}
+
+export function toGroupMoveDeadlineRoute(command: GroupMoveDeadline): Key {
+    return toAppQueueKey({
+        topicId: GROUP_MOVE_DEADLINE_TOPIC,
+        resourceId: `gm-${computeSha256CanonicalJson(command).slice(7, 37)}`,
+        contextId: groupStateGroupStorageKey(command.source)
+    });
 }
 
 export function groupMoveDeadlineDueAt(command: GroupMoveDeadline): number {

@@ -5,10 +5,6 @@ import {
     type ALAccountViewAuthority
 } from '../../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
-import {
-    hasGroupMoveChangedTopic,
-    matchesGroupMoveChangedRecipient
-} from '../../../api/mutation/group-move-changed.ts';
 import { hasServerRoomSnapshotTopic } from '../../../api/views/server-room-snapshot.ts';
 import { hasViewInvalidatedTopic } from '../../../api/views/view-invalidation.ts';
 import type { WsServerLiveSendInputDto } from '../ws-queue-box-server-contracts.ts';
@@ -30,10 +26,6 @@ export function validateLiveSendAuthority(input: WsServerLiveSendInputDto): read
     return [
         ...(hasViewInvalidatedTopic(input.message)
             ? validateViewInvalidationAudience(input.message, input.recipientScope, input.recipientPrincipalId)
-            : []),
-        ...(hasGroupMoveChangedTopic(input.message) && (input.sessionInvalidation !== undefined ||
-                !matchesGroupMoveChangedRecipient(input.message, input.recipientScope, input.recipientPrincipalId))
-            ? ['Move Together requires its exact current scoped account audience']
             : []),
         ...validateRecipientScopeAuthority(input)
     ];

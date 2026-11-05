@@ -1,6 +1,5 @@
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupMove, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -38,7 +37,13 @@ import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts'
 import { GroupMutationRejectedError } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeGroupMoveCommand, decodeGroupMoveIngress, type GroupMoveCommand } from './group-move-command.ts';
-import { decodeGroupMoveDeadline, groupMoveDeadlineDueAt, type GroupMoveDeadline } from './group-move-deadline.ts';
+import {
+    decodeGroupMoveDeadline,
+    GROUP_MOVE_DEADLINE_TOPIC,
+    groupMoveDeadlineDueAt,
+    toGroupMoveDeadlineRoute,
+    type GroupMoveDeadline
+} from './group-move-deadline.ts';
 import type { GroupMoveService } from './group-move-service.ts';
 
 export interface GroupMoveInboxRequest {
@@ -246,11 +251,7 @@ export function installGroupMoveDeadline(input: InstallGroupMoveDeadlineInput): 
     input.outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_MOVE_DEADLINE, {
         onMessage: async (message) => {
             const command = decodeGroupMoveDeadline(JSON.parse(message.payload.resource));
-            const key = toAppQueueKey({
-                topicId: 'group-move.deadline',
-                resourceId: `gm-${computeSha256CanonicalJson(command).slice(7, 37)}`,
-                contextId: groupStateGroupStorageKey(command.source)
-            });
+            const key = toGroupMoveDeadlineRoute(command);
             if (
                 !jsonEquals(message.route, key) || message.id.msgId !== key.resourceId ||
                 message.targets !== undefined ||
@@ -266,5 +267,5 @@ export function installGroupMoveDeadline(input: InstallGroupMoveDeadlineInput): 
             }
             await input.enqueue(command, message.id.traceId);
         }
-    }, ['group-move.deadline']);
+    }, [GROUP_MOVE_DEADLINE_TOPIC]);
 }

@@ -40,9 +40,9 @@ it('decodes account-wide friends only with its exact private account destination
     expect(() => decodeViewInvalidation({ ...notice, resource: 'matchmaking' })).toThrow();
 });
 
-it('keeps session-view invalidations scoped to their exact account', () => {
+it.each(['sessions', 'room-move'])('keeps %s invalidations scoped to their exact account', (resource) => {
     const scope = { applicationId: 'game', workspaceId: 'default' };
-    const scoped = { ...notice, resource: 'sessions', scope };
+    const scoped = { ...notice, resource, scope };
     const targets: ALMessage['targets'] = { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId: 'alice' } };
     expect(decodeViewInvalidationMessage({ ...message, targets, payload: { ...message.payload, resource: JSON.stringify(scoped) } })).toEqual(scoped);
     expect(() => decodeViewInvalidation({ ...scoped, scope: null })).toThrow();
@@ -81,6 +81,5 @@ it('names a server-pushed view by either half of its envelope, and only the serv
         expect(hasServerPushedViewTopic(relabel(topicId, 'chat.v1'))).toBe(true);
         expect(hasServerPushedViewTopic(relabel('room.chat', topicId))).toBe(true);
     }
-    expect(hasServerPushedViewTopic(relabel(AppTopics.groupMoveChanged, AppTopics.groupMoveChanged))).toBe(false);
     expect(hasServerPushedViewTopic(relabel('room.chat', 'chat.v1'))).toBe(false);
 });

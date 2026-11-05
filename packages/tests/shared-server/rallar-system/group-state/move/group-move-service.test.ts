@@ -253,14 +253,13 @@ describe('group move service', () => {
         const fixture = await database();
         const computed = await fixture.prepareMove('propose');
         const messages = computed.outbox.map((write) => JSON.parse(write.entry.resource));
-        expect(messages.filter((message) => message.payload.typeId === 'group-move.changed').map((message) => message.targets.principalRef.principalId).sort())
-            .toEqual(['alice', 'bob']);
+        const notices = messages.filter((message) => message.payload.typeId === 'view.invalidated');
+        expect(notices.map((message) => JSON.parse(message.payload.resource).resource)).toEqual(['room-move', 'room-move']);
+        expect(notices.map((message) => message.targets.principalRef.principalId).sort()).toEqual(['alice', 'bob']);
         const deadline = computed.outbox.find((write) => JSON.parse(write.entry.resource).payload.typeId === 'GROUP_MOVE_DEADLINE');
         expect(deadline?.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(computed.result.expiresAtEpochMs);
         await fixture.storage.sql.begin((transaction) => fixture.moveService.write(transaction, computed));
-        const rows = await fixture.storage.sql<
-            { count: string; }[]
-        >`select count(*)::text as count from resource_inbox where ri_topic_id = 'group-move.changed'`;
+        const rows = await fixture.storage.sql<{ count: string; }[]>`select count(*)::text as count from resource_inbox where ri_topic_id = 'view.invalidated'`;
         expect(Number(rows[0].count)).toBe(2);
     });
 
@@ -326,7 +325,7 @@ describe('group move service', () => {
         await assertHistoryOutboxRollback(fixture, computed);
         await fixture.storage.sql.begin((transaction) => fixture.moveService.writeExpiry(transaction, computed));
         expect((await fixture.moves.find(replacement))!.value.move).toEqual(replacement);
-        const rows = await fixture.storage.sql<{ ri_resource: string; }[]>`select ri_resource from resource_inbox where ri_topic_id='group-move.changed'`;
+        const rows = await fixture.storage.sql<{ ri_resource: string; }[]>`select ri_resource from resource_inbox where ri_topic_id='view.invalidated'`;
         const recipients = rows.map(({ ri_resource }) => JSON.parse(ri_resource)).filter((notice) => notice.id.traceId === 'retained-history-expired')
             .map((notice) => notice.targets.principalRef.principalId).sort();
         expect(recipients).toEqual(['alice', 'bob']);

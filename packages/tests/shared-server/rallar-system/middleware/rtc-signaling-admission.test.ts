@@ -33,8 +33,6 @@ const invalidIngressCases = [
     'page',
     'room-frame-route',
     'room-frame-type',
-    'move-route',
-    'move-type',
     AppTopics.viewInvalidated,
     AppTopics.viewResync,
     AppTopics.overlayTopology,
@@ -146,10 +144,6 @@ function invalidMessage(message: ALMessage, corruption: InvalidIngressCase): ALM
             return { ...message, route: { ...message.route, topicId: AppTopics.serverRoomSnapshot } };
         case 'room-frame-type':
             return { ...message, payload: { ...message.payload, typeId: AppTopics.serverRoomSnapshot } };
-        case 'move-route':
-            return { ...message, route: { ...message.route, topicId: AppTopics.groupMoveChanged } };
-        case 'move-type':
-            return { ...message, payload: { ...message.payload, typeId: AppTopics.groupMoveChanged } };
         case 'topic':
             return { ...message, route: { ...message.route, topicId: 'app.other' } };
         case 'payload-type':

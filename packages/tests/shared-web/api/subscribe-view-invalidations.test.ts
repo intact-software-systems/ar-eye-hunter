@@ -1,7 +1,6 @@
 import { subscribeViewInvalidations } from '@shared-web/browser/api/subscribe-view-invalidations.ts';
 import type { RallarMessageTransport } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { subscribeRoomMoveChanges, type SubscribeRoomMoveChanges } from '@shared-web/browser/rooms/move/subscribe-room-move-changes.ts';
 import {
     newALBroadcastMessage,
     newALRoute,
@@ -29,16 +28,11 @@ interface InvalidationFixture {
     reopen(kind?: RallarWsLifecycleEvent['kind']): void;
 }
 
-function fixture(resource: ViewInvalidation['resource'] | 'moves' = 'party'): InvalidationFixture {
+function fixture(resource: ViewInvalidation['resource'] = 'party'): InvalidationFixture {
     let session: AuthSession | undefined = alice;
     const browser = new ViewPushBrowser(() => session);
     const changed = vi.fn();
-    const input = {
-        browser,
-        scope,
-        changed
-    } satisfies SubscribeRoomMoveChanges.Input;
-    const stop = resource === 'moves' ? subscribeRoomMoveChanges(input) : subscribeViewInvalidations({ ...input, resource });
+    const stop = subscribeViewInvalidations({ browser, scope, resource, changed });
     return {
         changed,
         stop,
@@ -166,38 +160,4 @@ it('refreshes public catalog readers only while authenticated in the exact game 
     test.deliver(message);
     expect(test.changed).toHaveBeenCalledTimes(1);
     test.stop();
-});
-
-it('recovers account-owned moves from validated notices, reconnect and subscriber resync', () => {
-    const test = fixture('moves');
-    const source = { ...scope, groupId: 'source' };
-    const initial = newALBroadcastMessage(
-        'api',
-        newALRoute(AppTopics.groupMoveChanged, 'app=game:ws=default:group=source', 'change'),
-        'all',
-        AppTopics.groupMoveChanged,
-        { source, moveId: 'move' }
-    );
-    const move: ALMessage = { ...initial, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId: 'alice' } } };
-    test.deliver(move);
-    expect(test.changed).toHaveBeenCalledTimes(1);
-    test.deliver(move, 'rtc');
-    test.deliver({ ...move, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId: 'bob' } } });
-    test.deliver({ ...move, route: { ...move.route, contextId: 'wrong' } });
-    test.deliver({ ...move, payload: { ...move.payload, resource: JSON.stringify({ source: { ...source, workspaceId: 'other' }, moveId: 'move' }) } });
-    expect(test.changed).toHaveBeenCalledTimes(1);
-    test.reopen();
-    const resync = newALBroadcastMessage('api', newALRoute(AppTopics.viewResync, 'resync', 'all'), 'all', AppTopics.viewResync, { version: 1 });
-    test.deliver(resync);
-    expect(test.changed).toHaveBeenCalledTimes(3);
-    test.login(undefined);
-    test.deliver(move);
-    test.reopen();
-    test.deliver(resync);
-    expect(test.changed).toHaveBeenCalledTimes(3);
-    test.stop();
-    test.login(alice);
-    test.deliver(move);
-    test.reopen();
-    expect(test.changed).toHaveBeenCalledTimes(3);
 });

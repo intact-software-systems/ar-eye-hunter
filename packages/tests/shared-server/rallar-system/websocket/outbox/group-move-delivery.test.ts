@@ -27,7 +27,7 @@ const publication = computeGroupMoveHistoryPublication({
 const entry = publication.outbox[0].entry;
 const message = decodePersistedALMessageRow(entry);
 
-it('delivers a durable move notice through prepared native sends only to currently authenticated scoped account sessions', async () => {
+it('delivers a durable move invalidation through prepared native sends only to currently authenticated scoped account sessions', async () => {
     const repository = new FakeRuntimeStateRepository();
     for (const proof of publication.provenance) {
         if (proof.operation !== 'insert') {
@@ -84,7 +84,7 @@ it('delivers a durable move notice through prepared native sends only to current
     }
 });
 
-it.each(['state-sync', 'view-invalidation'] as const)('rejects a digest-valid move notice from the %s producer', async (producerKind) => {
+it.each(['state-sync', 'room-application'] as const)('rejects a digest-valid move invalidation from the %s producer', async (producerKind) => {
     const repository = new FakeRuntimeStateRepository();
     const proof = computeWsOutboxProvenanceRecord({
         entry,
@@ -98,7 +98,7 @@ it.each(['state-sync', 'view-invalidation'] as const)('rejects a digest-valid mo
     await expect(reader.readProducerProvenance(message, entry)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 });
 
-it('accepts only prepared move recipients bound to their exact principal, scope, connection and direct row', () => {
+it('accepts only prepared move recipients bound to their exact principal, scope and connection', () => {
     const prepared = {
         kind: 'scoped-recipient',
         peerId: 'replacement',
@@ -112,5 +112,4 @@ it('accepts only prepared move recipients bound to their exact principal, scope,
     for (const changed of [{ recipientScope: { ...scope, workspaceId: 'elsewhere' } }, { principalTargetId: 'bob' }, { peerId: 'other-connection' }]) {
         expect(() => decodeWsQueueBoxServerPreparedMessage({ ...prepared, ...changed }, message, entry.key)).toThrow();
     }
-    expect(() => decodeWsQueueBoxServerPreparedMessage(prepared, message, { ...entry.key, topicId: 'AL_OUTBOUND_MESSAGE' })).toThrow();
 });

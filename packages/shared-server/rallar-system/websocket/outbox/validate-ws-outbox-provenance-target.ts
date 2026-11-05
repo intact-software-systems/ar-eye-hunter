@@ -2,7 +2,6 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import { validateALAccountViewMessage } from '@shared/alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { hasGroupMoveChangedTopic, matchesGroupMoveChangedRecipient } from '@shared/api/mutation/group-move-changed.ts';
 import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 
 import { decodeViewInvalidationMessage, hasViewInvalidatedTopic } from '@shared/api/views/view-invalidation.ts';
@@ -63,11 +62,6 @@ function validateAccountViewTarget(
     message: ALMessage,
     target: Extract<WsOutboxProvenance['target'], { kind: 'scoped-account-view'; }>
 ): readonly string[] {
-    if (hasGroupMoveChangedTopic(message)) {
-        return matchesGroupMoveChangedRecipient(message, target.principalRef, target.principalRef.principalId)
-            ? []
-            : ['Move Together claim differs from its scoped account provenance'];
-    }
     try {
         const notice = decodeViewInvalidationMessage(message);
         return notice.scope !== null && notice.principalId === target.principalRef.principalId &&

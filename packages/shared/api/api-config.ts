@@ -40,7 +40,6 @@ export const AppTopics = {
     clientStateEvent: 'client-state.event',
     groupStateSnapshot: 'group-state.snapshot',
     groupStateEvent: 'group-state.event',
-    groupMoveChanged: 'group-move.changed',
     viewInvalidated: 'view.invalidated',
     viewResync: 'view.resync',
     groupDirectorySnapshot: 'group-directory.snapshot',

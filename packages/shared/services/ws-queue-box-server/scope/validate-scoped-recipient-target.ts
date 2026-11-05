@@ -1,10 +1,5 @@
 import { type ALMessage } from '../../../al-contracts/al-contract.ts';
 import { isALWorldBroadcast } from '../../../al-contracts/is-al-world-broadcast.ts';
-import { AppTopics } from '../../../api/api-config.ts';
-import {
-    hasGroupMoveChangedTopic,
-    matchesGroupMoveChangedRecipient
-} from '../../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { hasViewInvalidatedTopic } from '../../../api/views/view-invalidation.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
@@ -28,12 +23,6 @@ interface ScopedRecipientTargetInput {
 export function validateScopedRecipientTarget(input: ScopedRecipientTargetInput): readonly string[] {
     const { message, referenceKey, scope, principalTargetId } = input;
     const addressesItsConnection = input.peerId === input.connectionId;
-    if (hasGroupMoveChangedTopic(message)) {
-        return addressesItsConnection && referenceKey.topicId === AppTopics.groupMoveChanged &&
-                matchesGroupMoveChangedRecipient(message, scope, principalTargetId)
-            ? []
-            : ['Prepared Move Together notice differs from its scoped account and connection'];
-    }
     if (hasViewInvalidatedTopic(message)) {
         return addressesItsConnection
             ? validateViewInvalidationAudience(message, scope, principalTargetId)

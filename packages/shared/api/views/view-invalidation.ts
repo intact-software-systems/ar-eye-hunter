@@ -7,7 +7,14 @@ import { hasServerRoomSnapshotTopic } from './server-room-snapshot.ts';
 export namespace ViewInvalidation {
     export interface ScopedAccount {
         readonly version: 1;
-        readonly resource: 'party' | 'matchmaking' | 'friends' | 'sessions' | 'tournament-catalog' | 'tournament';
+        readonly resource:
+            | 'party'
+            | 'matchmaking'
+            | 'friends'
+            | 'sessions'
+            | 'tournament-catalog'
+            | 'tournament'
+            | 'room-move';
         readonly scope: StateScope;
         readonly principalId: string;
         readonly changeId: string;
@@ -74,7 +81,8 @@ export function decodeViewInvalidation(value: unknown): ViewInvalidation {
             'friends',
             'sessions',
             'tournament-catalog',
-            'tournament'
+            'tournament',
+            'room-move'
         ], 'View resource'),
         scope: decodeStateScope(record.scope),
         principalId: record.principalId,

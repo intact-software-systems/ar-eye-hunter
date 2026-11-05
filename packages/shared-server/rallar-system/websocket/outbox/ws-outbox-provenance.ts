@@ -35,7 +35,6 @@ export interface WsOutboxProvenance {
     readonly version: 1;
     readonly producerKind:
         | 'view-invalidation'
-        | 'group-move'
         | 'state-sync'
         | 'auth-session-invalidation'
         | 'crdt'
@@ -303,8 +302,7 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
     ]);
     if (
         proof.version !== 1 ||
-        (proof.producerKind !== 'view-invalidation' && proof.producerKind !== 'group-move' &&
-            proof.producerKind !== 'state-sync' &&
+        (proof.producerKind !== 'view-invalidation' && proof.producerKind !== 'state-sync' &&
             proof.producerKind !== 'auth-session-invalidation' &&
             proof.producerKind !== 'crdt' && proof.producerKind !== 'rtc-topology' &&
             proof.producerKind !== 'room-application')
