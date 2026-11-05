@@ -290,8 +290,11 @@ every session the page opens. The event's `data` is the event itself:
   floor). `reason` is the
   rejection's reasons, or `none` for every other outcome — for an ACK whose
   receipt is gone it reads `AL acknowledgement sender has no pending outbound
-  obligation`. A control's replay reports nothing here; its commit is visible
-  as the acknowledgement settlement on the send's handle. The event describes
+  obligation`. A control the outbound drain replays reports the verdict its
+  replay reaches under the same control id, so a control that read
+  `pending-control` reads again, `committed` or `rejected`, once per replay
+  (a replay that conflicts again reads `pending-control` again); a replay past
+  the control's deadline reports nothing. The event describes
   a received control decision and rides the page's batched diagnostics. Its
   presence does not guarantee a matching `admission-outcome`
 - A WS server receipt (`al.control.receipt.v1`) is decided by the origin's
@@ -413,7 +416,7 @@ independent of any connection. The following cadences describe eligible
 observations; events are captured only when optional diagnostic projection and
 publication succeed. The event's `data` is the event itself:
 
-- `kind`: `admission-outcome`, `effect-drain`, `claim-settled` or
+- `kind`: `admission-outcome`, `ordering-position`, `effect-drain`, `claim-settled` or
   `rotation-alive`, plus explicitly enabled `acknowledgement-association` and
   `acknowledgement-handoff`. There is no `readiness-probe` on this topic: the inbound
   rotation probes storage on every engine round by construction, and relaying
@@ -425,7 +428,7 @@ publication succeed. The event's `data` is the event itself:
   to, on every kind. One page runs a WS inbound owner and an RTC inbound
   owner, so this says which carrier an event came from
 - `traceId` then `corrId` close every message-scoped kind: `admission-outcome`,
-  `claim-settled`, `dispatch-decision`, `consumer-invocation`,
+  `ordering-position`, `claim-settled`, `dispatch-decision`, `consumer-invocation`,
   `rtc-ack-ingress`, `reply-late` and `reply-wrong-responder`, and the
   `incoming`, `control` and `generated` identities of
   `acknowledgement-association` and `acknowledgement-handoff`. They are the
@@ -500,6 +503,21 @@ publication succeed. The event's `data` is the event itself:
   carrier `rtc`, `rejected`/`unsupported`. The `messages.control` result is the
   submitting page's own carrier verdict (`admitted` when that carrier took the
   frame), never the addressee's
+- `ordering-position` carries `workerId`, `trackKey`, `seq`, `priorSeq`,
+  `status` and `carrier`: a recipient's position event on an ordering track,
+  stated by the inbound admission after its commit, so a replayed pending
+  admission states one too. `status` is `entered` (the first copy on a track
+  an authority recorded, opening it at `seq`), `omitted` (a copy whose record
+  names the recipient's own position as its prior, delivered across the
+  sequences never meant for it), `witnessed` (a frozen recipient that may not
+  deliver, its position moved to `seq`; only a copy that moved it) or
+  `before-entry` (a frozen copy below the recipient's position, refused with
+  that NACK). `priorSeq` is the prior the copy's record named for this
+  recipient, `seq - 1` when the record lists it not, and `null` when no
+  authority recorded the copy. `workerId` is the inbound lane's owner (the
+  volatile lane's ends `/volatile`), which can differ from the
+  `admission-outcome` of the same copy: join the two by `traceId` and
+  `corrId`, never by `workerId`. A relay states none: it observes no track
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
   touched work, the same five fields the outbound topic reports for its own

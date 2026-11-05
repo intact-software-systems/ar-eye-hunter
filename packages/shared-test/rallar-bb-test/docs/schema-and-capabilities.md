@@ -170,6 +170,10 @@ and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`,
 `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`,
 `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
+`orderingKey` and `seq` pass to the product send: a room send that names `orderingKey` without `seq` is sequenced by
+the page's outbound from the track's head, which both carriers of the session share, and a stated `seq` at or below
+that head is refused `unsupported` before any carrier, so a recipe that states sequences states each one above the
+last it sent on that key.
 `recipientPeer` (`receiver`, `recipient-b`) is a fixed audience of one by lane role; the `leader-ack` scenarios'
 `leader-outside-list` cell below states how the page resolves both roles.
 `purpose` (`command`, `notification`, `live`) is the purpose of the typed channel the page opens for the send; absent,
