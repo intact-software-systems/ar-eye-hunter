@@ -272,8 +272,7 @@ function subscriptionFor(topicId: string): GroupTopicSubscription {
         principalId: 'bob',
         topicId,
         connectionGenerationId: GENERATION,
-        leaseExpiresAtEpochMs: Date.now() + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS,
-        admittedAtGroupRevision: 2
+        leaseExpiresAtEpochMs: Date.now() + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS
     };
 }
 

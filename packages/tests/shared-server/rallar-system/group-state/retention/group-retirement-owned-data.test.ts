@@ -196,8 +196,7 @@ async function seedSubscription(fixture: RetentionDatabaseFixture, groupRef: typ
         principalId: 'owner',
         topicId: 'room.feed',
         connectionGenerationId: 'owner-ws-generation-1',
-        leaseExpiresAtEpochMs: fixture.nowEpochMs + 120_000,
-        admittedAtGroupRevision: 1
+        leaseExpiresAtEpochMs: fixture.nowEpochMs + 120_000
     };
     const key = groupStateTopicSubscriptionStorageKey(groupRef, subscription.sessionId, subscription.topicId);
     await fixture.runtime.upsert(SUBSCRIPTIONS_NAMESPACE, key, JSON.stringify(subscription), subscription.leaseExpiresAtEpochMs);

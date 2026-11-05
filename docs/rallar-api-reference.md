@@ -584,7 +584,7 @@ principal's subscriptions in the same write, so a re-grant or a rejoin starts
 unsubscribed. `GET .../groups/{groupId}/sessions/{sessionId}/subscriptions`
 lists the authenticated session's live subscriptions in topic order, each
 `{ sessionId, principalId, topicId, connectionGenerationId,
-leaseExpiresAtEpochMs, admittedAtGroupRevision }`; it is always authenticated,
+leaseExpiresAtEpochMs }`; it is always authenticated,
 whatever `RALLAR_STATE_STRICT_READ_AUTH` says, and an unknown group lists none.
 Browser code subscribes through a granted channel's `subscribe(handler)` (see
 WS And RTC Messages), which sends, renews and releases these requests itself.

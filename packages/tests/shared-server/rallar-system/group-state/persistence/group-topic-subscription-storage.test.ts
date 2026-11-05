@@ -28,8 +28,7 @@ function subscriptionFor(sessionId: string, topicId: string): GroupTopicSubscrip
         principalId: 'bob',
         topicId,
         connectionGenerationId: 'bob-ws-generation-1',
-        leaseExpiresAtEpochMs: 121_000,
-        admittedAtGroupRevision: 3
+        leaseExpiresAtEpochMs: 121_000
     };
 }
 

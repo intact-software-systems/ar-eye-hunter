@@ -90,8 +90,7 @@ Deno.test('API room authorization of a granted topic reads the current publicati
                     principalId: session!.principalId,
                     topicId,
                     connectionGenerationId: 'client-generation-1',
-                    leaseExpiresAtEpochMs: Date.now() + 120_000,
-                    admittedAtGroupRevision: 2
+                    leaseExpiresAtEpochMs: Date.now() + 120_000
                 }],
                 liveSessionGenerations: { [session!.sessionId]: ['client-generation-1'] }
             });

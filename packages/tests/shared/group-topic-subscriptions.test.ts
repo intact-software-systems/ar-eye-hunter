@@ -12,8 +12,7 @@ const SUBSCRIPTION: GroupTopicSubscription = {
     principalId: 'bob',
     topicId: 'room.feed',
     connectionGenerationId: 'bob-ws-generation-1',
-    leaseExpiresAtEpochMs: 1_000 + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS,
-    admittedAtGroupRevision: 4
+    leaseExpiresAtEpochMs: 1_000 + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS
 };
 
 function decodeIssues(value: unknown): readonly RallarValidationIssue[] {
@@ -21,7 +20,7 @@ function decodeIssues(value: unknown): readonly RallarValidationIssue[] {
 }
 
 describe('group topic subscription contract', () => {
-    it('decodeGroupTopicSubscription returns a complete row unchanged', () => {
+    it('decodeGroupTopicSubscription returns a complete five-key row unchanged', () => {
         expect(GROUP_TOPIC_SUBSCRIPTION_LEASE_MS).toBe(120_000);
         expect(decodeGroupTopicSubscription(structuredClone(SUBSCRIPTION)).fold(() => undefined, (row) => row))
             .toEqual(SUBSCRIPTION);
@@ -55,9 +54,9 @@ describe('group topic subscription contract', () => {
             ...SUBSCRIPTION,
             sessionId: '',
             topicId: 'feed',
-            admittedAtGroupRevision: -1
+            leaseExpiresAtEpochMs: -1
         });
 
-        expect(issues.map((issue) => issue.path)).toEqual(['$.sessionId', '$.topicId', '$.admittedAtGroupRevision']);
+        expect(issues.map((issue) => issue.path)).toEqual(['$.sessionId', '$.topicId', '$.leaseExpiresAtEpochMs']);
     });
 });

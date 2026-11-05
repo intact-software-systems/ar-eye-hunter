@@ -64,8 +64,7 @@ describe('group topic subscription mutation', () => {
             principalId: 'bob',
             topicId: 'room.feed',
             connectionGenerationId: 'bob-ws-generation-1',
-            leaseExpiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS,
-            admittedAtGroupRevision: group?.snapshotVersion
+            leaseExpiresAtEpochMs: SUBSCRIPTION_NOW_EPOCH_MS + GROUP_TOPIC_SUBSCRIPTION_LEASE_MS
         };
 
         expect(write.guard).toEqual({ kind: 'subscription', operation: 'insert', ref: groupRef(GRANT_ROOM), value: subscription });

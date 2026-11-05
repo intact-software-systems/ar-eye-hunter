@@ -659,8 +659,7 @@
               "principalId": "{bobClientId}",
               "topicId": "room.topicsub-feed",
               "connectionGenerationId": "topicsub-bob-gen-1-{runId}",
-              "leaseExpiresAtEpochMs": "integer",
-              "admittedAtGroupRevision": "{groupRevisionAfterGrant}"
+              "leaseExpiresAtEpochMs": "integer"
             }
           ]
         }
@@ -865,8 +864,7 @@
               "principalId": "{bobClientId}",
               "topicId": "room.topicsub-feed",
               "connectionGenerationId": "topicsub-bob-gen-2-{runId}",
-              "leaseExpiresAtEpochMs": "integer",
-              "admittedAtGroupRevision": "{groupRevisionAfterGrant}"
+              "leaseExpiresAtEpochMs": "integer"
             }
           ]
         }

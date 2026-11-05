@@ -713,8 +713,7 @@ function createAuthority(grants: Grants, options: CreateAuthorityOptions = {}): 
             principalId: sessionId,
             topicId: FEED,
             connectionGenerationId,
-            leaseExpiresAtEpochMs: Date.now() + 120_000,
-            admittedAtGroupRevision: snapshot.group.snapshotVersion
+            leaseExpiresAtEpochMs: Date.now() + 120_000
         })),
         liveSessionGenerations: Object.fromEntries(
             subscriptions.map(([sessionId, generation]) => [sessionId, [options.reopenedGenerations?.[sessionId] ?? generation]])

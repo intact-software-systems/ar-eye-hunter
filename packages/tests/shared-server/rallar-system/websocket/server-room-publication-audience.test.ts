@@ -130,8 +130,7 @@ describe('trusted server room publication audience', () => {
                     principalId: subscribed.principalId,
                     topicId: 'room.match',
                     connectionGenerationId: 'client-generation-2',
-                    leaseExpiresAtEpochMs: 200,
-                    admittedAtGroupRevision: 2
+                    leaseExpiresAtEpochMs: 200
                 }],
                 liveSessionGenerations: { [subscribed.sessionId]: ['client-generation-2'] }
             },
