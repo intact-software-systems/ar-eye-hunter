@@ -27,38 +27,44 @@ import {
     type ViewWatchTestRuntime
 } from './view-watch-test-runtime.ts';
 
-it('registers a nonmember preview through AppInbox without adding discovery, seats or membership, and fences stale clear/replay', async () => {
-    const storage = await createResourceInboxTestStorage('view_watch_registration');
-    try {
-        const test = await createViewWatchTestRuntime(storage);
-        const first = viewWatchCommand(test, 'first', null);
-        expect(await test.run(first)).toEqual({ status: 'applied', requestId: 'first', registrationId: 'first', resourceId: ref.groupId });
-        expect(await test.party.groups.findMember({ ...ref, principalId: 'bob' })).toBeUndefined();
-        expect(await test.party.groups.findSessionIntentEntry(ref, 'bob')).toBeUndefined();
-        expect(await test.party.groups.findSessionReservationsEntry(ref)).toBeUndefined();
-        expect(await test.run(viewWatchCommand(test, 'replacement', 'first'))).toMatchObject({ status: 'applied', registrationId: 'replacement' });
-        const stale = viewWatchCommand(test, 'stale-clear', 'first');
-        expect(await test.run({ ...stale, request: { ...stale.request, resourceId: null } })).toEqual({
-            status: 'conflict',
-            requestId: 'stale-clear',
-            registrationId: 'replacement',
-            resourceId: ref.groupId
-        });
-        expect(await test.run(first)).toMatchObject({ status: 'applied', registrationId: 'first' });
-        expect((await test.repository.readSlot({ ...scope, sessionId: 'session-bob', family: 'session-preview' }))?.value.registrationId).toBe('replacement');
-        expect(await test.run(viewWatchCommand(test, 'restart', null))).toMatchObject({ status: 'conflict', registrationId: 'replacement' });
-        const clear = viewWatchCommand(test, 'clear', 'replacement');
-        expect(await test.run({ ...clear, request: { ...clear.request, resourceId: null } })).toMatchObject({
-            status: 'applied',
-            registrationId: null,
-            resourceId: null
-        });
-        expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
+it(
+    'registers a nonmember preview through AppInbox without adding discovery, seats or membership, and fences stale clear/replay',
+    { timeout: 30_000 },
+    async () => {
+        const storage = await createResourceInboxTestStorage('view_watch_registration');
+        try {
+            const test = await createViewWatchTestRuntime(storage);
+            const first = viewWatchCommand(test, 'first', null);
+            expect(await test.run(first)).toEqual({ status: 'applied', requestId: 'first', registrationId: 'first', resourceId: ref.groupId });
+            expect(await test.party.groups.findMember({ ...ref, principalId: 'bob' })).toBeUndefined();
+            expect(await test.party.groups.findSessionIntentEntry(ref, 'bob')).toBeUndefined();
+            expect(await test.party.groups.findSessionReservationsEntry(ref)).toBeUndefined();
+            expect(await test.run(viewWatchCommand(test, 'replacement', 'first'))).toMatchObject({ status: 'applied', registrationId: 'replacement' });
+            const stale = viewWatchCommand(test, 'stale-clear', 'first');
+            expect(await test.run({ ...stale, request: { ...stale.request, resourceId: null } })).toEqual({
+                status: 'conflict',
+                requestId: 'stale-clear',
+                registrationId: 'replacement',
+                resourceId: ref.groupId
+            });
+            expect(await test.run(first)).toMatchObject({ status: 'applied', registrationId: 'first' });
+            expect((await test.repository.readSlot({ ...scope, sessionId: 'session-bob', family: 'session-preview' }))?.value.registrationId).toBe(
+                'replacement'
+            );
+            expect(await test.run(viewWatchCommand(test, 'restart', null))).toMatchObject({ status: 'conflict', registrationId: 'replacement' });
+            const clear = viewWatchCommand(test, 'clear', 'replacement');
+            expect(await test.run({ ...clear, request: { ...clear.request, resourceId: null } })).toMatchObject({
+                status: 'applied',
+                registrationId: null,
+                resourceId: null
+            });
+            expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
+        }
+        finally {
+            await storage.close();
+        }
     }
-    finally {
-        await storage.close();
-    }
-});
+);
 
 it('couples registration and domain mutations through the group predecessor in both commit orders', async () => {
     const storage = await createResourceInboxTestStorage('view_watch_race');

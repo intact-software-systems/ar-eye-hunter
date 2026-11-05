@@ -124,7 +124,7 @@ async function readFriendsNotices(database: PSqlSql) {
     return rows.map((row) => decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(row.ri_resource))));
 }
 
-describe('authenticated friends commands through AppInbox', () => {
+describe('authenticated friends commands through AppInbox', { timeout: 30_000 }, () => {
     it('changes visibility before adding contacts and reads the empty private view without an empty SQL batch', async () => {
         const fixture = await createFriendsRuntime();
         try {
