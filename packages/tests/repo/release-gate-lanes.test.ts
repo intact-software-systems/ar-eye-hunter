@@ -113,7 +113,8 @@ describe('Release Gate lanes', () => {
     it('runs every share of a sharded lane exactly once', () => {
         const shardedLanes = Object.entries(releaseGate.jobs).filter(([, job]) => toShares(job).length > 0);
 
-        expect(shardedLanes.map(([laneName]) => laneName).toSorted()).toEqual(['black-box', 'e2e-recipe-console']);
+        expect(shardedLanes.map(([laneName]) => laneName).toSorted()).toEqual(['black-box', 'e2e-recipe-console', 'unit']);
+        expect(releaseGate.jobs.unit.steps.map((step) => step.run)).toContain('npm run test:unit:main -- --shard=${{ matrix.shard }}');
         for (const [, job] of shardedLanes) {
             const shares = toShares(job).map((share) => share.split('/').map(Number));
             const count = shares[0][1];

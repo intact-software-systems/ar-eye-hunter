@@ -81,10 +81,13 @@ jobs:
           (cd apps/rallar-black-box-control-server && deno task check)
 
   unit:
-    name: Unit tests
+    name: Unit tests (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # Allow the observed 13-minute Chromium setup plus the 11-minute suite.
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -104,7 +107,7 @@ jobs:
 
       - name: Run unit tests
         timeout-minutes: 20
-        run: npm run test:unit:main
+        run: npm run test:unit:main -- --shard=${{ matrix.shard }}
 
   unit-tooling:
     name: Unit tests (tooling)
