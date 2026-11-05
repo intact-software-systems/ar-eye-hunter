@@ -72,6 +72,42 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         expect(requestIds).toEqual(['reconnect-request-1', 'reconnect-request-1']);
     });
 
+    it('requests a new ticket identity when an issued ticket fails to open within one reconnect action', async () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const requestIds: Array<string | undefined> = [];
+        let requestSequence = 0;
+        const socket = new JsonWebSocketClient((options) => {
+            requestIds.push(options.requestId);
+            return `ws://test?requestId=${options.requestId}`;
+        }, createPassThroughTransportFaultPort());
+        const service = createDefaultReconnectService(socket, {
+            newConnectionRequestId: () => `reconnect-request-${++requestSequence}`,
+            reconnect: {
+                maxAttempts: 2,
+                connectTimeoutMsecs: 0,
+                retryIntervalMsecs: 0,
+                maxRetryIntervalMsecs: 0
+            }
+        });
+
+        const initialConnect = socket.connect({ requestId: 'initial-request' });
+        await Promise.resolve();
+        const initialSocket = TestWebSocket.instances[0];
+        initialSocket.open();
+        await initialConnect;
+        requestIds.length = 0;
+        TestWebSocket.instances.length = 0;
+        service.enableReconnect();
+        initialSocket.disconnect(1006, 'network-lost');
+        await vi.waitFor(() => expect(TestWebSocket.instances).toHaveLength(1));
+        // The server issued this ticket; it expires, so replaying its identity could never authenticate.
+        TestWebSocket.instances[0].disconnect(1006, 'ticket rejected');
+        await vi.waitFor(() => expect(TestWebSocket.instances).toHaveLength(2));
+        TestWebSocket.instances[1].open();
+
+        expect(requestIds).toEqual(['reconnect-request-1', 'reconnect-request-2']);
+    });
+
     it('allocates a new ticket request identity for a later reconnect action', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const requestIds: Array<string | undefined> = [];

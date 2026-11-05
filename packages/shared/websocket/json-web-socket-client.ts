@@ -31,6 +31,7 @@ export class JsonWebSocketClient {
     public ws?: WebSocket = undefined;
     private connectPromise?: Promise<void> = undefined;
     private readonly urlProvider: WebSocketUrlProvider;
+    private resolvedRequestId: string | undefined;
     private readonly faultPort: TransportFaultPort;
 
     private readonly webSocketClientCallbacks = new Map<string, WebSocketClientCallbacks>();
@@ -80,6 +81,11 @@ export class JsonWebSocketClient {
     // Connect, send and close
     // --------------------
 
+    /** Whether a URL, and so any ticket it carries, was already issued for this connect request identity. */
+    isUrlResolvedFor(requestId: string | undefined): boolean {
+        return requestId !== undefined && this.resolvedRequestId === requestId;
+    }
+
     async connect(options: WebSocketConnectOptions = {}): Promise<void> {
         if (this.ws?.readyState === WebSocket.OPEN) {
             return Promise.resolve();
@@ -105,6 +111,7 @@ export class JsonWebSocketClient {
 
     private async openSocket(options: WebSocketConnectOptions): Promise<void> {
         const nextUrl = await this.urlProvider(options);
+        this.resolvedRequestId = options.requestId;
         if (options.signal?.aborted) {
             throw new Error('WebSocket connect aborted.');
         }

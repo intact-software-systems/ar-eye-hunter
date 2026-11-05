@@ -86,13 +86,21 @@ export class WsClientReconnect {
         }
 
         const reconnectGeneration = this.reconnectStatus.generation;
-        const connectionRequestId = this.dependencies.newConnectionRequestId?.();
+        // A lost ticket response is replayed under its identity; an issued ticket is never requested again.
+        let connectionRequestId = this.dependencies.newConnectionRequestId?.();
         const reconnectTask = tryWithPolicy(
-            async () =>
-                await this.attemptReconnect(
-                    reconnectGeneration,
-                    connectionRequestId
-                ),
+            async () => {
+                const requestId = connectionRequestId;
+                try {
+                    await this.attemptReconnect(reconnectGeneration, requestId);
+                }
+                catch (error) {
+                    if (this.socket.isUrlResolvedFor(requestId)) {
+                        connectionRequestId = this.dependencies.newConnectionRequestId?.();
+                    }
+                    throw error;
+                }
+            },
             this.toReconnectPolicy(reconnectGeneration)
         )
             .catch(
