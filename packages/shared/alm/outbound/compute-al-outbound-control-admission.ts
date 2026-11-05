@@ -1,14 +1,14 @@
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
-import {
-    isALOutsideAudienceNackReason,
-    type ALAckPayload,
-    type ALNackPayload,
-    type ALParsedControlMessage,
-    type ALPeerControlMessage,
-    type ALRepairPayload
+import type {
+    ALAckPayload,
+    ALNackPayload,
+    ALParsedControlMessage,
+    ALPeerControlMessage,
+    ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
+import { isALOutsideAudienceNackReason } from '../../al-contracts/is-al-outside-audience-nack-reason.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';

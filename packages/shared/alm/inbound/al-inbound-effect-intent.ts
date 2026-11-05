@@ -1,14 +1,14 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier, ALInboundNackPlanReason } from '../../al-contracts/al-control-value-codec.ts';
-import {
-    isALOutsideAudienceNackReason,
-    type ALAckStatus,
-    type ALNackReason,
-    type ALRepairReason
+import type {
+    ALAckStatus,
+    ALNackReason,
+    ALRepairReason
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
+import { isALOutsideAudienceNackReason } from '../../al-contracts/is-al-outside-audience-nack-reason.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
