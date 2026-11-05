@@ -56,6 +56,10 @@ import {
     type ComputeALOutboundDispatchInput
 } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-admission.ts';
+import {
+    computeALOutboundGroupChainedReads,
+    toALOutboundGroupPositionWrites
+} from './lane/compute-al-outbound-group-sent-positions.ts';
 import { recordALOutboundDequeueTiming } from './lane/record-al-outbound-dequeue-timing.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
 
@@ -316,25 +320,59 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     /**
      * Every member reads in the same turn, so a backend that batches one turn's reads answers the whole group in one
      * statement per store on its own connection. All reads settle before a group write or fresh single-member
-     * fallback may start.
+     * fallback may start. Members that record positions on one track decide on chained reads and write each
+     * position row once, as one-by-one commits would; a group that cannot chain commits its members alone.
      */
     private async readGroupDecisions(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
-        const reads = await Promise.allSettled(
-            members.map(({ dispatch, phases }) => this.readMemberDispatchDecision(dispatch, phases))
+        const reads = toALOutboundGroupSettledValues(
+            await Promise.allSettled(
+                members.map(({ dispatch, phases }) => this.readMemberDispatchRead(dispatch, phases))
+            )
         );
-        const decisions: ALOutboundCommitDecision<TPrepared>[] = [];
-        for (const read of reads) {
-            if (read.status === 'rejected') {
-                throw toError(read.reason);
-            }
-            if (read.value.kind === 'settled') {
-                return undefined;
-            }
-            decisions.push(read.value);
+        const read = reads.filter((member): member is ALOutboundMessageReadDto<TPrepared> => member !== undefined);
+        const chained = read.length === reads.length ? computeALOutboundGroupChainedReads(read) : undefined;
+        if (chained === undefined) {
+            return undefined;
         }
-        return decisions;
+        const decided = toALOutboundGroupSettledValues(
+            await Promise.allSettled(
+                members.map(({ dispatch, phases }, index) =>
+                    phases.withReadPhase(() =>
+                        this.readDispatchDecision(
+                            dispatch,
+                            this.toDispatchInput(dispatch, chained[index]!, this.readNowMs())
+                        )
+                    )
+                )
+            )
+        );
+        const decisions = decided.flatMap((decision) => decision.kind === 'commit' ? [decision] : []);
+        if (decisions.length < decided.length) {
+            return undefined;
+        }
+        const bundles = toALOutboundGroupPositionWrites(decisions.map((decision) => decision.bundle));
+        return decisions.map((decision, index) => ({
+            ...decision,
+            bundle: bundles[index]!,
+            computed: { ...decision.computed, bundle: bundles[index]! }
+        }));
+    }
+
+    /** One group member's read, signed when its admission signs; undefined once the owner is disposed. */
+    private async readMemberDispatchRead(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundMessageReadDto<TPrepared> | undefined> {
+        if (this.disposed) {
+            return undefined;
+        }
+        return await phases.withReadPhase(async () =>
+            await this.signAdmittedRead(
+                await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch))
+            )
+        );
     }
 
     private async commitDispatchOnce(
@@ -386,22 +424,6 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 }
             )
         );
-    }
-
-    /** One group member's decision; the group reads the observation of every bundle in its own commit. */
-    private async readMemberDispatchDecision(
-        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
-        phases: ALOutboundCommitPhases
-    ): Promise<ALOutboundDispatchDecision<TPrepared>> {
-        if (this.disposed) {
-            return { kind: 'settled', result: ALOutboundDispatchAdmission.toDisposedResult() };
-        }
-        return await phases.withReadPhase(async () => {
-            const read = await this.signAdmittedRead(
-                await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch))
-            );
-            return await this.readDispatchDecision(dispatch, this.toDispatchInput(dispatch, read, this.readNowMs()));
-        });
     }
 
     /**
@@ -810,6 +832,16 @@ function hasALOutboundAdmissionAdditions<TPrepared>(read: ALOutboundMessageReadD
         (originalMsg.ordering?.priorSeqByRecipient === undefined && msg.ordering?.priorSeqByRecipient !== undefined) ||
         (originalMsg.proof === undefined && msg.proof !== undefined)
     );
+}
+
+/** Each member's value in member order; the first member that threw rethrows, as a lone commit would. */
+function toALOutboundGroupSettledValues<T>(settled: readonly PromiseSettledResult<T>[]): readonly T[] {
+    return settled.map((outcome) => {
+        if (outcome.status === 'rejected') {
+            throw toError(outcome.reason);
+        }
+        return outcome.value;
+    });
 }
 
 /** Independent reads must agree on the sender version before their bundles can share one commit fence. */
