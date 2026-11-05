@@ -98,6 +98,25 @@ describe('readALOutboundDequeueWait', () => {
         expect(hold.settlements).toHaveLength(1);
     });
 
+    it('re-checks a row held on one fact through that fact\'s own read alone, never its whole authority again', async () => {
+        const released = [false, false, true];
+        const reads = { authority: 0, released: 0 };
+        const hold = createHold([{
+            status: 'held',
+            reason: 'WS row waits for sequence 3 of its track to record first',
+            readReleased: async () => released[reads.released++]!
+        }], () => {
+            reads.authority += 1;
+        });
+        await hold.read();
+
+        await vi.advanceTimersByTimeAsync(3 * AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS);
+
+        expect(reads).toEqual({ authority: 1, released: 3 });
+        expect(hold.released).toEqual({ status: 'not-ready', readyAtMs: NOW_MS + 3 * AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS });
+        expect(hold.settlements).toMatchObject([{ outcome: 'not-ready', detail: 'WS row waits for sequence 3 of its track to record first' }]);
+    });
+
     it('releases the claim at its lease end when the gap outlasts it', async () => {
         const hold = createHold([NOT_READY]);
         await hold.read();
@@ -169,7 +188,10 @@ interface HeldClaim {
     abort(): void;
 }
 
-function createHold(authorities: ALOutboundMessageRuntime.DequeuedAdmissionAuthority[]): HeldClaim {
+function createHold(
+    authorities: ALOutboundMessageRuntime.DequeuedAdmissionAuthority[],
+    onAuthorityRead: () => void = () => undefined
+): HeldClaim {
     const settlements: ALOutboundSettlementFact[] = [];
     const controller = new AbortController();
     let released: ALWorkOutcome | undefined;
@@ -186,6 +208,7 @@ function createHold(authorities: ALOutboundMessageRuntime.DequeuedAdmissionAutho
                 readAuthority: async (message, batch) => {
                     expect(message.id).toEqual(MESSAGE.id);
                     expect(batch).toBe(BATCH);
+                    onAuthorityRead();
                     return authorities.at(-1)!;
                 },
                 settlements: (fact) => settlements.push(fact),

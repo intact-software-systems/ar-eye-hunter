@@ -491,10 +491,14 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'authorized'; }>
         | Readonly<{ status: 'rejected'; reason: string; }>
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
-    /** A dequeued row's authority, which may also admit it only after its predecessor its batch claimed. */
+    /**
+     * A dequeued row's authority, which may also admit it only after its predecessor its batch claimed, or hold it
+     * until one fact changes: `readReleased` re-reads that fact alone, so a held claim's re-check costs one read.
+     */
     export type DequeuedAdmissionAuthority =
         | PendingAdmissionAuthority
-        | Readonly<{ status: 'follows-batch-predecessor'; }>;
+        | Readonly<{ status: 'follows-batch-predecessor'; }>
+        | Readonly<{ status: 'held'; reason: string; readReleased: () => Promise<boolean>; }>;
     export interface SendLifecycle {
         readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;

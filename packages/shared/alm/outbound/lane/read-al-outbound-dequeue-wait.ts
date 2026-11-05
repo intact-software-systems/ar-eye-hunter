@@ -10,10 +10,6 @@ import type { ALOrderingBatchSequences } from './compute-al-outbound-group-sent-
 
 export const AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS = 50;
 
-type ALOutboundAuthorityReader<TPrepared> = NonNullable<
-    ALOutboundMessageRuntime.Dependencies<TPrepared>['readDequeuedAdmissionAuthority']
->;
-
 /** Where a dequeued row's front leaves it: held, with the attempt its claim states, or passed on to its read. */
 export type ALOutboundDequeueFront =
     | Readonly<{ kind: 'held'; attempt: ALWorkAttemptResult; }>
@@ -32,15 +28,16 @@ export interface ReadALOutboundDequeueWaitInput<TPrepared> {
 
 interface ALOutboundDequeueHold<TPrepared> {
     readonly input: ReadALOutboundDequeueWaitInput<TPrepared>;
-    readonly msg: ALMessage;
-    readonly readAuthority: ALOutboundAuthorityReader<TPrepared>;
+    /** Whether the held row may go: the fact a held authority names, else a whole new authority read. */
+    readonly readReleased: () => Promise<boolean>;
 }
 
 /**
  * A held message whose carrier authority is not ready: the claim states one retrying `not-ready` attempt, under the
- * row's own identity, and stays reserved while it re-reads the authority in memory. It releases once -- ready at once
- * when the authority returns or the owner goes away, at the lease or deadline otherwise -- so a gap writes to storage
- * once per claim, never once per re-check. Any other answer passes the row on to its read.
+ * row's own identity, and stays reserved while it re-reads the authority, or only the one fact a `held` authority
+ * names. It releases once -- ready at once when the authority returns or the owner goes away, at the lease or deadline
+ * otherwise -- so a gap writes to storage once per claim, never once per re-check. Any other answer passes the row on
+ * to its read.
  */
 export async function readALOutboundDequeueWait<TPrepared>(
     input: ReadALOutboundDequeueWaitInput<TPrepared>
@@ -50,7 +47,10 @@ export async function readALOutboundDequeueWait<TPrepared>(
     const authority = msg === undefined || readAuthority === undefined
         ? undefined
         : await readAuthority(msg, input.batch);
-    if (msg === undefined || readAuthority === undefined || authority?.status !== 'not-ready') {
+    if (
+        msg === undefined || readAuthority === undefined ||
+        (authority?.status !== 'not-ready' && authority?.status !== 'held')
+    ) {
         return { kind: 'passed', followsBatchPredecessor: authority?.status === 'follows-batch-predecessor' };
     }
     input.settlements({
@@ -63,9 +63,12 @@ export async function readALOutboundDequeueWait<TPrepared>(
         detail: authority.reason,
         willRetry: true
     });
+    const readReleased = authority.status === 'held'
+        ? authority.readReleased
+        : async () => (await readAuthority(msg, input.batch)).status !== 'not-ready';
     return {
         kind: 'held',
-        attempt: { status: 'retained', settled: holdALOutboundDequeueClaim({ input, msg, readAuthority }) }
+        attempt: { status: 'retained', settled: holdALOutboundDequeueClaim({ input, readReleased }) }
     };
 }
 
@@ -81,7 +84,7 @@ async function holdALOutboundDequeueClaim<TPrepared>(
     const endAtMs = Math.min(effect.leaseUntilMs ?? clock.nowMs(), effect.expireAtTimestamp);
     while (!signal.aborted && clock.nowMs() + AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS < endAtMs) {
         await waitForALOutboundRecheck(signal);
-        if ((await hold.readAuthority(hold.msg, hold.input.batch)).status !== 'not-ready') {
+        if (await hold.readReleased()) {
             return { status: 'not-ready', readyAtMs: clock.nowMs() };
         }
     }

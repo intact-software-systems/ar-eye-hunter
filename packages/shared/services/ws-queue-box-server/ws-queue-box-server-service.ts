@@ -53,7 +53,6 @@ import {
     isALOrderingPredecessorInBatch,
     type ALOrderingBatchSequences
 } from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
-import { AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS } from '../../alm/outbound/lane/read-al-outbound-dequeue-wait.ts';
 import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -877,7 +876,9 @@ export class WsQueueBoxServerService {
     /**
      * A dequeued row that will record positions on its track follows its predecessor there when its batch claimed it
      * too, and otherwise waits while that predecessor is admitted here and not yet recorded, so the track's positions
-     * are written in sequence order: a predecessor never admitted here, already sent or expired holds nothing.
+     * are written in sequence order: a predecessor never admitted here, already sent or expired holds nothing. A held
+     * row's re-check reads the predecessor's row alone: the row's own answer and its predecessor's id hold while it
+     * is held.
      */
     private async readTrackOrderAuthority(
         message: ALMessage,
@@ -896,12 +897,17 @@ export class WsQueueBoxServerService {
             return { status: 'follows-batch-predecessor' };
         }
         const predecessor = await this.admissionStore.readSentMessageByOrdering(trackKey, seq - 1);
-        const stored = predecessor && await this.admissionStore.readStoredMessage(predecessor.msgId);
-        return isWsQueueBoxServerUnrecordedRow(stored, nowMs)
+        const readPredecessorUnrecorded = async () =>
+            predecessor !== undefined &&
+            isWsQueueBoxServerUnrecordedRow(
+                await this.admissionStore.readStoredMessage(predecessor.msgId),
+                this.clock.nowMs()
+            );
+        return await readPredecessorUnrecorded()
             ? {
-                status: 'not-ready',
+                status: 'held',
                 reason: `WS row waits for sequence ${seq - 1} of its track to record first`,
-                retryAfterMs: AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS
+                readReleased: async () => !await readPredecessorUnrecorded()
             }
             : { status: 'authorized' };
     }
