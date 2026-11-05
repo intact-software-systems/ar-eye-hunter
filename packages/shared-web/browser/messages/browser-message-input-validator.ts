@@ -128,7 +128,10 @@ export class BrowserMessageInputValidator {
         return issues;
     }
 
-    /** A broadcast has no group track to default its ordering key from, so a WS send states both halves or neither. */
+    /**
+     * A broadcast has no group track to default its ordering key from, so a WS send states its key beside a sequence;
+     * a key alone asks the session's outbound for the track's next sequence.
+     */
     public validateWsOrdering<T>(input: RallarWsSendInput<T>): readonly RallarValidationIssue[] {
         const issues: RallarValidationIssue[] = [];
         this.pushOptionalRouteId({
@@ -143,13 +146,6 @@ export class BrowserMessageInputValidator {
                 path: '$.orderingKey',
                 code: 'missing-ordering-key',
                 message: 'An ordered WS send states its orderingKey beside its seq.'
-            });
-        }
-        if (input.orderingKey !== undefined && input.seq === undefined) {
-            issues.push({
-                path: '$.seq',
-                code: 'missing-seq',
-                message: 'An ordered WS send states its seq beside its orderingKey.'
             });
         }
         return issues;

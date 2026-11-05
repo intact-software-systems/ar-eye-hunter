@@ -493,9 +493,7 @@ export class BrowserRallarMessageSender {
             ack: defaults.ack,
             ownership: input.ownership ?? 'shared',
             qos: defaults.qos,
-            ordering: input.orderingKey !== undefined && input.seq !== undefined
-                ? { orderingKey: input.orderingKey, seq: input.seq }
-                : undefined,
+            ordering: input.orderingKey === undefined ? undefined : { orderingKey: input.orderingKey, seq: input.seq },
             traceId: input.traceId
         };
     }
@@ -524,7 +522,8 @@ export class BrowserRallarMessageSender {
                 ttlHops: input.ttlHops,
                 ttlMs: defaults.ttlMs,
                 seq: input.seq,
-                orderingKey: input.orderingKey ?? toALGroupTargetKey(target.roomRef),
+                orderingKey: input.orderingKey ??
+                    (input.seq === undefined ? undefined : toALGroupTargetKey(target.roomRef)),
                 reliability: defaults.reliability,
                 ack: defaults.ack,
                 ownership: input.ownership ?? 'shared',

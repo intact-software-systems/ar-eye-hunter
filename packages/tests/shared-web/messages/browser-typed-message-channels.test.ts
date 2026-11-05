@@ -289,6 +289,26 @@ describe('Rallar typed message channel', () => {
         });
     });
 
+    it('hands a keyed room send to each carrier with its key alone, asking that carrier\'s outbound for the sequence', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'notification',
+            access: 'members'
+        });
+
+        await channel.sendRtc({ text: 'rtc' }, { orderingKey: 'chat' });
+        await channel.sendWs({ text: 'ws' }, { orderingKey: 'chat' });
+
+        for (const port of [rtcRxStreamer, webSocketQueueBox]) {
+            const ordering = port.enqueueOutboxIfAbsent.mock.calls[0][0].ordering;
+            expect(ordering).toMatchObject({ orderingKey: 'chat' });
+            expect(ordering?.seq).toBeUndefined();
+        }
+    });
+
     it('sends a command channel\'s WS send to one peer as a receipted room unicast (Q11, Relic\'s call)', async () => {
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
         const channel = createFacade().messages.room<ChatMessage>({

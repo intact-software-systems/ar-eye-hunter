@@ -387,19 +387,21 @@ describe('Rallar message send', () => {
         });
     });
 
-    it('carries a WS send\'s client-assigned ordering on its broadcast envelope, and none without it', async () => {
+    it('carries a WS send\'s ordering on its broadcast envelope: a stated sequence, a key alone that asks for one, or none', async () => {
         const facade = createRallarTestFacade();
         const send = { scope: 'world', topicId: 'app.chat', typeId: 'chat.message.v1' } as const;
 
         await facade.messages.ws.send({ ...send, payload: { text: 'ordered' }, orderingKey: 'k', seq: 7 });
+        await facade.messages.ws.send({ ...send, payload: { text: 'minted' }, orderingKey: 'k' });
         await facade.messages.ws.send({ ...send, payload: { text: 'unordered' } });
 
-        const [ordered, unordered] = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        const [ordered, minted, unordered] = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
         expect(ordered.ordering).toEqual({ orderingKey: 'k', seq: 7 });
+        expect(minted.ordering).toEqual({ orderingKey: 'k' });
         expect(unordered.ordering).toBeUndefined();
     });
 
-    it('rejects a WS send that states only one half of its ordering with a typed issue for the missing half', async () => {
+    it('rejects a WS send that states a sequence without its ordering key', async () => {
         const facade = createRallarTestFacade();
         const send = { scope: 'world', topicId: 'app.chat', typeId: 'chat.message.v1', payload: { text: 'half' } } as const;
 
@@ -407,10 +409,23 @@ describe('Rallar message send', () => {
             name: 'RallarValidationError',
             issues: [expect.objectContaining({ path: '$.orderingKey', code: 'missing-ordering-key' })]
         });
-        await expect(facade.messages.ws.send({ ...send, orderingKey: 'k' })).rejects.toMatchObject({
-            name: 'RallarValidationError',
-            issues: [expect.objectContaining({ path: '$.seq', code: 'missing-seq' })]
-        });
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+    });
+
+    it('keys an RTC room send on its room only beside a stated sequence, so a send without one stays unordered', async () => {
+        const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+        const facade = createRallarTestFacade();
+        const send = { roomRef, typeId: 'chat.message.v1' } as const;
+
+        await facade.messages.rtc.send({ ...send, payload: { text: 'unordered' } });
+        await facade.messages.rtc.send({ ...send, payload: { text: 'sequenced' }, seq: 4 });
+        await facade.messages.rtc.send({ ...send, payload: { text: 'minted' }, orderingKey: 'chat' });
+
+        const [unordered, sequenced, minted] = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        expect(unordered.ordering).toBeUndefined();
+        expect(sequenced.ordering).toEqual({ orderingKey: '["app-1","workspace-1","room-1"]', seq: 4 });
+        expect(minted.ordering).toMatchObject({ orderingKey: 'chat' });
+        expect(minted.ordering?.seq).toBeUndefined();
     });
 
     it('wakes the queue-box engine when WS send queues durable outbox work', async () => {
