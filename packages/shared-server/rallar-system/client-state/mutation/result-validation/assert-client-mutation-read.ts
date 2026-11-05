@@ -1,5 +1,5 @@
 import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import { assertFriendsPresenceRead } from '../../../friends/friends-presence-publication.ts';
+import { assertFriendsPresenceRead } from '../../../friends/compute-friends-presence-publication.ts';
 import { assertPartyMemberViewRead } from '../../../parties/party-member-view-publication.ts';
 import { assertViewWatchSessionCleanup } from '../../../view-watch/view-watch-session-cleanup.ts';
 

@@ -21,7 +21,7 @@ import {
 import { decodeWebSocketTicketByDigestEntry } from '../../auth/persistence/auth-ticket-persistence.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { AuthWsTicketConsumptionClaim } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
-import { readFriendsPresence } from '../../friends/friends-presence-publication.ts';
+import { readFriendsPresence } from '../../friends/compute-friends-presence-publication.ts';
 import type { FriendsRepository } from '../../friends/friends-repository.ts';
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';

@@ -32,7 +32,9 @@ export function computeTournamentViewPublication(
         : read.command.request.type === 'unlist'
         ? 'unlisted'
         : beforeListing;
-    const principals = [...new Set([...(before === null ? [] : participants(before)), ...participants(after)])].sort();
+    const principals = [
+        ...new Set([...(before === null ? [] : toTournamentParticipants(before)), ...toTournamentParticipants(after)])
+    ].sort();
     const catalogChanged = !jsonEquals(
         before === null ? null : toTournamentCatalogEntry(before),
         toTournamentCatalogEntry(after)
@@ -40,16 +42,16 @@ export function computeTournamentViewPublication(
     const bracketChanged = !jsonEquals(before, after) || beforeListing !== listing;
     const publications: ViewInvalidationPublication[] = [];
     if (catalogChanged) {
-        publications.push(publish(read, 'tournament-catalog', principals));
+        publications.push(computeTournamentViewNotice(read, 'tournament-catalog', principals));
     }
     if (bracketChanged) {
-        publications.push(publish(read, 'tournament', [...principals, ...read.watchers]));
+        publications.push(computeTournamentViewNotice(read, 'tournament', [...principals, ...read.watchers]));
     }
     const beforePublic = before !== null && beforeListing === 'listed' &&
         ['registration', 'active'].includes(before.status);
     const afterPublic = listing === 'listed' && ['registration', 'active'].includes(after.status);
     if ((beforePublic || afterPublic) && (catalogChanged || beforePublic !== afterPublic)) {
-        publications.push(publish(read, 'tournament-catalog', null));
+        publications.push(computeTournamentViewNotice(read, 'tournament-catalog', null));
     }
     const effects = [...storage.batch.effects];
     const creationFence = before === null ? computeCreationWatchFence(read) : null;
@@ -69,11 +71,11 @@ export function computeTournamentViewPublication(
     };
 }
 
-function participants(tournament: Tournament): readonly string[] {
+function toTournamentParticipants(tournament: Tournament): readonly string[] {
     return [tournament.organizerPrincipalId, ...tournament.entrants.map((entrant) => entrant.principalId)];
 }
 
-function publish(
+function computeTournamentViewNotice(
     read: TournamentService.Read,
     resource: 'tournament' | 'tournament-catalog',
     principalIds: readonly string[] | null

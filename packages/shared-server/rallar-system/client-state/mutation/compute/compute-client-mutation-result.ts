@@ -6,7 +6,7 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
-import { computeFriendsPresencePublication } from '../../../friends/friends-presence-publication.ts';
+import { computeFriendsPresencePublication } from '../../../friends/compute-friends-presence-publication.ts';
 import { computePartyMemberViewPublication } from '../../../parties/party-member-view-publication.ts';
 import {
     computeClientStateSyncEntries,

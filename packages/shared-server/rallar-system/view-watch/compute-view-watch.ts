@@ -1,14 +1,20 @@
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { ViewWatchResult } from '@shared/api/views/view-watch.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import type {
+    RuntimeStateGuardedBatchDelete,
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchExactUpdate,
+    RuntimeStateGuardedBatchGuard,
     RuntimeStateGuardedBatchInsert,
     RuntimeStateGuardedBatchUpdate,
     RuntimeStateGuardedBatchWrite
 } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import {
+    computeRuntimeStateObservations,
+    type RuntimeStateObservation,
+    type RuntimeStateObservations
+} from '../../runtime-state/observation/runtime-state-observation.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
@@ -23,6 +29,10 @@ import {
     type ViewWatchResource
 } from './view-watch-repository.ts';
 
+/**
+ * The resource's publishers capture their watcher audience after reading this predecessor, so advancing it makes a
+ * publisher that read the audience before this registration retry instead of missing it.
+ */
 export interface ViewWatchAuthorization {
     readonly resource: ViewWatchResource;
     readonly guard:
@@ -39,6 +49,14 @@ export interface ViewWatchAuthorityFacts {
 
 export interface ViewWatchAuthorizer {
     read(resource: ViewWatchResource, facts: ViewWatchAuthorityFacts): Promise<ViewWatchAuthorization | null>;
+    /** A row only the departing interest kept alive, deleted in the write that moves the slot away. */
+    readRelease(resource: ViewWatchResource): Promise<RuntimeStateGuardedBatchDelete | null>;
+}
+
+/** The slot and its resource lookup, read together and identical. */
+export interface ViewWatchPredecessor {
+    readonly slot: RuntimeStateEntryValue<ViewWatchRegistration>;
+    readonly resource: RuntimeStateEntryValue<ViewWatchRegistration>;
 }
 
 export interface ViewWatchRead {
@@ -46,43 +64,40 @@ export interface ViewWatchRead {
     readonly nowEpochMs: number;
     readonly auth: RuntimeStateEntryValue<PersistedAuthSession> | null;
     readonly client: RuntimeStateEntryValue<ClientSession> | null;
-    readonly previous: RuntimeStateEntryValue<ViewWatchRegistration> | null;
-    readonly previousResource: RuntimeStateEntryValue<ViewWatchRegistration> | null;
+    readonly predecessor: ViewWatchPredecessor | null;
     readonly authorization: ViewWatchAuthorization | null;
+    readonly release: RuntimeStateGuardedBatchDelete | null;
+}
+
+/** A read whose authenticated WebSocket generation is current and whose selected view, if any, is available. */
+export interface ViewWatchValidatedRead extends ViewWatchRead {
+    readonly auth: RuntimeStateEntryValue<PersistedAuthSession>;
+    readonly client: RuntimeStateEntryValue<ClientSession>;
 }
 
 export interface ViewWatchComputed {
     readonly result: ViewWatchResult;
-    readonly storage: RuntimeStateGuardedBatchWrite;
+    /** Session, generation and (for an unwritten slot) slot rows the outcome depends on; none is rewritten. */
+    readonly observations: RuntimeStateObservations;
+    readonly storage: RuntimeStateGuardedBatchWrite | null;
 }
 
-export class ViewWatchAuthorizationError extends Error {
-    readonly code = 'view-watch-authority-denied';
-    readonly status = 403;
-}
-
-export function computeViewWatch(read: ViewWatchRead): ViewWatchComputed {
-    const { command, previous, authorization } = read;
-    assertViewWatchAuthority(read);
-    const conflict = command.request.expectedRegistrationId !== (previous?.value.registrationId ?? null);
-    if (!conflict && command.request.resourceId !== null && authorization === null) {
-        throw new ViewWatchAuthorizationError('The selected view is not available');
-    }
-    const next = conflict ? previous?.value ?? null : toViewWatchRegistration(read);
-    const effects: RuntimeStateGuardedBatchEffect[] = [{
-        effectId: 'watch-client',
-        ...unchangedGuard(CLIENT_STATE_SESSIONS_NAMESPACE, read.client!)
-    }];
-    if (conflict) {
-        if (previous !== null) {
-            effects.push({ effectId: 'watch-slot', ...unchangedGuard(VIEW_WATCH_SLOTS_NAMESPACE, previous) });
-        }
-    }
-    else {
-        if (authorization !== null) {
-            effects.push({ effectId: 'watch-authority', ...authorization.guard });
-        }
-        effects.push(...computeWatchReplacement(read, next));
+export function computeViewWatch(read: ViewWatchValidatedRead): ViewWatchComputed {
+    const { command, predecessor } = read;
+    const previous = predecessor?.slot.value ?? null;
+    const conflict = command.request.expectedRegistrationId !== (previous?.registrationId ?? null);
+    const next = conflict ? previous : toViewWatchRegistration(read);
+    const storage = conflict ? null : computeWatchReplacement(read, next);
+    const observations: RuntimeStateObservation[] = [
+        { namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE, key: read.auth.entry.key, entry: read.auth.entry },
+        { namespace: CLIENT_STATE_SESSIONS_NAMESPACE, key: read.client.entry.key, entry: read.client.entry }
+    ];
+    if (storage === null) {
+        observations.push({
+            namespace: VIEW_WATCH_SLOTS_NAMESPACE,
+            key: toViewWatchSlotKey(command),
+            entry: predecessor?.slot.entry ?? null
+        });
     }
     return {
         result: {
@@ -91,65 +106,19 @@ export function computeViewWatch(read: ViewWatchRead): ViewWatchComputed {
             registrationId: next?.registrationId ?? null,
             resourceId: next?.resourceId ?? null
         },
-        storage: computeRuntimeStateGuardedBatchWrite({
-            guard: unchangedGuard(AUTH_SESSIONS_BY_SESSION_NAMESPACE, read.auth!),
-            effects
-        })
+        observations: computeRuntimeStateObservations(observations),
+        storage
     };
 }
 
-function assertViewWatchAuthority(read: ViewWatchRead): void {
-    const { command, auth, client, previous, previousResource } = read;
-    if (
-        auth === null || auth.value.clientId !== command.principalId || auth.value.sessionId !== command.sessionId ||
-        auth.value.issuedAtEpochMs !== command.sessionIssuedAtEpochMs ||
-        auth.value.expiresAtEpochMs !== command.sessionExpiresAtEpochMs ||
-        auth.value.expiresAtEpochMs <= read.nowEpochMs || client === null || client.value.status !== 'active' ||
-        client.value.expiresAtEpochMs <= read.nowEpochMs || client.value.transport !== 'ws' ||
-        client.value.sessionId !== command.sessionId || client.value.principalId !== command.principalId ||
-        client.value.applicationId !== command.scope.applicationId ||
-        client.value.workspaceId !== command.scope.workspaceId ||
-        client.value.generationId !== command.request.connectionGenerationId ||
-        client.value.connectionId !== client.value.generationId
-    ) {
-        throw new ViewWatchAuthorizationError('A watch requires its current authenticated WebSocket generation');
-    }
-    if (
-        previous !== null &&
-        (previous.value.family !== command.family || previous.value.principalId !== command.principalId ||
-            previous.value.sessionId !== command.sessionId ||
-            previous.value.sessionIssuedAtEpochMs !== command.sessionIssuedAtEpochMs ||
-            previous.value.applicationId !== command.scope.applicationId ||
-            previous.value.workspaceId !== command.scope.workspaceId)
-    ) {
-        throw new TypeError('View watch predecessor belongs to another authenticated identity');
-    }
-    if (
-        (previous === null) !== (previousResource === null) ||
-        (previous && !jsonEquals(previous.value, previousResource?.value))
-    ) {
-        throw new TypeError('View watch slot and resource lookup differ');
-    }
-    if (
-        read.authorization !== null && (
-            read.authorization.resource.resourceId !== command.request.resourceId ||
-            read.authorization.resource.family !== command.family ||
-            read.authorization.resource.applicationId !== command.scope.applicationId ||
-            read.authorization.resource.workspaceId !== command.scope.workspaceId
-        )
-    ) {
-        throw new TypeError('View watch authority names another preview');
-    }
-}
-
-function toViewWatchRegistration(read: ViewWatchRead): ViewWatchRegistration | null {
+function toViewWatchRegistration(read: ViewWatchValidatedRead): ViewWatchRegistration | null {
     const { command } = read;
     return command.request.resourceId === null ? null : {
         ...command.scope,
         family: command.family,
         principalId: command.principalId,
         sessionId: command.sessionId,
-        clientInstanceId: read.client!.value.clientInstanceId,
+        clientInstanceId: read.client.value.clientInstanceId,
         connectionGenerationId: command.request.connectionGenerationId,
         registrationId: command.requestId,
         resourceId: command.request.resourceId,
@@ -158,82 +127,66 @@ function toViewWatchRegistration(read: ViewWatchRead): ViewWatchRegistration | n
     };
 }
 
-function unchangedGuard<T>(namespace: string, stored: RuntimeStateEntryValue<T>): RuntimeStateGuardedBatchExactUpdate {
-    return {
-        operation: 'update-exact',
-        namespace,
-        key: stored.entry.key,
-        value: stored.entry.value,
-        expectedRevision: stored.entry.revision,
-        expectedValue: stored.entry.value,
-        expireAtTimestamp: stored.entry.expireAtTimestamp
-    };
+function toViewWatchSlotKey(command: ViewWatchCommand): string {
+    return viewWatchSlotKey({ ...command.scope, sessionId: command.sessionId, family: command.family });
 }
 
+/** The slot is its own guard; an absent slot cleared to nothing writes no row. */
 function computeWatchReplacement(
-    read: ViewWatchRead,
+    read: ViewWatchValidatedRead,
     next: ViewWatchRegistration | null
-): RuntimeStateGuardedBatchEffect[] {
-    const { previous, previousResource } = read;
-    const slotKey = viewWatchSlotKey({
-        ...read.command.scope,
-        sessionId: read.command.sessionId,
-        family: read.command.family
-    });
+): RuntimeStateGuardedBatchWrite | null {
+    const { predecessor, authorization, release } = read;
+    const releases: RuntimeStateGuardedBatchEffect[] = release === null
+        ? []
+        : [{ effectId: 'watch-previous-authority', ...release }];
     if (next === null) {
-        return computeWatchClear(read);
-    }
-    const resourceKey = viewWatchResourceKey(next);
-    const value = JSON.stringify(next);
-    const common = { value, expireAtTimestamp: next.expiresAtEpochMs };
-    const sameResource = previousResource?.entry.key === resourceKey;
-    const effects: RuntimeStateGuardedBatchEffect[] = [
-        {
-            effectId: 'watch-slot',
-            namespace: VIEW_WATCH_SLOTS_NAMESPACE,
-            key: slotKey,
-            ...common,
-            ...(previous === null
-                ? { operation: 'insert' }
-                : { operation: 'update', expectedRevision: previous.entry.revision })
-        },
-        {
-            effectId: 'watch-resource',
-            namespace: VIEW_WATCH_RESOURCES_NAMESPACE,
-            key: resourceKey,
-            ...common,
-            ...(sameResource
-                ? { operation: 'update', expectedRevision: previousResource!.entry.revision }
-                : { operation: 'insert' })
-        }
-    ];
-    if (previousResource !== null && !sameResource) {
-        effects.push({
-            effectId: 'watch-previous-resource',
-            operation: 'delete',
-            namespace: VIEW_WATCH_RESOURCES_NAMESPACE,
-            key: previousResource.entry.key,
-            expectedRevision: previousResource.entry.revision
+        return predecessor === null ? null : computeRuntimeStateGuardedBatchWrite({
+            guard: {
+                operation: 'delete',
+                namespace: VIEW_WATCH_SLOTS_NAMESPACE,
+                key: predecessor.slot.entry.key,
+                expectedRevision: predecessor.slot.entry.revision
+            },
+            effects: [toResourceDelete('watch-resource', predecessor), ...releases]
         });
     }
-    return effects;
+    const value = JSON.stringify(next);
+    const common = { value, expireAtTimestamp: next.expiresAtEpochMs };
+    const resourceKey = viewWatchResourceKey(next);
+    const sameResource = predecessor?.resource.entry.key === resourceKey;
+    const guard: RuntimeStateGuardedBatchGuard = {
+        namespace: VIEW_WATCH_SLOTS_NAMESPACE,
+        key: toViewWatchSlotKey(read.command),
+        ...common,
+        ...(predecessor === null
+            ? { operation: 'insert' }
+            : { operation: 'update', expectedRevision: predecessor.slot.entry.revision })
+    };
+    const effects: RuntimeStateGuardedBatchEffect[] = [{
+        effectId: 'watch-resource',
+        namespace: VIEW_WATCH_RESOURCES_NAMESPACE,
+        key: resourceKey,
+        ...common,
+        ...(predecessor !== null && sameResource
+            ? { operation: 'update', expectedRevision: predecessor.resource.entry.revision }
+            : { operation: 'insert' })
+    }];
+    if (predecessor !== null && !sameResource) {
+        effects.push(toResourceDelete('watch-previous-resource', predecessor), ...releases);
+    }
+    if (authorization !== null) {
+        effects.push({ effectId: 'watch-authority', ...authorization.guard });
+    }
+    return computeRuntimeStateGuardedBatchWrite({ guard, effects });
 }
 
-function computeWatchClear({ previous, previousResource }: ViewWatchRead): RuntimeStateGuardedBatchEffect[] {
-    return previous === null ? [] : [
-        {
-            effectId: 'watch-slot',
-            operation: 'delete',
-            namespace: VIEW_WATCH_SLOTS_NAMESPACE,
-            key: previous.entry.key,
-            expectedRevision: previous.entry.revision
-        },
-        {
-            effectId: 'watch-resource',
-            operation: 'delete',
-            namespace: VIEW_WATCH_RESOURCES_NAMESPACE,
-            key: previousResource!.entry.key,
-            expectedRevision: previousResource!.entry.revision
-        }
-    ];
+function toResourceDelete(effectId: string, predecessor: ViewWatchPredecessor): RuntimeStateGuardedBatchEffect {
+    return {
+        effectId,
+        operation: 'delete',
+        namespace: VIEW_WATCH_RESOURCES_NAMESPACE,
+        key: predecessor.resource.entry.key,
+        expectedRevision: predecessor.resource.entry.revision
+    };
 }

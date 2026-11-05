@@ -8,6 +8,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { isClientSnapshotPresent } from '@shared-server/rallar-system/client-state/is-client-snapshot-present.ts';
 import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
@@ -20,8 +21,8 @@ import type { ClientExpiryAttempt } from '@shared-server/rallar-system/client-st
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationInvariants } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { computeFriendsMutation, validateFriendsMutation } from '@shared-server/rallar-system/friends/compute-friends-mutation.ts';
+import { assertFriendsPresenceRead } from '@shared-server/rallar-system/friends/compute-friends-presence-publication.ts';
 import type { FriendsMutationComputed } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
-import { assertFriendsPresenceRead, isFriendOnline } from '@shared-server/rallar-system/friends/friends-presence-publication.ts';
 import { FRIENDS_PROFILE_NAMESPACE, friendsProfileKey } from '@shared-server/rallar-system/friends/friends-profile.ts';
 import { writeFriendsMutation } from '@shared-server/rallar-system/friends/write-friends-mutation.ts';
 import { PARTY_ACCOUNTS_NAMESPACE, partyAccountKey } from '@shared-server/rallar-system/parties/persistence/party-account.ts';
@@ -252,7 +253,7 @@ it('does not apply the party active-principal gate to a friend heartbeat resurre
         const before = (await test.clients.readSnapshot({ ...scope, principalId: 'alice' }))!;
         test.party.clock.now = before.activeSessions[0]!.expiresAtEpochMs + 1;
         await test.party.auth.putSession({ ...test.party.sessions[0]!, expiresAtEpochMs: test.party.clock.now + 60000 });
-        expect(isFriendOnline(before, test.party.clock.now)).toBe(false);
+        expect(isClientSnapshotPresent(before, test.party.clock.now)).toBe(false);
         const command = toHeartbeatClientSessionMutationInput({
             scope,
             principalId: 'alice',
@@ -270,7 +271,7 @@ it('does not apply the party active-principal gate to a friend heartbeat resurre
         expect((await test.notices()).map((notice) => notice.principalId)).toEqual(['bob']);
         const after = (await test.clients.readSnapshot({ ...scope, principalId: 'alice' }))!;
         expect(after.principal.status).toBe('disabled');
-        expect(isFriendOnline(after, test.party.clock.now)).toBe(true);
+        expect(isClientSnapshotPresent(after, test.party.clock.now)).toBe(true);
         await test.write(await test.prepare(command));
         expect(await test.notices()).toHaveLength(1);
     }

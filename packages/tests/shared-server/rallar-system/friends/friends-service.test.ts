@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { readFriendsPresence } from '@shared-server/rallar-system/friends/friends-presence-publication.ts';
+import { readFriendsPresence } from '@shared-server/rallar-system/friends/compute-friends-presence-publication.ts';
 import { FriendsReader } from '@shared-server/rallar-system/friends/friends-reader.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';

@@ -1,6 +1,6 @@
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { startDrainableRepeating } from '@shared/resilience/timing/start-drainable-repeating.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 export const DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS = 60_000;
@@ -23,25 +23,14 @@ export interface PresenceExpiryReconciliationInput {
 
 /** Stop owns the in-flight enqueue as well as the next scheduled reconciliation. */
 export function startPresenceExpiryReconciliation(input: PresenceExpiryReconciliationInput): () => Promise<void> {
-    let pending: Promise<void> = Promise.resolve();
-    const stop = startRepeating({
+    return startDrainableRepeating({
         timers: input.timers,
         intervalMs: input.intervalMs,
         firstRun: 'now',
         retryBackoff: { baseMs: 10000, maxMs: 20000 },
-        run: () => {
-            pending = enqueuePresenceExpiryReconciliation(input.runtime, input.nowEpochMs()).catch((error) => {
-                const failure = toError(error);
-                input.onFailure(failure);
-                throw failure;
-            });
-            return pending;
-        }
+        onFailure: input.onFailure,
+        run: () => enqueuePresenceExpiryReconciliation(input.runtime, input.nowEpochMs())
     });
-    return async () => {
-        stop();
-        await pending.catch(() => undefined);
-    };
 }
 
 export async function enqueuePresenceExpiryReconciliation(

@@ -28,7 +28,8 @@ fence registration with their bracket revision. A missing bracket instead uses
 `tournament-watch-fence.ts`: the row expires with captured authentication and
 contains a command-derived incarnation. Exact predecessor value plus revision
 prevents a delayed registration or creation from matching a physically collected
-and recreated fence. Creation promotes this fence atomically with the bracket
+and recreated fence. A slot that moves away from a missing bracket, or clears,
+deletes its absence fence in the same write. Creation promotes this fence atomically with the bracket
 before publishing to its captured watchers. Completed and cancelled brackets
 remain readable and never expire, so their created fences share that lifetime;
 there is currently no tournament retirement/deletion owner. A future retirement
@@ -37,5 +38,6 @@ owner must remove the fence in the same lifecycle as its bracket.
 Watch slots and resource lookups are separate from tournament membership. They
 are scoped by authenticated session and closed watch family, expire with auth,
 and are cleaned by the existing generation-fenced session lifecycle. The watch
-owner compares exact persisted auth/client authority when committing, so a
-reissued session key cannot authorize a delayed release from a prior incarnation.
+owner observes the exact persisted auth/client rows when committing, without
+rewriting them, so a reissued session key cannot authorize a delayed release from a
+prior incarnation.

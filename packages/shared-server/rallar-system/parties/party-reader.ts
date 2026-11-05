@@ -48,7 +48,7 @@ export class PartyReader {
                 leaderPrincipalId: party.leaderPrincipalId!,
                 members: party.members.map((member, index) => {
                     const snapshot = snapshots[index];
-                    const present = isPartyMemberPresent(snapshot, observedAtEpochMs);
+                    const present = isPartyMemberPresent(snapshot ?? null, observedAtEpochMs);
                     return {
                         ...member,
                         displayName: snapshot?.principal.displayName?.trim() || member.principalId,

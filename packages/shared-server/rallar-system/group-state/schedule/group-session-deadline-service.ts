@@ -2,7 +2,14 @@ import { requireEpoch, requireString } from '@shared/api/exact-object-decoding.t
 import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { Group, GroupMember } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { RallarServerAppInbox } from '../../../rallar-server/rallar-server-app-inbox.ts';
+import {
+    computeRuntimeStateObservations,
+    type RuntimeStateObservations
+} from '../../../runtime-state/observation/runtime-state-observation.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { readRuntimeStateObservationsCurrent } from '../../../runtime-state/postgres/read-runtime-state-observations-current.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
@@ -16,8 +23,8 @@ import {
     type GuardedViewPublication
 } from '../../websocket/outbox/guarded-view-publication.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
-import { groupStateUpdateGroupDescriptor } from '../persistence/aggregate/group-aggregate-write-descriptors.ts';
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
+import { GROUPS_NAMESPACE } from '../persistence/group-state-runtime-namespaces.ts';
 import { groupStateMemberStorageKey } from '../persistence/membership/group-membership-storage-key.ts';
 import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
 import { validateStoredMember } from '../persistence/validate-persisted-group.ts';
@@ -47,6 +54,12 @@ export namespace GroupSessionDeadlineService {
         readonly reservationPrincipals: readonly string[];
         readonly invitation: RuntimeStateEntryValue<GroupMember> | null;
     }
+
+    /** The notice commits while the group row it was computed from still holds; that row is not rewritten. */
+    export interface Computed {
+        readonly observations: RuntimeStateObservations;
+        readonly publication: GuardedViewPublication;
+    }
 }
 
 /** Durable phase wakes only invalidate views: gameplay still requires its explicit authoritative command. */
@@ -68,7 +81,7 @@ export class GroupSessionDeadlineService {
             materialize: (command) => command,
             encodeResult: (result) => decodeJsonWireValue(result, 'Session deadline result'),
             decodeResult: decodeGroupSessionDeadline,
-            handle: (command, context) => this.execute(command, context)
+            handle: (command, context) => this.wakeDeadline(command, context)
         });
     }
 
@@ -77,7 +90,7 @@ export class GroupSessionDeadlineService {
         if (nowEpochMs < command.dueAtEpochMs) {
             throw new Error('Session deadline is not due');
         }
-        // Registration and intents advance this predecessor, so a concurrent audience insertion forces retry.
+        // Registration and intents advance this predecessor, so its observation retries a concurrent audience insertion.
         const group = await this.dependencies.groups.findGroupEntry(command.ref) ?? null;
         const [audience, reservations, invitation] = group === null ? [null, undefined, null] : await Promise.all([
             readGroupSessionViewAudience(this.dependencies.runtime, command.ref, nowEpochMs),
@@ -97,7 +110,7 @@ export class GroupSessionDeadlineService {
         };
     }
 
-    compute(read: GroupSessionDeadlineService.Read): GuardedViewPublication | null {
+    compute(read: GroupSessionDeadlineService.Read): GroupSessionDeadlineService.Computed | null {
         assertDeadlineRead(read);
         const { group, command, audience } = read;
         if (group === null || group.value.status !== 'active') {
@@ -142,20 +155,37 @@ export class GroupSessionDeadlineService {
             serviceId: this.dependencies.serviceId,
             traceId: read.traceId
         });
-        return computeGuardedViewPublication({
-            guard: groupStateUpdateGroupDescriptor(group.value, group.entry.revision),
-            effects: publication.provenance
-        }, publication.outbox);
+        const [first, ...rest] = publication.provenance;
+        if (first?.operation !== 'insert') {
+            throw new TypeError('Session deadline notice requires its delivery provenance');
+        }
+        return {
+            observations: computeRuntimeStateObservations([{
+                namespace: GROUPS_NAMESPACE,
+                key: group.entry.key,
+                entry: group.entry
+            }]),
+            publication: computeGuardedViewPublication({
+                guard: {
+                    operation: 'insert',
+                    namespace: first.namespace,
+                    key: first.key,
+                    value: first.value,
+                    expireAtTimestamp: first.expireAtTimestamp
+                },
+                effects: rest
+            }, publication.outbox)
+        };
     }
 
     validate(
         read: GroupSessionDeadlineService.Read,
-        computed: GuardedViewPublication | null
+        computed: GroupSessionDeadlineService.Computed | null
     ): readonly ComputedDataValidationIssue[] {
         return validateComputedProjection(this.compute(read), computed, 'Session deadline');
     }
 
-    private async execute(
+    private async wakeDeadline(
         command: GroupSessionDeadline,
         context: AppInboxMessageContext<GroupSessionDeadline>
     ): Promise<GroupSessionDeadline> {
@@ -168,8 +198,21 @@ export class GroupSessionDeadlineService {
         return await this.dependencies.appInbox.commit(
             context,
             command,
-            (transaction) => writeGuardedViewPublication(transaction, computed)
+            (transaction) => writeGroupSessionDeadline(transaction, computed)
         );
+    }
+}
+
+export async function writeGroupSessionDeadline(
+    transaction: PSqlSql,
+    computed: GroupSessionDeadlineService.Computed | null
+): Promise<void> {
+    if (computed === null) {
+        return;
+    }
+    await writeGuardedViewPublication(transaction, computed.publication);
+    if (!(await readRuntimeStateObservationsCurrent(transaction, computed.observations))) {
+        throw new RuntimeStateWriteConflictError();
     }
 }
 

@@ -1,10 +1,10 @@
 import { readTournamentSignal } from '@shared-server/rallar-system/tournaments/tournament-signal.ts';
 import type { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { newALBroadcastMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { TournamentMatchBinding } from '@shared/api/tournaments/tournament-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -29,7 +29,12 @@ export namespace ArenaTournamentPublication {
         latest: Promise<void> | undefined;
         terminal: 'finished' | 'cancelled' | null;
     }
+
+    export type Refusal = 'stopped' | 'lane-capacity';
 }
+
+/** Concurrent attempt lanes one server process publishes; a further attempt waits for its next checkpoint or reminder. */
+export const ARENA_TOURNAMENT_PUBLICATION_MAX_LANES = 64;
 
 /** One in-flight read/encode/send and one pending mark per active attempt. Only attempt identities are queued. */
 export class ArenaTournamentPublication {
@@ -41,18 +46,18 @@ export class ArenaTournamentPublication {
         this.dependencies = dependencies;
     }
 
-    offer(binding: TournamentMatchBinding): void {
-        try {
-            this.markAttempt(binding, null);
-        }
-        catch (error) {
-            console.error('Arena live snapshot admission failed', error);
-        }
+    /** A refused live offer is dropped: the attempt's next committed checkpoint offers again. */
+    offer(binding: TournamentMatchBinding): ArenaTournamentPublication.Refusal | null {
+        return this.markAttempt(binding, null).left ?? null;
     }
 
     /** The durable signal is acknowledged only after its current terminal frame reached the live publication transport. */
     async terminal(binding: TournamentMatchBinding, status: 'finished' | 'cancelled'): Promise<void> {
-        await this.markAttempt(binding, status);
+        const marked = this.markAttempt(binding, status);
+        if (marked.right === undefined) {
+            throw new Error(`Arena terminal publication refused: ${marked.left}`);
+        }
+        await marked.right;
     }
 
     async stop(): Promise<void> {
@@ -63,9 +68,9 @@ export class ArenaTournamentPublication {
     private markAttempt(
         binding: TournamentMatchBinding,
         status: ArenaTournamentPublication.Lane['terminal']
-    ): Promise<void> {
+    ): Either<ArenaTournamentPublication.Refusal, Promise<void>> {
         if (this.stopped) {
-            throw new Error('Arena tournament publication stopped');
+            return Either.ofLeft('stopped');
         }
         const key = JSON.stringify([
             binding.roomRef.applicationId,
@@ -75,8 +80,8 @@ export class ArenaTournamentPublication {
         ]);
         let lane = this.lanes.get(key);
         if (!lane) {
-            if (this.lanes.size >= AL_PUBLICATION_STAGE_LIMITS.maxStreams) {
-                throw new Error('Arena tournament live publication stream capacity reached');
+            if (this.lanes.size >= ARENA_TOURNAMENT_PUBLICATION_MAX_LANES) {
+                return Either.ofLeft('lane-capacity');
             }
             lane = this.createLane(binding);
             this.lanes.set(key, lane);
@@ -99,7 +104,7 @@ export class ArenaTournamentPublication {
                 }
             });
         }
-        return pending;
+        return Either.ofRight(pending);
     }
 
     private createLane(binding: TournamentMatchBinding): ArenaTournamentPublication.Lane {

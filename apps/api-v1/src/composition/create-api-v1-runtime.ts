@@ -24,8 +24,8 @@ import {
     startGroupRetentionReconciliation
 } from '@shared-server/rallar-system/group-state/retention/reconcile-group-retention.ts';
 import { GroupSessionDeadlineService } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline-service.ts';
-import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline.ts';
 import { GroupSessionViewWatch } from '@shared-server/rallar-system/group-state/schedule/group-session-view-watch.ts';
+import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/install-group-session-deadline.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
@@ -237,7 +237,8 @@ export function createApiV1Runtime(input: CreateApiV1RuntimeInput): ApiV1Runtime
     const appInbox = createApiV1AppInbox({ mutation, runtime, timing: input.timing });
     input.backgroundTasks.register(() => appInbox.stop());
     startGroupMaintenance({ runtime, mutation, input });
-    const viewWatches = installSessionViews({ appInbox, runtime, mutation, input });
+    startSessionDeadlines({ appInbox, runtime, mutation, input });
+    const viewWatches = createViewWatchService(appInbox, mutation, input.nowEpochMs);
     return requireApiV1Runtime({
         runtime,
         appInbox,
@@ -659,14 +660,14 @@ function logRtcRttReceiptCleanupFailure(error: Error): void {
     console.error('RTC RTT receipt family cleanup failed:', error);
 }
 
-interface InstallSessionViewsInput {
+interface StartSessionDeadlinesInput {
     readonly appInbox: ApiV1Runtime['appInbox'];
     readonly runtime: RallarMiddlewareRuntime;
     readonly mutation: ApiV1MutationRuntime;
     readonly input: CreateApiV1RuntimeInput;
 }
 
-function installSessionViews({ appInbox, runtime, mutation, input }: InstallSessionViewsInput): ViewWatchService {
+function startSessionDeadlines({ appInbox, runtime, mutation, input }: StartSessionDeadlinesInput): void {
     const service = new GroupSessionDeadlineService({
         appInbox,
         groups: mutation.groupsRepository,
@@ -685,6 +686,13 @@ function installSessionViews({ appInbox, runtime, mutation, input }: InstallSess
             }
         }
     });
+}
+
+function createViewWatchService(
+    appInbox: ApiV1Runtime['appInbox'],
+    mutation: ApiV1MutationRuntime,
+    nowEpochMs: () => number
+): ViewWatchService {
     return new ViewWatchService({
         appInbox,
         repository: new ViewWatchRepository(mutation.runtimeStateRepository),
@@ -693,6 +701,6 @@ function installSessionViews({ appInbox, runtime, mutation, input }: InstallSess
             'session-preview': new GroupSessionViewWatch(mutation.groupsRepository),
             tournament: new TournamentViewWatch(mutation.runtimeStateRepository)
         },
-        nowEpochMs: input.nowEpochMs
+        nowEpochMs
     });
 }

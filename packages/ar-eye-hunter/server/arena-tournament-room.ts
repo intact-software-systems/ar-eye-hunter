@@ -117,7 +117,7 @@ export async function readArenaTournamentRoom(
     };
 }
 
-export function tournamentArenaIdentity(tournament: TournamentResultRepository.Read): CreateTournamentArenaInput {
+export function toTournamentArenaIdentity(tournament: TournamentResultRepository.Read): CreateTournamentArenaInput {
     const startedAtEpochMs = tournament.attempt?.startedAtEpochMs;
     if (
         startedAtEpochMs === null || startedAtEpochMs === undefined ||
@@ -151,5 +151,5 @@ function restoreTournamentArena(
     if (!jsonEquals(stored.binding, tournament.binding)) {
         throw new TypeError('Arena tournament state binding differs');
     }
-    return decodeTournamentArenaCheckpoint(stored.state, tournamentArenaIdentity(tournament));
+    return decodeTournamentArenaCheckpoint(stored.state, toTournamentArenaIdentity(tournament));
 }

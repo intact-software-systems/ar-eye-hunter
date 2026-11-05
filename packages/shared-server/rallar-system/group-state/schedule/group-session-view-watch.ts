@@ -34,4 +34,8 @@ export class GroupSessionViewWatch implements ViewWatchAuthorizer {
                 }
             };
     }
+
+    readRelease(): Promise<null> {
+        return Promise.resolve(null);
+    }
 }

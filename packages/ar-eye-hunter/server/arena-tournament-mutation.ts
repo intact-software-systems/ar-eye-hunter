@@ -66,7 +66,7 @@ import {
     type TournamentArenaInput
 } from '../tournament-arena.ts';
 import { ARENA_TOURNAMENT_FINISH_TOPIC, computeArenaTournamentDeadline } from './arena-tournament-deadline.ts';
-import { readArenaTournamentRoom, tournamentArenaIdentity } from './arena-tournament-room.ts';
+import { readArenaTournamentRoom, toTournamentArenaIdentity } from './arena-tournament-room.ts';
 
 export namespace ArenaTournamentMutation {
     export interface Actor {
@@ -240,7 +240,7 @@ function computeArenaTournamentMutation(read: ArenaTournamentMutation.Read): Are
     if (tournament.attempt?.status === 'finished') {
         return withoutWrite(read, 'applied', null);
     }
-    const previous = read.state ?? createTournamentArena(tournamentArenaIdentity(tournament));
+    const previous = read.state ?? createTournamentArena(toTournamentArenaIdentity(tournament));
     const transition = read.command.kind === 'input'
         ? applyTournamentArenaInput({
             state: previous,

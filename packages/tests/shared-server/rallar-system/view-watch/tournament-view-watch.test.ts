@@ -2,7 +2,6 @@ import { computeTournamentMutation } from '@shared-server/rallar-system/tourname
 import type { TournamentService } from '@shared-server/rallar-system/tournaments/tournament-service.ts';
 import { toTournamentStorageKey } from '@shared-server/rallar-system/tournaments/tournament-storage-key.ts';
 import { TOURNAMENT_WATCH_FENCES_NAMESPACE } from '@shared-server/rallar-system/tournaments/tournament-watch-fence.ts';
-import { computeViewWatch } from '@shared-server/rallar-system/view-watch/compute-view-watch.ts';
 import type { ViewWatchCommand } from '@shared-server/rallar-system/view-watch/view-watch-command.ts';
 import { writeViewWatch } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
@@ -12,7 +11,14 @@ import { decodeViewInvalidationMessage, type ViewInvalidation } from '@shared/ap
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
-import { createViewWatchTestRuntime, scope, sessionWatchResource, viewWatchCommand, type ViewWatchTestRuntime } from './view-watch-test-runtime.ts';
+import {
+    computeValidatedViewWatch,
+    createViewWatchTestRuntime,
+    scope,
+    sessionWatchResource,
+    viewWatchCommand,
+    type ViewWatchTestRuntime
+} from './view-watch-test-runtime.ts';
 
 const ref = { ...scope, tournamentId: sessionWatchResource.resourceId };
 const resource = { ...scope, family: 'tournament' as const, resourceId: ref.tournamentId };
@@ -63,6 +69,34 @@ it('renews an absent-resource fence through the current authenticated watcher li
     }
 });
 
+it('deletes the absence fence a replaced or cleared slot leaves, but keeps the fence of a created bracket', async () => {
+    const storage = await createResourceInboxTestStorage('tournament_fence_release');
+    try {
+        const test = await createViewWatchTestRuntime(storage);
+        const other = { ...scope, tournamentId: 'other-cup' };
+        const first = tournamentWatch(test, 'first-watch');
+        await test.run(first);
+        expect((await test.tournaments.readWatchFence(ref)).phase).toBe('absent');
+        await test.run({
+            ...first,
+            requestId: 'other-watch',
+            request: { ...first.request, resourceId: other.tournamentId, expectedRegistrationId: 'first-watch' }
+        });
+        expect((await test.tournaments.readWatchFence(ref)).entry).toBeNull();
+        expect((await test.tournaments.readWatchFence(other)).phase).toBe('absent');
+        await test.run({ ...first, requestId: 'clear-other', request: { ...first.request, resourceId: null, expectedRegistrationId: 'other-watch' } });
+        expect((await test.tournaments.readWatchFence(other)).entry).toBeNull();
+        const creation = await prepareCreation(test);
+        await storage.sql.begin((transaction) => test.tournamentService.write(transaction, creation));
+        await test.run(tournamentWatch(test, 'created-watch'));
+        await test.run({ ...first, requestId: 'clear-created', request: { ...first.request, resourceId: null, expectedRegistrationId: 'created-watch' } });
+        expect((await test.tournaments.readWatchFence(ref)).entry?.expireAtTimestamp).toBe(NEVER_EXPIRE_AT_TIMESTAMP);
+    }
+    finally {
+        await storage.close();
+    }
+});
+
 it.each(['watch-first', 'creation-first'] as const)(
     'rejects stale fence incarnation after physical expiry deletion and revision-zero reuse: %s',
     async (order) => {
@@ -70,7 +104,7 @@ it.each(['watch-first', 'creation-first'] as const)(
         try {
             const test = await createViewWatchTestRuntime(storage);
             await seedExpiredFence(test);
-            const pendingWatch = computeViewWatch(await test.service.read(tournamentWatch(test, 'captured-watch')));
+            const pendingWatch = computeValidatedViewWatch(await test.service.read(tournamentWatch(test, 'captured-watch')));
             const pendingCreation = await prepareCreation(test);
             await storage.sql`delete from runtime_state_store where store_namespace=${TOURNAMENT_WATCH_FENCES_NAMESPACE} and expire_at_ts <= now()`;
             if (order === 'creation-first') {

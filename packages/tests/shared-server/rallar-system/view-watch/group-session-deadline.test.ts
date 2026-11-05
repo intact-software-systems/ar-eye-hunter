@@ -27,8 +27,8 @@ it('persists each future canonical phase boundary once and suppresses unchanged 
     expect(() => decodeGroupSessionDeadline({ ...deadline, dueAtEpochMs: deadline.dueAtEpochMs + 1 })).toThrow();
 });
 
+import { writeGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline-service.ts';
 import type { GroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline.ts';
-import { writeGuardedViewPublication } from '@shared-server/rallar-system/websocket/outbox/guarded-view-publication.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
@@ -63,7 +63,7 @@ it('retries an audience captured before registration and drops cancelled or resc
         const deadline = await dueDeadline(test);
         const stale = test.deadlines.compute(await test.deadlines.read(deadline, 'test'));
         await test.run(viewWatchCommand(test, 'watch', null));
-        await expect(storage.sql.begin((transaction) => writeGuardedViewPublication(transaction, stale))).rejects.toBeInstanceOf(
+        await expect(storage.sql.begin((transaction) => writeGroupSessionDeadline(transaction, stale))).rejects.toBeInstanceOf(
             RuntimeStateWriteConflictError
         );
         expect(await notices(storage)).toEqual([]);
@@ -101,7 +101,7 @@ it('retries an audience captured before registration and drops cancelled or resc
     }
 });
 
-it('rolls back the deadline group fence and provenance when its final notice insert fails', async () => {
+it('rolls back the deadline provenance, leaving the observed group row unwritten, when its final notice insert fails', async () => {
     const storage = await createResourceInboxTestStorage('session_deadline_rollback');
     try {
         const test = await createViewWatchTestRuntime(storage);
@@ -112,7 +112,7 @@ it('rolls back the deadline group fence and provenance when its final notice ins
         const rows = await storage.sql`select count(*)::text as count from runtime_state_store`;
         await storage.sql`create function reject_deadline_notice() returns trigger language plpgsql as 'begin return null; end'`;
         await storage.sql`create trigger reject_deadline_notice before insert on resource_inbox for each row execute function reject_deadline_notice()`;
-        await expect(storage.sql.begin((transaction) => writeGuardedViewPublication(transaction, write))).rejects.toThrow();
+        await expect(storage.sql.begin((transaction) => writeGroupSessionDeadline(transaction, write))).rejects.toThrow();
         expect(await test.party.groups.findGroupEntry(ref)).toEqual(before);
         expect(await storage.sql`select count(*)::text as count from runtime_state_store`).toEqual(rows);
         expect(await notices(storage)).toEqual([]);
@@ -162,7 +162,7 @@ async function notices(storage: ResourceInboxTestStorage) {
 }
 
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/group-session-deadline.ts';
+import { installGroupSessionDeadline } from '@shared-server/rallar-system/group-state/schedule/install-group-session-deadline.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 it('delivers the stored future wake through the real outbox and AppInbox only when due', async () => {
@@ -222,18 +222,22 @@ it('rejects forged deadline guards, proof effects, outbox content, and captured 
     try {
         const test = await createViewWatchTestRuntime(storage);
         const deadline = await dueDeadline(test);
+        await test.run(viewWatchCommand(test, 'watch', null));
         const read = await test.deadlines.read(deadline, 'test');
         const computed = test.deadlines.compute(read)!;
         expect(test.deadlines.validate(read, computed)).toEqual([]);
-        if ('operation' in computed.storage) {
+        const { publication } = computed;
+        if ('operation' in publication.storage) {
             throw new Error('Expected owner notice provenance batch');
         }
-        expect(test.deadlines.validate(read, { ...computed, outbox: [] })).not.toEqual([]);
-        expect(test.deadlines.validate(read, { ...computed, storage: { ...computed.storage, effects: [] } })).not.toEqual([]);
-        expect(test.deadlines.validate(read, { ...computed, storage: { ...computed.storage, guard: { ...computed.storage.guard, key: 'another-room' } } })).not
+        const forge = (forged: Partial<typeof publication>) => ({ ...computed, publication: { ...publication, ...forged } });
+        expect(test.deadlines.validate(read, forge({ outbox: [] }))).not.toEqual([]);
+        expect(test.deadlines.validate(read, forge({ storage: { ...publication.storage, effects: [] } }))).not.toEqual([]);
+        expect(test.deadlines.validate(read, forge({ storage: { ...publication.storage, guard: { ...publication.storage.guard, key: 'another-room' } } }))).not
             .toEqual([]);
-        expect(test.deadlines.validate(read, { ...computed, outbox: [{ ...computed.outbox[0], entry: { ...computed.outbox[0].entry, resource: '{}' } }] })).not
+        expect(test.deadlines.validate(read, forge({ outbox: [{ ...publication.outbox[0], entry: { ...publication.outbox[0].entry, resource: '{}' } }] }))).not
             .toEqual([]);
+        expect(test.deadlines.validate(read, { ...computed, observations: { ...computed.observations, observationsJson: '[]' } })).not.toEqual([]);
         expect(() => test.deadlines.compute({ ...read, audience: { ref: { ...ref, groupId: 'another-room' }, principalIds: [] } })).toThrow();
         expect(await notices(storage)).toEqual([]);
     }

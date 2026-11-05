@@ -158,7 +158,10 @@ function createRuntimeAdditions(): RuntimeAdditions {
             appInbox,
             repository: new ViewWatchRepository(new FakeRuntimeStateRepository()),
             clients: { listSessionsForPrincipal: async () => [], findSessionEntry: async () => undefined },
-            authorizers: { 'session-preview': { read: async () => null }, tournament: { read: async () => null } },
+            authorizers: {
+                'session-preview': { read: async () => null, readRelease: async () => null },
+                tournament: { read: async () => null, readRelease: async () => null }
+            },
             nowEpochMs: Date.now
         }),
         authSessionRepository: {} as AuthSessionRepository,

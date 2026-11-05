@@ -13,12 +13,19 @@ import { assertClientMutationInvariants } from '@shared-server/rallar-system/cli
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
-import { computeViewWatch } from '@shared-server/rallar-system/view-watch/compute-view-watch.ts';
 import { writeViewWatch } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
-import { createViewWatchTestRuntime, ref, scope, sessionWatchResource, viewWatchCommand, type ViewWatchTestRuntime } from './view-watch-test-runtime.ts';
+import {
+    computeValidatedViewWatch,
+    createViewWatchTestRuntime,
+    ref,
+    scope,
+    sessionWatchResource,
+    viewWatchCommand,
+    type ViewWatchTestRuntime
+} from './view-watch-test-runtime.ts';
 
 it('registers a nonmember preview through AppInbox without adding discovery, seats or membership, and fences stale clear/replay', async () => {
     const storage = await createResourceInboxTestStorage('view_watch_registration');
@@ -58,7 +65,7 @@ it('couples registration and domain mutations through the group predecessor in b
     try {
         const test = await createViewWatchTestRuntime(storage);
         const previous = (await test.party.groups.findGroupEntry(ref))!;
-        const registration = computeViewWatch(await test.service.read(viewWatchCommand(test, 'register', null)));
+        const registration = computeValidatedViewWatch(await test.service.read(viewWatchCommand(test, 'register', null)));
         expect((await test.party.groups.updateGroup({ ...previous.value, displayName: 'Changed' }, previous.entry.revision)).status).toBe('applied');
         await expect(storage.sql.begin((transaction) => writeViewWatch(transaction, registration))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(await test.repository.listForResource(sessionWatchResource)).toEqual([]);
@@ -102,7 +109,7 @@ it('retries a slot/resource read torn by a concurrent replacement and then retur
             return await readResource(previous);
         });
         const old = viewWatchCommand(test, 'old-owner', 'first');
-        const pending = test.service.read(old).then(computeViewWatch);
+        const pending = test.service.read(old).then(computeValidatedViewWatch);
         const observed = expect(pending).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         await captured.promise;
         await test.run(viewWatchCommand(test, 'replacement', 'first'));
@@ -254,7 +261,7 @@ it('fences an absent-slot clear against registration using one auth-and-slot obs
         await captured.promise;
         await test.run(viewWatchCommand(test, 'registration', null));
         release.resolve();
-        const stale = computeViewWatch(await pending);
+        const stale = computeValidatedViewWatch(await pending);
         spy.mockRestore();
         await expect(storage.sql.begin((transaction) => writeViewWatch(transaction, stale))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(await test.run(request)).toMatchObject({ status: 'conflict', registrationId: 'registration' });
@@ -276,8 +283,7 @@ it('rejects stable slot/resource corruption rather than treating it as a replace
             value: JSON.stringify({ ...registration.value, registrationId: 'corrupt' }),
             expireAtTimestamp: registration.entry.expireAtTimestamp
         });
-        const read = await test.service.read(viewWatchCommand(test, 'next', 'first'));
-        expect(() => computeViewWatch(read)).toThrow(TypeError);
+        await expect(test.service.read(viewWatchCommand(test, 'next', 'first'))).rejects.toThrow(TypeError);
     }
     finally {
         await storage.close();

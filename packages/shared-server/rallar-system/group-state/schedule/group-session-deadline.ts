@@ -1,7 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
-import { AL_MESSAGE_ENVELOPE_VERSION } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     requireEpoch,
     requireExactKeys,
@@ -14,10 +10,9 @@ import type { Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
+import { computeAppOutboxSignal } from '../../app-outbox/compute-app-outbox-signal.ts';
 import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canonical-json.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 
@@ -40,6 +35,8 @@ export namespace GroupSessionDeadline {
 }
 
 export type GroupSessionDeadline = GroupSessionDeadline.Phase | GroupSessionDeadline.Invitation;
+
+export const GROUP_SESSION_DEADLINE_TOPIC = 'group-session.deadline';
 
 export interface GroupSessionDeadlinesInput {
     readonly before: Group | null;
@@ -128,7 +125,7 @@ export function computeGroupSessionDeadlines(input: GroupSessionDeadlinesInput):
         return [];
     }
     return [...computePhaseDeadlines(input), ...computeInvitationDeadlines(input)].map((deadline) =>
-        deadlineInsert(input, deadline)
+        toGroupSessionDeadlineSignal(input, deadline)
     );
 }
 
@@ -176,64 +173,27 @@ function computeInvitationDeadlines(input: GroupSessionDeadlinesInput): readonly
     return deadlines;
 }
 
-function deadlineInsert(input: GroupSessionDeadlinesInput, deadline: GroupSessionDeadline): AppOutboxInsert {
-    const message = decodePersistedALMessageValue({
-        id: {
-            v: AL_MESSAGE_ENVELOPE_VERSION,
-            msgId: groupSessionDeadlineRoute(deadline).resourceId,
-            ts: input.createdAtEpochMs,
-            senderId: input.serviceId,
-            traceId: input.traceId
-        },
-        route: groupSessionDeadlineRoute(deadline),
-        constraints: { expiresAtMs: deadline.dueAtEpochMs + input.retentionMs },
-        delivery: { ownership: 'exclusive', reliability: 'at-least-once', ack: 'none' },
-        payload: {
-            typeId: AppOutboxType.GROUP_SESSION_DEADLINE,
-            contentType: 'application/json',
-            resource: JSON.stringify(deadline)
-        },
-        audit: { createdBy: input.serviceId, createdTs: input.createdAtEpochMs }
-    });
-    return computeAppOutboxInsert({
-        ...QueueBoxUtilities.toResourceEntryFromMsg(
-            message,
-            EnqueuedType.APP_OUTBOX,
-            Temporal.Instant.fromEpochMilliseconds(input.createdAtEpochMs)
-        ),
-        dequeueAudit: { attempts: 0, nextTs: Temporal.Instant.fromEpochMilliseconds(deadline.dueAtEpochMs) }
+function toGroupSessionDeadlineSignal(
+    input: GroupSessionDeadlinesInput,
+    deadline: GroupSessionDeadline
+): AppOutboxInsert {
+    const route = toGroupSessionDeadlineRoute(deadline);
+    return computeAppOutboxSignal({
+        ...route,
+        typeId: AppOutboxType.GROUP_SESSION_DEADLINE,
+        resource: JSON.stringify(deadline),
+        createdAtEpochMs: input.createdAtEpochMs,
+        dueAtEpochMs: deadline.dueAtEpochMs,
+        expiresAtEpochMs: deadline.dueAtEpochMs + input.retentionMs,
+        serviceId: input.serviceId,
+        traceId: input.traceId
     });
 }
 
-function groupSessionDeadlineRoute(deadline: GroupSessionDeadline): Key {
+export function toGroupSessionDeadlineRoute(deadline: GroupSessionDeadline): Key {
     return toAppQueueKey({
-        topicId: 'group-session.deadline',
+        topicId: GROUP_SESSION_DEADLINE_TOPIC,
         resourceId: computeSha256CanonicalJson(deadline),
         contextId: groupStateGroupStorageKey(deadline.ref)
     });
-}
-
-export interface InstallGroupSessionDeadlineInput {
-    readonly outboxQueueReader: OutboxQueueReader;
-    readonly enqueue: (command: GroupSessionDeadline, traceId: string) => Promise<void>;
-    readonly nowEpochMs: () => number;
-}
-
-export function installGroupSessionDeadline(input: InstallGroupSessionDeadlineInput): void {
-    input.outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_SESSION_DEADLINE, {
-        onMessage: async (message) => {
-            const deadline = decodeGroupSessionDeadline(JSON.parse(message.payload.resource));
-            const expected = groupSessionDeadlineRoute(deadline);
-            if (
-                message.route.topicId !== expected.topicId || message.route.resourceId !== expected.resourceId ||
-                message.route.contextId !== expected.contextId || deadline.dueAtEpochMs <= message.id.ts
-            ) {
-                throw new TypeError('Session deadline envelope identity differs');
-            }
-            if (input.nowEpochMs() < deadline.dueAtEpochMs) {
-                throw new Error('Session deadline is not due');
-            }
-            await input.enqueue(deadline, message.id.traceId);
-        }
-    }, ['group-session.deadline']);
 }

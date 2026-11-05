@@ -1,6 +1,5 @@
 import type { Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
-import { toError } from '@shared/resilience/to-error.ts';
+import { startDrainableRepeating } from '@shared/resilience/timing/start-drainable-repeating.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 
@@ -39,25 +38,14 @@ export class PSqlResourceInboxMaintenance {
 
 /** Cancels the next eviction and drains both table writes before the SQL owner can close. */
 export function startResourceInboxExpiryEviction(input: ResourceInboxExpiryInput): () => Promise<void> {
-    let pending: Promise<void> = Promise.resolve();
-    const stop = startRepeating({
+    return startDrainableRepeating({
         timers: input.timers,
         intervalMs: input.intervalMs,
         firstRun: 'now',
         retryBackoff: { baseMs: 10000, maxMs: 20000 },
-        run: () => {
-            pending = evictResourceInbox(input).catch((error) => {
-                const failure = toError(error);
-                input.onFailure(failure);
-                throw failure;
-            });
-            return pending;
-        }
+        onFailure: input.onFailure,
+        run: () => evictResourceInbox(input)
     });
-    return async () => {
-        stop();
-        await pending.catch(() => undefined);
-    };
 }
 
 async function evictResourceInbox(owners: ResourceInboxExpiryInput): Promise<void> {

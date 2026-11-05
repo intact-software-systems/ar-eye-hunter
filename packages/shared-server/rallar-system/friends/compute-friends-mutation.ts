@@ -40,7 +40,7 @@ export function computeFriendsMutation(read: FriendsMutationRead): FriendsMutati
     if (profiles.some((profile) => exceedsFriendsCapacity(read, profile))) {
         return refusedFriendsMutation(read, 'capacity');
     }
-    const audience = friendsViewAudience(read, profiles);
+    const audience = computeFriendsViewAudience(read, profiles);
     const publication = computeViewInvalidationPublication({
         resource: 'friends',
         scope: null,
@@ -144,7 +144,7 @@ function computeFriendsAuthorityGuards(read: FriendsMutationRead): readonly Runt
     if (read.input.request.action === 'invite' && read.destination !== null) {
         guards.push(materializeGroupStateAuthorityGuard(read.destination.authorityGuard));
     }
-    for (const peer of mutualFriendsViewPeers(read)) {
+    for (const peer of computeMutualFriendsViewPeers(read)) {
         if (peer.entry === null) {
             throw new TypeError('Mutual friendship requires a persisted peer profile');
         }
@@ -160,13 +160,13 @@ function computeFriendsAuthorityGuards(read: FriendsMutationRead): readonly Runt
     return guards;
 }
 
-function mutualFriendsViewPeers(read: FriendsMutationRead): readonly FriendsProfileRead[] {
+function computeMutualFriendsViewPeers(read: FriendsMutationRead): readonly FriendsProfileRead[] {
     return read.input.request.action !== 'visibility'
         ? []
         : read.peers.filter(({ profile }) => areMutualFriends(read.actor.profile, profile));
 }
 
-function friendsViewAudience(read: FriendsMutationRead, profiles: readonly FriendsProfile[]): readonly string[] {
+function computeFriendsViewAudience(read: FriendsMutationRead, profiles: readonly FriendsProfile[]): readonly string[] {
     const changed = profiles.filter((profile) =>
         !jsonEquals(
             profile,
@@ -174,6 +174,6 @@ function friendsViewAudience(read: FriendsMutationRead, profiles: readonly Frien
         )
     ).map((profile) => profile.principalId);
     return read.input.request.action === 'visibility' && changed.includes(read.input.principalId)
-        ? [...changed, ...mutualFriendsViewPeers(read).map(({ profile }) => profile.principalId)]
+        ? [...changed, ...computeMutualFriendsViewPeers(read).map(({ profile }) => profile.principalId)]
         : changed;
 }

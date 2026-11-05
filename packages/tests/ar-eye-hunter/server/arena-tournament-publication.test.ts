@@ -1,5 +1,9 @@
 import type { ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
-import { ArenaTournamentPublication, publishArenaTournamentSnapshot } from '@ar-eye-hunter/server/arena-tournament-publication.ts';
+import {
+    ARENA_TOURNAMENT_PUBLICATION_MAX_LANES,
+    ArenaTournamentPublication,
+    publishArenaTournamentSnapshot
+} from '@ar-eye-hunter/server/arena-tournament-publication.ts';
 import { AR_EYE_TOURNAMENT_RULES_ID } from '@ar-eye-hunter/tournament-arena.ts';
 import { describe, expect, it } from 'vitest';
 import { createManualTimers } from '../../shared/resilience/manual-timers.ts';
@@ -131,4 +135,18 @@ it('keeps only the latest revision while a room socket write stalls across many 
     await timers.advanceTo(1400);
     expect(sent).toEqual([1, 10002]);
     await owner.stop();
+});
+
+it('refuses a live offer beyond its own lane capacity or after stop as a value, and a terminal mark as a retryable failure', async () => {
+    const timers = createManualTimers(1000);
+    const owner = new ArenaTournamentPublication({ timers, read: async () => null, send: async () => undefined });
+    const attempt = (index: number) => ({ ...snapshot.binding, attemptId: `attempt-${index}` });
+    for (let index = 0; index < ARENA_TOURNAMENT_PUBLICATION_MAX_LANES; index++) {
+        expect(owner.offer(attempt(index))).toBeNull();
+    }
+    expect(owner.offer(attempt(ARENA_TOURNAMENT_PUBLICATION_MAX_LANES))).toBe('lane-capacity');
+    expect(owner.offer(attempt(0))).toBeNull();
+    await expect(owner.terminal(attempt(ARENA_TOURNAMENT_PUBLICATION_MAX_LANES), 'finished')).rejects.toThrow('lane-capacity');
+    await owner.stop();
+    expect(owner.offer(attempt(0))).toBe('stopped');
 });

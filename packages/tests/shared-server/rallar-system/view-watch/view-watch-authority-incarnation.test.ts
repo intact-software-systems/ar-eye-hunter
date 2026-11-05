@@ -2,14 +2,14 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import { GROUPS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
-import { computeViewWatch, type ViewWatchRead } from '@shared-server/rallar-system/view-watch/compute-view-watch.ts';
+import type { ViewWatchRead } from '@shared-server/rallar-system/view-watch/compute-view-watch.ts';
 import { VIEW_WATCH_RESOURCES_NAMESPACE, VIEW_WATCH_SLOTS_NAMESPACE } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
 import { writeViewWatch } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { expect, it } from 'vitest';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
-import { createViewWatchTestRuntime, ref, viewWatchCommand, type ViewWatchTestRuntime } from './view-watch-test-runtime.ts';
+import { computeValidatedViewWatch, createViewWatchTestRuntime, ref, viewWatchCommand, type ViewWatchTestRuntime } from './view-watch-test-runtime.ts';
 
 it('rejects a captured release after auth, client and watch rows are physically collected and reissued at matching revisions', async () => {
     const storage = await createResourceInboxTestStorage('watch_authority_incarnation');
@@ -19,7 +19,7 @@ it('rejects a captured release after auth, client and watch rows are physically 
         await test.run(initial);
         const release = { ...initial, requestId: 'old-release', request: { ...initial.request, resourceId: null, expectedRegistrationId: 'old-watch' } };
         const read = await test.service.read(release);
-        const computed = computeViewWatch(read);
+        const computed = computeValidatedViewWatch(read);
         test.party.clock.now = read.auth!.value.expiresAtEpochMs + 1;
         const issuedAtEpochMs = test.party.clock.now;
         const expiresAtEpochMs = issuedAtEpochMs + 3600000;
@@ -49,12 +49,12 @@ it('rejects a captured release after auth, client and watch rows are physically 
         const fresh = await test.service.read({ ...current, request: { ...current.request, expectedRegistrationId: 'new-watch' } });
         expect(fresh.auth!.entry.revision).toBe(read.auth!.entry.revision);
         expect(fresh.client!.entry.revision).toBe(read.client!.entry.revision);
-        expect(fresh.previous!.entry.revision).toBe(read.previous!.entry.revision);
+        expect(fresh.predecessor!.slot.entry.revision).toBe(read.predecessor!.slot.entry.revision);
         await expect(storage.sql.begin((transaction) => writeViewWatch(transaction, computed))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         const retained = await test.service.read({ ...current, request: { ...current.request, expectedRegistrationId: 'new-watch' } });
         expect(retained.auth!.value).toEqual(auth);
         expect(retained.client!.value).toEqual(client);
-        expect(retained.previous!.value.registrationId).toBe('new-watch');
+        expect(retained.predecessor!.slot.value.registrationId).toBe('new-watch');
     }
     finally {
         await storage.close();
@@ -67,8 +67,8 @@ it('rejects a pending first registration when only the client generation is coll
         const test = await createViewWatchTestRuntime(storage);
         const command = viewWatchCommand(test, 'pending-first-watch', null);
         const read = await test.service.read(command);
-        expect(read.previous).toBeNull();
-        const computed = computeViewWatch(read);
+        expect(read.predecessor).toBeNull();
+        const computed = computeValidatedViewWatch(read);
         const client = { ...read.client!.value, generationId: 'replacement-generation', connectionId: 'replacement-generation' };
         const namespace = CLIENT_STATE_SESSIONS_NAMESPACE;
         await storage.sql`delete from runtime_state_store where store_namespace=${namespace} and store_key=${read.client!.entry.key}`;
@@ -78,7 +78,6 @@ it('rejects a pending first registration when only the client generation is coll
             value: JSON.stringify(client),
             expiresAtEpochMs: client.expiresAtEpochMs
         });
-        await test.party.runtime.upsert({ namespace, key: read.client!.entry.key, value: JSON.stringify(client), expireAtTimestamp: client.expiresAtEpochMs });
         expect((await test.party.clients.findSessionEntry(client))!.entry.revision).toBe(read.client!.entry.revision);
         await expect(storage.sql.begin((transaction) => writeViewWatch(transaction, computed))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         const retained = await test.repository.readSession({ ...command.scope, sessionId: command.sessionId, family: command.family });
@@ -97,7 +96,7 @@ it('rejects a pending preview registration after physical group deletion and a n
         const test = await createViewWatchTestRuntime(storage);
         const command = viewWatchCommand(test, 'pending-preview', null);
         const read = await test.service.read(command);
-        const computed = computeViewWatch(read);
+        const computed = computeValidatedViewWatch(read);
         const previous = (await test.party.groups.findGroupEntry(ref))!;
         const replacement = { ...previous.value, displayName: 'Recreated room', created: { ...previous.value.created, atEpochMs: test.party.clock.now } };
         await storage.sql`delete from runtime_state_store where store_namespace=${GROUPS_NAMESPACE} and store_key=${previous.entry.key}`;
@@ -116,8 +115,8 @@ async function collectCapturedRows(sql: PSqlSql, read: ViewWatchRead): Promise<v
     const rows = [
         { namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE, entry: read.auth!.entry },
         { namespace: CLIENT_STATE_SESSIONS_NAMESPACE, entry: read.client!.entry },
-        { namespace: VIEW_WATCH_SLOTS_NAMESPACE, entry: read.previous!.entry },
-        { namespace: VIEW_WATCH_RESOURCES_NAMESPACE, entry: read.previousResource!.entry }
+        { namespace: VIEW_WATCH_SLOTS_NAMESPACE, entry: read.predecessor!.slot.entry },
+        { namespace: VIEW_WATCH_RESOURCES_NAMESPACE, entry: read.predecessor!.resource.entry }
     ];
     for (const row of rows) {
         await sql`delete from runtime_state_store where store_namespace=${row.namespace} and store_key=${row.entry.key}`;
@@ -133,7 +132,7 @@ interface RecreatedWatchAuthority {
 
 async function recreateBeforeRegistration(test: ViewWatchTestRuntime, input: RecreatedWatchAuthority): Promise<void> {
     // Physical deletion resets revision; ordinary presence/auth writes can reach any previous revision again.
-    for (let revision = 0; revision < input.previous.revision; revision++) {
+    for (let revision = 0; revision <= input.previous.revision; revision++) {
         await test.party.runtime.upsert({ namespace: input.namespace, key: input.previous.key, value: input.value, expireAtTimestamp: input.expiresAtEpochMs });
     }
 }

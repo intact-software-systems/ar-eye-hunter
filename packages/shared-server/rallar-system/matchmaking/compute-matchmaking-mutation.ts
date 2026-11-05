@@ -128,21 +128,25 @@ export function computeMatchmakingMutation(read: MatchmakingService.Read): Match
     });
     const admissions = proposed.admission === null ? [] : computeAdmission(read, proposed);
     const transition = proposed.admission !== null && admissions.length === 0 ? failedAdmission(proposed) : proposed;
-    return computeAcceptedMatchmakingMutation(read, transition, admissions);
+    return computeAcceptedMatchmakingMutation({ read, transition, admissions, serviceId: command.serviceId });
 }
 
-function computeAcceptedMatchmakingMutation(
-    read: MatchmakingService.Read,
-    transition: MatchmakingTransition,
-    admissions: readonly GroupMutationComputedWrite[]
-): MatchmakingMutation {
+interface AcceptedMatchmakingMutationInput {
+    readonly read: MatchmakingService.Read;
+    readonly transition: MatchmakingTransition;
+    readonly admissions: readonly GroupMutationComputedWrite[];
+    readonly serviceId: string;
+}
+
+function computeAcceptedMatchmakingMutation(input: AcceptedMatchmakingMutationInput): MatchmakingMutation {
+    const { read, transition, admissions, serviceId } = input;
     const { command } = read;
     const publication = computeMatchmakingPublication({
         before: read.pool.pool,
         previousRevision: read.pool.entry?.revision ?? 0,
         transition,
         publication: {
-            serviceId: command.serviceId!,
+            serviceId,
             traceId: read.attempt.traceId,
             createdAtEpochMs: read.nowEpochMs,
             retentionMs: read.finishedRetentionMs
@@ -161,7 +165,7 @@ function computeAcceptedMatchmakingMutation(
                 after: transition.pool,
                 createdAtEpochMs: read.nowEpochMs,
                 retentionMs: read.finishedRetentionMs,
-                serviceId: command.serviceId!,
+                serviceId,
                 traceId: read.attempt.traceId
             })
         ],

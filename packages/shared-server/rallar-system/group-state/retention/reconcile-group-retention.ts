@@ -1,8 +1,7 @@
 import { readGroupRetentionState } from '@shared/api/group-retention.ts';
 import { toCanonicalGroupRef } from '@shared/api/group-types.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
-import { toError } from '@shared/resilience/to-error.ts';
+import { startDrainableRepeating } from '@shared/resilience/timing/start-drainable-repeating.ts';
 
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
 import type { GroupRetentionService } from './group-retention-service.ts';
@@ -18,10 +17,8 @@ export interface StartGroupRetentionReconciliationInput {
     readonly pageSize: number;
 }
 
-interface RetentionScanLifecycle {
-    stopped: boolean;
-    cursor: string | null;
-    pending: Promise<void>;
+interface RetentionScanCursor {
+    afterKey: string | null;
 }
 
 /** One bounded page per run; stop cancels the next run and drains the current one before returning. */
@@ -29,44 +26,33 @@ export function startGroupRetentionReconciliation(input: StartGroupRetentionReco
     if (!Number.isSafeInteger(input.pageSize) || input.pageSize < 1 || input.pageSize > 500) {
         throw new TypeError('Retention page size must be an integer from 1 through 500');
     }
-    const lifecycle: RetentionScanLifecycle = { stopped: false, cursor: null, pending: Promise.resolve() };
-    const stopRepeating = startRepeating({
+    const cursor: RetentionScanCursor = { afterKey: null };
+    return startDrainableRepeating({
         timers: input.timers,
         intervalMs: input.intervalMs,
         firstRun: 'after-interval',
         retryBackoff: { baseMs: input.intervalMs, maxMs: input.intervalMs * 4 },
-        run: () => {
-            lifecycle.pending = reconcileGroupRetention(input, lifecycle).catch((error) => {
-                const failure = toError(error);
-                input.onFailure(failure);
-                throw failure;
-            });
-            return lifecycle.pending;
-        }
+        onFailure: input.onFailure,
+        run: (stopping) => reconcileGroupRetention(input, cursor, stopping)
     });
-    return async () => {
-        lifecycle.stopped = true;
-        stopRepeating();
-        // Failures already reached onFailure and the repeating scheduler; stopping only drains that owned run.
-        await lifecycle.pending.catch(() => undefined);
-    };
 }
 
 async function reconcileGroupRetention(
     input: StartGroupRetentionReconciliationInput,
-    lifecycle: RetentionScanLifecycle
+    cursor: RetentionScanCursor,
+    stopping: AbortSignal
 ): Promise<void> {
     const page = await input.repository.listGroupsPage({
         limit: input.pageSize,
-        ...(lifecycle.cursor === null ? {} : { afterKey: lifecycle.cursor })
+        ...(cursor.afterKey === null ? {} : { afterKey: cursor.afterKey })
     });
-    if (lifecycle.stopped) {
+    if (stopping.aborted) {
         return;
     }
     const requestId = input.newObservationId();
     const observedAtEpochMs = input.now();
     for (const group of page.groups) {
-        if (lifecycle.stopped) {
+        if (stopping.aborted) {
             return;
         }
         if (
@@ -76,5 +62,5 @@ async function reconcileGroupRetention(
             await input.enqueue({ groupRef: toCanonicalGroupRef(group), requestId, observedAtEpochMs });
         }
     }
-    lifecycle.cursor = page.nextKey;
+    cursor.afterKey = page.nextKey;
 }

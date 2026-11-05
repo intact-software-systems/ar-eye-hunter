@@ -8,7 +8,7 @@ import { decodeStateScope, type StateScope } from '@shared/api/state-types.ts';
 import { decodeViewWatchFamily, type ViewWatchFamily } from '@shared/api/views/view-watch.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateReadBatchKeySelector } from '../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import { readRuntimeStateKeySelections } from '../../runtime-state/read-batch/read-runtime-state-key-selections.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import { decodeAuthSessionBySessionIdEntry } from '../auth/persistence/auth-session-persistence.ts';
@@ -74,7 +74,7 @@ export class ViewWatchRepository {
 
     /** Auth and slot share a snapshot, so even an absent-slot clear fences concurrent registration. */
     async readSession(identity: ViewWatchIdentity): Promise<ViewWatchSessionRead> {
-        const [auth, previous] = await this.readKeys([
+        const [auth, previous] = await readRuntimeStateKeySelections(this.repository, [
             {
                 selectorId: 'auth',
                 kind: 'key',
@@ -105,7 +105,7 @@ export class ViewWatchRepository {
     async readResource(
         registration: ViewWatchRegistration
     ): Promise<RuntimeStateEntryValue<ViewWatchRegistration> | null> {
-        const [slot, resource] = await this.readKeys([
+        const [slot, resource] = await readRuntimeStateKeySelections(this.repository, [
             {
                 selectorId: 'slot',
                 kind: 'key',
@@ -147,25 +147,6 @@ export class ViewWatchRepository {
             throw new TypeError('View watch selection differs from its requested prefix');
         }
         return selections[0].entries.map((entry) => decodeViewWatchEntry(entry, kind));
-    }
-
-    private async readKeys(
-        selectors: readonly RuntimeStateReadBatchKeySelector[]
-    ): Promise<readonly (RuntimeStateEntry | undefined)[]> {
-        const selections = await this.repository.readRuntimeStateBatch(selectors);
-        if (selections.length !== selectors.length) {
-            throw new TypeError('View watch read omitted an authority selector');
-        }
-        return selections.map((selection, index) => {
-            const selector = selectors[index];
-            if (
-                selection.selectorId !== selector.selectorId || selection.entries.length > 1 ||
-                selection.entries.some((entry) => entry.key !== selector.key)
-            ) {
-                throw new TypeError('View watch read returned another authority key');
-            }
-            return selection.entries[0];
-        });
     }
 }
 

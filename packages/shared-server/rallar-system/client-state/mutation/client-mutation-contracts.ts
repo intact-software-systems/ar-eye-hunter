@@ -21,7 +21,7 @@ import type {
     AuthWsTicketConsumptionClaim,
     AuthWsTicketConsumptionRead
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
-import type { FriendsPresenceRead } from '../../friends/friends-presence-publication.ts';
+import type { FriendsPresenceRead } from '../../friends/compute-friends-presence-publication.ts';
 import type { PartyMemberViewRead } from '../../parties/party-member-view-publication.ts';
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';

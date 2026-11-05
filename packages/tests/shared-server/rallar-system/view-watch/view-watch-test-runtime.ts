@@ -4,6 +4,8 @@ import { GroupSessionViewWatch } from '@shared-server/rallar-system/group-state/
 import { TournamentRepository } from '@shared-server/rallar-system/tournaments/tournament-repository.ts';
 import { TournamentService } from '@shared-server/rallar-system/tournaments/tournament-service.ts';
 import { TournamentViewWatch } from '@shared-server/rallar-system/tournaments/tournament-view-watch.ts';
+import { computeViewWatch, type ViewWatchComputed, type ViewWatchRead } from '@shared-server/rallar-system/view-watch/compute-view-watch.ts';
+import { validateViewWatch } from '@shared-server/rallar-system/view-watch/validate-view-watch.ts';
 import type { ViewWatchCommand } from '@shared-server/rallar-system/view-watch/view-watch-command.ts';
 import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
 import { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
@@ -97,4 +99,13 @@ export function viewWatchCommand(test: ViewWatchTestRuntime, requestId: string, 
         requestId,
         request: { resourceId: ref.groupId, connectionGenerationId: 'generation-bob', expectedRegistrationId }
     };
+}
+
+/** A captured attempt computed as the service does once its read validated. */
+export function computeValidatedViewWatch(read: ViewWatchRead): ViewWatchComputed {
+    const validated = validateViewWatch(read);
+    if (validated.right === undefined) {
+        throw new Error(`Expected a valid watch read: ${JSON.stringify(validated.left)}`);
+    }
+    return computeViewWatch(validated.right);
 }

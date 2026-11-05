@@ -2,9 +2,9 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { RuntimeStateGuardedBatchGuard } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { isClientSnapshotPresent } from '../client-state/is-client-snapshot-present.ts';
 import type { ClientMutationCommand, ClientMutationRead } from '../client-state/mutation/client-mutation-contracts.ts';
 import { computeClientPresenceTransition } from '../client-state/mutation/client-presence-transition.ts';
-import { isClientSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { computeViewInvalidationPublication } from '../websocket/outbox/compute-view-invalidation-publication.ts';
 import {
@@ -37,10 +37,6 @@ export async function readFriendsPresence(
     return { own, peers };
 }
 
-export function isFriendOnline(snapshot: ClientSnapshot | null | undefined, atEpochMs: number): boolean {
-    return snapshot?.activeSessions.some((session) => isClientSnapshotSessionLive(session, atEpochMs)) === true;
-}
-
 export function computeFriendsPresencePublication(
     command: ClientMutationCommand,
     read: ClientMutationRead,
@@ -52,8 +48,8 @@ export function computeFriendsPresencePublication(
     }
     const transition = computeClientPresenceTransition(command, read, snapshot);
     if (
-        isFriendOnline(transition.before, transition.beforeAtEpochMs) ===
-            isFriendOnline(snapshot, transition.afterAtEpochMs)
+        isClientSnapshotPresent(transition.before, transition.beforeAtEpochMs) ===
+            isClientSnapshotPresent(snapshot, transition.afterAtEpochMs)
     ) {
         return null;
     }
@@ -76,15 +72,18 @@ export function computeFriendsPresencePublication(
     });
     // Even hidden/absent profiles fence a concurrent visibility change or friendship acceptance.
     return computeGuardedViewPublication({
-        guard: profileGuard(presence.own),
+        guard: toFriendsProfileGuard(presence.own),
         effects: [
-            ...peers.map((peer) => ({ ...profileGuard(peer), effectId: `friend:${peer.profile.principalId}` })),
+            ...peers.map((peer) => ({
+                ...toFriendsProfileGuard(peer),
+                effectId: `friend:${peer.profile.principalId}`
+            })),
             ...publication.provenance
         ]
     }, publication.outbox);
 }
 
-function profileGuard(read: FriendsProfileRead): RuntimeStateGuardedBatchGuard {
+function toFriendsProfileGuard(read: FriendsProfileRead): RuntimeStateGuardedBatchGuard {
     const value = {
         namespace: FRIENDS_PROFILE_NAMESPACE,
         key: friendsProfileKey(read.profile.principalId),

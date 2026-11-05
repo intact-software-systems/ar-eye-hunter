@@ -1,4 +1,5 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { readRuntimeStateKeySelections } from '../../runtime-state/read-batch/read-runtime-state-key-selections.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey } from '../auth/persistence/auth-storage-keys.ts';
 import { decodePersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
@@ -29,36 +30,30 @@ export async function readViewWatchRecipients(
 ): Promise<readonly string[]> {
     const registrations = await new ViewWatchRepository(repository).listForResource(ref);
     const current = await Promise.all(
-        registrations.map(({ value }) => isCurrentWatch({ repository, registration: value, nowEpochMs }))
+        registrations.map(({ value }) => readIsCurrentWatch({ repository, registration: value, nowEpochMs }))
     );
     return registrations.filter((_, index) => current[index]).map(({ value }) => value.principalId);
 }
 
-async function isCurrentWatch({ repository, registration, nowEpochMs }: ViewWatchRecipientRead): Promise<boolean> {
+async function readIsCurrentWatch({ repository, registration, nowEpochMs }: ViewWatchRecipientRead): Promise<boolean> {
     if (registration.expiresAtEpochMs <= nowEpochMs) {
         return false;
     }
-    const authKey = authSessionKey(registration.sessionId);
-    const clientKey = clientStateSessionStorageKey(registration);
-    const slotKey = viewWatchSlotKey(registration);
-    const rows = await repository.readRuntimeStateBatch([
-        { selectorId: 'auth', kind: 'key', namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE, key: authKey },
-        { selectorId: 'client', kind: 'key', namespace: CLIENT_STATE_SESSIONS_NAMESPACE, key: clientKey },
-        { selectorId: 'slot', kind: 'key', namespace: VIEW_WATCH_SLOTS_NAMESPACE, key: slotKey }
+    const [auth, client, slot] = await readRuntimeStateKeySelections(repository, [
+        {
+            selectorId: 'auth',
+            kind: 'key',
+            namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+            key: authSessionKey(registration.sessionId)
+        },
+        {
+            selectorId: 'client',
+            kind: 'key',
+            namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+            key: clientStateSessionStorageKey(registration)
+        },
+        { selectorId: 'slot', kind: 'key', namespace: VIEW_WATCH_SLOTS_NAMESPACE, key: viewWatchSlotKey(registration) }
     ]);
-    if (rows.length !== 3) {
-        throw new TypeError('Watch recipient read omitted an authority selector');
-    }
-    const [auth, client, slot] = rows.map((row, index) => {
-        const expected = [authKey, clientKey, slotKey][index];
-        if (
-            row.selectorId !== ['auth', 'client', 'slot'][index] || row.entries.length > 1 ||
-            row.entries.some((entry) => entry.key !== expected)
-        ) {
-            throw new TypeError('Watch recipient read returned another authority slot');
-        }
-        return row.entries[0];
-    });
     if (auth === undefined || client === undefined || slot === undefined) {
         return false;
     }

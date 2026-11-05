@@ -1,12 +1,12 @@
 import type { RuntimeStateReadBatchLiveSelection } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { FriendsProfileRead } from '../../friends/friends-mutation-contracts.ts';
-import { isFriendOnline } from '../../friends/friends-presence-publication.ts';
 import { FRIENDS_PROFILE_NAMESPACE, friendsProfileKey } from '../../friends/friends-profile.ts';
 import { decodeFriendsProfileRead } from '../../friends/friends-repository.ts';
 import { PARTY_ACCOUNTS_NAMESPACE, partyAccountKey } from '../../parties/persistence/party-account.ts';
 import { decodePartyAccountEntry, type PartyRepository } from '../../parties/persistence/party-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { isClientSnapshotPresent } from '../is-client-snapshot-present.ts';
 import type { ClientMutationCommand, ClientMutationRead } from './client-mutation-contracts.ts';
 
 export interface ClientMutationSocialRead {
@@ -55,7 +55,7 @@ export function decodeClientMutationSocialRead(input: DecodeClientMutationSocial
     }
     const [party, friends] = selections;
     const needsFriends = command.operation !== 'heartbeatSession' ||
-        !isFriendOnline(state.snapshot, audienceObservedAtEpochMs);
+        !isClientSnapshotPresent(state.snapshot, audienceObservedAtEpochMs);
     // Durable social rows must never expire: a physically expired observation is corruption, not absence.
     return {
         partyAccount: needsPartyMemberRead(command, state, audienceObservedAtEpochMs)
@@ -85,9 +85,5 @@ function needsPartyMemberRead(
     if (command.operation !== 'heartbeatSession') {
         return true;
     }
-    return state.principal?.value.status === 'active' &&
-        !state.snapshot?.activeSessions.some((session) =>
-            session.status === 'active' && session.disconnectedAtEpochMs === null &&
-            session.expiresAtEpochMs > observedAtEpochMs
-        );
+    return state.principal?.value.status === 'active' && !isClientSnapshotPresent(state.snapshot, observedAtEpochMs);
 }
