@@ -15,7 +15,7 @@ export async function partyPlayJourney(host: Page, guest: Page, game: 'arena' | 
     await becomeFriends(host, guest);
     await formParty(host, guest, game);
     const source = await matchParty(host, guest);
-    await moveParty(host, guest, source, destination);
+    await moveParty({ host, guest, source, destination });
     await playTogetherInRoom(host, guest, game);
     await repeatPartyPlay(host, guest, game);
     if (game === 'arena') {
@@ -112,7 +112,14 @@ async function acceptWithLostResponse(guest: Page): Promise<void> {
     await expect(retry).toHaveCount(0);
 }
 
-async function moveParty(host: Page, guest: Page, source: string, destination: string): Promise<void> {
+interface PartyMove {
+    readonly host: Page;
+    readonly guest: Page;
+    readonly source: string;
+    readonly destination: string;
+}
+
+async function moveParty({ host, guest, source, destination }: PartyMove): Promise<void> {
     const hostMove = host.getByRole('region', { name: 'Move together', exact: true });
     const guestMove = guest.getByRole('region', { name: 'Move together', exact: true });
     await expect(hostMove).toContainText('Your whole party moves together');

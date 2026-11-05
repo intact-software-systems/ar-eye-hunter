@@ -1,5 +1,6 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeAppOutboxInsert, writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { computeViewInvalidationPublication } from '@shared-server/rallar-system/websocket/outbox/compute-view-invalidation-publication.ts';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
@@ -9,7 +10,7 @@ import { writeRuntimeStateConditionalBatch } from '@shared-server/runtime-state/
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 import assert from 'node:assert/strict';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
@@ -130,7 +131,17 @@ function messages(native: TestWebSocket, topic: string): ALMessage[] {
     return native.sent.map((value) => JSON.parse(value) as ALMessage).filter((message) => message.route.topicId === topic);
 }
 
-async function createFixture() {
+interface ApiRuntimeFixture {
+    readonly runtime: ApiV1Runtime;
+    readonly input: CreateApiV1RuntimeInput;
+    readonly parties: ReturnType<typeof createApiV1PartyServices>;
+    readonly notifications: NotificationPort;
+    readonly releases: (() => void)[];
+    readonly sql: PSqlSql;
+    readonly stop: () => Promise<void>;
+}
+
+async function createFixture(): Promise<ApiRuntimeFixture> {
     const database = await createApiV1TestPGliteDatabaseLifecycle();
     const backgroundTasks = createApiV1BackgroundTaskLifecycle({ runtimeStateExpiry: createRuntimeStateExpiryLifecycle() });
     const notifications = new NotificationPort();
@@ -159,7 +170,13 @@ async function createFixture() {
     return { runtime, input, parties, notifications, releases, sql: database.database, stop };
 }
 
-async function connectAccount(runtime: ApiV1Runtime, principalId: string, releases: (() => void)[]) {
+interface ConnectedAccount {
+    readonly session: PersistedAuthSession;
+    readonly native: TestWebSocket;
+    readonly connection: ConnectionContext;
+}
+
+async function connectAccount(runtime: ApiV1Runtime, principalId: string, releases: (() => void)[]): Promise<ConnectedAccount> {
     const issued = await runtime.appAuthInboxService.issueSession({
         requestId: `runtime-${principalId}`,
         traceId: `runtime-${principalId}`,
@@ -200,7 +217,7 @@ async function connectAccount(runtime: ApiV1Runtime, principalId: string, releas
     return { session, native, connection };
 }
 
-async function writeCorruptPublication(sql: PSqlSql, serviceId: string) {
+async function writeCorruptPublication(sql: PSqlSql, serviceId: string): Promise<ResourceEntry> {
     const publication = computeViewInvalidationPublication({
         resource: 'party',
         scope: SCOPE,
