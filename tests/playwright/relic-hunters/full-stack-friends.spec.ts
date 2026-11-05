@@ -1,4 +1,4 @@
-import { friendsPlayJourney } from '../friends-journey.ts';
+import { friendsPlayJourney } from '../friends-play-journey.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 
 roomBrowserTest(

@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { TournamentMatch } from '../../packages/shared/api/tournaments/tournament-types.ts';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { localStartInput } from './local-start-input.ts';
 import { openArenaOperations } from './room-player-journey.ts';
-import { assertIdleViewReads } from './view-push-observation.ts';
 
 /** Real accounts register, check in and enter through the same controls as human players. */
 export async function registerTournament(

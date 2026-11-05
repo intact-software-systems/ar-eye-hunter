@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
-import { assertIdleViewReads } from './view-push-observation.ts';
 
 export async function partyPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
     host.setDefaultTimeout(15000);

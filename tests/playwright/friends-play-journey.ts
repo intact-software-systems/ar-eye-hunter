@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
 import { scheduleThroughControls } from './scheduled-session-journey.ts';
-import { assertIdleViewReads } from './view-push-observation.ts';
 
 /** Two independent accounts, visible controls, real API and actual shared gameplay. */
 export async function friendsPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {

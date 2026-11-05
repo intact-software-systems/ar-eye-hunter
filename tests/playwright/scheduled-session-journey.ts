@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { localStartInput } from './local-start-input.ts';
 import {
     openArenaOperations,
@@ -6,7 +7,6 @@ import {
     signInRoomPlayer,
     startAndVerifyRoomPlay
 } from './room-player-journey.ts';
-import { assertIdleViewReads } from './view-push-observation.ts';
 
 /** Exercise only visible SPA controls against the actual API and game authority. */
 export async function scheduledSessionRecoveryJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {

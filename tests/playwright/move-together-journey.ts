@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { assertIdleViewReads } from './view-push-observation.ts';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 
 import {
     openArenaOperations,

@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
-import { assertIdleViewReads } from './view-push-observation.ts';
 
 /** The API owns reservations; both browsers reach it only through visible game controls. */
 export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {

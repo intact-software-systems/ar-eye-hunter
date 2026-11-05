@@ -1,5 +1,5 @@
 import { matchmakingExpiryJourney, matchmakingPlayJourney } from '../matchmaking-journey.ts';
-import { partyPlayJourney } from '../party-journey.ts';
+import { partyPlayJourney } from '../party-play-journey.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 
 roomBrowserTest(
