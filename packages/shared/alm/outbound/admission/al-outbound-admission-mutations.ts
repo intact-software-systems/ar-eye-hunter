@@ -25,22 +25,31 @@ import {
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
+    toALOutboundSentPositionKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
-import type { ALOutboundOrderingHead } from './al-outbound-admission-store.ts';
+import type { ALOutboundOrderingHead, ALOutboundSentPositions } from './al-outbound-admission-store.ts';
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 import type { ALOutboundOrderingHeadRow } from './decode-al-outbound-ordering-head.ts';
+import type { ALOutboundSentPositionRow } from './decode-al-outbound-sent-position.ts';
 
 export type ALOutboundAdmissionMutation =
     | Readonly<
         { kind: 'set-ordering-message'; trackKey: string; seq: number; msgId: string; expireAtTimestamp: number; }
     >
     | Readonly<{ kind: 'set-ordering-head'; trackKey: string; seq: number; expireAtTimestamp: number; }>
+    | Readonly<{
+        kind: 'set-sent-position';
+        trackKey: string;
+        recipientPeerId: string;
+        seq: number;
+        expireAtTimestamp: number;
+    }>
     | Readonly<{
         kind: 'set-msg-owner';
         msgId: string;
@@ -102,6 +111,7 @@ export interface ALOutboundStateWrite {
         | ALOutboundPendingAckSnapshot
         | ALOutboundRepairAttemptSnapshot
         | ALOutboundOrderingHeadRow
+        | ALOutboundSentPositionRow
         | ALLatestSupersedenceValue
         | ALReplacementSupersedenceValue
         | undefined;
@@ -129,6 +139,25 @@ export function toALOutboundOrderingHeadMutations(
     return head === undefined
         ? []
         : [{ kind: 'set-ordering-head', trackKey: head.trackKey, seq: head.seq, expireAtTimestamp }];
+}
+
+/** Moves each recorded recipient to the sequence it was sent; one already at or past it keeps its position. */
+export function toALOutboundSentPositionMutations(
+    positions: ALOutboundSentPositions | undefined,
+    expireAtTimestamp: number
+): readonly ALOutboundAdmissionMutation[] {
+    if (positions === undefined) {
+        return [];
+    }
+    return Object.entries(positions.priorSeqByRecipient)
+        .filter(([, priorSeq]) => priorSeq < positions.seq)
+        .map(([recipientPeerId]) => ({
+            kind: 'set-sent-position',
+            trackKey: positions.trackKey,
+            recipientPeerId,
+            seq: positions.seq,
+            expireAtTimestamp
+        }));
 }
 
 /** Owns the outbound mutation vocabulary: the state write each mutation names, its guards, and its apply. */
@@ -234,16 +263,8 @@ export class ALOutboundAdmissionMutations {
                     supersedenceGuard: undefined
                 };
             case 'set-ordering-head':
-                return {
-                    key: toALOutboundOrderingHeadKey(this.namespace, mutation.trackKey),
-                    value: { seq: mutation.seq },
-                    expireAtTimestamp: this.computeMessageRowExpiryMs(
-                        mutation.expireAtTimestamp,
-                        nowMs,
-                        this.retention.sentMessageTtlMs
-                    ),
-                    supersedenceGuard: undefined
-                };
+            case 'set-sent-position':
+                return this.computeTrackPositionWrite(mutation, nowMs);
             case 'set-msg-owner':
                 return this.computeMessageOwnerWrite(mutation, nowMs);
             case 'set-sent-message':
@@ -264,6 +285,28 @@ export class ALOutboundAdmissionMutations {
             case 'set-supersedence-replacement':
                 return this.computeSupersedenceWrite(mutation);
         }
+    }
+
+    /**
+     * The track's head and each recipient's sent position share one retention, so a recorded track continues for as
+     * long as its head does. The commit's sender-version fence serializes writers, so each is a plain set.
+     */
+    private computeTrackPositionWrite(
+        mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-ordering-head' | 'set-sent-position'; }>,
+        nowMs: number
+    ): ALOutboundStateWrite {
+        return {
+            key: mutation.kind === 'set-ordering-head'
+                ? toALOutboundOrderingHeadKey(this.namespace, mutation.trackKey)
+                : toALOutboundSentPositionKey(this.namespace, mutation.trackKey, mutation.recipientPeerId),
+            value: { seq: mutation.seq },
+            expireAtTimestamp: this.computeMessageRowExpiryMs(
+                mutation.expireAtTimestamp,
+                nowMs,
+                this.retention.sentMessageTtlMs
+            ),
+            supersedenceGuard: undefined
+        };
     }
 
     /** The owner row answers control that arrives after the message itself is gone, so it outlives both. */

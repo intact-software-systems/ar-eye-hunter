@@ -181,6 +181,13 @@ export interface ALOutboundOrderingHead {
     readonly seq: number;
 }
 
+/** The positions one admission read on its track: each planned recipient's prior sequence, `0` for none. */
+export interface ALOutboundSentPositions {
+    readonly trackKey: string;
+    readonly seq: number;
+    readonly priorSeqByRecipient: Readonly<Record<string, number>>;
+}
+
 export interface ALOutboundMessageReadDto<TPrepared> {
     readonly kind: 'outgoing';
     readonly storedMessage: ALStoredOutboundMessage | undefined;
@@ -194,6 +201,8 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
     /** The sequence `msg` was minted on this read; undefined when the read minted none. */
     readonly orderingHead: ALOutboundOrderingHead | undefined;
+    /** The recipients' positions `msg` was recorded against on this read; undefined when the read recorded none. */
+    readonly sentPositions: ALOutboundSentPositions | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;

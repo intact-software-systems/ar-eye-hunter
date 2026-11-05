@@ -49,6 +49,7 @@ import {
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
+    toALOutboundSentPositionKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey,
     toALOutboundVersionKey,
@@ -75,6 +76,7 @@ import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-cap
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';
+import { decodeALOutboundSentPosition } from './decode-al-outbound-sent-position.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 
@@ -173,6 +175,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             clientRecord,
             plan,
             orderingHead,
+            sentPositions: undefined,
             sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
             repairs,
@@ -450,6 +453,23 @@ export class ALOutboundAdmissionReads<TPrepared> {
             plan: { ...plan, msg: { ...plan.msg, ordering: { ...plan.msg.ordering, seq } } },
             orderingHead: { trackKey, seq }
         };
+    }
+
+    /** Each recipient's last sequence sent on the track, `0` for one never sent it: one indexed read per recipient. */
+    private async readSentPositions(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        recipientPeerIds: readonly string[]
+    ): Promise<Readonly<Record<string, number>>> {
+        const positions = await Promise.all(recipientPeerIds.map(async (recipientPeerId) => {
+            const position = await this.readValue(
+                session,
+                toALOutboundSentPositionKey(this.namespace, trackKey, recipientPeerId),
+                decodeALOutboundSentPosition
+            );
+            return [recipientPeerId, position?.seq ?? 0] as const;
+        }));
+        return Object.fromEntries(positions);
     }
 
     /** Without a known origin there is no receipt row to address; the rest is keyed by the message alone. */
