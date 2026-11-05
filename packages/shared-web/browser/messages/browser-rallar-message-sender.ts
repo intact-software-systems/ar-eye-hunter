@@ -28,7 +28,6 @@ import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.t
 import {
     newALRoute,
     toALGroupTargetKey,
-    type ALAckMode,
     type ALActions,
     type ALBroadcastMessageBuilderOptions,
     type ALMessage,
@@ -255,17 +254,16 @@ export class BrowserRallarMessageSender {
 
     /**
      * Only the WS server arbitrates a claim, so an exclusive send, room- or peer-addressed, and a world send go over
-     * WS under every strategy but `rtc`, whose own carrier refuses them as unsupported. A granted channel's send is
-     * routed by the ack `toBrowserMessageSendDefaults` resolves for it: only its room multicast without a receipt
-     * starts on RTC, which signs it; every other goes over WS under every strategy but `rtc`.
+     * WS under every strategy but `rtc`, whose own carrier refuses them as unsupported. A granted channel's room
+     * multicast starts on RTC under `rtc` and `rtc-with-ws-fallback`, receipted or not, and its origin signs it; every
+     * other granted send goes over WS under every strategy but `rtc`.
      */
     public async sendTyped<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         const strategy = input.strategy ?? 'rtc-with-ws-fallback';
-        const ack = toTypedSendAck(input, channel);
-        if (isBrowserWsOnlySend({ send: input, channel, ack, strategy }) && strategy !== 'rtc') {
+        if (isBrowserWsOnlySend({ send: input, channel, strategy }) && strategy !== 'rtc') {
             return await this.sendWs(input, channel);
         }
         if (input.peerId !== undefined && strategy !== 'ws') {
@@ -539,18 +537,6 @@ export class BrowserRallarMessageSender {
             }
         );
     }
-}
-
-function toTypedSendAck<T>(
-    input: BrowserRallarMessageSender.TypedInput<T>,
-    channel: BrowserTypedChannelPolicy | undefined
-): ALAckMode {
-    return toBrowserMessageSendDefaults({
-        send: input,
-        channel,
-        hasLogicalAudience: input.scope !== 'world',
-        laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
-    }).ack;
 }
 
 function toSendActions(send: Pick<RallarMessageSendBase<never>, 'corrId'>): ALActions | undefined {

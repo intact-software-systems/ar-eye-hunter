@@ -177,6 +177,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
                     localReady: false,
                     expectedFromPeerIds: ['owed-child'],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     carrier: 'ws'
                 }
             }, clock.nowMs + 5);
@@ -258,6 +259,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
                     localReady: false,
                     expectedFromPeerIds: [],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     carrier: 'ws'
                 }
             }, retainUntilMs);

@@ -51,6 +51,7 @@ describe('RTC message diagnostic receipts', () => {
                         {
                             msgId: 'attempted',
                             fromPeerId: 'receiver',
+                            logicalRecipientPeerId: 'receiver',
                             toPeerId: sessionId,
                             reason,
                             observedAtEpochMs: 1
@@ -109,6 +110,7 @@ async function admitAttemptedMessage(
                     mode: 'hop',
                     expectedPeerIds: ['receiver'],
                     ackedPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     timeoutMs: 2000,
                     maxAttempts: 3,
                     attempts: 0,

@@ -162,6 +162,7 @@ function recordDirectorReceipt(
         expectedRecipientPeerIds: ['director'],
         confirmedRecipientPeerIds: ['director'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-director-command-storage-volume'
     });

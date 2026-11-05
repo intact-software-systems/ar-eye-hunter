@@ -244,6 +244,7 @@ async function refuseForGood(
         {
             msgId: msg.id.msgId,
             fromPeerId: relayPeerId,
+            logicalRecipientPeerId: relayPeerId,
             toPeerId: 'self',
             reason: 'expired',
             observedAtEpochMs: Date.now()

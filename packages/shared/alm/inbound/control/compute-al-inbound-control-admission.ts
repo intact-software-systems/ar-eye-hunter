@@ -1,10 +1,8 @@
-import { AL_MESSAGE_ENVELOPE_VERSION } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALControlAcceptance,
     ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
-import { newALAckControlMessage } from '../../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
@@ -15,10 +13,10 @@ import type {
     ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
 import { toALInboundUpwardAcks } from '../al-inbound-effect-intent.ts';
-import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
-import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
+import type { ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import { acceptALPendingAckPayload, type ALPendingAckTransition } from '../transition-al-pending-ack.ts';
 import type { AcksControlValue, PendingControlValue } from './al-inbound-control-rows.ts';
+import { toALInboundUpwardControlWork } from './to-al-inbound-upward-control-work.ts';
 
 export interface ALInboundControlAdmissionRead {
     readonly namespace: string;
@@ -78,7 +76,7 @@ export function toALInboundControlCommitBundle(
     return {
         admissionExpiresAtMs: null,
         senderId: owner.senderId,
-        observations: toALInboundControlObservations(candidate.read),
+        observations: toALInboundControlObservations(ack.ackedMsgId, candidate.read),
         mutations: [
             {
                 kind: 'set-control-acks',
@@ -100,28 +98,35 @@ export function toALInboundControlCommitBundle(
     };
 }
 
-function toALInboundControlObservations(
-    read: ALInboundControlAdmissionRead
+/** The rows a child's control decided on, which the conditional commit observes unchanged. */
+export type ALInboundControlObservationSurface = Pick<
+    ALInboundControlAdmissionRead,
+    'owner' | 'pending' | 'acks' | 'controlOwners'
+>;
+
+export function toALInboundControlObservations(
+    msgId: string,
+    surface: ALInboundControlObservationSurface
 ): ALInboundAdmissionObservations {
     return {
-        msgId: read.ack.ackedMsgId,
-        senderId: read.owner.senderId,
-        messageOwner: read.owner,
+        msgId,
+        senderId: surface.owner.senderId,
+        messageOwner: surface.owner,
         dedup: undefined,
         claim: undefined,
         ordering: undefined,
         buffered: undefined,
         deliveryProgress: undefined,
         supersedence: {},
-        pendingAck: read.pending,
-        acks: read.acks,
-        controlOwners: read.controlOwners
+        pendingAck: surface.pending,
+        acks: surface.acks,
+        controlOwners: surface.controlOwners
     };
 }
 
 /**
- * The relay sends one ACK per recipient its row relays upward, then its own terminal ACK once its row
- * completed (D40). The origin is its own message-owner row sender, never what a child ACK claimed.
+ * The relay sends the `not-subscribed` NACK a hop completion implied, one ACK per recipient its row relays upward,
+ * then its own terminal ACK once its row completed (D40).
  */
 function computeUpwardAcknowledgementWork(
     read: ALInboundControlAdmissionRead,
@@ -132,49 +137,24 @@ function computeUpwardAcknowledgementWork(
     if (pending === undefined) {
         return [];
     }
-    // The ACKs travel back toward the message sender, over the carrier that message arrived on.
-    const carrier = toALDeliveryCarrier(read.owner.source);
-    const relayPeerId = read.ack.toPeerId;
-    return toALInboundUpwardAcks(transition).map((upward, index) => {
-        const controlMsgId = `${read.controlMsgId}:${index}`;
-        return computeALInboundWorkEntry({
+    return toALInboundUpwardControlWork(
+        {
             namespace: read.namespace,
-            observedAtMs: read.nowMs,
-            effectId: toInboundEffectId('ack', read.ack.ackedMsgId, pending.toPeerId, upward.status, controlMsgId),
-            expireAtTimestamp: resolveExpireAtTimestampWithFallback(
-                pending.expireAtTimestamp,
-                retention.durableEffectTtlMs,
-                read.nowMs
-            ),
-            carrier,
-            payload: {
-                kind: 'send-control',
-                msg: newALAckControlMessage(
-                    {
-                        v: AL_MESSAGE_ENVELOPE_VERSION,
-                        msgId: controlMsgId,
-                        senderId: relayPeerId,
-                        ts: read.nowMs,
-                        traceId: read.traceId
-                    },
-                    {
-                        fromPeerId: relayPeerId,
-                        toPeerId: pending.toPeerId,
-                        ackedMsgId: read.ack.ackedMsgId,
-                        originPeerId: read.owner.senderId,
-                        logicalRecipientPeerId: upward.logicalRecipient.kind === 'self'
-                            ? relayPeerId
-                            : upward.logicalRecipient.peerId,
-                        carrier,
-                        status: upward.status,
-                        observedAtEpochMs: read.nowMs
-                    }
-                )
-            }
-        });
-    });
-}
-
-function toInboundEffectId(...parts: readonly (number | string)[]): string {
-    return parts.map((part) => encodeURIComponent(String(part))).join(':');
+            msgId: read.ack.ackedMsgId,
+            owner: read.owner,
+            relayPeerId: read.ack.toPeerId,
+            pending,
+            nowMs: read.nowMs,
+            controlMsgId: read.controlMsgId,
+            traceId: read.traceId
+        },
+        [
+            ...transition.relayedOutsidePeerIds.map((peerId) => ({
+                kind: 'nack' as const,
+                logicalRecipientPeerId: peerId
+            })),
+            ...toALInboundUpwardAcks(transition).map((ack) => ({ kind: 'ack' as const, ack }))
+        ],
+        retention
+    );
 }

@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import {
     normalizeALQosPolicy,
@@ -9,6 +10,7 @@ import {
     type ALQosInputProvider,
     type ALReceiptMode,
     type ALRepairAlgo,
+    type ALStoreDurability,
     type ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
@@ -20,11 +22,9 @@ import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/reso
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import type { QRtcDataChannel } from '../../webrtc/qrtc-data-channel.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
 import type {
     ALDeliveryAdmissionVerdict,
-    ALDeliveryCarrier,
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
@@ -163,6 +163,7 @@ export type ALOutboundDropReasonCode =
     | 'capacity'
     | 'congested'
     | 'no-leader'
+    | 'no-publish-grant'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'

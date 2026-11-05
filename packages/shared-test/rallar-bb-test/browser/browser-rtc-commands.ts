@@ -1,5 +1,5 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { Either } from '@shared/resilience/Either.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
@@ -11,6 +11,7 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 
+import { decodeRtcSendObserve, type RtcSendExpectation } from '../schema/decode-rtc-send-observe.ts';
 import { createBrowserCommandAbortScope, withBrowserCommandAbort } from './browser-command-cancellation.ts';
 import type { CommandWithId, RallarBlackBoxBrowserRallarConnectionConfig } from './browser-command-contracts.ts';
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser-command-environment.ts';
@@ -19,7 +20,7 @@ import { decodeBrowserCommandRecord, decodeRtcTransport, toPositiveInteger } fro
 import { toRallarConnectionConfig } from './browser-rallar-command-input.ts';
 import {
     decodeRtcSendResult,
-    toRtcSendFailure,
+    toExpectedRtcSendFailure,
     toRtcSendObservation,
     type RtcSendResult
 } from './browser-rtc-send-observation.ts';
@@ -48,6 +49,7 @@ export namespace BrowserRtcCommands {
         readonly command: RtcSendCommand;
         readonly context: RallarBlackBoxTestCommandContext;
         readonly result: Either<RallarBlackBoxTestError, RtcSendResult>;
+        readonly expectation: RtcSendExpectation;
         readonly sendStartedAtEpochMs: number;
     }
 
@@ -56,6 +58,13 @@ export namespace BrowserRtcCommands {
         readonly severity: 'info' | 'error';
         readonly payload: RallarBlackBoxTestRecord;
     }
+}
+
+interface RtcSendPayloadInput {
+    readonly command: RtcSendCommand;
+    readonly context: RallarBlackBoxTestCommandContext;
+    readonly payload: RallarMessagePayload;
+    readonly expectation: RtcSendExpectation;
 }
 
 interface RtcSendDiagnostic {
@@ -108,9 +117,15 @@ export class BrowserRtcCommands {
         command: RtcSendCommand,
         context: RallarBlackBoxTestCommandContext
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        return await decodeRtcSendPayload(command.send).fold<Promise<RallarBlackBoxTestCommandOutcome>>(
+        const decoded = decodeRtcSendObserve(command.observe).flatMap(
+            (message): Either<RallarBlackBoxTestError, RtcSendPayloadInput> =>
+                Either.ofLeft({ code: 'RALLAR_BB_RTC_INVALID_SEND_OBSERVE', message }),
+            (expectation) =>
+                decodeRtcSendPayload(command.send).mapRight((payload) => ({ command, context, payload, expectation }))
+        );
+        return await decoded.fold<Promise<RallarBlackBoxTestCommandOutcome>>(
             async (error) => ({ status: 'failed', error, nextStatus: 'failed' }),
-            async (payload) => await this.sendRtcPayload(command, context, payload)
+            async (input) => await this.sendRtcPayload(input)
         );
     }
 
@@ -132,9 +147,7 @@ export class BrowserRtcCommands {
     }
 
     private async sendRtcPayload(
-        command: RtcSendCommand,
-        context: RallarBlackBoxTestCommandContext,
-        payload: RallarMessagePayload
+        { command, context, payload, expectation }: RtcSendPayloadInput
     ): Promise<RallarBlackBoxTestCommandOutcome> {
         const deadlineEpochMs = computeWaitDeadlineEpochMs(command, this.environment.now());
         const send = await this.readRtcSendInput(command, context, payload);
@@ -147,7 +160,7 @@ export class BrowserRtcCommands {
                     abort.signal
                 )
             );
-            return this.recordRtcSendOutcome({ command, context, result, sendStartedAtEpochMs });
+            return this.recordRtcSendOutcome({ command, context, result, expectation, sendStartedAtEpochMs });
         }
         finally {
             abort.cleanup();
@@ -238,7 +251,7 @@ export class BrowserRtcCommands {
                 return { status: 'failed', value: { sendObservation }, error: failure, nextStatus: 'failed' };
             },
             (result) => {
-                const failure = toRtcSendFailure(result);
+                const failure = toExpectedRtcSendFailure(result, sent.expectation);
                 const sendObservation = toRtcSendObservation({
                     command,
                     result,

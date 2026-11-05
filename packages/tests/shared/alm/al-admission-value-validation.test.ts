@@ -63,6 +63,7 @@ describe('admission control decoding', () => {
         localReady: false,
         expectedFromPeerIds: ['a'],
         ackedFromPeerIds: [],
+        outsideAudiencePeerIds: [],
         carrier: 'ws'
     };
 
@@ -75,6 +76,7 @@ describe('admission control decoding', () => {
                     msgId: 'msg',
                     fromPeerId: 'a',
                     toPeerId: 'b',
+                    logicalRecipientPeerId: 'a',
                     reason: 'resync-required',
                     observedAtEpochMs: 7,
                     orderingKey: 'track',
@@ -126,6 +128,13 @@ describe('admission control decoding', () => {
     // S2c-ii retired the relay recipient flag: the terminal ACK always names the relay, so a row carrying it is from before.
     it('rejects a pending receipt written before S2c-ii, which still carries the relay recipient flag', () => {
         expect(() => decodeALAdmissionControlValue({ kind: 'pending', value: { ...pending, localRecipient: true } }, 'msg', 'pending')).toThrow(TypeError);
+    });
+
+    // Only the wire reads an older NACK's absent recipient as its sender; a stored row written before the field existed stays undecodable.
+    it('rejects a stored NACK that names no logical recipient', () => {
+        const nack = { msgId: 'msg', fromPeerId: 'a', toPeerId: 'b', reason: 'resync-required', observedAtEpochMs: 7 };
+
+        expect(() => decodeALAdmissionControlValue({ kind: 'nacks', values: [nack] }, 'msg', 'nacks')).toThrow(TypeError);
     });
 
     // A row written before the carrier field existed is undecodable until its control TTL passes.

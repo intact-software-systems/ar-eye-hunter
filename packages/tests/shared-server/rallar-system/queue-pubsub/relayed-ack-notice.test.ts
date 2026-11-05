@@ -103,6 +103,7 @@ describe('relayed ACK notice codec', () => {
             {
                 msgId: 'room-message-1',
                 fromPeerId: 'c',
+                logicalRecipientPeerId: 'c',
                 toPeerId: 'a',
                 reason: 'unauthorized',
                 observedAtEpochMs: 1

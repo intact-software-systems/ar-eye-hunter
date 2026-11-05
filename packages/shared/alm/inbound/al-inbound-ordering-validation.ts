@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
@@ -12,7 +13,6 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundCommitBundle,
     ALInboundDeliveryProgress,

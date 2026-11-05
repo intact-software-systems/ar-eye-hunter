@@ -57,6 +57,7 @@ describe('retained room authority through repair scheduling', () => {
                 newALNackControlMessage({ v: 4, msgId: 'nack', senderId: 'frozen-session', ts: 1, traceId: 'trace-outbound-room-repair-authority' }, {
                     msgId: message.id.msgId,
                     fromPeerId: 'frozen-session',
+                    logicalRecipientPeerId: 'frozen-session',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1

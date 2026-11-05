@@ -5,7 +5,9 @@ import {
     type RallarConnectionRuntimePort,
     type RallarStateRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import { createDefaultPublicationCrypto } from '@shared-web/browser/composition/create-default-publication-crypto.ts';
+import {
+    createDefaultPublicationKeyStore
+} from '@shared-web/browser/composition/create-default-publication-key-store.ts';
 import {
     browserTransportRuntime,
     type BrowserTransportRuntimePort
@@ -49,7 +51,7 @@ import {
 } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+import type { PublicationKeyStore } from '@shared/signature/publication-key-store.ts';
 
 export interface BrowserRuntimeFoundation {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
@@ -58,8 +60,10 @@ export interface BrowserRuntimeFoundation {
     readonly authRuntime: RallarAuthRuntimePort;
     readonly lifecycle: RallarLifecycleCoordinator;
     readonly transportRuntime: BrowserTransportRuntimePort;
-    /** Started once per page; each connect awaits it. */
-    readonly publicationCrypto: Promise<PublicationCrypto>;
+    /** The page's WebCrypto: the only read of `globalThis.crypto.subtle` for publication signing and verification. */
+    readonly subtle: SubtleCrypto | undefined;
+    /** Where the pages of a session, this one among them, share the session's key pair. */
+    readonly publicationKeyStore: PublicationKeyStore;
 }
 
 export interface BrowserStateComposition {
@@ -133,7 +137,8 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
         authRuntime,
         lifecycle: createRallarLifecycleCoordinator(),
         transportRuntime,
-        publicationCrypto: createDefaultPublicationCrypto()
+        subtle: globalThis.crypto?.subtle,
+        publicationKeyStore: createDefaultPublicationKeyStore()
     };
 }
 

@@ -18,9 +18,23 @@ export async function registerRelicHunter(page: Page, role: string): Promise<Rel
     return credentials;
 }
 
-export async function waitForExpeditionScene(page: Page): Promise<void> {
+/**
+ * Where the page's Babylon scene runs: in its own browser (the room fixture's guests), or in a browser context that
+ * already drives a live scene (a second tab of the shared-session specs). A second tab shares the first tab's GPU
+ * process, so its context creation and shader work on portable SwiftShader block the tab's main thread for 8–12 s on a
+ * developer machine and 20–27 s on a CI runner (measured 2026-11-04 across six commits; the network part of the entry
+ * is done in 0.4 s).
+ */
+export type ExpeditionSceneHost = 'own-browser' | 'shared-context';
+
+const EXPEDITION_SCENE_READY_TIMEOUT_MS: Readonly<Record<ExpeditionSceneHost, number>> = {
+    'own-browser': 30_000,
+    'shared-context': 60_000
+};
+
+export async function waitForExpeditionScene(page: Page, host: ExpeditionSceneHost = 'own-browser'): Promise<void> {
     // A new Babylon context can block browser tasks while portable SwiftShader initializes.
     // Require the actual expedition frame before testing the room's visible participation state.
     await expect(page.locator('canvas.relic-scene[data-scene-runtime="next"]'))
-        .toHaveAttribute('data-scene-ready', 'true', { timeout: 30_000 });
+        .toHaveAttribute('data-scene-ready', 'true', { timeout: EXPEDITION_SCENE_READY_TIMEOUT_MS[host] });
 }

@@ -11,6 +11,7 @@ import {
     computeRtcOutboundCarrierAvailability,
     toRtcCarrierGapFrozenMessage
 } from '@shared/multicast/compute-rtc-outbound-carrier-availability.ts';
+import type { RtcFreezingOrigin } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {
     createOriginOverlay,
@@ -137,17 +138,28 @@ describe('computeRtcOutboundCarrierAvailability', () => {
     });
 });
 
+/** The origin `a` freezing a send that is not a granted publication. */
+const ORIGIN: RtcFreezingOrigin = { selfPeerId: 'a', subscribeHolders: null };
+
 describe('toRtcCarrierGapFrozenMessage', () => {
     it('freezes a held origin multicast to the sessions its room authority admits, without the origin', () => {
         const message = createRoomMulticast();
         const availability = computeFor({ room: createRoom(), overlay: undefined, message });
 
-        expect(toRtcCarrierGapFrozenMessage(message, availability, 'a')?.targets).toEqual({
+        expect(toRtcCarrierGapFrozenMessage(message, availability, ORIGIN)?.targets).toEqual({
             mode: 'multicast',
             groupRef: ORIGIN_ROOM,
             recipientPeerIds: ['b', 'c'],
             snapshotVersion: 4
         });
+    });
+
+    it('freezes a held granted publication to the subscribe holders its origin names', () => {
+        const message = createRoomMulticast();
+        const availability = computeFor({ room: createRoom(), overlay: undefined, message });
+
+        expect(toRtcCarrierGapFrozenMessage(message, availability, { selfPeerId: 'a', subscribeHolders: new Set(['c']) })?.targets)
+            .toEqual({ mode: 'multicast', groupRef: ORIGIN_ROOM, recipientPeerIds: ['c'], snapshotVersion: 4 });
     });
 
     it('leaves the audience to the overlay plan when the carrier is available or the room is unobserved', () => {
@@ -157,7 +169,7 @@ describe('toRtcCarrierGapFrozenMessage', () => {
             toRtcCarrierGapFrozenMessage(
                 message,
                 computeFor({ room: createRoom(), overlay: createOriginOverlay(['b']), message }),
-                'a'
+                ORIGIN
             )
         )
             .toBeUndefined();
@@ -165,7 +177,7 @@ describe('toRtcCarrierGapFrozenMessage', () => {
             toRtcCarrierGapFrozenMessage(
                 message,
                 computeFor({ room: undefined, overlay: undefined, message }),
-                'a'
+                ORIGIN
             )
         )
             .toBeUndefined();

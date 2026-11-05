@@ -242,6 +242,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
@@ -633,6 +634,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 {
                     msgId: 'missing-msg',
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
@@ -688,6 +690,7 @@ describe('AL outbound durable effect lifecycle', () => {
                             originPeerId: 'self',
                             expectedRecipientPeerIds: ['peer'],
                             confirmedRecipientPeerIds: ['peer'],
+                            outsideAudienceRecipientPeerIds: [],
                             snapshotVersion: 1,
                             phase: 'complete',
                             observedAtEpochMs: 1
@@ -740,6 +743,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 originPeerId: 'self',
                 expectedRecipientPeerIds: ['peer'],
                 confirmedRecipientPeerIds: ['peer'],
+                outsideAudienceRecipientPeerIds: [],
                 snapshotVersion: 1,
                 phase: 'complete',
                 observedAtEpochMs: 1
@@ -786,6 +790,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'expired',
                     observedAtEpochMs: 1

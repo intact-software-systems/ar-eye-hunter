@@ -14,7 +14,9 @@ import { toStorageCountersCommand } from './alm-conformance-message-commands.ts'
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type {
+    AlmConformanceContinuationDefinition,
     AlmConformanceLaneFamily,
+    AlmConformanceRecipeGate,
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
     AlmConformanceStepInput,
@@ -59,8 +61,11 @@ import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts'
 import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-delivered.ts';
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
 import { grantedRtcMissingProof } from './scenarios/granted-rtc/granted-rtc-missing-proof.ts';
+import { grantedRtcNotSubscribed } from './scenarios/granted-rtc/granted-rtc-not-subscribed.ts';
 import { grantedRtcPublishRefused } from './scenarios/granted-rtc/granted-rtc-publish-refused.ts';
-import { grantedRtcReceiptedUnsupported } from './scenarios/granted-rtc/granted-rtc-receipted-unsupported.ts';
+import { grantedRtcReceiptedDelivered } from './scenarios/granted-rtc/granted-rtc-receipted-delivered.ts';
+import { grantedRtcRelayOnly } from './scenarios/granted-rtc/granted-rtc-relay-only.ts';
+import { grantedRtcRevokedPublisher } from './scenarios/granted-rtc/granted-rtc-revoked-publisher.ts';
 import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from './scenarios/leader-ack/no-leader-refused.ts';
@@ -122,6 +127,22 @@ export interface AlmConformanceScenario {
     /** The second producer's recipe; undefined exactly when `roles` does not declare `publisher-b`. */
     readonly publisherB: RallarBlackBoxTestRecipe | undefined;
     readonly tags: readonly AlmConformanceTag[];
+    /** The owner's command after which the lane starts the successor; undefined starts it once the owner page ended. */
+    readonly successorGate: AlmConformanceScenarioGate | undefined;
+    /** The sender's later recipe; undefined when the sender runs one. */
+    readonly continuation: AlmConformanceContinuation | undefined;
+}
+
+/** A command of `role`'s recipe, after which the lane starts a recipe it holds back. */
+export interface AlmConformanceScenarioGate {
+    readonly role: AlmConformanceRole;
+    readonly commandId: string;
+}
+
+/** A recipe the lane starts on the sender's agent, on its open connection, once the gate's command passed. */
+export interface AlmConformanceContinuation {
+    readonly gate: AlmConformanceScenarioGate;
+    readonly recipe: RallarBlackBoxTestRecipe;
 }
 
 interface AlmRecipeDiagnosticSelection {
@@ -198,7 +219,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcDelivered,
     grantedRtcMissingProof,
     grantedRtcPublishRefused,
-    grantedRtcReceiptedUnsupported,
+    grantedRtcReceiptedDelivered,
+    grantedRtcRevokedPublisher,
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,
@@ -226,7 +248,10 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     subscriptionRevokeDisconnected,
     subscriptionReconnect,
     subscriptionSuccessor,
-    grantedRtcForgedSender
+    grantedRtcForgedSender,
+    grantedRtcNotSubscribed,
+    // The room's three-agent cells share it, and this one reshapes its topology until its own last step.
+    grantedRtcRelayOnly
 ];
 
 export function createAlmConformanceRecipes(
@@ -279,14 +304,7 @@ function toAlmConformanceScenario(
     diagnostics: AlmRecipeDiagnosticSelection
 ): AlmConformanceScenario {
     const toRoleRecipe = (role: AlmConformanceRole): RallarBlackBoxTestRecipe => {
-        const step: AlmConformanceStepInput = {
-            input,
-            scenarioId: definition.scenarioId,
-            scenarioKey: definition.scenarioKey,
-            role,
-            roles: definition.roles,
-            messageSelector: definition.messageSelector
-        };
+        const step = toStepInput(input, definition, role);
         const commands = role === 'sender' || role === 'successor' || role === 'publisher-b'
             ? definition.toSenderCommands(step)
             : definition.toRecipientCommands(step);
@@ -297,7 +315,7 @@ function toAlmConformanceScenario(
             input.principalIdsByRole
         );
     };
-    return {
+    const scenario: AlmConformanceScenario = {
         scenarioId: definition.scenarioId,
         scenarioKey: definition.scenarioKey,
         roles: definition.roles,
@@ -308,8 +326,90 @@ function toAlmConformanceScenario(
         recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined,
         successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined,
         sibling: definition.roles.includes('sibling') ? toRoleRecipe('sibling') : undefined,
-        publisherB: definition.roles.includes('publisher-b') ? toRoleRecipe('publisher-b') : undefined
+        publisherB: definition.roles.includes('publisher-b') ? toRoleRecipe('publisher-b') : undefined,
+        successorGate: undefined,
+        continuation: undefined
     };
+    return { ...scenario, ...toHeldBackRecipes(input, definition, scenario) };
+}
+
+/** The recipes the lane holds back until a command of a role recipe passed: the successor, and a continuation. */
+function toHeldBackRecipes(
+    input: CreateAlmConformanceRecipesInput,
+    definition: AlmConformanceScenarioDefinition,
+    scenario: AlmConformanceScenario
+): Pick<AlmConformanceScenario, 'successorGate' | 'continuation'> {
+    const toGate = (gate: AlmConformanceRecipeGate) => toScenarioGate({ input, definition, scenario, gate });
+    return {
+        successorGate: definition.successorGate && toGate(definition.successorGate),
+        continuation: definition.continuation && {
+            gate: toGate(definition.continuation.gate),
+            recipe: toContinuationRecipe(input, definition, definition.continuation)
+        }
+    };
+}
+
+function toStepInput(
+    input: CreateAlmConformanceRecipesInput,
+    definition: AlmConformanceScenarioDefinition,
+    role: AlmConformanceRole
+): AlmConformanceStepInput {
+    return {
+        input,
+        scenarioId: definition.scenarioId,
+        scenarioKey: definition.scenarioKey,
+        role,
+        roles: definition.roles,
+        messageSelector: definition.messageSelector,
+        connect: definition.connect
+    };
+}
+
+interface ToScenarioGateInput {
+    readonly input: CreateAlmConformanceRecipesInput;
+    readonly definition: AlmConformanceScenarioDefinition;
+    /** The scenario's role recipes, one of which must hold the gate's command. */
+    readonly scenario: AlmConformanceScenario;
+    readonly gate: AlmConformanceRecipeGate;
+}
+
+/**
+ * A gate names a command of its role's recipe; one that names none would hold its recipe back to the lane's timeout.
+ */
+function toScenarioGate(gateInput: ToScenarioGateInput): AlmConformanceScenarioGate {
+    const { input, definition, scenario, gate } = gateInput;
+    const commandId = toCommandId(toStepInput(input, definition, gate.role), gate.commandName);
+    const recipe = toAlmConformanceRoleRecipe(scenario, gate.role);
+    if (!recipe?.commands.some((command) => command.commandId === commandId)) {
+        throw new Error(`${recipe?.recipeId ?? gate.role} names no ${commandId} command for its gate.`);
+    }
+    return { role: gate.role, commandId };
+}
+
+/**
+ * The sender's later steps run on the connection its first recipe opened, so the recipe carries no prologue; its own
+ * stats read ends the recipe.
+ */
+function toContinuationRecipe(
+    input: CreateAlmConformanceRecipesInput,
+    definition: AlmConformanceScenarioDefinition,
+    continuation: AlmConformanceContinuationDefinition
+): RallarBlackBoxTestRecipe {
+    const step = toStepInput(input, definition, 'sender');
+    const recipe: RallarBlackBoxTestRecipe = {
+        schemaVersion: 1,
+        recipeId: `alm-${input.carrier}-${definition.scenarioKey}-sender-continuation`,
+        name: `ALM conformance ${definition.scenarioKey} sender continuation over ${input.carrier}`,
+        continueOnFailure: false,
+        metadata: {
+            profile: 'alm-conformance',
+            carrier: input.carrier,
+            scenarioId: definition.scenarioId,
+            group: toRoomRef(input.group)
+        },
+        commands: [...continuation.toCommands(step), toStatsCommand(step, 'continuation-stats')]
+    };
+    return resolveAlmConformancePrincipals(recipe, input.principalIdsByRole);
 }
 
 function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
@@ -372,7 +472,8 @@ function toReceiptRolesMetadata(
     return {
         handleId: toSendHandleId({ ...step, index: 1 }),
         confirmed: roles.confirmed,
-        unconfirmed: roles.unconfirmed
+        unconfirmed: roles.unconfirmed,
+        outsideAudience: roles.outsideAudience
     };
 }
 

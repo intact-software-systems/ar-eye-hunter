@@ -223,6 +223,7 @@ describe('outbound message expiry', () => {
                     mode: 'hop',
                     expectedPeerIds: ['peer-1'],
                     ackedPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     timeoutMs: 50,
                     deadlineAtMs: 1_050,
                     attempts: 0,

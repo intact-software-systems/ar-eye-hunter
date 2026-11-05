@@ -619,10 +619,12 @@ browser no-op, keep capture disabled. The two added events carry closed immutabl
 facts without application payloads, raw work keys or arbitrary exception text:
 
 - `acknowledgement-association` carries `incoming`, `attempts`, `terminalOrigin`,
-  `phase` (`ingress` or `replay`) and the actual outer `result`. Each identity names
-  `controlMsgId`, `controlSenderId`, `subjectMsgId`, `originPeerId`,
-  `logicalRecipientPeerId`, `fromPeerId`, `toPeerId`, actual `carrier`, `status`
-  and the ACK producer's `producerObservedAtEpochMs`.
+  `phase` (`ingress` or `replay`) and the actual outer `result`. It covers the two
+  controls the relay admits: an ACK and a `not-subscribed` NACK. Each identity names
+  its `control` (`ack` or `nack`), `controlMsgId`, `controlSenderId`, `subjectMsgId`,
+  `logicalRecipientPeerId`, `fromPeerId`, `toPeerId`, actual `carrier` and the
+  producer's `producerObservedAtEpochMs`; an ACK identity also names `originPeerId`
+  and `status`, which a NACK does not carry.
 - Each lane attempt records the computed candidate separately from `commit`
   (`not-called`, `pending`, `committed`, `conflict`, `expired`), `retention`
   (`not-called`, `pending`, `returned`) and admission `result`. A candidate names

@@ -439,6 +439,16 @@ describe('full-stack private upstream receipt capture', () => {
         expect(toSafeApiWsReceiptObservation({ ...observation, ...corruption })).toBeUndefined();
     });
 
+    it.each(['accepted', 'delivered', 'forwarded', 'subtree-complete', 'subtree-complete-not-subscribed'])(
+        'keeps an ACK relay record whose ACK has status %s',
+        (status) => {
+            const relay = TRACED_OBSERVATIONS.find((observation) => observation.kind === 'ack-relay')!;
+            const record = { ...relay, ack: { ...ACK, status } };
+
+            expect(toSafeApiWsReceiptObservation(record)).toEqual(record);
+        }
+    );
+
     it('retains closed terminal aggregate, currentness and relay refusals with their actual owner and stage', () => {
         expect(toSafeApiWsReceiptObservation(ACK_REJECTION)).toEqual(ACK_REJECTION);
         const absent = { ...ACK_REJECTION, stage: 'ingress-protocol', failedGuards: ['aggregate-absent'], deadlineAtMs: undefined };

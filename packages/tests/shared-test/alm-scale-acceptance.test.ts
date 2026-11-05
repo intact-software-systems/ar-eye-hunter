@@ -330,6 +330,7 @@ function createTrafficReceipt(scenario: TrafficScenario, handleId: string): Blac
             ? ['director-session']
             : confirmedPlayers,
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         attempts: 1,
         attemptOutcomes: [],
         attemptCarriers: [],

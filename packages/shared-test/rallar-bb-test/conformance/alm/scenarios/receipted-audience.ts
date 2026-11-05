@@ -38,8 +38,16 @@ import { toCommandId } from '../alm-conformance-step-identities.ts';
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 const RETIRED_ACK_TYPE_ID = 'al.control.ack.v1';
 
-const BOTH_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver', 'recipient-b'], unconfirmed: [] };
-const RECIPIENT_B_UNCONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver'], unconfirmed: ['recipient-b'] };
+const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver', 'recipient-b'],
+    unconfirmed: [],
+    outsideAudience: []
+};
+const RECIPIENT_B_UNCONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver'],
+    unconfirmed: ['recipient-b'],
+    outsideAudience: []
+};
 
 /** Both recipients confirm the one send, and the origin reads that from its own receipt. */
 const aggregatedReceipt: AlmConformanceScenarioDefinition = {

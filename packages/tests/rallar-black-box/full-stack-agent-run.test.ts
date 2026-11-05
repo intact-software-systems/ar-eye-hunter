@@ -83,13 +83,11 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
-    it('selects exactly the topic subscription cells for the four-role family over ws and the fallback carrier', () => {
+    it('selects exactly the topic subscription cells for the four-role family on every carrier', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const fourRole = toScenarios(carrier).filter((scenario) => scenario.laneFamily === 'four-role');
             expect(fourRole.map((scenario) => scenario.scenarioKey), carrier).toEqual(
-                carrier === 'rtc'
-                    ? []
-                    : ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect']
+                ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect']
             );
             expect(fourRole.every((scenario) => scenario.publisherB !== undefined && scenario.sibling !== undefined), carrier)
                 .toBe(true);
@@ -184,7 +182,8 @@ describe('ALM run on an agent per role', () => {
                     ['publisher-b', publisherB],
                     ['receiver', baseline.receiver],
                     ['sibling', sibling]
-                ])
+                ]),
+                undefined
             );
             await vi.waitFor(() => expect(posted).toContain(runIds.receiver));
             await new Promise((resolve) => setTimeout(resolve, 10));
@@ -194,12 +193,117 @@ describe('ALM run on an agent per role', () => {
             const outcome = await running;
 
             expect(posted).toEqual([runIds.receiver, runIds.publisherB, runIds.sibling, runIds.sender]);
-            expect(Object.fromEntries(outcome)).toEqual({
+            expect(outcome.continuation).toBeUndefined();
+            expect(Object.fromEntries(outcome.roles)).toEqual({
                 sender: { commandId: runIds.sender, ok: true, summary: 'ok' },
                 receiver: { commandId: runIds.receiver, ok: true, summary: 'ok' },
                 sibling: { commandId: runIds.sibling, ok: true, summary: 'ok' },
                 'publisher-b': { commandId: runIds.publisherB, ok: true, summary: 'ok' }
             });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await request.dispose();
+            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+    });
+
+    it('starts the sender\'s continuation only once its first recipe ended and the gate passed in the sibling\'s still running recipe', async () => {
+        const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+        const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
+        const continuation = {
+            gate: { role: 'sibling', commandId: 'sibling-reasserted' } as const,
+            recipe: { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-continuation` }
+        };
+        const siblingRunId = `${sibling.recipeId}-run`;
+        const senderRunId = `${baseline.sender.recipeId}-run`;
+        const continuationRunId = `${continuation.recipe.recipeId}-run`;
+        const siblingConnect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+        const posted: string[] = [];
+        let gateOpen = false;
+        let senderDone = false;
+        const server = createServer((_request, response) => {
+            response.writeHead(202, { 'content-type': 'application/json' });
+            response.end('{}');
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (address === null || typeof address === 'string') {
+            throw new Error('Expected the owned HTTP server address.');
+        }
+        const request = await Playwright.request.newContext();
+        const post = request.post.bind(request);
+        vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
+            const data = options?.data;
+            if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
+                throw new Error('Expected the actual control HTTP command body.');
+            }
+            posted.push(data.commandId);
+            return await post(`http://127.0.0.1:${address.port}`, options);
+        });
+        const toPassedEvent = (commandId: string) => ({
+            kind: 'event' as const,
+            protocolVersion: 1 as const,
+            runId: 'gated-run',
+            agentId: 'sibling-agent',
+            atEpochMs: 1,
+            eventId: `event-${commandId}`,
+            commandId,
+            payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId, payload: { commandId, ok: true } }
+        });
+        const run: AgentRecipeRun = {
+            request,
+            runId: 'gated-run',
+            agents: new Map([
+                ['sender', { agentId: 'sender-agent' }],
+                ['receiver', { agentId: 'receiver-agent' }],
+                ['sibling', { agentId: 'sibling-agent' }]
+            ]),
+            readSnapshot: async () => ({
+                runId: 'gated-run',
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 2,
+                agents: [],
+                commands: [],
+                // The sibling's connect passed, so it is started; its recipe runs on until the gate opens.
+                events: [toPassedEvent(siblingConnect), ...(gateOpen ? [toPassedEvent('sibling-reasserted')] : [])],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+                results: posted.filter((commandId) => (gateOpen || commandId !== siblingRunId) && (senderDone || commandId !== senderRunId)).map((
+                    commandId
+                ) => ({
+                    kind: 'result',
+                    protocolVersion: 1,
+                    runId: 'gated-run',
+                    agentId: 'observed-agent',
+                    commandId,
+                    ok: true
+                }))
+            })
+        };
+        try {
+            const running = runRecipesOnAgents(
+                run,
+                new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['sibling', sibling]]),
+                continuation
+            );
+            await vi.waitFor(() => expect(posted).toContain(senderRunId));
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            expect(posted).not.toContain(continuationRunId);
+
+            // The gate passed, but the continuation is the sender's later steps: its first recipe must end first.
+            gateOpen = true;
+            await new Promise((resolve) => setTimeout(resolve, 600));
+            expect(posted).not.toContain(continuationRunId);
+
+            senderDone = true;
+            const outcome = await running;
+
+            expect(posted.at(-1)).toBe(continuationRunId);
+            expect(outcome.continuation).toEqual({ commandId: continuationRunId, ok: true, summary: 'ok' });
+            expect([...outcome.roles.keys()].toSorted()).toEqual(['receiver', 'sender', 'sibling']);
         }
         finally {
             vi.restoreAllMocks();

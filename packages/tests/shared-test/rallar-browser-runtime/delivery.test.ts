@@ -25,12 +25,9 @@ import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/brow
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessage, RallarMessageHandle } from '@shared-web/browser/rallar.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import {
-    AL_DELIVERY_STATES,
-    type ALDeliveryAdmissionVerdict,
-    type ALDeliveryCarrier
-} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
@@ -98,6 +95,7 @@ const unknownObservation = {
     expectedRecipientPeerIds: [],
     confirmedRecipientPeerIds: [],
     unconfirmedRecipientPeerIds: [],
+    outsideAudienceRecipientPeerIds: [],
     reason: undefined,
     backpressured: false,
     enqueued: false
@@ -182,6 +180,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: [],
         confirmedRecipientPeerIds: [],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         reason: undefined,
         backpressured: false,
         enqueued: true
@@ -224,6 +223,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
         unconfirmedRecipientPeerIds: ['peer-3'],
+        outsideAudienceRecipientPeerIds: [],
         complete: false,
         traceId: 'trace-delivery'
     });
@@ -235,6 +235,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
         unconfirmedRecipientPeerIds: ['peer-3'],
+        outsideAudienceRecipientPeerIds: [],
         attempts: 1
     });
     delivery.registry.record({
@@ -248,6 +249,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         confirmedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-delivery'
     });
@@ -1152,6 +1154,36 @@ it('reports a typed RTC rejection as a failed recipe command with its reason', a
     expect(result.ok).toBe(false);
     expect(result.value).toMatchObject({ message: { state: 'rejected' }, sendObservation: { status: 'rejected', ok: false } });
     expect(result.error).toMatchObject({ code: 'RALLAR_BB_RTC_SEND_FAILED', message: expect.stringContaining('Payload exceeds 8 bytes.') });
+});
+
+it.each([
+    { verdict: { kind: 'refused', reason: 'no-publish-grant', detail: 'No publish grant.' } as const, ok: true, state: 'rejected' },
+    { verdict: admittedVerdict, ok: false, state: 'queued' }
+])('makes a $state typed RTC handle the value of an rtc.send that observes rejected only when it is rejected', async ({ verdict, ok, state }) => {
+    const { runtime, native } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
+    const running = runtime.execute({ kind: 'rtc.send', commandId: 'observed-rtc', transport: 'messages.rtc', observe: 'rejected', send: { payload: true } });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    admission.resolve(verdict);
+    const result = await running;
+    expect(result.ok).toBe(ok);
+    expect(result.value).toMatchObject({ message: { state }, sendObservation: { status: state, ok } });
+    if (ok) {
+        expect(result.value).toMatchObject({ message: { failure: { kind: 'refused', reason: 'no-publish-grant' }, attempts: 0 } });
+    }
+    else {
+        expect(result.error).toMatchObject({ code: 'RALLAR_BB_RTC_SEND_NOT_REJECTED', message: `RTC send observed ${state}, not rejected.` });
+    }
 });
 
 it('keeps the authored bounded-rejection cancellation probe aligned with a real terminal handle', async () => {

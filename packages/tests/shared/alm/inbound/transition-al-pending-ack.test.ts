@@ -59,6 +59,7 @@ const RELAY_ROW: ALPendingAckSnapshot = {
     localReady: true,
     expectedFromPeerIds: ['child-relay', 'leaf'],
     ackedFromPeerIds: [],
+    outsideAudiencePeerIds: [],
     carrier: 'rtc'
 };
 
@@ -98,6 +99,7 @@ describe('inbound pending ACK transition', () => {
             msgId: 'message',
             current: undefined,
             toPeerId: 'origin',
+            status: 'subtree-complete',
             expectedFromPeerIds: [],
             localReady: false,
             expireAtTimestamp: undefined,
@@ -119,7 +121,8 @@ describe('a logical recipient that relays a group-leader send', () => {
             toPeerId: 'relay',
             localReady: true,
             expectedFromPeerIds: DIRECTOR_CHILD_PEER_IDS,
-            ackedFromPeerIds: []
+            ackedFromPeerIds: [],
+            outsideAudiencePeerIds: []
         });
     });
 
@@ -248,7 +251,12 @@ function readPendingRow(bundle: ALInboundCommitBundle): ALPendingAckSnapshot {
 
 /** Each child ends its own empty subtree: none of them is in the audience. */
 function acceptChildCompletions(pending: ALPendingAckSnapshot, childPeerIds: readonly string[]): ALPendingAckTransition {
-    let transition: ALPendingAckTransition = { pending, completed: undefined, relayedRecipientPeerIds: [] };
+    let transition: ALPendingAckTransition = {
+        pending,
+        completed: undefined,
+        relayedRecipientPeerIds: [],
+        relayedOutsidePeerIds: []
+    };
     for (const childPeerId of childPeerIds) {
         transition = acceptALPendingAckPayload({
             current: transition.pending,

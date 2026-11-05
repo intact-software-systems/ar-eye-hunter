@@ -102,7 +102,8 @@ describe('IndexedDB AL runtime stores', () => {
                             peerId: 'peer-default-schema',
                             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
                         },
-                        supersedenceKey: null
+                        supersedenceKey: null,
+                        deliveredLocally: true
                     },
                     expireAtTimestamp: Date.now() + 60_000
                 }]
@@ -366,7 +367,8 @@ describe('IndexedDB AL runtime stores', () => {
                             msgId: msg.id.msgId,
                             senderId: msg.id.senderId,
                             source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
-                            supersedenceKey: null
+                            supersedenceKey: null,
+                            deliveredLocally: true
                         },
                         expireAtTimestamp: Date.now() + 20
                     },
@@ -382,6 +384,7 @@ describe('IndexedDB AL runtime stores', () => {
                                 localReady: false,
                                 expectedFromPeerIds: ['peer-2', 'peer-3'],
                                 ackedFromPeerIds: [],
+                                outsideAudiencePeerIds: [],
                                 carrier: 'ws'
                             }
                         },
@@ -525,6 +528,7 @@ describe('IndexedDB AL runtime stores', () => {
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
@@ -605,6 +609,7 @@ describe('IndexedDB AL runtime stores', () => {
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1,

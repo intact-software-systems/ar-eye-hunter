@@ -3,6 +3,7 @@ import { onTestFinished } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type {
@@ -73,6 +74,8 @@ export interface RtcRelayOverlayFixtureInput {
 export interface RtcRelayOverlayFixture {
     receive(message: ALMessage, fromPeerId: string): Promise<void>;
     readSent(peerId: string): Promise<readonly ALMessage[]>;
+    /** The ACKs and NACKs this session sent `peerId`, in send order. */
+    readSentControls(peerId: string): Promise<readonly ALPeerControlMessage[]>;
     /** The messages this session delivered to its own inbox, in arrival order. */
     readonly delivered: readonly ALMessage[];
     /** Admits a message this session sends, as the browser sender hands it to the RTC carrier. */
@@ -140,6 +143,13 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
         const { connection, outboundResources } = this.dependencies;
         await waitForOwnedQueueWork(outboundResources.workQueue);
         return connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)));
+    }
+
+    async readSentControls(peerId: string): Promise<readonly ALPeerControlMessage[]> {
+        return (await this.readSent(peerId)).flatMap((message) => {
+            const control = decodeALControlMessage(message).right;
+            return control === undefined || control.type === 'receipt' ? [] : [control];
+        });
     }
 
     async enqueue(message: ALMessage): Promise<ALOutboundEnqueueResult> {
@@ -221,7 +231,9 @@ function createDefaultRelayOverlayResources(
         grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
         publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
         publicationVerifier: new RtcPublicationProofVerifier({
-            crypto: toPublicationVerificationCrypto(input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO),
+            crypto: toPublicationVerificationCrypto(
+                input.publicationCrypto?.kind === 'available' ? input.publicationCrypto.subtle : undefined
+            ),
             findGroupSnapshot: (groupRef) => readRtcGroupSnapshotByRef(groups, groupRef),
             nowEpochMs: Date.now
         }),

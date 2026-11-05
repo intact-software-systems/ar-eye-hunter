@@ -1,8 +1,8 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import type { ALQosNormalizationResult } from '../../../al-contracts/al-policy.ts';
 import { validateALAckSupport } from '../../../al-contracts/validate-al-ack-support.ts';
 import { Either } from '../../../resilience/Either.ts';
-import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 
 export interface ComputeALOutboundAckRefusalInput {

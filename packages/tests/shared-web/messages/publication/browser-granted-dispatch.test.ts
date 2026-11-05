@@ -8,7 +8,7 @@ import { BrowserGrantedTopics } from '@shared-web/browser/messages/publication/b
 import { BrowserPublicationStages } from '@shared-web/browser/messages/publication/browser-publication-stages.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALBroadcastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 
 import { createDefaultApiMiddlewareTestDouble } from '../../api-middleware-test-double.ts';
 import { toQueuedMessageAdmission } from '../browser-message-sender-fixture.ts';

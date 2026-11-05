@@ -24,7 +24,8 @@ import {
  * Both producers hold `publish` and `subscribe`, the receiver `subscribe`; only the receiver and the sibling elect to
  * receive. Each producer publishes until both confirm one copy, so the receiver and the sibling receive both
  * publications, the sibling its own principal's too, and neither producer, granted but not subscribed, the other's.
- * Each recipient keeps its election until both producers said their copy was confirmed.
+ * Over RTC the other producer is frozen into each copy's audience and ends outside it. Each recipient keeps its
+ * election until both producers said their copy was confirmed.
  */
 export const subscriptionDelivery: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-delivery',
@@ -45,7 +46,13 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ? ['publication-a', 'publication-c']
         : ['publication-c', 'publication-a'];
     return [
-        ...toPublishUntilConfirmedCommands({ step: producer, name: own, confirmations: 2, kind: 'publication' }),
+        ...toPublishUntilConfirmedCommands({
+            step: producer,
+            name: own,
+            confirmations: 2,
+            outsideAudience: computeUnelectedOutsideCount(producer, 1),
+            kind: 'publication'
+        }),
         toPublicationWait(producer, other, true)
     ];
 }
@@ -84,4 +91,13 @@ function toReceivedPublicationCommands(subscriber: AlmConformanceStepInput): rea
         toConfirmedCueWait(subscriber, 'publication-c'),
         ...toUnsubscribeCommands(subscriber, subscriber.role)
     ];
+}
+
+/**
+ * Over ws the server's intersection expects only the elected sessions, so no receipt records anyone outside. A
+ * receipted granted send that starts on RTC freezes every live session whose principal holds `subscribe`, so the
+ * `unelected` ones among them answer `not-subscribed` and end outside its audience.
+ */
+function computeUnelectedOutsideCount(step: AlmConformanceStepInput, unelected: number): number {
+    return step.input.carrier === 'ws' ? 0 : unelected;
 }

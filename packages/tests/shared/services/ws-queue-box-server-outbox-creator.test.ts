@@ -81,6 +81,7 @@ it('enqueues a server receipt with a queue creator that fits the durable column'
             originPeerId: 'origin',
             expectedRecipientPeerIds: ['recipient'],
             confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             snapshotVersion: 1,
             phase: 'admitted',
             observedAtEpochMs: nowMs

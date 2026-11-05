@@ -1,7 +1,7 @@
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
-    ALDeliveryCarrier,
     ALDeliveryFallbackReason,
     ALDeliveryRefusalReason,
     ALDeliverySettlement
@@ -69,6 +69,7 @@ const RTC_ACKNOWLEDGEMENT: ALDeliverySettlement = {
     expectedRecipientPeerIds: ['b'],
     confirmedRecipientPeerIds: [],
     unconfirmedRecipientPeerIds: ['b'],
+    outsideAudienceRecipientPeerIds: [],
     complete: false,
     traceId: 'trace-resolve-al-delivery-fallback-trigger'
 };
@@ -82,6 +83,25 @@ describe('the declared retryable outcomes (D56)', () => {
     it('keeps capacity out of the refusals that hand over: a send over the bound ends rejected (D78, C1)', () => {
         expectTypeOf<Extract<ALDeliveryRefusalReason, 'capacity'>>().toEqualTypeOf<'capacity'>();
         expect(AL_DELIVERY_FALLBACK_REFUSAL_REASONS).toEqual(['unsupported', 'congested']);
+    });
+
+    it('keeps a revoked publisher\'s refused RTC re-plan out of the hand-over: the revoke ends the message (S3-R8)', () => {
+        const refusal: ALDeliveryAdmissionVerdict = { kind: 'refused', reason: 'no-publish-grant', detail: 'Revoked.' };
+
+        expect(isALDeliveryAdmissionFallbackVerdict(refusal)).toBe(false);
+        expect(resolveALDeliveryFallbackTrigger({
+            settlement: {
+                kind: 'admission',
+                msgId: MSG_ID,
+                carrier: 'rtc',
+                atMs: 1,
+                verdict: refusal,
+                trackedReceiptAlgo: 'none',
+                traceId: 'trace-resolve-al-delivery-fallback-trigger'
+            },
+            leg: 'rtc',
+            notReadyRun: 2
+        })).toEqual({ kind: 'continue', notReadyRun: 2 });
     });
 
     it('keeps a claim held by another session out of the hand-over: the server decided, the carrier did not fail', () => {
@@ -195,6 +215,7 @@ describe('the declared retryable outcomes (D56)', () => {
             mode: 'receiver',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['b'],
+            outsideAudiencePeerIds: [],
             cause: 'budget',
             detail: 'The receipt ran out of retries after 3 of 3.',
             traceId: 'trace-resolve-al-delivery-fallback-trigger'

@@ -16,13 +16,16 @@ import {
     type ALTargets
 } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import {
     computeFrozenAudience,
-    computeRtcFrozenAudienceRefusal
+    computeRtcFrozenAudienceRefusal,
+    computeRtcLeaderRefusal,
+    toRtcFrozenRoomMessage
 } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {
@@ -35,6 +38,7 @@ import {
     ORIGIN_PRINCIPAL_REF,
     ORIGIN_ROOM,
     readSentTargets,
+    toOriginDirectedSnapshot,
     toOriginFrozenTargets,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
@@ -138,6 +142,7 @@ describe('RTC frozen room audience', () => {
             {
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'resync-required',
                 observedAtEpochMs: Date.now()
@@ -170,6 +175,7 @@ describe('RTC frozen room audience', () => {
             {
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'resync-required',
                 observedAtEpochMs: Date.now()
@@ -229,7 +235,7 @@ describe('the origin receipt of a frozen room multicast', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-frozen-audience' },
-            { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+            { msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
         ));
         await vi.advanceTimersByTimeAsync(100);
 
@@ -306,21 +312,9 @@ function toRoomSessionIds(count: number): readonly string[] {
 
 describe('computeFrozenAudience', () => {
     it('names the authorized sessions except the origin, at the snapshot version the authority was read at', () => {
-        const room = createSnapshotWithRefusedSessions();
-        const admission = computeRtcRoomSnapshotAdmission({
-            message: createOriginReceiverMulticast('pure'),
-            snapshot: room,
-            overlay: createOriginOverlay(['b', 'c']),
-            selfPeerId: 'a',
-            fromPeerId: undefined,
-            recipientPeerId: undefined,
-            nowMs: Date.now()
-        });
-        if (admission.kind !== 'authorized') {
-            throw new Error('The origin must be authorized in its own room');
-        }
+        const admission = toOriginAdmission(createSnapshotWithRefusedSessions(), createOriginReceiverMulticast('pure'));
 
-        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: undefined, leader: undefined }))
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: undefined, leader: undefined, subscribeHolders: null }))
             .toEqual({ recipientPeerIds: ['b', 'c'], snapshotVersion: admission.snapshotVersion });
         expect(admission.snapshotVersion).toBe(4);
     });
@@ -329,23 +323,56 @@ describe('computeFrozenAudience', () => {
         { label: 'a principal', narrowing: { kind: 'principal', principalId: 'principal-1' }, recipientPeerIds: ['b', 'd'] },
         { label: 'a list', narrowing: { kind: 'list', recipientPeerIds: ['a', 'c', 'z'] }, recipientPeerIds: ['c'] }
     ])('narrows the authorized sessions except the origin to $label', ({ narrowing, recipientPeerIds }) => {
-        const admission = computeRtcRoomSnapshotAdmission({
-            message: createOriginReceiverMulticast('narrowed'),
-            snapshot: createOriginPrincipalSnapshot(),
-            overlay: createOriginOverlay(['b', 'c']),
-            selfPeerId: 'a',
-            fromPeerId: undefined,
-            recipientPeerId: undefined,
-            nowMs: Date.now()
-        });
-        if (admission.kind !== 'authorized') {
-            throw new Error('The origin must be authorized in its own room');
-        }
+        const admission = toOriginAdmission(createOriginPrincipalSnapshot(), createOriginReceiverMulticast('narrowed'));
 
-        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing, leader: undefined }))
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing, leader: undefined, subscribeHolders: null }))
             .toEqual({ recipientPeerIds, snapshotVersion: 4 });
     });
+
+    it.each<{ label: string; subscribeHolders: ReadonlySet<string> | null; recipientPeerIds: readonly string[]; }>([
+        { label: 'no holder set (any send but a granted one)', subscribeHolders: null, recipientPeerIds: ['b', 'c', 'd'] },
+        { label: 'the subscribe holders of a granted send', subscribeHolders: new Set(['a', 'c', 'z']), recipientPeerIds: ['c'] },
+        { label: 'an empty holder set (a granted send nobody may subscribe to)', subscribeHolders: new Set(), recipientPeerIds: [] }
+    ])('freezes the origin\'s room audience narrowed by $label', ({ subscribeHolders, recipientPeerIds }) => {
+        const admission = toOriginAdmission(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), createOriginReceiverMulticast('granted'));
+
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a', narrowing: undefined, leader: undefined, subscribeHolders }))
+            .toEqual({ recipientPeerIds, snapshotVersion: 4 });
+    });
+
+    it('freezes a granted group-leader send to its leader only while it holds subscribe, else to none, which its refusal names no-leader', () => {
+        const message: ALMessage = {
+            ...createOriginReceiverMulticast('leader'),
+            delivery: { ...createOriginReceiverMulticast('leader').delivery!, ack: 'group-leader' }
+        };
+        const admission = toOriginAdmission(toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c'], 4), 'c', Date.now()), message);
+        const toFrozen = (subscribeHolders: ReadonlySet<string>) => toRtcFrozenRoomMessage(message, admission, { selfPeerId: 'a', subscribeHolders });
+
+        const subscribedLeader = toFrozen(new Set(['b', 'c']));
+        const unsubscribedLeader = toFrozen(new Set(['b']));
+
+        expect(resolveALFrozenMulticastAudience(subscribedLeader.targets)?.recipientPeerIds).toEqual(['c']);
+        expect(computeRtcLeaderRefusal(subscribedLeader, message).right).toBe(subscribedLeader);
+        expect(resolveALFrozenMulticastAudience(unsubscribedLeader.targets)?.recipientPeerIds).toEqual([]);
+        expect(computeRtcLeaderRefusal(unsubscribedLeader, message).left).toMatchObject({ dropReasonCode: 'no-leader' });
+    });
 });
+
+function toOriginAdmission(snapshot: GroupSnapshot, message: ALMessage) {
+    const admission = computeRtcRoomSnapshotAdmission({
+        message,
+        snapshot,
+        overlay: createOriginOverlay(['b', 'c']),
+        selfPeerId: 'a',
+        fromPeerId: undefined,
+        recipientPeerId: undefined,
+        nowMs: Date.now()
+    });
+    if (admission.kind !== 'authorized') {
+        throw new Error('The origin must be authorized in its own room');
+    }
+    return admission;
+}
 
 describe('the RTC leg of a principal or listed room send', () => {
     beforeEach(() => {

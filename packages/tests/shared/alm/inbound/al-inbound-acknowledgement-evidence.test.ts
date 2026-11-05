@@ -158,7 +158,11 @@ class AcknowledgementFixture {
                 admissionExpiresAtMs: null,
                 observations: read.observations,
                 mutations: [
-                    { kind: 'set-msg-owner', value: { msgId: 'subject', senderId: 'origin', source: this.source, supersedenceKey: null }, expireAtTimestamp },
+                    {
+                        kind: 'set-msg-owner',
+                        value: { msgId: 'subject', senderId: 'origin', source: this.source, supersedenceKey: null, deliveredLocally: true },
+                        expireAtTimestamp
+                    },
                     {
                         kind: 'set-control-owners',
                         msgId: 'subject',
@@ -178,6 +182,7 @@ class AcknowledgementFixture {
                                 localReady: true,
                                 expectedFromPeerIds: ['child'],
                                 ackedFromPeerIds: [],
+                                outsideAudiencePeerIds: [],
                                 expireAtTimestamp,
                                 carrier: 'rtc'
                             }
@@ -429,6 +434,7 @@ it('associates the exact received ACK with independently stored regenerated cont
     expect(JSON.parse(JSON.stringify(captured)).data).toEqual(association?.data);
     expect(association?.data).toMatchObject({
         incoming: {
+            control: 'ack',
             controlMsgId: 'incoming-control',
             subjectMsgId: 'subject',
             originPeerId: 'origin',
@@ -443,6 +449,7 @@ it('associates the exact received ACK with independently stored regenerated cont
                 parentPeerId: 'parent',
                 // The regenerated ACK travels under the trace of the ACK it answers, so both name one trace.
                 generated: [{
+                    control: 'ack',
                     controlMsgId: 'generated-1:0',
                     logicalRecipientPeerId: 'leaf',
                     carrier: 'rtc',

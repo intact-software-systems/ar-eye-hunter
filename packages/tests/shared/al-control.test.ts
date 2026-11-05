@@ -41,6 +41,7 @@ const ack: ALAckPayload = {
 const nack: ALNackPayload = {
     msgId: 'msg-1',
     fromPeerId: 'sender',
+    logicalRecipientPeerId: 'sender',
     toPeerId: 'receiver',
     reason: 'resync-required',
     observedAtEpochMs: 13,
@@ -63,6 +64,7 @@ const receipt: ALReceiptPayload = {
     originPeerId: 'origin',
     expectedRecipientPeerIds: ['recipient-b', 'recipient-c'],
     confirmedRecipientPeerIds: ['recipient-b'],
+    outsideAudienceRecipientPeerIds: [],
     snapshotVersion: 7,
     phase: 'complete',
     observedAtEpochMs: 15
@@ -151,6 +153,7 @@ describe('AL control message codec', () => {
             const refusal: ALNackPayload = {
                 msgId: 'msg-1',
                 fromPeerId: 'sender',
+                logicalRecipientPeerId: 'sender',
                 toPeerId: 'receiver',
                 reason,
                 observedAtEpochMs: 13

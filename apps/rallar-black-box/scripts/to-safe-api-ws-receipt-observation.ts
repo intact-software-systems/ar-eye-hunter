@@ -41,6 +41,7 @@ const AGGREGATE_ACK_GUARDS = [
     'sender-recipient-mismatch',
     'outside-frozen-audience',
     'already-confirmed',
+    'already-outside',
     'deadline-expired'
 ];
 
@@ -474,7 +475,13 @@ function toSafeAck(record: unknown): ApiJsonObject | undefined {
             isSafeApiTimingIdentity(record[field])
         ) ||
         !isAllowedApiTimingString(record.carrier, ['ws', 'rtc']) ||
-        !isAllowedApiTimingString(record.status, ['accepted', 'delivered', 'forwarded', 'subtree-complete']) ||
+        !isAllowedApiTimingString(record.status, [
+            'accepted',
+            'delivered',
+            'forwarded',
+            'subtree-complete',
+            'subtree-complete-not-subscribed'
+        ]) ||
         !isNonNegativeApiTimingNumber(record.observedAtEpochMs)
     ) {
         return undefined;

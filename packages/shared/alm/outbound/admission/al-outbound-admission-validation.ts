@@ -6,6 +6,7 @@ import {
     requirePersistedALSafeInteger,
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
@@ -14,7 +15,6 @@ import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot
 } from '../../al-runtime-state-stores.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
@@ -259,6 +259,7 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
         'mode',
         'expectedPeerIds',
         'ackedPeerIds',
+        'outsideAudiencePeerIds',
         'timeoutMs',
         'maxAttempts',
         'attempts',
@@ -270,11 +271,15 @@ export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string
         throw new TypeError('Persisted AL pending acknowledgement identity does not match its slot');
     }
     requirePersistedALReceiptMode(snapshot.mode, 'pending acknowledgement mode');
-    if (snapshot.expectedPeerIds === undefined || snapshot.ackedPeerIds === undefined) {
+    if (
+        snapshot.expectedPeerIds === undefined || snapshot.ackedPeerIds === undefined ||
+        snapshot.outsideAudiencePeerIds === undefined
+    ) {
         throw new TypeError('Persisted AL pending acknowledgement peer arrays are missing');
     }
     requireOptionalPersistedALUniqueStringArray(snapshot.expectedPeerIds, 'expected acknowledgement peers');
     requireOptionalPersistedALUniqueStringArray(snapshot.ackedPeerIds, 'acknowledged peers');
+    requireOptionalPersistedALUniqueStringArray(snapshot.outsideAudiencePeerIds, 'outside-audience peers');
     requirePersistedALSafeInteger(snapshot.timeoutMs, 0, 'acknowledgement timeout');
     requirePersistedALSafeInteger(snapshot.maxAttempts, 0, 'acknowledgement maximum attempts');
     requirePersistedALSafeInteger(snapshot.attempts, 0, 'acknowledgement attempts');

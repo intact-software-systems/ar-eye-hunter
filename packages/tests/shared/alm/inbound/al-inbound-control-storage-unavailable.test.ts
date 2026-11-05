@@ -159,7 +159,7 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
         observations: read.observations,
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId: 'acked-msg', senderId: 'peer-1', source, supersedenceKey: null },
+            value: { msgId: 'acked-msg', senderId: 'peer-1', source, supersedenceKey: null, deliveredLocally: true },
             expireAtTimestamp
         }, {
             kind: 'set-control-pending',
@@ -174,6 +174,7 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
                     localReady: false,
                     expectedFromPeerIds: ['peer-2'],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     carrier: 'ws'
                 }
             }

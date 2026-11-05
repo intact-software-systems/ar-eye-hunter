@@ -1,22 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateGroupPresenceMutationRequest } from '@shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts';
+import type { GroupPresenceSummaryComputedWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolvePublicationKey } from '@shared/api/group-presence/resolve-publication-key.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent, GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import { readOrCreatePublicationCrypto } from '@shared/signature/read-or-create-publication-crypto.ts';
 
 import {
     RFC_7517_PRIVATE_D,
     RFC_7517_PUBLICATION_KEY,
     ROTATED_PUBLICATION_KEY
 } from '../../../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
+import { InMemoryPublicationKeyStore } from '../../../../shared/signature/publication-key-store-fixtures.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
@@ -59,11 +63,29 @@ describe('the publication key on the presence row', () => {
 
         expect(receipt.outboxIds).toHaveLength(1);
         expect((await readStoredSession(scenario)).publicationKey).toEqual(ROTATED_PUBLICATION_KEY);
-        const envelope = await computeHeartbeatDelta(scenario);
+        const envelope = toDeltaEnvelope(await computeHeartbeatSummaryWork(scenario));
         expect(envelope.sessions.map((session) => session.publicationKey)).toEqual([ROTATED_PUBLICATION_KEY]);
         await converge(scenario, 'key-rotate-heartbeat-converge');
         expect(resolvePublicationKey(await requireSnapshot(scenario.runtime, scenario.groupId), BOB_SESSION, BASE_EPOCH_MS))
             .toEqual(ROTATED_PUBLICATION_KEY);
+    });
+
+    it('bumps presenceRevision and fans the delta out for a key-only heartbeat, but queues no topology replan', async () => {
+        const scenario = await createConnectedScenario('key-only-replan', RFC_7517_PUBLICATION_KEY);
+        await converge(scenario, 'key-only-replan-converge');
+        const converged = (await requireSnapshot(scenario.runtime, scenario.groupId)).causalRevision;
+
+        await heartbeat(scenario, ROTATED_PUBLICATION_KEY, 1);
+        const computed = await computeHeartbeatSummaryWork(scenario);
+
+        expect(computed.summary.summary.causalRevision).toEqual({
+            groupRevision: converged.groupRevision,
+            presenceRevision: converged.presenceRevision + 1
+        });
+        expect(toDeltaEnvelope(computed).sessions.map((session) => session.publicationKey)).toEqual([
+            ROTATED_PUBLICATION_KEY
+        ]);
+        expect(computed.topologyReplan).toEqual({ decision: 'no-topology-change' });
     });
 
     it('renews the lease without summary work when the heartbeat names the same key', async () => {
@@ -74,6 +96,18 @@ describe('the publication key on the presence row', () => {
 
         expect(receipt.outboxIds).toEqual([]);
         expect((await readStoredSession(scenario)).publicationKey).toEqual(RFC_7517_PUBLICATION_KEY);
+    });
+
+    it('renews the lease without summary work when a second page of the session heartbeats with the stored key', async () => {
+        const store = new InMemoryPublicationKeyStore();
+        const firstPage = await readSessionPublicationKey(store);
+        const scenario = await createConnectedScenario('key-second-page', firstPage);
+        await converge(scenario, 'key-second-page-converge');
+
+        const receipt = await heartbeat(scenario, await readSessionPublicationKey(store), 1);
+
+        expect(firstPage).not.toBeNull();
+        expect(receipt.outboxIds).toEqual([]);
     });
 
     it('takes whatever the latest heartbeat said, including null', async () => {
@@ -283,7 +317,7 @@ async function converge(scenario: ConnectedScenario, commandId: string, nowEpoch
     });
 }
 
-async function computeHeartbeatDelta(scenario: ConnectedScenario): Promise<GroupStateDeltaEnvelope> {
+async function computeHeartbeatSummaryWork(scenario: ConnectedScenario): Promise<GroupPresenceSummaryComputedWork> {
     const ref = groupRef(scenario.groupId);
     const event = (await createTestGroupStateRepository(scenario.runtime).listEvents(ref)).findLast(
         (candidate: GroupEvent) => candidate.eventType === 'session-heartbeat'
@@ -302,7 +336,11 @@ async function computeHeartbeatDelta(scenario: ConnectedScenario): Promise<Group
     };
     const work = createSummaryWork(scenario.runtime, BASE_EPOCH_MS + 1_000);
     const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
-    const entry = work.compute(toSummaryExpansion(command, read)).downstreamOutboxWrites[0]?.entry;
+    return work.compute(toSummaryExpansion(command, read));
+}
+
+function toDeltaEnvelope(computed: GroupPresenceSummaryComputedWork): GroupStateDeltaEnvelope {
+    const entry = computed.downstreamOutboxWrites[0]?.entry;
     if (entry === undefined) {
         throw new Error('Expected emitted group state event row');
     }
@@ -324,6 +362,13 @@ function createSummaryWork(runtime: GroupBarrierRepository, nowEpochMs: number):
         serviceId: 'summary-worker',
         senderPeerId: 'ws-server'
     });
+}
+
+/** The key a page of the session registers: the session's stored pair, read or created through the shared store. */
+async function readSessionPublicationKey(store: InMemoryPublicationKeyStore): Promise<GroupPresencePublicationKey | null> {
+    return toGroupPresencePublicationKey(
+        await readOrCreatePublicationCrypto({ subtle: globalThis.crypto.subtle, store, sessionId: BOB_SESSION })
+    );
 }
 
 function toMessages(operation: 'connectPresence' | 'heartbeatPresence', request: object): readonly string[] {

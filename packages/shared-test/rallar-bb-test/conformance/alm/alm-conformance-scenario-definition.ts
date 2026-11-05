@@ -60,9 +60,12 @@ export type AlmConformanceScenarioId =
     | 'flush-on-hide'
     | 'granted-rtc-delivered'
     | 'granted-rtc-forged-sender'
-    | 'granted-rtc-publish-refused'
     | 'granted-rtc-missing-proof'
-    | 'granted-rtc-receipted-unsupported'
+    | 'granted-rtc-not-subscribed'
+    | 'granted-rtc-publish-refused'
+    | 'granted-rtc-receipted-delivered'
+    | 'granted-rtc-relay-only'
+    | 'granted-rtc-revoked-publisher'
     | 'leader-confirms'
     | 'leader-outside-list'
     | 'no-fallback-after-deadline'
@@ -111,6 +114,25 @@ export interface AlmConformanceMessageSelector {
     readonly access?: 'granted';
 }
 
+/** How a scenario's waiting connect judges readiness: the count of its ready RTC peers that settles the connect. */
+export interface AlmConformanceConnect {
+    readonly minReadyPeers: number;
+}
+
+/**
+ * A step of `role`'s recipe, named as a step names its commands, after which the lane starts a recipe it holds back.
+ */
+export interface AlmConformanceRecipeGate {
+    readonly role: AlmConformanceRole;
+    readonly commandName: string;
+}
+
+/** A further recipe of the sender, which the lane starts on the sender's agent, on its open connection, at the gate. */
+export interface AlmConformanceContinuationDefinition {
+    readonly gate: AlmConformanceRecipeGate;
+    readonly toCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
+}
+
 export interface AlmConformanceStepInput {
     readonly input: CreateAlmConformanceRecipesInput;
     readonly scenarioId: AlmConformanceScenarioId;
@@ -120,6 +142,8 @@ export interface AlmConformanceStepInput {
     readonly roles: readonly AlmConformanceRole[];
     /** The definition's selector, which every connect of the scenario carries; undefined subscribes its own channel. */
     readonly messageSelector: AlmConformanceMessageSelector | undefined;
+    /** The definition's connect readiness; undefined waits for every other peer. */
+    readonly connect: AlmConformanceConnect | undefined;
 }
 
 export interface AlmConformanceMessageStepInput extends AlmConformanceStepInput {
@@ -166,6 +190,11 @@ export interface AlmConformanceScenarioDefinition {
      */
     readonly messageSelector?: AlmConformanceMessageSelector;
     /**
+     * Absent, a connect that waits for ready peers waits for every other peer of the scenario. A scenario whose overlay
+     * gives a connect fewer next hops, such as a path whose leaf has one, names the count instead.
+     */
+    readonly connect?: AlmConformanceConnect;
+    /**
      * Absent when no step names a principal. Otherwise every role a step names as `{principal:<role>}`: creation makes
      * the scenario only when `principalIdsByRole` resolves each of them.
      */
@@ -181,6 +210,10 @@ export interface AlmConformanceScenarioDefinition {
     readonly toReceiptRoles?: (carrier: AlmConformanceCarrier) => AlmConformanceReceiptRoles;
     /** Absent when the sender keeps its page. Otherwise the sync points both roles carry around its one reload. */
     readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
+    /** Absent when the successor starts once the owner page ended; otherwise the owner's step it starts after. */
+    readonly successorGate?: AlmConformanceRecipeGate;
+    /** Absent when the sender runs one recipe; otherwise the sender's later steps, which wait for another role. */
+    readonly continuation?: AlmConformanceContinuationDefinition;
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];

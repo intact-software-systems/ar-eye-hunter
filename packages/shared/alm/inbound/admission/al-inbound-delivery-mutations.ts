@@ -13,6 +13,7 @@ import type {
     ALInboundMessageReadDto
 } from '../al-inbound-admission-store.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
+import { isALInboundDeliveringPlan } from './al-inbound-not-subscribed-plan.ts';
 
 export interface ComputeALInboundDedupExpiryInput {
     readonly nowMs: number;
@@ -35,7 +36,8 @@ export function toALInboundAdmittedMessageMutations(
                 msgId: read.msg.id.msgId,
                 senderId: read.msg.id.senderId,
                 source: read.source,
-                supersedenceKey: read.plan.supersedence.key ?? null
+                supersedenceKey: read.plan.supersedence.key ?? null,
+                deliveredLocally: isALInboundDeliveringPlan(read.plan)
             },
             expireAtTimestamp: computeALInboundMessageOwnerExpiryMs(read, deadlineAtMs)
         }

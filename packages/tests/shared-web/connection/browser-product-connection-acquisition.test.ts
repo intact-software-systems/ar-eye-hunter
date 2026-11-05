@@ -13,7 +13,7 @@ import { configureOverlayRepositories } from '@shared/repository/overlays-reposi
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { InMemoryPublicationKeyStore } from '../../shared/signature/publication-key-store-fixtures.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from '../session/browser-auth-session-contract-fixture.ts';
@@ -175,7 +175,7 @@ describe('implicit product acquisition of the owned connection', () => {
         await session.acquireConnection();
 
         const options = mocks.initialiseMiddleware.mock.calls[0]?.[2];
-        expect(await options?.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
+        expect(options?.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
         expect(options?.topicSubscriptions).toBe(NO_RTC_TOPIC_SUBSCRIPTIONS);
     });
 
@@ -205,8 +205,9 @@ async function createOwnedSession(): Promise<RallarSessionController> {
         readPublicationStageLimits: undefined,
         sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, foundation.transportRuntime, mocks.readSession),
         onResyncRequired: () => {},
-        publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
-        publicationVerifier: Promise.resolve(KEYLESS_PUBLICATION_VERIFIER),
+        subtle: undefined,
+        publicationKeyStore: new InMemoryPublicationKeyStore(),
+        publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
         grantedTopics: NO_RTC_GRANTED_TOPICS,
         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
         connectionRuntime: foundation.connectionRuntime,

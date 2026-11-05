@@ -1,4 +1,3 @@
-import type { ALDeliveryCarrier } from '../alm/delivery/al-delivery-lifecycle.ts';
 import { toStrictAppInboxQueueKey } from '../queuebox/AppQueueIdentity.ts';
 import { isKeysEqual } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
@@ -13,8 +12,11 @@ import {
 import {
     decodeALAckPayload,
     decodeALNackPayload,
+    decodeALNackWirePayload,
     decodeALReceiptPayload,
-    decodeALRepairPayload
+    decodeALReceiptWirePayload,
+    decodeALRepairPayload,
+    type ALDeliveryCarrier
 } from './al-control-value-codec.ts';
 import {
     decodeALMessageValue,
@@ -25,7 +27,16 @@ import {
 } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 
-export type ALAckStatus = 'accepted' | 'delivered' | 'forwarded' | 'subtree-complete';
+/**
+ * `subtree-complete-not-subscribed` ends the hop of a frozen recipient that delivered nothing, having answered
+ * `not-subscribed`: it completes that hop and confirms no recipient, so no hop relays or counts it as a confirmation.
+ */
+export type ALAckStatus =
+    | 'accepted'
+    | 'delivered'
+    | 'forwarded'
+    | 'subtree-complete'
+    | 'subtree-complete-not-subscribed';
 export type ALNackReason =
     | 'duplicate'
     | 'gap'
@@ -40,7 +51,8 @@ export type ALNackReason =
     | 'no-leader'
     | 'held-by-other'
     | 'unsupported'
-    | 'no-publish-grant';
+    | 'no-publish-grant'
+    | 'not-subscribed';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
 
 export interface ALAckPayload {
@@ -64,6 +76,8 @@ export interface ALNackPayload {
     readonly msgId: string;
     readonly fromPeerId: string;
     readonly toPeerId: string;
+    /** The recipient this NACK speaks for: its sender's own session, or a recipient below a relay that re-sends it. */
+    readonly logicalRecipientPeerId: string;
     readonly reason: ALNackReason;
     readonly observedAtEpochMs: number;
     readonly orderingKey?: string;
@@ -89,6 +103,7 @@ export interface ALReceiptPayload {
     readonly originPeerId: string;
     readonly expectedRecipientPeerIds: readonly string[];
     readonly confirmedRecipientPeerIds: readonly string[];
+    readonly outsideAudienceRecipientPeerIds: readonly string[];
     readonly snapshotVersion: number;
     readonly phase: 'admitted' | 'complete' | 'timed-out';
     readonly observedAtEpochMs: number;
@@ -115,12 +130,13 @@ export type ALPeerControlMessage = Exclude<ALParsedControlMessage, Readonly<{ ty
 
 /**
  * The completion of a hop itself: the delivered ACK of a leaf, or the terminal ACK of a relay whose
- * subtree completed.
+ * subtree completed, a not-subscribed recipient's included.
  * A relay that passes on an ACK for a recipient below it speaks for that recipient, not for its hop.
  */
 export function isALHopCompletionAck(ack: ALAckPayload): boolean {
     return ack.fromPeerId === ack.logicalRecipientPeerId &&
-        (ack.status === 'delivered' || ack.status === 'subtree-complete');
+        (ack.status === 'delivered' || ack.status === 'subtree-complete' ||
+            ack.status === 'subtree-complete-not-subscribed');
 }
 
 export interface ALCompletedPendingAck {
@@ -153,6 +169,11 @@ export interface ALPendingAckSnapshot {
      * ACK for anyone else is not relayed. Absent for any other message, whose child ACKs are all relayed.
      */
     readonly upwardAudiencePeerIds?: readonly string[];
+    /**
+     * The recipients a `not-subscribed` NACK named, each relayed upward once and again on a retried copy: recipients
+     * that delivered nothing, for whom no confirming ACK is admitted after it; a row stored before it reads none.
+     */
+    readonly outsideAudiencePeerIds: readonly string[];
     readonly expireAtTimestamp?: number;
     /** The carrier the acknowledged data message arrived on. */
     readonly carrier: ALDeliveryCarrier;
@@ -169,11 +190,11 @@ export function parseALControlMessage(msg: ALMessage): ALParsedControlMessage | 
         case AL_CONTROL_ACK_TYPE_ID:
             return { type: 'ack', payload: decodeALAckPayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_NACK_TYPE_ID:
-            return { type: 'nack', payload: decodeALNackPayload(parseControlPayload(msg.payload.resource)) };
+            return { type: 'nack', payload: decodeALNackWirePayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_REPAIR_TYPE_ID:
             return { type: 'repair', payload: decodeALRepairPayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_RECEIPT_TYPE_ID:
-            return { type: 'receipt', payload: decodeALReceiptPayload(parseControlPayload(msg.payload.resource)) };
+            return { type: 'receipt', payload: decodeALReceiptWirePayload(parseControlPayload(msg.payload.resource)) };
         default:
             return undefined;
     }

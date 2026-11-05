@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 
 /** Where a receiver's ordering track stands, and what arrived, when it can no longer order the sender's messages. */
 export interface ALInboundResyncCursor {

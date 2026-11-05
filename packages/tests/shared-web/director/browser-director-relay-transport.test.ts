@@ -512,6 +512,7 @@ function recordDirectorReceipt(command: MessageDeliveryFixture): void {
         expectedRecipientPeerIds: ['director'],
         confirmedRecipientPeerIds: ['director'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-browser-director-relay-transport'
     });

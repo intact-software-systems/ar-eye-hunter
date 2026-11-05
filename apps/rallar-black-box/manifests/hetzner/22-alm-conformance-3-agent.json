@@ -26,7 +26,8 @@
                 "receiver",
                 "recipient-b"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-ws-missing-recipient-retry-send-1",
@@ -35,7 +36,8 @@
               ],
               "unconfirmed": [
                 "recipient-b"
-              ]
+              ],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-ws-frozen-audience-membership-send-1",
@@ -44,7 +46,8 @@
               ],
               "unconfirmed": [
                 "recipient-b"
-              ]
+              ],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-aggregated-receipt-send-1",
@@ -52,7 +55,8 @@
                 "receiver",
                 "recipient-b"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-missing-recipient-retry-send-1",
@@ -60,7 +64,8 @@
                 "receiver",
                 "recipient-b"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-unknown-ack-version-send-1",
@@ -68,7 +73,8 @@
                 "receiver",
                 "recipient-b"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-frozen-audience-membership-send-1",
@@ -77,7 +83,8 @@
               ],
               "unconfirmed": [
                 "recipient-b"
-              ]
+              ],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-with-ws-fallback-aggregated-receipt-send-1",
@@ -85,7 +92,8 @@
                 "receiver",
                 "recipient-b"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-with-ws-fallback-missing-recipient-retry-send-1",
@@ -93,7 +101,8 @@
                 "receiver",
                 "recipient-b"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-with-ws-fallback-unknown-ack-version-send-1",
@@ -101,7 +110,8 @@
                 "receiver",
                 "recipient-b"
               ],
-              "unconfirmed": []
+              "unconfirmed": [],
+              "outsideAudience": []
             },
             {
               "handleId": "alm-rtc-with-ws-fallback-frozen-audience-membership-send-1",
@@ -110,7 +120,8 @@
               ],
               "unconfirmed": [
                 "recipient-b"
-              ]
+              ],
+              "outsideAudience": []
             }
           ]
         },
@@ -350,6 +361,14 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "assert",
+            "commandId": "alm-ws-aggregated-receipt-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-ws-aggregated-receipt-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-ws-aggregated-receipt-sender-stats",
             "timeoutMs": 3000
@@ -476,6 +495,14 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "assert",
+            "commandId": "alm-ws-missing-recipient-retry-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-ws-missing-recipient-retry-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-ws-missing-recipient-retry-sender-stats",
             "timeoutMs": 3000
@@ -599,6 +626,14 @@
             "source": "resultCache.alm-ws-frozen-audience-membership-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
             "operator": "equals",
             "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-frozen-audience-membership-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-ws-frozen-audience-membership-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
             "timeoutMs": 2000
           },
           {
@@ -733,6 +768,14 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "assert",
+            "commandId": "alm-rtc-aggregated-receipt-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-aggregated-receipt-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-rtc-aggregated-receipt-sender-stats",
             "timeoutMs": 3000
@@ -859,6 +902,14 @@
             "kind": "assert",
             "commandId": "alm-rtc-missing-recipient-retry-sender-assert-receipt-unconfirmedRecipientPeerIds-count-1",
             "source": "resultCache.alm-rtc-missing-recipient-retry-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-missing-recipient-retry-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-missing-recipient-retry-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
             "operator": "equals",
             "expected": 0,
             "timeoutMs": 2000
@@ -1006,6 +1057,14 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "assert",
+            "commandId": "alm-rtc-unknown-ack-version-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-unknown-ack-version-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-rtc-unknown-ack-version-sender-stats",
             "timeoutMs": 3000
@@ -1134,6 +1193,14 @@
             "source": "resultCache.alm-rtc-frozen-audience-membership-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
             "operator": "equals",
             "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-frozen-audience-membership-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-frozen-audience-membership-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
             "timeoutMs": 2000
           },
           {
@@ -1268,6 +1335,14 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-aggregated-receipt-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-stats",
             "timeoutMs": 3000
@@ -1394,6 +1469,14 @@
             "kind": "assert",
             "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-assert-receipt-unconfirmedRecipientPeerIds-count-1",
             "source": "resultCache.alm-rtc-with-ws-fallback-missing-recipient-retry-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-missing-recipient-retry-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
             "operator": "equals",
             "expected": 0,
             "timeoutMs": 2000
@@ -1541,6 +1624,14 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-stats",
             "timeoutMs": 3000
@@ -1669,6 +1760,14 @@
             "source": "resultCache.alm-rtc-with-ws-fallback-frozen-audience-membership-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
             "operator": "equals",
             "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-sender-assert-receipt-outsideAudienceRecipientPeerIds-count-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-frozen-audience-membership-sender-receipts-1.value.outsideAudienceRecipientPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
             "timeoutMs": 2000
           },
           {

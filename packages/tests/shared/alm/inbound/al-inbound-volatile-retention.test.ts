@@ -463,7 +463,7 @@ async function seedRelayRow(
         observations: (await readInboundTestDecisionSurface(store, message)).observations,
         mutations: [{
             kind: 'set-msg-owner',
-            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null },
+            value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null, deliveredLocally: true },
             expireAtTimestamp: rowExpiresAtMs + AL_RECEIPT_DEADLINE_GRACE_MS
         }, {
             kind: 'set-control-pending',
@@ -477,6 +477,7 @@ async function seedRelayRow(
                     localReady: true,
                     expectedFromPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
                     ackedFromPeerIds: [],
+                    outsideAudiencePeerIds: [],
                     ...(deadlineAtMs === undefined ? {} : { expireAtTimestamp: deadlineAtMs }),
                     carrier: 'ws'
                 }

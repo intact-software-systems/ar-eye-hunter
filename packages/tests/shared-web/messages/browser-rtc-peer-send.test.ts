@@ -18,10 +18,10 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     type ALDeliveryAdmissionVerdict,
-    type ALDeliveryCarrier,
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { AL_FALLBACK_NOT_READY_ATTEMPTS } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
@@ -562,6 +562,7 @@ function toExhausted(msgId: string): ALDeliverySettlement {
         mode: 'receiver',
         confirmedPeerIds: [],
         unconfirmedPeerIds: [DIRECTOR],
+        outsideAudiencePeerIds: [],
         detail: 'The receipt ran out of retries after 3 of 3.',
         cause: 'budget',
         traceId: 'trace-browser-rtc-peer-send'
@@ -580,6 +581,7 @@ function toReceipt(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettlem
         expectedRecipientPeerIds: [DIRECTOR],
         confirmedRecipientPeerIds: [DIRECTOR],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-browser-rtc-peer-send'
     };

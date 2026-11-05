@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import type {
     ALAckPayload,
     ALNackPayload,
@@ -11,7 +12,7 @@ import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
@@ -22,9 +23,11 @@ import {
     resolveALOutboundRelayRejection,
     toALOutboundRelayRejectedFact
 } from './control/resolve-al-outbound-relay-rejection.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
+    acceptALOutboundNotSubscribedNack,
     acceptALOutboundPendingAckSnapshot,
     isALOutboundReceiptComplete,
     toALOutboundAcknowledgementFact,
@@ -56,6 +59,8 @@ export interface ALControlAdmissionRead {
     readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
     readonly history: ALControlHistory;
+    /** The ACKs admitted before this control, which the hop view reads whatever kind of control it is. */
+    readonly acknowledgements: readonly ALAckPayload[];
 }
 
 export type ALPendingAckWrite =
@@ -141,7 +146,9 @@ export function toALOutboundControlSettlements(
         receipt: snapshot,
         hops: {
             nextHopPeerIds: read.sent?.policy.ackTracking?.nextHopPeerIds ?? [],
-            completedHopPeerIds: toALOutboundCompletedHopPeerIds(history.kind === 'acks' ? history.values : [])
+            completedHopPeerIds: toALOutboundCompletedHopPeerIds(
+                history.kind === 'acks' ? history.values : read.acknowledgements
+            )
         },
         complete: isALOutboundReceiptComplete(snapshot),
         traceId
@@ -225,12 +232,24 @@ function computePendingAckWrite(
     history: ALControlHistory
 ): ALPendingAckWrite {
     if (read.parsed.type === 'ack' && history.kind === 'acks') {
-        const next = acceptALOutboundPendingAckSnapshot({
-            current: read.pending,
-            acks: [],
-            ack: read.parsed.payload
-        });
-        return next ? { kind: 'set', value: next } : { kind: 'remove' };
+        const ack = read.parsed.payload;
+        const next = acceptALOutboundPendingAckSnapshot({ current: read.pending, acks: [], ack });
+        if (next === undefined) {
+            return { kind: 'remove' };
+        }
+        const owedPeerIds = toALOutboundReceiptClasses(next).unconfirmedPeerIds;
+        return {
+            kind: 'set',
+            value: isALImpliedNotSubscribedNack(ack, owedPeerIds)
+                ? acceptALOutboundNotSubscribedNack(next, ack.logicalRecipientPeerId)
+                : next
+        };
+    }
+    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'not-subscribed' && read.pending) {
+        return {
+            kind: 'set',
+            value: acceptALOutboundNotSubscribedNack(read.pending, read.parsed.payload.logicalRecipientPeerId)
+        };
     }
     return read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload) && read.pending
         ? { kind: 'remove' }
@@ -274,7 +293,7 @@ export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairP
 
 /**
  * A `resync-required`, `held-by-other`, `unsupported` or `no-publish-grant` refusal ends the receipt too: the hop will
- * refuse every resend of the message.
+ * refuse every resend of the message. A `not-subscribed` NACK speaks for one recipient only, so it never ends one.
  */
 function isTerminalNack(nack: ALNackPayload): boolean {
     return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale' ||

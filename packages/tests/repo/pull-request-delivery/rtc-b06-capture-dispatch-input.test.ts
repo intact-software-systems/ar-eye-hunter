@@ -1,5 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import {
+    mkdtempSync,
+    readFileSync,
+    rmSync
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
@@ -8,6 +13,7 @@ import {
     YAML11_SCHEMA
 } from 'js-yaml';
 import {
+    afterAll,
     describe,
     expect,
     it
@@ -22,6 +28,10 @@ interface RtcB06CaptureDispatchInput {
 }
 
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
+/** The CLI's Deno runs keep their lock here, so they never rewrite the tracked one. */
+const scratchDirectory = mkdtempSync(path.join(tmpdir(), 'rtc-b06-capture-'));
+
+afterAll(() => rmSync(scratchDirectory, { recursive: true, force: true }));
 
 describe('RTC-B06 capture dispatch input', () => {
     it.each([CORE_SCHEMA, YAML11_SCHEMA])('offers readable string choices under YAML scalar schema %#', (schema) => {
@@ -46,6 +56,7 @@ describe('RTC-B06 capture dispatch input', () => {
             '--cached-only',
             '--no-check',
             '--config=packages/shared-rtc-bench/deno.json',
+            `--lock=${path.join(scratchDirectory, 'deno.lock')}`,
             '--allow-read',
             '--deny-env',
             '--deny-run',

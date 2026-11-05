@@ -552,6 +552,14 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   room. RTC carries no `world` or `all` audience, nor a principal broadcast that names no room: such a broadcast is refused at admission as
   `refused/unsupported` (D157), and the browser sender routes a `world` send to WS first whenever
   the strategy allows it.
+- A granted publication narrows that audience at the same freeze to the live sessions whose principal holds
+  effective `subscribe` on its topic in the origin's cached snapshot
+  ([`computeGrantedSubscribeHolders`](../../multicast/publication/compute-granted-subscribe-holders.ts), passed as
+  `subscribeHolders`; `null` for any other send), before the origin signs it, so the signed targets and the receipt
+  row's expected set are the narrowed audience, receipted or not. A granted `group-leader` send whose room's director
+  holds no `subscribe` is refused before freezing as `refused/unsupported`, which a fallback carrier takes over
+  ([`resolveRtcGrantedLeaderRefusal`](../../multicast/publication/compute-rtc-granted-publication-refusal.ts)); a
+  room without a director, or one the sender directs, keeps `refused/no-leader` as any room send does.
 - A `group-leader` room send narrows that audience to the room's leader (D164, D165, D166). The narrowing
   comes from the message, its `delivery.ack` on a room-bounded target, never from a side input, and its
   `sessionId` is resolved at admission from the room snapshot the carrier holds by
@@ -578,7 +586,9 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   `refused/unsupported`, naming the bound, in every ack mode and before anything is persisted or sent
   (`computeRtcFrozenAudienceRefusal`). That is the refusal a fallback takes over: `rtc-with-ws-fallback`
   delivers over WS, whose audience travels off the wire (below), and `rtc` alone settles `rejected`
-  with the typed reason, never `failed`.
+  with the typed reason. A signed granted publication is the exception: its origin signs the frozen
+  audience before that refusal runs, so past the bound the signed message fails its own envelope
+  decode (`AL collection exceeds the entry limit`), the send ends `failed` and no carrier takes it over.
 - The WS server freezes a room message at its admission stamp from the sessions it authorizes,
   narrowed for a principal broadcast that names its room to that principal's sessions (the group
   snapshot's `activeSessions[].principalId`), for a room broadcast that carries
@@ -722,7 +732,8 @@ NACK refuses the whole send whatever the receipt and ends it: a held dispatch al
 `route` re-reads the grant.
 A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
-audience verbatim, so a session that left since reads unconfirmed (D73).
+audience verbatim, so a session that left since reads unconfirmed (D73), and a recipient whose ACK confirms nobody
+(`subtree-complete-not-subscribed`) is recorded in the receipt's `outsideAudienceRecipientPeerIds`, never confirmed.
 
 The wire `targets.groupRef` scopes every row that names a group (D101): its captured policy stores no
 `recipientScope`, `principalTargetId` or `sessionInvalidation`
@@ -1231,6 +1242,30 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
 - **The `not-yet-in-sync` budget.** When its retry schedule is spent the owner states
   `not-yet-in-sync-exhausted`. It ends nothing on its own -- the receipt budget still ends the message --
   and is one of the declared retryable outcomes below.
+
+A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop re-originated it: it comes from a
+next hop of the message or from a peer a repair may come from (a recipient the receipt expects, a unicast's addressee,
+a hop every frame passes), and a WS session's NACK speaks only for itself; it moves a recipient the receipt still owes
+into the row's `outsideAudiencePeerIds` and is refused for any other peer, a repeat or a confirmed one, and no ACK
+confirms a recipient after it. A dishonest client can thus remove itself or, as a next hop, a recipient it claims to
+relay for, since the origin does not know a hop's subtree. The recipient's own `subtree-complete-not-subscribed` ACK,
+from a next hop, is admitted as that hop's
+completion and confirms nobody; while the receipt still owes that recipient it also stands for the NACK, so a lost
+NACK records the recipient outside at once, as every relay reads it
+([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)).
+The acknowledgement a NACK states reads its hop view from the ACK history. It ends no receipt and hands nothing over:
+the row completes once every expected recipient is confirmed or outside and one is confirmed, and a receipt whose
+every recipient is outside stays open to its deadline and ends `receipt-exhausted` (PL10, PL16).
+
+An RTC origin resends a stored granted publication only while its cached snapshot still grants it `publish` (S3-R8):
+the RTC carrier applies
+[`computeRtcRepairRefusal`](../../multicast/publication/compute-rtc-repair-refusal.ts) before every
+repair, re-plan and dequeue of a signed message, and a re-plan it refuses `no-publish-grant` ends the message
+([`resolveALOutboundReplanRefusalSettlement`](./control/resolve-al-outbound-replan-refusal-settlement.ts)): the
+ack-timeout retry deletes the pending receipt under the version its decision read, the dequeue and the retransmit end
+it inside the dispatch's own commit, a conflicting commit decides again from a fresh read, and the handle settles
+`rejected` with nothing handed to WS. Only a revoke the snapshot shows ends it: with no readable snapshot the room's
+own planning decides, as for any stored send, and `unsupported` or `unauthorized` re-plans keep their silent drop.
 
 A receipt that a control ends -- a complete ACK or a terminal NACK -- completes the send's `ack-timeout`
 work row in the commit that ends it, so no timeout batch runs for it; a row a batch already leased is

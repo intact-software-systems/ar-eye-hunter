@@ -27,7 +27,11 @@ import {
 
 const REPLY_FIRST_WINS_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 
-const BOTH_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver', 'recipient-b'], unconfirmed: [] };
+const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver', 'recipient-b'],
+    unconfirmed: [],
+    outsideAudience: []
+};
 
 /**
  * D445: a room request asking for every logical recipient, which both recipients answer. The sender reads `replied`

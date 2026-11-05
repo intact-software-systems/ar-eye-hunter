@@ -1,11 +1,11 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { Key, ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../../resilience/bounded-concurrency-admission.ts';
 import { settleAllInOrder } from '../../../resilience/settle-all-in-order.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult, ALWorkBatchDiagnostics } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkOutcome } from '../../work/al-work-queue-port.ts';

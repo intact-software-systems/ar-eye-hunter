@@ -10,7 +10,11 @@ import { toReceivedCommand, toSingleArrivalReceiverCommands } from '../../alm-co
 import { ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES } from '../../alm-conformance-roles.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
 
-const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver'], unconfirmed: [] };
+const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver'],
+    unconfirmed: [],
+    outsideAudience: []
+};
 
 /**
  * The sender lists one of the room's three sessions, the receiver's. The receiver receives the send once and

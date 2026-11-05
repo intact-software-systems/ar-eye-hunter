@@ -58,6 +58,15 @@ validation.
    its connection generation; server-only, never on a snapshot.
    [decodeGroupTopicSubscription](./group-publication/group-topic-subscriptions.ts#decodeGroupTopicSubscription)
    decodes a row at a trust boundary and reports every issue.
+10. [GroupPresencePublicationKey](./group-types.ts#GroupPresencePublicationKey) is
+    the public half of the key a session signs granted RTC publications with,
+    `{ keyId, publicJwk }` on its presence row and snapshot session, or `null`.
+    [decodeGroupPresencePublicationKey](./group-presence/decode-group-presence-publication-key.ts#decodeGroupPresencePublicationKey)
+    is its one decoder, shape only and refusing a private `d`, and
+    [resolvePublicationKey](./group-presence/resolve-publication-key.ts#resolvePublicationKey)
+    is its one lookup: a session that is not live
+    ([isLiveRoomSession](./group-presence/is-live-room-session.ts#isLiveRoomSession))
+    attests no key.
 
 ## Boundaries
 

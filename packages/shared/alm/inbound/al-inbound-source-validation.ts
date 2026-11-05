@@ -1,5 +1,6 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { PersistedALRecord } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -10,7 +11,6 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundControlOwnerIndex, ALInboundMessageOwner } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
@@ -150,6 +150,9 @@ export interface ALInboundMessageOwnerSlot {
     readonly expectedSenderId: string;
 }
 
+/** The fields every stored inbound message owner row carries. */
+export const AL_INBOUND_MESSAGE_OWNER_FIELDS = ['msgId', 'senderId', 'source', 'supersedenceKey'] as const;
+
 export function toALInboundMessageOwnerKey(namespace: string, msgId: string, senderId: string): string {
     return `${namespace}:msg-owner:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
 }
@@ -173,8 +176,9 @@ export async function readALInboundMessageOwner(
     );
 }
 
+/** A row written before `deliveredLocally` existed reads as delivered, the only outcome such a build recorded. */
 export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessageOwnerSlot): ALInboundMessageOwner {
-    const owner = decodeALAdmissionRecord(value, ['msgId', 'senderId', 'source', 'supersedenceKey']);
+    const owner = decodeALAdmissionRecord(value, AL_INBOUND_MESSAGE_OWNER_FIELDS, ['deliveredLocally']);
     const msgId = decodeALAdmissionString(owner.msgId);
     const senderId = decodeALAdmissionString(owner.senderId);
     if (
@@ -186,11 +190,15 @@ export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessa
     if (owner.supersedenceKey !== null && typeof owner.supersedenceKey !== 'string') {
         throw new TypeError('Stored inbound message owner supersedence key is invalid');
     }
+    if (owner.deliveredLocally !== undefined && typeof owner.deliveredLocally !== 'boolean') {
+        throw new TypeError('Stored inbound message owner local delivery is invalid');
+    }
     return {
         msgId,
         senderId,
         source: decodeALInboundSource(owner.source),
-        supersedenceKey: owner.supersedenceKey
+        supersedenceKey: owner.supersedenceKey,
+        deliveredLocally: owner.deliveredLocally ?? true
     };
 }
 

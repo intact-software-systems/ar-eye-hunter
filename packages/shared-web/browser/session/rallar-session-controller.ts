@@ -21,6 +21,7 @@ import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/ral
 import { BrowserSessionAuthLifecycle } from '@shared-web/browser/session/session-auth-lifecycle.ts';
 import { BrowserSessionConnectionLifecycle } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { createRallarSessionConnectionOperations } from '@shared-web/browser/session/session-connection-operations.ts';
+import { SessionPublicationCrypto } from '@shared-web/browser/session/session-publication-crypto.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
@@ -33,7 +34,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
-import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
+import type { PublicationKeyStore } from '@shared/signature/publication-key-store.ts';
 
 export interface CreateRallarSessionControllerOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
@@ -46,8 +47,11 @@ export interface CreateRallarSessionControllerOptions {
     readonly authRuntime: RallarAuthRuntimePort;
     readonly stateRuntime: Pick<RallarBrowserFacadeRuntimeContext, 'clearCurrentRoom'>;
     readonly lifecycle: RallarLifecycleCoordinator;
-    readonly publicationCrypto: Promise<PublicationCrypto>;
-    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+    /** The page's WebCrypto, which signs with the key pair of the session the page is signed into. */
+    readonly subtle: SubtleCrypto | undefined;
+    /** Where the pages of a session share its key pair. */
+    readonly publicationKeyStore: PublicationKeyStore;
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
     readonly grantedTopics: RtcGrantedTopicReader;
     readonly topicSubscriptions: RtcTopicSubscriptionReader;
     readonly emitState: () => void;
@@ -64,7 +68,9 @@ export interface RallarSessionController {
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
     requireSession(): AuthSession;
-    /** The public half of the page's key, which room entry registers on the presence row; `null` for a keyless page. */
+    /**
+     * The public half of the session's key, which room entry registers on the presence row; `null` for a keyless page.
+     */
     readPublicationKey(): Promise<GroupPresencePublicationKey | null>;
     readDefaults(): RallarDefaults | undefined;
     readDefaultScope(): StateScope | undefined;
@@ -79,6 +85,10 @@ export interface RallarSessionController {
 export function createRallarSessionController(
     options: CreateRallarSessionControllerOptions
 ): RallarSessionController {
+    const publicationCrypto = new SessionPublicationCrypto({
+        subtle: options.subtle,
+        store: options.publicationKeyStore
+    });
     const connectionLifecycle = new BrowserSessionConnectionLifecycle({
         qosProvider: options.qosProvider,
         readVolatileSessionLimits: options.readVolatileSessionLimits,
@@ -88,7 +98,7 @@ export function createRallarSessionController(
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         lifecycle: options.lifecycle,
-        publicationCrypto: options.publicationCrypto,
+        publicationCrypto,
         publicationVerifier: options.publicationVerifier,
         grantedTopics: options.grantedTopics,
         topicSubscriptions: options.topicSubscriptions,
@@ -125,7 +135,8 @@ export function createRallarSessionController(
         readMiddleware: () => options.connectionRuntime.readMiddleware(),
         requireMiddleware: () => options.connectionRuntime.requireMiddleware(),
         requireSession: () => authLifecycle.requireSession(),
-        readPublicationKey: async () => toGroupPresencePublicationKey(await options.publicationCrypto),
+        readPublicationKey: async () =>
+            toGroupPresencePublicationKey(await publicationCrypto.read(authLifecycle.requireSession().sessionId)),
         readDefaults: () => options.connectionRuntime.readDefaults(),
         readDefaultScope: () => options.connectionRuntime.readDefaultScope(),
         resolveOperationOptions: (operationOptions) =>

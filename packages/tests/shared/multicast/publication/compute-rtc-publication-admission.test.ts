@@ -5,6 +5,7 @@ import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/gro
 import {
     computeRtcPublicationAdmission,
     type RtcPublicationAdmissionInput,
+    type RtcPublicationAdmitted,
     type RtcPublicationRefusalCode
 } from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
 
@@ -113,23 +114,27 @@ describe('computeRtcPublicationAdmission', () => {
         expect(admission.left?.code).toBe('no-authority');
     });
 
-    it('delivers to a subscribed receiver whose token is active, and only forwards while its token is pending', () => {
-        const input = toAdmissionInput();
-
-        expect(computeRtcPublicationAdmission(input).right).toEqual({ delivery: 'deliver' });
-        expect(computeRtcPublicationAdmission({ ...input, ownSubscriptionActive: false }).right).toEqual({
-            delivery: 'forward-only'
-        });
+    it.each<[string, Partial<RtcPublicationAdmissionInput>, RtcPublicationAdmitted['delivery']]>([
+        ['a frozen subscribe holder whose token is active', {}, 'deliver'],
+        ['a frozen subscribe holder whose token is still pending', { ownSubscriptionActive: false }, 'forward-not-subscribed'],
+        ['a frozen recipient whose own snapshot revoked its subscribe after the freeze', {
+            snapshot: createPublicationRoomSnapshot({ ...ROOM, grants: { a: PUBLISH_AND_SUBSCRIBE, b: PUBLISH_ONLY } })
+        }, 'forward-not-subscribed'],
+        ['a session outside the frozen audience without a token', { frozenRecipient: false, ownSubscriptionActive: false }, 'forward-only'],
+        ['a session outside the frozen audience holding subscribe and an active token', { frozenRecipient: false }, 'deliver']
+    ])('answers %s with %s', (_name, override, delivery) => {
+        expect(computeRtcPublicationAdmission({ ...toAdmissionInput(), ...override }).right).toEqual({ delivery });
     });
 
     it.each<[string, PublicationRoomInput['grants']]>([
         ['an unsubscribed relay', { a: PUBLISH_AND_SUBSCRIBE, b: PUBLISH_AND_SUBSCRIBE }],
         ['a publisher-only relay', { a: PUBLISH_AND_SUBSCRIBE, r: PUBLISH_ONLY }]
-    ])('only forwards at %s, whatever its own token', (_name, grants) => {
+    ])('only forwards at %s outside the frozen audience, whatever its own token', (_name, grants) => {
         const admission = computeRtcPublicationAdmission({
             ...toAdmissionInput(),
             snapshot: createPublicationRoomSnapshot({ ...ROOM, grants }),
-            selfPrincipalId: 'r'
+            selfPrincipalId: 'r',
+            frozenRecipient: false
         });
 
         expect(admission.right).toEqual({ delivery: 'forward-only' });
@@ -202,6 +207,7 @@ function toAdmissionInput(): RtcPublicationAdmissionInput {
         selfPrincipalId: 'b',
         signatureValid: true,
         ownSubscriptionActive: true,
+        frozenRecipient: true,
         nowEpochMs: NOW_EPOCH_MS
     };
 }

@@ -166,6 +166,39 @@ describe('outbound admission verdict', () => {
         });
     });
 
+    it('is refused as no-publish-grant when the planner drops a revoked publisher\'s message, and hands nothing over', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('verdict-no-publish-grant');
+        const read = await store.readOutgoingMessage({
+            msg: message,
+            planner: () => ({
+                msg: message,
+                dropReason: 'The origin no longer holds publish',
+                dropReasonCode: 'no-publish-grant',
+                lane: 'volatile',
+                preparedMessages: []
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'repair'
+        });
+        const computed = computeALOutboundDispatch({
+            read,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
+            dispatchAtMs: Date.now(),
+            intent: 'repair',
+            phase: 'immediate',
+            options: {}
+        });
+
+        expect(computed.verdict).toStrictEqual({
+            kind: 'refused',
+            reason: 'no-publish-grant',
+            detail: 'The origin no longer holds publish'
+        });
+        expect(isALDeliveryAdmissionFallbackVerdict(computed.verdict)).toBe(false);
+    });
+
     it('is refused as capacity when the planner drops the message with that code, and hands nothing over (D78, C1)', async () => {
         const stores = createDefaultOutboundTestStores();
         const store = stores.admissionStore;

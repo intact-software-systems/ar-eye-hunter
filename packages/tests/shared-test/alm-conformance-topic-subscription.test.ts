@@ -13,7 +13,6 @@ import {
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
 import { assessSubscriptionRevokeDisconnected } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
-import { toSubscriptionSuccessorGateCommandId } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-successor.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand,
@@ -108,12 +107,12 @@ function toRecipeRunParticipant(
 }
 
 describe('ALM topic subscription conformance', () => {
-    it('the four-role family declares sender, publisher-b, receiver and sibling and runs over ws and rtc-with-ws-fallback only', () => {
+    it('the four-role family declares sender, publisher-b, receiver and sibling and runs on every carrier', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = toTopicSubscriptionScenarios(carrier);
             const fourRole = scenarios.filter(({ laneFamily }) => laneFamily === 'four-role');
 
-            expect(fourRole.map(({ scenarioId }) => scenarioId), carrier).toEqual(carrier === 'rtc' ? [] : FOUR_ROLE_IDS);
+            expect(fourRole.map(({ scenarioId }) => scenarioId), carrier).toEqual(FOUR_ROLE_IDS);
             for (const scenario of fourRole) {
                 expect(scenario.roles).toEqual(['sender', 'publisher-b', 'receiver', 'sibling']);
                 expect(scenario.tags).toEqual(['full']);
@@ -121,7 +120,7 @@ describe('ALM topic subscription conformance', () => {
                 expect(toAlmConformanceRoleRecipe(scenario, 'publisher-b')).toBe(scenario.publisherB);
             }
             expect(scenarios.filter(({ laneFamily }) => laneFamily === 'same-context').map(({ roles }) => roles))
-                .toEqual(carrier === 'rtc' ? [] : [['sender', 'receiver', 'successor']]);
+                .toEqual(carrier === 'ws' ? [['sender', 'receiver', 'successor']] : []);
         }
     });
 
@@ -218,11 +217,11 @@ describe('ALM topic subscription conformance', () => {
         if (successor === undefined) {
             throw new Error('The ws carrier creates the subscription-successor cell.');
         }
-        const gate = toSubscriptionSuccessorGateCommandId(successor.sender);
+        const gate = successor.successorGate;
         const ownerCommands = successor.sender.commands.map(({ kind, commandId }) => ({ kind, commandId }));
 
-        expect(gate).toBe('alm-ws-subscription-successor-sender-tokens-owner-generation');
-        expect(ownerCommands.findIndex(({ commandId }) => commandId === gate))
+        expect(gate).toEqual({ role: 'sender', commandId: 'alm-ws-subscription-successor-sender-tokens-owner-generation' });
+        expect(ownerCommands.findIndex(({ commandId }) => commandId === gate?.commandId))
             .toBe(ownerCommands.findIndex(({ kind }) => kind === 'loop') + 1);
     });
 
@@ -241,23 +240,36 @@ describe('ALM topic subscription conformance', () => {
         expect(children[2]).not.toHaveProperty('absent');
     });
 
-    it('ends a publish loop only when the server expected exactly the awaited recipients and all confirmed, then cues it', () => {
-        const [delivery] = toTopicSubscriptionScenarios('ws');
-        const commands = delivery?.sender.commands ?? [];
-        const loop = commands.find(({ commandId }) => commandId === 'alm-ws-subscription-delivery-sender-publication-a');
-        const facts = (loop?.kind === 'loop' ? loop.commands : []).flatMap((command) =>
-            command.kind === 'assert' ? [{ source: command.source.split('.').at(-1), expected: command.expected }] : []
-        );
+    it.each(
+        [
+            { carrier: 'ws', outsideAudience: 0 },
+            { carrier: 'rtc', outsideAudience: 1 },
+            { carrier: 'rtc-with-ws-fallback', outsideAudience: 1 }
+        ] as const
+    )(
+        'ends a publish loop over $carrier once the receipt expects the awaited recipients and $outsideAudience outside, the rest confirming',
+        ({ carrier, outsideAudience }) => {
+            const [delivery] = toTopicSubscriptionScenarios(carrier);
+            for (const [producer, name] of [[delivery?.sender, 'publication-a'], [delivery?.publisherB, 'publication-c']] as const) {
+                const commands = producer?.commands ?? [];
+                const loop = commands.find(({ commandId }) => commandId === `${producer?.recipeId}-${name}`);
+                const facts = (loop?.kind === 'loop' ? loop.commands : []).flatMap((command) =>
+                    command.kind === 'assert' ? [{ source: command.source.split('.').at(-1), expected: command.expected }] : []
+                );
 
-        expect(facts).toEqual([
-            { source: 'expectedRecipientPeerIds', expected: 2 },
-            { source: 'confirmedRecipientPeerIds', expected: 2 }
-        ]);
-        expect(commands.slice(commands.indexOf(loop!) + 1).map(({ commandId }) => commandId).slice(0, 2)).toEqual([
-            'alm-ws-subscription-delivery-sender-cue-publication-a-confirmed',
-            'alm-ws-subscription-delivery-sender-cue-publication-a-confirmed-sent'
-        ]);
-    });
+                // The other producer holds `subscribe` without an election: over RTC it is frozen in and ends outside.
+                expect(facts, producer?.recipeId).toEqual([
+                    { source: 'expectedRecipientPeerIds', expected: 2 + outsideAudience },
+                    { source: 'confirmedRecipientPeerIds', expected: 2 },
+                    { source: 'outsideAudienceRecipientPeerIds', expected: outsideAudience }
+                ]);
+                expect(commands.slice(commands.indexOf(loop!) + 1).map(({ commandId }) => commandId).slice(0, 2)).toEqual([
+                    `${producer?.recipeId}-cue-${name}-confirmed`,
+                    `${producer?.recipeId}-cue-${name}-confirmed-sent`
+                ]);
+            }
+        }
+    );
 
     it('holds every delivery subscriber\'s election until both producers cued their confirmed copy', () => {
         const [delivery] = toTopicSubscriptionScenarios('ws');
@@ -282,20 +294,43 @@ describe('ALM topic subscription conformance', () => {
         }
     });
 
-    it('expects the reconnected sibling to keep an active token and miss the publication its closed presence excludes', () => {
-        const reconnect = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-reconnect');
-        const sibling = reconnect?.sibling?.commands ?? [];
-        const publication = reconnect?.sender.commands.find(({ commandId }) => commandId === 'alm-ws-subscription-reconnect-sender-publication');
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'publishes to the reconnected sibling only after its re-asserted token reads active, and expects it to miss the publication over %s',
+        (carrier) => {
+            const reconnect = toTopicSubscriptionScenarios(carrier).find(({ scenarioId }) => scenarioId === 'subscription-reconnect');
+            const prefix = `alm-${carrier}-subscription-reconnect`;
+            const sibling = reconnect?.sibling?.commands ?? [];
+            const sender = reconnect?.sender.commands ?? [];
+            const continuation = reconnect?.continuation?.recipe.commands ?? [];
+            const loopFacts = (commands: readonly RallarBlackBoxTestCommand[], name: string) => {
+                const loop = commands.find(({ commandId }) => commandId === `${prefix}-sender-${name}`);
+                return loop?.kind === 'loop' ? loop.commands.filter(({ kind }) => kind === 'assert') : [];
+            };
+            const index = (name: string) => sender.findIndex(({ commandId }) => commandId === `${prefix}-sender-${name}`);
+            const gate = `${prefix}-sibling-assert-tokens-after-rows-active`;
 
-        expect(sibling.find(({ commandId }) => commandId?.endsWith('-assert-tokens-after-rows-active'))).toMatchObject({
-            operator: 'equals',
-            expected: 'active'
-        });
-        expect(sibling.find(({ commandId }) => commandId?.endsWith('-absent-publication'))).toMatchObject({
-            absent: true
-        });
-        expect(publication?.kind === 'loop' ? publication.commands.filter(({ kind }) => kind === 'assert') : [])
-            .toMatchObject([{ expected: 1 }, { expected: 1 }]);
+            expect(sibling.find(({ commandId }) => commandId === gate)).toMatchObject({ operator: 'equals', expected: 'active' });
+            expect(sibling.find(({ commandId }) => commandId?.endsWith('-absent-publication'))).toMatchObject({ absent: true });
+            // An RTC sender freezes the sibling in until its snapshot drops the closed presence, so a probe goes first.
+            expect(loopFacts(sender, 'probe-receiver-alone')).toMatchObject([{ expected: 1 }, { expected: 1 }, { expected: 0 }]);
+            expect(index('probe-two-subscribers')).toBeLessThan(index('probe-receiver-alone'));
+            // The publication leaves only once the sibling's row names its new generation and its token reads active.
+            expect(index('publication')).toBe(-1);
+            expect(reconnect?.continuation?.gate).toEqual({ role: 'sibling', commandId: gate });
+            expect(reconnect?.continuation?.recipe.recipeId).toBe(`${prefix}-sender-continuation`);
+            expect(loopFacts(continuation, 'publication')).toMatchObject([{ expected: 1 }, { expected: 1 }, { expected: 0 }]);
+            // The continuation runs on the sender's open connection, so its ids stay apart from the first recipe's.
+            const firstIds = new Set(toFlatCommands(sender).map(({ commandId }) => commandId));
+            expect(toFlatCommands(continuation).filter(({ commandId }) => firstIds.has(commandId))).toEqual([]);
+            expect(continuation.map(({ kind }) => kind)).not.toContain('rtc.connect');
+        }
+    );
+
+    it('holds back no continuation in any other topic subscription cell', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const continued = toTopicSubscriptionScenarios(carrier).filter(({ continuation }) => continuation !== undefined);
+            expect(continued.map(({ scenarioId }) => scenarioId), carrier).toEqual(['subscription-reconnect']);
+        }
     });
 
     it('keeps the successor\'s election, which the replaced owner page\'s later row reads name', () => {

@@ -50,6 +50,7 @@ describe('outbound control version candidate', () => {
         const control = newALNackControlMessage({ v: 4, msgId: 'nack', senderId: 'peer-1', ts: 1_000, traceId: 'trace-outbound-control-version-candidate' }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
+            logicalRecipientPeerId: 'peer-1',
             toPeerId: 'self',
             reason: 'not-yet-in-sync',
             observedAtEpochMs: 1_000
@@ -64,7 +65,8 @@ describe('outbound control version candidate', () => {
             owner: 'self',
             ownerVersion: Object.freeze({ senderId: 'self', version: 7 }),
             sent: Object.freeze(sent),
-            history: { kind: 'nacks', values: [] }
+            history: { kind: 'nacks', values: [] },
+            acknowledgements: []
         });
         const retention = normalizeALRuntimeStoreRetention();
         const candidate = computeALOutboundControlAdmission(read, retention);
@@ -120,12 +122,14 @@ describe('outbound control version candidate', () => {
                 mode: 'hop',
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
+                outsideAudiencePeerIds: [],
                 timeoutMs: 2_000,
                 maxAttempts: 3,
                 attempts: 3,
                 deadlineAtMs: nowMs - 1
             },
-            history: { kind: 'acks', values: [] }
+            history: { kind: 'acks', values: [] },
+            acknowledgements: []
         });
         const retention = normalizeALRuntimeStoreRetention();
         const deadlineMs = sent.reference.expiresAtMs;
@@ -167,6 +171,7 @@ describe('outbound control version candidate', () => {
         }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
+            logicalRecipientPeerId: 'peer-1',
             toPeerId: 'self',
             reason: 'not-yet-in-sync',
             observedAtEpochMs: Date.now()

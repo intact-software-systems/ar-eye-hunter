@@ -32,6 +32,7 @@ describe('browser session delivery observation', () => {
             expectedRecipientPeerIds: ['current-hop'],
             confirmedRecipientPeerIds: ['current-hop'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             complete: true,
             traceId: 'trace-browser-delivery-observation'
         });

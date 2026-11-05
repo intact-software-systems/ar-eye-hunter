@@ -224,7 +224,8 @@ describe('the RTC origin retry of a receiver receipt', () => {
         expect(acknowledgements().at(-1)).toMatchObject({
             confirmedHopPeerIds: ['r'],
             unconfirmedHopPeerIds: [],
-            confirmedRecipientPeerIds: ['b', 'r'],
+            // The confirmed recipients follow the frozen audience's order, like the other recipient lists.
+            confirmedRecipientPeerIds: ['r', 'b'],
             unconfirmedRecipientPeerIds: [],
             complete: true
         });

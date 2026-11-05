@@ -27,7 +27,8 @@ const RECEIPT_WINDOW = [
     'assert-receipt-receiptMode-1',
     'assert-receipt-expectedRecipientPeerIds-count-1',
     'assert-receipt-confirmedRecipientPeerIds-count-1',
-    'assert-receipt-unconfirmedRecipientPeerIds-count-1'
+    'assert-receipt-unconfirmedRecipientPeerIds-count-1',
+    'assert-receipt-outsideAudienceRecipientPeerIds-count-1'
 ] as const;
 
 type LeaderScenarioId = (typeof LEADER_SCENARIO_IDS)[number];
@@ -166,7 +167,7 @@ describe('leader-confirms', () => {
             expect(findCommand(scenario.sender, 'assert-receipt-receiptMode-1')).toMatchObject({ expected: 'leader' });
             expect(findCommand(scenario.sender, 'assert-receipt-expectedRecipientPeerIds-count-1')).toMatchObject({ expected: 1 });
             expect(readAlmReceiptRolesEntries(scenario.sender)).toEqual([
-                { handleId: `alm-${carrier}-leader-confirms-send-1`, confirmed: ['receiver'], unconfirmed: [] }
+                { handleId: `alm-${carrier}-leader-confirms-send-1`, confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] }
             ]);
         }
     );

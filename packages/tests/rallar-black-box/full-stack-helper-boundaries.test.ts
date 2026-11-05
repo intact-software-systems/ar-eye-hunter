@@ -707,10 +707,14 @@ describe('recipient outcome ownership after its connect barrier', () => {
                 readSnapshot: () => readControlRun(request, 'outcome-owner')
             };
             const running = runner === 'agents'
-                ? runRecipesOnAgents({
-                    ...run,
-                    agents: new Map([['sender', run.sender], ['receiver', run.receiver], ['recipient-b', { agentId: 'third' }]])
-                }, new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['recipient-b', third]]))
+                ? runRecipesOnAgents(
+                    {
+                        ...run,
+                        agents: new Map([['sender', run.sender], ['receiver', run.receiver], ['recipient-b', { agentId: 'third' }]])
+                    },
+                    new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['recipient-b', third]]),
+                    undefined
+                )
                 : runner === 'same-context'
                 ? runRecipeTrioOnSameContext(run, {
                     owner: { ...run.sender, page },

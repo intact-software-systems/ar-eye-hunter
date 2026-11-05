@@ -31,6 +31,7 @@ Deno.test('private receipt observer uses the existing console sink with real pro
             originPeerId: 'origin',
             expectedRecipientPeerIds: ['peer'],
             confirmedRecipientPeerIds: ['peer'],
+            outsideAudienceRecipientPeerIds: [],
             phase: 'complete',
             snapshotVersion: 7,
             observedAtEpochMs: 1000

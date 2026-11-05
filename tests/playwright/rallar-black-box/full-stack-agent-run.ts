@@ -5,6 +5,9 @@ import type {
 } from '@playwright/test';
 
 import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import type {
+    AlmConformanceContinuation
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     cleanupRallarPage,
@@ -26,6 +29,7 @@ import {
     type TwoAgentRun,
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
+import { waitForRecipeGate } from './full-stack-recipe-gate.ts';
 
 /** A run's agents by the role each plays in its scenarios; the sender and the receiver are always among them. */
 export interface AgentRecipeRun extends RecipeRun {
@@ -78,15 +82,30 @@ export async function createAgentRun(input: CreateAgentRunInput): Promise<AgentR
     }
 }
 
+/** Each role's recipe outcome, and the outcome of the sender's continuation when the scenario holds one back. */
+export interface AgentRunOutcomes {
+    readonly roles: ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>;
+    readonly continuation: RecipeRunOutcome | undefined;
+}
+
+/**
+ * A gate's command may sit at the end of its role's recipe: the gate waits as long as that recipe may run. In the S3-ii
+ * lanes the reconnect sibling, whose step gates the sender's continuation, ran 11.8 s over `ws` and 12.3–13.6 s over
+ * `rtc` and `rtc-with-ws-fallback`, and the longest four-role recipe 15.4 s, so the budget keeps over ten times that.
+ */
+const CONTINUATION_GATE_TIMEOUT_MS = 180_000;
+
 /**
  * The receiver starts first: its prologue creates the run's group and owns it, so a role that leaves the group is
  * never its only owner, whose leave is refused, and the owner's grants name a room that exists. Every other recipient
- * starts once the one before it connected, and the sender last.
+ * starts once the one before it connected, and the sender last. A continuation starts on the sender's agent after the
+ * sender's first recipe, once its gate passed.
  */
 export async function runRecipesOnAgents(
     run: AgentRecipeRun,
-    recipes: ReadonlyMap<AlmConformanceRole, RallarBlackBoxTestRecipe>
-): Promise<ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>> {
+    recipes: ReadonlyMap<AlmConformanceRole, RallarBlackBoxTestRecipe>,
+    continuation: AlmConformanceContinuation | undefined
+): Promise<AgentRunOutcomes> {
     const started = new Map<AlmConformanceRole, StartedRecipeRun>();
     for (const role of toStartOrder([...recipes.keys()])) {
         const agent = requireRoleValue(run.agents, role);
@@ -98,6 +117,43 @@ export async function runRecipesOnAgents(
                 : await startRecipientRecipeRun(run, agent, recipe)
         );
     }
+    const continued = continuation === undefined ? undefined : await startContinuation(run, continuation, started);
+    const [roles, continuationOutcome] = await Promise.allSettled([
+        readRoleOutcomes(started),
+        continued?.readOutcome()
+    ]);
+    return { roles: requireSettled(roles), continuation: requireSettled(continuationOutcome) };
+}
+
+function requireSettled<T>(settled: PromiseSettledResult<T>): T {
+    if (settled.status === 'rejected') {
+        throw settled.reason;
+    }
+    return settled.value;
+}
+
+/**
+ * The continuation is the sender's later steps, so it starts once the sender's first recipe ended, whatever its
+ * outcome, and the gate passed: a page runs its recipes side by side, and a gate that passes early must not let the
+ * later steps overtake the first.
+ */
+async function startContinuation(
+    run: AgentRecipeRun,
+    continuation: AlmConformanceContinuation,
+    started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>
+): Promise<StartedRecipeRun> {
+    await requireRoleValue(started, 'sender').readOutcome();
+    await waitForRecipeGate(run, {
+        commandId: continuation.gate.commandId,
+        gatingRun: requireRoleValue(started, continuation.gate.role),
+        timeoutMs: CONTINUATION_GATE_TIMEOUT_MS
+    });
+    return await startRecipeRun(run, requireRoleValue(run.agents, 'sender'), continuation.recipe);
+}
+
+async function readRoleOutcomes(
+    started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>
+): Promise<ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>> {
     const settled = await Promise.allSettled(
         [...started].map(async ([role, recipeRun]) => [role, await recipeRun.readOutcome()] as const)
     );

@@ -16,6 +16,7 @@ import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-t
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -23,7 +24,6 @@ import {
     createInitialALDeliveryLifecycle,
     isALDeliveryTerminal,
     isALDeliveryTerminalState,
-    type ALDeliveryCarrier,
     type ALDeliveryCarrierFallback,
     type ALDeliveryDurabilityDowngrade,
     type ALDeliveryLifecycle,
@@ -1427,6 +1427,7 @@ function toPortDeliveryObservation(
         expectedRecipientPeerIds: message?.receiptEvidence.expectedRecipientPeerIds ?? [],
         confirmedRecipientPeerIds: message?.receiptEvidence.confirmedRecipientPeerIds ?? [],
         unconfirmedRecipientPeerIds: message?.receiptEvidence.unconfirmedRecipientPeerIds ?? [],
+        outsideAudienceRecipientPeerIds: message?.receiptEvidence.outsideAudienceRecipientPeerIds ?? [],
         attempts: message?.attemptCarriers.length ?? 0,
         attemptCarriers: message?.attemptCarriers ?? [],
         attemptOutcomes: message?.attemptOutcomes ?? [],
@@ -1507,7 +1508,8 @@ function createInitialPortReceiptEvidence(
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds,
         confirmedRecipientPeerIds: [],
-        unconfirmedRecipientPeerIds: expectedRecipientPeerIds
+        unconfirmedRecipientPeerIds: expectedRecipientPeerIds,
+        outsideAudienceRecipientPeerIds: []
     };
 }
 
@@ -1549,6 +1551,7 @@ function computePortAcknowledgement(
         expectedRecipientPeerIds: receiptEvidence.expectedRecipientPeerIds,
         confirmedRecipientPeerIds: receiptEvidence.confirmedRecipientPeerIds,
         unconfirmedRecipientPeerIds: receiptEvidence.unconfirmedRecipientPeerIds,
+        outsideAudienceRecipientPeerIds: receiptEvidence.outsideAudienceRecipientPeerIds,
         complete: receiptEvidence.unconfirmedRecipientPeerIds.length === 0,
         traceId: toPortMessageTrace(message).traceId
     });

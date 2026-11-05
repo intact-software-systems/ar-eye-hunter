@@ -1,8 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import {
     decodeALPeerControlMessage,
     type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -10,10 +12,8 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../../al-admission-work-backend.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
-import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALStorageUnavailable } from '../../storage/al-storage-unavailable.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
@@ -319,7 +319,7 @@ export class ALOutboundControlAdmission<TPrepared> {
                 owner,
                 ...await this.readOwnedControlSurface(session, owner, targetMsgId),
                 sent: await this.reads.readStoredMessage(session, targetMsgId),
-                history: await this.readControlHistory(session, parsed, targetMsgId)
+                ...await this.readControlHistories(session, parsed, targetMsgId)
             };
         });
     }
@@ -339,21 +339,28 @@ export class ALOutboundControlAdmission<TPrepared> {
         };
     }
 
-    private async readControlHistory(
+    /** The control's own history, and the ACK history the hop view reads whatever kind of control this is. */
+    private async readControlHistories(
         session: ALAdmissionReadSession,
         parsed: ALPeerControlMessage,
         msgId: string
-    ) {
+    ): Promise<Pick<ALControlAdmissionRead, 'history' | 'acknowledgements'>> {
+        const acknowledgements = await this.reads.readAcks(session, msgId);
         switch (parsed.type) {
             case 'ack':
-                return await this.reads.readControlHistory(session, 'acks', msgId) ??
-                    { kind: 'acks' as const, values: [] };
+                return { history: { kind: 'acks', values: acknowledgements }, acknowledgements };
             case 'nack':
-                return await this.reads.readControlHistory(session, 'nacks', msgId) ??
-                    { kind: 'nacks' as const, values: [] };
+                return {
+                    history: await this.reads.readControlHistory(session, 'nacks', msgId) ??
+                        { kind: 'nacks', values: [] },
+                    acknowledgements
+                };
             case 'repair':
-                return await this.reads.readControlHistory(session, 'repairs', msgId) ??
-                    { kind: 'repairs' as const, values: [] };
+                return {
+                    history: await this.reads.readControlHistory(session, 'repairs', msgId) ??
+                        { kind: 'repairs', values: [] },
+                    acknowledgements
+                };
         }
     }
 

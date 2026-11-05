@@ -48,7 +48,6 @@ import {
     type AlmConformanceIdentityParticipant
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import { assessSubscriptionRevokeDisconnected } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
-import { toSubscriptionSuccessorGateCommandId } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-successor.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
@@ -459,14 +458,21 @@ async function runAgentScenarios(
     for (const planned of selectScenarios(toRunSelection(run), carrier, family)) {
         const scenario = family === 'four-role' ? toOwnRoomScenario(run, carrier, planned) : planned;
         const recipes = new Map(scenario.roles.map((role) => [role, requireRoleRecipe(scenario, role)] as const));
-        const outcomes = await runRecipesOnAgents(run, recipes);
+        const outcomes = await runRecipesOnAgents(run, recipes, scenario.continuation);
         const evidence = scenario.roles.map((role) => ({
             role,
             agent: requireRoleAgent(run, role),
-            outcome: requireRoleOutcome(outcomes, role)
+            outcome: requireRoleOutcome(outcomes.roles, role)
         }));
         for (const { role, outcome } of evidence) {
             expect.soft(outcome.ok, `${scenario.scenarioKey} ${role}: ${outcome.summary}`).toBe(true);
+        }
+        if (outcomes.continuation !== undefined) {
+            expect.soft(
+                outcomes.continuation.ok,
+                `${scenario.scenarioKey} sender continuation: ${outcomes.continuation.summary}`
+            )
+                .toBe(true);
         }
         if (hasAlmIdentityEvidence(scenario.sender)) {
             await assertScenarioIdentity(run, scenario, evidence);
@@ -566,9 +572,7 @@ async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
         const successor = await openSuccessorPage({ testInfo, run, owner });
         participants.push(successor);
         const ownerEnd = scenario.scenarioId === 'flush-on-hide' ? 'flush-and-crash' : 'close';
-        const successorGate = scenario.scenarioId === 'subscription-successor'
-            ? toSubscriptionSuccessorGateCommandId(scenario.sender)
-            : undefined;
+        const successorGate = scenario.successorGate?.commandId;
         const outcome = await runRecipeTrioOnSameContext(run, { owner, successor, ownerEnd, successorGate }, {
             ...scenario,
             successor: scenario.successor

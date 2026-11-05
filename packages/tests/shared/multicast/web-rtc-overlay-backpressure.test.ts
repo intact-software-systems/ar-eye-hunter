@@ -295,6 +295,7 @@ describe('what never reads backpressure (D184)', () => {
                     originPeerId: 'a',
                     expectedRecipientPeerIds: ['b', 'c'],
                     confirmedRecipientPeerIds: ['b', 'c'],
+                    outsideAudienceRecipientPeerIds: [],
                     snapshotVersion: 4,
                     phase: 'complete',
                     observedAtEpochMs: Date.now()
@@ -321,7 +322,7 @@ describe('what never reads backpressure (D184)', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-backpressure' },
-            { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+            { msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
         ));
         await vi.advanceTimersByTimeAsync(100);
         holdBuffered(fixture.channels.b!, 0);

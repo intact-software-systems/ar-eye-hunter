@@ -1,8 +1,8 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import { decodeALControlMessage, type ALAckPayload } from '../../../al-contracts/al-control.ts';
+import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
-import type { ALStoreDurability } from '../../al-runtime-stores.ts';
-import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkBatchObservations } from '../../work/al-work-batch-observations.ts';
 import type { ALWorkObservationDeferral } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkOutcome } from '../../work/al-work-queue-port.ts';
@@ -12,6 +12,7 @@ import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import type { ALPersistedInboundEffect } from '../al-inbound-work-entry.ts';
 import type { ALInboundControlAdmissionResult } from './al-inbound-control-admission.ts';
 import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-control-admission.ts';
+import type { ALInboundNackAdmissionCandidate } from './compute-al-inbound-nack-admission.ts';
 
 export namespace ALInboundAcknowledgementEvidence {
     /** Explicitly installed by a capturing consumer; ordinary callable sinks allocate no ACK evidence. */
@@ -48,18 +49,32 @@ export namespace ALInboundAcknowledgementEvidence {
         readonly defer: ALWorkObservationDeferral | undefined;
     }
 
-    /** The ACK's own trace and correlation close it; its trace is the one of the message it acknowledges. */
-    export interface Identity extends ALMessageTrace {
+    /**
+     * A control's own trace and correlation close it; its trace is the one of the message it answers. The relay admits
+     * a child's ACK and its `not-subscribed` NACK, so the evidence covers those two controls and no other.
+     */
+    export type Identity = AckIdentity | NackIdentity;
+
+    export interface ControlIdentity extends ALMessageTrace {
         readonly controlMsgId: string;
         readonly controlSenderId: string;
         readonly subjectMsgId: string;
-        readonly originPeerId: string;
         readonly logicalRecipientPeerId: string;
         readonly fromPeerId: string;
         readonly toPeerId: string;
         readonly carrier: ALDeliveryCarrier;
-        readonly status: ALAckPayload['status'];
         readonly producerObservedAtEpochMs: number;
+    }
+
+    export interface AckIdentity extends ControlIdentity {
+        readonly control: 'ack';
+        readonly originPeerId: string;
+        readonly status: ALAckPayload['status'];
+    }
+
+    /** A NACK names no origin or status: the relay's message-owner row is its only word on the origin. */
+    export interface NackIdentity extends ControlIdentity {
+        readonly control: 'nack';
     }
 
     export interface Candidate {
@@ -112,7 +127,7 @@ export namespace ALInboundAcknowledgementEvidence {
     }
 }
 
-/** Closed facts of one ACK invocation; it never reads stores, generates IDs, reads clocks or changes work. */
+/** Closed facts of one ACK or NACK invocation; it never reads stores, generates IDs, reads clocks or changes work. */
 export class ALInboundAcknowledgementEvidence {
     private readonly attempts: ALInboundAcknowledgementEvidence.Attempt[] = [];
     private claim: ALInboundAcknowledgementEvidence.Claim | undefined;
@@ -136,7 +151,7 @@ export class ALInboundAcknowledgementEvidence {
 
     static tryCreate(input: ALInboundAcknowledgementEvidence.Input): ALInboundAcknowledgementEvidence | undefined {
         try {
-            const identity = toAcknowledgementIdentity(input.msg, input.carrier);
+            const identity = toControlIdentity(input.msg, input.carrier);
             return identity === undefined ? undefined : new this(identity, input.sink, input.workerId);
         }
         catch {
@@ -152,7 +167,7 @@ export class ALInboundAcknowledgementEvidence {
             if (payload.kind !== 'admit-control' && payload.kind !== 'send-control') {
                 return undefined;
             }
-            const identity = toAcknowledgementIdentity(payload.msg, carrier);
+            const identity = toControlIdentity(payload.msg, carrier);
             if (identity === undefined) {
                 return undefined;
             }
@@ -187,14 +202,17 @@ export class ALInboundAcknowledgementEvidence {
         }
     }
 
-    candidate(candidate: ALInboundControlAdmissionCandidate, validated: boolean): void {
+    candidate(
+        candidate: ALInboundControlAdmissionCandidate | ALInboundNackAdmissionCandidate,
+        validated: boolean
+    ): void {
         try {
             const generated = candidate.upwardEffects.map((effect) => {
                 const identity = effect.payload.kind === 'send-control'
-                    ? toAcknowledgementIdentity(effect.payload.msg, effect.carrier)
+                    ? toControlIdentity(effect.payload.msg, effect.carrier)
                     : undefined;
                 if (identity === undefined) {
-                    throw new TypeError('Expected acknowledgement work');
+                    throw new TypeError('Expected relayed control work');
                 }
                 return identity;
             });
@@ -317,26 +335,42 @@ export class ALInboundAcknowledgementEvidence {
     }
 }
 
-function toAcknowledgementIdentity(
+function toControlIdentity(
     msg: ALMessage,
     carrier: ALDeliveryCarrier
 ): ALInboundAcknowledgementEvidence.Identity | undefined {
-    const decoded = decodeALControlMessage(msg);
-    if (decoded.left || decoded.right!.type !== 'ack') {
-        return undefined;
-    }
-    const ack = decoded.right!.payload;
-    return Object.freeze({
+    const control = decodeALControlMessage(msg).right;
+    const envelope = {
         controlMsgId: msg.id.msgId,
         controlSenderId: msg.id.senderId,
-        subjectMsgId: ack.ackedMsgId,
-        originPeerId: ack.originPeerId,
-        logicalRecipientPeerId: ack.logicalRecipientPeerId,
-        fromPeerId: ack.fromPeerId,
-        toPeerId: ack.toPeerId,
         carrier,
-        status: ack.status,
-        producerObservedAtEpochMs: ack.observedAtEpochMs,
         ...toALMessageTrace(msg)
-    });
+    };
+    if (control?.type === 'ack') {
+        const ack = control.payload;
+        return Object.freeze({
+            control: 'ack',
+            ...envelope,
+            subjectMsgId: ack.ackedMsgId,
+            originPeerId: ack.originPeerId,
+            logicalRecipientPeerId: ack.logicalRecipientPeerId,
+            fromPeerId: ack.fromPeerId,
+            toPeerId: ack.toPeerId,
+            status: ack.status,
+            producerObservedAtEpochMs: ack.observedAtEpochMs
+        });
+    }
+    if (control?.type === 'nack' && control.payload.reason === 'not-subscribed') {
+        const nack = control.payload;
+        return Object.freeze({
+            control: 'nack',
+            ...envelope,
+            subjectMsgId: nack.msgId,
+            logicalRecipientPeerId: nack.logicalRecipientPeerId,
+            fromPeerId: nack.fromPeerId,
+            toPeerId: nack.toPeerId,
+            producerObservedAtEpochMs: nack.observedAtEpochMs
+        });
+    }
+    return undefined;
 }

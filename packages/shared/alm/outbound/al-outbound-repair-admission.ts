@@ -20,18 +20,23 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
     ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundSettlementEmitter
+    ALOutboundSettlementEmitter,
+    ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import {
     controlTargetMsgId,
     toALOutboundControlRepairHint,
     type ALOutboundControlSource
 } from './compute-al-outbound-control-admission.ts';
+import { toALOutboundAdmissionVerdict } from './compute-al-outbound-dispatch.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
+import { resolveALOutboundReplanRefusalSettlement } from './control/resolve-al-outbound-replan-refusal-settlement.ts';
+import { toALOutboundEndReceiptBundle } from './control/to-al-outbound-end-receipt-bundle.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
@@ -53,7 +58,10 @@ export namespace ALOutboundRepairAdmission {
         /** The composition's fixed hops, the sender's own beside a plan's tracked next hops; undefined for none. */
         readonly hopPeerIds: readonly string[] | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
-        /** The lane's guarded emitter: where a receipt and a not-yet-in-sync budget state that they ran out. */
+        /**
+         * The lane's guarded emitter: where a receipt and a not-yet-in-sync budget state that they ran out, and a
+         * receipt whose message a revoked publisher may no longer re-send states that refusal.
+         */
         readonly settlements: ALOutboundSettlementEmitter;
     }
 
@@ -224,26 +232,58 @@ export class ALOutboundRepairAdmission<TPrepared> {
             await this.commitClearPendingAck(msg, pending, read.clientRecord?.version);
             return;
         }
+        const refusal = read.plan &&
+            resolveALOutboundReplanRefusalSettlement(msg, toALOutboundAdmissionVerdict(read.plan));
+        if (refusal) {
+            await this.commitRefusedReceipt(msg, refusal, read.clientRecord?.version);
+            return;
+        }
         if (pending.attempts >= pending.maxAttempts) {
             await this.commitReceiptExhausted(msg, pending, read.clientRecord?.version);
             return;
         }
+        await this.commitAckTimeoutRetry({ msg, pending, messageExpiresAtMs }, {
+            expectedVersion: read.clientRecord?.version,
+            replannable: read.plan !== undefined && !read.plan.dropReason
+        });
+    }
 
+    /** The receipt's next window, and its repair hint when this peer can re-plan the message. */
+    private async commitAckTimeoutRetry(
+        receipt: ALOutboundRepairAdmission.RetriedReceipt,
+        retry: ALOutboundRepairAdmission.AckTimeoutRetry
+    ): Promise<void> {
+        const { pending } = receipt;
         const nextPending: ALOutboundPendingAckSnapshot = {
             ...pending,
             attempts: pending.attempts + 1,
             deadlineAtMs: this.readNowMs() + pending.timeoutMs
         };
-        const bundle = this.toAckTimeoutRepairBundle(
-            { msg, pending: nextPending, messageExpiresAtMs },
-            {
-                expectedVersion: read.clientRecord?.version,
-                replannable: read.plan !== undefined && !read.plan.dropReason
-            }
+        const status = await this.admissionStore.commitBundle(
+            this.toAckTimeoutRepairBundle({ ...receipt, pending: nextPending }, retry)
         );
-        const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound ack timeout commit conflict');
+        }
+    }
+
+    /**
+     * A re-plan refused for good ends the receipt under the version its decision read: a same-sender commit since, such
+     * as a completing ACK, conflicts and the retry decides again; the commit's success states the refusal once.
+     */
+    private async commitRefusedReceipt(
+        msg: ALMessage,
+        refusal: ALOutboundSettlementFact,
+        expectedVersion: number | undefined
+    ): Promise<void> {
+        const status = await this.admissionStore.commitBundle(
+            toALOutboundEndReceiptBundle(msg.id.senderId, msg.id.msgId, expectedVersion)
+        );
+        if (status === 'conflict') {
+            throw new RetryableConflictError('Outbound receipt refusal commit conflict');
+        }
+        if (status === 'committed') {
+            this.dependencies.settlements(refusal);
         }
     }
 
@@ -258,7 +298,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return;
         }
         await this.admissionStore.commitBundle(
-            toEndReceiptBundle(read.clientRecord.senderId, msgId, read.clientRecord.version)
+            toALOutboundEndReceiptBundle(read.clientRecord.senderId, msgId, read.clientRecord.version)
         );
     }
 
@@ -271,7 +311,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return;
         }
         const status = await this.admissionStore.commitBundle(
-            toEndReceiptBundle(clientRecord.senderId, msgId, clientRecord.version)
+            toALOutboundEndReceiptBundle(clientRecord.senderId, msgId, clientRecord.version)
         );
         if (status === 'conflict') {
             throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
@@ -288,7 +328,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         retry: ALOutboundRepairAdmission.AckTimeoutRetry
     ): ALOutboundCommitBundle<TPrepared> {
         const { msg, pending, messageExpiresAtMs } = receipt;
-        const failedPeerIds = pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId));
+        const failedPeerIds = toALOutboundReceiptClasses(pending).unconfirmedPeerIds;
         const repairHint: ALOutboundDurableEffectWrite<TPrepared> = {
             effectId: toALOutboundEffectId([
                 'repair-hint',
@@ -345,7 +385,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         expectedVersion?: number
     ): Promise<void> {
         const status = await this.admissionStore.commitBundle(
-            toEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
+            toALOutboundEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
         );
         if (status === 'conflict') {
             throw new RetryableConflictError(
@@ -364,7 +404,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         expectedVersion: number | undefined
     ): Promise<void> {
         const status = await this.admissionStore.commitBundle(
-            toEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
+            toALOutboundEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
         );
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound receipt exhaustion commit conflict');
@@ -397,21 +437,4 @@ export class ALOutboundRepairAdmission<TPrepared> {
             }
         };
     }
-}
-
-/** The commit that ends one receipt: its pending-ACK row and its repair-attempt row, under the sender's fence. */
-function toEndReceiptBundle<TPrepared>(
-    senderId: string,
-    msgId: string,
-    expectedVersion: number | undefined
-): ALOutboundCommitBundle<TPrepared> {
-    return {
-        senderId,
-        expectedVersion,
-        mutations: [
-            { kind: 'delete-pending-ack', originPeerId: senderId, msgId },
-            { kind: 'delete-repair-attempt', msgId }
-        ],
-        durableEffects: []
-    };
 }

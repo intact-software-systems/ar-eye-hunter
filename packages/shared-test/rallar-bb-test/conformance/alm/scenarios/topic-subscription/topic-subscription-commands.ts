@@ -22,10 +22,12 @@ import {
 } from './topic-subscription-polls.ts';
 
 /**
- * Every cell is a granted-topic proof of the WS path: a granted topic rides RTC only as a signed `ack: 'none'` room
- * multicast with a verified publisher proof, delivered to `subscribe(handler)`; every other granted send goes over WS.
+ * The granted-topic proof's carriers, which a cell narrows only for a reason of its own: over ws the server's
+ * intersection decides who receives, and over rtc and the fallback carrier a receipted granted send rides RTC as a
+ * signed room multicast, frozen to the sessions whose principal holds `subscribe`, which deliver to
+ * `subscribe(handler)` only under an active election.
  */
-export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];
+export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 
 /** Every cell's connects listen on the granted topic and open their room channel there as granted. */
 export const TOPIC_SUBSCRIPTION_SELECTOR = { topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, access: 'granted' } as const;
@@ -174,7 +176,8 @@ function toPermissionName(grant: TopicGrantInput): string {
     return `${grant.publish ? 'p' : ''}${grant.subscribe ? 's' : ''}`;
 }
 
-function toGroupPath(step: AlmConformanceStepInput): string {
+/** The REST path of the cell's room, which every owner and member request extends. */
+export function toGroupPath(step: AlmConformanceStepInput): string {
     const group = step.input.group;
     return `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups/${group.groupId}`;
 }

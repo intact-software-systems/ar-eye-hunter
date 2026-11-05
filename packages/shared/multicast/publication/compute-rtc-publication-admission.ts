@@ -20,6 +20,8 @@ export interface RtcPublicationAdmissionInput {
     readonly signatureValid: boolean;
     /** Whether this tab's token for the message's room and topic is `active`. */
     readonly ownSubscriptionActive: boolean;
+    /** Whether the frame's frozen audience names this session, so its origin counts it as a recipient. */
+    readonly frozenRecipient: boolean;
     readonly nowEpochMs: number;
 }
 
@@ -38,8 +40,12 @@ export interface RtcPublicationRefusal {
     readonly code: RtcPublicationRefusalCode;
 }
 
+/**
+ * `forward-not-subscribed`: a recipient the origin froze into the audience that may not subscribe, or holds no active
+ * token, forwards and answers that it is not subscribed; `forward-only`: a session outside the audience only forwards.
+ */
 export interface RtcPublicationAdmitted {
-    readonly delivery: 'deliver' | 'forward-only';
+    readonly delivery: 'deliver' | 'forward-only' | 'forward-not-subscribed';
 }
 
 /**
@@ -109,7 +115,10 @@ function toPublicationDelivery(
         return toRefusal('no-publish-grant');
     }
     const subscribed = resolveGroupPublicationPermissions(snapshot, input.selfPrincipalId, topicId).subscribe;
-    return Either.ofRight({ delivery: subscribed && input.ownSubscriptionActive ? 'deliver' : 'forward-only' });
+    if (subscribed && input.ownSubscriptionActive) {
+        return Either.ofRight({ delivery: 'deliver' });
+    }
+    return Either.ofRight({ delivery: input.frozenRecipient ? 'forward-not-subscribed' : 'forward-only' });
 }
 
 function resolveSessionPrincipalId(snapshot: GroupSnapshot, sessionId: string): string | undefined {

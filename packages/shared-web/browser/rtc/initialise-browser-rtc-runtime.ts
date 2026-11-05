@@ -85,7 +85,7 @@ export interface InitialiseRtcOverlayMulticastManagerInput {
     /** The session's transport faults, the same port its data channels decide their frames by. */
     readonly faultPort: TransportFaultPort;
     readonly grantedTopics: RtcGrantedTopicReader;
-    /** The page's one key, which signs each granted RTC publication. */
+    /** The session's one key, which signs each granted RTC publication. */
     readonly publicationCrypto: PublicationCrypto;
     /** The page's one verifier, which each granted RTC frame is verified by before it is forwarded or delivered. */
     readonly publicationVerifier: RtcPublicationProofVerifierPort;

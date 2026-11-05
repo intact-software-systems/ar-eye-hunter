@@ -1,13 +1,18 @@
-import { isALHopCompletionAck, type ALAckPayload } from '../../al-contracts/al-control.ts';
+import {
+    isALHopCompletionAck,
+    type ALAckPayload
+} from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
+import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 
 /**
  * What one peer knows of the relay tree: its own next hops, and those whose subtree completed (a leaf
@@ -20,7 +25,10 @@ export interface OverlayTree {
 
 /** A receipt row as far as its acknowledgement states it, with the local hop view of its origin. */
 export interface ToALOutboundAcknowledgementFactInput {
-    readonly receipt: Pick<ALOutboundPendingAckSnapshot, 'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds'>;
+    readonly receipt: Pick<
+        ALOutboundPendingAckSnapshot,
+        'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'
+    >;
     readonly hops: OverlayTree;
     readonly complete: boolean;
     /** The trace of the request whose commit moved the receipt. */
@@ -88,11 +96,14 @@ export function toALOutboundTrackedReceipt(
             }
         }
     }
+    const outsideAudiencePeerIds = (input.current?.outsideAudiencePeerIds ?? [])
+        .filter((peerId) => expectedPeerIds.has(peerId));
     return {
         msgId: input.msgId,
         mode,
         expectedPeerIds: [...expectedPeerIds],
         ackedPeerIds: [...ackedPeerIds],
+        outsideAudiencePeerIds,
         timeoutMs: input.tracking.timeoutMs,
         maxAttempts: input.tracking.maxAttempts,
         attempts: input.current?.attempts ?? 0,
@@ -125,9 +136,21 @@ export function acceptALOutboundPendingAckSnapshot(
     return { ...input.current, ackedPeerIds: [...ackedPeerIds] };
 }
 
+/** A `not-subscribed` NACK places its recipient outside the audience: neither confirmed nor still owed (PL10). */
+export function acceptALOutboundNotSubscribedNack(
+    current: ALOutboundPendingAckSnapshot,
+    logicalRecipientPeerId: string
+): ALOutboundPendingAckSnapshot {
+    return {
+        ...current,
+        outsideAudiencePeerIds: [...new Set([...current.outsideAudiencePeerIds, logicalRecipientPeerId])]
+    };
+}
+
 /**
  * The peer an ACK confirms in a receipt of this mode: the logical recipient it speaks for under
- * `receiver` and `leader`, and the hop that sent it otherwise. A hop ACK names the hop itself, so it never stands in
+ * `receiver` and `leader`, unless it is the hop completion of a recipient that delivered nothing, and the hop that
+ * sent it otherwise. A hop ACK names the hop itself, so it never stands in
  * for a logical recipient it did not name. Under `subtree` only the completion ACK of the hop itself
  * confirms it, never an ACK it relays for a recipient below it.
  */
@@ -135,7 +158,7 @@ export function toALOutboundAckedPeerId(mode: ALReceiptMode, ack: ALAckPayload):
     switch (mode) {
         case 'receiver':
         case 'leader':
-            return ack.logicalRecipientPeerId;
+            return isALRecipientConfirmationAck(ack) ? ack.logicalRecipientPeerId : undefined;
         case 'subtree':
             return isALHopCompletionAck(ack) ? ack.fromPeerId : undefined;
         case 'hop':
@@ -155,29 +178,35 @@ export function toALOutboundCompletedHopPeerIds(acks: readonly ALAckPayload[]): 
  */
 export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgementFactInput): ALOutboundSettlementFact {
     const { receipt, hops } = input;
-    const unconfirmed = receipt.expectedPeerIds.filter((peerId) => !receipt.ackedPeerIds.includes(peerId));
+    const classes = toALOutboundReceiptClasses(receipt);
     const receiverHops = isALLogicalReceiptMode(receipt.mode);
     return {
         kind: 'acknowledgement',
         msgId: receipt.msgId,
         traceId: input.traceId,
         mode: receipt.mode,
-        confirmedHopPeerIds: receiverHops ? hops.completedHopPeerIds : receipt.ackedPeerIds,
+        confirmedHopPeerIds: receiverHops ? hops.completedHopPeerIds : classes.confirmedPeerIds,
         unconfirmedHopPeerIds: receiverHops
             ? hops.nextHopPeerIds.filter((peerId) => !hops.completedHopPeerIds.includes(peerId))
-            : unconfirmed,
+            : classes.unconfirmedPeerIds,
         expectedRecipientPeerIds: receipt.expectedPeerIds,
-        confirmedRecipientPeerIds: receipt.ackedPeerIds,
-        unconfirmedRecipientPeerIds: unconfirmed,
+        confirmedRecipientPeerIds: classes.confirmedPeerIds,
+        unconfirmedRecipientPeerIds: classes.unconfirmedPeerIds,
+        outsideAudienceRecipientPeerIds: classes.outsideAudiencePeerIds,
         complete: input.complete
     };
 }
 
+/**
+ * Every expected peer is acked or outside the audience, and somebody confirmed: a receipt whose every recipient is
+ * outside confirmed nothing, so it stays open until its deadline. A receipt that expected nobody is complete.
+ */
 export function isALOutboundReceiptComplete(
-    pending: ALOutboundPendingAckSnapshot
+    pending: Pick<ALOutboundPendingAckSnapshot, 'expectedPeerIds' | 'ackedPeerIds' | 'outsideAudiencePeerIds'>
 ): boolean {
+    const classes = toALOutboundReceiptClasses(pending);
     return pending.expectedPeerIds.length === 0 ||
-        pending.expectedPeerIds.every((peerId) => pending.ackedPeerIds.includes(peerId));
+        (classes.confirmedPeerIds.length > 0 && classes.unconfirmedPeerIds.length === 0);
 }
 
 /**
@@ -192,7 +221,13 @@ export function toALOutboundEmptyAudienceReceipt<TPrepared>(
         return undefined;
     }
     return toALOutboundAcknowledgementFact({
-        receipt: { msgId: plan.msg.id.msgId, mode: 'receiver', expectedPeerIds: [], ackedPeerIds: [] },
+        receipt: {
+            msgId: plan.msg.id.msgId,
+            mode: 'receiver',
+            expectedPeerIds: [],
+            ackedPeerIds: [],
+            outsideAudiencePeerIds: []
+        },
         hops: { nextHopPeerIds: [], completedHopPeerIds: [] },
         complete: true,
         traceId: plan.msg.id.traceId

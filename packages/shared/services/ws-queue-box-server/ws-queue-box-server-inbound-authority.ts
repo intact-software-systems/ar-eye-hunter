@@ -442,6 +442,7 @@ export class WsQueueBoxServerInboundAuthority {
         const payload: ALNackPayload = {
             fromPeerId: this.#serverPeerId,
             toPeerId: message.id.senderId,
+            logicalRecipientPeerId: this.#serverPeerId,
             msgId: message.id.msgId,
             reason: authorization.reason,
             observedAtEpochMs,

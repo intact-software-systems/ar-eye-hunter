@@ -141,7 +141,8 @@ describe('inbound admission preparation boundary', () => {
             msgId: prepared.read.msg.id.msgId,
             senderId: 'sender',
             source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-            supersedenceKey: null
+            supersedenceKey: null,
+            deliveredLocally: true
         });
     });
 

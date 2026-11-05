@@ -1,19 +1,25 @@
 import type { ALTargets } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import {
     isALHopCompletionAck,
     type ALAckPayload,
+    type ALAckStatus,
     type ALCompletedPendingAck,
+    type ALNackPayload,
     type ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
+import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 
 export interface TrackALPendingAckSnapshotInput {
     readonly msgId: string;
     readonly current: ALPendingAckSnapshot | undefined;
     readonly toPeerId: string;
+    /** The status of the terminal ACK the row ends its hop with. */
+    readonly status: ALAckStatus;
     readonly expectedFromPeerIds: readonly string[];
     readonly localReady: boolean;
     readonly expireAtTimestamp: number | undefined;
@@ -41,6 +47,8 @@ export interface ALPendingAckTransition {
     readonly completed: ALCompletedPendingAck | undefined;
     /** The recipients this transition relays upward, one ACK each (D40). */
     readonly relayedRecipientPeerIds: readonly string[];
+    /** The recipients this transition records outside the audience, one `not-subscribed` NACK each upward. */
+    readonly relayedOutsidePeerIds: readonly string[];
 }
 
 interface ALPendingAckTransitionInput {
@@ -48,12 +56,14 @@ interface ALPendingAckTransitionInput {
     readonly previous: ALPendingAckSnapshot | undefined;
     readonly pending: ALPendingAckSnapshot;
     readonly relayedRecipientPeerIds: readonly string[];
+    readonly relayedOutsidePeerIds: readonly string[];
 }
 
 const NO_AL_PENDING_ACK_TRANSITION: ALPendingAckTransition = {
     pending: undefined,
     completed: undefined,
-    relayedRecipientPeerIds: []
+    relayedRecipientPeerIds: [],
+    relayedOutsidePeerIds: []
 };
 
 export function trackALPendingAckSnapshot(
@@ -66,7 +76,7 @@ export function trackALPendingAckSnapshot(
         previous: input.current,
         pending: {
             toPeerId: input.toPeerId,
-            status: 'subtree-complete',
+            status: input.status,
             localReady: (input.current?.localReady ?? false) || input.localReady,
             expectedFromPeerIds: [
                 ...new Set([...input.current?.expectedFromPeerIds ?? [], ...input.expectedFromPeerIds])
@@ -74,9 +84,11 @@ export function trackALPendingAckSnapshot(
             ackedFromPeerIds: input.current?.ackedFromPeerIds ?? [],
             ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp }),
             ...(upwardAudiencePeerIds === undefined ? {} : { upwardAudiencePeerIds }),
+            outsideAudiencePeerIds: input.current?.outsideAudiencePeerIds ?? [],
             carrier: input.carrier
         },
-        relayedRecipientPeerIds: []
+        relayedRecipientPeerIds: [],
+        relayedOutsidePeerIds: []
     });
 }
 
@@ -89,7 +101,8 @@ export function markALPendingAckLocalReadySnapshot(
             msgId: input.msgId,
             previous: input.current,
             pending: { ...input.current, localReady: true },
-            relayedRecipientPeerIds: []
+            relayedRecipientPeerIds: [],
+            relayedOutsidePeerIds: []
         });
 }
 
@@ -109,9 +122,11 @@ export function isALPendingAckUpwardRecipient(pending: ALPendingAckSnapshot, rec
 }
 
 /**
- * An admitted child ACK is relayed upward when the origin counts its recipient and no earlier child ACK named it
- * already: a recipient relay's terminal ACK follows its `accepted` one. Only the completion ACK of the child hop
- * itself completes it.
+ * An admitted child ACK is relayed upward when it confirms a recipient the origin counts and no earlier child ACK
+ * named it already: a recipient relay's terminal ACK follows its `accepted` one. Only the completion ACK of the child
+ * hop itself completes it, a not-subscribed one's included, which is never relayed. That one also implies its
+ * `not-subscribed` NACK, so a lost NACK still reaches the origin, as a delivering relay's terminal ACK still confirms
+ * it when its `accepted` one was lost (R-S2c-ii-14).
  */
 export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
@@ -123,14 +138,45 @@ export function acceptALPendingAckPayload(
     const ackedFromPeerIds = isALHopCompletionAck(ack)
         ? [...new Set([...current.ackedFromPeerIds, ack.fromPeerId])]
         : current.ackedFromPeerIds;
-    const relayed = isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId) &&
+    const relayed = isALRecipientConfirmationAck(ack) &&
+        isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId) &&
         !input.acks.some((prior) => prior.logicalRecipientPeerId === ack.logicalRecipientPeerId);
+    const outside = isALImpliedNotSubscribedNack(ack, toOwedUpwardRecipientPeerIds(current, input.acks));
     return toALPendingAckTransition({
         msgId: ack.ackedMsgId,
         previous: current,
-        pending: { ...current, ackedFromPeerIds },
-        relayedRecipientPeerIds: relayed ? [ack.logicalRecipientPeerId] : []
+        pending: {
+            ...current,
+            ackedFromPeerIds,
+            outsideAudiencePeerIds: outside
+                ? [...current.outsideAudiencePeerIds, ack.logicalRecipientPeerId]
+                : current.outsideAudiencePeerIds
+        },
+        relayedRecipientPeerIds: relayed ? [ack.logicalRecipientPeerId] : [],
+        relayedOutsidePeerIds: outside ? [ack.logicalRecipientPeerId] : []
     });
+}
+
+/** The frozen recipients of the row's upward audience not yet recorded outside, and never confirmed. */
+function toOwedUpwardRecipientPeerIds(
+    current: ALPendingAckSnapshot,
+    acks: readonly ALAckPayload[]
+): readonly string[] {
+    return (current.upwardAudiencePeerIds ?? []).filter((recipientPeerId) =>
+        !current.outsideAudiencePeerIds.includes(recipientPeerId) &&
+        !acks.some((prior) => prior.logicalRecipientPeerId === recipientPeerId && isALRecipientConfirmationAck(prior))
+    );
+}
+
+/**
+ * An admitted `not-subscribed` NACK names a recipient that delivered nothing, which the row relays upward and records.
+ * It completes no hop: the child's own hop-completion ACK does, once its subtree answered.
+ */
+export function acceptALPendingNotSubscribedNack(
+    current: ALPendingAckSnapshot,
+    nack: ALNackPayload
+): ALPendingAckSnapshot {
+    return { ...current, outsideAudiencePeerIds: [...current.outsideAudiencePeerIds, nack.logicalRecipientPeerId] };
 }
 
 export function isALPendingAckComplete(pending: ALPendingAckSnapshot): boolean {
@@ -139,7 +185,7 @@ export function isALPendingAckComplete(pending: ALPendingAckSnapshot): boolean {
 }
 
 function toALPendingAckTransition(input: ALPendingAckTransitionInput): ALPendingAckTransition {
-    const { msgId, previous, pending, relayedRecipientPeerIds } = input;
+    const { msgId, previous, pending, relayedRecipientPeerIds, relayedOutsidePeerIds } = input;
     const completes = isALPendingAckComplete(pending) && (previous === undefined || !isALPendingAckComplete(previous));
     return {
         pending,
@@ -151,6 +197,7 @@ function toALPendingAckTransition(input: ALPendingAckTransitionInput): ALPending
                 ...(pending.expireAtTimestamp === undefined ? {} : { expireAtTimestamp: pending.expireAtTimestamp })
             }
             : undefined,
-        relayedRecipientPeerIds
+        relayedRecipientPeerIds,
+        relayedOutsidePeerIds
     };
 }

@@ -599,9 +599,11 @@ Any other shape, a private `d` member included, is a `400` before enqueue. The
 session's row keeps what its latest connect or heartbeat sent, a heartbeat that
 changes the key is not a pure lease renewal, and
 `GroupSnapshot.activeSessions[].publicationKey` and the group-state delta carry
-it; the key leaves the snapshot with its session. The server checks the shape
-only: a receiver recomputes the key's thumbprint before it trusts `keyId`. The
-browser creates one key per page at startup and sends it itself.
+it; the key leaves the snapshot with its session. A change of keys alone advances
+`presenceRevision` and sends the delta but queues no RTC topology replan. The
+server checks the shape only: a receiver recomputes the key's thumbprint before it
+trusts `keyId`. The browser keeps one key per session, shared by the session's
+pages through IndexedDB, and sends it itself.
 
 Join-code rotation is currently exposed through lower-level API integration and
 workflow helpers. The plaintext code is returned only by the rotation response;
@@ -1083,31 +1085,37 @@ exactly `{ topicId, typeId?, fanout, serverProducerIds }` (see
 `docs/environment-variables.md`). A
 `room.message<T>('name')` binding fills `members`. Any other value is refused
 `$.access` `invalid-access`, and a granted channel without a `topicId`
-`$.topicId` `missing-topic-id`. A granted channel rides RTC only as a room
-multicast that asks no receipt (`ack: 'none'`), under `rtc` or
-`rtc-with-ws-fallback`: the sending page signs each frame with the publication key
-its room presence registered (see Group Policy And State Routes above), and every
-relay and receiver verifies that signature against its own cached room snapshot
-before it forwards or delivers the frame. A frame that names no room, reaches a
-hop without a current snapshot of it, carries no proof or an invalid signature,
-or comes from a publisher the snapshot grants no `publish` is dropped there,
-`unauthorized` and with no NACK; one signed with a key the snapshot does not name
-yet, or stamped with a newer authority than it, is dropped `not-yet-in-sync` and
-the hop refreshes its snapshot once. A frame is delivered only to a session
-holding `subscribe` and an active subscription; a relay needs only membership to
-forward it. The proof
+`$.topicId` `missing-topic-id`. A granted channel rides RTC as a room
+multicast, receipted or not, under `rtc` or `rtc-with-ws-fallback`: the sending
+page freezes the publication to the room's live sessions whose principal holds
+effective `subscribe` in its cached snapshot, so the signed targets and a
+receipt's expected recipients are that audience, and signs each frame with the
+publication key its session registered on its room presence (see Group Policy
+And State Routes above). Every relay and receiver verifies that signature
+against its own cached room snapshot before it forwards or delivers the frame. A
+frame that names no room, reaches a hop without a current snapshot of it,
+carries no proof or an invalid signature, or comes from a publisher the snapshot
+grants no `publish` is dropped there, `unauthorized` and with no NACK; one
+signed with a key the snapshot does not name yet, or stamped with a newer
+authority than it, is dropped `not-yet-in-sync` and the hop refreshes its
+snapshot once. A frame is delivered only to a session holding `subscribe` and an
+`active` subscription; a relay needs only membership to forward it. The proof
 authenticates the publisher, never the payload's confidentiality: relays read the
-payload bytes. Every other granted RTC send (a receipted one, a unicast, a `world`
-or `principal` send, or one from a page whose key is absent or not yet in its
-snapshot) is refused `unsupported` before admission: `strategy: 'rtc'` and
-`sendRtc` end `rejected` with `failure: { kind: 'refused', reason: 'unsupported' }`,
-and `rtc-with-ws-fallback` sends it over WS. `ws-then-rtc` sends every granted
-message over WS. A lane `messages.rtc.send` on a topic the cached snapshot grants
-follows the same rules. `onRtc` throws the `unsupported` issue at `$.access`;
-`subscribe(handler)` hears both carriers. A granted send names its room; one that
-names none is refused `unsupported`. Before any carrier, the send reads the room's
-cached snapshot: when it grants this principal no effective `publish` (none for a
-spectator or a member that is not active), the send ends `rejected` with
+payload bytes. Every other granted RTC send (a unicast, a `world` or `principal`
+send, one that narrows its room's audience, a `group-leader` send whose director
+holds no `subscribe` on the topic, or one from a page whose key is absent or not
+yet in its snapshot) is refused `unsupported` before admission: `strategy: 'rtc'`
+and `sendRtc` end `rejected` with
+`failure: { kind: 'refused', reason: 'unsupported' }`, and
+`rtc-with-ws-fallback` sends it over WS. A `group-leader` send in a room with no
+director, or one the sender directs, keeps `no-leader`. `ws-then-rtc` sends every
+granted message over WS. A lane `messages.rtc.send` on a topic the cached
+snapshot grants follows the same rules. `onRtc` throws the `unsupported` issue
+at `$.access`; `subscribe(handler)` hears both carriers. A granted send names
+its room; one that names none is refused `unsupported`. Before any carrier, the
+send reads the room's cached snapshot: when it grants this principal no
+effective `publish` (none for a spectator or a member that is not active), the
+send ends `rejected` with
 `failure: { kind: 'refused', reason: 'no-publish-grant' }`. With no snapshot
 cached, the server decides. The server refuses a publication without effective
 `publish` at socket admission or at `route` with the NACK reason
@@ -1158,6 +1166,36 @@ generation changed since admission, and an empty audience is admitted with no
 recipients. A send asking `ack: 'group-leader'` whose leader has not
 subscribed is NACKed `no-leader`, and a room unicast to an unsubscribed session
 `unauthorized`.
+
+Over RTC the sender sees grants but not subscriptions, so a receipted granted
+send (`ack: 'receiver'`, `'all-logical-recipients'` or `'group-leader'`) expects
+every session it froze. A frozen session whose own snapshot gives its principal
+no `subscribe`, or whose token is not `active` (a `pending` token included),
+forwards the frame, delivers nothing and answers `not-subscribed` for itself,
+which each relay carries on toward the origin for that one recipient. The receipt
+records such a session in `lifecycle.evidence.outsideAudienceRecipientPeerIds`,
+neither confirmed nor unconfirmed, while `expectedRecipientPeerIds` keeps the
+frozen set, so it is the confirmed, unconfirmed and outside lists together. The
+handle reads `acknowledged` once every expected session is confirmed or outside
+and at least one is confirmed; the answer itself ends nothing and hands nothing
+to WS, and a receipt whose every recipient answered `not-subscribed` stays open
+until it is exhausted (`failed`, `failure.kind: 'receipt-exhausted'`). When
+`rtc-with-ws-fallback` hands an admitted RTC leg to WS, the WS server keeps the
+frozen set as the receipt's expected set and sends only to its own audience, so
+the carriers can disagree: a frozen session that never subscribes stays expected
+and unconfirmed on WS until the deadline, while one whose RTC copy already
+answered `not-subscribed` and that then receives the WS copy is recorded outside
+on WS too, since that copy answers with an ACK that confirms nobody. Receipts are
+not signed: a confirmation authenticates no recipient across relays.
+
+A stored granted publication is resent only while the origin's cached snapshot
+still grants it `publish`: once that snapshot shows the revoke, its next repair,
+re-plan or dequeue ends the handle `rejected` with
+`failure: { kind: 'refused', reason: 'no-publish-grant' }` and nothing is resent
+or handed to WS. A peer serves a repair copy to a recipient only when the origin
+froze it and its principal still holds `subscribe` in the peer's own snapshot. A
+repair resends the stored signed frame, never re-signs it, and sends nothing
+past the frame's deadline.
 
 ```ts
 interface FeedItem {

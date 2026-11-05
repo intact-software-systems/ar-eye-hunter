@@ -1,6 +1,10 @@
-import { isALHopCompletionAck, type ALAckPayload } from '../../../al-contracts/al-control.ts';
+import {
+    isALHopCompletionAck,
+    type ALAckPayload
+} from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-control-admission.ts';
 
 /** Every reason this acknowledgement may not be admitted; an absent obligation makes the rest moot. */
@@ -22,6 +26,11 @@ export function validateALInboundControlAdmission(
     }
     if (acks.some((prior) => isSameAckIdentity(prior, ack))) {
         issues.push(rejectInboundControl('Inbound acknowledgement was already admitted'));
+    }
+    if (isALRecipientConfirmationAck(ack) && pending.outsideAudiencePeerIds.includes(ack.logicalRecipientPeerId)) {
+        issues.push(
+            rejectInboundControl('Inbound acknowledgement names a recipient that answered it is not subscribed')
+        );
     }
     if (
         candidate.acks.values.length > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||

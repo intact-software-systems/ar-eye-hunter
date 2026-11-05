@@ -1,17 +1,26 @@
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodeALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
+import {
+    computeALInboundAdmission,
+    computeALInboundBufferedRelease
+} from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import type {
     ALInboundAdmissionStore,
     ALInboundCommitBundle,
     ALInboundPlanner
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
+import {
+    computeALInboundBufferedReleasePlanningObservations,
+    computeALInboundPlanningObservations
+} from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
+import { toRtcPublicationHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import {
     describe,
     expect,
@@ -30,6 +39,7 @@ const SOURCES: Readonly<Record<ALDeliveryCarrier, ALInboundMessageRuntime.Source
     rtc: { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID },
     ws: { kind: 'ws-client', peerId: INBOUND_TEST_SENDER_PEER_ID, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
 };
+const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 /** Two downstream peers, so the relay's first admission forwards and keeps a relay row. */
 const DOWNSTREAM_PEER_IDS = ['downstream-1', 'downstream-2'];
 
@@ -53,6 +63,30 @@ const RELAY_PEER: ReceivingPeer = {
     canForward: true
 };
 
+/** A frozen leaf of the sender's room, planning every copy as the room authorizes it. */
+const FROZEN_LEAF_PEER: ReceivingPeer = {
+    planner: (msg, _source, observations) =>
+        planALMessageHandling(msg, {
+            ...observations,
+            selfPeerId: INBOUND_TEST_SELF_PEER_ID,
+            fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            connectedPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
+            groupMemberPeerIds: [INBOUND_TEST_SELF_PEER_ID, INBOUND_TEST_SENDER_PEER_ID]
+        }),
+    canForward: false
+};
+
+/** The same leaf holding no active token: its RTC carrier plans a granted copy forward-not-subscribed. */
+const NOT_SUBSCRIBED_OVER_RTC_PEER: ReceivingPeer = {
+    planner: (msg, source, observations) => {
+        const plan = FROZEN_LEAF_PEER.planner(msg, source, observations);
+        return source.kind === 'rtc-peer'
+            ? toRtcPublicationHandlingPlan(plan, Either.ofRight({ delivery: 'forward-not-subscribed' }), INBOUND_TEST_SENDER_PEER_ID)
+            : plan;
+    },
+    canForward: false
+};
+
 interface RepeatedAck {
     /** The runtime that claims the `send-control` row. */
     readonly rowCarrier: ALDeliveryCarrier;
@@ -61,6 +95,23 @@ interface RepeatedAck {
     readonly toPeerId: string;
     readonly ackedMsgId: string;
     readonly status: ALAckStatus;
+}
+
+/** A `receiver` room multicast its origin froze to this peer alone; a `seq` orders it on the sender's feed track. */
+function createFrozenReceiverMessage(msgId: string, seq?: number): ALMessage {
+    const message = newALMulticastMessage(
+        INBOUND_TEST_SENDER_PEER_ID,
+        { topicId: 'room.feed', resourceId: msgId, contextId: 'room' },
+        ROOM,
+        'room.feed.v1',
+        { text: msgId },
+        { reliability: 'at-least-once', ack: 'receiver', ttlMs: 60_000, ...(seq === undefined ? {} : { seq }) }
+    );
+    return {
+        ...message,
+        id: { ...message.id, msgId },
+        targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID], snapshotVersion: 1 }
+    };
 }
 
 /** A room message acknowledged by every logical recipient, the shape a relay forwards down the RTC tree. */
@@ -122,6 +173,27 @@ async function computeRetriedArrival(
     const firstBundle = await computeArrival(admissionStore, first, { peer, carrier: carriers[0] });
     expect(await admissionStore.commitBundle(firstBundle)).toBe('committed');
     return await computeArrival(admissionStore, retried, { peer, carrier: carriers[1] });
+}
+
+/** The release of the buffered copy of `msg`, computed as the ordered delivery does once its predecessor was admitted. */
+async function computeBufferedRelease(
+    store: ALInboundAdmissionStore,
+    msg: ALMessage,
+    peer: ReceivingPeer
+): Promise<ALInboundCommitBundle> {
+    const nowMs = Date.now();
+    const trackKey = toALOrderingTrackKey(msg);
+    const seq = msg.ordering?.seq;
+    if (trackKey === undefined || seq === undefined) {
+        throw new Error('A buffered release needs an ordered message');
+    }
+    const read = await store.readBufferedRelease({ trackKey, seq, nowMs });
+    if (read === undefined) {
+        throw new Error('The buffered copy must still be retained for its release');
+    }
+    const plan = peer.planner(read.snapshot.msg, read.source, computeALInboundBufferedReleasePlanningObservations(read));
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
+    return computeALInboundBufferedRelease({ read, plan, facts });
 }
 
 /** The retried hop copy a relay's parent resends to it alone (D25). */
@@ -209,10 +281,74 @@ describe('a duplicate on the other carrier than its first admission (D56, R-S3b-
         expect(bundle.durableEffects.map((effect) => effect.payload.kind)).toEqual(expected.map(() => 'send-control'));
     });
 
+    // A frozen recipient that answered `not-subscribed` over RTC delivered nothing, and the WS copy is a duplicate it
+    // never delivers either: its own ACK on the arrival carrier ends its hop and confirms nobody.
+    it('answers a WS copy of a message its RTC copy found not subscribed with the ACK that confirms nobody, delivering nothing', async () => {
+        const msg = createFrozenReceiverMessage('not-subscribed-then-ws');
+
+        const bundle = await computeSecondArrival(msg, NOT_SUBSCRIBED_OVER_RTC_PEER, ['rtc', 'ws']);
+
+        expect(toRepeatedAcks(bundle)).toEqual([{
+            rowCarrier: 'ws',
+            carrier: 'ws',
+            toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            ackedMsgId: 'not-subscribed-then-ws',
+            status: 'subtree-complete-not-subscribed'
+        }]);
+        expect(bundle.durableEffects.map((effect) => effect.payload.kind)).toEqual(['send-control']);
+    });
+
+    it('keeps the delivered ACK for a WS copy of a message its RTC copy delivered', async () => {
+        const msg = createFrozenReceiverMessage('delivered-then-ws');
+
+        expect(toRepeatedAcks(await computeSecondArrival(msg, FROZEN_LEAF_PEER, ['rtc', 'ws'])).map((ack) => ack.status))
+            .toEqual(['delivered']);
+    });
+
     it('answers nothing for a message that asked for no acknowledgement', async () => {
         const msg = createInboundTestMessage({ msgId: 'unacknowledged' });
 
         expect(toRepeatedAcks(await computeSecondArrival(msg, LEAF_PEER, ['rtc', 'ws']))).toEqual([]);
+    });
+});
+
+// C1: a frozen recipient that buffers its first copy on a gap delivers it on release, so its row says it delivers and
+// a cross-carrier copy confirms it, before the release and after it.
+describe('a frozen recipient whose first copy waits on a gap', () => {
+    it('answers a WS copy delivered while its RTC copy is buffered behind the missing seq', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('buffered-then-ws', 2);
+
+        const buffered = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'rtc' });
+        expect(buffered.mutations.map((mutation) => mutation.kind)).toContain('set-buffered');
+        expect(await admissionStore.commitBundle(buffered)).toBe('committed');
+
+        const copy = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(toRepeatedAcks(copy).map((ack) => ack.status)).toEqual(['delivered']);
+    });
+
+    it('answers a WS copy delivered after its buffered RTC copy was released', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenReceiverMessage('released-then-ws', 2);
+        for (const arrival of [msg, createFrozenReceiverMessage('released-predecessor', 1)]) {
+            const bundle = await computeArrival(admissionStore, arrival, { peer: FROZEN_LEAF_PEER, carrier: 'rtc' });
+            expect(await admissionStore.commitBundle(bundle)).toBe('committed');
+        }
+
+        const release = await computeBufferedRelease(admissionStore, msg, FROZEN_LEAF_PEER);
+        expect(release.mutations.map((mutation) => mutation.kind)).toContain('set-msg-owner');
+        expect(await admissionStore.commitBundle(release)).toBe('committed');
+
+        const copy = await computeArrival(admissionStore, msg, { peer: FROZEN_LEAF_PEER, carrier: 'ws' });
+        expect(toRepeatedAcks(copy).map((ack) => ack.status)).toEqual(['delivered']);
+    });
+
+    it('still answers a WS copy with the ACK that confirms nobody when its RTC copy found it not subscribed', async () => {
+        const msg = createFrozenReceiverMessage('not-subscribed-gap-then-ws', 2);
+
+        const bundle = await computeSecondArrival(msg, NOT_SUBSCRIBED_OVER_RTC_PEER, ['rtc', 'ws']);
+
+        expect(toRepeatedAcks(bundle).map((ack) => ack.status)).toEqual(['subtree-complete-not-subscribed']);
     });
 });
 

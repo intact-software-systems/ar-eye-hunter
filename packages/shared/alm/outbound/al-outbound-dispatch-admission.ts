@@ -8,6 +8,7 @@ import {
     decodePersistedALMessageRow,
     toChangedALMessageRow
 } from '../../al-contracts/al-message-persistence-validation.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-policy.ts';
 import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -15,7 +16,6 @@ import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrenc
 import { toError } from '../../resilience/to-error.ts';
 import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
 import { decodeALAdmissionValue } from '../al-admission-decoder.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import { toALOutboundCommitLockName, type ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';

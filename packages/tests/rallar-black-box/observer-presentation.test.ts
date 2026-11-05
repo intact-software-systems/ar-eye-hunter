@@ -12,7 +12,8 @@ import {
     beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
@@ -26,6 +27,7 @@ import { EventStreamPanel } from '../../../apps/rallar-black-box/src/legacy/diag
 import { RallarTracePanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/events/rallar-trace-panel.tsx';
 import { ReportPanel } from '../../../apps/rallar-black-box/src/legacy/runner/advanced/report-panel.tsx';
 import { RunnerAdvancedPanel } from '../../../apps/rallar-black-box/src/legacy/runner/advanced/runner-advanced-panel.tsx';
+import { createBrowserTestStorage } from '../shared-test/browser-test-storage.ts';
 import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -33,8 +35,9 @@ import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/crea
 let container: HTMLDivElement;
 let root: Root;
 
+// Node's own `localStorage` getter shadows happy-dom's and warns, so each test gets a fresh stubbed storage.
 beforeEach(() => {
-    window.localStorage?.clear();
+    vi.stubGlobal('localStorage', createBrowserTestStorage());
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -43,6 +46,7 @@ beforeEach(() => {
 afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
 });
 
 describe('observer presentation visibility', () => {

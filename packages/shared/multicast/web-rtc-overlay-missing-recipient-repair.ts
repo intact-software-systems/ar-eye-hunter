@@ -21,6 +21,7 @@ import {
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { OverlayTree } from '../alm/outbound/transition-al-outbound-pending-ack.ts';
+import type { RtcGrantedPublicationCarrier } from './publication/rtc-granted-publication-carrier.ts';
 import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export interface OverlayRepairPlan {
@@ -42,6 +43,8 @@ export interface PlanRtcFailedPeerRepairInput {
     /** Absent when the origin holds no accepted layout to route by. */
     readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
     readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
+    /** Whether a missing recipient may still get a copy: a recipient refused here is skipped, never replaced. */
+    readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
 }
 
 export interface ToRtcTargetedRepairCopyInput {
@@ -57,6 +60,7 @@ interface RtcMissingRecipientRepairInput {
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
     readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
+    readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
 }
 
 /**
@@ -80,8 +84,8 @@ export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepa
 
 /**
  * The retry for the peers a receipt failed. The origin of a frozen `receiver` multicast retries only the
- * missing recipients, through the tree over the current room; every other retry re-plans around the
- * failed hops through an alternate parent.
+ * missing recipients it still admits as repair targets, through the tree over the current room; every other
+ * retry re-plans around the failed hops through an alternate parent.
  */
 export function planRtcFailedPeerRepair(
     input: PlanRtcFailedPeerRepairInput
@@ -98,7 +102,8 @@ export function planRtcFailedPeerRepair(
             ackTracking: outgoing.ackTracking,
             request: input.request,
             frozen,
-            adjacency: input.adjacency
+            adjacency: input.adjacency,
+            isRepairTargetAdmitted: input.isRepairTargetAdmitted
         })
         : planRtcAlternateParentRepair(input);
 }
@@ -153,7 +158,9 @@ function toMissingRecipientRepairPlan(
     if (outgoing.dropReason) {
         return outgoing;
     }
-    const failed = new Set(request.failedPeerIds);
+    const failed = new Set(
+        request.failedPeerIds.filter((peerId) => input.isRepairTargetAdmitted(peerId, input.ackTracking.mode))
+    );
     const repair = computeMissingRecipientRepair({
         frozen: frozen.recipientPeerIds,
         confirmed: frozen.recipientPeerIds.filter((peerId) => !failed.has(peerId)),

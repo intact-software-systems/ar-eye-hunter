@@ -20,9 +20,18 @@ import type { OverlayMulticasterContext } from './overlay-multicast-contracts.ts
 import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from './rtc-room-snapshot-admission.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 
-export interface ComputeFrozenAudienceInput {
-    readonly admission: Extract<RtcRoomSnapshotAdmission, { readonly kind: 'authorized'; }>;
+/** The origin that freezes its own room send, and for a granted publication the sessions it may reach. */
+export interface RtcFreezingOrigin {
     readonly selfPeerId: string;
+    /**
+     * The sessions whose principal holds effective `subscribe` on a granted publication's topic; `null` for any other
+     * send.
+     */
+    readonly subscribeHolders: ReadonlySet<string> | null;
+}
+
+export interface ComputeFrozenAudienceInput extends RtcFreezingOrigin {
+    readonly admission: Extract<RtcRoomSnapshotAdmission, { readonly kind: 'authorized'; }>;
     /** `undefined` freezes every authorized session of the room. */
     readonly narrowing: ALAudienceNarrowing | undefined;
     /** The room's leader inside that audience, for a `group-leader` send; `undefined` for any other. */
@@ -30,12 +39,12 @@ export interface ComputeFrozenAudienceInput {
 }
 
 export function computeFrozenAudience(input: ComputeFrozenAudienceInput): ALFrozenMulticastAudience {
-    const { admission, selfPeerId, narrowing, leader } = input;
+    const { admission, selfPeerId, narrowing, leader, subscribeHolders } = input;
     return {
         recipientPeerIds: admission.memberSessions
             .filter((session) =>
                 session.sessionId !== selfPeerId && isALAudienceSession(session, narrowing) &&
-                isALAudienceSession(session, leader)
+                isALAudienceSession(session, leader) && (subscribeHolders?.has(session.sessionId) ?? true)
             )
             .map((session) => session.sessionId),
         snapshotVersion: admission.snapshotVersion
@@ -83,21 +92,21 @@ export function computeRtcBroadcastScopeRefusal(
 export function toRtcOriginFrozenMessage(
     message: ALMessage,
     context: OverlayMulticasterContext | undefined,
-    selfPeerId: string
+    origin: RtcFreezingOrigin
 ): ALMessage {
-    if (context === undefined || message.id.senderId !== selfPeerId || !isRtcUnfrozenRoomMessage(message)) {
+    if (context === undefined || message.id.senderId !== origin.selfPeerId || !isRtcUnfrozenRoomMessage(message)) {
         return message;
     }
     const admission = computeRtcRoomSnapshotAdmission({
         message,
         snapshot: context.room,
         overlay: context.overlay,
-        selfPeerId,
+        selfPeerId: origin.selfPeerId,
         fromPeerId: undefined,
         recipientPeerId: undefined,
         nowMs: context.nowMs
     });
-    return admission.kind === 'authorized' ? toRtcFrozenRoomMessage(message, admission, selfPeerId) : message;
+    return admission.kind === 'authorized' ? toRtcFrozenRoomMessage(message, admission, origin) : message;
 }
 
 /** A room broadcast that names its own audience, or addresses its room's leader, is frozen as a multicast. */
@@ -110,11 +119,11 @@ export function isRtcUnfrozenRoomMessage(message: ALMessage): boolean {
 export function toRtcFrozenRoomMessage(
     message: ALMessage,
     admission: Extract<RtcRoomSnapshotAdmission, { readonly kind: 'authorized'; }>,
-    selfPeerId: string
+    origin: RtcFreezingOrigin
 ): ALMessage {
     const frozen = computeFrozenAudience({
+        ...origin,
         admission,
-        selfPeerId,
         narrowing: toRtcAudienceNarrowing(message),
         leader: toALLeaderNarrowing(message, admission.leaderSessionId)
     });
@@ -164,7 +173,8 @@ export function computeRtcFrozenAudienceRefusal(
 /**
  * A `group-leader` room send frozen to no session has no leader to confirm it: the room appoints no director present
  * at admission, the sender is the director, or the audience its sender names leaves the director out (D165). It is
- * refused, never handed to another carrier, which reads the same room.
+ * refused, never handed to another carrier, which reads the same room. A granted send whose director holds no
+ * `subscribe` never reaches it: its carrier refuses it before freezing, as unsupported.
  */
 export function computeRtcLeaderRefusal(
     msg: ALMessage,
@@ -182,7 +192,11 @@ export function computeRtcLeaderRefusal(
         });
 }
 
+/** A refusal names the targets its sender gave; a signed message keeps the audience its origin signed. */
 function toUnfrozenRoomMessage(msg: ALMessage, original: ALMessage): ALMessage {
+    if (msg.proof !== undefined) {
+        return msg;
+    }
     return original.targets?.mode === 'broadcast'
         ? { ...msg, targets: original.targets }
         : toUnfrozenMulticastMessage(msg);

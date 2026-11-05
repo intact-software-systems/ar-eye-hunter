@@ -1,19 +1,25 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALAckStatus, ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
+import {
+    type ALAckStatus,
+    type ALPendingAckSnapshot
+} from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../../al-contracts/is-al-unicast-addressed-to.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
+import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
 import {
     toALInboundAckEffect,
+    toALInboundRelayedNotSubscribedEffect,
     type ALInboundAckRecipient,
     type ALInboundEffectIntent
 } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
+import { isALInboundNotSubscribedPlan } from './al-inbound-not-subscribed-plan.ts';
 
 export interface ALInboundDuplicateChanges {
     readonly mutations: readonly ALInboundAdmissionMutation[];
@@ -45,7 +51,8 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
  * answer (R-S2c-ii-14). A copy on the other carrier than the first admission -- the envelope a sender
  * re-admitted there after a hand-over (D56) -- gets the own ACK of this peer again over the carrier it came
  * in on, whatever its next hops and whether or not it holds a relay row: the first ACK went out on the
- * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21).
+ * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21). A peer
+ * that answered `not-subscribed` ends its hop with an ACK that confirms nobody, and answers with that NACK again.
  */
 export function computeALInboundDuplicateChanges(
     read: ALInboundMessageReadDto,
@@ -138,23 +145,28 @@ function isReparentingSender(
 }
 
 /**
- * Every ACK the row relays upward again, then its terminal ACK once complete. While it still waits, a recipient
- * that delivered confirms itself again, since its `accepted` ACK may be the one the origin lost.
+ * Every ACK and `not-subscribed` NACK the row relays upward again, then its terminal ACK once complete. While it
+ * still waits, a recipient that delivered confirms itself again, since its `accepted` ACK may be the one the origin
+ * lost.
  */
 function toParentAnswer(
     read: ALInboundMessageReadDto,
     pendingAck: ALPendingAckSnapshot,
     selfPeerId: string
 ): readonly ALInboundEffectIntent[] {
-    const relayed = [...new Set(read.acks.map((ack) => ack.logicalRecipientPeerId))]
-        .filter((peerId) => isALPendingAckUpwardRecipient(pendingAck, peerId))
-        .map((peerId) =>
-            toRepeatedAck(read, {
-                toPeerId: pendingAck.toPeerId,
-                logicalRecipient: { kind: 'relayed', peerId },
-                status: 'forwarded'
-            })
-        );
+    const confirmed = read.acks.filter(isALRecipientConfirmationAck).map((ack) => ack.logicalRecipientPeerId);
+    const relayed = [
+        ...[...new Set(confirmed)]
+            .filter((peerId) => isALPendingAckUpwardRecipient(pendingAck, peerId))
+            .map((peerId) =>
+                toRepeatedAck(read, {
+                    toPeerId: pendingAck.toPeerId,
+                    logicalRecipient: { kind: 'relayed', peerId },
+                    status: 'forwarded'
+                })
+            ),
+        ...pendingAck.outsideAudiencePeerIds.map((peerId) => toRepeatedNotSubscribed(read, pendingAck.toPeerId, peerId))
+    ];
     if (isALPendingAckComplete(pendingAck)) {
         return [
             ...relayed,
@@ -181,7 +193,8 @@ function toParentAnswer(
 
 /**
  * Whether this peer confirmed itself with `accepted` beside the row when it first admitted the message: it is a
- * logical recipient, one the frozen audience names or the unicast addresses, never a relay passing a copy on.
+ * logical recipient, one the frozen audience names or the unicast addresses, never a relay passing a copy on, nor
+ * one whose row ends with a not-subscribed completion.
  */
 function isAcceptingRecipient(
     read: ALInboundMessageReadDto,
@@ -190,6 +203,7 @@ function isAcceptingRecipient(
 ): boolean {
     const frozen = resolveALFrozenMulticastAudience(read.msg.targets);
     return isALLogicalReceiptMode(read.plan.ack.algo) && pendingAck.localReady &&
+        pendingAck.status === 'subtree-complete' &&
         (frozen?.recipientPeerIds.includes(selfPeerId) === true || isALUnicastAddressedTo(read.msg, selfPeerId));
 }
 
@@ -215,10 +229,35 @@ function toReparentedRowMutation(
     };
 }
 
-/** A peer outside the frozen audience delivered nothing: its ACK only ends its own empty subtree. */
+/**
+ * A peer outside the frozen audience, or not subscribed, delivered nothing: its ACK only ends its own empty subtree.
+ * A frozen recipient whose first admission delivered nothing never confirms itself on a later copy either, whatever
+ * the carrier it arrives on plans: the copy is a duplicate, so it is not delivered now.
+ */
 function toOwnAckStatus(read: ALInboundMessageReadDto, selfPeerId: string): ALAckStatus {
+    if (isALInboundNotSubscribedPlan(read.plan)) {
+        return 'subtree-complete-not-subscribed';
+    }
     const frozen = resolveALFrozenMulticastAudience(read.msg.targets);
-    return frozen === undefined || frozen.recipientPeerIds.includes(selfPeerId) ? 'delivered' : 'subtree-complete';
+    if (frozen === undefined) {
+        return 'delivered';
+    }
+    if (!frozen.recipientPeerIds.includes(selfPeerId)) {
+        return 'subtree-complete';
+    }
+    return read.observations.messageOwner?.deliveredLocally === false ? 'subtree-complete-not-subscribed' : 'delivered';
+}
+
+function toRepeatedNotSubscribed(
+    read: ALInboundMessageReadDto,
+    toPeerId: string,
+    peerId: string
+): ALInboundEffectIntent {
+    const nack = toALInboundRelayedNotSubscribedEffect(
+        { msg: read.msg, plan: read.plan, carrier: toALDeliveryCarrier(read.source), fromPeerId: read.fromPeerId },
+        { toPeerId, peerId }
+    );
+    return { ...nack, effectId: toRetriedEffectId(nack.effectId, read.nowMs) };
 }
 
 function toRepeatedAck(read: ALInboundMessageReadDto, repeated: ALInboundRepeatedAck): ALInboundEffectIntent {

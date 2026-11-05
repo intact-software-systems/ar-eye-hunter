@@ -198,7 +198,7 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
         timeoutMs: CONNECT_TIMEOUT_MS,
         ...(input.carrier === 'ws' || !waitsForReadyPeers(step) ? {} : {
             readiness: {
-                minReadyPeers: toPeerCount(step.roles) - 1,
+                minReadyPeers: step.connect?.minReadyPeers ?? toPeerCount(step.roles) - 1,
                 timeoutMs: CONNECT_READINESS_TIMEOUT_MS,
                 intervalMs: CONNECT_READINESS_INTERVAL_MS
             }

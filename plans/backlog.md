@@ -95,11 +95,13 @@ and it has no status list.
   `packages/shared/alm` (D8; roadmap F15).
 - ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
   peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.
-- ALM topic-policy advertisement (carried from S1-ii, D482, and S2-i): a client
-  learns a topic's effective fanout and participation before sending, so the WS
-  server's `unsupported` refusal of a live publication on an `outbox` topic, and
-  the participation a browser channel's `access` only mirrors today, become a
-  synchronous decision at the send.
+- ALM topic-policy advertisement (carried from S1-ii, D482, S2-i and S3): a
+  client learns a topic's effective fanout and participation before sending, so
+  the WS server's `unsupported` refusal of a live publication on an `outbox`
+  topic, and the participation a browser channel's `access` only mirrors today,
+  become a synchronous decision at the send, and it replaces the RTC inference
+  that a topic is granted when a channel declares it or the cached snapshot
+  grants it (D517).
 - The WS ingress's static read of proxy rules (S1-ii, D482): `resolveFanouts`
   reads their declared targets, so it under-refuses when a suppressing rule's
   `authorize` or `targets` would skip at runtime and over-refuses when a rule
@@ -137,11 +139,28 @@ and it has no status list.
 - The same fixture carries no `stats.rallar.alm` / `readUsage().publication`
   projection; add it, from the real stage's `readReport`, when a hosted recipe
   reads it (S1-ii, Task 8 deviation 1).
-- Restricted RTC parity for publication grants (the addendum's first later
-  outcome, D491): an authenticated original publisher across relays, relay
-  versus application permission, RTC fallback and repair under role churn, and a
-  receiver-side drop of granted-topic traffic that arrives on a raw RTC lane.
-  Until then a granted topic is WS-only.
+- Confidentiality for granted topics over RTC (S3, D520): relays decode a
+  granted publication's payload and keep a durable forwarded copy, so an
+  encrypted publication needs key distribution, rotation and revocation bound
+  to the grant; until then an application that needs subscriber-only bytes
+  keeps the topic on `ws`.
+- Signed receipts (S3, D519): ACKs and NACKs stay unsigned and
+  relay-re-originated, so a receipt authenticates no logical recipient across
+  relays.
+- The measured granted RTC envelope (S3): sign and verify cost per frame and
+  hop, relay depth and mixed WS/RTC under role churn, beside the refresh
+  amplification of an unknown key: every receiver of a frame whose `keyId` its
+  snapshot does not name runs one scoped snapshot read
+  (`not-yet-in-sync: unknown-key`, collapsed only while one is in flight), the
+  class `minSnapshotVersion` already has on ordinary room frames; measure it,
+  or add a per-room refresh cooldown in `RtcGroupSnapshotRefresh`
+  (`packages/shared-web/browser/state-read/rtc-group-snapshot-refresh.ts`).
+- Granted unicast and broadcast over RTC (S3, D518): only a granted room
+  multicast rides RTC; a unicast, a `world` or principal broadcast and a
+  narrowed room send stay `unsupported` there and take WS under every strategy
+  but `rtc`.
+- Publication keys for native hosts (S3, D513): only a browser session
+  registers a key, so a native host signs no granted RTC publication.
 - Ordered subscription entry on granted topics (the addendum's second later
   outcome): start positions, snapshot and live handoff and omission evidence, so
   a subscriber joining mid-stream gets more than today's per-sender tracks.
@@ -157,8 +176,9 @@ and it has no status list.
 - Batched subscription renewal (S2-ii, D489), if the per-subscription renew
   traffic shows in the state-write gate.
 - A hosted four-agent manifest for the four-role topic subscription cells
-  (S2-ii, D505): the cells name each role's principal, which a static hosted
-  manifest cannot, so today only the local lane runs them.
+  and the `granted-rtc` cells (S2-ii, D505; S3, D521): the cells name each
+  role's principal, which a static hosted manifest cannot, so today only the
+  local lane runs them.
 - A same-session WS reconnect leaves the session's room presence closed
   (S2-ii, D506; task_6dcb2b11): cleanup closes the closed socket's
   generation's presence row and nothing re-writes it when the socket reopens,

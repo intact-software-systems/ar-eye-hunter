@@ -287,6 +287,7 @@ async function receiveNack(server: OrderedServer, input: NackInput): Promise<voi
         {
             msgId: input.msgId,
             fromPeerId: input.fromPeerId,
+            logicalRecipientPeerId: input.fromPeerId,
             toPeerId: SERVER_ID,
             reason: input.reason,
             observedAtEpochMs: server.clock.nowMs,

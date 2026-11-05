@@ -19,11 +19,11 @@ import { openSuccessorPage, runRecipeTrioOnSameContext } from '../../../tests/pl
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 describe('same-context ALM run', () => {
-    it('selects durable-takeover on every carrier, flush-on-hide over ws and rtc and the subscription successor where a granted topic runs', () => {
+    it('selects durable-takeover on every carrier, flush-on-hide over ws and rtc and the subscription successor over ws', () => {
         const expectedKeys = {
             ws: ['durable-takeover', 'flush-on-hide', 'subscription-successor'],
             rtc: ['durable-takeover', 'flush-on-hide'],
-            'rtc-with-ws-fallback': ['durable-takeover', 'subscription-successor']
+            'rtc-with-ws-fallback': ['durable-takeover']
         };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const sameContext = createAlmConformanceRecipes({
@@ -312,7 +312,7 @@ it('rejects without starting the successor when the owner\'s gate neither passes
             run,
             { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate: 'owner-gate' },
             { sender: baseline.sender, receiver: baseline.receiver, successor }
-        )).rejects.toThrow('owner-gate: the owner\'s gate did not pass within 90000 ms.');
+        )).rejects.toThrow('owner-gate: the gate did not pass within 90000 ms.');
         expect(posted).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId]);
     }
     finally {

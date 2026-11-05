@@ -1,5 +1,5 @@
-import type { ALStoreDurability } from '../alm/al-runtime-stores.ts';
 import type { ALMessage, ALTargets } from './al-contract.ts';
+import type { ALInboundNackPlanReason } from './al-control-value-codec.ts';
 
 import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } from './al-runtime.ts';
 import { toALSeqRangesText } from './al-seq-range.ts';
@@ -298,7 +298,7 @@ export interface ALMessageHandlingPlan {
     readonly nack: {
         readonly enabled: boolean;
         readonly toPeerId?: string;
-        readonly reason?: string;
+        readonly reason?: ALInboundNackPlanReason;
         readonly missingRanges: readonly ALSeqRange[];
     };
     readonly repair: {
@@ -412,6 +412,14 @@ export function planALMessageHandling(
 export function shouldPersistInbox(effective: ALQosEffectivePolicy): boolean {
     return effective.durability.algo === 'local-inbox';
 }
+
+/**
+ * Which store pair of a runtime a lane runs over: the IndexedDB pair (`durable`), the session's memory
+ * pair (`volatile`), or a memory pair whose rows a checkpoint copies to IndexedDB (`checkpoint`). A lane
+ * names it on every diagnostic it states, so a reader of storage timings can keep them apart; the WS
+ * server's single-lane runtime is always `durable`.
+ */
+export type ALStoreDurability = 'volatile' | 'checkpoint' | 'durable';
 
 const AL_OUTBOUND_STORE_DURABILITY: Readonly<Record<ALDurabilityAlgo, ALStoreDurability>> = {
     volatile: 'volatile',

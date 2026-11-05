@@ -168,6 +168,7 @@ describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound
                 msgId: second.bundle.observations.msgId,
                 fromPeerId: 'server-1',
                 toPeerId: 'claimant-b',
+                logicalRecipientPeerId: 'server-1',
                 reason: 'held-by-other',
                 observedAtEpochMs: STARTED_AT_MS
             }

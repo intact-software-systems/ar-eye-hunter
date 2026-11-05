@@ -23,7 +23,8 @@ const SHORT_CLAIM_TTL_MS = 3_000;
 const CLAIM_EXPIRY_WAIT_MS = 3_500;
 const SENDER_AND_RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
     confirmed: ['sender', 'receiver'],
-    unconfirmed: []
+    unconfirmed: [],
+    outsideAudience: []
 };
 
 /**

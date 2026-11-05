@@ -1,7 +1,12 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
-import type { ALAckAlgo, ALDurabilityAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
+import type {
+    ALAckAlgo,
+    ALDurabilityAlgo,
+    ALReceiptMode,
+    ALStoreDurability
+} from '../../al-contracts/al-policy.ts';
 import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delivery-failure.ts';
@@ -42,8 +47,6 @@ export const AL_DELIVERY_STATES: readonly ALDeliveryState[] = [
 export const AL_DELIVERY_ADMITTED_STATES: readonly ALDeliveryState[] = AL_DELIVERY_STATES.filter(
     (state) => state !== 'submitted'
 );
-
-export type ALDeliveryCarrier = 'rtc' | 'ws';
 
 /** What one carrier attempt settled to; the seven transport outcomes plus an unroutable or refused admission. */
 export type ALDeliveryAttemptOutcome =
@@ -195,6 +198,8 @@ type ALDeliverySettlementStatement =
         expectedRecipientPeerIds: readonly string[];
         confirmedRecipientPeerIds: readonly string[];
         unconfirmedRecipientPeerIds: readonly string[];
+        /** Expected recipients that answered they are outside the audience: neither confirmed nor unconfirmed. */
+        outsideAudienceRecipientPeerIds: readonly string[];
         complete: boolean;
     }>
     /**
@@ -211,6 +216,7 @@ type ALDeliverySettlementStatement =
             mode: ALReceiptMode;
             confirmedPeerIds: readonly string[];
             unconfirmedPeerIds: readonly string[];
+            outsideAudiencePeerIds: readonly string[];
             detail: string;
         }>
         & ALDeliveryReceiptExhaustion
@@ -299,6 +305,8 @@ export interface ALDeliveryReceiptEvidence {
     readonly expectedRecipientPeerIds: readonly string[];
     readonly confirmedRecipientPeerIds: readonly string[];
     readonly unconfirmedRecipientPeerIds: readonly string[];
+    /** The expected recipients outside the audience; the expected list is the other three together. */
+    readonly outsideAudienceRecipientPeerIds: readonly string[];
 }
 
 /**
@@ -426,6 +434,7 @@ export function createInitialALDeliveryLifecycle(
             expectedRecipientPeerIds: [],
             confirmedRecipientPeerIds: [],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             relayRejection: undefined,
             receiptDowngrade: undefined,
             durabilityDowngrade: undefined,

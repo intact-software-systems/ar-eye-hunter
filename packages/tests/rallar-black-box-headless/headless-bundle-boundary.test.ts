@@ -25,6 +25,9 @@ interface HeadlessBundleMeasurement {
     readonly metafile: Metafile;
 }
 
+// The test bundles the whole headless entry with esbuild; on a loaded CI runner that takes longer than Vitest's 5 s default.
+const HEADLESS_BUNDLE_TEST_TIMEOUT_MS = 60_000;
+
 describe('rallar-black-box-headless bundle boundary', () => {
     let result: HeadlessBundleMeasurement;
     beforeAll(() => {
@@ -65,7 +68,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
             `the headless agent measures ${result.brotliKiB.toFixed(3)} KiB against ${budgetKiB} in headless-bundle-budget.json; ` +
                 `the budget is adjustable, so raise it to ${Math.floor(result.brotliKiB) + 1} and say so in the PR`
         ).toBeLessThan(budgetKiB);
-    });
+    }, HEADLESS_BUNDLE_TEST_TIMEOUT_MS);
 });
 
 function readBrotliBudgetKiB(): number {

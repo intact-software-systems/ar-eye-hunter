@@ -3,7 +3,8 @@ import {
     decodeALDeliveryCarrier,
     decodeALNackPayload,
     decodeALPendingAckSnapshot,
-    decodeALRepairPayload
+    decodeALRepairPayload,
+    type ALDeliveryCarrier
 } from '../al-contracts/al-control-value-codec.ts';
 import {
     type ALControlPayload,
@@ -16,7 +17,6 @@ import {
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALSeqRange, ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
 import { decodeALSeqRanges } from '../al-contracts/al-seq-range.ts';
-import type { ALDeliveryCarrier } from './delivery/al-delivery-lifecycle.ts';
 
 import type { ALOutboundVersionedClientRecord } from './outbound/admission/al-outbound-admission-store.ts';
 

@@ -5,7 +5,7 @@ import {
 } from 'vitest';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
@@ -82,10 +82,10 @@ const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as c
 /** The audiences run on every carrier, on the sender's principal twice and another principal once. */
 const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
-/** The topic subscription cells run over ws and the fallback cell, on four roles. */
+/** The topic subscription cells run on every carrier, on four roles. */
 const FOUR_ROLE_KEYS_BY_CARRIER = {
     ws: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect'],
-    rtc: [],
+    rtc: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect'],
     'rtc-with-ws-fallback': [
         'subscription-delivery',
         'subscription-token-count',
@@ -95,14 +95,22 @@ const FOUR_ROLE_KEYS_BY_CARRIER = {
 } as const;
 
 /**
- * A granted topic rides RTC as a signed `ack: 'none'` room multicast: its cells run over rtc alone, the two-agent ones
- * before the congestion and fairness cells and the forged sender last, on three agents.
+ * A granted topic rides RTC as a signed room multicast: its cells run over rtc, the two-agent ones before the
+ * congestion and fairness cells and the three-agent ones last, the relay-only cell, which reshapes the room's
+ * topology, after every other. The revoked publisher runs over the fallback carrier too.
  */
 const GRANTED_RTC_TWO_AGENT_KEYS = [
     'granted-rtc-delivered',
     'granted-rtc-missing-proof',
     'granted-rtc-publish-refused',
-    'granted-rtc-receipted-unsupported'
+    'granted-rtc-receipted-delivered',
+    'granted-rtc-revoked-publisher'
+] as const;
+
+const GRANTED_RTC_THREE_AGENT_KEYS = [
+    'granted-rtc-forged-sender',
+    'granted-rtc-not-subscribed',
+    'granted-rtc-relay-only'
 ] as const;
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
@@ -298,6 +306,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'paced-cancel',
         'paced-isolation-resources',
         'paced-isolation-lists',
+        'granted-rtc-revoked-publisher',
         'backpressure-hands-over'
     ]
 } as const;
@@ -365,12 +374,13 @@ describe('alm-conformance recipe family', () => {
                     ...FOUR_ROLE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
                         ['sender', 'receiver', 'sibling', 'publisher-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
-                    ...(carrier === 'rtc'
-                        ? []
-                        : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)),
-                    ...(carrier === 'rtc'
-                        ? ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-granted-rtc-forged-sender-${role}`)
-                        : [])
+                    // One RTC peer per session: the successor page runs over ws alone.
+                    ...(carrier === 'ws'
+                        ? ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)
+                        : []),
+                    ...(carrier === 'rtc' ? GRANTED_RTC_THREE_AGENT_KEYS : []).flatMap((key) =>
+                        ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
+                    )
                 ]);
         }
     });
@@ -389,7 +399,7 @@ describe('alm-conformance recipe family', () => {
             'claim-refused-on-rtc',
             'reply-first-wins',
             'paced-isolation-lists',
-            'granted-rtc-forged-sender'
+            ...GRANTED_RTC_THREE_AGENT_KEYS
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -432,7 +442,8 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role,
                 roles,
-                messageSelector: undefined
+                messageSelector: undefined,
+                connect: undefined
             })
                 .readiness?.minReadyPeers;
         const threeRoles = ['sender', 'receiver', 'recipient-b'] as const;
@@ -450,10 +461,31 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role: 'sender',
                 roles: threeRoles,
-                messageSelector: undefined
+                messageSelector: undefined,
+                connect: undefined
             })
                 .readiness
         ).toBeUndefined();
+    });
+
+    it('waits for the ready peers a scenario names in place of every other role, wherever the role waits at all', () => {
+        const threeRoles = ['sender', 'receiver', 'recipient-b'] as const;
+        const readinessOf = (role: AlmConformanceRole, carrier: AlmConformanceCarrier) =>
+            toConnectCommand({
+                input: toConformanceInput(carrier),
+                scenarioId: 'granted-rtc-relay-only',
+                scenarioKey: 'probe',
+                role,
+                roles: threeRoles,
+                messageSelector: undefined,
+                connect: { minReadyPeers: 1 }
+            })
+                .readiness?.minReadyPeers;
+
+        expect(readinessOf('sender', 'rtc')).toBe(1);
+        expect(readinessOf('receiver', 'rtc')).toBeUndefined();
+        expect(readinessOf('recipient-b', 'rtc')).toBeUndefined();
+        expect(readinessOf('sender', 'ws')).toBeUndefined();
     });
 
     // The successor is the sender's own session on a second page, so it is never a peer to wait for.
@@ -468,7 +500,8 @@ describe('alm-conformance recipe family', () => {
                     scenarioKey: 'probe',
                     role,
                     roles: sameContext,
-                    messageSelector: undefined
+                    messageSelector: undefined,
+                    connect: undefined
                 })
                     .readiness?.minReadyPeers,
                 role
@@ -483,7 +516,8 @@ describe('alm-conformance recipe family', () => {
             scenarioKey: 'probe',
             role: 'successor',
             roles: ['sender', 'receiver', 'successor'],
-            messageSelector: undefined
+            messageSelector: undefined,
+            connect: undefined
         });
 
         expect(connect.commandId).toBe('alm-ws-probe-successor-connect');
@@ -674,6 +708,7 @@ describe('alm-conformance recipe family', () => {
             'unicast-fallback',
             ...VOLATILE_BOUND_KEYS,
             ...REPLY_ADDRESSED_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
+            'granted-rtc-revoked-publisher',
             'backpressure-hands-over',
             'receipted-audience',
             'receipted-audience',
@@ -683,8 +718,7 @@ describe('alm-conformance recipe family', () => {
             ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             ...CLAIM_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             'durable-takeover',
-            ...FOUR_ROLE_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
-            'subscription-successor'
+            ...FOUR_ROLE_KEYS_BY_CARRIER['rtc-with-ws-fallback']
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
@@ -736,7 +770,9 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             // The granted rtc cells.
-            ...[...GRANTED_RTC_TWO_AGENT_KEYS, 'granted-rtc-forged-sender'].map(() => ['full'])
+            ...[...GRANTED_RTC_TWO_AGENT_KEYS, ...GRANTED_RTC_THREE_AGENT_KEYS].map(() => ['full']),
+            // The topic subscription cells, now that a receipted granted send rides rtc.
+            ...FOUR_ROLE_KEYS_BY_CARRIER.rtc.map(() => ['full'])
         ]);
     });
 
@@ -945,25 +981,34 @@ describe('alm-conformance recipe family', () => {
                 : command.kind;
 
         it('reads every receipt only after the scenario window, pinning its mode and the length of each recipient list', () => {
+            // expected = confirmed + unconfirmed + outside the audience
             const tails = {
-                'aggregated-receipt': ['acknowledged', 2, 2, 0],
-                'unknown-ack-version': ['acknowledged', 2, 2, 0],
-                'frozen-audience-membership': ['expired', 2, 1, 1]
+                'aggregated-receipt': ['acknowledged', 2, 2, 0, 0],
+                'unknown-ack-version': ['acknowledged', 2, 2, 0, 0],
+                'frozen-audience-membership': ['expired', 2, 1, 1, 0]
             } as const;
-            for (const [key, [ending, expected, confirmed, unconfirmed]] of Object.entries(tails)) {
-                const tail = receiptedOf('rtc', key).sender.commands.slice(-8, -1);
-                expect(tail.map(shapeOf), key)
-                    .toEqual(['received:1:absent', 'messages.receipts', 'assert', 'assert', 'assert', 'assert', 'assert']);
+            for (const [key, [ending, expected, confirmed, unconfirmed, outside]] of Object.entries(tails)) {
+                const tail = receiptedOf('rtc', key).sender.commands.slice(-9, -1);
+                expect(tail.map(shapeOf), key).toEqual([
+                    'received:1:absent',
+                    'messages.receipts',
+                    'assert',
+                    'assert',
+                    'assert',
+                    'assert',
+                    'assert',
+                    'assert'
+                ]);
                 expect(tail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []), key)
-                    .toEqual([ending, 'receiver', expected, confirmed, unconfirmed]);
+                    .toEqual([ending, 'receiver', expected, confirmed, unconfirmed, outside]);
             }
             const retryCounts = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
                 receiptedOf(carrier, 'missing-recipient-retry').sender.commands.flatMap((command) =>
                     command.kind === 'assert' && command.source.includes('RecipientPeerIds') ? [command.expected] : []
                 );
-            expect(retryCounts('ws')).toEqual([2, 1, 1]);
-            expect(retryCounts('rtc')).toEqual([2, 2, 0]);
-            expect(retryCounts('rtc-with-ws-fallback')).toEqual([2, 2, 0]);
+            expect(retryCounts('ws')).toEqual([2, 1, 1, 0]);
+            expect(retryCounts('rtc')).toEqual([2, 2, 0, 0]);
+            expect(retryCounts('rtc-with-ws-fallback')).toEqual([2, 2, 0, 0]);
         });
 
         it.each(
@@ -989,7 +1034,8 @@ describe('alm-conformance recipe family', () => {
                                     receiptMode: 'receiver',
                                     expectedRecipientPeerIds: lists.expected,
                                     confirmedRecipientPeerIds: lists.confirmed,
-                                    unconfirmedRecipientPeerIds: lists.unconfirmed
+                                    unconfirmedRecipientPeerIds: lists.unconfirmed,
+                                    outsideAudienceRecipientPeerIds: []
                                 }
                             }
                             : undefined

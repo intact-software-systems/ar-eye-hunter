@@ -71,7 +71,11 @@ function createOrderedMessage(seq: number): ALMessage {
 }
 
 /** What every control of the test shares: the addressee reports a gap before the revealing message. */
-function toGapReport(revealing: ALMessage, trackKey: string, missingRanges: readonly ALSeqRange[]): Omit<ALNackPayload, 'reason'> {
+function toGapReport(
+    revealing: ALMessage,
+    trackKey: string,
+    missingRanges: readonly ALSeqRange[]
+): Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId'> {
     return {
         msgId: revealing.id.msgId,
         fromPeerId: 'peer-1',
@@ -83,10 +87,10 @@ function toGapReport(revealing: ALMessage, trackKey: string, missingRanges: read
     };
 }
 
-function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason'>): ALMessage {
+function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId'>): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: controlMsgId, ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-repair-exhaustion' },
-        { ...report, reason: 'gap' }
+        { ...report, logicalRecipientPeerId: report.fromPeerId, reason: 'gap' }
     );
 }
 

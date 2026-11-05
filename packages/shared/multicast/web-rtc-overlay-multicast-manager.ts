@@ -132,6 +132,17 @@ import {
 /** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
 type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
 
+/** The plans that re-send a stored own message: each re-reads the origin's publish grant on a granted topic (S3-R8). */
+const RTC_STORED_SEND_STAGES: ReadonlySet<RtcOutgoingPlanStage> = new Set(['replan', 'dequeue']);
+
+/** An origin plan's message as carried and as its sender gave it, its policy, and whether it re-sends a stored copy. */
+interface RtcOriginRefusalInput {
+    readonly msg: ALMessage;
+    readonly original: ALMessage;
+    readonly policy: ALQosNormalizationResult;
+    readonly storedSend: boolean;
+}
+
 /** What one incoming plan reads beside its room admission. */
 interface RtcRoomMessagePlanningInput {
     readonly msg: ALMessage;
@@ -279,7 +290,12 @@ export class WebRtcOverlayMulticastManager {
                         lifecycle,
                         prepared.ingressPeerId
                     ),
-                planRepairMessage: async (msg, request) => await this.planRepairMessage(msg, request),
+                planRepairMessage: async (msg, request) =>
+                    this.#publications.planRepair(
+                        msg,
+                        request,
+                        (isTargetAdmitted) => this.planRepairMessage(msg, request, isTargetAdmitted)
+                    ),
                 diagnostics: dependencies.outboundDiagnostics,
                 settlements: dependencies.outboundSettlements
             }
@@ -339,7 +355,10 @@ export class WebRtcOverlayMulticastManager {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
             return await this.enqueueCarriedLegIfAbsent(msg, carrierGap);
         }
-        const signed = await this.#publications.signLeg(msg, (leg) => this.toRtcOriginAdmittedMessage(leg).message);
+        const signed = await this.#publications.signLeg(
+            msg,
+            (leg, subscribeHolders) => this.toRtcOriginAdmittedMessage(leg, subscribeHolders).message
+        );
         return await signed.fold(
             async (detail) =>
                 WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
@@ -640,7 +659,10 @@ export class WebRtcOverlayMulticastManager {
         ) {
             return false;
         }
-        const frozen = toRtcOriginFrozenMessage(msg, availability.context, this.connectionService.input.sessionId);
+        const frozen = toRtcOriginFrozenMessage(msg, availability.context, {
+            selfPeerId: this.connectionService.input.sessionId,
+            subscribeHolders: null
+        });
         const ownedChildPeerIds = resolveALOwnedChildPeerIds(frozen, {
             nowMs: availability.context.nowMs,
             selfPeerId: this.connectionService.input.sessionId,
@@ -701,8 +723,8 @@ export class WebRtcOverlayMulticastManager {
         original: ALMessage,
         stage: RtcOutgoingPlanStage
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        const { availability, policy, message: msg } = this.toRtcOriginAdmittedMessage(original);
-        const plan = this.computeOriginRefusal(msg, original, policy)
+        const { availability, policy, message: msg } = this.toRtcOriginAdmittedMessage(original, null);
+        const plan = this.computeOriginRefusal({ msg, original, policy, storedSend: RTC_STORED_SEND_STAGES.has(stage) })
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
         const planned = toRtcFrozenAudienceDispatchPlan(
             toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
@@ -713,21 +735,23 @@ export class WebRtcOverlayMulticastManager {
     }
 
     /** The origin freezes its room send at the first plan whose room authority admits it, then normalizes it. */
-    private toRtcOriginAdmittedMessage(original: ALMessage): RtcOriginAdmittedMessage {
-        const selfPeerId = this.connectionService.input.sessionId;
+    private toRtcOriginAdmittedMessage(
+        original: ALMessage,
+        subscribeHolders: ReadonlySet<string> | null
+    ): RtcOriginAdmittedMessage {
+        const origin = { selfPeerId: this.connectionService.input.sessionId, subscribeHolders };
         const availability = this.readCarrierAvailability(original);
         const context = availability.kind === 'available' ? availability.context : undefined;
-        const frozen = toRtcCarrierGapFrozenMessage(original, availability, selfPeerId) ??
-            toRtcOriginFrozenMessage(original, context, selfPeerId);
+        const frozen = toRtcCarrierGapFrozenMessage(original, availability, origin) ??
+            toRtcOriginFrozenMessage(original, context, origin);
         const policy = this.readOutgoingQosPolicy(frozen, context);
         return { availability, policy, message: toRtcOutboundMessage(frozen, policy.effective) };
     }
 
     private computeOriginRefusal(
-        msg: ALMessage,
-        original: ALMessage,
-        policy: ALQosNormalizationResult
+        input: RtcOriginRefusalInput
     ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
+        const { msg, original, policy } = input;
         return computeRtcBroadcastScopeRefusal(msg)
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
@@ -735,7 +759,8 @@ export class WebRtcOverlayMulticastManager {
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
-                (carried) => this.#publications.computeOriginRefusal(carried, original)
+                (carried) =>
+                    this.#publications.computeOriginRefusal({ carried, original, storedSend: input.storedSend })
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
@@ -1143,7 +1168,8 @@ export class WebRtcOverlayMulticastManager {
 
     private planRepairMessage(
         msg: ALMessage,
-        request: ALOutboundRepairRequest
+        request: ALOutboundRepairRequest,
+        isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
         if (request.requestedByPeerId) {
             return toRtcFrozenAudienceRepairPlan(
@@ -1162,7 +1188,8 @@ export class WebRtcOverlayMulticastManager {
                     selfPeerId,
                     toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
                 ),
-                planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg, 'replan')
+                planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg, 'replan'),
+                isRepairTargetAdmitted
             });
         }
 

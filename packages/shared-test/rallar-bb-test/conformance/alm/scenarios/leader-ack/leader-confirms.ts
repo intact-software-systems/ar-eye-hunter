@@ -15,7 +15,11 @@ import {
     toLeaderActivityWait
 } from './leader-ack-commands.ts';
 
-const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver'], unconfirmed: [] };
+const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver'],
+    unconfirmed: [],
+    outsideAudience: []
+};
 
 /**
  * The receiver appoints itself the room's director; once the sender's own snapshot reads it active, the sender's room

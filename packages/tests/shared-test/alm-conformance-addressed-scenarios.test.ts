@@ -142,7 +142,8 @@ describe('the addressed-send family (C11)', () => {
                 {
                     handleId: `alm-${carrier}-ws-unicast-receipt-send-1`,
                     confirmed: ['receiver'],
-                    unconfirmed: []
+                    unconfirmed: [],
+                    outsideAudience: []
                 }
             ]);
             expect(bodyOf(scenario.receiver).map(shapeOf), carrier).toEqual(['received:1']);

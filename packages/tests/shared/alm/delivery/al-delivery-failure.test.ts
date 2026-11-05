@@ -89,6 +89,7 @@ function toReceiptExhausted(exhaustion: ALDeliveryReceiptExhaustion): ALDelivery
         mode: 'receiver',
         confirmedPeerIds: ['b'],
         unconfirmedPeerIds: ['c'],
+        outsideAudiencePeerIds: [],
         ...exhaustion,
         detail: 'The receipt ended.',
         traceId: 'trace-al-delivery-failure'

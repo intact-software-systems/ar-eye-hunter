@@ -381,6 +381,7 @@ describe('typed message fallback identity', () => {
             mode: 'receiver',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['peer-1'],
+            outsideAudiencePeerIds: [],
             cause: 'budget',
             detail: 'No receipt arrived.',
             traceId: 'trace-browser-message-fallback-identity'
@@ -449,6 +450,7 @@ describe('typed message fallback identity', () => {
             mode: 'receiver',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['peer-1'],
+            outsideAudiencePeerIds: [],
             cause: 'budget',
             detail: 'No receipt arrived.',
             traceId: 'trace-hand-over'
@@ -476,6 +478,7 @@ describe('typed message fallback identity', () => {
             mode: 'receiver',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['peer-1'],
+            outsideAudiencePeerIds: [],
             cause: 'budget',
             detail: 'No receipt arrived.',
             traceId: 'trace-hand-over'

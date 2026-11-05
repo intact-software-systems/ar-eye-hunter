@@ -358,6 +358,7 @@ it('retains delivery results, retry outcomes and receipts with ALM recording Off
         expectedRecipientPeerIds: ['peer-1'],
         confirmedRecipientPeerIds: ['peer-1'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-alm-recording'
     });

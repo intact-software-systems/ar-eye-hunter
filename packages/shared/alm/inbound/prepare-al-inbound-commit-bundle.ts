@@ -1,4 +1,5 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -7,7 +8,6 @@ import {
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
@@ -211,6 +211,9 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     ...toControlOrdering(payload.ordering),
                     fromPeerId: facts.selfPeerId,
                     toPeerId: payload.toPeerId,
+                    logicalRecipientPeerId: payload.logicalRecipient.kind === 'self'
+                        ? facts.selfPeerId
+                        : payload.logicalRecipient.peerId,
                     msgId: payload.msgId,
                     reason: payload.reason,
                     observedAtEpochMs: facts.observedAtEpochMs

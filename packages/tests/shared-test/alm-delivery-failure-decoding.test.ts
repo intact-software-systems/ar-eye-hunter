@@ -13,6 +13,7 @@ const OBSERVATION = {
     expectedRecipientPeerIds: ['relay-session'],
     confirmedRecipientPeerIds: [],
     unconfirmedRecipientPeerIds: ['relay-session'],
+    outsideAudienceRecipientPeerIds: [],
     attempts: 1,
     attemptOutcomes: ['sent'],
     attemptCarriers: ['rtc'],
@@ -48,6 +49,12 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
                 cause: 'hop-refused',
                 hopPeerId: 'relay-session',
                 nackReason: 'stale'
+            },
+            {
+                kind: 'receipt-exhausted',
+                cause: 'hop-refused',
+                hopPeerId: 'relay-session',
+                nackReason: 'not-subscribed'
             },
             { kind: 'expired' }
         ] satisfies readonly ALDeliveryFailure[]
@@ -122,5 +129,25 @@ describe('the durability downgrade a delivery observation carries', () => {
     ])('refuses a downgrade whose $field is unusable', ({ durabilityDowngrade, field }) => {
         expect(() => decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }))
             .toThrowError(`The page runtime returned no usable delivery observation.${field}.`);
+    });
+
+    it('reads the recipients a receipt holds outside the audience', () => {
+        const observation = {
+            ...OBSERVATION,
+            receiptMode: 'receiver',
+            expectedRecipientPeerIds: ['recipient-b', 'recipient-c'],
+            confirmedRecipientPeerIds: ['recipient-b'],
+            unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: ['recipient-c']
+        };
+
+        expect(decodeAlmDeliveryResultValue(observation).outsideAudienceRecipientPeerIds).toEqual(['recipient-c']);
+    });
+
+    it('refuses an observation that omits the outside-audience recipients', () => {
+        const { outsideAudienceRecipientPeerIds: _omitted, ...withoutOutside } = OBSERVATION;
+
+        expect(() => decodeAlmDeliveryResultValue(withoutOutside))
+            .toThrowError('The page runtime returned no usable delivery observation.outsideAudienceRecipientPeerIds.');
     });
 });

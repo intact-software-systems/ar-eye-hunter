@@ -143,7 +143,8 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source: INBOUND_TEST_SOURCE,
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp
             }, {
@@ -158,6 +159,7 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
                         localReady: true,
                         expectedFromPeerIds: [ACKNOWLEDGING_PEER_ID],
                         ackedFromPeerIds: [],
+                        outsideAudiencePeerIds: [],
                         expireAtTimestamp,
                         carrier: 'ws'
                     }

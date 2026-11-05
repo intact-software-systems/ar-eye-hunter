@@ -277,6 +277,7 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             expectedRecipientPeerIds: ['peer-1', 'peer-2'],
             confirmedRecipientPeerIds: ['peer-1'],
             unconfirmedRecipientPeerIds: ['peer-2'],
+            outsideAudienceRecipientPeerIds: [],
             complete: false,
             traceId: 'trace-outbound-runtime-test-fixture'
         },
@@ -292,6 +293,7 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             expectedRecipientPeerIds: ['peer-1', 'peer-2'],
             confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             complete: true,
             traceId: 'trace-outbound-runtime-test-fixture'
         }
@@ -323,6 +325,7 @@ it.each(BACKEND_KINDS)(
                 {
                     msgId: message.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'resync-required',
                     observedAtEpochMs: 1

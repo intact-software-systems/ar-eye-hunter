@@ -555,6 +555,7 @@ export class RallarServerWsRouter {
                 {
                     fromPeerId: this.service.name,
                     toPeerId: message.id.senderId,
+                    logicalRecipientPeerId: this.service.name,
                     msgId: message.id.msgId,
                     reason: rejection.reason,
                     observedAtEpochMs,

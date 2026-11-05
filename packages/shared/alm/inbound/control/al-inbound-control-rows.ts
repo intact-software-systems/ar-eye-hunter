@@ -1,4 +1,4 @@
-import type { ALAckPayload, ALControlPersistenceValue } from '../../../al-contracts/al-control.ts';
+import type { ALControlPersistenceValue } from '../../../al-contracts/al-control.ts';
 import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../../al-admission-backend.ts';
 import { decodeALAdmissionControlValue } from '../../al-admission-value-validation.ts';
 import type {
@@ -57,21 +57,27 @@ export async function readStoredControlOwnerIndex(
     return await database.read(toALInboundControlOwnersKey(namespace, msgId), decodeALInboundControlOwnerIndex);
 }
 
-/** Absent when the owner index names no single original sender for the acknowledging peer. */
+/** Which message a child's control is about, and the child hop it came from. */
+export interface ALInboundControlSubject {
+    readonly msgId: string;
+    readonly fromPeerId: string;
+}
+
+/** Absent when the owner index names no single original sender for the controlling peer. */
 export async function readControlDecisionSurface(
     database: Pick<ALAdmissionBackend, 'read'>,
     namespace: string,
-    ack: ALAckPayload
+    subject: ALInboundControlSubject
 ): Promise<ALInboundControlDecisionSurface | undefined> {
-    const controlOwners = await readStoredControlOwnerIndex(database, namespace, ack.ackedMsgId);
+    const controlOwners = await readStoredControlOwnerIndex(database, namespace, subject.msgId);
     if (controlOwners === undefined) {
         return undefined;
     }
-    const senderId = resolveALInboundAcknowledgedSenderId(controlOwners, ack.fromPeerId);
+    const senderId = resolveALInboundAcknowledgedSenderId(controlOwners, subject.fromPeerId);
     if (senderId === undefined) {
         return undefined;
     }
-    const rows: ALInboundMessageRowsRead = { database, namespace, msgId: ack.ackedMsgId, senderId };
+    const rows: ALInboundMessageRowsRead = { database, namespace, msgId: subject.msgId, senderId };
     const messageOwner = await readALInboundMessageOwner(rows);
     const { pendingAck, acks } = await readStoredAcknowledgements(rows);
     return { senderId, controlOwners, messageOwner, pendingAck, acks };

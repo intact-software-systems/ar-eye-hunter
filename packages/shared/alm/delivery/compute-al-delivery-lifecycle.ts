@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryFailure } from './al-delivery-failure.ts';
@@ -5,7 +6,6 @@ import {
     isALDeliveryTerminal,
     type ALDeliveryAdmissionVerdict,
     type ALDeliveryAttempt,
-    type ALDeliveryCarrier,
     type ALDeliveryEvidence,
     type ALDeliveryLifecycle,
     type ALDeliveryReceiptDowngrade,
@@ -207,7 +207,10 @@ function toAcknowledgementLifecycle(
     return isAcknowledged(settlement) ? { ...previous, state: 'acknowledged', evidence } : { ...previous, evidence };
 }
 
-/** Under `receiver` and `leader` only logical completeness acknowledges: every expected recipient confirmed. */
+/**
+ * Under `receiver` and `leader` only logical completeness acknowledges: every expected recipient confirmed or outside
+ * the audience.
+ */
 function isAcknowledged(settlement: ALDeliveryAcknowledgementSettlement): boolean {
     return isALLogicalReceiptMode(settlement.mode)
         ? settlement.complete && settlement.unconfirmedRecipientPeerIds.length === 0
@@ -247,10 +250,12 @@ function toReceiptExhaustedLifecycle(
                 : failed.evidence.unconfirmedHopPeerIds,
             expectedRecipientPeerIds: [
                 ...settlement.confirmedPeerIds,
-                ...settlement.unconfirmedPeerIds
+                ...settlement.unconfirmedPeerIds,
+                ...settlement.outsideAudiencePeerIds
             ],
             confirmedRecipientPeerIds: [...settlement.confirmedPeerIds],
-            unconfirmedRecipientPeerIds: [...settlement.unconfirmedPeerIds]
+            unconfirmedRecipientPeerIds: [...settlement.unconfirmedPeerIds],
+            outsideAudienceRecipientPeerIds: [...settlement.outsideAudiencePeerIds]
         }
     };
 }
@@ -543,6 +548,7 @@ function toAcknowledgementEvidence(
         unconfirmedHopPeerIds: [...settlement.unconfirmedHopPeerIds],
         expectedRecipientPeerIds: [...settlement.expectedRecipientPeerIds],
         confirmedRecipientPeerIds: [...settlement.confirmedRecipientPeerIds],
-        unconfirmedRecipientPeerIds: [...settlement.unconfirmedRecipientPeerIds]
+        unconfirmedRecipientPeerIds: [...settlement.unconfirmedRecipientPeerIds],
+        outsideAudienceRecipientPeerIds: [...settlement.outsideAudienceRecipientPeerIds]
     };
 }

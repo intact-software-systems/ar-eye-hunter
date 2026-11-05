@@ -163,6 +163,11 @@ receipted: the WS copy meets the first admission in the shared session store, is
 `not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
 its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers below)
 -- the receipt the WS leg needs from every member of the frozen audience.
+The message-owner row records whether the recipient delivers the message, at once or on its ordered release
+(`deliveredLocally`; a row written
+before the field existed reads as delivered), so a WS copy that meets the RTC admission of a frozen recipient that
+answered `not-subscribed` answers `subtree-complete-not-subscribed`, never `delivered`, and the WS server's receipt
+aggregation records that recipient in `outsideAudienceRecipientPeerIds`, never as a confirmation.
 The WS server narrows its current room to the frozen audience, so a session that left after the RTC
 freeze is absent from the WS receipt rather than read unconfirmed.
 
@@ -277,7 +282,22 @@ own terminal `subtree-complete` ACK, naming itself, last; the parent reads it
 as the end of the subtree. A peer that delivered nothing -- local delivery
 off, or a session outside the frozen audience, which may forward but never
 delivers locally or counts as a recipient -- ends its subtree with
-`subtree-complete`, never `delivered` (R-S2c-ii-4). The row stays until it
+`subtree-complete`, never `delivered` (R-S2c-ii-4). A frozen recipient of a granted RTC publication that may
+not subscribe or holds no active token
+([`computeRtcPublicationAdmission`](../../multicast/publication/compute-rtc-publication-admission.ts)'s
+`forward-not-subscribed`) is the one peer
+that says why: under `receiver` and `leader` it sends its hop a `not-subscribed` NACK naming itself, and never
+confirms itself -- no `accepted`, no `delivered`, on a retried copy neither. Its hop still ends as any hop does,
+with a terminal ACK once its subtree answered (a leaf at once), but of status `subtree-complete-not-subscribed`,
+which completes the hop and confirms no recipient: no relay passes it upward and the origin counts nobody for it
+(PL11). A copy that arrives past an ordering gap is answered the same way: its gap NACK, which would ask for
+history the session is not entitled to, gives way to the `not-subscribed` NACK, and its hop ends with that status.
+A relay admits a child's `not-subscribed` NACK -- the one NACK inbound control admission handles; every
+other NACK stays its outbound owner's -- from a child hop its row waits on and for a recipient of the frozen
+audience whose confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`,
+and re-originates it to its parent from itself naming the same recipient, once per recipient and again in its
+answer to a retried copy; the NACK completes no hop, and no confirming ACK for that recipient is admitted after
+it (PL9, PL16). A row stored before `outsideAudiencePeerIds` existed reads none. The row stays until it
 expires, so a child ACK that arrives after completion is still relayed, and a
 retried copy of the message is answered from it
 ([`computeALInboundDuplicateChanges`](./admission/compute-al-inbound-duplicate-changes.ts)):
@@ -870,7 +890,9 @@ Explicit ACK capture is owned by
 The black-box browser diagnostic installer supplies its class and the existing
 `ALWorkBatchObservations` resource through the callable sink's optional
 `acknowledgementCapture`. Runtime/lane/admission reference that owner only as a
-type; ordinary sinks create no new ACK evidence. The association retains exact
+type; ordinary sinks create no new ACK evidence. It covers both controls the relay
+admits — a child's ACK and its `not-subscribed` NACK — through one recording path,
+each identity naming its `control`. The association retains exact
 received and generated control identities, logical recipient, prior owner/source,
 pending parent, candidate validity, actual conditional commit and retention results.
 A conflict's candidate IDs remain distinguishable from a replay's newly generated

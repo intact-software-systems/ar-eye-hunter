@@ -1,3 +1,4 @@
+import { AL_INBOUND_NACK_PLAN_REASONS } from '../../al-contracts/al-control-value-codec.ts';
 import { assertPersistedALQos } from '../../al-contracts/al-message-persistence/assert-persisted-al-qos.ts';
 import {
     requireOptionalPersistedALNonEmptyString,
@@ -130,7 +131,9 @@ function assertControlPlan(plan: PersistedALRecord): void {
     requirePersistedALFields(nack, ['enabled', 'toPeerId', 'reason', 'missingRanges'], ['enabled', 'missingRanges']);
     requireBooleans(nack, ['enabled']);
     requireOptionalPersistedALNonEmptyString(nack.toPeerId, 'nack peer');
-    requireOptionalPersistedALNonEmptyString(nack.reason, 'nack reason');
+    if (nack.reason !== undefined) {
+        requireVariant(nack.reason, AL_INBOUND_NACK_PLAN_REASONS, 'nack reason');
+    }
     decodeALAdmissionSeqRanges(nack.missingRanges);
     const repair = requirePersistedALRecord(plan.repair, 'repair plan');
     requirePersistedALFields(repair, ['enabled', 'algo', 'reason'], ['enabled', 'algo']);

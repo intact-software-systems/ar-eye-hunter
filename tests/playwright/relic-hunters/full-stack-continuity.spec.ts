@@ -209,7 +209,7 @@ roomBrowserTest(
         const other = await host.context().newPage();
         await other.addInitScript(observeBrowserWebGlContexts);
         await other.goto(link);
-        await waitForExpeditionScene(other);
+        await waitForExpeditionScene(other, 'shared-context');
         // interaction: direct room recovery allocates only the destination renderer, not a discarded opening context.
         await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
         const committed = Promise.withResolvers<void>();
@@ -242,7 +242,7 @@ roomBrowserTest(
             // A fragment-only navigation retains the departed runtime instead of loading the saved state.
             await other.goto('about:blank');
             await other.goto(link);
-            await waitForExpeditionScene(other);
+            await waitForExpeditionScene(other, 'shared-context');
             await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
             await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
             await expect(other.locator('.lobby-party-row')).toHaveCount(0);
@@ -264,7 +264,7 @@ roomBrowserTest(
         const link = await host.getByLabel('Room link', { exact: true }).inputValue();
         const other = await host.context().newPage();
         await other.goto(link);
-        await waitForExpeditionScene(other);
+        await waitForExpeditionScene(other, 'shared-context');
         const requested = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         await host.route('**/commands/requests/*', async (route) => {

@@ -135,15 +135,15 @@ export function createDefaultBrowserTopicSubscriptions(): BrowserTopicSubscripti
 }
 
 /**
- * Built once per page beside its key, so its verdicts outlive a reconnect; each connect's RTC overlay verifies
- * granted frames with it against the room snapshot the page currently holds.
+ * Built once per page over its WebCrypto, so its verdicts outlive a reconnect and a session change; each connect's RTC
+ * overlay verifies granted frames with it against the room snapshot the page currently holds.
  */
-export async function createDefaultRtcPublicationProofVerifier(
-    foundation: Pick<BrowserRuntimeFoundation, 'publicationCrypto'>,
+export function createDefaultRtcPublicationProofVerifier(
+    foundation: Pick<BrowserRuntimeFoundation, 'subtle'>,
     state: BrowserStateComposition
-): Promise<RtcPublicationProofVerifier> {
+): RtcPublicationProofVerifier {
     return new RtcPublicationProofVerifier({
-        crypto: toPublicationVerificationCrypto(await foundation.publicationCrypto),
+        crypto: toPublicationVerificationCrypto(foundation.subtle),
         findGroupSnapshot: (groupRef) => state.roomStateStore.findGroupSnapshot(groupRef),
         nowEpochMs: Date.now
     });

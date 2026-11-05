@@ -16,7 +16,11 @@ import {
     toHeldByOtherVerdictCommands
 } from './claim-commands.ts';
 
-const BOTH_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver', 'recipient-b'], unconfirmed: [] };
+const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver', 'recipient-b'],
+    unconfirmed: [],
+    outsideAudience: []
+};
 
 /**
  * The sender claims the cell's resource with a room send over WS that both recipients receive once and confirm.

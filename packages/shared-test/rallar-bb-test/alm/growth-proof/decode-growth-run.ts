@@ -1,4 +1,4 @@
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { decodeGrowthBrowserStats } from './decode-growth-browser-stats.ts';
@@ -8,7 +8,6 @@ import {
     isPositiveNumber,
     type DecodedGrowthPoints
 } from './decode-growth-lines.ts';
-import { isApiJsonObject } from './growth-series.ts';
 import type { GrowthRun, GrowthSamples } from './growth-verdict.ts';
 import type { GrowthRunnerOutcome, GrowthWorkload } from './growth-workload.ts';
 

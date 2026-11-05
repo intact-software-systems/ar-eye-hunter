@@ -2,6 +2,7 @@ import { assert } from '@std/assert';
 
 import type { RallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     AL_MESSAGE_RESOURCE_LIMITS,
     computeALMessageEnvelopeBytes
@@ -13,7 +14,7 @@ import {
 } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { toALPublicationLaneKey } from '@shared/al-contracts/publication/to-al-publication-stream-key.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
-import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundPublicationStage,

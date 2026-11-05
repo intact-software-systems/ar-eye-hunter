@@ -30,21 +30,17 @@ import {
     toReceiptsCommand
 } from './topic-subscription-publications.ts';
 
-/**
- * Covers the sibling's socket close, which follows the probe loop's cue at once, so `publication-1` leaves while that
- * socket is down: a cue the sibling sent itself could be lost with the socket it closes.
- */
-const SOCKET_CLOSE_MARGIN_MS = 2_000;
-
 /** Covers the window between the sender's last readiness probe and its receipt reads, so the receipts have settled. */
 const RECEIPT_SETTLE_MS = 2_000;
 
 /**
- * Revoke while disconnected: the sibling's product socket drops; `publication-1` leaves while it is down, and the
- * receiver then revokes the principal's `subscribe` (it keeps `publish`) and says so; `publication-2` follows. The
- * reopened socket's re-assertion is refused. The receiver receives both, the sibling neither, and neither receipt
- * confirms the sibling. A clean close removes the sibling's live generation at once, so no dispatch is held for it:
- * the held-dispatch revocation is proven server-side by `apps/api-v1/test/services/ws-room-granted-delivery.test.ts`.
+ * Revoke while disconnected: the sibling's product socket drops, and a probe publishes until the receiver alone is
+ * expected (a cue the sibling sent itself could be lost with the socket it closes); `publication-1` leaves while the
+ * socket is down, and the receiver then revokes the principal's `subscribe` (it keeps `publish`) and says so;
+ * `publication-2` follows. The reopened socket's re-assertion is refused. The receiver receives both, the sibling
+ * neither, and neither receipt confirms the sibling. A clean close removes the sibling's live generation at once, so
+ * no dispatch is held for it: the held-dispatch revocation is proven server-side by
+ * `apps/api-v1/test/services/ws-room-granted-delivery.test.ts`.
  * A reopened socket's session holds no room presence, so the sibling sends nothing after it drops.
  */
 export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = {
@@ -116,9 +112,16 @@ function toPublisherCommands(sender: AlmConformanceStepInput): readonly RallarBl
             step: sender,
             name: 'probe-two-subscribers',
             confirmations: 2,
+            outsideAudience: 0,
             kind: 'probe'
         }),
-        toPauseCommand(sender, 'socket-close-margin', SOCKET_CLOSE_MARGIN_MS),
+        ...toPublishUntilConfirmedCommands({
+            step: sender,
+            name: 'probe-receiver-alone',
+            confirmations: 1,
+            outsideAudience: 0,
+            kind: 'probe'
+        }),
         ...toPublishCommands(sender, 'publication-1'),
         toCueWait(sender, 'revoked'),
         ...toPublishCommands(sender, 'publication-2'),

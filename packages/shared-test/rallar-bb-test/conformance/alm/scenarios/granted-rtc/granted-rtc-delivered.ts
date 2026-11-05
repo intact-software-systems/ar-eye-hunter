@@ -37,7 +37,7 @@ export const grantedRtcDelivered: AlmConformanceScenarioDefinition = {
 
 function toDeliveredReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(receiver),
+        ...toGrantedRtcOwnerCommands(receiver, []),
         toRtcArrivalWait(receiver),
         ...toCueSendCommands(receiver, 'received'),
         ...toUnsubscribeCommands(receiver, 'receiver')

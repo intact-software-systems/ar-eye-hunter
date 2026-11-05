@@ -8,7 +8,9 @@ import type { ALMessageRejection } from '../../al-contracts/al-message-persisten
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
+import { isALOutboundExpectedRepairPeer } from './control/is-al-outbound-expected-repair-peer.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
+import { validateALOutboundNotSubscribedNack } from './control/validate-al-outbound-not-subscribed-nack.ts';
 import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
@@ -46,8 +48,11 @@ export function validateALOutboundControlAdmission(
         }
         return [...issues, ...validateAcknowledgedReceipt(read, payload)];
     }
+    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'not-subscribed') {
+        return [...issues, ...validateALOutboundNotSubscribedNack(read, read.parsed.payload)];
+    }
     const payload = read.parsed.payload;
-    if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read, payload.fromPeerId)) {
+    if (!isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, payload.fromPeerId)) {
         issues.push({ code: 'unauthorized', message: 'AL repair sender has no retained outbound obligation' });
     }
     if (!hasValidOrderingHints(read.sent, payload)) {
@@ -62,13 +67,20 @@ export function validateALOutboundControlAdmission(
 /**
  * An ACK must move its receipt: confirm a peer the receipt expects and has not counted yet. One that
  * would move nothing is refused rather than committed, so it costs no write and no version bump. The
- * exception is the terminal ACK of a recipient relay whose `accepted` ACK the receipt already counted:
- * it completes that next hop, which the hop view records, so a retry never resends into its subtree.
+ * exception is the terminal ACK of a next hop whose recipient the receipt already counted, or which confirms
+ * nobody, having answered `not-subscribed`: it completes that hop, which the hop view records, so a retry never
+ * resends into its subtree.
  */
 function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPayload): readonly ALMessageRejection[] {
     const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
-    if (!pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId)) {
+    if (pending && countedPeerId === undefined && isOpenNextHopCompletion(read, ack)) {
+        return [];
+    }
+    if (
+        !pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId) ||
+        pending.outsideAudiencePeerIds.includes(countedPeerId)
+    ) {
         return [{
             code: 'unauthorized',
             message: 'AL acknowledgement confirms no peer of the pending outbound receipt'
@@ -103,6 +115,7 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
             return read.history.kind === 'nacks' &&
                 read.history.values.some((prior) =>
                     prior.fromPeerId === payload.fromPeerId && prior.reason === payload.reason &&
+                    prior.logicalRecipientPeerId === payload.logicalRecipientPeerId &&
                     prior.orderingKey === payload.orderingKey && prior.expectedSeq === payload.expectedSeq &&
                     prior.serverSnapshotVersion === payload.serverSnapshotVersion &&
                     equalSeqRanges(prior.missingRanges, payload.missingRanges)
@@ -127,15 +140,6 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
  */
 function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
     return resolveALOutboundRelayRejection(read)?.relay === 'trusted-server';
-}
-
-/**
- * A repair or NACK comes from a unicast's addressee, from any peer its receipt expects, or from a hop the
- * composition sends every frame through: on WS, the server, tracked by the receipt or named by the client.
- */
-function isExpectedRepairPeer(read: ALControlAdmissionRead, peerId: string): boolean {
-    return read.sent?.unicastPeerId === peerId || read.pending?.expectedPeerIds.includes(peerId) === true ||
-        read.hopPeerIds?.includes(peerId) === true;
 }
 
 function hasValidOrderingHints(

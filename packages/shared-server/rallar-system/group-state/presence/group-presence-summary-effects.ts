@@ -72,10 +72,11 @@ export interface GroupPresenceSummaryWorkRead {
     readonly topologyReplanPolicyFacts: TopologyReplanPolicyFacts;
 }
 
-/** The replan decision: queued work, or held by the replanning policy. */
+/** The replan decision: queued work, held by the replanning policy, or nothing to plan after a key-only change. */
 export type TopologyReplanDecision =
     | Readonly<{ decision: 'enqueue'; work: ComputedCoalescedAppOutboxWork; }>
-    | Readonly<{ decision: 'held-by-policy'; }>;
+    | Readonly<{ decision: 'held-by-policy'; }>
+    | Readonly<{ decision: 'no-topology-change'; }>;
 
 export interface GroupPresenceSummaryComputedWork {
     readonly work: GroupPresenceSummaryWorkData;
@@ -281,6 +282,14 @@ export function toTopologyReplanOrigin(work: GroupPresenceSummaryWorkData): Topo
 
 function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): TopologyReplanDecision {
     const { work, read, summary, snapshot, options } = input;
+    const origin = toTopologyReplanOrigin(work);
+    // Commanded work always runs; automatic work after a change of publication keys alone has no input to plan from.
+    if (
+        origin === 'automatic' && summary.outcome === 'write' && summary.operation === 'update' &&
+        summary.publicationKeysOnly
+    ) {
+        return { decision: 'no-topology-change' };
+    }
     const enqueue = resolveTopologyReplanEnqueue({
         ...toTopologyReplanEnqueueFacts(work, snapshot.group, {
             coalescedTopologyEntry: read.coalescedTopologyEntry,
@@ -300,7 +309,7 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
             expireAtEpochMs: work.expireAtEpochMs,
             timing: toTopologyReplanTiming({ read, snapshot, options }),
             senderId: options.serviceId,
-            origin: toTopologyReplanOrigin(work),
+            origin,
             previousEntry: read.coalescedTopologyEntry,
             traceId: input.traceId
         })

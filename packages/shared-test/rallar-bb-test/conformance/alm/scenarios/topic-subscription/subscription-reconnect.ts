@@ -30,14 +30,18 @@ import {
     toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
 
-/** Covers the sibling's close, which follows the probe loop's cue at once, its reopen and its re-assertion. */
-const RECONNECT_MARGIN_MS = 2_000;
+/** The sibling's fact that its re-asserted token reads `active` once its row names the new generation. */
+const REASSERTED_ACTIVE = 'tokens-after-rows-active';
 
 /**
  * A same-session socket reconnect re-asserts the subscription under the new connection generation, but the server
  * closed the session's room presence with the old socket and nothing reopens it. The sibling's product socket drops
- * and reopens; its one row moves to the new generation and its token stays `active`, yet `publication`, published once
- * the server expects the receiver alone, reaches the receiver and not the reopened sibling.
+ * and reopens; its one row moves to the new generation and its token stays `active`, yet `publication` reaches the
+ * receiver and not the reopened sibling. A probe publishes first until the receiver alone is expected: the WS server
+ * stops expecting the sibling with its socket, an RTC sender once its snapshot drops the closed presence, which
+ * until then freezes the sibling in with its active token. The reopened sibling can send nothing to say it is done,
+ * so the lane holds the publication back as the sender's continuation until the sibling's token reads `active` after
+ * its row names the new generation.
  */
 export const subscriptionReconnect: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-reconnect',
@@ -48,9 +52,21 @@ export const subscriptionReconnect: AlmConformanceScenarioDefinition = {
     laneFamily: 'four-role',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
-    toSenderCommands: (producer) => producer.role === 'sender' ? toPublisherCommands(producer) : [],
+    toSenderCommands: (producer) => producer.role === 'sender' ? toProbeCommands(producer) : [],
     toRecipientCommands: (recipient) =>
-        recipient.role === 'receiver' ? toOwnerCommands(recipient) : toReconnectingSubscriberCommands(recipient)
+        recipient.role === 'receiver' ? toOwnerCommands(recipient) : toReconnectingSubscriberCommands(recipient),
+    continuation: {
+        // A fact's command is named `assert-<fact>`.
+        gate: { role: 'sibling', commandName: `assert-${REASSERTED_ACTIVE}` },
+        toCommands: (sender) =>
+            toPublishUntilConfirmedCommands({
+                step: sender,
+                name: 'publication',
+                confirmations: 1,
+                outsideAudience: 0,
+                kind: 'publication'
+            })
+    }
 };
 
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
@@ -93,7 +109,7 @@ function toReconnectingSubscriberCommands(sibling: AlmConformanceStepInput): rea
         toTokenReadCommand(sibling, 'tokens-after-rows'),
         toResultFact({
             step: sibling,
-            name: 'tokens-after-rows-active',
+            name: REASSERTED_ACTIVE,
             source: `resultCache.${toCommandId(sibling, 'tokens-after-rows')}.value.subscriptions.0.status`,
             operator: 'equals',
             expected: 'active'
@@ -104,15 +120,21 @@ function toReconnectingSubscriberCommands(sibling: AlmConformanceStepInput): rea
     ];
 }
 
-function toPublisherCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+function toProbeCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toPublishUntilConfirmedCommands({
             step: sender,
             name: 'probe-two-subscribers',
             confirmations: 2,
+            outsideAudience: 0,
             kind: 'probe'
         }),
-        toPauseCommand(sender, 'reconnect-margin', RECONNECT_MARGIN_MS),
-        ...toPublishUntilConfirmedCommands({ step: sender, name: 'publication', confirmations: 1, kind: 'publication' })
+        ...toPublishUntilConfirmedCommands({
+            step: sender,
+            name: 'probe-receiver-alone',
+            confirmations: 1,
+            outsideAudience: 0,
+            kind: 'probe'
+        })
     ];
 }

@@ -29,6 +29,7 @@ const nackFrame = JSON.stringify(newALNackControlMessage(
     {
         msgId: 'msg-2',
         fromPeerId: 'b',
+        logicalRecipientPeerId: 'b',
         toPeerId: 'a',
         reason: 'gap',
         observedAtEpochMs: 1

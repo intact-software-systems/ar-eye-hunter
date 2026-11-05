@@ -97,6 +97,7 @@ describe('a repair hint is served in pages', () => {
                 {
                     msgId: track[REVEALING_SEQ - 1]!.id.msgId,
                     fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1,

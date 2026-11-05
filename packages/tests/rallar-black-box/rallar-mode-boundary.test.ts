@@ -1,12 +1,24 @@
 // @vitest-environment happy-dom
 
 import {
+    afterEach,
+    beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
+import { createBrowserTestStorage } from '../shared-test/browser-test-storage.ts';
+
+// Node's own `localStorage` getter shadows happy-dom's and warns, so the browser storage the store reads is stubbed.
+beforeEach(() => {
+    vi.stubGlobal('localStorage', createBrowserTestStorage());
+    vi.stubGlobal('sessionStorage', createBrowserTestStorage());
+});
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {

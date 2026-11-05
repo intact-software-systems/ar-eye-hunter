@@ -986,6 +986,7 @@ function toAcknowledgementSettlement(msgId: string, atMs: number): ALDeliverySet
         expectedRecipientPeerIds: ['peer-1'],
         confirmedRecipientPeerIds: ['peer-1'],
         unconfirmedRecipientPeerIds: [],
+        outsideAudienceRecipientPeerIds: [],
         complete: true,
         traceId: 'trace-browser-rallar-delivery-registry'
     };

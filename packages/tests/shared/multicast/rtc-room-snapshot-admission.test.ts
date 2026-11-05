@@ -8,7 +8,11 @@ import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RtcPublicationRefusalCode } from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
+import type {
+    RtcPublicationAdmitted,
+    RtcPublicationRefusal,
+    RtcPublicationRefusalCode
+} from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcPublicationHandlingPlan,
@@ -421,5 +425,91 @@ describe('a granted publication\'s admission on its room plan', () => {
         expect(plan.localDelivery.enabled).toBe(true);
         expect([forwardOnly.localDelivery.enabled, forwardOnly.forwarding.nextHopPeerIds]).toEqual([false, ['downstream']]);
         expect(delivered).toBe(plan);
+    });
+
+    describe('at a frozen recipient that is not subscribed', () => {
+        const receipted = planALMessageHandling(
+            newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'receipted' }, roomRef, 'chat.v1', {}, {
+                ack: 'receiver',
+                ttlMs: 30_000
+            }),
+            {
+                nowMs,
+                selfPeerId: 'relay',
+                fromPeerId: 'origin',
+                connectedPeerIds: ['origin', 'receiver', 'downstream'],
+                groupMemberPeerIds: ['origin', 'relay', 'receiver', 'downstream'],
+                overlayNeighborPeerIds: ['downstream']
+            }
+        );
+        const notSubscribed = Either.ofRight<RtcPublicationRefusal, RtcPublicationAdmitted>({ delivery: 'forward-not-subscribed' });
+
+        it('forwards, delivers nothing, answers its hop not-subscribed, and keeps its ACK, which ends its hop', () => {
+            const answered = toRtcPublicationHandlingPlan(receipted, notSubscribed, 'origin');
+
+            expect(receipted.ack).toMatchObject({ enabled: true, algo: 'receiver', deferred: true, toPeerId: 'origin' });
+            expect(answered).toMatchObject({
+                dropReason: undefined,
+                localDelivery: { enabled: false, deferred: false },
+                forwarding: { enabled: true, nextHopPeerIds: ['downstream'] },
+                ack: { enabled: true, algo: 'receiver', deferred: true, toPeerId: 'origin' },
+                nack: { enabled: true, toPeerId: 'origin', reason: 'not-subscribed', missingRanges: [] }
+            });
+        });
+
+        it('answers a copy an ordering gap held back not-subscribed instead of asking for the gap, and keeps its ACK', () => {
+            const ordered = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'gapped' }, roomRef, 'chat.v1', {}, {
+                ack: 'receiver',
+                reliability: 'at-least-once',
+                ttlMs: 30_000,
+                orderingKey: 'room-track',
+                seq: 2
+            });
+            const gapped = planALMessageHandling(ordered, {
+                nowMs,
+                selfPeerId: 'leaf',
+                fromPeerId: 'origin',
+                connectedPeerIds: ['origin'],
+                groupMemberPeerIds: ['origin', 'leaf'],
+                orderingObservation: {
+                    status: 'gap',
+                    trackKey: 'room-track',
+                    seq: 2,
+                    expectedSeq: 1,
+                    lastContiguousSeq: 0,
+                    missingRanges: [{ from: 1, to: 1 }],
+                    releasableSeqs: []
+                }
+            });
+
+            const answered = toRtcPublicationHandlingPlan(gapped, notSubscribed, 'origin');
+
+            expect([gapped.localDelivery.deferred, gapped.ack.enabled, gapped.nack.reason]).toEqual([true, false, 'gap']);
+            expect(answered).toMatchObject({
+                localDelivery: { enabled: false, deferred: false },
+                ack: { enabled: true, algo: 'receiver', toPeerId: 'origin' },
+                nack: { enabled: true, toPeerId: 'origin', reason: 'not-subscribed', missingRanges: [] }
+            });
+        });
+
+        it('only forwards a frame no receipt counts recipients of, answering nothing', () => {
+            const answered = toRtcPublicationHandlingPlan(plan, notSubscribed, 'origin');
+
+            expect(answered).toEqual(toRtcPublicationHandlingPlan(plan, Either.ofRight({ delivery: 'forward-only' }), 'origin'));
+            expect(answered.nack.enabled).toBe(false);
+        });
+
+        it('answers a duplicate copy not-subscribed again, and keeps the NACK of a plan that drops with its own', () => {
+            const duplicate = { ...receipted, dropReason: 'duplicate', dropReasonCode: 'duplicate' as const };
+            const overloaded = {
+                ...receipted,
+                dropReason: 'overloaded',
+                dropReasonCode: 'overloaded' as const,
+                nack: { enabled: true, toPeerId: 'origin', reason: 'overloaded' as const, missingRanges: [] }
+            };
+
+            expect(toRtcPublicationHandlingPlan(duplicate, notSubscribed, 'origin').nack.reason).toBe('not-subscribed');
+            expect(toRtcPublicationHandlingPlan(overloaded, notSubscribed, 'origin').nack).toEqual(overloaded.nack);
+        });
     });
 });

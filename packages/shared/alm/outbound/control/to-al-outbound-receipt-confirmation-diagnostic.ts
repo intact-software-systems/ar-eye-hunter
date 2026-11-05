@@ -79,6 +79,7 @@ function toReceiptSnapshot(pending: ALOutboundPendingAckSnapshot | undefined): A
         mode: pending.mode,
         expectedPeerIds: Object.freeze([...pending.expectedPeerIds]),
         ackedPeerIds: Object.freeze([...pending.ackedPeerIds]),
+        outsideAudiencePeerIds: Object.freeze([...pending.outsideAudiencePeerIds]),
         timeoutMs: pending.timeoutMs,
         maxAttempts: pending.maxAttempts,
         attempts: pending.attempts,
@@ -96,6 +97,7 @@ function toReceiptSettlementSnapshot(
         expectedRecipientPeerIds: Object.freeze([...settlement.expectedRecipientPeerIds]),
         confirmedRecipientPeerIds: Object.freeze([...settlement.confirmedRecipientPeerIds]),
         unconfirmedRecipientPeerIds: Object.freeze([...settlement.unconfirmedRecipientPeerIds]),
+        outsideAudienceRecipientPeerIds: Object.freeze([...settlement.outsideAudienceRecipientPeerIds]),
         confirmedHopPeerIds: Object.freeze([...settlement.confirmedHopPeerIds]),
         unconfirmedHopPeerIds: Object.freeze([...settlement.unconfirmedHopPeerIds]),
         complete: settlement.complete

@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
-import { AL_DELIVERY_CARRIERS } from '../../al-contracts/al-control-value-codec.ts';
+import { AL_DELIVERY_CARRIERS, type ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { decodeALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALInboundPendingAdmissionId, toALInboundPendingControlId } from './al-inbound-pending-admission.ts';
 import { decodeALInboundSource } from './al-inbound-source-validation.ts';
@@ -34,11 +34,15 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
+
+/** The work identity of an inbound effect: its parts, each URI-encoded, joined by `:`. */
+export function toALInboundEffectId(parts: readonly (number | string)[]): string {
+    return parts.map((part) => encodeURIComponent(String(part))).join(':');
+}
 
 export interface ALInboundDurableEffectWrite {
     readonly entry: ResourceEntry;

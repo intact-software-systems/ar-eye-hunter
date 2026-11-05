@@ -203,6 +203,7 @@ describe('QueueBoxPubSubBridge', () => {
                     phase: 'complete',
                     expectedRecipientPeerIds: ['recipient'],
                     confirmedRecipientPeerIds: ['recipient'],
+                    outsideAudienceRecipientPeerIds: [],
                     snapshotVersion: 7,
                     observedAtEpochMs: 1000
                 }

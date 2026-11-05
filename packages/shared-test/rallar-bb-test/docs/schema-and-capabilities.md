@@ -307,8 +307,10 @@ length of each recipient list. Every send payload names its carrier, and the raw
 of `unknown-ack-version` its own authored msgId, so a wait in a combined recipe that
 runs every carrier on one page never matches an earlier carrier's event. Its
 recipe metadata `almReceiptRoles` names, per send handle, the recipient roles the
-receipt confirms and leaves unconfirmed. The identity assessment joins each list to
-the sessions of those roles after the run.
+receipt confirms, leaves unconfirmed and records outside the audience
+(`confirmed`, `unconfirmed`, `outsideAudience`); the expected roles are the three
+together. The identity assessment joins each list to the sessions of those roles
+after the run.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
   waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
@@ -495,9 +497,13 @@ the reply cells, so they stay as recorded.
 The `topic-subscription` conformance scenarios (`scenarios/topic-subscription/`) prove the
 granted topic's elections: a session receives `room.alm-conformance-granted`, which the lane's API
 profile installs, only while it holds `subscribe` and an election its current connection
-generation asserted. They run in the full scope over `ws` and `rtc-with-ws-fallback`: a granted
-topic rides RTC only as a signed `ack: 'none'` room multicast with a verified publisher proof,
-delivered to `subscribe(handler)`, and every other granted send goes over WS. Four of them form the `four-role` family: the receiver owns the room
+generation asserted. They run in the full scope over every carrier. Over `ws` the server's
+intersection of grants and elections decides who receives, so a receipt expects only the elected
+sessions. Over `rtc` and `rtc-with-ws-fallback` a receipted granted send starts on RTC as a signed
+room multicast frozen to the live sessions whose principal holds `subscribe`: a frozen session
+without an election forwards, delivers nothing to `subscribe(handler)` and answers
+`not-subscribed`, so the receipt records it outside the audience and expects the confirmed
+recipients plus the outside ones. Four of them form the `four-role` family: the receiver owns the room
 and grants, the sender and `sibling` are two sessions of user A, and `publisher-b` is user C, a
 second producer. The owner's grants name each grantee as `{principal:<role>}`, which recipe
 creation substitutes from `principalIdsByRole` (the lane passes its opened agents' client ids;
@@ -511,12 +517,14 @@ the result events of `messages.subscriptions` and of the subscription rows read,
 
 - `subscription-delivery`: the receiver and the sibling elect to receive; the sender's and
   `publisher-b`'s publications reach both, and neither producer, granted but not subscribed,
-  receives the other's.
+  receives the other's. Over the RTC carriers each copy freezes the other producer in, which
+  ends outside its audience.
 - `subscription-token-count`: the receiver's two tokens hold one election and one row; releasing
   the first lapses it alone, a publication still arrives, and releasing the last deletes the row,
   so the next publication reaches the subscribed sibling and not the receiver.
 - `subscription-revoke-disconnected`: revoke while disconnected. The sibling's product socket
-  drops, a publication leaves while it is down, and the receiver then revokes the principal's
+  drops, a probe publishes until the receiver alone is expected, a publication leaves while the
+  socket is down, and the receiver then revokes the principal's
   `subscribe`. The reopened socket's re-assertion is refused and a second publication follows.
   The receiver receives both, the sibling neither, and the lane fails a receipt that confirms the
   sibling. A clean close removes the sibling's live generation at once, so no dispatch is held
@@ -525,16 +533,65 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   dequeue skips the revoked session at the awaited hold"; "a held row for a session whose
   generation changed is not sent when its socket opens").
 - `subscription-reconnect`: the sibling's socket drops and reopens under a new generation; its
-  token re-asserts `active` and the session's row names the new generation (S2ii-R5). A
-  publication reaches the receiver and not the reopened sibling, whose room presence closed with
-  the old socket.
+  token re-asserts `active` and the session's row names the new generation (S2ii-R5). A probe
+  publishes until the receiver alone is expected, since an RTC sender freezes the sibling in with
+  its active election until its snapshot drops the presence that closed with the old socket. The
+  reopened sibling can send nothing, so the publication is the sender's continuation, a recipe the
+  lane starts on the sender's agent once the sibling's token reads `active` after its row names the
+  new generation, the same gate that starts the `subscription-successor` page; the publication then
+  reaches the receiver and not the reopened sibling.
 
-`subscription-successor` runs in the `same-context` family: the successor page opens while the
+`subscription-successor` runs in the `same-context` family over `ws` alone: the harness holds one RTC peer per
+session, so over `rtc` and `rtc-with-ws-fallback` its successor page would wait for RTC readiness while the owner page
+still holds the session's peer. The successor page opens while the
 owner page still runs, once the owner read its own generation, and its connect replaces the
 owner's socket. The successor's election moves the session's row to its generation; the owner's
 token reads `lapsed`, its release sends nothing, and an explicit unsubscribe naming the owner's
 generation answers `not-subscribed`, so the row stays the successor's, which the receiver's
 publication then reaches. No hosted manifest carries these cells (S2ii-R3).
+
+The `granted-rtc` conformance scenarios (`scenarios/granted-rtc/`) prove the signed RTC path of
+`room.alm-conformance-granted`. The receiver owns the room: it elects itself to receive and grants every
+further member before it grants the sender `publish`, so the sender's snapshot names the grant only once the
+receiver can hear it. They run in the full scope over `rtc`, where no refusal or lost copy is handed to WS;
+`granted-rtc-revoked-publisher` runs over `rtc-with-ws-fallback` as well. Every send states its `ack` and
+reliability. No hosted manifest carries them (D505).
+
+- `granted-rtc-delivered` (two-agent): an `ack: 'none'` publication reaches the receiver's election over RTC
+  (`data.transport: 'rtc'`).
+- `granted-rtc-receipted-delivered` (two-agent): the sender publishes asking `all-logical-recipients` until one
+  copy's receipt expects the receiver alone and it confirms (expected 1, confirmed 1, outside 0, `acknowledged`),
+  and the copy arrives over RTC.
+- `granted-rtc-missing-proof` (two-agent): a `strip-proof` rewrite deletes each signed frame's proof, the
+  receiver drops it `unauthorized: missing-proof`, and the publication is absent.
+- `granted-rtc-publish-refused` (two-agent): the subscribe-only receiver publishes through the `messages.rtc`
+  lane entry, with no channel of its own (`rtc.send` with `transport: 'messages.rtc'` and `observe: 'rejected'`);
+  only its snapshot's grant makes the send granted, and the page refuses it `no-publish-grant` before any carrier,
+  with no attempt.
+- `granted-rtc-revoked-publisher` (two-agent): `publication-1` is confirmed, the owner revokes the sender's
+  `publish` and cues, and `publication-2` settles `rejected` with `failure.reason: 'no-publish-grant'`, refused
+  by the sender's snapshot once the revoke's delta lands; the receiver never receives it.
+- `granted-rtc-forged-sender` (three-agent): a `forgeSender` rewrite names each signed frame as recipient-b's live
+  session and registered key, so the receiver and recipient-b each drop it `unauthorized: invalid-signature`, and
+  the publication is absent.
+- `granted-rtc-not-subscribed` (three-agent): recipient-b holds `subscribe` but takes no election, so the sender's
+  grant-narrowed audience freezes it in. The sender publishes until one copy's receipt expects both recipients,
+  the receiver confirmed and recipient-b outside the audience, its handle `acknowledged`; recipient-b waits for
+  its RTC admission of the copy and then for the publication's absence.
+- `granted-rtc-relay-only` (three-agent): the receiver PUTs `{ topologyKind: 'tree', degreeLimit: 2,
+  meshParamK: 2 }` to the room's topology config through `http.request`, so the three pages form a path, and the
+  sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
+  `subscribe` and an election and recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen
+  to the receiver; the sender publishes until the receiver hears it. Recipient-b admits the frame over RTC and
+  delivers nothing whether the path puts it in the middle, where it forwards the frame, or at a leaf. Each page
+  records its overlay next hops in a `health` read, which names the layout the run drew; the cell asserts neither
+  which agent relays nor the hop count, and the relay fixture
+  (`packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`) proves a publisher-only relay on every run. The
+  receiver deletes the topology config once every page recorded its hops, since the room's three-agent cells
+  share it.
+
+A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
+absent, each connect waits for every other agent of the cell.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
@@ -819,7 +876,7 @@ its current lifecycle without waiting. The shared states are `submitted`,
 Carrier settlements update the handle directly. Observations include
 `submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `carrierFallback`, `failure`,
 `receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
-`confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
+`confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `outsideAudienceRecipientPeerIds`, `reason`,
 `attemptRefusalReasons`, `backpressured`, `enqueued`, and `durabilityDowngrade` (`{ requested, cause }`, present
 only on a send its channel downgraded to volatile because storage could not hold it). `attempts` counts every attempt
 row, including a carrier admission that never reached the transport: an `unroutable`
@@ -831,8 +888,12 @@ receipt's mode (`hop`, `subtree` or `receiver`), absent until a receipt
 settles. Under `hop` and `subtree` the recipient lists equal the hop lists.
 Under `receiver` the recipient lists count the frozen logical audience:
 `expectedRecipientPeerIds` is that audience (never the origin), and
-`acknowledged` means every one of them confirmed; an origin alone in its room is
-acknowledged at admission with all three lists empty. The hop lists are then the
+`acknowledged` means every one of them confirmed. A granted RTC publication also
+lists in `outsideAudienceRecipientPeerIds` the frozen recipients that answered
+`not-subscribed`: its expected list is the confirmed, unconfirmed and outside
+lists together, and it is `acknowledged` once every expected recipient is
+confirmed or outside and one is confirmed. An origin alone in its room is
+acknowledged at admission with every recipient list empty. The hop lists are then the
 local hop view of the origin: `confirmedHopPeerIds` are the next hops whose own
 completion ACK arrived, `unconfirmedHopPeerIds` the rest of the next hops the
 send went through. A relay in front of a recipient is a confirmed hop while the
@@ -913,6 +974,13 @@ repair, against the original message id parsed out of the control payload's own
 id. A top-level `typeId` never matches. The fault's observations are not
 readable from a recipe in this release, so a fault's effect can only be inferred
 from what the receiver did or did not get.
+
+On the `rtc` carrier, `action: { rewrite }` writes each matching frame in place of the frame the page signed:
+`'strip-proof'` deletes its publication proof, and `{ forgeSender: { principal } }` names that principal's one
+live session in the page's room snapshot as the frame's sender and that session's registered key id in the
+proof, keeping the signature. The page resolves the principal at injection and fails the command when its
+snapshot holds no live session of it, more than one, or a session with no registered key. A rewrite on any
+other carrier is refused.
 
 `messages.subscribe` names a `subscriptionId` (and optionally `connection`) and elects the page's
 session to receive the granted topic its connection's message selector names (`access:
@@ -1081,7 +1149,8 @@ no longer order is dropped, as a product channel does by default.
 `members`; any other value fails the connect. Like the other `rallar` fields it is validated in
 the page only. `granted` makes the room channel the page opens on the selector's topic a granted
 one: a `messages.send` on that topic opens it so, and `messages.subscribe` elects on it. Every
-other channel the page opens is a members one, and a granted selector subscribes no RTC lane.
+other channel the page opens is a members one, and a granted selector subscribes no RTC lane: a granted RTC
+copy reaches the page only through an election, whose token records it.
 
 ### A `fault.inject` that holds one message
 
@@ -1131,6 +1200,13 @@ while asserting nothing. The `RallarBlackBoxTestRtcSendCommand.expect`
 TypeScript field exists only for the in-process black-box-runner adapter,
 which calls `runtime.execute` directly and records runner-side expectations.
 Distributed delivery expectations belong in `wait` and `assert` commands.
+
+A typed `messages.rtc` send fails its `rtc.send` on a handle that ends `rejected`, `failed`, `expired`, `cancelled`
+or `superseded`. `observe: 'rejected'` reverses that for a send a recipe expects to be refused: a rejected handle is
+the command's value, its `message` carrying the handle's `failure` and `attempts`, and any other end of the send
+fails the command with `RALLAR_BB_RTC_SEND_NOT_REJECTED`. The command schema, the control validator and the page
+read `observe` through one decoder, and `rejected` is its only value. The field is carrier-neutral, read whatever the
+`transport`: a `realtime` send ends in a lane result, never a rejected handle, so `observe: 'rejected'` always fails it.
 
 A `{resultCache.<commandId>.<path>}` token in an `http.request` body stands for the string or
 number an earlier command returned, as in a wait's `contains`; a token naming none fails the

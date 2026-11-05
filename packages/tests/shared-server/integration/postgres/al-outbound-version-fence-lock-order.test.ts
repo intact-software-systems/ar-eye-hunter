@@ -185,6 +185,7 @@ function toPendingAck(
             mode: 'hop',
             expectedPeerIds: ['peer-1', 'peer-2'],
             ackedPeerIds: [],
+            outsideAudiencePeerIds: [],
             timeoutMs: 2_000,
             maxAttempts: 3,
             attempts,

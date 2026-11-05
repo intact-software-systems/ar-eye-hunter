@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '../../../al-contracts/publication/al-publication-policy.ts';
 import type {
@@ -15,7 +16,6 @@ import { toError } from '../../../resilience/to-error.ts';
 import type { InboxOutboxEngine } from '../../../services/inbox-outbox-engine.ts';
 import type {
     ALDeliveryAdmissionVerdict,
-    ALDeliveryCarrier,
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../../delivery/al-delivery-lifecycle.ts';

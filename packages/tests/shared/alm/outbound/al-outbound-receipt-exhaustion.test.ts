@@ -36,6 +36,7 @@ const SPENT_RECEIPT: ReceiptRow = {
     mode: 'hop',
     expectedPeerIds: ['peer-1', 'peer-2'],
     ackedPeerIds: ['peer-1'],
+    outsideAudiencePeerIds: [],
     timeoutMs: 2_000,
     maxAttempts: 3,
     attempts: 3,
@@ -115,6 +116,7 @@ describe('the receipt budget runs out (Q6)', () => {
             mode: 'hop',
             confirmedPeerIds: ['peer-1'],
             unconfirmedPeerIds: ['peer-2'],
+            outsideAudiencePeerIds: [],
             cause: 'budget',
             detail: 'The receipt ran out of retries after 3 of 3.',
             traceId: fixture.message.id.traceId

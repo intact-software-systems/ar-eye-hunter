@@ -14,7 +14,11 @@ import {
 /** Replies travel over WS only, so over the fallback carrier the request may arrive on RTC and its reply on WS. */
 const REPLY_CORRELATED_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];
 
-const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver'], unconfirmed: [] };
+const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = {
+    confirmed: ['receiver'],
+    unconfirmed: [],
+    outsideAudience: []
+};
 
 /**
  * D445: a `command` addressed to the receiver reads `replied`. The reply names the request's msgId as its

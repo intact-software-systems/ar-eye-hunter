@@ -20,6 +20,7 @@ import {
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
+import { isALRecipientConfirmationAck } from '../../alm/delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundDispatchPlan,
@@ -27,6 +28,7 @@ import type {
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
+import { isALOutboundReceiptComplete } from '../../alm/outbound/transition-al-outbound-pending-ack.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
@@ -59,6 +61,8 @@ export const WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES = 4096;
 
 interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggregation.Admission {
     readonly confirmedRecipientPeerIds: readonly string[];
+    /** Expected recipients whose ACK ended their hop delivering nothing: never confirmed, no longer owed. */
+    readonly outsideAudienceRecipientPeerIds: readonly string[];
 }
 
 interface WsQueueBoxServerReceiptCountObservation {
@@ -85,6 +89,7 @@ export namespace WsQueueBoxServerReceiptAggregation {
         | 'sender-recipient-mismatch'
         | 'outside-frozen-audience'
         | 'already-confirmed'
+        | 'already-outside'
         | 'deadline-expired';
 
     export interface AckValidationIssue {
@@ -265,7 +270,7 @@ export class WsQueueBoxServerReceiptAggregation {
         const key = toReceiptAggregateKey(admission.originPeerId, admission.msgId);
         const nowMs = this.#dependencies.clock.nowMs();
         const live = this.#aggregates.readAt(key, nowMs);
-        const aggregate = live ?? { ...admission, confirmedRecipientPeerIds: [] };
+        const aggregate = live ?? { ...admission, confirmedRecipientPeerIds: [], outsideAudienceRecipientPeerIds: [] };
         const started = live === undefined;
         if (!started || aggregate.expectedRecipientPeerIds.length === 0) {
             return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
@@ -276,7 +281,7 @@ export class WsQueueBoxServerReceiptAggregation {
         return { started, admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted };
     }
 
-    /** A counted ACK; its `complete` receipt when it confirms the last expected recipient, none before. */
+    /** A counted ACK; its `complete` receipt when it answers for the last expected recipient, none before. */
     private countAck(
         ack: ALAckPayload,
         control: ALMessage['id'],
@@ -298,11 +303,8 @@ export class WsQueueBoxServerReceiptAggregation {
             outcome = 'rejected';
         }
         else {
-            after = {
-                ...aggregate,
-                confirmedRecipientPeerIds: [...aggregate.confirmedRecipientPeerIds, ack.logicalRecipientPeerId]
-            };
-            const complete = after.confirmedRecipientPeerIds.length >= after.expectedRecipientPeerIds.length;
+            after = toCountedAggregate(aggregate, ack);
+            const complete = isReceiptAggregateComplete(after);
             if (complete) {
                 this.deleteAggregate(key);
             }
@@ -505,7 +507,8 @@ export class WsQueueBoxServerReceiptAggregation {
             ? Object.freeze({
                 ...receipt,
                 expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
-                confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds])
+                confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds]),
+                outsideAudienceRecipientPeerIds: Object.freeze([...receipt.outsideAudienceRecipientPeerIds])
             })
             : undefined;
         const enqueued = await this.#dependencies.enqueueOutbox(
@@ -592,6 +595,12 @@ function validateWsQueueBoxServerReceiptAck(
             message: 'AL acknowledgement confirms a peer the receipt already counted'
         });
     }
+    if (aggregate.outsideAudienceRecipientPeerIds.includes(ack.logicalRecipientPeerId)) {
+        issues.push({
+            code: 'already-outside',
+            message: 'AL acknowledgement answers for a peer the receipt already records outside the audience'
+        });
+    }
     if (aggregate.deadlineAtMs <= nowMs) {
         issues.push({ code: 'deadline-expired', message: 'AL acknowledgement arrived after its receipt deadline' });
     }
@@ -628,6 +637,29 @@ function toFrozenAudience(
     );
 }
 
+/**
+ * A recipient that delivered nothing ends its hop with an ACK that confirms nobody: it is recorded outside the
+ * audience, as the RTC origin records its `not-subscribed` answer, and never confirmed.
+ */
+function toCountedAggregate(
+    aggregate: WsQueueBoxServerReceiptAggregate,
+    ack: ALAckPayload
+): WsQueueBoxServerReceiptAggregate {
+    const recipient = ack.logicalRecipientPeerId;
+    return isALRecipientConfirmationAck(ack)
+        ? { ...aggregate, confirmedRecipientPeerIds: [...aggregate.confirmedRecipientPeerIds, recipient] }
+        : { ...aggregate, outsideAudienceRecipientPeerIds: [...aggregate.outsideAudienceRecipientPeerIds, recipient] };
+}
+
+/** Complete as the origin's own receipt row completes: every expected recipient confirmed or outside, one confirmed. */
+function isReceiptAggregateComplete(aggregate: WsQueueBoxServerReceiptAggregate): boolean {
+    return isALOutboundReceiptComplete({
+        expectedPeerIds: aggregate.expectedRecipientPeerIds,
+        ackedPeerIds: aggregate.confirmedRecipientPeerIds,
+        outsideAudiencePeerIds: aggregate.outsideAudienceRecipientPeerIds
+    });
+}
+
 function toReceiptAggregateKey(originPeerId: string, msgId: string): string {
     return JSON.stringify([originPeerId, msgId]);
 }
@@ -654,6 +686,7 @@ function toReceiptPayload(
         originPeerId: aggregate.originPeerId,
         expectedRecipientPeerIds: aggregate.expectedRecipientPeerIds,
         confirmedRecipientPeerIds: aggregate.confirmedRecipientPeerIds,
+        outsideAudienceRecipientPeerIds: aggregate.outsideAudienceRecipientPeerIds,
         snapshotVersion: aggregate.snapshotVersion,
         phase,
         observedAtEpochMs

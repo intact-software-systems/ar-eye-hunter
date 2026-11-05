@@ -28,8 +28,8 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
- * The topic subscription cells run over ws and the fallback cell; a granted topic rides RTC only as a signed `ack: 'none'`
- * room multicast, whose cells run over rtc alone.
+ * The topic subscription cells run on every carrier, the successor's over ws alone; a granted topic rides RTC as a
+ * signed room multicast, whose cells run over rtc, the revoked publisher over the fallback carrier too.
  */
 const TOPIC_SUBSCRIPTION_IDS = [
     'subscription-delivery',
@@ -121,7 +121,8 @@ const CARRIER_SCENARIO_IDS = {
         'granted-rtc-delivered',
         'granted-rtc-missing-proof',
         'granted-rtc-publish-refused',
-        'granted-rtc-receipted-unsupported',
+        'granted-rtc-receipted-delivered',
+        'granted-rtc-revoked-publisher',
         'backpressure-refused',
         'backpressure-deferred',
         'own-share-under-inbound',
@@ -138,7 +139,10 @@ const CARRIER_SCENARIO_IDS = {
         'claim-refused-on-rtc',
         'durable-takeover',
         'flush-on-hide',
-        'granted-rtc-forged-sender'
+        ...TOPIC_SUBSCRIPTION_IDS.filter((scenarioId) => scenarioId !== 'subscription-successor'),
+        'granted-rtc-forged-sender',
+        'granted-rtc-not-subscribed',
+        'granted-rtc-relay-only'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -173,6 +177,7 @@ const CARRIER_SCENARIO_IDS = {
         'paced-cancel',
         'paced-isolation-resources',
         'paced-isolation-lists',
+        'granted-rtc-revoked-publisher',
         'backpressure-hands-over',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
         'principal-delivery',
@@ -181,7 +186,7 @@ const CARRIER_SCENARIO_IDS = {
         'leader-confirms',
         'claim-first-wins',
         'durable-takeover',
-        ...TOPIC_SUBSCRIPTION_IDS
+        ...TOPIC_SUBSCRIPTION_IDS.filter((scenarioId) => scenarioId !== 'subscription-successor')
     ]
 } as const;
 

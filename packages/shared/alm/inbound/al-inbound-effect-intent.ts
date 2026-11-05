@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier, ALInboundNackPlanReason } from '../../al-contracts/al-control-value-codec.ts';
 import type {
     ALAckStatus,
     ALNackReason,
@@ -7,15 +8,15 @@ import type {
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
+import { toALInboundEffectId } from './al-inbound-work-entry.ts';
 import type { ALPendingAckTransition } from './transition-al-pending-ack.ts';
 
 /**
- * Whom an ACK speaks for: this peer itself, whose ACK ends its own hop and names it whether or not it delivered,
- * or a recipient a child ACK named, which a relay passes upward as that ACK arrives (D40).
+ * Whom an ACK or a NACK speaks for: this peer itself, whose ACK ends its own hop and names it whether or not it
+ * delivered, or a recipient a child control named, which a relay passes upward as that control arrives (D40).
  */
 export type ALInboundAckRecipient =
     | Readonly<{ kind: 'self'; }>
@@ -39,6 +40,7 @@ export interface ALInboundEffectIntent {
             readonly kind: 'send-nack';
             readonly toPeerId: string;
             readonly msgId: string;
+            readonly logicalRecipient: ALInboundAckRecipient;
             readonly reason: ALNackReason;
             readonly ordering: ALOrderingObservation | undefined;
         }
@@ -81,7 +83,7 @@ export function toALInboundForwardingEffects(
 ): readonly ALInboundEffectIntent[] {
     if (shouldForward) {
         return [{
-            effectId: toEffectId(['forward', input.msg.id.senderId, input.msg.id.msgId, input.fromPeerId]),
+            effectId: toALInboundEffectId(['forward', input.msg.id.senderId, input.msg.id.msgId, input.fromPeerId]),
             expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
             carrier: input.carrier,
             payload: {
@@ -116,12 +118,12 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
 
 /** The one row that releases `seq` of a track: a delivered predecessor finds its successor by it (D190). */
 export function toALInboundReleaseEffectId(trackKey: string, seq: number): string {
-    return toEffectId(['release', trackKey, seq]);
+    return toALInboundEffectId(['release', trackKey, seq]);
 }
 
 /** The one row that delivers `msg` to this peer's own consumers; a retained delivery is found by it. */
 export function toALInboundLocalDeliveryEffectId(msg: ALMessage): string {
-    return toEffectId(['dispatch', msg.id.senderId, msg.id.msgId]);
+    return toALInboundEffectId(['dispatch', msg.id.senderId, msg.id.msgId]);
 }
 
 export function toALInboundLocalDeliveryEffects(
@@ -144,20 +146,21 @@ export function toALInboundLocalDeliveryEffects(
 export function toALInboundNegativeControlEffects(
     input: ALInboundControlEffectInput
 ): readonly ALInboundEffectIntent[] {
-    if (!input.plan.nack.enabled) {
+    if (!input.plan.nack.enabled || input.plan.nack.reason === undefined) {
         return [];
     }
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
     const reason = toNackReason(input.plan.nack.reason);
     const authorityRefusal = isAuthorityRefusalNackReason(reason);
     const nack: ALInboundEffectIntent = {
-        effectId: toEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
+        effectId: toALInboundEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         carrier: input.carrier,
         payload: {
             kind: 'send-nack',
             toPeerId,
             msgId: input.msg.id.msgId,
+            logicalRecipient: { kind: 'self' },
             reason,
             ordering: authorityRefusal ? undefined : input.plan.orderingRuntime
         }
@@ -165,9 +168,40 @@ export function toALInboundNegativeControlEffects(
     return authorityRefusal ? [nack] : [nack, ...toRepairEffects(input)];
 }
 
-/** An authority refusal is about the receiver's roster or a claim, never the ordering track, so it asks for no repair. */
+/**
+ * An authority refusal is about the receiver's roster, a claim or its own subscription, never the ordering track, so it
+ * asks for no repair.
+ */
 function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
-    return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other';
+    return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other' ||
+        reason === 'not-subscribed';
+}
+
+/** A relay's `not-subscribed` NACK again for a recipient below it, answering a retried copy as it answers ACKs. */
+export function toALInboundRelayedNotSubscribedEffect(
+    input: ALInboundControlEffectInput,
+    relayed: Readonly<{ toPeerId: string; peerId: string; }>
+): ALInboundEffectIntent {
+    return {
+        effectId: toALInboundEffectId([
+            'nack',
+            input.msg.id.senderId,
+            input.msg.id.msgId,
+            relayed.toPeerId,
+            'not-subscribed',
+            relayed.peerId
+        ]),
+        expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
+        carrier: input.carrier,
+        payload: {
+            kind: 'send-nack',
+            toPeerId: relayed.toPeerId,
+            msgId: input.msg.id.msgId,
+            logicalRecipient: { kind: 'relayed', peerId: relayed.peerId },
+            reason: 'not-subscribed',
+            ordering: undefined
+        }
+    };
 }
 
 function toRepairEffects(
@@ -178,7 +212,7 @@ function toRepairEffects(
     }
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
     return [{
-        effectId: toEffectId([
+        effectId: toALInboundEffectId([
             'repair',
             input.msg.id.senderId,
             input.msg.id.msgId,
@@ -224,7 +258,7 @@ export function toALInboundUpwardAcks(
 
 export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundEffectIntent {
     return {
-        effectId: toEffectId([
+        effectId: toALInboundEffectId([
             'ack',
             input.ackedMsgId,
             input.toPeerId,
@@ -244,30 +278,18 @@ export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundE
     };
 }
 
-function toEffectId(
-    parts: readonly (number | string)[]
-): string {
-    return parts.map((part) => encodeURIComponent(String(part))).join(':');
-}
-
-function toNackReason(reason?: string) {
+function toNackReason(reason: ALInboundNackPlanReason): ALNackReason {
     switch (reason) {
-        case 'gap':
-            return 'gap' as const;
         case 'resync-required':
-            return 'resync-required' as const;
+        case 'gap':
         case 'expired':
-            return 'expired' as const;
         case 'overloaded':
-            return 'overloaded' as const;
-        case 'not-yet-in-sync':
-            return 'not-yet-in-sync' as const;
-        case 'membership-fenced':
-            return 'membership-fenced' as const;
         case 'held-by-other':
-            return 'held-by-other' as const;
-        default:
-            return 'stale' as const;
+        case 'not-yet-in-sync':
+        case 'membership-fenced':
+        case 'unauthorized':
+        case 'not-subscribed':
+            return reason;
     }
 }
 

@@ -69,7 +69,7 @@ export function readALInboundMessageAuthorization(
 
 /**
  * A receipt is the server's word, so only the trusted server speaks one. A WS session never relays, so
- * its ACK speaks only for itself, whoever it is addressed to. Any other control is for this receiver,
+ * its ACK or NACK speaks only for itself, whoever it is addressed to. Any other control is for this receiver,
  * or a receiver ACK a relaying WS server admits for the origin it names.
  */
 function readALInboundControlRejection(
@@ -86,12 +86,13 @@ function readALInboundControlRejection(
         return { code: 'unauthorized', message: 'AL receipt control comes only from the trusted server' };
     }
     if (
-        control.type === 'ack' && source.kind === 'ws-client' &&
+        (control.type === 'ack' || control.type === 'nack') && source.kind === 'ws-client' &&
         control.payload.fromPeerId !== control.payload.logicalRecipientPeerId
     ) {
+        const controlName = control.type === 'ack' ? 'acknowledgement' : 'NACK';
         return {
             code: 'unauthorized',
-            message: 'AL acknowledgement from a WS session speaks for another recipient than its sender'
+            message: `AL ${controlName} from a WS session speaks for another recipient than its sender`
         };
     }
     if (toALControlRecipientPeerId(control) === receiver.selfPeerId) {

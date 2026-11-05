@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import type {
     ALAckAlgo,
     ALDurabilityAlgo,
@@ -5,10 +6,7 @@ import type {
 } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
-import type {
-    ALDeliveryCarrier,
-    ALDeliveryState
-} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     IndexedDbOperationKind,
@@ -368,6 +366,7 @@ export type RallarBlackBoxTestRtcSendCommand =
         roomRef?: RallarBlackBoxTestRecord;
         minSnapshotVersion?: number;
         transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+        observe?: 'rejected';
     }>;
 
 export type RallarBlackBoxTestMessagesCarrier = 'ws' | 'rtc' | 'rtc-with-ws-fallback';

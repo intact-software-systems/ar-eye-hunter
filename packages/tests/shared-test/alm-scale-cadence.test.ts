@@ -122,6 +122,7 @@ function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessage
             expectedRecipientPeerIds: ['director-session'],
             confirmedRecipientPeerIds: ['director-session'],
             unconfirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
             complete: true,
             traceId: 'trace-alm-scale-cadence'
         }), 2_000);
@@ -756,6 +757,7 @@ class ScaleCohort {
             expectedRecipientPeerIds: expected,
             confirmedRecipientPeerIds: confirmed,
             unconfirmedRecipientPeerIds: unconfirmed,
+            outsideAudienceRecipientPeerIds: [],
             complete: unconfirmed.length === 0,
             traceId: 'trace-alm-scale-cadence'
         });
@@ -969,6 +971,7 @@ it.each([
                 expectedRecipientPeerIds: ['director-session'],
                 confirmedRecipientPeerIds: ['director-session'],
                 unconfirmedRecipientPeerIds: [],
+                outsideAudienceRecipientPeerIds: [],
                 complete: true,
                 traceId: 'trace-alm-scale-cadence'
             });

@@ -1,6 +1,10 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALAckPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
-import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
+import type {
+    ALMessageHandlingPlan,
+    ALMessagePlanningObservations,
+    ALStoreDurability
+} from '../../al-contracts/al-policy.ts';
 import type {
     ALOrderingTrackSnapshot,
     ALReadyable
@@ -19,7 +23,6 @@ import {
     decodeALAdmissionSupersedenceValue
 } from '../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type { ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
@@ -67,6 +70,7 @@ import {
     readStoredAcknowledgements,
     readStoredControlOwnerIndex,
     type AcksControlValue,
+    type ALInboundControlSubject,
     type PendingControlValue
 } from './control/al-inbound-control-rows.ts';
 
@@ -75,6 +79,11 @@ export interface ALInboundMessageOwner {
     readonly senderId: string;
     readonly source: ALInboundMessageRuntime.Source;
     readonly supersedenceKey: string | null;
+    /**
+     * Whether the admission that wrote the row delivers the message here, now or on its release from a gap's buffer;
+     * a later copy is never delivered again.
+     */
+    readonly deliveredLocally: boolean;
 }
 
 export interface ALInboundControlOwnerIndex {
@@ -385,7 +394,7 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     ): Promise<ALInboundStoredPlanningRead | undefined>;
 
     /** Absent when the owner index names no single original sender for the acknowledging peer. */
-    readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined>;
+    readControlDecisionSurface(subject: ALInboundControlSubject): Promise<ALInboundControlDecisionSurface | undefined>;
 
     /** The audience a WS client's message was frozen to at ingress; absent for any other message or a missing row. */
     readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined>;
@@ -953,8 +962,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return owner;
     }
 
-    async readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined> {
-        return await this.backend.readWithin((session) => readControlDecisionSurface(session, this.namespace, ack));
+    async readControlDecisionSurface(
+        subject: ALInboundControlSubject
+    ): Promise<ALInboundControlDecisionSurface | undefined> {
+        return await this.backend.readWithin((session) => readControlDecisionSurface(session, this.namespace, subject));
     }
 
     async readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined> {

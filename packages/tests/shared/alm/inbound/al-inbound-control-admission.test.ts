@@ -1,7 +1,9 @@
 import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
+    newALNackControlMessage,
     parseALControlMessage,
     type ALAckPayload,
     type ALPendingAckSnapshot
@@ -15,17 +17,19 @@ import {
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionStore,
     type ALInboundControlOwnerIndex
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {
     decodeALInboundWorkEntry,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
+import type { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
 import { computeALInboundControlAdmission } from '@shared/alm/inbound/control/compute-al-inbound-control-admission.ts';
 import { validateALInboundControlAdmission } from '@shared/alm/inbound/control/validate-al-inbound-control-admission.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
@@ -96,6 +100,18 @@ async function seedPendingAcknowledgement(
         authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
     }
 ): Promise<void> {
+    await seedRelayRow(admissionStore, { controlOwners, source, row: {} });
+}
+
+interface SeededRelayRow {
+    readonly controlOwners: ALInboundControlOwnerIndex;
+    readonly source: ALInboundMessageRuntime.Source;
+    /** What differs from a ready row toward `upstream` waiting on `receiver` alone. */
+    readonly row: Partial<ALPendingAckSnapshot>;
+}
+
+async function seedRelayRow(admissionStore: ALInboundAdmissionStore, seeded: SeededRelayRow): Promise<void> {
+    const { controlOwners, source } = seeded;
     const expireAtTimestamp = Date.now() + 60_000;
     const nowMs = Date.now();
     const read = await admissionStore.readIncomingMessage({
@@ -115,7 +131,8 @@ async function seedPendingAcknowledgement(
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source,
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 expireAtTimestamp
             }, {
@@ -130,8 +147,10 @@ async function seedPendingAcknowledgement(
                         localReady: true,
                         expectedFromPeerIds: ['receiver'],
                         ackedFromPeerIds: [],
+                        outsideAudiencePeerIds: [],
                         expireAtTimestamp,
-                        carrier: 'ws'
+                        carrier: 'ws',
+                        ...seeded.row
                     }
                 },
                 expireAtTimestamp
@@ -378,7 +397,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'rtc-peer', peerId: message.id.senderId },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -386,6 +406,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['lower-relay', 'leaf'],
                 ackedFromPeerIds: ['lower-relay'],
+                outsideAudiencePeerIds: [],
                 carrier: 'rtc'
             },
             acks: [toAck('lower-relay', 'deep-recipient')],
@@ -454,7 +475,8 @@ describe('inbound control admission', () => {
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
                     source: { kind: 'rtc-peer', peerId: message.id.senderId },
-                    supersedenceKey: null
+                    supersedenceKey: null,
+                    deliveredLocally: true
                 },
                 pending: {
                     toPeerId: message.id.senderId,
@@ -462,6 +484,7 @@ describe('inbound control admission', () => {
                     localReady: true,
                     expectedFromPeerIds: ['child-relay', 'leaf'],
                     ackedFromPeerIds: ['child-relay'],
+                    outsideAudiencePeerIds: [],
                     carrier: 'rtc'
                 },
                 acks: [toAck('grandchild-1')],
@@ -494,7 +517,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'rtc-peer', peerId: message.id.senderId },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -502,6 +526,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['leaf'],
                 ackedFromPeerIds: [],
+                outsideAudiencePeerIds: [],
                 carrier: 'rtc'
             },
             acks: [],
@@ -538,7 +563,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -546,6 +572,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['receiver'],
                 ackedFromPeerIds: [],
+                outsideAudiencePeerIds: [],
                 carrier: 'ws'
             },
             acks: [],
@@ -583,7 +610,8 @@ describe('inbound control admission', () => {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending: {
                 toPeerId: message.id.senderId,
@@ -591,6 +619,7 @@ describe('inbound control admission', () => {
                 localReady: true,
                 expectedFromPeerIds: ['receiver'],
                 ackedFromPeerIds: ['stranger'],
+                outsideAudiencePeerIds: [],
                 carrier: 'ws'
             },
             acks: [{
@@ -644,6 +673,7 @@ function admitRelayAcknowledgements(
         localReady: true,
         expectedFromPeerIds: row.expectedFromPeerIds,
         ackedFromPeerIds: [],
+        outsideAudiencePeerIds: [],
         carrier: 'rtc'
     };
     let acks: readonly ALAckPayload[] = [];
@@ -659,7 +689,8 @@ function admitRelayAcknowledgements(
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
                 source: { kind: 'rtc-peer', peerId: row.toPeerId },
-                supersedenceKey: null
+                supersedenceKey: null,
+                deliveredLocally: true
             },
             pending,
             acks,
@@ -693,3 +724,280 @@ function toRelayAck(
         observedAtEpochMs: 1_800_000_000_000
     };
 }
+
+describe('a not-subscribed NACK at a relay (PL9)', () => {
+    /** A receipted room message whose frozen audience names the child `receiver` and `below` it. */
+    const FROZEN_ROW: Partial<ALPendingAckSnapshot> = { upwardAudiencePeerIds: ['receiver', 'below'] };
+    const SEEDED = {
+        controlOwners: TRACKED_CONTROL_OWNERS,
+        source: { kind: 'rtc-peer', peerId: message.id.senderId } as const,
+        row: FROZEN_ROW
+    };
+
+    function createNotSubscribedNack(logicalRecipientPeerId: string, reason: 'not-subscribed' | 'gap' = 'not-subscribed'): ALMessage {
+        return newALNackControlMessage(
+            { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
+            {
+                msgId: message.id.msgId,
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                logicalRecipientPeerId,
+                reason,
+                observedAtEpochMs: 1
+            }
+        );
+    }
+
+    async function readUpwardControls(admissionStore: ALInboundAdmissionStore, workQueue: QueueBoxResourceEntryRepository) {
+        return (await readRetainedWork(admissionStore, workQueue, 'rtc')).flatMap((work) => {
+            const control = work.payload.kind === 'send-control' ? parseALControlMessage(work.payload.msg) : undefined;
+            return control === undefined || control.type === 'receipt' || control.type === 'repair' ? [] : [control];
+        });
+    }
+
+    it('re-originates a child\'s NACK for a recipient below it to its parent from itself, naming the same recipient', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        const result = await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL);
+
+        expect(result).toEqual({ kind: 'committed', acceptance: { handled: true, completedPendingAcks: [] } });
+        expect(await readUpwardControls(admissionStore, workQueue)).toEqual([{
+            type: 'nack',
+            payload: expect.objectContaining({
+                msgId: message.id.msgId,
+                fromPeerId: 'self',
+                toPeerId: 'upstream',
+                logicalRecipientPeerId: 'below',
+                reason: 'not-subscribed'
+            })
+        }]);
+        expect((await readAcknowledgements(backend, admissionStore)).pendingAck).toMatchObject({
+            ackedFromPeerIds: [],
+            outsideAudiencePeerIds: ['below']
+        });
+    });
+
+    function createChildAck(logicalRecipientPeerId: string, status: ALAckPayload['status']): ALMessage {
+        return newALAckControlMessage(
+            { v: 4, msgId: `ack-${logicalRecipientPeerId}-${status}`, ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
+            {
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId,
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                status,
+                observedAtEpochMs: 1,
+                carrier: 'rtc'
+            }
+        );
+    }
+
+    it('keeps the hop of a child that answers for itself open: only its hop-completion ACK ends it', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        const nacked = await control.admit(createNotSubscribedNack('receiver'), WS_ARRIVAL);
+        const rowAfterNack = (await readAcknowledgements(backend, admissionStore)).pendingAck;
+        const completed = await control.admit(createChildAck('receiver', 'subtree-complete-not-subscribed'), WS_ARRIVAL);
+
+        expect(nacked.kind === 'committed' && nacked.acceptance.completedPendingAcks).toEqual([]);
+        expect(rowAfterNack).toMatchObject({ ackedFromPeerIds: [], outsideAudiencePeerIds: ['receiver'] });
+        expect(completed.kind === 'committed' && completed.acceptance.completedPendingAcks).toHaveLength(1);
+        expect((await readUpwardControls(admissionStore, workQueue)).map((upward) => [upward.type, upward.payload.fromPeerId]).toSorted())
+            .toEqual([['ack', 'self'], ['nack', 'self']]);
+    });
+
+    it('reads a hop-completion ACK that arrives without its NACK as implying it, relaying that NACK and no confirmation', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        expect((await control.admit(createChildAck('receiver', 'subtree-complete-not-subscribed'), WS_ARRIVAL)).kind).toBe('committed');
+
+        expect((await readAcknowledgements(backend, admissionStore)).pendingAck).toMatchObject({
+            ackedFromPeerIds: ['receiver'],
+            outsideAudiencePeerIds: ['receiver']
+        });
+        const upward = await readUpwardControls(admissionStore, workQueue);
+        expect(upward.map((control) => [control.type, control.payload.logicalRecipientPeerId]).toSorted())
+            .toEqual([['ack', 'self'], ['nack', 'receiver']]);
+    });
+
+    it.each(
+        [
+            ['the NACK first', ['nack', 'ack']],
+            ['the hop-completion ACK first', ['ack', 'nack']]
+        ] as const
+    )('relays one NACK for the recipient whichever arrives first: %s', async (_order, arrivals) => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        for (const arrival of arrivals) {
+            await control.admit(
+                arrival === 'nack'
+                    ? createNotSubscribedNack('receiver')
+                    : createChildAck('receiver', 'subtree-complete-not-subscribed'),
+                WS_ARRIVAL
+            );
+        }
+
+        const upward = await readUpwardControls(admissionStore, workQueue);
+        expect(upward.map((control) => [control.type, control.payload.logicalRecipientPeerId]).toSorted())
+            .toEqual([['ack', 'self'], ['nack', 'receiver']]);
+    });
+
+    it('refuses a NACK for a recipient whose confirmation it already relayed', async () => {
+        const { admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+        await control.admit(createChildAck('below', 'forwarded'), WS_ARRIVAL);
+
+        expect(await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound NACK names a recipient whose confirmation was already relayed'
+        });
+    });
+
+    it.each<[string, Partial<ALPendingAckSnapshot>, string]>([
+        ['a peer outside the frozen audience', FROZEN_ROW, 'stranger'],
+        ['a recipient of a message no receipt counts recipients of', {}, 'below']
+    ])('refuses a NACK naming %s, relaying nothing', async (_name, row, logicalRecipientPeerId) => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, { ...SEEDED, row });
+
+        expect(await control.admit(createNotSubscribedNack(logicalRecipientPeerId), WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound NACK names no recipient of the frozen audience'
+        });
+        expect(await readUpwardControls(admissionStore, workQueue)).toEqual([]);
+    });
+
+    it('relays each recipient once, and admits no ACK for a recipient it relayed a NACK for', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+        await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL);
+        const forwarded = newALAckControlMessage(
+            { v: 4, msgId: 'ack-below', ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
+            {
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'below',
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                status: 'forwarded',
+                observedAtEpochMs: 1,
+                carrier: 'rtc'
+            }
+        );
+
+        expect(await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound NACK names a recipient already relayed outside the audience'
+        });
+        expect(await control.admit(forwarded, WS_ARRIVAL)).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound acknowledgement names a recipient that answered it is not subscribed'
+        });
+        expect(await readUpwardControls(admissionStore, workQueue)).toHaveLength(1);
+    });
+
+    it('leaves every other NACK to its outbound owner, as before', async () => {
+        const { admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        expect(await control.admit(createNotSubscribedNack('receiver', 'gap'), WS_ARRIVAL)).toEqual({ kind: 'not-handled' });
+    });
+
+    /** Admits a NACK with the evidence a capturing sink installs, and returns the association it publishes. */
+    async function admitWithEvidence(control: ALInboundControlAdmission, nack: ALMessage) {
+        const events: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const evidence = ALInboundAcknowledgementEvidence.tryCreate({
+            msg: nack,
+            carrier: 'ws',
+            sink: (event) => events.push(event),
+            workerId: 'relay-worker'
+        });
+        evidence?.beginAttempt('durable');
+        const result = await control.admit(nack, WS_ARRIVAL, evidence);
+        evidence?.admissionResult(result.kind);
+        evidence?.publishAssociation('ingress', 'control');
+        return { result, association: events.find((event) => event.kind === 'acknowledgement-association') };
+    }
+
+    it.each(
+        [
+            {
+                name: 'commits',
+                row: FROZEN_ROW,
+                conflicts: false,
+                attempt: { validated: true, commit: 'committed', retention: 'not-called', result: 'committed' }
+            },
+            {
+                name: 'refuses',
+                row: {},
+                conflicts: false,
+                attempt: { validated: false, commit: 'not-called', retention: 'not-called', result: 'rejected' }
+            },
+            {
+                name: 'conflicts on',
+                row: FROZEN_ROW,
+                conflicts: true,
+                attempt: { validated: true, commit: 'conflict', retention: 'returned', result: 'pending-control' }
+            }
+        ] as const
+    )('records a NACK\'s candidate and commit as an ACK\'s when it $name it', async ({ row, conflicts, attempt }) => {
+        const { backend, admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, { ...SEEDED, row });
+        if (conflicts) {
+            vi.spyOn(backend, 'write').mockImplementationOnce(() => {
+                throw new ALAdmissionBackendConflictError('simulated inbound NACK conflict');
+            });
+        }
+
+        const { result, association } = await admitWithEvidence(control, createNotSubscribedNack('below'));
+
+        expect(result.kind).toBe(attempt.result);
+        expect(association).toMatchObject({
+            incoming: {
+                control: 'nack',
+                controlMsgId: 'nack-below',
+                subjectMsgId: message.id.msgId,
+                logicalRecipientPeerId: 'below',
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                carrier: 'ws',
+                traceId: 'trace-not-subscribed'
+            },
+            attempts: [{
+                lane: 'durable',
+                candidate: { ownerPeerId: message.id.senderId, parentPeerId: 'upstream', validated: attempt.validated },
+                commit: attempt.commit,
+                retention: attempt.retention,
+                result: attempt.result
+            }]
+        });
+    });
+
+    it('names the NACK it relays upward among the candidate\'s generated controls', async () => {
+        const { admissionStore, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+
+        const { association } = await admitWithEvidence(control, createNotSubscribedNack('below'));
+
+        expect(association).toMatchObject({
+            attempts: [{
+                candidate: {
+                    generated: [{
+                        control: 'nack',
+                        controlMsgId: 'generated-control:0',
+                        subjectMsgId: message.id.msgId,
+                        logicalRecipientPeerId: 'below',
+                        fromPeerId: 'self',
+                        toPeerId: 'upstream',
+                        carrier: 'rtc'
+                    }]
+                }
+            }]
+        });
+    });
+});

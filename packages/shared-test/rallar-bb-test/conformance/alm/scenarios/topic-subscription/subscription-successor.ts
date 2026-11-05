@@ -1,7 +1,4 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe
-} from '../../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import {
     FULL_TAGS,
@@ -10,7 +7,6 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import {
-    TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toSubscriptionRowsCommand,
@@ -48,23 +44,17 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-successor',
     scenarioKey: 'subscription-successor',
     tags: FULL_TAGS,
-    carriers: TOPIC_SUBSCRIPTION_CARRIERS,
+    // The harness holds one RTC peer per session: over `rtc` and the fallback carrier the successor page's connect
+    // would wait for RTC readiness while the owner page still holds the session's peer, and never reach it.
+    carriers: ['ws'],
     roles: ['sender', 'receiver', 'successor'],
     laneFamily: 'same-context',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    successorGate: { role: 'sender', commandName: OWNER_GATE },
     toSenderCommands: (page) => page.role === 'sender' ? toOwnerPageCommands(page) : toSuccessorPageCommands(page),
     toRecipientCommands: toPublisherCommands
 };
-
-/** The owner page's command after which the lane opens the successor page. */
-export function toSubscriptionSuccessorGateCommandId(owner: RallarBlackBoxTestRecipe): string {
-    const gate = owner.commands.find((command) => command.commandId?.endsWith(`-sender-${OWNER_GATE}`));
-    if (gate?.commandId === undefined) {
-        throw new Error(`${owner.recipeId} names no ${OWNER_GATE} command for the successor to follow.`);
-    }
-    return gate.commandId;
-}
 
 /** The receiver owns the room: it grants itself `publish` and the sender's principal `subscribe`. */
 function toPublisherCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {

@@ -62,9 +62,12 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     };
 });
 
-vi.mock(import('@shared-web/browser/composition/create-default-publication-crypto.ts'), () => ({
-    createDefaultPublicationCrypto: () => Promise.resolve(roomWorkflowMocks.publicationCrypto)
-}));
+vi.mock(import('@shared-web/browser/composition/create-default-publication-key-store.ts'), async () => {
+    const { InMemoryPublicationKeyStore } = await import('../../shared/signature/publication-key-store-fixtures.ts');
+    const store = new InMemoryPublicationKeyStore();
+    store.pairs.set(roomWorkflowMocks.session.sessionId, roomWorkflowMocks.publicationCrypto.keyPair);
+    return { createDefaultPublicationKeyStore: () => store };
+});
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
     initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({

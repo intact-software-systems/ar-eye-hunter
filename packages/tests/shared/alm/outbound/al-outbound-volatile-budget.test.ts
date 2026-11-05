@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -8,7 +9,6 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import { normalizeALQosPolicy, type ALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import {
@@ -170,6 +170,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
                 { v: 4, msgId: 'nack-at-the-bound', senderId: 'self', ts: Date.now(), traceId: 'trace-al-outbound-volatile-budget' },
                 {
                     fromPeerId: 'self',
+                    logicalRecipientPeerId: 'self',
                     toPeerId: 'peer-1',
                     msgId: 'received-message',
                     reason: 'gap',
@@ -186,6 +187,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
                     originPeerId: 'peer-1',
                     expectedRecipientPeerIds: ['self'],
                     confirmedRecipientPeerIds: ['self'],
+                    outsideAudienceRecipientPeerIds: [],
                     snapshotVersion: 1,
                     phase: 'complete',
                     observedAtEpochMs: Date.now()

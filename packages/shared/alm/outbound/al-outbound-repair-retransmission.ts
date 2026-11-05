@@ -15,6 +15,7 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
 import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
@@ -136,8 +137,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         );
         const msg = read.sentSnapshot?.msg;
         const plan = read.plan;
-        if (!msg || !plan || plan.dropReason) {
+        if (!msg || !plan) {
             console.warn(`No cached outbound message found for repair ${msgId}`);
+            return;
+        }
+        if (plan.dropReason) {
+            console.warn(`Skipping outbound repair of a refused re-plan: ${plan.dropReason}`);
             return;
         }
 
@@ -274,7 +279,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 admittedAudience: plan.admittedAudience,
                 admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds,
                 referenceKey: read.storedMessage?.reference.key,
-                failedPeerIds: toFailedPeerIds(pending),
+                failedPeerIds: toALOutboundReceiptClasses(pending).unconfirmedPeerIds,
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
             })
@@ -334,11 +339,7 @@ function isOwnHopRetry<TPrepared>(
     if (pending === undefined) {
         return false;
     }
-    const failedPeerIds = toFailedPeerIds(pending);
+    const failedPeerIds = toALOutboundReceiptClasses(pending).unconfirmedPeerIds;
     return failedPeerIds.length > 0 &&
         failedPeerIds.every((peerId) => isALOutboundOwnHopPeer(plan, hopPeerIds, peerId));
-}
-
-function toFailedPeerIds(pending: ALOutboundPendingAckSnapshot): readonly string[] {
-    return pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId));
 }

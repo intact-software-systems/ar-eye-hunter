@@ -1,4 +1,3 @@
-import type { ALDeliveryCarrier } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALAckPayload,
     ALAckStatus,
@@ -49,6 +48,7 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
         'originPeerId',
         'expectedRecipientPeerIds',
         'confirmedRecipientPeerIds',
+        'outsideAudienceRecipientPeerIds',
         'snapshotVersion',
         'phase',
         'observedAtEpochMs'
@@ -64,6 +64,10 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
             record.confirmedRecipientPeerIds,
             'receipt confirmed recipient identity'
         ),
+        outsideAudienceRecipientPeerIds: decodeControlIdentifierArray(
+            record.outsideAudienceRecipientPeerIds,
+            'receipt outside-audience recipient identity'
+        ),
         snapshotVersion: decodeControlNumber(record.snapshotVersion, 'receipt snapshot version'),
         phase: decodeReceiptPhase(record.phase),
         observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'receipt observation time')
@@ -73,17 +77,35 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
 export function decodeALNackPayload(value: unknown): ALNackPayload {
     const record = decodeControlRecord(
         value,
-        ['msgId', 'fromPeerId', 'toPeerId', 'reason', 'observedAtEpochMs'],
+        ['msgId', 'fromPeerId', 'toPeerId', 'logicalRecipientPeerId', 'reason', 'observedAtEpochMs'],
         ['orderingKey', 'expectedSeq', 'missingRanges', 'serverSnapshotVersion']
     );
     return {
         ...decodeControlRoute(record, 'NACK'),
+        logicalRecipientPeerId: decodeControlIdentifier(
+            record.logicalRecipientPeerId,
+            'NACK logical recipient identity'
+        ),
         reason: decodeNackReason(record.reason),
         ...decodeOptionalIdentifier(record, 'orderingKey', 'NACK ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'NACK expected sequence'),
         ...decodeOptionalSeqRanges(record, 'missingRanges', 'NACK missing ranges'),
         ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version')
     };
+}
+
+/** A NACK off the wire: an older peer's NACK names no logical recipient, so it speaks for its sender. */
+export function decodeALNackWirePayload(value: unknown): ALNackPayload {
+    return isControlRecord(value) && !Object.hasOwn(value, 'logicalRecipientPeerId')
+        ? decodeALNackPayload({ ...value, logicalRecipientPeerId: value.fromPeerId })
+        : decodeALNackPayload(value);
+}
+
+/** A receipt off the wire: an older server's receipt lists nobody outside the audience. */
+export function decodeALReceiptWirePayload(value: unknown): ALReceiptPayload {
+    return isControlRecord(value) && !Object.hasOwn(value, 'outsideAudienceRecipientPeerIds')
+        ? decodeALReceiptPayload({ ...value, outsideAudienceRecipientPeerIds: [] })
+        : decodeALReceiptPayload(value);
 }
 
 export function decodeALRepairPayload(value: unknown): ALRepairPayload {
@@ -104,8 +126,15 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
 export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot {
     const record = decodeControlRecord(
         value,
-        ['toPeerId', 'status', 'localReady', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
-        ['expireAtTimestamp', 'upwardAudiencePeerIds']
+        [
+            'toPeerId',
+            'status',
+            'localReady',
+            'expectedFromPeerIds',
+            'ackedFromPeerIds',
+            'carrier'
+        ],
+        ['expireAtTimestamp', 'upwardAudiencePeerIds', 'outsideAudiencePeerIds']
     );
     if (typeof record.localReady !== 'boolean') {
         throw new TypeError('Pending ACK readiness is invalid');
@@ -131,6 +160,13 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
                 )
             }
             : {}),
+        // A row the WS server stored before the list existed records nobody outside the audience.
+        outsideAudiencePeerIds: Object.hasOwn(record, 'outsideAudiencePeerIds')
+            ? decodeControlIdentifierArray(
+                record.outsideAudiencePeerIds,
+                'pending ACK outside-audience recipient identity'
+            )
+            : [],
         carrier: decodeALDeliveryCarrier(record.carrier, 'pending ACK carrier')
     };
 }
@@ -139,12 +175,16 @@ interface ControlRecord {
     readonly [key: string]: unknown;
 }
 
+function isControlRecord(value: unknown): value is ControlRecord {
+    return typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
+}
+
 function decodeControlRecord(
     value: unknown,
     required: readonly string[],
     optional: readonly string[] = []
 ): ControlRecord {
-    if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
+    if (!isControlRecord(value)) {
         throw new TypeError('Control value must be a plain record');
     }
     const allowed = [...required, ...optional];
@@ -260,7 +300,10 @@ function readControlArrayEntries(value: unknown, limit: number, label: string): 
 }
 
 function decodeAckStatus(value: unknown): ALAckStatus {
-    if (value !== 'accepted' && value !== 'delivered' && value !== 'forwarded' && value !== 'subtree-complete') {
+    if (
+        value !== 'accepted' && value !== 'delivered' && value !== 'forwarded' && value !== 'subtree-complete' &&
+        value !== 'subtree-complete-not-subscribed'
+    ) {
         throw new TypeError('Control ACK status is invalid');
     }
     return value;
@@ -274,15 +317,36 @@ export function decodeALDeliveryCarrier(value: unknown, label: string): ALDelive
     return value;
 }
 
+/** The carrier one copy of a message travels: the RTC overlay or the WS server. */
+export type ALDeliveryCarrier = 'rtc' | 'ws';
+
 /** The one enumeration of `ALDeliveryCarrier` values, for a decoder that must find the matching one. */
 export const AL_DELIVERY_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
+
+/**
+ * Every NACK reason an inbound plan names: `planNack`'s, the RTC room and publication refusals', and `not-subscribed`.
+ */
+export const AL_INBOUND_NACK_PLAN_REASONS = [
+    'resync-required',
+    'gap',
+    'expired',
+    'overloaded',
+    'held-by-other',
+    'not-yet-in-sync',
+    'membership-fenced',
+    'unauthorized',
+    'not-subscribed'
+] as const;
+
+export type ALInboundNackPlanReason = typeof AL_INBOUND_NACK_PLAN_REASONS[number];
 
 function decodeNackReason(value: unknown): ALNackReason {
     if (
         value !== 'duplicate' && value !== 'gap' && value !== 'resync-required' && value !== 'expired' &&
         value !== 'unauthorized' && value !== 'no-route' && value !== 'overloaded' && value !== 'stale' &&
         value !== 'not-yet-in-sync' && value !== 'membership-fenced' && value !== 'no-leader' &&
-        value !== 'held-by-other' && value !== 'unsupported' && value !== 'no-publish-grant'
+        value !== 'held-by-other' && value !== 'unsupported' && value !== 'no-publish-grant' &&
+        value !== 'not-subscribed'
     ) {
         throw new TypeError('Control NACK reason is invalid');
     }

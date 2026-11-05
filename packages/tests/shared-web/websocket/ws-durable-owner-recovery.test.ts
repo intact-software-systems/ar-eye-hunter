@@ -279,6 +279,7 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
         traceId: 'trace-ws-durable-owner-recovery'
     }, {
         fromPeerId: sessionId,
+        logicalRecipientPeerId: sessionId,
         toPeerId: 'peer',
         msgId: 'missing',
         reason: 'not-yet-in-sync',

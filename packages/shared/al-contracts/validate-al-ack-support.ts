@@ -1,5 +1,5 @@
-import type { ALDeliveryCarrier } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALTargets } from './al-contract.ts';
+import type { ALDeliveryCarrier } from './al-control-value-codec.ts';
 import type {
     ALAckAlgo,
     ALAckOptions,

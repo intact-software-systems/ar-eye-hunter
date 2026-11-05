@@ -23,7 +23,11 @@ import {
     decodeALInboundBufferedSnapshot,
     type ALStoredInboundBufferedSnapshot
 } from '../al-inbound-ordering-validation.ts';
-import { decodeALInboundMessageOwner, toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
+import {
+    AL_INBOUND_MESSAGE_OWNER_FIELDS,
+    decodeALInboundMessageOwner,
+    toALInboundMessageOwnerKey
+} from '../al-inbound-source-validation.ts';
 import {
     decodeALInboundWorkEntry,
     toALInboundWorkKey,
@@ -101,7 +105,7 @@ function isReclaimableProvenance(
 function readProvenance(raw: ALAdmissionStoredValue, namespace: string): HeldProvenance {
     const { key } = raw;
     const owner = decodeALAdmissionValue(raw.value, key, (value) => {
-        const record = decodeALAdmissionRecord(value, ['msgId', 'senderId', 'source', 'supersedenceKey']);
+        const record = decodeALAdmissionRecord(value, AL_INBOUND_MESSAGE_OWNER_FIELDS, ['deliveredLocally']);
         return decodeALInboundMessageOwner(value, {
             namespace,
             key,

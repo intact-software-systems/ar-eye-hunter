@@ -28,11 +28,23 @@ export const SUBSCRIPTION_ABSENCE_MS = 5_000;
 /** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
 const CONFIRMATION_WAIT_MS = 3_000;
 
+/**
+ * A refusal settles the handle before a carrier, or once a re-plan or the WS admission meets the revoke. The S3-ii
+ * lanes ran the whole revoked-publisher sender recipe, this wait included, in 3.2–6.6 s over `rtc` and
+ * `rtc-with-ws-fallback`, so the budget keeps at least 4.5 times the longest.
+ */
+const REJECTION_WAIT_MS = 30_000;
+
 export interface TopicPublicationInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
-    /** How many recipients the server must expect for one copy, every one of them confirming it, before the loop ends. */
+    /** How many recipients one copy must confirm before the loop ends. */
     readonly confirmations: number;
+    /**
+     * How many more the copy's receipt must expect and record outside its audience: granted sessions that answered
+     * `not-subscribed` because they hold no election, which only a send that starts on RTC freezes in.
+     */
+    readonly outsideAudience: number;
     /** A probe's payload names the probe, so no publication wait or absence matches it. */
     readonly kind: 'publication' | 'probe';
 }
@@ -45,11 +57,12 @@ interface PayloadWaitInput {
 }
 
 /**
- * Publishes on the granted topic until the server expects exactly `confirmations` recipients for one copy and every one
- * confirms it, then tells the recipients so. Until every subscriber's election holds, an attempt reaches fewer, or
- * none when the page's own room snapshot does not yet hold its publish grant: a probe makes those attempts without a
- * publication's payload. A recipient that drops out of the audience before the cue would leave every later attempt
- * short, so each recipient holds its election and its socket until `toConfirmedCueWait` hears the cue.
+ * Publishes on the granted topic until one copy's receipt expects exactly `confirmations` plus `outsideAudience`
+ * recipients, `confirmations` of them confirm it and the rest end outside, then tells the recipients so. Until every
+ * subscriber's election holds, an attempt reaches fewer, or none when the page's own room snapshot does not yet hold
+ * its publish grant: a probe makes those attempts without a publication's payload. A recipient that drops out of the
+ * audience before the cue would leave every later attempt short, so each recipient holds its election and its socket
+ * until `toConfirmedCueWait` hears the cue.
  */
 export function toPublishUntilConfirmedCommands(
     publication: TopicPublicationInput
@@ -84,20 +97,19 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
             state: ['acknowledged'],
             timeoutMs: CONFIRMATION_WAIT_MS
         },
-        toResultFact({
-            step,
-            name: `${name}-expected`,
-            source: `${receipt}.expectedRecipientPeerIds`,
-            operator: 'length',
-            expected: publication.confirmations
-        }),
-        toResultFact({
-            step,
-            name: `${name}-confirmed`,
-            source: `${receipt}.confirmedRecipientPeerIds`,
-            operator: 'length',
-            expected: publication.confirmations
-        })
+        ...([
+            ['expected', publication.confirmations + publication.outsideAudience],
+            ['confirmed', publication.confirmations],
+            ['outsideAudience', publication.outsideAudience]
+        ] as const).map(([list, expected]) =>
+            toResultFact({
+                step,
+                name: `${name}-${list}`,
+                source: `${receipt}.${list}RecipientPeerIds`,
+                operator: 'length',
+                expected
+            })
+        )
     ]);
 }
 
@@ -116,6 +128,38 @@ export function toPublishCommands(step: AlmConformanceStepInput, name: string): 
             source: `resultCache.${send}.value.status`,
             operator: 'notEquals',
             expected: 'rejected'
+        })
+    ];
+}
+
+/**
+ * One publication on the granted topic that must settle `rejected` for `reason`: a send whose publisher's grant the
+ * room revoked, refused by the sender's own snapshot or, if that still held the grant, by a re-plan or the WS
+ * admission.
+ */
+export function toRejectedPublishCommands(
+    step: AlmConformanceStepInput,
+    name: string,
+    reason: string
+): readonly RallarBlackBoxTestCommand[] {
+    const send = toCommandId(step, `${name}-send`);
+    const observe = toCommandId(step, `${name}-observe`);
+    return [
+        { ...toGrantedSend(step, toPublicationPayload(step, name, 'publication')), commandId: send, handleId: send },
+        {
+            kind: 'messages.observe',
+            commandId: observe,
+            connection: toConnectionName(step),
+            handleId: send,
+            state: ['rejected'],
+            timeoutMs: REJECTION_WAIT_MS
+        },
+        toResultFact({
+            step,
+            name: `${name}-refusal-reason`,
+            source: `resultCache.${observe}.value.failure.reason`,
+            operator: 'equals',
+            expected: reason
         })
     ];
 }

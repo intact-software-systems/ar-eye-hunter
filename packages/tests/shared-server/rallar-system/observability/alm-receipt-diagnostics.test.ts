@@ -48,6 +48,7 @@ describe('the WS server settlement recorder (D58, D61, C10)', () => {
             mode: 'receiver',
             confirmedPeerIds: ['a'],
             unconfirmedPeerIds: ['b'],
+            outsideAudiencePeerIds: [],
             cause: 'budget',
             detail: 'The receipt ran out of retries after 3 of 3.',
             traceId: 'trace-receipt-subject-1'
@@ -126,6 +127,7 @@ function acknowledgement(
         expectedRecipientPeerIds: [...confirmed, ...unconfirmed],
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: unconfirmed,
+        outsideAudienceRecipientPeerIds: [],
         complete: unconfirmed.length === 0,
         traceId: 'trace-receipt-subject-1'
     };

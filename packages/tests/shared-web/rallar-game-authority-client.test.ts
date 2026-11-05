@@ -261,6 +261,7 @@ describe('Rallar Game Authority browser client', () => {
             expectedRecipientPeerIds: ['server-1', 'peer-b'],
             confirmedRecipientPeerIds: ['server-1'],
             unconfirmedRecipientPeerIds: ['peer-b'],
+            outsideAudienceRecipientPeerIds: [],
             complete: false,
             traceId: 'trace-rallar-game-authority-client'
         });

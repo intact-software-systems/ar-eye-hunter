@@ -89,6 +89,7 @@ function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage
         { v: 4, msgId: `control-${reason}`, senderId: 'receiver', ts: 1, traceId: 'trace-al-outbound-control-admission' },
         {
             fromPeerId: 'receiver',
+            logicalRecipientPeerId: 'receiver',
             toPeerId: 'sender',
             msgId: 'message',
             reason,
@@ -136,6 +137,7 @@ describe('outbound control admission identity', () => {
                         mode: 'hop',
                         expectedPeerIds: ['receiver'],
                         ackedPeerIds: [],
+                        outsideAudiencePeerIds: [],
                         timeoutMs: 2_000,
                         maxAttempts: 3,
                         attempts: 0,
@@ -157,7 +159,13 @@ describe('outbound control admission identity', () => {
                     carrier: 'ws'
                 })
                 : type === 'nack'
-                ? newALNackControlMessage(id, { ...common, ...ordering, msgId, reason: 'gap' })
+                ? newALNackControlMessage(id, {
+                    ...common,
+                    ...ordering,
+                    logicalRecipientPeerId: 'receiver',
+                    msgId,
+                    reason: 'gap'
+                })
                 : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
             const before = [...state.data];
             const wrongRoute = { ...accepted, route: { ...accepted.route, resourceId: 'another-locator' } };
@@ -363,6 +371,7 @@ describe('outbound control admission identity', () => {
                 },
                 {
                     fromPeerId: 'receiver',
+                    logicalRecipientPeerId: 'receiver',
                     toPeerId: 'sender',
                     msgId: 'message',
                     reason: 'stale',
@@ -651,6 +660,7 @@ describe('outbound control admission identity', () => {
                 mode: 'hop',
                 confirmedPeerIds: [],
                 unconfirmedPeerIds: ['receiver'],
+                outsideAudiencePeerIds: [],
                 cause: 'hop-refused',
                 hopPeerId: 'receiver',
                 nackReason: reason,
@@ -1077,6 +1087,7 @@ async function seedObligation(
                     mode: 'hop',
                     expectedPeerIds: input.expectedPeerIds,
                     ackedPeerIds: input.ackedPeerIds,
+                    outsideAudiencePeerIds: [],
                     timeoutMs: 2000,
                     maxAttempts: 3,
                     attempts: 0,
@@ -1113,6 +1124,7 @@ function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[
         },
         {
             fromPeerId: 'receiver',
+            logicalRecipientPeerId: 'receiver',
             toPeerId: 'sender',
             msgId: 'message',
             reason: 'gap',
@@ -1153,6 +1165,7 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
         { v: 4, msgId: `control-resync-${fromPeerId}`, senderId: fromPeerId, ts: 1, traceId: 'trace-al-outbound-control-admission' },
         {
             fromPeerId,
+            logicalRecipientPeerId: fromPeerId,
             toPeerId: input.toPeerId ?? 'sender',
             msgId: 'message',
             reason: 'resync-required',
@@ -1172,7 +1185,7 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
 function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired' | 'membership-fenced'): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        { fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 }
+        { fromPeerId, logicalRecipientPeerId: fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 }
     );
 }
 
@@ -1181,6 +1194,7 @@ function notYetInSyncNack(): ALMessage {
         { v: 4, msgId: 'control-not-yet-in-sync', senderId: 'receiver', ts: 1, traceId: 'trace-al-outbound-control-admission' },
         {
             fromPeerId: 'receiver',
+            logicalRecipientPeerId: 'receiver',
             toPeerId: 'sender',
             msgId: 'message',
             reason: 'not-yet-in-sync',
@@ -1204,7 +1218,12 @@ function controlMessage(type: 'ack' | 'nack' | 'repair', peerId: string = 'recei
                 carrier: 'ws'
             });
         case 'nack':
-            return newALNackControlMessage(id, { ...common, msgId: 'message', reason: 'gap' });
+            return newALNackControlMessage(id, {
+                ...common,
+                logicalRecipientPeerId: peerId,
+                msgId: 'message',
+                reason: 'gap'
+            });
         case 'repair':
             return newALRepairControlMessage(id, { ...common, msgId: 'message', reason: 'retransmit' });
     }

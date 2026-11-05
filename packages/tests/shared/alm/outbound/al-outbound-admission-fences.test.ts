@@ -394,6 +394,7 @@ async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTes
                 mode: 'hop',
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
+                outsideAudiencePeerIds: [],
                 timeoutMs: 2_000,
                 maxAttempts: 3,
                 attempts: 0,

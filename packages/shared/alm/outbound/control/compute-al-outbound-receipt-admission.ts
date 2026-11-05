@@ -42,7 +42,8 @@ export interface ALOutboundReceiptAdmissionCandidate {
 /**
  * A receipt answers against the row an earlier receipt left, or, when none has, against the message
  * the origin sent: a terminal receipt may overtake its `admitted` one. It replaces the expected set with
- * the server's frozen audience and adds the recipients it confirmed to those already counted.
+ * the server's frozen audience and adds the recipients it confirmed, and those it records outside the
+ * audience, to those already counted.
  */
 export function computeALOutboundReceiptAdmission(
     read: ALOutboundReceiptAdmissionRead
@@ -53,13 +54,15 @@ export function computeALOutboundReceiptAdmission(
     }
     const expected = read.receipt.expectedRecipientPeerIds;
     const acked = new Set([...current.ackedPeerIds, ...read.receipt.confirmedRecipientPeerIds]);
+    const outside = new Set([...current.outsideAudiencePeerIds, ...read.receipt.outsideAudienceRecipientPeerIds]);
     return {
         read,
         write: {
             value: {
                 ...current,
                 expectedPeerIds: expected,
-                ackedPeerIds: expected.filter((peerId) => acked.has(peerId))
+                ackedPeerIds: expected.filter((peerId) => acked.has(peerId)),
+                outsideAudiencePeerIds: expected.filter((peerId) => outside.has(peerId))
             },
             expireAtTimestamp: computeALReceiptRetentionExpiryMs(current.deadlineAtMs)
         }
@@ -139,6 +142,7 @@ function toTrackedReceipt(read: ALOutboundReceiptAdmissionRead): ALOutboundPendi
         mode: tracking.mode,
         expectedPeerIds: [],
         ackedPeerIds: [],
+        outsideAudiencePeerIds: [],
         timeoutMs: tracking.timeoutMs,
         maxAttempts: tracking.maxAttempts,
         attempts: 0,
@@ -154,7 +158,8 @@ function toMissingReceiptRejection(read: ALOutboundReceiptAdmissionRead): ALMess
 
 function hasSameReceipt(pending: ALOutboundPendingAckSnapshot, next: ALOutboundPendingAckSnapshot): boolean {
     return hasSamePeers(pending.expectedPeerIds, next.expectedPeerIds) &&
-        hasSamePeers(pending.ackedPeerIds, next.ackedPeerIds);
+        hasSamePeers(pending.ackedPeerIds, next.ackedPeerIds) &&
+        hasSamePeers(pending.outsideAudiencePeerIds, next.outsideAudiencePeerIds);
 }
 
 function hasSamePeers(left: readonly string[], right: readonly string[]): boolean {

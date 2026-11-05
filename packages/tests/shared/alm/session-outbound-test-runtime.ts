@@ -2,11 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import {
-    createCheckpointALOutboundRuntimeStores,
-    createDefaultIndexedDbALOutboundRuntimeStores,
-    type ALStoreDurability
-} from '@shared/alm/al-runtime-stores.ts';
+import type { ALStoreDurability } from '@shared/al-contracts/al-policy.ts';
+import { createCheckpointALOutboundRuntimeStores, createDefaultIndexedDbALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type {
     ALCheckpointOutboundRuntimeStores,
     ALOutboundMessageRuntime,

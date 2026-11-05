@@ -113,10 +113,10 @@ export interface MiddlewareInitOptions {
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     /** Where both carriers' inbound runtimes hand a message they can no longer order. */
     readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
-    /** The page's one key, started by the composition root; each connect awaits it once. */
+    /** The key pair of the session this connect connects, read for it by the session controller; awaited once. */
     readonly publicationCrypto: Promise<PublicationCrypto>;
-    /** Built once per page beside its key; each connect's RTC overlay verifies granted frames with it. */
-    readonly publicationVerifier: Promise<RtcPublicationProofVerifierPort>;
+    /** Built once per page over its WebCrypto; each connect's RTC overlay verifies granted frames with it. */
+    readonly publicationVerifier: RtcPublicationProofVerifierPort;
     /** The page's granted topics, whose RTC publications the overlay signs with the page's key. */
     readonly grantedTopics: RtcGrantedTopicReader;
     /** The tab's held subscription tokens, which a granted RTC frame's local delivery reads. */
@@ -186,13 +186,13 @@ export interface InitialiseBrowserTransportInput {
     readonly publicationStageLimits: ALPublicationStageLimits;
     /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
     readonly checkpointStores: BrowserALCheckpointStores;
-    /** The page's one key, which each group heartbeat registers and the RTC overlay signs with. */
+    /** The session's one key, which each group heartbeat registers and the RTC overlay signs with. */
     readonly publicationCrypto: PublicationCrypto;
     readonly publicationVerifier: RtcPublicationProofVerifierPort;
     readonly options: BrowserConnectOptions;
 }
 
-/** The page's publication capabilities, each started once per page and awaited by every connect. */
+/** The connect's publication capabilities: its session's key, awaited once, and the page's verifier. */
 export type BrowserTransportPublication = Pick<
     InitialiseBrowserTransportInput,
     'publicationCrypto' | 'publicationVerifier'
@@ -291,7 +291,7 @@ export async function initialiseMiddleware(
         );
         const transportInput = createBrowserTransportInput(session, options, {
             publicationCrypto: await options.publicationCrypto,
-            publicationVerifier: await options.publicationVerifier
+            publicationVerifier: options.publicationVerifier
         });
         webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
         rtcTransport = await initialiseBrowserRtcTransport({

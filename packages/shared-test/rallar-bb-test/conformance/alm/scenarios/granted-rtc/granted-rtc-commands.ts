@@ -14,12 +14,15 @@ import {
     ALM_CONFORMANCE_GRANTED_TOPIC_ID,
     toCommandId,
     toConnectionName,
-    toLoopIterationSendHandleId
+    toLoopIterationSendHandleId,
+    toRoomRef,
+    toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
 import {
     toSubscribeCommand,
     toTopicGrantCommand,
-    toUnsubscribeCommands
+    toUnsubscribeCommands,
+    type TopicGrantInput
 } from '../topic-subscription/topic-subscription-commands.ts';
 import {
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
@@ -36,7 +39,10 @@ import {
     toPublicationWait
 } from '../topic-subscription/topic-subscription-publications.ts';
 
-/** A granted topic rides RTC only under the `rtc` strategy's own cell; the fallback cell would hand a refusal to WS. */
+/**
+ * A granted cell proves what the RTC carrier itself decides, so it runs under the `rtc` strategy, where no refusal or
+ * lost copy is handed to WS; a cell that proves the hand-over too names the fallback carrier itself.
+ */
 export const GRANTED_RTC_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
 
 /** The one publication every cell sends, so a payload wait or its absence names it. */
@@ -44,9 +50,6 @@ const PUBLICATION = 'publication';
 
 /** How long one publish attempt listens for its cue before it publishes again. */
 const CUE_ATTEMPT_WAIT_MS = 1_500;
-
-/** A carrier-admission refusal settles the handle before any carrier, well within this. */
-const REFUSAL_WAIT_MS = 1_000;
 
 export type GrantedRtcInboundRefusal = 'invalid-signature' | 'missing-proof';
 
@@ -56,11 +59,8 @@ export interface GrantedRtcDelivery {
     readonly reliability: NonNullable<RallarBlackBoxTestMessagesSendCommand['reliability']>;
 }
 
-/** The one shape RTC carries a granted publication in: a room multicast asking no receipt. */
+/** A publication asking no receipt, which only the receiver's cue confirms. */
 export const UNRECEIPTED_DELIVERY: GrantedRtcDelivery = { ack: 'none', reliability: 'best-effort' };
-
-/** A receipt the RTC carrier cannot give a granted publication. */
-export const RECEIPTED_DELIVERY: GrantedRtcDelivery = { ack: 'receiver', reliability: 'at-least-once' };
 
 interface GrantedRtcRefusalPollInput {
     readonly step: AlmConformanceStepInput;
@@ -68,15 +68,22 @@ interface GrantedRtcRefusalPollInput {
     readonly facts: readonly AlmConformanceVerdictFact[];
 }
 
+/** A further member's permissions on the granted topic, which the owner writes before it grants the sender. */
+export type GrantedRtcMemberGrant = Pick<TopicGrantInput, 'grantee' | 'publish' | 'subscribe'>;
+
 /**
- * The receiver owns the room: it elects itself to receive before it grants the sender `publish`, so the sender's
- * snapshot names the grant only once the receiver can hear it.
+ * The receiver owns the room: it elects itself to receive and grants every further member before it grants the sender
+ * `publish`, so the sender's snapshot names the grant only once the receiver can hear it.
  */
-export function toGrantedRtcOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+export function toGrantedRtcOwnerCommands(
+    owner: AlmConformanceStepInput,
+    memberGrants: readonly GrantedRtcMemberGrant[]
+): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
         toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
         toSubscribeCommand(owner, 'receiver'),
+        ...memberGrants.map((grant) => toTopicGrantCommand({ ...grant, step: owner, operation: 'grant' })),
         toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: false })
     ];
 }
@@ -125,7 +132,7 @@ export function toRefusedReceiverCommands(
     refusal: GrantedRtcInboundRefusal
 ): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(receiver),
+        ...toGrantedRtcOwnerCommands(receiver, []),
         toInboundRefusalWait(receiver, refusal),
         ...toCueSendCommands(receiver, 'refused'),
         toPublicationWait(receiver, PUBLICATION, true),
@@ -146,29 +153,61 @@ export function toInboundRefusalWait(
 }
 
 /**
- * Sends until one attempt's handle settles `rejected` with every fact, which a refusal before admission does at once;
- * until the page's snapshot holds the grant the cell needs, an attempt ends another way and the poll sends again.
+ * This page admitted the cell's frame over RTC: verified, and forwarded wherever its plan names a next hop. With an
+ * absence wait beside it, the frame reached a member that delivers nothing.
+ */
+export function toRtcAdmittedWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
+    return toAdmissionOutcomeWait(step, {
+        name: 'rtc-admitted',
+        contains: '"carrier":"rtc","outcome":"committed","reason":"admitted"',
+        timeoutMs: SUBSCRIPTION_PHASE_MS
+    });
+}
+
+/**
+ * Sends through the `rallar.messages.rtc.send` lane entry until one attempt's handle settles `rejected` with every
+ * fact, which a refusal before admission does at once: the send observes `rejected`, so a rejected handle is its
+ * value. Until the page's snapshot holds the grant the cell needs, an attempt ends another way, fails, and the poll
+ * sends again.
  */
 export function toGrantedRefusalPollCommand(
     { step, delivery, facts }: GrantedRtcRefusalPollInput
 ): RallarBlackBoxTestCommand {
     const name = 'refusal';
-    const observe = toCommandId(step, `${name}-observe`);
-    const verdict = toPollResult({ step, name, index: 2, childId: observe });
+    const send = toCommandId(step, `${name}-send`);
+    const verdict = toPollResult({ step, name, index: 1, childId: send });
     return toPollCommand(step, name, [
-        toGrantedRtcSend(step, name, delivery),
         {
-            kind: 'messages.observe',
-            commandId: observe,
+            kind: 'rtc.send',
+            commandId: send,
             connection: toConnectionName(step),
-            handleId: toLoopIterationSendHandleId(step),
-            state: ['rejected'],
-            timeoutMs: REFUSAL_WAIT_MS
+            transport: 'messages.rtc',
+            observe: 'rejected',
+            send: {
+                typeId: toScenarioTypeId(step),
+                topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID,
+                roomRef: toRoomRef(step.input.group),
+                payload: toPublicationPayload(step, PUBLICATION, 'publication'),
+                ...delivery
+            },
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
         },
         ...facts.map(([fact, field, operator, expected]) =>
-            toResultFact({ step, name: `${name}-${fact}`, source: `${verdict}.${field}`, operator, expected })
+            toResultFact({ step, name: `${name}-${fact}`, source: `${verdict}.message.${field}`, operator, expected })
         )
     ]);
+}
+
+/**
+ * The page's health, whose formation summary names its accepted overlay, topology and `nextHopSessionIds`: recorded for
+ * the cell's evidence and asserted nowhere. Its RTC lane status lists every open connection, not the overlay's hops.
+ */
+export function toOverlayNextHopsCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'health',
+        commandId: toCommandId(step, 'overlay-next-hops'),
+        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+    };
 }
 
 /** One room publication on the granted topic over the cell's carrier, its handle new on each attempt of the poll. */

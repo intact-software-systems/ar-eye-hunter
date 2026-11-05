@@ -96,6 +96,8 @@ export interface ALOutboundPendingAckSnapshot {
     readonly mode: ALReceiptMode;
     readonly expectedPeerIds: readonly string[];
     readonly ackedPeerIds: readonly string[];
+    /** Expected recipients that answered they are not in the audience: neither confirmed nor owed a retry. */
+    readonly outsideAudiencePeerIds: readonly string[];
     readonly timeoutMs: number;
     readonly maxAttempts: number;
     readonly attempts: number;

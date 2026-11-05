@@ -49,6 +49,11 @@ import {
     toALInboundDeliveryMutations,
     toALInboundSupersedenceMutations
 } from './al-inbound-delivery-mutations.ts';
+import {
+    isALInboundDeliveringPlan,
+    isALInboundNotSubscribedPlan,
+    toALInboundHopCompletionStatus
+} from './al-inbound-not-subscribed-plan.ts';
 import { computeALInboundDuplicateChanges } from './compute-al-inbound-duplicate-changes.ts';
 
 interface ALInboundAdmissionChanges {
@@ -184,7 +189,7 @@ function computeALInboundAdmissionChanges(
             ...acknowledgements.mutations
         ],
         effects: [
-            ...(read.plan.localDelivery.deferred
+            ...(read.plan.localDelivery.deferred || isALInboundNotSubscribedPlan(read.plan)
                 ? toALInboundNegativeControlEffects(controls)
                 : toALInboundLocalDeliveryEffects(controls)),
             ...acknowledgements.immediateEffects,
@@ -221,7 +226,8 @@ export function computeALInboundBufferedRelease(
                     msgId: read.snapshot.msg.id.msgId,
                     senderId: read.snapshot.msg.id.senderId,
                     source: read.source,
-                    supersedenceKey: read.snapshot.plan.supersedence.key ?? null
+                    supersedenceKey: read.snapshot.plan.supersedence.key ?? null,
+                    deliveredLocally: isALInboundDeliveringPlan(plan)
                 },
                 expireAtTimestamp: Math.max(
                     computeALInboundMessageOwnerExpiryMs(read, expireAtTimestamp),
@@ -272,6 +278,7 @@ function computeIncomingAcknowledgements(
  * A relay's row waits on its next hops and ends its hop with its terminal ACK once they completed. A logical
  * recipient that delivered confirms itself at once with `accepted` beside that row: its confirmation never
  * waits on the subtree below it, and `accepted` completes no hop, so its parent still waits on its terminal ACK.
+ * The row of a recipient that answered `not-subscribed` ends its hop with a terminal ACK that confirms nothing.
  */
 function computeRelayAcknowledgements(
     read: ALInboundMessageReadDto,
@@ -283,6 +290,7 @@ function computeRelayAcknowledgements(
         current: read.pendingAck,
         toPeerId: ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
+        status: toALInboundHopCompletionStatus(plan),
         localReady: !plan.localDelivery.deferred,
         expireAtTimestamp: ack.expireAtTimestamp,
         carrier: ack.carrier,
@@ -298,12 +306,12 @@ function computeRelayAcknowledgements(
     };
 }
 
-/** A peer that delivers nothing, being outside the frozen audience, ends its own empty subtree instead. */
+/** A peer that delivers nothing, being outside the frozen audience or not subscribed, ends its own empty subtree. */
 function toImmediateAckStatus(plan: ALMessageHandlingPlan, shouldForward: boolean): ALAckStatus {
     if (shouldForward) {
         return 'forwarded';
     }
-    return plan.localDelivery.enabled || plan.localDelivery.deferred ? 'delivered' : 'subtree-complete';
+    return isALInboundDeliveringPlan(plan) ? 'delivered' : toALInboundHopCompletionStatus(plan);
 }
 
 function toControlOwnerMutation(

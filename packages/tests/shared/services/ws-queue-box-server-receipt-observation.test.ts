@@ -13,6 +13,7 @@ import {
     decodeALControlMessage,
     newALAckControlMessage,
     type ALAckPayload,
+    type ALAckStatus,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -33,9 +34,10 @@ import type { WsServerInboundAuthorizer } from '@shared/services/ws-queue-box-se
 import { WsQueueBoxServerControlDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts';
 import { WsQueueBoxServerInboundAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts';
 import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
-import type {
-    WsQueueBoxServerReceiptObservation,
-    WsQueueBoxServerReceiptObserver
+import {
+    toWsQueueBoxServerReceiptAckFacts,
+    type WsQueueBoxServerReceiptObservation,
+    type WsQueueBoxServerReceiptObserver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
@@ -1420,3 +1422,24 @@ describe('receipt observations name the trace', () => {
         expect(events).toEqual([expect.objectContaining({ kind: 'ack-rejection', controlMsgId: 'ack-outside', traceId: CONTROL_TRACE })]);
     });
 });
+
+it.each<ALAckStatus>(['accepted', 'delivered', 'forwarded', 'subtree-complete', 'subtree-complete-not-subscribed'])(
+    'projects an ACK of status %s into its closed ACK facts',
+    (status) => {
+        const ack = newALAckControlMessage(
+            { v: 4, msgId: `ack-${status}`, senderId: 'recipient', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' },
+            {
+                ackedMsgId: 'subject',
+                originPeerId: 'origin',
+                fromPeerId: 'recipient',
+                toPeerId: 'origin',
+                logicalRecipientPeerId: 'recipient',
+                carrier: 'rtc',
+                status,
+                observedAtEpochMs: 901
+            }
+        );
+
+        expect(toWsQueueBoxServerReceiptAckFacts(ack)?.ack.status).toBe(status);
+    }
+);

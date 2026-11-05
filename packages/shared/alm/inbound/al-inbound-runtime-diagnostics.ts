@@ -1,7 +1,9 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '../../al-contracts/al-control-type-ids.ts';
+import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import type { ALStoreDurability } from '../../al-contracts/al-policy.ts';
 import {
     toALMessageTrace,
     toALMessageTraceOrNull,
@@ -9,8 +11,6 @@ import {
     type ALMessageTraceOrNull
 } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { Either } from '../../resilience/Either.ts';
-import type { ALStoreDurability } from '../al-runtime-stores.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
