@@ -5,7 +5,11 @@ import type {
 import { groupStateTopicSubscriptionStorageKey } from '../../persistence/subscription/group-topic-subscription-storage-key.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { resolveGroupMutationTargetPrincipalId } from '../orchestration/resolve-group-mutation-target-identity.ts';
-import { readsTargetPrincipalSubscriptions, readsTopicSubscriptionTarget } from './group-mutation-read-scope.ts';
+import {
+    readsTargetClientSessions,
+    readsTargetPrincipalSubscriptions,
+    readsTopicSubscriptionTarget
+} from './group-mutation-read-scope.ts';
 
 export type GroupMutationSubscriptionReadInput = Pick<
     GroupStateMutationExactReadInput,
@@ -27,9 +31,9 @@ export function toGroupMutationSubscriptionReadInput(
         : null;
     return {
         topicSubscriptions: subscriptionTarget === null ? [] : [subscriptionTarget],
-        clientSessions: subscriptionTarget === null || targetPrincipalId === null
+        clientSessions: !readsTargetClientSessions(command) || targetPrincipalId === null
             ? []
-            : [{ principalId: targetPrincipalId, sessionId: subscriptionTarget.sessionId }],
+            : [{ principalId: targetPrincipalId, sessionId: command.sessionId }],
         subscriptionPrincipalIds: readsTargetPrincipalSubscriptions(command) && targetPrincipalId !== null
             ? [targetPrincipalId]
             : []
@@ -54,7 +58,7 @@ export function toGroupMutationSubscriptionRead(
     return {
         targetTopicSubscription: read.topicSubscriptions.find(({ identity }) => identity === subscriptionKey)?.entry ??
             null,
-        targetClientSessions: readsTopicSubscriptionTarget(command) ? (clientSession?.entries ?? []) : null,
+        targetClientSessions: readsTargetClientSessions(command) ? (clientSession?.entries ?? []) : null,
         targetPrincipalSubscriptions: input.subscriptionPrincipalIds.length === 0
             ? null
             : principalSubscriptions?.entries ?? []

@@ -1,9 +1,14 @@
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupMutationFacts, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { describe, expect, it } from 'vitest';
 import { createMutationCommand, createMutationFacts, createMutationRead } from '../group-state-concurrency-test-fixtures.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
-import { groupRef, groupSessionStorageKey, groupStorageKey, presenceFor, storagePart, storedEntry } from './group-mutation-test-runtime.ts';
+import { groupRef, groupSessionStorageKey, groupStorageKey, presenceFor, SCOPE, storagePart, storedEntry } from './group-mutation-test-runtime.ts';
+import { computeDescriptorMutation, GRANT_ROOM, requireWrite, seedGrantRoom } from './group-publication-grant-test-runtime.ts';
+import { SUBSCRIPTION_NOW_EPOCH_MS, writeClientSessionRow } from './group-topic-subscription-test-runtime.ts';
 
 describe('group presence mutation computation', () => {
     it('rejects a canonical target session whose value belongs to another principal', () => {
@@ -66,6 +71,44 @@ describe('group presence mutation computation', () => {
                 facts: createMutationFacts()
             })
         ).toThrow(/target presence principal.*command|command slot identity/i);
+    });
+});
+
+describe('presence connect connection generation', () => {
+    it('commits a connect asserted by the session\'s live connection generation', async () => {
+        const runtime = await roomWithBobSocket('bob-ws-generation-1');
+
+        const { computed } = await computeBobConnect(runtime, 'bob-ws-generation-1');
+
+        expect(requireWrite(computed).guard.value).toMatchObject({
+            sessionId: 'bob-session',
+            generationId: 'bob-presence-generation-1',
+            connectionGenerationId: 'bob-ws-generation-1',
+            status: 'active'
+        });
+    });
+
+    it('refuses a connect naming a dead connection generation as stale-generation and writes nothing', async () => {
+        const runtime = await roomWithBobSocket('bob-ws-generation-1');
+        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2');
+
+        const { command, read, computed } = await computeBobConnect(runtime, 'bob-ws-generation-1');
+
+        expect(computed).toMatchObject({
+            outcome: 'rejected',
+            rejectionCode: 'group-policy-denied',
+            policyDenial: { code: 'stale-generation' }
+        });
+        expect(validateGroupMutation({ command: command.command, read, facts: command.facts, computed })).toEqual([]);
+    });
+
+    it('keeps admitting a connect from a session that holds no live client-state row', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedGrantRoom(runtime);
+
+        const { computed } = await computeBobConnect(runtime, 'bob-ws-generation-1');
+
+        expect(requireWrite(computed).guard.value).toMatchObject({ connectionGenerationId: 'bob-ws-generation-1' });
     });
 });
 
@@ -192,4 +235,33 @@ function createHeartbeatRead(): GroupMutationRead {
             computedAtEpochMs: 1_000
         })
     };
+}
+
+async function roomWithBobSocket(connectionGenerationId: string): Promise<GroupBarrierRepository> {
+    const runtime = new GroupBarrierRepository();
+    await seedGrantRoom(runtime);
+    await writeClientSessionRow(runtime, 'bob', connectionGenerationId);
+    return runtime;
+}
+
+async function computeBobConnect(runtime: GroupBarrierRepository, connectionGenerationId: string) {
+    return await computeDescriptorMutation(
+        runtime,
+        'bob',
+        mutationDescriptor({
+            operation: 'connectPresence',
+            scope: SCOPE,
+            groupId: GRANT_ROOM,
+            sessionId: 'bob-session',
+            request: {
+                principalId: 'bob',
+                generationId: 'bob-presence-generation-1',
+                connectionGenerationId,
+                publicationKey: null,
+                actorPrincipalId: 'bob',
+                requestId: `connect-bob-${connectionGenerationId}`
+            }
+        }),
+        SUBSCRIPTION_NOW_EPOCH_MS
+    );
 }

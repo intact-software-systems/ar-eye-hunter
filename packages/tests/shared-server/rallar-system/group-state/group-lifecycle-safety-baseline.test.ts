@@ -202,7 +202,8 @@ function memberRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
     return {
         ...stored,
         targetMember: stored.actorMember,
-        targetMemberEntry: stored.actorMemberEntry
+        targetMemberEntry: stored.actorMemberEntry,
+        targetClientSessions: []
     };
 }
 

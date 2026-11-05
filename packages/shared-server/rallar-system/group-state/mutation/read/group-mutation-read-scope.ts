@@ -113,11 +113,21 @@ export function groupSessionIntentPrincipal(command: GroupMutationCommand): stri
         : null;
 }
 
-/** Subscribe and unsubscribe read their own (session, topic) row and the session's live client-state row. */
+/** Subscribe and unsubscribe read their own (session, topic) row. */
 export function readsTopicSubscriptionTarget(
     command: GroupMutationCommand
 ): command is Extract<GroupMutationCommand, { operation: GroupTopicSubscriptionOperation; }> {
     return command.operation === 'subscribeGroupTopic' || command.operation === 'unsubscribeGroupTopic';
+}
+
+/**
+ * The commands that assert a connection generation read the session's live client-state rows to compare it: subscribe,
+ * unsubscribe and a presence connect.
+ */
+export function readsTargetClientSessions(
+    command: GroupMutationCommand
+): command is Extract<GroupMutationCommand, { operation: GroupTopicSubscriptionOperation | 'connectPresence'; }> {
+    return readsTopicSubscriptionTarget(command) || command.operation === 'connectPresence';
 }
 
 /**

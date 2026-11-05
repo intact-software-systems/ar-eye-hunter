@@ -3,9 +3,16 @@ import { SESSIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/per
 import { readGroupSessionCleanupCandidates } from '@shared-server/rallar-system/group-state/presence/group-session-cleanup.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession, GroupScope } from '@shared/api/group-types.ts';
+import type { ConnectGroupPresenceSessionRequest } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
 
 import { ReadBatchFakeRuntimeStateRepository } from '../../../runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { createTestAuthSession } from '../group-state-test-runtime.ts';
+import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
+import { GRANT_ROOM, seedGrantRoom } from '../mutation/group-publication-grant-test-runtime.ts';
+import { SUBSCRIPTION_NOW_EPOCH_MS, writeClientSessionRow } from '../mutation/group-topic-subscription-test-runtime.ts';
+import { createMaintenance, createService } from './group-presence-test-runtime.ts';
 
 const SCOPE: GroupScope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 const AUTH_SESSION = {
@@ -61,6 +68,45 @@ describe('group session cleanup candidates', () => {
     });
 });
 
+describe('generation change, same session', () => {
+    it('a connect under the reopened socket\'s generation and a fresh presence generation reopens the closed row', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedGrantRoom(runtime);
+        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-1');
+        await connectBob(runtime, SUBSCRIPTION_NOW_EPOCH_MS, {
+            generationId: 'bob-presence-generation-1',
+            connectionGenerationId: 'bob-ws-generation-1'
+        });
+        const closedAt = SUBSCRIPTION_NOW_EPOCH_MS + 1_000;
+        expect(await readBobCleanupCandidates(runtime, 'bob-ws-generation-1', closedAt)).toHaveLength(1);
+        await createMaintenance(runtime, closedAt).disconnectPresenceSessionsBySessionIdWritten('bob-session', closedAt);
+        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2');
+
+        // The joined presence generation is spent: reusing it on the closed row is a no-op.
+        await connectBob(runtime, closedAt + 500, {
+            generationId: 'bob-presence-generation-1',
+            connectionGenerationId: 'bob-ws-generation-2'
+        });
+        expect(await readBobPresence(runtime)).toMatchObject({ status: 'disconnected' });
+        await connectBob(runtime, closedAt + 1_000, {
+            generationId: 'bob-presence-generation-2',
+            connectionGenerationId: 'bob-ws-generation-2'
+        });
+
+        expect(await readBobPresence(runtime)).toMatchObject({
+            generationId: 'bob-presence-generation-2',
+            connectionGenerationId: 'bob-ws-generation-2',
+            status: 'active',
+            disconnectedAtEpochMs: null
+        });
+        expect(await readBobCleanupCandidates(runtime, 'bob-ws-generation-1', closedAt + 2_000)).toEqual([]);
+        await expect(connectBob(runtime, closedAt + 1_500, {
+            generationId: 'bob-presence-generation-3',
+            connectionGenerationId: 'bob-ws-generation-1'
+        })).rejects.toMatchObject({ denial: { code: 'stale-generation' } });
+    });
+});
+
 interface SessionInput {
     readonly groupId: string;
     readonly sessionId?: string;
@@ -111,4 +157,39 @@ function session(input: SessionInput): GroupPresenceSession {
             disconnectedAtEpochMs: input.disconnectedAtEpochMs,
             disconnectReason: 'closed'
         };
+}
+
+async function connectBob(
+    runtime: GroupBarrierRepository,
+    nowEpochMs: number,
+    generations: Pick<ConnectGroupPresenceSessionRequest, 'generationId' | 'connectionGenerationId'>
+): Promise<void> {
+    await createService(runtime, nowEpochMs).connectPresenceSession(SCOPE, GRANT_ROOM, 'bob-session', {
+        principalId: 'bob',
+        ...generations,
+        publicationKey: null,
+        actorPrincipalId: 'bob',
+        requestId: `connect-bob-${generations.generationId}-${generations.connectionGenerationId}`
+    });
+}
+
+async function readBobPresence(runtime: GroupBarrierRepository): Promise<GroupPresenceSession | undefined> {
+    return await createTestGroupStateRepository(runtime).findPresenceSession({
+        ...groupRef(GRANT_ROOM),
+        sessionId: 'bob-session'
+    });
+}
+
+async function readBobCleanupCandidates(
+    runtime: GroupBarrierRepository,
+    connectionGenerationId: string,
+    disconnectedAtEpochMs: number
+): Promise<readonly GroupPresenceSession[]> {
+    return await readGroupSessionCleanupCandidates(createTestGroupStateRepository(runtime), {
+        scope: SCOPE,
+        authSession: createTestAuthSession('bob'),
+        principalId: 'bob',
+        connectionGenerationId,
+        disconnectedAtEpochMs
+    });
 }

@@ -8,6 +8,7 @@ import {
     validateStoredGeneration
 } from '../../persistence/validate-persisted-group-presence.ts';
 import { canConnectGroupPresenceSession } from '../../policy/group-membership-admission-policy.ts';
+import { canConnectGroupPresenceAtGeneration } from '../../policy/group-presence-connection-generation-policy.ts';
 import {
     assertAllowed,
     assertPrincipalAuthority,
@@ -20,7 +21,7 @@ import type {
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
-import { noOp, requireGroup } from '../group-mutation-result.ts';
+import { noOp, rejectedByGroupPolicy, requireGroup } from '../group-mutation-result.ts';
 import { computeConnectPresenceAdmission } from './compute-group-presence-admission.ts';
 import { computeGroupPresenceWrite } from './compute-group-presence-write.ts';
 
@@ -33,23 +34,15 @@ export function computeConnectGroupPresence(
 ): GroupMutationComputed {
     requireGroup(read, command.aggregateRef);
     assertPrincipalAuthority(command, command.input.principalId);
-    const member = read.targetMember ?? undefined;
-    if (!member || member.status !== 'active') {
-        throw new GroupMutationRejectedError(
-            `Forbidden: active group member required for presence: ${command.input.principalId}`
-        );
+    assertConnectPresenceAdmitted({ command, read, facts });
+    const generationDecision = canConnectGroupPresenceAtGeneration({
+        clientSessions: (read.targetClientSessions ?? []).map(({ value }) => value),
+        connectionGenerationId: command.input.connectionGenerationId,
+        nowEpochMs: facts.attemptAtEpochMs
+    });
+    if (!generationDecision.allowed) {
+        return rejectedByGroupPolicy({ command, read, facts, denial: generationDecision });
     }
-    assertAllowed(
-        canConnectGroupPresenceSession({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
-            actor: {
-                principalId: command.input.principalId,
-                sessionId: command.input.actorSessionId ?? undefined
-            },
-            sessionId: command.sessionId,
-            nowEpochMs: facts.attemptAtEpochMs
-        })
-    );
     const existing = read.targetPresence;
     const connection = createConnectedPresenceSession({ command, read, facts });
     if (connection.outcome === 'noop') {
@@ -71,10 +64,30 @@ export function computeConnectGroupPresence(
     });
 }
 
-interface CreateConnectedPresenceSessionInput {
+interface ConnectPresenceDecisionInput {
     readonly command: Extract<GroupMutationCommand, { operation: 'connectPresence'; }>;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
+}
+
+function assertConnectPresenceAdmitted({ command, read, facts }: ConnectPresenceDecisionInput): void {
+    const member = read.targetMember ?? undefined;
+    if (!member || member.status !== 'active') {
+        throw new GroupMutationRejectedError(
+            `Forbidden: active group member required for presence: ${command.input.principalId}`
+        );
+    }
+    assertAllowed(
+        canConnectGroupPresenceSession({
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.attemptAtEpochMs),
+            actor: {
+                principalId: command.input.principalId,
+                sessionId: command.input.actorSessionId ?? undefined
+            },
+            sessionId: command.sessionId,
+            nowEpochMs: facts.attemptAtEpochMs
+        })
+    );
 }
 
 interface PresenceConnectionTiming {
@@ -92,7 +105,7 @@ function createConnectedPresenceSession({
     command,
     read,
     facts
-}: CreateConnectedPresenceSessionInput): ConnectedPresenceSession {
+}: ConnectPresenceDecisionInput): ConnectedPresenceSession {
     const timing = resolvePresenceConnectionTiming({ command, read, facts });
     if (timing === null) {
         return { outcome: 'noop' };
@@ -138,7 +151,7 @@ function resolvePresenceConnectionTiming({
     command,
     read,
     facts
-}: CreateConnectedPresenceSessionInput): PresenceConnectionTiming | null {
+}: ConnectPresenceDecisionInput): PresenceConnectionTiming | null {
     const existing = read.targetPresence;
     const connectedAt = existing?.value.generationId === command.input.generationId &&
             command.input.connectedAtEpochMs === null
