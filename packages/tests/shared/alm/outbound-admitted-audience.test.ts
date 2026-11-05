@@ -726,6 +726,7 @@ async function createFixture(
         unicastPeerId: null,
         orderingTrackKey: null,
         orderingSeq: null,
+        sentPositions: null,
         policy: captureALOutboundPolicy({
             msg: message,
             dropReasonCode: undefined,

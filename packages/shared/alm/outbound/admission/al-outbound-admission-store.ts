@@ -256,6 +256,11 @@ export type ALOutboundDurableEffect<TPrepared> =
         preparedFingerprint: string;
         attemptIdentity: string;
         phase: ALOutboundDispatchPhase;
+        /**
+         * The positions the message's recording read, from which each copy's entry is derived. Absent when nothing
+         * recorded them, and on every row an older build wrote, so such a row keeps reading as it always did.
+         */
+        sentPositions?: Readonly<Record<string, number>>;
     }>
     | Readonly<{
         kind: 'ack-timeout';
@@ -387,6 +392,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     ) => Promise<ALOutboundCapturedPolicy>;
 
     readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
+
+    /** The sent row -- its owner, captured policy and recorded positions -- in its own session. */
+    readonly readStoredMessage: (msgId: string) => Promise<ALStoredOutboundMessage | undefined>;
 
     readonly readSentMessageByOrdering: (
         trackKey: string,
@@ -600,6 +608,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
         return await this.backend.readWithin((session) => this.reads.readSentMessage(session, msgId));
+    }
+
+    async readStoredMessage(msgId: string): Promise<ALStoredOutboundMessage | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readStoredMessage(session, msgId));
     }
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {

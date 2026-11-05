@@ -220,6 +220,7 @@ function computePreparedEffects<TPrepared>(
     const { read, options, phase } = input;
     const reference = toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg);
     const attemptIdentity = toALOutboundAttemptIdentity(options);
+    const sentPositions = toALOutboundRecordedSentPositions(read);
     return read.plan.preparedMessages.map((prepared, index) => {
         const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
         return {
@@ -237,10 +238,18 @@ function computePreparedEffects<TPrepared>(
                 prepared,
                 preparedFingerprint,
                 attemptIdentity,
-                phase
+                phase,
+                ...(sentPositions === null ? {} : { sentPositions })
             }
         };
     });
+}
+
+/** The positions this read recorded, else those the row's first recording kept: each copy's entry derives from them. */
+function toALOutboundRecordedSentPositions<TPrepared>(
+    read: ALOutboundMessageReadDto<TPrepared>
+): Readonly<Record<string, number>> | null {
+    return read.sentPositions?.priorSeqByRecipient ?? read.storedMessage?.sentPositions ?? null;
 }
 
 function toEarlyDispatchResult<TPrepared>(
@@ -476,6 +485,7 @@ function toSentMessageMutation<TPrepared>(
         kind: 'set-sent-message',
         reference: toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg),
         policy: toALOutboundSentPolicy(read.storedMessage?.policy, read.plan),
+        sentPositions: toALOutboundRecordedSentPositions(read),
         creationExpiry: read.creationExpiry,
         snapshot: {
             msgId: read.msg.id.msgId,

@@ -12,7 +12,10 @@ import {
     toALOutboundOrderingHeadKey,
     toALOutboundSentPositionKey
 } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
-import { decodeALOutboundTrackPositionRow } from '@shared/alm/outbound/admission/decode-al-outbound-track-position-row.ts';
+import {
+    decodeALOutboundSentPositionRecord,
+    decodeALOutboundTrackPositionRow
+} from '@shared/alm/outbound/admission/decode-al-outbound-track-position-row.ts';
 
 const NAMESPACE = 'outbound';
 const NOW_MS = 1_700_000_000_000;
@@ -59,6 +62,24 @@ describe('a stored track position, a head or a sent position', () => {
         { label: 'a bare number', value: 3 }
     ])('refuses $label as corrupt', ({ value }) => {
         expect(() => decodeALOutboundTrackPositionRow(value)).toThrow(TypeError);
+    });
+});
+
+describe('the positions a sent row or a send keeps', () => {
+    it('decodes each recipient position, and reads an absent field as nothing recorded', () => {
+        expect(decodeALOutboundSentPositionRecord({ b: 4, c: 0 })).toEqual({ b: 4, c: 0 });
+        expect(decodeALOutboundSentPositionRecord(undefined)).toBeNull();
+        expect(decodeALOutboundSentPositionRecord(null)).toBeNull();
+    });
+
+    it.each([
+        { label: 'a negative position', value: { b: -1 } },
+        { label: 'a fractional position', value: { b: 1.5 } },
+        { label: 'an empty recipient', value: { '': 1 } },
+        { label: 'a list', value: [1] },
+        { label: 'a bare number', value: 3 }
+    ])('refuses $label as corrupt', ({ value }) => {
+        expect(() => decodeALOutboundSentPositionRecord(value)).toThrow(TypeError);
     });
 });
 

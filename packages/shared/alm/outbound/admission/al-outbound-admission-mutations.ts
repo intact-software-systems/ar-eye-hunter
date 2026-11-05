@@ -30,7 +30,7 @@ import type { ALOutboundOrderingHead, ALOutboundSentPositions } from './al-outbo
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
-    type ALStoredOutboundMessage
+    type ALStoredOutboundMessageRow
 } from './al-outbound-admission-validation.ts';
 import {
     toALOutboundOrderingHeadKey,
@@ -61,6 +61,7 @@ export type ALOutboundAdmissionMutation =
         kind: 'set-sent-message';
         reference: ALOutboundMessageReference;
         policy: ALOutboundCapturedPolicy;
+        sentPositions: Readonly<Record<string, number>> | null;
         creationExpiry: string;
         snapshot: ALOutboundSentMessageSnapshot;
         expireAtTimestamp?: number;
@@ -108,7 +109,7 @@ export interface ALOutboundStateWrite {
     readonly key: string;
     readonly value:
         | string
-        | ALStoredOutboundMessage
+        | ALStoredOutboundMessageRow
         | ALOutboundPendingAckSnapshot
         | ALOutboundRepairAttemptSnapshot
         | ALOutboundTrackPositionRow
@@ -384,6 +385,7 @@ export class ALOutboundAdmissionMutations {
                     : null,
                 orderingTrackKey: toALOrderingTrackKey(mutation.snapshot.msg) ?? null,
                 orderingSeq: mutation.snapshot.msg.ordering?.seq ?? null,
+                ...(mutation.sentPositions === null ? {} : { sentPositions: mutation.sentPositions }),
                 policy: mutation.policy,
                 creationExpiry: mutation.creationExpiry
             },

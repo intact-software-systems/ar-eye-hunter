@@ -113,6 +113,14 @@ interface ALOutboundAdmissionFenceReadInput<TPrepared> {
     readonly nowMs: number;
 }
 
+/** Whether a read records its plan's recipients' positions, and whether it also stamps the record on its copy. */
+interface ALOutboundSentPositionRecording {
+    /** The row holds no positions yet. */
+    readonly unrecorded: boolean;
+    /** A first admission that is no dequeue: its copy carries the record. */
+    readonly stampsCopy: boolean;
+}
+
 /** Assembles outbound decisions in a caller-owned read session; the write owner re-reads its fences. */
 export class ALOutboundAdmissionReads<TPrepared> {
     private readOperationCount = 0;
@@ -163,7 +171,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
             computeALOutboundDispatchPlan(input, canonical, stored),
             stored === undefined
         );
-        const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, stored === undefined);
+        const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, {
+            unrecorded: stored === undefined || stored.sentPositions === null,
+            stampsCopy: stored === undefined && input.intent !== 'dequeue'
+        });
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
 
         return {
@@ -459,20 +470,24 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     /**
-     * An admission whose plan names the recipients it records stamps the copy with the record of their positions on
-     * its track (`computeALOrderingPriorSeqRecord`), read in this session after the sequence is known. Only a message
-     * with no sent row records -- a first attempt, or the replay of the request a lost commit retained -- so a
-     * re-admission keeps the record its row holds. The commit moves each recipient to the copy's sequence under the
-     * sender version this session read.
+     * An admission whose plan names the recipients it records reads their positions on its track, after the sequence
+     * is known; the commit keeps them on the sent row and moves each recipient to the copy's sequence under the sender
+     * version this session read. Only a row that holds no positions yet records -- a first attempt, the replay of the
+     * request a lost commit retained, or a WS row's first dequeue -- so a re-admission keeps what its row holds. A
+     * first admission stamps its copy with the record (`computeALOrderingPriorSeqRecord`); a dequeue's copy is the row
+     * as admitted, and its carrier derives each copy's entry from the kept positions.
      */
     private async readSentPositionRecord(
         session: ALAdmissionReadSession,
         plan: ALOutboundDispatchPlan<TPrepared>,
-        unadmitted: boolean
+        recording: ALOutboundSentPositionRecording
     ): Promise<Pick<ALOutboundMessageReadDto<TPrepared>, 'plan' | 'sentPositions'>> {
         const trackKey = toALOrderingTrackKey(plan.msg);
         const seq = plan.msg.ordering?.seq;
-        if (plan.recordsSentPositions === undefined || !unadmitted || trackKey === undefined || seq === undefined) {
+        if (
+            plan.recordsSentPositions === undefined || !recording.unrecorded || trackKey === undefined ||
+            seq === undefined
+        ) {
             return { plan, sentPositions: undefined };
         }
         const sentPositions = {
@@ -480,6 +495,9 @@ export class ALOutboundAdmissionReads<TPrepared> {
             seq,
             priorSeqByRecipient: await this.readSentPositions(session, trackKey, plan.recordsSentPositions)
         };
+        if (!recording.stampsCopy) {
+            return { plan, sentPositions };
+        }
         const ordering = { ...plan.msg.ordering, priorSeqByRecipient: computeALOrderingPriorSeqRecord(sentPositions) };
         return { plan: { ...plan, msg: { ...plan.msg, ordering } }, sentPositions };
     }

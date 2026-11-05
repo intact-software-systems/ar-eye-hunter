@@ -88,6 +88,7 @@ function storedMessage(message: ALMessage, key: Key): ALStoredOutboundMessage {
         unicastPeerId: null,
         orderingTrackKey: null,
         orderingSeq: null,
+        sentPositions: null,
         policy: {
             persist: true,
             ackTracking: {

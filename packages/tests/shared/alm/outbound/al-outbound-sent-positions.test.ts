@@ -50,6 +50,7 @@ describe('the sent positions an admission records on its track', () => {
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(admitted.message.ordering).toEqual({ orderingKey: 'feed', epoch: 1, seq: 1, priorSeqByRecipient: {} });
         expect(await readSentPositions(stores, admitted.message, ['b', 'c'])).toEqual({ b: 1, c: 1 });
+        expect((await stores.admissionStore.readStoredMessage(admitted.message.id.msgId))?.sentPositions).toEqual({ b: 0, c: 0 });
     });
 
     it('stamps the next frame to the same audience with an empty record', async () => {
@@ -91,6 +92,7 @@ describe('the sent positions an admission records on its track', () => {
         const keyed = await unrecording.enqueueIfAbsent(createFeedFrame('keyed', 1, ['b']));
         expect(keyed.message.ordering).toEqual({ orderingKey: 'feed', epoch: 1, seq: 1 });
         expect(await readSentPositions(stores, keyed.message, ['b'])).toEqual({ b: 0 });
+        expect((await stores.admissionStore.readStoredMessage(keyed.message.id.msgId))?.sentPositions).toBeNull();
     });
 
     it('answers a re-admission with the stored envelope: its record is not recomputed and its proof not re-signed', async () => {
@@ -111,6 +113,8 @@ describe('the sent positions an admission records on its track', () => {
         expect(again.message.proof).toEqual(admitted.message.proof);
         expect((await stores.admissionStore.readSentMessage(frame.id.msgId))?.msg).toEqual(admitted.message);
         expect(await readSentPositions(stores, admitted.message, ['b', 'c'])).toEqual({ b: 4, c: 4 });
+        // The row keeps the positions its first admission read: a stored row never records again.
+        expect((await stores.admissionStore.readStoredMessage(frame.id.msgId))?.sentPositions).toEqual({ b: 2, c: 1 });
     });
 
     it('records once when a lost fence retries the admission: the replay reads the positions the winner moved', async () => {

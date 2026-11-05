@@ -248,6 +248,7 @@ function readALOutboundWorkMessageReference(entry: ResourceEntry): ALOutboundMes
             'preparedFingerprint',
             'attemptIdentity',
             'phase',
+            'sentPositions',
             'msgId',
             'msg',
             'source',

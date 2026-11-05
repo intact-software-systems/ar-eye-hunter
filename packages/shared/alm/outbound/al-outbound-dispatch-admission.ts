@@ -799,10 +799,17 @@ function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<
         : read.msg;
 }
 
-/** Whether a first admission added to its request: it minted a sequence, recorded positions or signed the frame. */
+/**
+ * Whether a first admission added to its request: it minted a sequence, stamped a record or signed the frame. A
+ * recording that stamps nothing, a dequeue's, adds nothing to the message: its copy stays the row as admitted.
+ */
 function hasALOutboundAdmissionAdditions<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
-    return read.orderingHead !== undefined || read.sentPositions !== undefined ||
-        (read.storedMessage === undefined && read.originalMsg.proof === undefined && read.msg.proof !== undefined);
+    const { originalMsg, msg } = read;
+    return read.storedMessage === undefined && (
+        read.orderingHead !== undefined ||
+        (originalMsg.ordering?.priorSeqByRecipient === undefined && msg.ordering?.priorSeqByRecipient !== undefined) ||
+        (originalMsg.proof === undefined && msg.proof !== undefined)
+    );
 }
 
 /** Independent reads must agree on the sender version before their bundles can share one commit fence. */

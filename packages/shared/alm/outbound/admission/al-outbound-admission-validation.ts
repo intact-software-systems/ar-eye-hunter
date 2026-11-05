@@ -22,6 +22,7 @@ import {
     decodeALSessionInvalidationAuthority,
     type ALSessionInvalidationAuthority
 } from './al-session-invalidation-authority.ts';
+import { decodeALOutboundSentPositionRecord } from './decode-al-outbound-track-position-row.ts';
 
 export interface ALStoredOutboundMessage {
     readonly msgId: string;
@@ -30,9 +31,22 @@ export interface ALStoredOutboundMessage {
     readonly unicastPeerId: string | null;
     readonly orderingTrackKey: string | null;
     readonly orderingSeq: number | null;
+    /**
+     * Each recorded recipient's position on the track as the row's first recording read it, `0` for one never sent
+     * the track; every later copy of the row derives that recipient's entry from it. `null`: nothing recorded.
+     */
+    readonly sentPositions: Readonly<Record<string, number>> | null;
     readonly policy: ALOutboundCapturedPolicy;
     readonly creationExpiry: string;
 }
+
+/**
+ * The sent row as it is written: positions only once a recording kept them, so a row without them reads as one an
+ * older build wrote, and an older build still reads every row that recorded nothing.
+ */
+export type ALStoredOutboundMessageRow = Omit<ALStoredOutboundMessage, 'sentPositions'> & {
+    readonly sentPositions?: Readonly<Record<string, number>>;
+};
 
 export interface ALOutboundCapturedPolicy {
     /** Whether the copy outlives the volatile lane; the row keeps no finer lane. */
@@ -141,7 +155,7 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
         'orderingSeq',
         'policy',
         'creationExpiry'
-    ], ['supersedenceKey']);
+    ], ['supersedenceKey', 'sentPositions']);
     const reference = decodeALOutboundMessageReference(snapshot.reference);
     if (snapshot.msgId !== expectedMsgId || reference.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL outbound message identity does not match its slot');
@@ -154,7 +168,11 @@ export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: strin
     }
     requirePersistedALNonEmptyString(snapshot.creationExpiry, 'outbound creation expiry observation');
     decodeALOutboundCapturedPolicy(snapshot.policy);
-    return { ...value as ALStoredOutboundMessage, reference };
+    return {
+        ...value as ALStoredOutboundMessage,
+        reference,
+        sentPositions: decodeALOutboundSentPositionRecord(snapshot.sentPositions)
+    };
 }
 
 export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCapturedPolicy {

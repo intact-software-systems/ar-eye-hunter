@@ -575,6 +575,7 @@ export class ALOutboundStoreLane<TPrepared> {
                 payload,
                 lifecycle: {
                     canonicalMessage,
+                    sentPositions: payload.sentPositions ?? null,
                     deferReceiptObservation,
                     signal,
                     expiresAtMs: effect.expireAtTimestamp,
