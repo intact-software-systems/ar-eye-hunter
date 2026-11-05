@@ -31,6 +31,7 @@ import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbou
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundPlanningAuthority } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
+import { isALOutboundRowUnrecorded } from '../../alm/outbound/admission/compute-al-ordering-prior-seq-record.ts';
 import {
     ALOutboundMessageRuntime,
     type ALOutboundDispatchPlan,
@@ -49,6 +50,7 @@ import {
     createALOutboundReceiptWorkEvidence,
     toALOutboundReceiptFacts
 } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
+import { AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS } from '../../alm/outbound/lane/read-al-outbound-dequeue-wait.ts';
 import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -434,6 +436,10 @@ export class WsQueueBoxServerService {
                     this.creationNow()
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
+            readPendingAdmissionAuthority: async (message, preparedMessages) =>
+                preparedMessages.length > 0
+                    ? { status: 'authorized' }
+                    : await this.readTrackOrderAuthority(message),
             readDequeueAuthority: async (message, entry) => {
                 const read = await this.dequeueAuthority.readDequeueAuthority(message, entry);
                 await this.writeOutsideAudience(message, read.dropped);
@@ -863,6 +869,33 @@ export class WsQueueBoxServerService {
             sentPositions
         }));
         await this.writeOutsideAudience(message, sent.belowPositionPeerIds);
+    }
+
+    /**
+     * A dequeued row that will record positions on its track waits while its predecessor there is admitted here and not
+     * yet recorded (T3-R2): a predecessor never admitted here, already sent or expired holds nothing.
+     */
+    private async readTrackOrderAuthority(
+        message: ALMessage
+    ): Promise<ALOutboundMessageRuntime.PendingAdmissionAuthority> {
+        const trackKey = toALOrderingTrackKey(message);
+        const seq = message.ordering?.seq;
+        const nowMs = this.clock.nowMs();
+        if (
+            trackKey === undefined || seq === undefined || seq <= 1 ||
+            !isALOutboundRowUnrecorded(await this.admissionStore.readStoredMessage(message.id.msgId), nowMs)
+        ) {
+            return { status: 'authorized' };
+        }
+        const predecessor = await this.admissionStore.readSentMessageByOrdering(trackKey, seq - 1);
+        const stored = predecessor && await this.admissionStore.readStoredMessage(predecessor.msgId);
+        return isALOutboundRowUnrecorded(stored, nowMs)
+            ? {
+                status: 'not-ready',
+                reason: `WS row waits for sequence ${seq - 1} of its track to record first`,
+                retryAfterMs: AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS
+            }
+            : { status: 'authorized' };
     }
 
     /**

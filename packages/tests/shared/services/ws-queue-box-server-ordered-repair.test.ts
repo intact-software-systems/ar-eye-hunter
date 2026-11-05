@@ -50,6 +50,13 @@ interface OrderedServer {
     readonly settlements: ALDeliverySettlement[];
 }
 
+interface OrderedServerOptions {
+    /** Registers a cluster publisher, as every default api-v1 composition does. */
+    readonly cluster?: boolean;
+    /** Re-checks every frozen audience, and cannot read the one of this message the first time, so its row retries. */
+    readonly unreadableOnceMsgId?: string;
+}
+
 interface NackInput {
     readonly fromPeerId: string;
     readonly msgId: string;
@@ -93,7 +100,7 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.c)).toEqual([]);
     });
 
-    it('serves a gap wider than one repair page in two ascending pages, to the requester alone', async () => {
+    it('serves a gap wider than one repair page in two ascending pages, to the requester alone', { timeout: 20_000 }, async () => {
         const server = await createOrderedServer();
         await publishEvents(server, 35);
         for (let index = 1; index <= 35; index += 1) {
@@ -275,13 +282,28 @@ describe.each([
         expect(readFrames(server.sockets.c, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
     });
 
+    it('holds a row until its track\'s earlier row, admitted first but dequeued later, records; both deliver in order', async () => {
+        const first = browserEvent(1);
+        const second = browserEvent(2);
+        const server = await createOrderedServer({ cluster, unreadableOnceMsgId: first.id.msgId });
+        // Sequence 1's first dequeue cannot read its audience and retries; sequence 2 is admitted and claimed meanwhile.
+        await server.service.enqueueOutboxIfAbsent(first, toAudienceAuthority(['b']));
+        await server.service.enqueueOutboxIfAbsent(second, toAudienceAuthority(['b']));
+
+        await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.b).slice(0, 2)), { timeout: 10_000 })
+            .toEqual([first.id.msgId, second.id.msgId]);
+        expect(readFrames(server.sockets.b, first.id.msgId)[0]).toEqual({ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined });
+        expect(readFrames(server.sockets.b, second.id.msgId)[0]).toEqual({ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined });
+    });
+
     it('sends a burst of more than one page of rows on one track with every recipient\'s entry, the burst\'s groups chained', async () => {
         const server = await createOrderedServer({ cluster });
         await enqueueEvents(server, { from: 1, to: 10, audience: ['a', 'b'] });
         await enqueueEvents(server, { from: 11, to: 20, audience: ['a'] });
         await enqueueEvents(server, { from: 21, to: 21, audience: ['a', 'b'] });
 
-        await expect.poll(() => runEngine(server, () => [readSeqs(server.sockets.a).length, readSeqs(server.sockets.b).length])).toEqual([21, 11]);
+        await expect.poll(() => runEngineTicking(server, () => [readSeqs(server.sockets.a).length, readSeqs(server.sockets.b).length]))
+            .toEqual([21, 11]);
         expect(readFrames(server.sockets.b, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: { b: 10 } }, proof: undefined }]);
         expect(readFrames(server.sockets.b, 'event-10')).toEqual([{ ordering: { ...ORDERING, seq: 10, priorSeqByRecipient: {} }, proof: undefined }]);
         expect(readFrames(server.sockets.a, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: {} }, proof: undefined }]);
@@ -293,7 +315,7 @@ describe.each([
  * One instance whose clock moves only when a test moves it, so no receipt window passes unasked; `cluster` registers a
  * cluster publisher, as every default api-v1 composition does, so each dequeued row is published and sent live here.
  */
-async function createOrderedServer(options: { readonly cluster?: boolean; } = {}): Promise<OrderedServer> {
+async function createOrderedServer(options: OrderedServerOptions = {}): Promise<OrderedServer> {
     const clock = mockClock();
     const nowMs = () => clock.nowMs;
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
@@ -309,7 +331,19 @@ async function createOrderedServer(options: { readonly cluster?: boolean; } = {}
     const controlAdmissions: ControlAdmission[] = [];
     const settlements: ALDeliverySettlement[] = [];
     const engine = new InboxOutboxEngine();
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        nowMs,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
+    });
+    const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
     const service = createDefaultWsQueueBoxServerService({
+        filterEligibleCapturedSessionIds: options.unreadableOnceMsgId === undefined ? undefined : (captured) => {
+            if (unreadable.delete(captured.message.id.msgId)) {
+                return Promise.reject(new Error('Re-check could not read'));
+            }
+            return Promise.resolve(captured.candidateSessionIds);
+        },
         inboundVolatileStores: undefined,
         outbox,
         socket: socketServer,
@@ -320,11 +354,7 @@ async function createOrderedServer(options: { readonly cluster?: boolean; } = {}
             socketServer.connections.get(connection.id) === connection
                 ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
-        outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
-            nowMs,
-            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-            outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
-        }),
+        outboundStores,
         outboundDiagnostics: (event) => {
             if (event.kind === 'control-admission') {
                 controlAdmissions.push(event);
@@ -332,7 +362,7 @@ async function createOrderedServer(options: { readonly cluster?: boolean; } = {}
         },
         outboundSettlements: (settlement) => settlements.push(settlement),
         targetResolver: {
-            requiresFrozenAudience: () => false,
+            requiresFrozenAudience: () => options.unreadableOnceMsgId !== undefined,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveGroupRecipients: recipients,
             resolveBroadcastRecipients: recipients
@@ -359,8 +389,11 @@ async function publishEvents(
         );
         minted.push(result.message.ordering);
     }
-    await expect.poll(() => runEngine(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length)))
-        .toEqual(audience.map(() => count));
+    // Each row of the track waits for its predecessor to record (T3-R2), so a long run drains one held row at a time.
+    await expect.poll(
+        () => runEngineTicking(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length)),
+        { timeout: 10_000 }
+    ).toEqual(audience.map(() => count));
     return minted;
 }
 
@@ -375,6 +408,10 @@ async function enqueueEvents(
             { admittedAudience: input.audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
         );
     }
+}
+
+function toAudienceAuthority(admittedAudience: readonly string[]): WsQueueBoxServerService.EnqueueAuthority {
+    return { admittedAudience, admittedConnectionGenerationIds: undefined, recipientScope: undefined };
 }
 
 /** Admits one row to the audience and waits until it reached every recipient it sends. */
@@ -396,8 +433,7 @@ async function publishEvent(
 }
 
 /** Client `a`'s keyed room event at the sequence `a` stated, as the server relays it. */
-function browserEvent(seq: number): ALMessage {
-    const msgId = `a-event-${seq}`;
+function browserEvent(seq: number, msgId = `a-event-${seq}`): ALMessage {
     const message = newALBroadcastMessage(
         'a',
         newALRoute('room.round.event', ROOM.groupId, msgId),
@@ -479,6 +515,21 @@ async function receiveAck(server: OrderedServer, ackedMsgId: string, recipient: 
 async function runEngine<T>(server: OrderedServer, observe: () => T): Promise<T> {
     await server.engine.executeOnce();
     return observe();
+}
+
+/**
+ * One engine pass a millisecond on: a row a track's order held is due again at the instant it was released, and the
+ * engine runs a row only once the clock has reached past it, so a frozen clock would keep it waiting.
+ */
+async function runEngineTicking<T>(server: OrderedServer, observe: () => T): Promise<T> {
+    server.clock.nowMs += 1;
+    return await runEngine(server, observe);
+}
+
+/** One engine pass a step of the clock on, so a row that retries after a backoff falls due within a few passes. */
+async function runEngineAdvancing<T>(server: OrderedServer, observe: () => T): Promise<T> {
+    server.clock.nowMs += CLOCK_STEP_MS;
+    return await runEngine(server, observe);
 }
 
 /** Further passes after the awaited outcome, so a send that should not happen has had its chance to. */
