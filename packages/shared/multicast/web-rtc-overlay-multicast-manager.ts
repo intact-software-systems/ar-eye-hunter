@@ -115,6 +115,7 @@ import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-dro
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import { toRtcControlHandoffError } from './to-rtc-control-handoff-error.ts';
 import { toRtcOutboundMessage } from './to-rtc-outbound-message.ts';
+import { toRtcSentPositionRecordingPlan } from './to-rtc-sent-position-recording-plan.ts';
 import {
     computeRtcBroadcastScopeRefusal,
     computeRtcFrozenAudienceRefusal,
@@ -122,8 +123,7 @@ import {
     toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
     toRtcFrozenAudienceRepairPlan,
-    toRtcOriginFrozenMessage,
-    toRtcSentPositionRecordingPlan
+    toRtcOriginFrozenMessage
 } from './web-rtc-overlay-frozen-audience.ts';
 import {
     planRtcFailedPeerRepair,

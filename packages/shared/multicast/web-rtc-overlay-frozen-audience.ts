@@ -12,7 +12,6 @@ import {
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import { resolveALOutboundStoreDurability, type ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../al-contracts/al-runtime.ts';
 import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
@@ -230,21 +229,6 @@ export function toRtcFrozenAudienceDispatchPlan(
         return plan;
     }
     return { ...plan, ackTracking: { ...plan.ackTracking, expectedPeerIds: frozen.recipientPeerIds } };
-}
-
-/**
- * The origin finalizes its own frozen audience, so the plan of a frame's first admission on a track records the sent
- * position of every frozen recipient, granted topic or not (S4-R1, S4-R10); any other plan records nothing.
- */
-export function toRtcSentPositionRecordingPlan(
-    plan: ALOutboundDispatchPlan<ALOutboundTransportMessage>,
-    selfPeerId: string
-): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-    const frozen = resolveALFrozenMulticastAudience(plan.msg.targets);
-    const tracked = (toALOrderingTrackKey(plan.msg) ?? toALSequenceMintTrackKey(plan.msg)) !== undefined;
-    return frozen === undefined || !tracked || plan.msg.id.senderId !== selfPeerId || plan.dropReasonCode !== undefined
-        ? plan
-        : { ...plan, recordsSentPositions: frozen.recipientPeerIds };
 }
 
 export function toRtcFrozenAudienceRepairPlan(
