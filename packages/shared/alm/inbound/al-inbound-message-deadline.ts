@@ -26,8 +26,8 @@ export function decodeALDeadlinedMessage(msg: ALMessage): ALDeadlinedMessage {
  * Invariant: every decoded RTC frame passes through here before its plan can drop it, so the exact statement is that a
  * proof on a frame that commits work here is a granted, verified publication's. The RTC plan drops every frame whose
  * proof it has not verified (an ungranted topic's, or a granted one's its verifier refused) before any pending or
- * committed row, and a NACK row's expiry goes through `resolveALMessageExpireAtMs`; a WS message carries a proof only
- * after a hand-over its server already normalized.
+ * committed row, and a NACK row's expiry goes through `resolveALMessageExpireAtMs`; a WS copy carries no proof, since
+ * its server drops it from every copy (D519).
  */
 export function toALInboundMessageWithDeadline(msg: ALMessage, expireAtTimestamp: number): ALDeadlinedMessage {
     const ownExpiresAtMs = msg.constraints?.expiresAtMs ?? expireAtTimestamp;

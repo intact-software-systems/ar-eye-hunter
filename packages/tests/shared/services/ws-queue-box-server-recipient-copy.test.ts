@@ -59,15 +59,18 @@ describe('the copy the WS server sends one recipient of a recorded track', () =>
         expect(copy.left).toEqual({ kind: 'below-position' });
     });
 
-    it('leaves a copy no dequeue recorded as it is', () => {
-        const message = signedFrame();
+    it('sends a copy no dequeue recorded (a live-only hand-over) with neither the origin\'s record nor its proof', () => {
+        const copy = toWsQueueBoxServerRecipientCopy({ message: signedFrame(), recipientPeerId: 'c', sentPositions: null });
 
-        expect(toWsQueueBoxServerRecipientCopy({ message, recipientPeerId: 'b', sentPositions: null }).right).toBe(message);
+        expect(copy.right?.ordering).toEqual({ orderingKey: 'game-1', epoch: 1, seq: 5 });
+        expect(copy.right?.proof).toBeUndefined();
     });
 
-    it('leaves an untracked copy as it is', () => {
-        const message = { ...signedFrame(), ordering: undefined };
+    it('sends an untracked copy without its proof and otherwise as it is', () => {
+        const { proof: _proof, ...unsigned } = { ...signedFrame(), ordering: undefined };
 
-        expect(toWsQueueBoxServerRecipientCopy({ message, recipientPeerId: 'b', sentPositions: { b: 9 } }).right).toBe(message);
+        const copy = toWsQueueBoxServerRecipientCopy({ message: { ...unsigned, proof: PROOF }, recipientPeerId: 'b', sentPositions: { b: 9 } });
+
+        expect(copy.right).toEqual(unsigned);
     });
 });
