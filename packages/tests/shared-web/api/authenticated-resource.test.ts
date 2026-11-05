@@ -243,3 +243,24 @@ it('subscribes before reading, covers a push during that read, and detaches on s
     await Promise.resolve();
     expect(test.api.read).toHaveBeenCalledTimes(2);
 });
+
+describe('authenticated resource error lifetime', () => {
+    it('keeps a command refusal through background reads until the user refreshes, and clears a failed read on success', async () => {
+        const test = browser();
+        await test.owner.start();
+        test.api.change.mockResolvedValueOnce('This invitation is no longer available.');
+        await test.owner.act({ name: 'join' });
+        const reads = test.api.read.mock.calls.length;
+        test.invalidate();
+        await vi.waitFor(() => expect(test.api.read.mock.calls.length).toBeGreaterThan(reads));
+        await vi.waitFor(() => expect(test.owner.getState().busy).toBe(false));
+        expect(test.owner.getState().error).toBe('This invitation is no longer available.');
+        await test.owner.refresh();
+        expect(test.owner.getState().error).toBeNull();
+        test.api.read.mockRejectedValueOnce(new Error('Read failed'));
+        test.invalidate();
+        await vi.waitFor(() => expect(test.owner.getState().error).toBe('Read failed'));
+        test.invalidate();
+        await vi.waitFor(() => expect(test.owner.getState()).toMatchObject({ view: { name: 'alice' }, error: null }));
+    });
+});

@@ -67,6 +67,8 @@ export class AuthenticatedResource<View, Request> {
     private sessionKey: string | null = null;
     private pending: AuthenticatedResource.Pending<Request> | null = null;
     private state: AuthenticatedResource.State<View> = { view: null, busy: false, retryPending: false, error: null };
+    /** A later read clears only a failed read's error; an operation's error stays until the next operation. */
+    private errorFromRead = false;
 
     constructor(
         dependencies: AuthenticatedResource.Dependencies,
@@ -95,16 +97,16 @@ export class AuthenticatedResource<View, Request> {
             );
             this.subscriptions.add(this.dependencies.activity.onChange(() => {
                 if (this.dependencies.activity.isActive()) {
-                    void this.refresh();
+                    void this.readLatest();
                 }
             }));
             this.subscriptions.add(
                 this.config.subscribeRefresh(() =>
-                    this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve()
+                    this.dependencies.activity.isActive() ? this.readLatest() : Promise.resolve()
                 )
             );
         }
-        return this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve();
+        return this.dependencies.activity.isActive() ? this.readLatest() : Promise.resolve();
     }
 
     stop(): void {
@@ -118,7 +120,15 @@ export class AuthenticatedResource<View, Request> {
         }
     }
 
+    /** A requested refresh also dismisses an idle operation's error; background reads keep it. */
     refresh(): Promise<void> {
+        if (!this.state.busy && !this.errorFromRead && this.state.error !== null) {
+            this.publish({ ...this.state, error: null });
+        }
+        return this.readLatest();
+    }
+
+    private readLatest(): Promise<void> {
         const attempt = this.attempt();
         const revision = this.revision;
         if (attempt === null) {
@@ -146,7 +156,7 @@ export class AuthenticatedResource<View, Request> {
     /** The owner's read input changed: reads of the previous input are superseded by one current read. */
     refreshForNewInput(): Promise<void> {
         this.revision++;
-        return this.refresh();
+        return this.readLatest();
     }
 
     act(request: Request): Promise<void> {
@@ -176,6 +186,7 @@ export class AuthenticatedResource<View, Request> {
     }
 
     protected setError(error: string | null): void {
+        this.errorFromRead = false;
         this.publish({ ...this.state, error });
     }
 
@@ -206,7 +217,7 @@ export class AuthenticatedResource<View, Request> {
                 this.publish({
                     ...this.state,
                     view: this.resolveReadView(view, attempt),
-                    error: this.pending === null ? null : this.state.error
+                    error: this.pending === null && this.errorFromRead ? null : this.state.error
                 });
             }
         }
@@ -215,6 +226,7 @@ export class AuthenticatedResource<View, Request> {
                 const failure = toError(error);
                 this.invalidateLostAuthority(failure);
                 const superseded = previousView !== this.state.view && isRetryableApiViewFailure(failure);
+                this.errorFromRead = true;
                 this.publish({ ...this.state, view: superseded ? this.state.view : null, error: failure.message });
             }
         }
@@ -242,7 +254,7 @@ export class AuthenticatedResource<View, Request> {
             this.pending = null;
             if (readsResult) {
                 this.revision++;
-                await this.refresh();
+                await this.readLatest();
             }
             if (this.current(attempt) && refusal !== null) {
                 this.setError(refusal);
@@ -281,7 +293,7 @@ export class AuthenticatedResource<View, Request> {
         this.sessionKey = key;
         this.invalidate();
         if (this.dependencies.activity.isActive()) {
-            void this.refresh();
+            void this.readLatest();
         }
     }
 
