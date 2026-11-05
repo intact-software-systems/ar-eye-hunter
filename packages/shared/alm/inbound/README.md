@@ -544,8 +544,9 @@ position before it is sent. After each committed admission, replays included,
 diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
 refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
 carrier. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it; the lost
-copy, arriving later, answers `before-entry` on a frozen copy (RTC, or a handed-over frozen leg), and over plain `ws` it
-is dropped `stale` with no NACK and stays unconfirmed in the origin's receipt.
+copy, arriving later, answers `before-entry` on a recorded frozen copy; a live-only hand-over copy carries no
+record and is dropped silently (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with no NACK
+and stays unconfirmed in the origin's receipt.
 
 **Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
 releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release

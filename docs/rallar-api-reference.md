@@ -1910,10 +1910,13 @@ hand-over) carries no record either. Under `rtc-with-ws-fallback` the RTC
 origin's record also counts the sequences its session's WS leg sent the room,
 whose audience only the server knows: it lists no recipient behind the last of
 them, so a recipient waiting for that WS copy asks a gap the copy closes rather
-than reading an omission. The server's record of a WS copy counts only the
-server's own copies, so the two may differ; a prior behind the recipient's
-position says nothing it does not know. A recipient reads its prior from the
-record, or `seq - 1` when the record lists it not:
+than reading an omission. A recipient the WS server left out of that send -- a
+narrowed audience, such as a revoked or late subscriber, or a stale audience --
+then reads a gap the RTC origin cannot serve, and its track stalls until
+resync or the track expires, instead of a silent loss. The server's record of a
+WS copy counts only the server's own copies, so the two may differ; a prior
+behind the recipient's position says nothing it does not know. A recipient
+reads its prior from the record, or `seq - 1` when the record lists it not:
 
 - **No position yet, on a recorded copy**: it enters the track at that copy
   (`entered`), whatever the sequence, and asks for nothing below it. The
@@ -1955,14 +1958,24 @@ its receivers keep the rule from their own position; a live-only send records
 none; in a cluster positions are recorded only for sessions connected to the
 dequeuing instance; a receiver whose entry frame is lost and whose next frame
 arrives first enters past it, and the lost frame, arriving later, answers
-`before-entry` on a frozen copy (RTC, or a handed-over frozen leg) and over
-plain `ws` is dropped `stale` with no NACK and stays unconfirmed, repaired by
-nothing; under `rtc-with-ws-fallback` a server copy whose record meets the
-receiver's position can be read as an omission while the RTC frame for an
-earlier sequence is in flight, since the server's record does not count the RTC
-origin's sends, and that frame then arrives stale; the WS dequeue wait checks
-the immediate predecessor only, and a predecessor that ends without recording
-holds its track's later rows until its own deadline.
+`before-entry` on a recorded frozen copy, while a live-only hand-over copy
+carries no record and is dropped silently (`ordering-rejected`, no NACK), and
+over plain `ws` it is dropped `stale` with no NACK and stays unconfirmed,
+repaired by nothing; under `rtc-with-ws-fallback` a server copy whose record
+meets the receiver's position can be read as an omission while the RTC frame for
+an earlier sequence is in flight, since the server's record does not count the
+RTC origin's sends, and that frame then arrives stale; under the same mode, when
+the WS leg mints a send the RTC origin reads the browser's room-wide sent
+position as a floor for every recipient's prior, so a WS frame in flight is
+never read as an omission, but a recipient the WS server left out of that send
+(a narrowed audience: a revoked or late subscriber, or a stale audience) reads a
+gap the RTC origin cannot serve, and its track stalls until resync or the track
+expires, instead of a silent loss, since the browser cannot know the server's
+audience (S4-ii closes it, by the server's receipt returning the admitted
+audience or by per-recipient rows when the sender states `recipientPeerIds`);
+the WS dequeue wait checks the immediate predecessor only, and a predecessor
+that ends without recording holds its track's later rows until its own
+deadline.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the

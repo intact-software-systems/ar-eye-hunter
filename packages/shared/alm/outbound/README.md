@@ -860,7 +860,11 @@ keeps `recordsSentPositions`), and its replay reads the positions again. When bo
 to the server -- also moves the track's room-wide sent position (`toALOutboundRoomSentPositionKey`) beside the head,
 under the head's guard, and a recording admission reads each recipient no lower than it: the RTC record then never
 lists a recipient behind a sequence the WS leg sent the room, so a recipient whose WS copy is in flight asks a gap that
-copy closes instead of reading an omission. A pair whose head is its own (the WS server) has no room-wide position.
+copy closes instead of reading an omission. The browser cannot know the server's audience, so a recipient the WS
+server left out of that send (a narrowed audience: a revoked or late subscriber, or a stale audience) reads a gap the
+RTC origin cannot serve, and its track stalls until resync or the track expires, instead of a silent loss; S4-ii closes
+it, by the server's receipt returning the admitted audience or by per-recipient rows when the sender states
+`recipientPeerIds`. A pair whose head is its own (the WS server) has no room-wide position.
 On RTC the carrier then signs the stamped
 frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored
 canonical carries the proof over the sequence and the record, and every re-plan, dequeue and repair resends it as

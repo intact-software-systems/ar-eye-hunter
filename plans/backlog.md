@@ -195,14 +195,28 @@ and it has no status list.
   next delivered copy.
 - A lost entry frame (S4-i, D527): a receiver whose entry frame is lost and
   whose next frame arrives first enters past it; the lost frame answers
-  `before-entry` on a frozen copy (RTC, a handed-over frozen leg) and over plain
-  `ws` is dropped `stale` with no NACK and stays unconfirmed. Under
-  `rtc-with-ws-fallback` a server copy whose record meets the receiver's
+  `before-entry` on a recorded frozen copy, a live-only hand-over copy
+  carries no record and is dropped silently (`ordering-rejected`, no NACK), and
+  over plain `ws` it is dropped `stale` with no NACK and stays unconfirmed.
+  Under `rtc-with-ws-fallback` a server copy whose record meets the receiver's
   position can be read as an omission while the origin's RTC frame for an
   earlier sequence is still in flight, since the server's record does not count
   the RTC origin's sends; the RTC record already counts the WS leg's (D525), so
   a server-side room-wide position fed by the browser's RTC sends would close
   the mirror.
+- A stall for a recipient the WS leg left out (S4-i, D525): under
+  `rtc-with-ws-fallback`, when the WS leg mints a send, the browser moves a
+  room-wide sent position that the RTC origin reads as a floor for every
+  recipient's prior, so a WS frame still in flight is never read as an
+  omission. A recipient the WS server left out of that send (a narrowed
+  audience: a revoked or late subscriber, or a stale audience) then reads a gap
+  the RTC origin cannot serve, and its track stalls until resync or the track
+  expires, instead of a silent loss. The same holds for the omission cell's
+  revoked subscriber if `p3`/`p4` fall back to WS before admission (the cells
+  run each carrier alone, so the lane does not hit it). The browser cannot know
+  the server's audience; S4-ii closes it either by the server's receipt
+  returning the admitted audience, so the WS leg records per recipient, or by
+  per-recipient rows when the sender states `recipientPeerIds`.
 - A stuck predecessor on a WS track (S4-i, D524): an admitted row that ends
   without recording (dropped at dequeue, a non-retryable corruption, superseded
   or cancelled) holds its track's later rows at dequeue until its own deadline,
