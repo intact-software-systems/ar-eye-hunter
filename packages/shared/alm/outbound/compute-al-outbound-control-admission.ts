@@ -13,7 +13,6 @@ import type {
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
-import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
@@ -294,12 +293,10 @@ export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairP
 
 /**
  * A `resync-required`, `held-by-other`, `unsupported` or `no-publish-grant` refusal ends the receipt too: the hop will
- * refuse every resend of the message. An outside-audience NACK speaks for one recipient only, so it never ends one.
+ * refuse every resend of the message. An outside-audience NACK (`not-subscribed`, `before-entry`) speaks for one
+ * recipient only, so it never ends one.
  */
 function isTerminalNack(nack: ALNackPayload): boolean {
-    if (isALOutsideAudienceNackReason(nack.reason)) {
-        return false;
-    }
     return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale' ||
         nack.reason === 'resync-required' || nack.reason === 'membership-fenced' || nack.reason === 'held-by-other' ||
         nack.reason === 'unsupported' || nack.reason === 'no-publish-grant';
