@@ -7,7 +7,6 @@ import {
 } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
@@ -24,6 +23,7 @@ import {
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '../decode-al-admission-resource-entry-key.ts';
+import { toALOutboundRequestComparableMessage } from './to-al-outbound-request-comparable-message.ts';
 
 export interface ALOutboundMessageReference {
     readonly key: Key;
@@ -213,55 +213,6 @@ function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
     catch (cause) {
         throw new ALAdmissionCorruptionError(JSON.stringify(retained.key), toError(cause));
     }
-}
-
-/**
- * The candidate as its request would compare to it: what an admission adds to a request is removed -- a sequence
- * minted on the track its request named without one, and the prior-sequence record and the proof its request does
- * not carry -- so an admitted copy matches its request while a copy that changes the key, the epoch, a stated
- * sequence, a stated record or a carried proof still differs.
- */
-export function toALOutboundRequestComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
-    const unsigned = original.proof === undefined ? toALUnsignedMessage(candidate) : candidate;
-    const unrecorded = original.ordering?.priorSeqByRecipient === undefined
-        ? toALUnrecordedMessage(unsigned)
-        : unsigned;
-    return toALOutboundUnmintedMessage(original, unrecorded);
-}
-
-/**
- * The candidate without a sequence minted on the track its request named without one: the one addition an outbound
- * makes before its planner's message is checked. Every other field stays, so a stated sequence still differs.
- */
-export function toALOutboundUnmintedMessage(original: ALMessage, candidate: ALMessage): ALMessage {
-    return toALSequenceMintTrackKey(original) !== undefined &&
-            toALOrderingTrackKey(candidate) === toALSequenceMintTrackKey(original)
-        ? toALUnsequencedMessage(candidate)
-        : candidate;
-}
-
-function toALUnsignedMessage(message: ALMessage): ALMessage {
-    if (message.proof === undefined) {
-        return message;
-    }
-    const { proof: _proof, ...unsigned } = message;
-    return unsigned;
-}
-
-function toALUnrecordedMessage(message: ALMessage): ALMessage {
-    if (message.ordering?.priorSeqByRecipient === undefined) {
-        return message;
-    }
-    const { priorSeqByRecipient: _priorSeqByRecipient, ...ordering } = message.ordering;
-    return { ...message, ordering };
-}
-
-function toALUnsequencedMessage(message: ALMessage): ALMessage {
-    if (message.ordering?.seq === undefined) {
-        return message;
-    }
-    const { seq: _seq, ...ordering } = message.ordering;
-    return { ...message, ordering };
 }
 
 function outboundMessageIdentity(message: ALMessage): string {

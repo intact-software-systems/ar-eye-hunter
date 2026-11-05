@@ -14,9 +14,9 @@ import {
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
-    toALOutboundMessageReference,
-    toALOutboundRequestComparableMessage
+    toALOutboundMessageReference
 } from './al-outbound-canonical-message.ts';
+import { toALOutboundRequestComparableMessage } from './to-al-outbound-request-comparable-message.ts';
 
 export interface ALOutboundCanonicalReadInput {
     readonly nowMs: () => number;
