@@ -97,7 +97,8 @@ export const AL_PUBLICATION_PROOF_FIELD_CLASSES = {
     ordering: {
         orderingKey: 'signed',
         epoch: 'signed',
-        seq: 'signed'
+        seq: 'signed',
+        priorSeqByRecipient: 'signed'
     } as const satisfies Record<keyof ALOrdering, ALPublicationProofFieldClass>,
     delivery: {
         ownership: 'signed',

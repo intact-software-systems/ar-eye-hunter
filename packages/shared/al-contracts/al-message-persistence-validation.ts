@@ -190,16 +190,28 @@ function assertRoutingSections(message: PersistedALRecord): void {
 function assertDeliverySections(message: PersistedALRecord): void {
     if (message.ordering !== undefined) {
         const section = requirePersistedALRecord(message.ordering, 'ordering');
-        requirePersistedALFields(section, ['orderingKey', 'epoch', 'seq'], []);
+        requirePersistedALFields(section, ['orderingKey', 'epoch', 'seq', 'priorSeqByRecipient'], []);
         requireOptionalPersistedALNonEmptyString(section.orderingKey, 'ordering key');
         requireOptionalPersistedALSafeInteger(section.epoch, 0, 'ordering epoch');
         requireOptionalPersistedALSafeInteger(section.seq, 0, 'ordering sequence');
+        if (section.priorSeqByRecipient !== undefined) {
+            assertPriorSeqRecord(section.priorSeqByRecipient);
+        }
     }
     if (message.delivery !== undefined) {
         assertPersistedALDelivery(message.delivery);
     }
     if (message.qos !== undefined) {
         assertPersistedALQos(message.qos);
+    }
+}
+
+/** Its entry count is bounded before any section decodes: the resource walk refuses every oversized collection. */
+function assertPriorSeqRecord(value: PersistedALValue): void {
+    const record = requirePersistedALRecord(value, 'ordering prior sequences');
+    for (const recipientPeerId of Object.keys(record)) {
+        requirePersistedALNonEmptyString(recipientPeerId, 'ordering prior sequence recipient');
+        requirePersistedALSafeInteger(record[recipientPeerId], 0, 'ordering prior sequence');
     }
 }
 

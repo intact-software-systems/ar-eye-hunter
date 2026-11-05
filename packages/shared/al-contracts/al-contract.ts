@@ -99,6 +99,13 @@ export interface ALOrdering {
     readonly orderingKey?: string; // e.g. groupId or senderId or roomId
     readonly epoch?: number; // ordering track epoch
     readonly seq?: number; // monotonic within orderingKey + sender or server ordering
+    /**
+     * Recipient -> the last sequence the authority that froze this copy's audience previously sent it on the track,
+     * `0` for none. Lists a recipient never sent the track and one whose prior lies below `seq - 1`; a recipient it
+     * omits was last sent `seq - 1` or is already at or past `seq`. Present, possibly empty, on every tracked
+     * frozen-audience room multicast an authority recorded; absent when no authority recorded this copy.
+     */
+    readonly priorSeqByRecipient?: Readonly<Record<string, number>>;
 }
 
 // -------------------------------------------------------

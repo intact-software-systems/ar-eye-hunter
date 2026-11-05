@@ -56,7 +56,7 @@ const MULTICAST: ALMessage = {
     },
     forwarding: { nextHopPeerIds: ['session-b'], overlayId: 'overlay-1', fanoutLimit: 2 },
     constraints: { ttlHops: 3, expiresAtMs: 1_700_000_060_000 },
-    ordering: { orderingKey: 'room-1', epoch: 1, seq: 7 },
+    ordering: { orderingKey: 'room-1', epoch: 1, seq: 7, priorSeqByRecipient: { 'session-c': 4 } },
     delivery: { ownership: 'shared', reliability: 'at-least-once', ack: 'receiver' },
     actions: { corrId: 'corr-1', replyToMsgId: 'message-0' },
     qos: { fanout: { algo: 'limit', opts: { limit: 2 } }, durability: { algo: 'volatile' } },
@@ -115,6 +115,11 @@ const SIGNED_FIELD_CHANGES: readonly ALPublicationProofFieldChange[] = [
     { field: 'ordering.orderingKey', signed: MULTICAST, change: (message) => ({ ...message, ordering: { ...message.ordering, orderingKey: 'room-2' } }) },
     { field: 'ordering.epoch', signed: MULTICAST, change: (message) => ({ ...message, ordering: { ...message.ordering, epoch: 2 } }) },
     { field: 'ordering.seq', signed: MULTICAST, change: (message) => ({ ...message, ordering: { ...message.ordering, seq: 8 } }) },
+    {
+        field: 'ordering.priorSeqByRecipient',
+        signed: MULTICAST,
+        change: (message) => ({ ...message, ordering: { ...message.ordering, priorSeqByRecipient: { 'session-c': 6 } } })
+    },
     {
         field: 'delivery.ownership',
         signed: MULTICAST,
@@ -209,7 +214,7 @@ describe('ALM publication proof signing input', () => {
                 '"multicast",{"applicationId":"app-1","groupId":"room-1","workspaceId":"workspace-1"},null,null,' +
                 '["session-b","session-c"],5,3,4,null,null,' +
                 '1700000060000,' +
-                '"room-1",1,7,' +
+                '"room-1",1,7,{"session-c":4},' +
                 '"shared","at-least-once","receiver",' +
                 '"corr-1","message-0",' +
                 'null,null,null,null,null,null,null,null,{"algo":"limit","opts":{"limit":2}},null,{"algo":"volatile"},null,' +
@@ -238,7 +243,7 @@ describe('ALM publication proof signing input', () => {
             'room.chat',
             'resource-1',
             'room-1',
-            ...Array.from({ length: 10 + 1 + 3 + 3 + 2 + 12 }, () => null),
+            ...Array.from({ length: 10 + 1 + 4 + 3 + 2 + 12 }, () => null),
             'chat.message.v1',
             null,
             '{}'
