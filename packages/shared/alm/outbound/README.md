@@ -295,7 +295,9 @@ every read DTO; [`ALOutboundAdmissionMutations`](./admission/al-outbound-admissi
 turns each `ALOutboundAdmissionMutation` into the state write it names, checks the
 guards that write carries, and applies it inside the transaction;
 [`al-outbound-admission-keys.ts`](./admission/al-outbound-admission-keys.ts) owns
-every admission key string;
+the admission key strings, and
+[`al-outbound-ordering-track-keys.ts`](./admission/al-outbound-ordering-track-keys.ts) those of
+one ordering track (its head, its messages by sequence, its recipients' sent positions);
 [`ALOutboundAdmissionEffectStore`](./admission/al-outbound-admission-effect-store.ts)
 owns durable effect rows;
 [`ALOutboundDecisionReadSession`](./admission/al-outbound-decision-read-session.ts)
