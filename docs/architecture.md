@@ -188,8 +188,9 @@ without writing. Old timers cannot cancel a newer search. API configuration supp
 `matchmaking.defaultPolicy`, complete `matchmaking.policiesByApplication` overrides and a mutation
 rate limit. The authenticated scoped GET and request-keyed POST are described in OpenAPI.
 
-`RallarMatchmaking` owns account-fenced recovery, foreground/online polling and exact ambiguous-write
-retry. It reuses notifications, single-flight reads, timers and subscription cleanup. The shared HTTP
+`RallarMatchmaking` owns account-fenced recovery and exact ambiguous-write retry. It reads on scoped
+`view.invalidated` notices, socket recovery and foreground return, never on an idle timer, through the
+shared authenticated-resource owner with its coalesced reads, timers and subscription cleanup. The shared HTTP
 mutation retry classifier distinguishes definitive outcomes from transport ambiguity. `MatchmakingPanel`
 in `packages/shared-react` supplies both games' visible consent controls. Explicit matched-room entry
 uses `RallarRoomEntry`; game participation and director/Keeper authority stay with their existing owners.

@@ -163,7 +163,6 @@ async function revokePendingInvitation(host: Page, guest: Page, game: 'arena' | 
     const guestPanel = friendsPanel(guest);
     await hostPanel.getByRole('button', { name: 'Invite to destination', exact: true }).click();
     await expect(hostPanel.getByRole('button', { name: 'Refresh friends', exact: true })).toBeEnabled();
-    await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(guestPanel.getByRole('button', { name: 'Join invited room', exact: true })).toBeEnabled();
     const endpoint = '**/api/friends/apps/*/workspaces/*';
     const refreshPending = Promise.withResolvers<void>();

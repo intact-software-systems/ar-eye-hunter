@@ -218,10 +218,8 @@ async function becomeFriends(host: Page, guest: Page): Promise<void> {
     await hostFriends.getByLabel('Friend username', { exact: true }).fill('bob');
     await hostFriends.getByRole('button', { name: 'Send friend request', exact: true }).click();
     await expect(hostFriends).toContainText('Friend request sent');
-    await guestFriends.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await guestFriends.getByRole('button', { name: 'Accept request', exact: true }).click();
     await expect(guestFriends.getByRole('button', { name: 'Remove friend', exact: true })).toBeEnabled();
-    await hostFriends.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(hostFriends.getByRole('button', { name: 'Remove friend', exact: true })).toBeEnabled();
 }
 

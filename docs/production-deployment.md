@@ -30,22 +30,6 @@ normal main-branch workflow. Production workflow runs are serialized, and each
 Deno job refuses to proceed when its checked-out commit is no longer the remote
 `main` tip.
 
-## WS push cutover for Move Together
-
-Deploy the server before publishing the two push-only browser builds. Because Cloudflare publishes on a `main` update, coordinate the browser release **before merging** if the serving database contains pending Move notices or terminal history from the preceding server. Record the target database, observation time, row counts and latest relevant expiry. A fresh validation database has no such rows.
-
-1. Quiesce old Move producers, including in-flight transactions and workers handling Move commands and proposal expiry. Let old delivery workers finish any unexpired `group-move.changed` WS outbox work (new, retrying, or reserved). Check `AL_OUTBOUND` `admit-message` and `send-prepared` work referencing those message keys or IDs; completing the raw outbox row alone does not finish a prepared delivery. Resolve any failed work intended for manual replay with the old server.
-2. Allow old cluster subscribers and held socket sends to finish, stop the old processes and recheck both inventories. A late remote delivery failure can return a completed raw row to retry. Proceed only with zero executable old deliveries. Completed facts, expired rows, and proofs without executable references can remain.
-3. Start new server writers. Existing proposal deadlines retain their canonical shape and identity. New terminal transitions also schedule account notices at history expiry. Keep the already-deployed browser build until terminal records written by the preceding server have passed their stored expiry; they have no history-removal wake. Then publish both new browser builds and verify a two-account Move without manual refresh on the receiving browser.
-
-The public Move claim remains `{source, moveId}`. The server now resolves eligible sessions at delivery rather than persisting the original sessions in a new notice. Rollback also needs a drained deployment boundary: do not start an older server with new executable delivery or terminal-retention work. No database rewrite is part of either cutover.
-
-## Tournament snapshot cutover
-
-Publish the API socket receivers and AR Eye tournament server together, before publishing the browser builds. Every socket receiver must recognize the reserved server snapshot topic, enforce room presence for the **current connection generation**, and reassemble large PostgreSQL notices. The game server must return the committed attempt revision alongside the checkpoint on the canonical HTTP read and send it in each native frame. Deploying only some receivers can leave connected players without live updates.
-
-Coordinate Cloudflare publication before merging. Have active tournament participants reload for the new mandatory snapshot shape; the old exact decoder cannot consume it. Verify a player and spectator on different nodes see a live match and that a disconnected spectator recovers without a page reload. If reverting, coordinate both server and browser versions and follow the Move drain above. No data conversion or compatibility reader is needed.
-
 ## Cloudflare branch controls
 
 The `cloudflare-branch-controls` job in **Deploy Web + API** is disabled
