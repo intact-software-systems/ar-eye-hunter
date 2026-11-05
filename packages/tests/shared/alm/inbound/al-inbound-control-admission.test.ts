@@ -736,7 +736,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
         row: FROZEN_ROW
     };
 
-    function createNotSubscribedNack(logicalRecipientPeerId: string, reason: 'not-subscribed' | 'gap' = 'not-subscribed'): ALMessage {
+    function createNotSubscribedNack(logicalRecipientPeerId: string, reason: 'not-subscribed' | 'duplicate' = 'not-subscribed'): ALMessage {
         return newALNackControlMessage(
             { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
             {
@@ -903,11 +903,38 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
         expect(await readUpwardControls(admissionStore, workQueue)).toHaveLength(1);
     });
 
-    it('leaves every other NACK to its outbound owner, as before', async () => {
+    it('leaves every NACK it does not relay to its outbound owner, as before', async () => {
         const { admissionStore, control } = createFixture();
         await seedRelayRow(admissionStore, SEEDED);
 
-        expect(await control.admit(createNotSubscribedNack('receiver', 'gap'), WS_ARRIVAL)).toEqual({ kind: 'not-handled' });
+        expect(await control.admit(createNotSubscribedNack('receiver', 'duplicate'), WS_ARRIVAL)).toEqual({ kind: 'not-handled' });
+    });
+
+    it('re-originates a child\'s gap NACK to its parent with its ordering hints, leaving its row as it was (S4ii-R3)', async () => {
+        const { backend, admissionStore, workQueue, control } = createFixture();
+        await seedRelayRow(admissionStore, SEEDED);
+        const rowBefore = (await readAcknowledgements(backend, admissionStore)).pendingAck;
+        const ordering = { orderingKey: 'chat:sender:1', expectedSeq: 1, missingRanges: [{ from: 1, to: 1 }] };
+        const gap = newALNackControlMessage(
+            { v: 4, msgId: 'gap-below', ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
+            {
+                msgId: message.id.msgId,
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                logicalRecipientPeerId: 'below',
+                reason: 'gap',
+                observedAtEpochMs: 1,
+                ...ordering
+            }
+        );
+
+        expect(await control.admit(gap, WS_ARRIVAL)).toEqual({ kind: 'committed', acceptance: { handled: true, completedPendingAcks: [] } });
+
+        expect(await readUpwardControls(admissionStore, workQueue)).toEqual([{
+            type: 'nack',
+            payload: expect.objectContaining({ fromPeerId: 'self', toPeerId: 'upstream', logicalRecipientPeerId: 'below', reason: 'gap', ...ordering })
+        }]);
+        expect((await readAcknowledgements(backend, admissionStore)).pendingAck).toEqual(rowBefore);
     });
 
     /** Admits a NACK with the evidence a capturing sink installs, and returns the association it publishes. */

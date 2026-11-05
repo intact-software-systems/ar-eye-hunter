@@ -6,7 +6,7 @@ import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
-import { isALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
+import { isALRelayedNackReason } from '../../delivery/is-al-relayed-nack-reason.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALInboundAdmissionStore,
@@ -122,7 +122,7 @@ export class ALInboundControlAdmission {
         };
     }
 
-    /** A relay admits a child's ACK, and its outside-audience NACK; every other control is its outbound owner's. */
+    /** A relay admits a child's ACK, and the NACKs it relays; every other control is its outbound owner's. */
     private async admitArrival(
         arrival: ALInboundControlArrival,
         evidence: ALInboundAcknowledgementEvidence | undefined
@@ -131,8 +131,8 @@ export class ALInboundControlAdmission {
         if (control?.type === 'ack') {
             return await this.admitAcknowledgement(arrival, { ...control.payload, carrier: arrival.carrier }, evidence);
         }
-        return control?.type === 'nack' && isALOutsideAudienceNackReason(control.payload.reason)
-            ? await this.admitOutsideAudienceNack(
+        return control?.type === 'nack' && isALRelayedNackReason(control.payload.reason)
+            ? await this.admitRelayedNack(
                 arrival,
                 { ...control.payload, reason: control.payload.reason },
                 evidence
@@ -163,7 +163,7 @@ export class ALInboundControlAdmission {
         }, evidence);
     }
 
-    private async admitOutsideAudienceNack(
+    private async admitRelayedNack(
         arrival: ALInboundControlArrival,
         nack: ALInboundNackAdmissionRead['nack'],
         evidence: ALInboundAcknowledgementEvidence | undefined

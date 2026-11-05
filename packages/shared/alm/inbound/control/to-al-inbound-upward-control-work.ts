@@ -2,8 +2,10 @@ import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../../al-contrac
 import {
     newALAckControlMessage,
     newALNackControlMessage,
+    type ALNackPayload,
     type ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
+import type { ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import type { ALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
@@ -31,10 +33,30 @@ export interface ALInboundUpwardControlContext {
     readonly traceId: string;
 }
 
-/** One control a relay sends toward the origin: an ACK it relays or ends its hop with, or a NACK it relays. */
+/** The ordering hints of a recipient's gap NACK, which the relay passes upward unchanged. */
+export interface ALInboundUpwardNackOrdering {
+    /** The recipient's track key, which the origin matches against its stored track. */
+    readonly orderingKey: string;
+    readonly expectedSeq: number;
+    readonly missingRanges: readonly ALSeqRange[];
+}
+
+/**
+ * One control a relay sends toward the origin: an ACK it relays or ends its hop with, or a NACK it relays. A relayed
+ * gap NACK carries the recipient's ordering hints; an outside-audience NACK carries none.
+ */
 export type ALInboundUpwardControl =
     | Readonly<{ kind: 'ack'; ack: ALInboundUpwardAck; }>
-    | Readonly<{ kind: 'nack'; logicalRecipientPeerId: string; reason: ALOutsideAudienceNackReason; }>;
+    | Readonly<{ kind: 'nack'; logicalRecipientPeerId: string; reason: ALOutsideAudienceNackReason; }>
+    | Readonly<{ kind: 'nack'; logicalRecipientPeerId: string; reason: 'gap'; ordering: ALInboundUpwardNackOrdering; }>;
+
+/** A gap NACK's ordering hints, complete; `undefined` when the NACK lacks any of them and so has none to relay. */
+export function toALInboundUpwardNackOrdering(nack: ALNackPayload): ALInboundUpwardNackOrdering | undefined {
+    const { orderingKey, expectedSeq, missingRanges } = nack;
+    return orderingKey === undefined || expectedSeq === undefined || missingRanges === undefined
+        ? undefined
+        : { orderingKey, expectedSeq, missingRanges };
+}
 
 /** The relay re-originates each control to its row's parent, over the carrier the message arrived on (D40). */
 export function toALInboundUpwardControlWork(
@@ -86,7 +108,8 @@ function toUpwardControlMessage(
             ...route,
             msgId: context.msgId,
             logicalRecipientPeerId: control.logicalRecipientPeerId,
-            reason: control.reason
+            reason: control.reason,
+            ...(control.reason === 'gap' ? control.ordering : {})
         });
     }
     return newALAckControlMessage(id, {

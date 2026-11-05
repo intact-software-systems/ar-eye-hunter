@@ -2,10 +2,12 @@ import type { ALMessageRejection } from '../../../al-contracts/al-message-persis
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundNackAdmissionCandidate } from './compute-al-inbound-nack-admission.ts';
+import { toALInboundUpwardNackOrdering } from './to-al-inbound-upward-control-work.ts';
 
 /**
- * Every reason this `not-subscribed` NACK may not be relayed: it must come from a child hop the row waits on and name
- * a recipient of the frozen audience the origin counts, once (PL9, PL16).
+ * Every reason this NACK may not be relayed: it must come from a child hop the row waits on and name a recipient of
+ * the frozen audience the origin counts that is neither outside nor confirmed (PL9, PL16). An outside-audience NACK
+ * must also fit the row's outside list; a gap NACK, which writes no row, must carry the ordering hints it relays.
  */
 export function validateALInboundNackAdmission(
     candidate: ALInboundNackAdmissionCandidate
@@ -31,7 +33,12 @@ export function validateALInboundNackAdmission(
     ) {
         issues.push(rejectInboundNack('Inbound NACK names a recipient whose confirmation was already relayed'));
     }
-    if (
+    if (nack.reason === 'gap') {
+        if (toALInboundUpwardNackOrdering(nack) === undefined) {
+            issues.push({ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to relay' });
+        }
+    }
+    else if (
         pending.outsideAudiencePeerIds.length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
         !Number.isSafeInteger(candidate.pendingExpireAtTimestamp)
     ) {
