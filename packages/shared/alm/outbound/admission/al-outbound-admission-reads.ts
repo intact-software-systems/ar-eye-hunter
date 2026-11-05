@@ -77,8 +77,7 @@ import {
 } from './al-outbound-ordering-track-keys.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
-import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';
-import { decodeALOutboundSentPosition } from './decode-al-outbound-sent-position.ts';
+import { decodeALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 
@@ -448,7 +447,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const head = await this.readValue(
             session,
             toALOutboundOrderingHeadKey(this.namespace, trackKey),
-            decodeALOutboundOrderingHead
+            decodeALOutboundTrackPositionRow
         );
         const seq = (head?.seq ?? 0) + 1;
         return {
@@ -467,7 +466,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             const position = await this.readValue(
                 session,
                 toALOutboundSentPositionKey(this.namespace, trackKey, recipientPeerId),
-                decodeALOutboundSentPosition
+                decodeALOutboundTrackPositionRow
             );
             return [recipientPeerId, position?.seq ?? 0] as const;
         }));

@@ -12,7 +12,7 @@ import {
     toALOutboundOrderingHeadKey,
     toALOutboundSentPositionKey
 } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
-import { decodeALOutboundSentPosition } from '@shared/alm/outbound/admission/decode-al-outbound-sent-position.ts';
+import { decodeALOutboundTrackPositionRow } from '@shared/alm/outbound/admission/decode-al-outbound-track-position-row.ts';
 
 const NAMESPACE = 'outbound';
 const NOW_MS = 1_700_000_000_000;
@@ -46,9 +46,9 @@ describe('the sent-position row key', () => {
     });
 });
 
-describe('a stored sent position', () => {
-    it('decodes the last sequence sent the recipient', () => {
-        expect(decodeALOutboundSentPosition({ seq: 3 })).toEqual({ seq: 3 });
+describe('a stored track position, a head or a sent position', () => {
+    it('decodes the sequence the track reached', () => {
+        expect(decodeALOutboundTrackPositionRow({ seq: 3 })).toEqual({ seq: 3 });
     });
 
     it.each([
@@ -58,7 +58,7 @@ describe('a stored sent position', () => {
         { label: 'a missing sequence', value: {} },
         { label: 'a bare number', value: 3 }
     ])('refuses $label as corrupt', ({ value }) => {
-        expect(() => decodeALOutboundSentPosition(value)).toThrow(TypeError);
+        expect(() => decodeALOutboundTrackPositionRow(value)).toThrow(TypeError);
     });
 });
 

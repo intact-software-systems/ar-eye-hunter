@@ -37,8 +37,7 @@ import {
     toALOutboundOrderingMessageKey,
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
-import type { ALOutboundOrderingHeadRow } from './decode-al-outbound-ordering-head.ts';
-import type { ALOutboundSentPositionRow } from './decode-al-outbound-sent-position.ts';
+import type { ALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
 
 export type ALOutboundAdmissionMutation =
     | Readonly<
@@ -112,8 +111,7 @@ export interface ALOutboundStateWrite {
         | ALStoredOutboundMessage
         | ALOutboundPendingAckSnapshot
         | ALOutboundRepairAttemptSnapshot
-        | ALOutboundOrderingHeadRow
-        | ALOutboundSentPositionRow
+        | ALOutboundTrackPositionRow
         | ALLatestSupersedenceValue
         | ALReplacementSupersedenceValue
         | undefined;
