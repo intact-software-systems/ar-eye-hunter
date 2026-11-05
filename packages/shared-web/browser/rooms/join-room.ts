@@ -12,9 +12,7 @@ import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 
-import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
 import { createRoomSwitchPartialFailureError } from './create-and-join-room.ts';
@@ -27,6 +25,7 @@ import type {
     RallarRoomSession,
     RallarRoomSwitchOperation
 } from './rallar-room-contracts.ts';
+import { readRoomSessionPresence } from './read-room-session-presence.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
 import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
 import {
@@ -110,6 +109,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     }).catch((cause) => {
         throw createRoomJoinPartialFailureError(snapshot, toError(cause));
     });
+    input.enteredRooms.rememberEnteredRoom(arrived.group);
     return await completeRoomJoin({
         input,
         context,
@@ -295,11 +295,12 @@ async function connectMovedSession(
         context,
         options
     });
+    input.enteredRooms.rememberEnteredRoom(move.destination);
     return snapshot;
 }
 
 interface RoomPresenceDeparture {
-    readonly input: Pick<LeaveRoomInput, 'stateStore'>;
+    readonly input: Pick<LeaveRoomInput, 'stateStore' | 'enteredRooms'>;
     readonly roomRef: GroupRef;
     readonly generationId: string;
     readonly context: ApiMiddleware;
@@ -310,6 +311,7 @@ interface RoomPresenceDeparture {
 async function disconnectRoomSession(
     { input, roomRef, generationId, context, fence, options }: RoomPresenceDeparture
 ): Promise<GroupSnapshot | undefined> {
+    input.enteredRooms.forgetEnteredRoom(roomRef);
     const sourceBeforeDisconnect = input.stateStore.findGroupSnapshot(roomRef);
     const sourceSession = sourceBeforeDisconnect?.activeSessions.find((session) =>
         session.sessionId === fence.session.sessionId
@@ -353,61 +355,6 @@ async function disconnectRoomSession(
     }
     return undefined;
 }
-
-interface RoomSessionPresenceInput {
-    readonly snapshot: GroupSnapshot;
-    readonly sessionId: string;
-    readonly generationId: string;
-    readonly present: boolean;
-    readonly fence: RoomSessionFence;
-    readonly context: ApiMiddleware;
-    readonly options: RallarOperationOptions;
-    readonly minPresenceRevision: number;
-}
-
-/** Presence writes commit before their summary. A successful response alone does not prove arrival. */
-async function readRoomSessionPresence(input: RoomSessionPresenceInput): Promise<GroupSnapshot> {
-    const matches = (snapshot: GroupSnapshot) => {
-        if (snapshot.causalRevision.presenceRevision < input.minPresenceRevision) {
-            return false;
-        }
-        const session = snapshot.activeSessions.find((candidate) => candidate.sessionId === input.sessionId);
-        return input.present
-            ? session?.generationId === input.generationId && session.expiresAtEpochMs > Date.now()
-            : session === undefined;
-    };
-    if (matches(input.snapshot)) {
-        return input.snapshot;
-    }
-    return await new Command(async (signal) => {
-        return await TryWithPolicy.defaults().label('room presence')
-            .maxElapsedMsecs(input.options.timeoutMs ?? 15000)
-            .retryIntervalMsecs(100).maxRetryIntervalMsecs(500)
-            .retryIf((error) => error instanceof RoomPresencePendingError && !signal?.aborted)
-            .run(async () => {
-                signal?.throwIfAborted();
-                input.fence.assertCurrent(input.context);
-                const { snapshot } = await readStateGroupSnapshot(
-                    input.snapshot.group.groupId,
-                    toStateScope(input.snapshot.group),
-                    {
-                        authSession: input.fence.session,
-                        signal,
-                        minCausalRevision: input.snapshot.causalRevision
-                    }
-                );
-                input.fence.assertCurrent(input.context);
-                if (!matches(snapshot)) {
-                    throw new RoomPresencePendingError(
-                        'Room presence has not confirmed the switch yet. Retry entering.'
-                    );
-                }
-                return snapshot;
-            });
-    }, { signal: input.options.signal, timeoutMs: input.options.timeoutMs ?? 15000 }).run();
-}
-
-class RoomPresencePendingError extends Error {}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;
@@ -513,6 +460,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         options: input.options,
         minPresenceRevision: 0
     });
+    input.dependencies.enteredRooms.rememberEnteredRoom(arrived.group);
     return await adoptJoinedRoom({
         dependencies: input.dependencies,
         context: input.context,

@@ -264,6 +264,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         stateEvents,
         messaging,
         realtime,
+        rooms,
         director
     });
     const crdt = createBrowserCrdtComposition({
@@ -387,6 +388,7 @@ interface RegisterBlackBoxBrowserRallarLifecycleInput {
     readonly stateEvents: BrowserStateEventComposition;
     readonly messaging: BrowserMessagingComposition;
     readonly realtime: BrowserRealtimeCoreComposition;
+    readonly rooms: BrowserRoomsComposition;
     readonly director: BrowserDirectorComposition;
 }
 
@@ -403,6 +405,7 @@ function registerBlackBoxBrowserRallarLifecycle(
         messageSubscriptions: input.messaging.messagesController.subscriptions,
         wsInbox: input.stateEvents.wsInbox,
         topicSubscriptions: input.messaging.topicSubscriptions,
+        roomPresenceReassertion: input.rooms.presenceReassertion,
         wsController: input.realtime.wsController,
         realtimeReceive: input.realtime.realtimeReceive,
         rtcLifecycle: input.realtime.rtcController.lifecycle

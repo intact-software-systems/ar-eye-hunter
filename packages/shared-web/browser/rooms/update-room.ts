@@ -8,6 +8,7 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
+import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
 import type {
     RallarRoomLifecycleOptions,
     RallarRoomTargetInput,
@@ -62,6 +63,7 @@ interface UpdateRoomOperationInput extends Omit<RunRoomTargetMutationInput, 'roo
 
 interface RoomLifecycleOperationInput extends Omit<RunRoomTargetMutationInput, 'options' | 'execute'> {
     readonly options?: RallarRoomLifecycleOptions;
+    readonly enteredRooms: BrowserRoomPresenceReassertion.EnteredRooms;
 }
 
 interface UpdateRoomMetadataOperationInput extends Omit<RunRoomTargetMutationInput, 'execute'> {
@@ -178,7 +180,7 @@ async function changeRoomLifecycle(
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     const request = options.reason === undefined ? {} : { reason: options.reason };
-    return await runRoomTargetMutation({
+    const snapshot = await runRoomTargetMutation<GroupSnapshot>({
         ...input,
         options,
         execute: async ({ roomId, session, scope, policies }) =>
@@ -200,6 +202,8 @@ async function changeRoomLifecycle(
                     policies
                 })
     });
+    input.enteredRooms.forgetEnteredRoom(snapshot.group);
+    return snapshot;
 }
 
 function toUpdateRoomRequest(input: RallarUpdateRoomInput): UpdateStateGroupBody {

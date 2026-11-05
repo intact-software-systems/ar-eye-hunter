@@ -9,7 +9,8 @@ export type BrowserStateReadDiagnosticEvent = Readonly<{
         | 'collection'
         | 'topology-read-through'
         | 'reopen-resync'
-        | 'delta-apply';
+        | 'delta-apply'
+        | 'room-presence-reassertion';
     result:
         | 'found'
         | 'not-found'
@@ -24,7 +25,10 @@ export type BrowserStateReadDiagnosticEvent = Readonly<{
         | 'revision-conflict'
         | 'read-failed'
         | 'resynced'
-        | 'stale-generation';
+        | 'stale-generation'
+        | 'reasserted'
+        | 'inactive'
+        | 'refused';
     source?: StateSnapshotReadSource;
     durationMs: number;
 }>;

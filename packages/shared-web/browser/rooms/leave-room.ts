@@ -4,6 +4,7 @@ import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/sta
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 
+import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
 import type { RallarLeaveRoomOptions } from './rallar-room-contracts.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 import { leaveStateGroup, type StateGroupWorkflowValue } from './room-group-state-workflows.ts';
@@ -23,6 +24,7 @@ export interface LeaveRoomInput {
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
+    readonly enteredRooms: BrowserRoomPresenceReassertion.EnteredRooms;
 }
 
 export async function leaveRoom(input: LeaveRoomInput): Promise<GroupSnapshot | undefined> {
@@ -49,6 +51,10 @@ async function leaveAuthenticatedRoom(input: LeaveRoomInput): Promise<GroupSnaps
     const scope = leaveOptions.scope ?? (roomRef ? toStateScope(roomRef) : explicitScope);
     if (!roomId) {
         return undefined;
+    }
+    const departedRoomRef = roomRef ?? toGroupRefFromScope(roomId, scope);
+    if (departedRoomRef) {
+        input.enteredRooms.forgetEnteredRoom(departedRoomRef);
     }
     const snapshot = await leaveStateGroup({
         groupId: roomId,

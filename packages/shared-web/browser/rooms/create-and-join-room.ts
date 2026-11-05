@@ -11,6 +11,7 @@ import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
+import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
 import { leaveRoom } from './leave-room.ts';
 import type { RallarCreateRoomInput, RallarRoomSwitchPartialFailureError } from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
@@ -36,6 +37,7 @@ export interface CreateAndJoinRoomInput {
     readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
+    readonly enteredRooms: BrowserRoomPresenceReassertion.EnteredRooms;
 }
 
 export async function createAndJoinRoom(input: CreateAndJoinRoomInput): Promise<GroupSnapshot> {
@@ -65,6 +67,7 @@ async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<G
         authSession: session,
         assertCurrent: () => fence.assertCurrent(context)
     });
+    input.enteredRooms.rememberEnteredRoom(snapshot.group);
     try {
         return await adoptJoinedRoom({
             dependencies: input,
