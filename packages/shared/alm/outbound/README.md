@@ -829,7 +829,14 @@ remain: sequences follow commit order, so under contention two publications of o
 (a first-in-first-out mint per track is a follow-up), and a track silent for over an hour restarts at 1 on both sides.
 Each browser carrier marks the first admission of its own room send that names an ordering key
 (`toALOutboundMintingPlan`): a key alone takes the next sequence, and a stated `seq` at or below the head is refused
-`unsupported` while one above it moves the head (`computeALOutboundSequenceMint`).
+`unsupported` while one above it moves the head (`computeALOutboundSequenceMint`). Both carriers' durable pairs of one
+session keep one head per track under the pair input `orderingHeadNamespace` (the session's
+`toBrowserSessionALOrderingHeadNamespace`; any other pair keeps its heads in its own namespace), so a fallback send's
+WS leg and its RTC leg never take one sequence twice. The two pairs fence on different sender-version rows, so the
+head write is a compare-and-set: the commit re-reads the head inside its transaction and conflicts when it no longer
+holds the value the admission read, and the conflict retries the admission from a fresh read. A copy handed over to WS
+after its RTC admission (D56) carries the sequence that admission fixed and enters through
+`enqueueHandedOverIfAbsent`, which plans it at stage `hand-over`: it is never guarded.
 
 **Sent positions (S4-R1, S4-R2).** The authority that finalizes a copy's audience records, per track and recipient,
 the last sequence it sent that recipient. A plan names those recipients in `recordsSentPositions` (the RTC origin at
