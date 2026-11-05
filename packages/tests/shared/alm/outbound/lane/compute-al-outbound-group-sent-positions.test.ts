@@ -5,7 +5,9 @@ import type { ALOutboundAdmissionMutation } from '@shared/alm/outbound/admission
 import type { ALOutboundCommitBundle, ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     computeALOutboundGroupChainedReads,
+    toALOutboundFollowerOrder,
     toALOutboundGroupPositionWrites,
+    toALOutboundLeftBehindPredecessors,
     type ALOutboundGroupMemberRead
 } from '@shared/alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 
@@ -103,3 +105,43 @@ describe('the sent positions of one commit group', () => {
         ]);
     });
 });
+
+describe('the rows of a dequeued batch that follow their predecessor on the track (T3-R5)', () => {
+    it('leaves a follower whose predecessor the batch did not admit, and its own follower with it', () => {
+        const dispatches = [follower(4), follower(3), { msg: message(1) }, follower(5)];
+
+        expect([...toALOutboundLeftBehindPredecessors(dispatches)].map(toSeq)).toEqual([3, 4, 5]);
+    });
+
+    it('keeps a follower whose predecessor the batch admits ahead of it, whatever order they were claimed in', () => {
+        const dispatches = [follower(3), follower(2), { msg: message(1) }];
+
+        expect(toALOutboundLeftBehindPredecessors(dispatches)).toEqual(new Set());
+    });
+
+    it('never leaves a row that does not follow its predecessor, admitted or not', () => {
+        expect(toALOutboundLeftBehindPredecessors([{ msg: message(7) }, { msg: message(9), followsBatchPredecessor: false }])).toEqual(new Set());
+    });
+
+    it('orders a track that holds a follower by ascending sequence in the places it holds, leaving other rows where they are', () => {
+        const untracked = { msg: { ...message(0), ordering: undefined } };
+        const otherTrack = { msg: { ...message(5), ordering: { orderingKey: 'game-2', epoch: 1, seq: 5 } } };
+        const rows = [follower(3), untracked, otherTrack, { msg: message(1) }, follower(2)];
+
+        expect(toALOutboundFollowerOrder(rows, (row) => row)).toEqual([rows[3], untracked, otherTrack, rows[4], rows[0]]);
+    });
+
+    it('keeps the order of a track no row of which follows its predecessor', () => {
+        const rows = [{ msg: message(2) }, { msg: message(1) }];
+
+        expect(toALOutboundFollowerOrder(rows, (row) => row)).toEqual(rows);
+    });
+});
+
+function follower(seq: number): Readonly<{ msg: ALMessage; followsBatchPredecessor: boolean; }> {
+    return { msg: message(seq), followsBatchPredecessor: true };
+}
+
+function toSeq(dispatch: Readonly<{ msg: ALMessage; }>): number | undefined {
+    return dispatch.msg.ordering?.seq;
+}

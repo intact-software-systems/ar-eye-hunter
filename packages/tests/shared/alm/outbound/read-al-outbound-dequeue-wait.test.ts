@@ -18,9 +18,9 @@ import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outboun
 import { toALOutboundDequeueWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
     AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS,
-    readALOutboundDequeueWait
+    readALOutboundDequeueWait,
+    type ALOutboundDequeueFront
 } from '@shared/alm/outbound/lane/read-al-outbound-dequeue-wait.ts';
-import type { ALWorkAttemptResult } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkOutcome } from '@shared/alm/work/al-work-queue-port.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -43,6 +43,8 @@ const HELD_EFFECT = {
     leaseUntilMs: NOW_MS + 10_000,
     expireAtTimestamp: NOW_MS + 30_000
 };
+/** The sequences the held row's batch claimed: the row's own track holds sequence 4 of key `held`. */
+const BATCH = new Map([['held:a:0', new Set([4])]]);
 const NOT_READY: ALOutboundMessageRuntime.PendingAdmissionAuthority = {
     status: 'not-ready',
     reason: 'RTC room transport is halted',
@@ -65,7 +67,7 @@ describe('readALOutboundDequeueWait', () => {
         const result = await hold.read();
         await vi.advanceTimersByTimeAsync(40 * AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS);
 
-        expect(result?.status).toBe('retained');
+        expect(result.kind === 'held' && result.attempt.status).toBe('retained');
         expect(hold.settlements).toEqual([{
             kind: 'attempt-settled',
             msgId: MESSAGE.id.msgId,
@@ -125,7 +127,14 @@ describe('readALOutboundDequeueWait', () => {
     )('leaves a $status authority to the planner and states nothing', async (authority) => {
         const hold = createHold([authority]);
 
-        expect(await hold.read()).toBeUndefined();
+        expect(await hold.read()).toEqual({ kind: 'passed', followsBatchPredecessor: false });
+        expect(hold.settlements).toEqual([]);
+    });
+
+    it('passes a row its carrier admits behind its batch predecessor on to the planner, marked so', async () => {
+        const hold = createHold([{ status: 'follows-batch-predecessor' }]);
+
+        expect(await hold.read()).toEqual({ kind: 'passed', followsBatchPredecessor: true });
         expect(hold.settlements).toEqual([]);
     });
 
@@ -135,26 +144,27 @@ describe('readALOutboundDequeueWait', () => {
         expect(
             await readALOutboundDequeueWait({
                 effect: HELD_EFFECT,
+                batch: BATCH,
                 readAuthority: undefined,
                 settlements: (fact) => settlements.push(fact),
                 clock: { nowMs: () => Date.now() },
                 signal: new AbortController().signal
             })
-        ).toBeUndefined();
+        ).toEqual({ kind: 'passed', followsBatchPredecessor: false });
         expect(settlements).toEqual([]);
     });
 });
 
 interface HeldClaim {
     /** The authorities the carrier answers, in order; the last one repeats. */
-    readonly authorities: ALOutboundMessageRuntime.PendingAdmissionAuthority[];
+    readonly authorities: ALOutboundMessageRuntime.DequeuedAdmissionAuthority[];
     readonly settlements: ALOutboundSettlementFact[];
     readonly released: ALWorkOutcome | undefined;
-    read(): Promise<ALWorkAttemptResult | undefined>;
+    read(): Promise<ALOutboundDequeueFront>;
     abort(): void;
 }
 
-function createHold(authorities: ALOutboundMessageRuntime.PendingAdmissionAuthority[]): HeldClaim {
+function createHold(authorities: ALOutboundMessageRuntime.DequeuedAdmissionAuthority[]): HeldClaim {
     const settlements: ALOutboundSettlementFact[] = [];
     const controller = new AbortController();
     let released: ALWorkOutcome | undefined;
@@ -167,17 +177,18 @@ function createHold(authorities: ALOutboundMessageRuntime.PendingAdmissionAuthor
         read: async () => {
             const result = await readALOutboundDequeueWait({
                 effect: HELD_EFFECT,
-                readAuthority: async (message, prepared) => {
+                batch: BATCH,
+                readAuthority: async (message, batch) => {
                     expect(message.id).toEqual(MESSAGE.id);
-                    expect(prepared).toEqual([]);
+                    expect(batch).toBe(BATCH);
                     return authorities.at(-1)!;
                 },
                 settlements: (fact) => settlements.push(fact),
                 clock: { nowMs: () => Date.now() },
                 signal: controller.signal
             });
-            if (result?.status === 'retained') {
-                void result.settled.then((outcome) => {
+            if (result.kind === 'held' && result.attempt.status === 'retained') {
+                void result.attempt.settled.then((outcome) => {
                     released = outcome;
                 });
             }

@@ -45,6 +45,7 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
 import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
+import type { ALOrderingBatchSequences } from './admission/compute-al-ordering-prior-seq-record.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
@@ -485,6 +486,10 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'authorized'; }>
         | Readonly<{ status: 'rejected'; reason: string; }>
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
+    /** A dequeued row's authority, which may also admit it only after its predecessor its batch claimed (T3-R5). */
+    export type DequeuedAdmissionAuthority =
+        | PendingAdmissionAuthority
+        | Readonly<{ status: 'follows-batch-predecessor'; }>;
     export interface SendLifecycle {
         readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;
@@ -538,11 +543,16 @@ export namespace ALOutboundMessageRuntime {
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
-        /** Read before a retained admission replays (with its prepared copies) and before a dequeued message plans (with none). */
+        /** Read before a retained admission replays, with its prepared copies. */
         readonly readPendingAdmissionAuthority?: (
             msg: ALMessage,
             preparedMessages: readonly TPrepared[]
         ) => Promise<PendingAdmissionAuthority>;
+        /** Read before a dequeued message plans, with the sequences its batch claimed beside it. */
+        readonly readDequeuedAdmissionAuthority?: (
+            msg: ALMessage,
+            batch: ALOrderingBatchSequences
+        ) => Promise<DequeuedAdmissionAuthority>;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;

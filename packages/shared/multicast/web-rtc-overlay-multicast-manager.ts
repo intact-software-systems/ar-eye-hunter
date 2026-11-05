@@ -288,6 +288,7 @@ export class WebRtcOverlayMulticastManager {
                 afterDequeueAdmission: undefined,
                 readPendingAdmissionAuthority: async (message, prepared) =>
                     this.readPendingAdmissionAuthority(message, prepared),
+                readDequeuedAdmissionAuthority: async (message) => this.readPendingAdmissionAuthority(message, []),
                 sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                     await this.sendPreparedMessage(
                         reconstructALOutboundTransportMessage(prepared, lifecycle.canonicalMessage),

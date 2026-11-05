@@ -48,6 +48,8 @@ interface OrderedServer {
     readonly clock: { nowMs: number; };
     readonly controlAdmissions: ControlAdmission[];
     readonly settlements: ALDeliverySettlement[];
+    /** The member count of each dequeue group that committed under one fence. */
+    readonly groupCommits: number[];
 }
 
 interface OrderedServerOptions {
@@ -55,6 +57,8 @@ interface OrderedServerOptions {
     readonly cluster?: boolean;
     /** Re-checks every frozen audience, and cannot read the one of this message the first time, so its row retries. */
     readonly unreadableOnceMsgId?: string;
+    /** Holds the re-check of this message's audience until released, so the claim that reads it stays running. */
+    readonly recheckGate?: Readonly<{ msgId: string; released: Promise<void>; }>;
 }
 
 interface NackInput {
@@ -100,7 +104,7 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.c)).toEqual([]);
     });
 
-    it('serves a gap wider than one repair page in two ascending pages, to the requester alone', { timeout: 20_000 }, async () => {
+    it('serves a gap wider than one repair page in two ascending pages, to the requester alone', async () => {
         const server = await createOrderedServer();
         await publishEvents(server, 35);
         for (let index = 1; index <= 35; index += 1) {
@@ -282,18 +286,64 @@ describe.each([
         expect(readFrames(server.sockets.c, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
     });
 
-    it('holds a row until its track\'s earlier row, admitted first but dequeued later, records; both deliver in order', async () => {
+    it('holds a row claimed without its track\'s earlier row, admitted first but dequeued later, until it records; both deliver in order', async () => {
         const first = browserEvent(1);
         const second = browserEvent(2);
         const server = await createOrderedServer({ cluster, unreadableOnceMsgId: first.id.msgId });
         // Sequence 1's first dequeue cannot read its audience and retries; sequence 2 is admitted and claimed meanwhile.
         await server.service.enqueueOutboxIfAbsent(first, toAudienceAuthority(['b']));
+        await runEngine(server, () => undefined);
         await server.service.enqueueOutboxIfAbsent(second, toAudienceAuthority(['b']));
 
         await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.b).slice(0, 2)), { timeout: 10_000 })
             .toEqual([first.id.msgId, second.id.msgId]);
+        expect(readHeldMsgIds(server)).toEqual([second.id.msgId]);
         expect(readFrames(server.sockets.b, first.id.msgId)[0]).toEqual({ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined });
         expect(readFrames(server.sockets.b, second.id.msgId)[0]).toEqual({ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined });
+    });
+
+    it('leaves a row whose earlier row in the same batch fails its admission to a later pass; both deliver, none skipped', async () => {
+        const first = browserEvent(1);
+        const second = browserEvent(2);
+        const lead = roundEvent('event-1');
+        const released = Promise.withResolvers<void>();
+        const server = await createOrderedServer({
+            cluster,
+            unreadableOnceMsgId: first.id.msgId,
+            recheckGate: { msgId: lead.id.msgId, released: released.promise }
+        });
+        // The server's own row holds its claim at its re-check while both rows of `a`'s track commit, so the follow-up
+        // claim takes them together, and sequence 1's dequeue there cannot read its audience.
+        await server.service.enqueueOutboxIfAbsent(lead, toAudienceAuthority(['c']));
+        await server.service.enqueueOutboxIfAbsent(first, toAudienceAuthority(['b']));
+        await server.service.enqueueOutboxIfAbsent(second, toAudienceAuthority(['b']));
+        released.resolve();
+
+        await expect.poll(() => runEngineAdvancing(server, () => new Set(readMsgIds(server.sockets.b)).size), { timeout: 3_000 }).toBe(2);
+        await settle(server);
+        expect(readFrames(server.sockets.b, first.id.msgId)).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.b, second.id.msgId)).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readHeldMsgIds(server)).toEqual([]);
+        expect(server.groupCommits).toEqual([2]);
+    });
+
+    it('commits an in-order run of one track claimed in one batch as one chained group, every recipient its entry', async () => {
+        const server = await createOrderedServer({ cluster });
+        // The first admission's commit starts a claim at once; the other three commit while it runs, and the follow-up
+        // claim takes them together, ahead of `b`'s recorded position at sequence 1.
+        await Promise.all(
+            [['a', 'b'], ['a', 'b'], ['a'], ['a', 'b']].map((audience, index) =>
+                server.service.enqueueOutboxIfAbsent(roundEvent(`event-${index + 1}`), toAudienceAuthority(audience))
+            )
+        );
+
+        await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.a).length)).toBe(4);
+        await settle(server);
+        expect(server.groupCommits).toEqual([3]);
+        expect(readHeldMsgIds(server)).toEqual([]);
+        expect([...readSeqs(server.sockets.b)].sort()).toEqual([1, 2, 4]);
+        expect(readFrames(server.sockets.b, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.a, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: {} }, proof: undefined }]);
     });
 
     it('sends a burst of more than one page of rows on one track with every recipient\'s entry, the burst\'s groups chained', async () => {
@@ -307,7 +357,9 @@ describe.each([
         expect(readFrames(server.sockets.b, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: { b: 10 } }, proof: undefined }]);
         expect(readFrames(server.sockets.b, 'event-10')).toEqual([{ ordering: { ...ORDERING, seq: 10, priorSeqByRecipient: {} }, proof: undefined }]);
         expect(readFrames(server.sockets.a, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: {} }, proof: undefined }]);
-        expect(readSeqs(server.sockets.b)).toEqual([...toSeqs(1, 10), 21]);
+        expect([...readSeqs(server.sockets.b)].sort((left, right) => left! - right!)).toEqual([...toSeqs(1, 10), 21]);
+        expect(Math.max(...server.groupCommits)).toBeGreaterThan(1);
+        expect(readHeldMsgIds(server)).toEqual([]);
     });
 });
 
@@ -330,6 +382,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const controlAdmissions: ControlAdmission[] = [];
     const settlements: ALDeliverySettlement[] = [];
+    const groupCommits: number[] = [];
     const engine = new InboxOutboxEngine();
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         nowMs,
@@ -338,11 +391,14 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     });
     const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
     const service = createDefaultWsQueueBoxServerService({
-        filterEligibleCapturedSessionIds: options.unreadableOnceMsgId === undefined ? undefined : (captured) => {
-            if (unreadable.delete(captured.message.id.msgId)) {
-                return Promise.reject(new Error('Re-check could not read'));
+        filterEligibleCapturedSessionIds: options.unreadableOnceMsgId === undefined ? undefined : async (captured) => {
+            if (captured.message.id.msgId === options.recheckGate?.msgId) {
+                await options.recheckGate.released;
             }
-            return Promise.resolve(captured.candidateSessionIds);
+            if (unreadable.delete(captured.message.id.msgId)) {
+                throw new Error('Re-check could not read');
+            }
+            return captured.candidateSessionIds;
         },
         inboundVolatileStores: undefined,
         outbox,
@@ -361,6 +417,11 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
             }
         },
         outboundSettlements: (settlement) => settlements.push(settlement),
+        dequeueTiming: (observation) => {
+            if (observation.kind === 'admission-group' && observation.outcome === 'committed') {
+                groupCommits.push(observation.memberCount);
+            }
+        },
         targetResolver: {
             requiresFrozenAudience: () => options.unreadableOnceMsgId !== undefined,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
@@ -372,7 +433,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     if (options.cluster === true) {
         await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: new LoopbackBridge(), channel: 'ws', publisherId: SERVER_ID });
     }
-    return { service, engine, sockets, clock, controlAdmissions, settlements };
+    return { service, engine, sockets, clock, controlAdmissions, settlements, groupCommits };
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */
@@ -389,10 +450,10 @@ async function publishEvents(
         );
         minted.push(result.message.ordering);
     }
-    // Each row of the track waits for its predecessor to record (T3-R2), so a long run drains one held row at a time.
+    // A claim takes the run's rows in key order: rows that follow their predecessor in the same claim commit with it
+    // (T3-R5), and a row claimed without its unrecorded predecessor waits for it (T3-R2).
     await expect.poll(
-        () => runEngineTicking(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length)),
-        { timeout: 10_000 }
+        () => runEngineTicking(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length))
     ).toEqual(audience.map(() => count));
     return minted;
 }
@@ -550,6 +611,16 @@ function readMsgIds(socket: SimulatedWebSocket): readonly string[] {
     return socket.sent.map((frame) => decodePersistedALMessage(frame))
         .filter((message) => message.ordering?.orderingKey === ORDERING.orderingKey)
         .map((message) => message.id.msgId);
+}
+
+/** The rows a track's order held at dequeue, each time it held one, while an earlier row of the track recorded first. */
+function readHeldMsgIds(server: OrderedServer): readonly string[] {
+    return server.settlements
+        .filter((settlement) =>
+            settlement.kind === 'attempt-settled' && settlement.outcome === 'not-ready' &&
+            settlement.detail?.includes('of its track to record first') === true
+        )
+        .map((settlement) => settlement.msgId);
 }
 
 /** The messages whose repair budget a requester found spent; each is stated once. */

@@ -31,7 +31,10 @@ import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbou
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundPlanningAuthority } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
-import { isALOutboundRowUnrecorded } from '../../alm/outbound/admission/compute-al-ordering-prior-seq-record.ts';
+import {
+    isALOrderingPredecessorInBatch,
+    type ALOrderingBatchSequences
+} from '../../alm/outbound/admission/compute-al-ordering-prior-seq-record.ts';
 import {
     ALOutboundMessageRuntime,
     type ALOutboundDispatchPlan,
@@ -93,6 +96,7 @@ import { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-
 import { WsQueueBoxServerInboundDelivery } from './ws-queue-box-server-inbound-delivery.ts';
 import { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import {
+    isWsQueueBoxServerUnrecordedRow,
     WsQueueBoxServerOutboundPlanning,
     type WsQueueBoxServerOutboundPhase,
     type WsQueueBoxServerPreparedMessage
@@ -436,10 +440,8 @@ export class WsQueueBoxServerService {
                     this.creationNow()
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
-            readPendingAdmissionAuthority: async (message, preparedMessages) =>
-                preparedMessages.length > 0
-                    ? { status: 'authorized' }
-                    : await this.readTrackOrderAuthority(message),
+            readDequeuedAdmissionAuthority: async (message, batch) =>
+                await this.readTrackOrderAuthority(message, batch),
             readDequeueAuthority: async (message, entry) => {
                 const read = await this.dequeueAuthority.readDequeueAuthority(message, entry);
                 await this.writeOutsideAudience(message, read.dropped);
@@ -872,24 +874,29 @@ export class WsQueueBoxServerService {
     }
 
     /**
-     * A dequeued row that will record positions on its track waits while its predecessor there is admitted here and not
-     * yet recorded (T3-R2): a predecessor never admitted here, already sent or expired holds nothing.
+     * A dequeued row that will record positions on its track follows its predecessor there when its batch claimed it
+     * too (T3-R5), and otherwise waits while that predecessor is admitted here and not yet recorded (T3-R2): a
+     * predecessor never admitted here, already sent or expired holds nothing.
      */
     private async readTrackOrderAuthority(
-        message: ALMessage
-    ): Promise<ALOutboundMessageRuntime.PendingAdmissionAuthority> {
+        message: ALMessage,
+        batch: ALOrderingBatchSequences
+    ): Promise<ALOutboundMessageRuntime.DequeuedAdmissionAuthority> {
         const trackKey = toALOrderingTrackKey(message);
         const seq = message.ordering?.seq;
         const nowMs = this.clock.nowMs();
         if (
             trackKey === undefined || seq === undefined || seq <= 1 ||
-            !isALOutboundRowUnrecorded(await this.admissionStore.readStoredMessage(message.id.msgId), nowMs)
+            !isWsQueueBoxServerUnrecordedRow(await this.admissionStore.readStoredMessage(message.id.msgId), nowMs)
         ) {
             return { status: 'authorized' };
         }
+        if (isALOrderingPredecessorInBatch(message, batch)) {
+            return { status: 'follows-batch-predecessor' };
+        }
         const predecessor = await this.admissionStore.readSentMessageByOrdering(trackKey, seq - 1);
         const stored = predecessor && await this.admissionStore.readStoredMessage(predecessor.msgId);
-        return isALOutboundRowUnrecorded(stored, nowMs)
+        return isWsQueueBoxServerUnrecordedRow(stored, nowMs)
             ? {
                 status: 'not-ready',
                 reason: `WS row waits for sequence ${seq - 1} of its track to record first`,

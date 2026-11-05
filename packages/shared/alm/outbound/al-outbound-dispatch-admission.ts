@@ -11,6 +11,7 @@ import {
 import type { ALStoreDurability } from '../../al-contracts/al-policy.ts';
 import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { NotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -58,7 +59,10 @@ import {
 import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-admission.ts';
 import {
     computeALOutboundGroupChainedReads,
-    toALOutboundGroupPositionWrites
+    isALOutboundLeftBehindPredecessor,
+    toALOutboundFollowerOrder,
+    toALOutboundGroupPositionWrites,
+    toALOutboundLeftBehindPredecessors
 } from './lane/compute-al-outbound-group-sent-positions.ts';
 import { recordALOutboundDequeueTiming } from './lane/record-al-outbound-dequeue-timing.ts';
 import { validateALOutboundDispatch } from './validate-al-outbound-dispatch.ts';
@@ -75,6 +79,9 @@ interface ALOutboundCommitDecision<TPrepared> {
     readonly bundle: ALOutboundCommitBundle<TPrepared>;
 }
 
+/** A row left behind its batch predecessor is due again at the next pass, where it joins or waits for it. */
+const AL_OUTBOUND_LEFT_BEHIND_RETRY_MS = 1;
+
 /** One dispatch of a group, with the phases its one `commit-phases` event reports. */
 interface ALOutboundGroupMember<TPrepared> {
     readonly dispatch: ALOutboundDispatchAdmission.Input<TPrepared>;
@@ -90,6 +97,8 @@ export namespace ALOutboundDispatchAdmission {
     export interface Input<TPrepared> {
         readonly msg: ALMessage;
         readonly dequeueAuthority?: ALOutboundDequeueAuthority;
+        /** A dequeued row admitted only behind its predecessor its batch claimed (T3-R5); absent outside a batch. */
+        readonly followsBatchPredecessor?: boolean;
         readonly planner: ALOutboundPlanner<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
@@ -166,7 +175,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
      * settles before its write (it fails validation, finds its pending admission, has nothing to
      * commit), the store answers the group with anything but `committed`, or the group attempt throws,
      * every member commits again alone, one after another: a fresh read, compute and conflict
-     * handling, as a single send gets. Each member keeps its own answer there.
+     * handling, as a single send gets. Each member keeps its own answer there. A dispatch that follows its batch
+     * predecessor commits only behind it, so its positions are recorded in sequence order: whether in the group or
+     * alone, it is left to the next pass when its predecessor did not reach the commit ahead of it (T3-R5).
      */
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
@@ -182,6 +193,19 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     /** `commitAll` with each member's own answer: a member whose single commit threw rejects alone. */
     async commitAllSettled(
+        dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
+    ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
+        const left = toALOutboundLeftBehindPredecessors(dispatches);
+        const committing = dispatches.filter((dispatch) => !left.has(dispatch));
+        const settled = await this.commitAdmittedSettled(committing);
+        return dispatches.map((dispatch) =>
+            left.has(dispatch)
+                ? toALOutboundLeftBehindPredecessorOutcome<TPrepared>()
+                : settled[committing.indexOf(dispatch)]!
+        );
+    }
+
+    private async commitAdmittedSettled(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
     ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
         if (dispatches.length < 2) {
@@ -252,16 +276,29 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
     }
 
-    /** Every member commits alone, one after another, whatever an earlier one answered; each keeps its own answer. */
+    /**
+     * Every member commits alone, one after another, whatever an earlier one answered; each keeps its own answer. A
+     * member that follows its batch predecessor commits after it, and only once it committed.
+     */
     private async commitEachAlone(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
-        const outcomes: PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
-        for (const { dispatch, phases } of members) {
-            const [outcome] = await Promise.allSettled([this.commitWithPhases(dispatch, phases)]);
-            outcomes.push(outcome!);
+        const outcomes = new Map<
+            ALOutboundGroupMember<TPrepared>,
+            PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>
+        >();
+        const committed: ALMessage[] = [];
+        for (const member of toALOutboundFollowerOrder(members, ({ dispatch }) => dispatch)) {
+            const { dispatch, phases } = member;
+            const [outcome] = isALOutboundLeftBehindPredecessor(dispatch, committed)
+                ? [toALOutboundLeftBehindPredecessorOutcome<TPrepared>()]
+                : await Promise.allSettled([this.commitWithPhases(dispatch, phases)]);
+            if (outcome!.status === 'fulfilled' && outcome!.value.committed) {
+                committed.push(dispatch.msg);
+            }
+            outcomes.set(member, outcome!);
         }
-        return outcomes;
+        return members.map((member) => outcomes.get(member)!);
     }
 
     /** The results of the group, or `undefined` when every member must commit alone instead. */
@@ -850,4 +887,17 @@ function hasOneALOutboundSenderVersion<TPrepared>(decisions: readonly ALOutbound
     return decisions.every(({ bundle }) =>
         bundle.senderId === first?.bundle.senderId && bundle.expectedVersion === first.bundle.expectedVersion
     );
+}
+
+/** A row left behind its batch predecessor: not ready, so its claim is due again at the next pass, uncharged. */
+function toALOutboundLeftBehindPredecessorOutcome<TPrepared>(): PromiseSettledResult<
+    ALOutboundDispatchAdmission.Result<TPrepared>
+> {
+    return {
+        status: 'rejected',
+        reason: new NotReadyException(
+            AL_OUTBOUND_LEFT_BEHIND_RETRY_MS,
+            'Outbound row follows its batch predecessor, which did not commit ahead of it'
+        )
+    };
 }

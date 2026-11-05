@@ -1,5 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
 import type { ALOutboundCommitBundle, ALOutboundSentPositions } from '../admission/al-outbound-admission-store.ts';
+import {
+    isALOrderingPredecessorInBatch,
+    toALOrderingBatchSequences
+} from '../admission/compute-al-ordering-prior-seq-record.ts';
 
 /** What chaining reads of a group member's read: its positions, and whether its admission stamped its copy. */
 export interface ALOutboundGroupMemberRead {
@@ -31,6 +36,61 @@ export function computeALOutboundGroupChainedReads<TRead extends ALOutboundGroup
         chained[index] = { ...read, sentPositions: { ...positions, priorSeqByRecipient } };
     }
     return chained;
+}
+
+/** A dispatch of a dequeued batch, and whether its carrier admits it only behind its batch predecessor (T3-R5). */
+export interface ALOutboundBatchFollowerCandidate {
+    readonly msg: ALMessage;
+    readonly followsBatchPredecessor?: boolean;
+}
+
+/**
+ * Whether a dispatch that follows its batch predecessor is left to the next pass: its predecessor is not among the
+ * messages admitted ahead of it, so committing it now would record positions out of sequence order (T3-R5).
+ */
+export function isALOutboundLeftBehindPredecessor(
+    dispatch: ALOutboundBatchFollowerCandidate,
+    admittedAhead: readonly ALMessage[]
+): boolean {
+    return dispatch.followsBatchPredecessor === true &&
+        !isALOrderingPredecessorInBatch(dispatch.msg, toALOrderingBatchSequences(admittedAhead));
+}
+
+/** The dispatches left to the next pass: each that follows a batch predecessor not admitted ahead of it. */
+export function toALOutboundLeftBehindPredecessors<T extends ALOutboundBatchFollowerCandidate>(
+    dispatches: readonly T[]
+): ReadonlySet<T> {
+    const admittedAhead: ALMessage[] = [];
+    const left = new Set<T>();
+    for (const dispatch of toALOutboundFollowerOrder(dispatches, (candidate) => candidate)) {
+        if (isALOutboundLeftBehindPredecessor(dispatch, admittedAhead)) {
+            left.add(dispatch);
+        }
+        else {
+            admittedAhead.push(dispatch.msg);
+        }
+    }
+    return left;
+}
+
+/**
+ * The items with the members of each track that holds a follower by ascending sequence, in the places that track's
+ * members hold, so a follower comes after its predecessor; every other item keeps its place.
+ */
+export function toALOutboundFollowerOrder<T>(
+    items: readonly T[],
+    toCandidate: (item: T) => ALOutboundBatchFollowerCandidate
+): readonly T[] {
+    const toTrackKey = (item: T) => toALOrderingTrackKey(toCandidate(item).msg);
+    const followedTracks = new Set(
+        items.flatMap((item) => toCandidate(item).followsBatchPredecessor === true ? toTrackKey(item) ?? [] : [])
+    );
+    const toSeq = (item: T) => toCandidate(item).msg.ordering?.seq ?? 0;
+    const ascendingByTrack = new Map<string | undefined, T[]>([...followedTracks].map((trackKey) => [
+        trackKey,
+        items.filter((item) => toTrackKey(item) === trackKey).toSorted((left, right) => toSeq(left) - toSeq(right))
+    ]));
+    return items.map((item) => ascendingByTrack.get(toTrackKey(item))?.shift() ?? item);
 }
 
 /** The indexes of the members that record positions, by ascending sequence. */

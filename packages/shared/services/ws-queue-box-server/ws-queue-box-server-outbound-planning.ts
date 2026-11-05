@@ -13,8 +13,10 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
+import type { ALStoredOutboundMessage } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
+import { isALOutboundRowUnrecorded } from '../../alm/outbound/admission/compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import type {
     ALOutboundAckTrackingPlan,
@@ -371,6 +373,12 @@ function toSentPositionRecipients(
 /** A row the WS outbound admitted, named by its canonical key, as opposed to a row a producer wrote to the outbox. */
 function isWsQueueBoxServerAdmittedRow(referenceKey: Key | undefined): boolean {
     return referenceKey?.topicId === 'AL_OUTBOUND_MESSAGE';
+}
+
+/** A stored row the WS outbound admitted that still has to record its recipients' positions at its dequeue. */
+export function isWsQueueBoxServerUnrecordedRow(stored: ALStoredOutboundMessage | undefined, nowMs: number): boolean {
+    return stored !== undefined && isWsQueueBoxServerAdmittedRow(stored.reference.key) &&
+        isALOutboundRowUnrecorded(stored, nowMs);
 }
 
 /** The authority a dispatch carries on to its captured policy, each field only when the request names it. */
