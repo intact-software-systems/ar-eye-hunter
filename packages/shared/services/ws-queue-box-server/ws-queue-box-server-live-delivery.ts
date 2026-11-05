@@ -81,7 +81,7 @@ export class WsQueueBoxServerLiveDelivery {
     }
 
     sendToTargets(message: ALMessage): number {
-        return this.sendToTargetsWithResult({ message }).sentCount;
+        return this.sendToTargetsWithResult({ message, sentPositions: null }).sentCount;
     }
 
     /** Unicast scope is recipient policy, not proof that a local recipient exists. */
@@ -119,7 +119,7 @@ export class WsQueueBoxServerLiveDelivery {
         const { copies, belowPositionPeerIds } = toWsQueueBoxServerRecipientCopies(
             message,
             recipients,
-            input.sentPositions ?? null
+            input.sentPositions
         );
         const sent = copies.map((copy) => copy.recipient);
         // Read before encoding: a connection replaced while the frame encodes must not receive it.

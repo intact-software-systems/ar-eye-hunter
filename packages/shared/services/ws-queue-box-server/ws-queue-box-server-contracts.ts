@@ -61,10 +61,10 @@ export interface WsServerLiveSendInputDto {
     /** Broad notices still require a current authenticated connection, without inventing a scope. */
     readonly requireAuthenticatedRecipient?: boolean;
     /**
-     * The positions the row's first dequeue recorded, from which each recipient's copy takes its entry; absent for a
+     * The positions the row's first dequeue recorded, from which each recipient's copy takes its entry; `null` for a
      * send no recording covers, which every recipient receives as it is.
      */
-    readonly sentPositions?: Readonly<Record<string, number>>;
+    readonly sentPositions: Readonly<Record<string, number>> | null;
 }
 
 export interface WsServerTargetResolver {

@@ -74,7 +74,11 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             nowMs = expiresAtMs + offsetMs;
         }
 
-        const result = service.sendToTargetsWithResult({ message: msg, inboundScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } });
+        const result = service.sendToTargetsWithResult({
+            message: msg,
+            sentPositions: null,
+            inboundScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         expect(result.status).toBe(offsetMs < 0 ? 'sent-live' : 'expired');
         expect(result.sentCount).toBe(offsetMs < 0 ? 1 : 0);
@@ -259,7 +263,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 { groupRef: groupRef('room-1') }
             );
 
-            const result = service.sendToTargetsWithResult({ message: msg });
+            const result = service.sendToTargetsWithResult({ message: msg, sentPositions: null });
 
             expect(result.status).toBe('partial-failure');
             expect(result.recipientCount).toBe(3);

@@ -119,6 +119,7 @@ describe('WS server bounded and authorized admission', () => {
 
         const result = fixture.service.sendToTargetsWithResult({
             message,
+            sentPositions: null,
             inboundScope: { applicationId: 'app', workspaceId: 'workspace' }
         });
 
@@ -179,6 +180,7 @@ describe('WS server bounded and authorized admission', () => {
 
         const sent = fixture.service.sendToTargetsWithResult({
             message,
+            sentPositions: null,
             recipientSessionIds: ['target-session'],
             inboundScope: { applicationId: 'app', workspaceId: 'workspace' }
         });

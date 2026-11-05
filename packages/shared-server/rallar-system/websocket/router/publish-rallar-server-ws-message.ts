@@ -168,6 +168,7 @@ async function publishRallarServerWsFanout(
             const groupRef = readALTargetGroupRef(input.message);
             const result = input.service.sendToTargetsWithResult({
                 message: input.message,
+                sentPositions: null,
                 recipientSessionIds: input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
                     message: input.message,
                     audience: input.audience,

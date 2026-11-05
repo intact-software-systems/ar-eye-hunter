@@ -215,6 +215,7 @@ function installMiddlewareLiveWsNoticeSubscriber(
         sendToTargetsWithResult: ({ message, recipientSessionIds, notice, audience }) => {
             wsQBoxServerService.sendToTargetsWithResult({
                 message,
+                sentPositions: null,
                 expiresAtMs: notice.expiresAtMs,
                 recipientSessionIds,
                 inboundScope: message.targets?.mode === 'unicast' ? notice.scope : undefined,

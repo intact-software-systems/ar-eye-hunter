@@ -994,6 +994,7 @@ describe('Rallar server WS live cluster publication', () => {
 
         service.sendToTargetsWithResult({
             message,
+            sentPositions: null,
             recipientSessionIds: ['principal-session'],
             recipientScope: scope,
             recipientPrincipalId: 'intended-principal',

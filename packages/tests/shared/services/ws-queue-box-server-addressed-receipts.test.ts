@@ -281,6 +281,7 @@ async function createAddressedFixture(sendNacks = true): Promise<AddressedFixtur
             if (message.targets?.mode === 'unicast' && message.targets.toPeerId !== SERVER_ID) {
                 service.sendToTargetsWithResult({
                     message,
+                    sentPositions: null,
                     recipientSessionIds: [message.targets.toPeerId],
                     admittedPeerIds: ROOM_SESSIONS,
                     inboundScope: SCOPE

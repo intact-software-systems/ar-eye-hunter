@@ -22,13 +22,13 @@ export function toWsQueueBoxServerCapturedSendInput(
 ): WsServerLiveSendInputDto {
     const { message, key, policy } = input;
     if (policy?.sessionInvalidation !== undefined) {
-        return { message, sessionInvalidation: policy.sessionInvalidation };
+        return { message, sessionInvalidation: policy.sessionInvalidation, sentPositions: null };
     }
     const recipientScope = resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope);
     const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, key);
     return {
         message,
-        ...(input.sentPositions === null ? {} : { sentPositions: input.sentPositions }),
+        sentPositions: input.sentPositions,
         recipientSessionIds: input.eligibleSessionIds,
         admittedPeerIds: policy?.admittedAudience,
         inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,

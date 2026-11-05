@@ -52,7 +52,7 @@ describe('WS room unicast scope authority', () => {
         ({ connectionScope, sent }) => {
             const fixture = createFixture(connectionScope);
             expect(
-                fixture.service.sendToTargetsWithResult({ message: createRoomUnicast() }).sentCount
+                fixture.service.sendToTargetsWithResult({ message: createRoomUnicast(), sentPositions: null }).sentCount
             ).toBe(sent);
             expect(fixture.native.sent).toHaveLength(sent);
         }
