@@ -397,6 +397,12 @@
       "request": {
         "method": "GET",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{founderClientId}",
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
         "headers": {
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"

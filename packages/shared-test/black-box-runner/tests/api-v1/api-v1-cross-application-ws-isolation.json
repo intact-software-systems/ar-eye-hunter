@@ -437,6 +437,12 @@
       "request": {
         "method": "GET",
         "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/clients/{aliceClientId}",
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
@@ -464,6 +470,12 @@
       "request": {
         "method": "GET",
         "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/clients/{bobClientId}",
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
