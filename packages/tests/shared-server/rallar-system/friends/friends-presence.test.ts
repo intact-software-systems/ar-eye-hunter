@@ -265,29 +265,23 @@ postgresIt('makes presence retry when a visibility change holding the own profil
         const test = await fixture(storage);
         const visibility = await prepareVisibility(test);
         const presence = await test.prepare(disconnect());
-        let release!: () => void;
-        const released = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        let held!: () => void;
-        const holding = new Promise<void>((resolve) => {
-            held = resolve;
-        });
+        const release = Promise.withResolvers<void>();
+        const holding = Promise.withResolvers<void>();
         const committed = storage.sql.begin(async (transaction) => {
             await writeFriendsMutation(transaction, visibility);
-            held();
-            await released;
+            holding.resolve();
+            await release.promise;
         });
-        await holding;
-        const blocked = test.write(presence).then(() => 'applied', (error: unknown) => error);
+        await holding.promise;
+        const blocked = expect(test.write(presence)).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         await vi.waitFor(async () => {
             const [row] = await storage.sql<{ waiting: number; }[]>`
                 select count(*)::int as waiting from pg_stat_activity where wait_event_type = 'Lock'`;
             expect(row.waiting).toBeGreaterThan(0);
         });
-        release();
+        release.resolve();
         await committed;
-        expect(await blocked).toBeInstanceOf(RuntimeStateWriteConflictError);
+        await blocked;
         expect((await test.notices()).map(({ principalId, scope }) => `${principalId}:${scope === null}`).sort()).toEqual([
             'alice:true',
             'bob:true'
