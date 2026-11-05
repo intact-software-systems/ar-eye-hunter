@@ -643,8 +643,12 @@ function planNack(
         return { enabled: true, toPeerId: context.fromPeerId, reason: 'resync-required', missingRanges: [] };
     }
 
-    // A frozen copy below the position the recipient entered the track at is one it was never owed.
-    if (drop?.code === 'ordering-rejected' && orderingRuntime.status === 'stale' && rejection.frozenRecipient) {
+    // A recorded frozen copy below the position the recipient entered its track at is one it was never owed; a copy
+    // no authority recorded speaks for no entry, so its stale drop states nothing.
+    if (
+        drop?.code === 'ordering-rejected' && orderingRuntime.status === 'stale' && rejection.frozenRecipient &&
+        orderingRuntime.priorSeq !== undefined
+    ) {
         return { enabled: true, toPeerId: context.fromPeerId, reason: 'before-entry', missingRanges: [] };
     }
 
