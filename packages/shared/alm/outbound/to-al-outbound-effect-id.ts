@@ -39,9 +39,10 @@ export function toALOutboundAckTimeoutEffectId(
 
 /**
  * The hint a NACK or repair request raises, and the follow-up that carries what a served page left. The
- * gap names it -- the requester, the track and the missing ranges -- never the control that reported it:
- * a NACK and a repair request naming the same gap are one hint, served once, and so are the rest of one
- * page and a later report of the same gap.
+ * gap names it -- the requester, the track and the missing ranges, and the recipient a relay asked for --
+ * never the control that reported it: a NACK and a repair request naming the same gap are one hint, served
+ * once, and so are the rest of one page and a later report of the same gap. Each recipient a relay reports
+ * one gap for is its own hint; a hint without a recipient keeps the identity it always had.
  */
 export function toALOutboundRepairHintEffectId(msgId: string, request: ALOutboundRepairHint): string {
     return toALOutboundEffectId([
@@ -49,6 +50,7 @@ export function toALOutboundRepairHintEffectId(msgId: string, request: ALOutboun
         msgId,
         request.requestedByPeerId ?? '-',
         request.orderingTrackKey ?? '-',
-        toALSeqRangesText(request.missingRanges)
+        toALSeqRangesText(request.missingRanges),
+        ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId])
     ]);
 }

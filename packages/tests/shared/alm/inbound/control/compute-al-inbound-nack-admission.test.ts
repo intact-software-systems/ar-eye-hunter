@@ -139,7 +139,8 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
     it.each(
         [
             ['its missing ranges', { orderingKey: GAP_ORDERING.orderingKey, expectedSeq: GAP_ORDERING.expectedSeq }],
-            ['its ordering key', { expectedSeq: GAP_ORDERING.expectedSeq, missingRanges: GAP_ORDERING.missingRanges }]
+            ['its ordering key', { expectedSeq: GAP_ORDERING.expectedSeq, missingRanges: GAP_ORDERING.missingRanges }],
+            ['its expected sequence', { orderingKey: GAP_ORDERING.orderingKey, missingRanges: GAP_ORDERING.missingRanges }]
         ] as const
     )('refuses a gap NACK without %s as malformed, relaying nothing', (_missing, ordering) => {
         const candidate = computeArrival({ reason: 'gap', ordering });

@@ -33,14 +33,13 @@ export function validateALInboundNackAdmission(
     ) {
         issues.push(rejectInboundNack('Inbound NACK names a recipient whose confirmation was already relayed'));
     }
-    if (nack.reason === 'gap') {
-        if (toALInboundUpwardNackOrdering(nack) === undefined) {
-            issues.push({ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to relay' });
-        }
+    if (nack.reason === 'gap' && toALInboundUpwardNackOrdering(nack) === undefined) {
+        issues.push({ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to relay' });
     }
-    else if (
-        pending.outsideAudiencePeerIds.length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
-        !Number.isSafeInteger(candidate.pendingExpireAtTimestamp)
+    if (
+        nack.reason !== 'gap' &&
+        (pending.outsideAudiencePeerIds.length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
+            !Number.isSafeInteger(candidate.pendingExpireAtTimestamp))
     ) {
         issues.push(rejectInboundNack('Inbound NACK candidate exceeds persistence limits'));
     }

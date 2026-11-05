@@ -20,6 +20,7 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
+import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import {
     resolveALOutboundRelayRejection,
     toALOutboundRelayRejectedFact
@@ -266,7 +267,7 @@ function toRepairHintEffect(
     ) {
         return undefined;
     }
-    const request = toALOutboundControlRepairHint(read.parsed.payload);
+    const request = toALOutboundControlRepairHint(read.parsed);
     return {
         effectId: toALOutboundRepairHintEffectId(read.targetMsgId, request),
         payload: { kind: 'repair-hint', msgId: read.targetMsgId, request },
@@ -280,19 +281,21 @@ function toRepairHintEffect(
  * follows the gap too, never the control: `nack` names missing ranges, `repair` asks for the message
  * itself. The two controls a receiver sends for one gap thus build one hint, written once and absorbed
  * the second time rather than refused as conflicting content. A relay's gap NACK also names the
- * recipient it asks the repair for, which the responder admits the copy on (S4ii-R3).
+ * recipient it asks the repair for, which the responder admits the copy on and which names the hint
+ * apart (S4ii-R3): each recipient a relay reports one gap for raises its own hint.
  */
-export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairPayload): ALOutboundRepairHint {
-    const missingRanges = control.missingRanges ?? [];
-    const relayedForPeerId =
-        'logicalRecipientPeerId' in control && control.logicalRecipientPeerId !== control.fromPeerId
-            ? control.logicalRecipientPeerId
-            : undefined;
+export function toALOutboundControlRepairHint(
+    control: Exclude<ALPeerControlMessage, Readonly<{ type: 'ack'; }>>
+): ALOutboundRepairHint {
+    const { payload } = control;
+    const missingRanges = payload.missingRanges ?? [];
     return {
         trigger: missingRanges.length > 0 ? 'nack' : 'repair',
-        requestedByPeerId: control.fromPeerId,
-        ...(relayedForPeerId === undefined ? {} : { logicalRecipientPeerId: relayedForPeerId }),
-        orderingTrackKey: control.orderingKey,
+        requestedByPeerId: payload.fromPeerId,
+        ...(isALOutboundRelayedGapNack(control)
+            ? { logicalRecipientPeerId: control.payload.logicalRecipientPeerId }
+            : {}),
+        orderingTrackKey: payload.orderingKey,
         missingRanges,
         failedPeerIds: []
     };

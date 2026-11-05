@@ -131,6 +131,33 @@ describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
         ).toBe('AL repair ordering hints do not match the retained outbound message');
     });
 
+    it('admits the gap NACKs a relay re-sends for two recipients over one range, each its own hint', async () => {
+        const origin = await createOrderedOrigin('relayed-gap-two-recipients');
+
+        expect([
+            await origin.accept(toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r1' })),
+            await origin.accept(toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r2' }))
+        ]).toEqual(['committed', 'committed']);
+    });
+
+    it('refuses a next hop\'s terminal NACK naming a recipient the receipt owes, keeping the receipt', async () => {
+        const origin = await createOrderedOrigin('relayed-terminal-nack');
+        const expired = newALNackControlMessage(
+            { v: 4, msgId: 'expired-relay-r2', ts: Date.now(), senderId: 'relay', traceId: 'trace-relayed-gap' },
+            {
+                msgId: origin.msg.id.msgId,
+                fromPeerId: 'relay',
+                toPeerId: 'self',
+                logicalRecipientPeerId: 'r2',
+                reason: 'expired',
+                observedAtEpochMs: Date.now()
+            }
+        );
+
+        expect(await origin.accept(expired)).toBe('AL repair sender has no retained outbound obligation');
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe('committed');
+    });
+
     it('admits a recipient\'s own gap NACK as an expected repair peer\'s, as before', async () => {
         const origin = await createOrderedOrigin('own-gap');
 

@@ -4,6 +4,7 @@ import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRepairHint } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
+import { toALOutboundEffectId, toALOutboundRepairHintEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 const GAP: ALNackPayload = {
     msgId: 'subject',
@@ -35,7 +36,7 @@ function toPersistedHint(request: ALOutboundRepairHint) {
 
 describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
     it('names the recipient a relay asks the repair for beside the relay that asks', () => {
-        expect(toALOutboundControlRepairHint(GAP)).toEqual({
+        expect(toALOutboundControlRepairHint({ type: 'nack', payload: GAP })).toEqual({
             trigger: 'nack',
             requestedByPeerId: 'relay',
             logicalRecipientPeerId: 'leaf',
@@ -46,19 +47,38 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
     });
 
     it('names no other recipient when the recipient asks for itself, so its NACK and repair request stay one hint', () => {
-        const own = toALOutboundControlRepairHint({ ...GAP, fromPeerId: 'leaf' });
+        const own = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, fromPeerId: 'leaf' } });
 
         expect(own).not.toHaveProperty('logicalRecipientPeerId');
         expect(own).toEqual(toALOutboundControlRepairHint({
-            msgId: 'subject',
-            fromPeerId: 'leaf',
-            toPeerId: 'origin',
-            reason: 'missing-seq',
-            observedAtEpochMs: 1,
-            orderingKey: 'feed:origin:1',
-            expectedSeq: 2,
-            missingRanges: [{ from: 2, to: 2 }]
+            type: 'repair',
+            payload: {
+                msgId: 'subject',
+                fromPeerId: 'leaf',
+                toPeerId: 'origin',
+                reason: 'missing-seq',
+                observedAtEpochMs: 1,
+                orderingKey: 'feed:origin:1',
+                expectedSeq: 2,
+                missingRanges: [{ from: 2, to: 2 }]
+            }
         }));
+    });
+
+    it('names each recipient\'s hint apart, and a recipient\'s own hint as before', () => {
+        const forLeaf = toALOutboundControlRepairHint({ type: 'nack', payload: GAP });
+        const forOther = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, logicalRecipientPeerId: 'other' } });
+        const own = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, fromPeerId: 'leaf' } });
+
+        expect(toALOutboundRepairHintEffectId('subject', forLeaf)).not.toBe(toALOutboundRepairHintEffectId('subject', forOther));
+        expect(toALOutboundRepairHintEffectId('subject', own))
+            .toBe(toALOutboundEffectId(['repair-hint', 'subject', 'leaf', 'feed:origin:1', '2-2']));
+    });
+
+    it('does not read a relay\'s terminal NACK for another recipient as one it relays', () => {
+        const expired = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, reason: 'expired' } });
+
+        expect(expired).not.toHaveProperty('logicalRecipientPeerId');
     });
 
     it('round-trips the recipient through the persisted hint', () => {
@@ -75,7 +95,7 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
     });
 
     it('decodes a persisted hint without a recipient as one whose requester is the recipient', () => {
-        const request = toALOutboundControlRepairHint({ ...GAP, fromPeerId: 'leaf' });
+        const request = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, fromPeerId: 'leaf' } });
 
         const decoded = toPersistedHint(request);
 

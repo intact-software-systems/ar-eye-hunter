@@ -2,6 +2,7 @@ import {
     isALHopCompletionAck,
     type ALAckPayload,
     type ALNackPayload,
+    type ALPeerControlMessage,
     type ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -10,6 +11,7 @@ import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audienc
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
 import { isALOutboundExpectedRepairPeer } from './control/is-al-outbound-expected-repair-peer.ts';
+import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
 import { validateALOutboundOutsideAudienceNack } from './control/validate-al-outbound-outside-audience-nack.ts';
 import { validateALOutboundRelayedNack } from './control/validate-al-outbound-relayed-nack.ts';
@@ -43,7 +45,7 @@ export function validateALOutboundControlAdmission(
     if (read.parsed.type === 'nack' && isALOutsideAudienceNackReason(read.parsed.payload.reason)) {
         return [...issues, ...validateALOutboundOutsideAudienceNack(read, read.parsed.payload)];
     }
-    return [...issues, ...validateRepairRequest(read, read.sent, read.parsed.payload)];
+    return [...issues, ...validateRepairRequest(read, read.sent, read.parsed)];
 }
 
 /** An ACK names this owner as its origin, arrives before the message's deadline and moves the receipt. */
@@ -73,16 +75,16 @@ function validateAcknowledgement(
 function validateRepairRequest(
     read: ALControlAdmissionRead,
     sent: ALStoredOutboundMessage,
-    control: ALNackPayload | ALRepairPayload
+    control: Exclude<ALPeerControlMessage, Readonly<{ type: 'ack'; }>>
 ): readonly ALMessageRejection[] {
     const issues: ALMessageRejection[] = [];
-    if ('logicalRecipientPeerId' in control && control.fromPeerId !== control.logicalRecipientPeerId) {
-        issues.push(...validateALOutboundRelayedNack(read, control));
+    if (isALOutboundRelayedGapNack(control)) {
+        issues.push(...validateALOutboundRelayedNack(read, control.payload));
     }
-    else if (!isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, control.fromPeerId)) {
+    else if (!isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, control.payload.fromPeerId)) {
         issues.push({ code: 'unauthorized', message: 'AL repair sender has no retained outbound obligation' });
     }
-    if (!hasValidOrderingHints(sent, control)) {
+    if (!hasValidOrderingHints(sent, control.payload)) {
         issues.push({
             code: 'unauthorized',
             message: 'AL repair ordering hints do not match the retained outbound message'
