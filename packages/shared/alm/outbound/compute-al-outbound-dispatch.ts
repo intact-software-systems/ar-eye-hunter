@@ -17,6 +17,7 @@ import type {
     ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundRecordedSentPositions } from './admission/to-al-outbound-recorded-sent-positions.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
     ALOutboundDispatchPhase,
@@ -243,13 +244,6 @@ function computePreparedEffects<TPrepared>(
             }
         };
     });
-}
-
-/** The positions this read recorded, else those the row's first recording kept: each copy's entry derives from them. */
-function toALOutboundRecordedSentPositions<TPrepared>(
-    read: ALOutboundMessageReadDto<TPrepared>
-): Readonly<Record<string, number>> | null {
-    return read.sentPositions?.priorSeqByRecipient ?? read.storedMessage?.sentPositions ?? null;
 }
 
 function toEarlyDispatchResult<TPrepared>(

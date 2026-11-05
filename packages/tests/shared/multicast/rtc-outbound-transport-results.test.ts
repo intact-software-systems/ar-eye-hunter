@@ -445,7 +445,7 @@ describe('RTC outbound transport results', () => {
                 expiresAtMs: message.constraints?.expiresAtMs,
                 leaseUntilMs: Date.now() + 10_000,
                 canonicalMessage: message,
-                sentPositions: null
+                sentPositions: undefined
             });
 
         await expect(sending()).rejects.toBe(failure);

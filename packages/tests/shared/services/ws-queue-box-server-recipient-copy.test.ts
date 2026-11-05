@@ -62,7 +62,7 @@ describe('the copy the WS server sends one recipient of a recorded track', () =>
     it('leaves a copy no dequeue recorded as it is', () => {
         const message = signedFrame();
 
-        expect(toWsQueueBoxServerRecipientCopy({ message, recipientPeerId: 'b', sentPositions: null }).right).toBe(message);
+        expect(toWsQueueBoxServerRecipientCopy({ message, recipientPeerId: 'b', sentPositions: undefined }).right).toBe(message);
     });
 
     it('leaves an untracked copy as it is', () => {

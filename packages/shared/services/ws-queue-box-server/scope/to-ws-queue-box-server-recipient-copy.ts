@@ -13,8 +13,8 @@ export interface WsQueueBoxServerCopySkip {
 export interface ToWsQueueBoxServerRecipientCopyInput {
     readonly message: ALMessage;
     readonly recipientPeerId: string;
-    /** Each recorded recipient's position as the row's first dequeue read it; `null` when no dequeue recorded one. */
-    readonly sentPositions: Readonly<Record<string, number>> | null;
+    /** Each recorded recipient's position as the row's first dequeue read it; undefined when no dequeue recorded one. */
+    readonly sentPositions: Readonly<Record<string, number>> | undefined;
 }
 
 /**
@@ -28,7 +28,7 @@ export function toWsQueueBoxServerRecipientCopy(
     const { message, recipientPeerId, sentPositions } = input;
     const trackKey = toALOrderingTrackKey(message);
     const seq = message.ordering?.seq;
-    if (sentPositions === null || trackKey === undefined || seq === undefined) {
+    if (sentPositions === undefined || trackKey === undefined || seq === undefined) {
         return Either.ofRight(message);
     }
     const priorSeq = sentPositions[recipientPeerId];
