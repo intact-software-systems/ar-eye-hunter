@@ -78,6 +78,7 @@ import {
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 import { computeALOrderingPriorSeqRecord } from './compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
+import { computeALOutboundSequenceMint } from './compute-al-outbound-sequence-mint.ts';
 import { decodeALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
@@ -452,17 +453,17 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     /**
-     * An admission whose plan asks for a sequence takes the next one on its track: the head this session
-     * read, plus one. Only a message with no sent row is minted -- a first attempt, or the replay of the
-     * request a lost commit retained -- so a re-admission keeps the sequence its row holds. The commit
-     * writes the head under the sender version this session read.
+     * An admission whose plan owns its track reads the head it reached: a message naming no sequence takes the next one,
+     * and a stated one must lie above it (`computeALOutboundSequenceMint`). Only a message with no sent row reads it --
+     * a first attempt, or the replay of the request a lost commit retained -- so a re-admission keeps the sequence its
+     * row holds. The commit writes the head under the sender version this session read.
      */
     private async readSequenceMint(
         session: ALAdmissionReadSession,
         plan: ALOutboundDispatchPlan<TPrepared>,
         unadmitted: boolean
     ): Promise<Pick<ALOutboundMessageReadDto<TPrepared>, 'plan' | 'orderingHead'>> {
-        const trackKey = toALSequenceMintTrackKey(plan.msg);
+        const trackKey = toALSequenceMintTrackKey(plan.msg) ?? toALOrderingTrackKey(plan.msg);
         if (!plan.mintsSequence || !unadmitted || trackKey === undefined) {
             return { plan, orderingHead: undefined };
         }
@@ -471,11 +472,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             toALOutboundOrderingHeadKey(this.namespace, trackKey),
             decodeALOutboundTrackPositionRow
         );
-        const seq = (head?.seq ?? 0) + 1;
-        return {
-            plan: { ...plan, msg: { ...plan.msg, ordering: { ...plan.msg.ordering, seq } } },
-            orderingHead: { trackKey, seq }
-        };
+        return computeALOutboundSequenceMint({ plan, trackKey, head });
     }
 
     /**

@@ -313,8 +313,9 @@ export class ALOutboundAdmissionMutations {
     }
 
     /**
-     * The track's head and each recipient's sent position share one retention, so a recorded track continues for as
-     * long as its head does. The commit's sender-version fence serializes writers, so each is a plain set.
+     * The track's head and each recipient's sent position share the receivers' track retention, the repository TTL,
+     * so a durable pair continues a track across a reload or a quiet hour for as long as a receiver keeps its position.
+     * The commit's sender-version fence serializes writers, so each is a plain set.
      */
     private computeTrackPositionWrite(
         mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-ordering-head' | 'set-sent-position'; }>,
@@ -328,7 +329,7 @@ export class ALOutboundAdmissionMutations {
             expireAtTimestamp: this.computeMessageRowExpiryMs(
                 mutation.expireAtTimestamp,
                 nowMs,
-                this.retention.sentMessageTtlMs
+                this.retention.repositoryTtlMs
             ),
             supersedenceGuard: undefined
         };

@@ -33,6 +33,7 @@ import {
     type ALInboundRuntimeDiagnosticsSink
 } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { toALOutboundMintingPlan } from '../alm/outbound/admission/to-al-outbound-minting-plan.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundMessageRuntime,
@@ -299,7 +300,7 @@ export class WsQueueBoxClientService {
         stage: 'admission' | 'replan'
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const readsBackpressure = stage === 'admission' && !isALControlTypeId(msg.payload.typeId);
-        return toWsQueueBoxClientDispatchPlan(msg, {
+        const plan = toWsQueueBoxClientDispatchPlan(msg, {
             sessionId: this.sessionId,
             serverPeerId: this.serverPeerId,
             socketOpen: this.isSocketOpen(),
@@ -307,6 +308,7 @@ export class WsQueueBoxClientService {
             backpressured: readsBackpressure && this.decideBackpressure(msg),
             qosProvider: this.dependencies.qosProvider
         });
+        return toALOutboundMintingPlan(plan, stage, this.sessionId);
     }
 
     private planIncomingMessage(

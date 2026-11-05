@@ -862,6 +862,41 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
     });
+
+    it('sends a room send that names its ordering key alone with the track\'s next sequence, from its durable lane', async () => {
+        const socket = createFakeWsSocket();
+        const volatileStores = createVolatileALOutboundRuntimeStores(
+            { decodePrepared: decodeALOutboundTransportMessage },
+            undefined
+        );
+        const service = createOutboundRuntimeWithWorkTask(() =>
+            shared.createDefaultWsQueueBoxClientService({
+                outbox: new shared.InMemoryQueueBox(new Map()),
+                socket: socket.client,
+                inboundDiagnostics: socket.inboundDiagnostics,
+                sessionId: 'self',
+                serverPeerId: 'server',
+                outboundVolatileStores: volatileStores
+            }).enableDefaultCallbacks()
+        );
+        onTestFinished(() => service.close());
+        const keyedRoomSend = (resourceId: string) =>
+            shared.newALBroadcastMessage(
+                'self',
+                { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+                'room',
+                'chat.message.v1',
+                { resourceId },
+                { groupRef: groupRef('room-1'), ttlMs: 30_000, ordering: { orderingKey: 'chat' } }
+            );
+
+        const first = await enqueueOutboxAndDrain(service, keyedRoomSend('keyed-1'));
+        const second = await enqueueOutboxAndDrain(service, keyedRoomSend('keyed-2'));
+
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(second.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(socket.sentJsonStrings.map((sent) => decodePersistedALMessage(sent).ordering?.seq)).toEqual([1, 2]);
+    });
 });
 
 interface WsQosSocketFixture {

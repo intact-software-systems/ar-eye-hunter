@@ -9,19 +9,23 @@ import {
 
 import {
     newALBroadcastMessage,
+    newALMulticastMessage,
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
+import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { ALOutboundAdmissionMutations } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/to-al-outbound-minting-plan.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundDispatchPlan, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
+    createVolatileOutboundTestStores,
     OUTBOUND_TEST_SEND_PLANNER,
     readOutboundTestAdmission,
     runOutboundWorkTask,
@@ -38,6 +42,23 @@ const MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg, authority)
     ...OUTBOUND_TEST_SEND_PLANNER(msg, authority),
     mintsSequence: true
 });
+
+/** A browser session's own sends: one copy on the lane its durability names, a volatile one here. */
+const BROWSER_SESSION_ID = 'session-a';
+const BROWSER_VOLATILE_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+    msg,
+    dropReasonCode: undefined,
+    lane: 'volatile',
+    preparedMessages: [{ peer: 'receiver' }]
+});
+
+/** The browser carriers' composition: the minting plan at a first admission, the stored policy on every later plan. */
+const BROWSER_MINTING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg, authority) =>
+    toALOutboundMintingPlan(
+        BROWSER_VOLATILE_PLANNER(msg, authority),
+        authority === undefined ? 'admission' : 'replan',
+        BROWSER_SESSION_ID
+    );
 
 interface MintingRuntime {
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
@@ -181,6 +202,138 @@ describe('outbound sequence minting', () => {
         expect((await stores.admissionStore.readSentMessage(message.id.msgId))?.msg.ordering?.seq).toBeUndefined();
     });
 });
+
+describe('the browser minting plan', () => {
+    const base: ALOutboundDispatchPlan<OutboundTestPayload> = {
+        msg: createRoomSend('base', {}),
+        dropReasonCode: undefined,
+        lane: 'volatile',
+        preparedMessages: []
+    };
+
+    it.each([
+        { name: 'a key alone', ordering: { orderingKey: 'chat' } },
+        { name: 'a key beside an application sequence', ordering: { orderingKey: 'chat', seq: 7 } }
+    ])('owns the track of an own room send naming $name on the durable lane at its admission', ({ ordering }) => {
+        const plan = { ...base, msg: createRoomSend('keyed', ordering) };
+
+        expect(toALOutboundMintingPlan(plan, 'admission', BROWSER_SESSION_ID)).toEqual({
+            ...plan,
+            mintsSequence: true,
+            lane: 'durable'
+        });
+    });
+
+    it.each(['replan', 'dequeue', 'hand-over'] as const)('leaves a plan at stage %s as it is', (stage) => {
+        const plan = { ...base, msg: createRoomSend('keyed', { orderingKey: 'chat' }) };
+
+        expect(toALOutboundMintingPlan(plan, stage, BROWSER_SESSION_ID)).toBe(plan);
+    });
+
+    it('leaves an unkeyed send, a world broadcast, a relayed frame and a dropping plan as they are', () => {
+        const world = newALBroadcastMessage(
+            BROWSER_SESSION_ID,
+            newALRoute('app.chat', 'world', 'world-keyed'),
+            'world',
+            'app.chat.v1',
+            {},
+            { ordering: { orderingKey: 'chat' } }
+        );
+        const plans = [
+            base,
+            { ...base, msg: world },
+            { ...base, msg: { ...createRoomSend('relayed', { orderingKey: 'chat' }), id: { ...base.msg.id, senderId: 'b' } } },
+            { ...base, msg: createRoomSend('dropped', { orderingKey: 'chat' }), dropReasonCode: 'no-route' as const }
+        ];
+
+        for (const plan of plans) {
+            expect(toALOutboundMintingPlan(plan, 'admission', BROWSER_SESSION_ID)).toBe(plan);
+        }
+    });
+});
+
+describe('a browser room send that asks its outbound for a sequence', () => {
+    it('is admitted durable, and its minted track continues where the store stands after a reload', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const page = createBrowserMintingRuntime(stores);
+        const first = await page.enqueueIfAbsent(createRoomSend('before-1', { orderingKey: 'chat' }));
+        await page.enqueueIfAbsent(createRoomSend('before-2', { orderingKey: 'chat' }));
+        await page.dispose();
+
+        const reloaded = createBrowserMintingRuntime(stores);
+        const after = await reloaded.enqueueIfAbsent(createRoomSend('after', { orderingKey: 'chat' }));
+
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(first.message.ordering?.seq).toBe(1);
+        expect(after.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(after.message.ordering?.seq).toBe(3);
+    });
+
+    it('refuses an application sequence at or below the head as unsupported, and moves the head to one above it', async () => {
+        const runtime = createBrowserMintingRuntime(createDefaultOutboundTestStores());
+        await runtime.enqueueIfAbsent(createRoomSend('minted-1', { orderingKey: 'chat' }));
+        await runtime.enqueueIfAbsent(createRoomSend('minted-2', { orderingKey: 'chat' }));
+
+        const repeated = await runtime.enqueueIfAbsent(createRoomSend('stated-2', { orderingKey: 'chat', seq: 2 }));
+        const below = await runtime.enqueueIfAbsent(createRoomSend('stated-1', { orderingKey: 'chat', seq: 1 }));
+        const forced = await runtime.enqueueIfAbsent(createRoomSend('stated-300', { orderingKey: 'chat', seq: 300 }));
+        const next = await runtime.enqueueIfAbsent(createRoomSend('minted-301', { orderingKey: 'chat' }));
+
+        expect(repeated.verdict).toMatchObject({ kind: 'refused', reason: 'unsupported' });
+        expect(below.verdict).toMatchObject({ kind: 'refused', reason: 'unsupported' });
+        expect(forced.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(forced.message.ordering?.seq).toBe(300);
+        expect(next.message.ordering?.seq).toBe(301);
+    });
+
+    it('keeps the head and each sent position for the repository TTL, past a shorter sent-row TTL', () => {
+        const nowMs = 1_700_000_000_000;
+        const mutations = new ALOutboundAdmissionMutations({
+            namespace: 'outbound-test',
+            canonicalScope: 'outbound-test',
+            retention: normalizeALRuntimeStoreRetention({ sentMessageTtlMs: 60_000 }),
+            supersedenceTrackTtlMs: 60_000,
+            durability: 'durable'
+        });
+
+        const writes = mutations.computeStateWrites([
+            { kind: 'set-ordering-head', trackKey: 'chat:session-a:0', seq: 3, expireAtTimestamp: nowMs + 1_000 },
+            {
+                kind: 'set-sent-position',
+                trackKey: 'chat:session-a:0',
+                recipientPeerId: 'b',
+                seq: 3,
+                expireAtTimestamp: nowMs + 1_000
+            }
+        ], nowMs);
+
+        expect(writes.map((write) => write.expireAtTimestamp)).toEqual([
+            nowMs + DEFAULT_AL_REPOSITORY_TTL_MS,
+            nowMs + DEFAULT_AL_REPOSITORY_TTL_MS
+        ]);
+    });
+});
+
+function createRoomSend(name: string, ordering: Readonly<{ orderingKey?: string; seq?: number; }>): ALMessage {
+    return newALMulticastMessage(
+        BROWSER_SESSION_ID,
+        newALRoute('room.chat', ROOM.groupId, name),
+        ROOM,
+        'room.chat.v1',
+        { name },
+        { ttlMs: ROUND_EVENT_TTL_MS, ...ordering }
+    );
+}
+
+/** A page's carrier runtime: its durable pair outlives the page, its memory pair does not. */
+function createBrowserMintingRuntime(stores: OutboundTestStores): ALOutboundMessageRuntime<OutboundTestPayload> {
+    return createDefaultOutboundTestRuntime({
+        stores,
+        volatileStores: createVolatileOutboundTestStores(),
+        planOutgoingMessage: BROWSER_MINTING_PLANNER,
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+}
 
 function createRoundEvent(name: string, ordering: Readonly<{ orderingKey: string; epoch: number; }>): ALMessage {
     return newALBroadcastMessage(

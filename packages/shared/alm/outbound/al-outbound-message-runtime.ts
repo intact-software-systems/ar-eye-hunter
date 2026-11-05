@@ -195,9 +195,10 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
     /**
-     * The sender asks its own outbound for the sequence: a first admission of a message that names an
-     * ordering key without one takes the next sequence of that track. Only the WS server plans it, and only
-     * for a message it publishes itself; absent, a keyed message without a sequence stays unsequenced.
+     * The sender's own outbound owns the message's track: a first admission of a message that names an ordering key
+     * without a sequence takes the next one, and one that states a sequence must lie above the head and moves it there.
+     * The WS server plans it for a message it publishes itself without a sequence; a browser carrier for its own room
+     * send that names a key (`toALOutboundMintingPlan`). Absent, a keyed message without a sequence stays unsequenced.
      */
     readonly mintsSequence?: true;
     /**

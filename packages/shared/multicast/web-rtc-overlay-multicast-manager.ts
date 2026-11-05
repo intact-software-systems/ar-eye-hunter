@@ -27,6 +27,7 @@ import { isALDeliveryAdmissionFallbackVerdict } from '../alm/delivery/resolve-al
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
+import { toALOutboundMintingPlan } from '../alm/outbound/admission/to-al-outbound-minting-plan.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundDispatchPlan,
@@ -767,7 +768,8 @@ export class WebRtcOverlayMulticastManager {
             toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
             selfPeerId
         );
-        const planned = stage === 'admission' ? toRtcSentPositionRecordingPlan(frozen, selfPeerId) : frozen;
+        const minting = toALOutboundMintingPlan(frozen, stage, selfPeerId);
+        const planned = stage === 'admission' ? toRtcSentPositionRecordingPlan(minting, selfPeerId) : minting;
         this.#publications.assertSignedPlanKept(original, planned);
         return planned;
     }

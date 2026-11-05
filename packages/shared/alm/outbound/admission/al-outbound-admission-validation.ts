@@ -55,7 +55,7 @@ export interface ALOutboundCapturedPolicy {
     readonly retryTracking: NonNullable<ALOutboundDispatchPlan<never>['retryTracking']> | null;
     readonly repairTracking: NonNullable<ALOutboundDispatchPlan<never>['repairTracking']> | null;
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
-    /** Kept only for a WS server publication whose admission mints its sequence, so a retained replay mints too. */
+    /** Kept only for an admission whose outbound owns its track's sequence, so a retained replay mints or guards too. */
     readonly mintsSequence?: true;
     /** Kept only for an admission that records its recipients' sent positions, so a retained replay records too. */
     readonly recordsSentPositions?: readonly string[];

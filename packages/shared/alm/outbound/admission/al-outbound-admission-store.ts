@@ -199,7 +199,7 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
-    /** The sequence `msg` was minted on this read; undefined when the read minted none. */
+    /** The head this read moves its owned track to: a minted sequence or a stated one above it; undefined for none. */
     readonly orderingHead: ALOutboundOrderingHead | undefined;
     /** The recipients' positions `msg` was recorded against on this read; undefined when the read recorded none. */
     readonly sentPositions: ALOutboundSentPositions | undefined;

@@ -866,7 +866,7 @@ function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<
 function hasALOutboundAdmissionAdditions<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
     const { originalMsg, msg } = read;
     return read.storedMessage === undefined && (
-        read.orderingHead !== undefined ||
+        (originalMsg.ordering?.seq === undefined && msg.ordering?.seq !== undefined) ||
         (originalMsg.ordering?.priorSeqByRecipient === undefined && msg.ordering?.priorSeqByRecipient !== undefined) ||
         (originalMsg.proof === undefined && msg.proof !== undefined)
     );
