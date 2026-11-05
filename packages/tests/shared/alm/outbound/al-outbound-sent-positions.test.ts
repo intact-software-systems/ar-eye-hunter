@@ -93,19 +93,24 @@ describe('the sent positions an admission records on its track', () => {
         expect(await readSentPositions(stores, keyed.message, ['b'])).toEqual({ b: 0 });
     });
 
-    it('answers a re-admission of a sent frame with the stored signed envelope, though its recipients moved since', async () => {
+    it('answers a re-admission with the stored envelope: its record is not recomputed and its proof not re-signed', async () => {
         const stores = createDefaultOutboundTestStores();
-        const { runtime } = createRecordingRuntime(stores, signWithTestProof);
-        const frame = createFeedFrame('seq-1', 1, ['b', 'c']);
-        const admitted = await runtime.enqueueIfAbsent(frame);
+        const { runtime } = createRecordingRuntime(stores, createCountingSigner());
+        await runtime.enqueueIfAbsent(createFeedFrame('seq-1', 1, ['b', 'c']));
         await runtime.enqueueIfAbsent(createFeedFrame('seq-2', 2, ['b']));
+        const frame = createFeedFrame('seq-3', 3, ['b', 'c']);
+        const admitted = await runtime.enqueueIfAbsent(frame);
+        // A later frame moves both recipients past seq 3, so a re-read would stamp `{}` and a re-sign a new proof.
+        await runtime.enqueueIfAbsent(createFeedFrame('seq-4', 4, ['b', 'c']));
 
         const again = await runtime.enqueueIfAbsent(frame);
 
+        expect(admitted.message.ordering?.priorSeqByRecipient).toEqual({ c: 1 });
         expect(again.verdict.kind).toBe('duplicate');
-        expect(again.message).toEqual(admitted.message);
+        expect(again.message.ordering).toEqual(admitted.message.ordering);
+        expect(again.message.proof).toEqual(admitted.message.proof);
         expect((await stores.admissionStore.readSentMessage(frame.id.msgId))?.msg).toEqual(admitted.message);
-        expect(await readSentPositions(stores, admitted.message, ['b', 'c'])).toEqual({ b: 2, c: 1 });
+        expect(await readSentPositions(stores, admitted.message, ['b', 'c'])).toEqual({ b: 4, c: 4 });
     });
 
     it('records once when a lost fence retries the admission: the replay reads the positions the winner moved', async () => {
@@ -199,6 +204,17 @@ function createRecordingRuntime(stores: OutboundTestStores, signAdmittedMessage?
 
 async function signWithTestProof(msg: ALMessage): Promise<Either<string, ALMessage>> {
     return Either.ofRight({ ...msg, proof: PROOF });
+}
+
+/** A signer whose every signature differs, so an envelope signed twice carries two proofs. */
+function createCountingSigner(): SignAdmittedMessage {
+    const signatures = ['Q', 'g', 'w', 'A', 'E', 'I'];
+    let signed = 0;
+    return async (msg) => {
+        const signature = signatures[signed % signatures.length]!.repeat(86);
+        signed += 1;
+        return Either.ofRight({ ...msg, proof: { ...PROOF, signature } });
+    };
 }
 
 /** A frame of the `feed` track, frozen to `recipientPeerIds` of the room. */
