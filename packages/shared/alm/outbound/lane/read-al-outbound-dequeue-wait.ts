@@ -69,6 +69,11 @@ export async function readALOutboundDequeueWait<TPrepared>(
     };
 }
 
+/** The outcome a front's timing records: the held attempt's status, or `ready` for a row passed on to its read. */
+export function toALOutboundDequeueFrontOutcome(front: ALOutboundDequeueFront): string {
+    return front.kind === 'held' ? front.attempt.status : 'ready';
+}
+
 async function holdALOutboundDequeueClaim<TPrepared>(
     hold: ALOutboundDequeueHold<TPrepared>
 ): Promise<ALWorkOutcome> {

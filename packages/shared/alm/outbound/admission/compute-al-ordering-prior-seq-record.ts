@@ -36,12 +36,12 @@ export function isALOrderingPredecessorInBatch(message: ALMessage, batch: ALOrde
     return trackKey !== undefined && seq !== undefined && batch.get(trackKey)?.has(seq - 1) === true;
 }
 
-/** The sequences the messages claim, by track key; an untracked message claims none. */
-export function toALOrderingBatchSequences(messages: readonly ALMessage[]): ALOrderingBatchSequences {
+/** The sequences the messages claim, by track key; an absent or untracked message claims none. */
+export function toALOrderingBatchSequences(messages: readonly (ALMessage | undefined)[]): ALOrderingBatchSequences {
     const batch = new Map<string, Set<number>>();
     for (const message of messages) {
-        const trackKey = toALOrderingTrackKey(message);
-        const seq = message.ordering?.seq;
+        const trackKey = message === undefined ? undefined : toALOrderingTrackKey(message);
+        const seq = message?.ordering?.seq;
         if (trackKey !== undefined && seq !== undefined) {
             batch.set(trackKey, new Set([...(batch.get(trackKey) ?? []), seq]));
         }

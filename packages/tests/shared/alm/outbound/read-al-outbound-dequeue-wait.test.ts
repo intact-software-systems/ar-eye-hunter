@@ -19,6 +19,7 @@ import { toALOutboundDequeueWork } from '@shared/alm/outbound/al-outbound-work-e
 import {
     AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS,
     readALOutboundDequeueWait,
+    toALOutboundDequeueFrontOutcome,
     type ALOutboundDequeueFront
 } from '@shared/alm/outbound/lane/read-al-outbound-dequeue-wait.ts';
 import type { ALWorkOutcome } from '@shared/alm/work/al-work-queue-port.ts';
@@ -68,6 +69,7 @@ describe('readALOutboundDequeueWait', () => {
         await vi.advanceTimersByTimeAsync(40 * AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS);
 
         expect(result.kind === 'held' && result.attempt.status).toBe('retained');
+        expect(toALOutboundDequeueFrontOutcome(result)).toBe('retained');
         expect(hold.settlements).toEqual([{
             kind: 'attempt-settled',
             msgId: MESSAGE.id.msgId,
@@ -134,7 +136,10 @@ describe('readALOutboundDequeueWait', () => {
     it('passes a row its carrier admits behind its batch predecessor on to the planner, marked so', async () => {
         const hold = createHold([{ status: 'follows-batch-predecessor' }]);
 
-        expect(await hold.read()).toEqual({ kind: 'passed', followsBatchPredecessor: true });
+        const front = await hold.read();
+
+        expect(front).toEqual({ kind: 'passed', followsBatchPredecessor: true });
+        expect(toALOutboundDequeueFrontOutcome(front)).toBe('ready');
         expect(hold.settlements).toEqual([]);
     });
 

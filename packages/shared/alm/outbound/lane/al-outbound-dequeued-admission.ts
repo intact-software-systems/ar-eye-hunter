@@ -27,7 +27,11 @@ import type {
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import { readALOutboundDequeueWait, type ALOutboundDequeueFront } from './read-al-outbound-dequeue-wait.ts';
+import {
+    readALOutboundDequeueWait,
+    toALOutboundDequeueFrontOutcome,
+    type ALOutboundDequeueFront
+} from './read-al-outbound-dequeue-wait.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import {
     recordALOutboundClaimAdmissionVerdict,
@@ -159,9 +163,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
     admitDequeuedMessages(
         members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
     ): readonly Promise<ALWorkAttemptResult>[] {
-        const batch = toALOrderingBatchSequences(
-            members.flatMap((member) => member.effect.canonicalMessage ?? [])
-        );
+        const batch = toALOrderingBatchSequences(members.map((member) => member.effect.canonicalMessage));
         const gating = new BoundedConcurrencyAdmission({ maxConcurrent: AL_OUTBOUND_DEQUEUED_FRONT_CONCURRENCY });
         const fronts = members.map((member) => gating.admit(() => this.readDequeuedFront(member, batch)));
         const reads = this.readDequeuedDispatches(members, fronts);
@@ -211,11 +213,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
                 clock: this.dependencies.runtime.clock,
                 signal: this.dependencies.sendSignal
             });
-            this.recordTiming(
-                member,
-                'pending-authority-read-end',
-                front.kind === 'held' ? front.attempt.status : 'ready'
-            );
+            this.recordTiming(member, 'pending-authority-read-end', toALOutboundDequeueFrontOutcome(front));
             return front;
         }
         catch (error) {
@@ -236,9 +234,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         const started = Promise.allSettled(fronts).then((settled) =>
             this.startDequeuedReads(
                 members,
-                settled.map((front) =>
-                    front.status === 'fulfilled' && front.value.kind === 'passed' ? front.value : undefined
-                )
+                settled.map((front) => front.status === 'fulfilled' ? front.value : undefined)
             )
         );
         return members.map((_member, index) => started.then((reads) => reads[index]));
@@ -246,12 +242,12 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
 
     private startDequeuedReads(
         members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[],
-        passed: readonly (Extract<ALOutboundDequeueFront, { kind: 'passed'; }> | undefined)[]
+        fronts: readonly (ALOutboundDequeueFront | undefined)[]
     ): readonly (Promise<ALOutboundDequeuedRead<TPrepared>> | undefined)[] {
         const reading = members.flatMap((member, index) => {
             const msg = member.effect.canonicalMessage;
-            const front = passed[index];
-            return front !== undefined && msg !== undefined ? [{ member, msg, front }] : [];
+            const front = fronts[index];
+            return front?.kind === 'passed' && msg !== undefined ? [{ member, msg, front }] : [];
         });
         const supersedence = this.dependencies.admissionStore.readMessageSupersedence(reading.map(({ msg }) => msg));
         const reads = new Map(reading.map(({ member, msg, front }, position) => [
@@ -264,7 +260,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
             })
         ]));
         return members.map((member, index) =>
-            passed[index] !== undefined
+            fronts[index]?.kind === 'passed'
                 ? reads.get(member) ?? Promise.reject(new NonRetryableException('Dequeued work has no message'))
                 : undefined
         );

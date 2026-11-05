@@ -51,11 +51,11 @@ describe('the predecessor a dequeued batch claimed beside a tracked row', () => 
         expect(isALOrderingPredecessorInBatch(trackedMessage('game-3', 2), batch)).toBe(false);
     });
 
-    it('finds none for an untracked row, which claims no sequence either', () => {
+    it('finds none for an untracked row, which claims no sequence either, as an absent message claims none', () => {
         const untracked = { ...trackedMessage('game-1', 2), ordering: undefined };
 
         expect(isALOrderingPredecessorInBatch(untracked, batch)).toBe(false);
-        expect(toALOrderingBatchSequences([untracked])).toEqual(new Map());
+        expect(toALOrderingBatchSequences([untracked, undefined])).toEqual(new Map());
     });
 });
 
