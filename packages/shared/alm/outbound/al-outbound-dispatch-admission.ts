@@ -177,7 +177,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
      * every member commits again alone, one after another: a fresh read, compute and conflict
      * handling, as a single send gets. Each member keeps its own answer there. A dispatch that follows its batch
      * predecessor commits only behind it, so its positions are recorded in sequence order: whether in the group or
-     * alone, it is left to the next pass when its predecessor did not reach the commit ahead of it (T3-R5).
+     * alone, it is left to the next pass when its predecessor did not reach the commit ahead of it. The members of a
+     * track that holds a follower commit by ascending sequence, so their sends are written in that order too.
      */
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
@@ -196,7 +197,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
     ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
         const left = toALOutboundLeftBehindPredecessors(dispatches);
-        const committing = dispatches.filter((dispatch) => !left.has(dispatch));
+        const committing = toALOutboundFollowerOrder(
+            dispatches.filter((dispatch) => !left.has(dispatch)),
+            (dispatch) => dispatch
+        );
         const settled = await this.commitAdmittedSettled(committing);
         return dispatches.map((dispatch) =>
             left.has(dispatch)
@@ -277,28 +281,25 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     /**
-     * Every member commits alone, one after another, whatever an earlier one answered; each keeps its own answer. A
-     * member that follows its batch predecessor commits after it, and only once it committed.
+     * Every member commits alone, one after another in the order given (a follower after its predecessor), whatever
+     * an earlier one answered; each keeps its own answer. A member that follows its batch predecessor commits only
+     * once its predecessor committed.
      */
     private async commitEachAlone(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
-        const outcomes = new Map<
-            ALOutboundGroupMember<TPrepared>,
-            PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>
-        >();
+        const outcomes: PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
         const committed: ALMessage[] = [];
-        for (const member of toALOutboundFollowerOrder(members, ({ dispatch }) => dispatch)) {
-            const { dispatch, phases } = member;
+        for (const { dispatch, phases } of members) {
             const [outcome] = isALOutboundLeftBehindPredecessor(dispatch, committed)
                 ? [toALOutboundLeftBehindPredecessorOutcome<TPrepared>()]
                 : await Promise.allSettled([this.commitWithPhases(dispatch, phases)]);
             if (outcome!.status === 'fulfilled' && outcome!.value.committed) {
                 committed.push(dispatch.msg);
             }
-            outcomes.set(member, outcome!);
+            outcomes.push(outcome!);
         }
-        return members.map((member) => outcomes.get(member)!);
+        return outcomes;
     }
 
     /** The results of the group, or `undefined` when every member must commit alone instead. */

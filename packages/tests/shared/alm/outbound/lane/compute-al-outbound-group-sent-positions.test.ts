@@ -136,6 +136,12 @@ describe('the rows of a dequeued batch that follow their predecessor on the trac
 
         expect(toALOutboundFollowerOrder(rows, (row) => row)).toEqual(rows);
     });
+
+    it('keeps a row without a message in its place among a track it orders', () => {
+        const rows = [follower(2), undefined, leader(1)];
+
+        expect(toALOutboundFollowerOrder(rows, (row) => row)).toEqual([rows[2], undefined, rows[0]]);
+    });
 });
 
 function follower(seq: number): Readonly<{ msg: ALMessage; followsBatchPredecessor: boolean; }> {

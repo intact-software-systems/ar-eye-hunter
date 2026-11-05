@@ -334,7 +334,9 @@ claimed. A tracked row may answer `follows-batch-predecessor`: its carrier admit
 the track (`seq − 1`), which the same batch claimed. Such a row commits in its predecessor's group, whose positions
 chain in sequence order, and after it when the group's members commit alone. When the predecessor reaches no commit
 ahead of it, the row is left to the next pass as `not-ready`, uncharged. The WS server answers so for a row that
-records positions (T3-R5); a row whose predecessor is outside the batch and unrecorded waits as `not-ready` (T3-R2).
+records positions; a row whose predecessor is outside the batch and unrecorded waits as `not-ready`. Either way a
+track's positions are written in sequence order. Each row's after-admission effect then runs in the same follower
+order, so a recipient receives the rows of a track that one batch admits in sequence order.
 
 ## Canonical message storage
 

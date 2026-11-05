@@ -50,6 +50,8 @@ interface OrderedServer {
     readonly settlements: ALDeliverySettlement[];
     /** The member count of each dequeue group that committed under one fence. */
     readonly groupCommits: number[];
+    /** The rows each dequeue handed on after its admission, in the order it handed them. */
+    readonly orderedDispatches: string[];
 }
 
 interface OrderedServerOptions {
@@ -57,7 +59,10 @@ interface OrderedServerOptions {
     readonly cluster?: boolean;
     /** Re-checks every frozen audience, and cannot read the one of this message the first time, so its row retries. */
     readonly unreadableOnceMsgId?: string;
-    /** Holds the re-check of this message's audience until released, so the claim that reads it stays running. */
+    /**
+     * Re-checks every frozen audience, and holds the re-check of this message's audience until released, so the claim
+     * that reads it stays running.
+     */
     readonly recheckGate?: Readonly<{ msgId: string; released: Promise<void>; }>;
 }
 
@@ -327,6 +332,28 @@ describe.each([
         expect(server.groupCommits).toEqual([2]);
     });
 
+    it('sends a track\'s rows claimed in one batch against their sequence in sequence order to each recipient', async () => {
+        const first = browserEvent(1);
+        const second = browserEvent(2);
+        const lead = roundEvent('event-1');
+        const released = Promise.withResolvers<void>();
+        const server = await createOrderedServer({ cluster, recheckGate: { msgId: lead.id.msgId, released: released.promise } });
+        // The server's own row holds its claim at its re-check while `a`'s sequence 2 and then its sequence 1 are
+        // admitted, so the follow-up claim takes them together in that order.
+        await server.service.enqueueOutboxIfAbsent(lead, toAudienceAuthority(['c']));
+        await server.service.enqueueOutboxIfAbsent(second, toAudienceAuthority(['b']));
+        await server.service.enqueueOutboxIfAbsent(first, toAudienceAuthority(['b']));
+        released.resolve();
+
+        await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.b).length), { timeout: 3_000 }).toBe(2);
+        await settle(server);
+        expect(server.groupCommits).toEqual([2]);
+        expect(readHeldMsgIds(server)).toEqual([]);
+        expect(readMsgIds(server.sockets.b)).toEqual([first.id.msgId, second.id.msgId]);
+        expect(server.orderedDispatches.filter((msgId) => msgId !== lead.id.msgId)).toEqual([first.id.msgId, second.id.msgId]);
+        expect(readFrames(server.sockets.b, second.id.msgId)).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined }]);
+    });
+
     it('commits an in-order run of one track claimed in one batch as one chained group, every recipient its entry', async () => {
         const server = await createOrderedServer({ cluster });
         // The first admission's commit starts a claim at once; the other three commit while it runs, and the follow-up
@@ -341,7 +368,7 @@ describe.each([
         await settle(server);
         expect(server.groupCommits).toEqual([3]);
         expect(readHeldMsgIds(server)).toEqual([]);
-        expect([...readSeqs(server.sockets.b)].sort()).toEqual([1, 2, 4]);
+        expect(readSeqs(server.sockets.b)).toEqual([1, 2, 4]);
         expect(readFrames(server.sockets.b, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined }]);
         expect(readFrames(server.sockets.a, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: {} }, proof: undefined }]);
     });
@@ -357,7 +384,7 @@ describe.each([
         expect(readFrames(server.sockets.b, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: { b: 10 } }, proof: undefined }]);
         expect(readFrames(server.sockets.b, 'event-10')).toEqual([{ ordering: { ...ORDERING, seq: 10, priorSeqByRecipient: {} }, proof: undefined }]);
         expect(readFrames(server.sockets.a, 'event-21')).toEqual([{ ordering: { ...ORDERING, seq: 21, priorSeqByRecipient: {} }, proof: undefined }]);
-        expect([...readSeqs(server.sockets.b)].sort((left, right) => left! - right!)).toEqual([...toSeqs(1, 10), 21]);
+        expect(readSeqs(server.sockets.b)).toEqual([...toSeqs(1, 10), 21]);
         expect(Math.max(...server.groupCommits)).toBeGreaterThan(1);
         expect(readHeldMsgIds(server)).toEqual([]);
     });
@@ -383,6 +410,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     const controlAdmissions: ControlAdmission[] = [];
     const settlements: ALDeliverySettlement[] = [];
     const groupCommits: number[] = [];
+    const orderedDispatches: string[] = [];
     const engine = new InboxOutboxEngine();
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         nowMs,
@@ -390,8 +418,9 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
         outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
     });
     const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
+    const rechecksAudience = options.unreadableOnceMsgId !== undefined || options.recheckGate !== undefined;
     const service = createDefaultWsQueueBoxServerService({
-        filterEligibleCapturedSessionIds: options.unreadableOnceMsgId === undefined ? undefined : async (captured) => {
+        filterEligibleCapturedSessionIds: !rechecksAudience ? undefined : async (captured) => {
             if (captured.message.id.msgId === options.recheckGate?.msgId) {
                 await options.recheckGate.released;
             }
@@ -421,9 +450,12 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
             if (observation.kind === 'admission-group' && observation.outcome === 'committed') {
                 groupCommits.push(observation.memberCount);
             }
+            if (observation.kind === 'admission-stage' && observation.stage === 'ordered-dispatch-start') {
+                orderedDispatches.push(decodePersistedALMessage(observation.member.effect.entry.resource).id.msgId);
+            }
         },
         targetResolver: {
-            requiresFrozenAudience: () => options.unreadableOnceMsgId !== undefined,
+            requiresFrozenAudience: () => rechecksAudience,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveGroupRecipients: recipients,
             resolveBroadcastRecipients: recipients
@@ -433,7 +465,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     if (options.cluster === true) {
         await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: new LoopbackBridge(), channel: 'ws', publisherId: SERVER_ID });
     }
-    return { service, engine, sockets, clock, controlAdmissions, settlements, groupCommits };
+    return { service, engine, sockets, clock, controlAdmissions, settlements, groupCommits, orderedDispatches };
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */

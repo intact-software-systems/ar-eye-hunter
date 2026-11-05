@@ -75,17 +75,21 @@ export function toALOutboundLeftBehindPredecessors<T extends ALOutboundBatchFoll
 
 /**
  * The items with the members of each track that holds a follower by ascending sequence, in the places that track's
- * members hold, so a follower comes after its predecessor; every other item keeps its place.
+ * members hold, so a follower comes after its predecessor; every other item, and one without a candidate (no message),
+ * keeps its place.
  */
 export function toALOutboundFollowerOrder<T>(
     items: readonly T[],
-    toCandidate: (item: T) => ALOutboundBatchFollowerCandidate
+    toCandidate: (item: T) => ALOutboundBatchFollowerCandidate | undefined
 ): readonly T[] {
-    const toTrackKey = (item: T) => toALOrderingTrackKey(toCandidate(item).msg);
+    const toTrackKey = (item: T) => {
+        const candidate = toCandidate(item);
+        return candidate === undefined ? undefined : toALOrderingTrackKey(candidate.msg);
+    };
     const followedTracks = new Set(
-        items.flatMap((item) => toCandidate(item).followsBatchPredecessor === true ? toTrackKey(item) ?? [] : [])
+        items.flatMap((item) => toCandidate(item)?.followsBatchPredecessor === true ? toTrackKey(item) ?? [] : [])
     );
-    const toSeq = (item: T) => toCandidate(item).msg.ordering?.seq ?? 0;
+    const toSeq = (item: T) => toCandidate(item)?.msg.ordering?.seq ?? 0;
     const ascendingByTrack = new Map<string | undefined, T[]>([...followedTracks].map((trackKey) => [
         trackKey,
         items.filter((item) => toTrackKey(item) === trackKey).toSorted((left, right) => toSeq(left) - toSeq(right))
