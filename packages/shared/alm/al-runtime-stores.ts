@@ -64,6 +64,8 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly nowMs: () => number;
     readonly namespace: string;
     readonly canonicalScope?: string;
+    /** The ordering-head namespace the session's carrier pairs share over one backend; absent, the pair's own. */
+    readonly orderingHeadNamespace?: string;
     /** Absent, each inbound resolve builds its own backend; present, every resolve shares it. */
     readonly inboundBackend?: ALAdmissionWorkBackend;
     readonly outboundBackend?: ALAdmissionWorkBackend;
@@ -108,6 +110,8 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly nowMs?: () => number;
     readonly namespace?: string;
     readonly canonicalScope?: string;
+    /** The ordering-head namespace the session's carrier pairs share over one backend; absent, the pair's own. */
+    readonly orderingHeadNamespace?: string;
     /** Absent, each inbound resolve builds its own backend; present, every resolve shares it. */
     readonly inboundBackend?: ALAdmissionWorkBackend;
     readonly outboundBackend?: ALAdmissionWorkBackend;
@@ -262,6 +266,7 @@ function toIndexedDbALOutboundRuntimeStores<TPrepared>(
             nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,
             canonicalScope: input.canonicalScope ?? input.namespace,
+            orderingHeadNamespace: input.orderingHeadNamespace,
             backend,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
             retention: normalizeALRuntimeStoreRetention(input.retention),
@@ -401,6 +406,7 @@ function toInMemoryALOutboundAdmissionStoreInput<TPrepared>(
         nowMs: input.nowMs,
         namespace: `${input.namespace}:outbound:admission`,
         canonicalScope: input.canonicalScope ?? input.namespace,
+        orderingHeadNamespace: input.orderingHeadNamespace,
         backend,
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
         retention: normalizeALRuntimeStoreRetention(input.retention),
@@ -449,6 +455,7 @@ function toDefaultInMemoryInput(
         nowMs: options.nowMs ?? Date.now,
         namespace: options.namespace ?? DEFAULT_NAMESPACE,
         canonicalScope: options.canonicalScope,
+        orderingHeadNamespace: options.orderingHeadNamespace,
         inboundBackend: options.inboundBackend,
         outboundBackend: options.outboundBackend,
         // A receiver remembers a track at least as long as its sender keeps the head, or a silence past it reads as

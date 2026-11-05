@@ -86,6 +86,8 @@ export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 export interface CreateALOutboundAdmissionReadsInput {
     readonly nowMs: () => number;
     readonly namespace: string;
+    /** Where the sender's ordering-track heads live: this pair's namespace, or the one its session's pairs share. */
+    readonly orderingHeadNamespace: string;
     readonly canonicalScope: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
@@ -138,6 +140,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     private readOperationCount = 0;
     private readonly nowMs: () => number;
     private readonly namespace: string;
+    private readonly orderingHeadNamespace: string;
     private readonly canonicalScope: string;
     private readonly backend: ALAdmissionWorkBackend;
     private readonly supersedenceTrackTtlMs: number;
@@ -145,6 +148,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     constructor(input: CreateALOutboundAdmissionReadsInput) {
         this.nowMs = input.nowMs;
         this.namespace = input.namespace;
+        this.orderingHeadNamespace = input.orderingHeadNamespace;
         this.canonicalScope = input.canonicalScope;
         this.backend = input.backend;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
@@ -469,7 +473,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         }
         const head = await this.readValue(
             session,
-            toALOutboundOrderingHeadKey(this.namespace, trackKey),
+            toALOutboundOrderingHeadKey(this.orderingHeadNamespace, trackKey),
             decodeALOutboundTrackPositionRow
         );
         return computeALOutboundSequenceMint({ plan, trackKey, head });

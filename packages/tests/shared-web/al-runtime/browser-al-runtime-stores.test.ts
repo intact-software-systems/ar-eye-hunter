@@ -20,6 +20,7 @@ import {
     toBrowserALRuntimeEntryKeyPrefix,
     toBrowserRtcOverlayALRuntimeStoreId,
     toBrowserSessionALInboundRuntimeStoreId,
+    toBrowserSessionALOrderingHeadNamespace,
     toBrowserWsClientALRuntimeStoreId
 } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
@@ -42,6 +43,7 @@ import {
     AL_ADMISSION_SCHEMA_ID,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createPassThroughALStorageEventSink, type ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
@@ -51,6 +53,7 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
+    newALMulticastMessage,
     newALUnicastMessage,
     type ALMessage,
     type ALOutboundAdmissionStore,
@@ -446,6 +449,26 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys(otherSentPrefix)).toEqual([
             `${otherSentPrefix}:other-ws`
         ]);
+    });
+
+    it('keeps one ordering head per session track for both carriers, and purges it with the session', async () => {
+        const sessionId = `shared-head-${crypto.randomUUID()}`;
+        configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
+        const wsStore = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
+        const overlayStore = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId).admissionStore;
+
+        const seqs = [
+            await commitMintedRoomSend(wsStore, sessionId, 'ws-1'),
+            await commitMintedRoomSend(overlayStore, sessionId, 'overlay-2'),
+            await commitMintedRoomSend(wsStore, sessionId, 'ws-3')
+        ];
+        const headPrefix = `${toBrowserSessionALOrderingHeadNamespace(sessionId)}:`;
+        const headsBeforePurge = await readBrowserALRuntimeEntryKeys(headPrefix);
+        await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: SCOPE, storage: diagnosticsPorts.storage });
+
+        expect(seqs).toEqual([1, 2, 3]);
+        expect(headsBeforePurge).toHaveLength(1);
+        expect(await readBrowserALRuntimeEntryKeys(headPrefix)).toEqual([]);
     });
 
     it('names one database per scope', () => {
@@ -877,6 +900,36 @@ async function persistSentMessage(
     if (status !== 'committed') {
         throw new Error(`Failed to persist sent message ${msgId}`);
     }
+}
+
+/** Admits one keyed room send of `sessionId` as its carrier's planner asks: the track's next sequence. */
+async function commitMintedRoomSend(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
+    sessionId: string,
+    resourceId: string
+): Promise<number | undefined> {
+    const message = newALMulticastMessage(
+        sessionId,
+        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+        'chat.message.v1',
+        { resourceId },
+        { ttlMs: 60_000, orderingKey: 'chat' }
+    );
+    const bundle = await readOutboundTestAdmission({
+        store: admissionStore,
+        message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (msg) =>
+            toALOutboundMintingPlan(
+                { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] },
+                'admission',
+                sessionId
+            )
+    });
+    expect(await admissionStore.commitBundle(bundle)).toBe('committed');
+    return (await admissionStore.readSentMessage(message.id.msgId))?.msg.ordering?.seq;
 }
 
 function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {

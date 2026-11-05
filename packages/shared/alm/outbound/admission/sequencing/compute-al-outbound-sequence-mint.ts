@@ -24,11 +24,11 @@ export function computeALOutboundSequenceMint<TPrepared>(
         const seq = headSeq + 1;
         return {
             plan: { ...plan, msg: { ...plan.msg, ordering: { ...plan.msg.ordering, seq } } },
-            orderingHead: { trackKey, seq }
+            orderingHead: { trackKey, seq, observedSeq: input.head?.seq }
         };
     }
     if (stated > headSeq) {
-        return { plan, orderingHead: { trackKey, seq: stated } };
+        return { plan, orderingHead: { trackKey, seq: stated, observedSeq: input.head?.seq } };
     }
     return {
         plan: {

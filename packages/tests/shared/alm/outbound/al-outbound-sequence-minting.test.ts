@@ -290,6 +290,7 @@ describe('a browser room send that asks its outbound for a sequence', () => {
         const nowMs = 1_700_000_000_000;
         const mutations = new ALOutboundAdmissionMutations({
             namespace: 'outbound-test',
+            orderingHeadNamespace: 'outbound-test',
             canonicalScope: 'outbound-test',
             retention: normalizeALRuntimeStoreRetention({ sentMessageTtlMs: 60_000 }),
             supersedenceTrackTtlMs: 60_000,
@@ -297,7 +298,13 @@ describe('a browser room send that asks its outbound for a sequence', () => {
         });
 
         const writes = mutations.computeStateWrites([
-            { kind: 'set-ordering-head', trackKey: 'chat:session-a:0', seq: 3, expireAtTimestamp: nowMs + 1_000 },
+            {
+                kind: 'set-ordering-head',
+                trackKey: 'chat:session-a:0',
+                seq: 3,
+                observedSeq: 2,
+                expireAtTimestamp: nowMs + 1_000
+            },
             {
                 kind: 'set-sent-position',
                 trackKey: 'chat:session-a:0',

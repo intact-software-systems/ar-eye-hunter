@@ -31,6 +31,7 @@ const POSITIONS: ALOutboundSentPositions = {
 function createMutations(durability: ALStoreDurability): ALOutboundAdmissionMutations {
     return new ALOutboundAdmissionMutations({
         namespace: NAMESPACE,
+        orderingHeadNamespace: NAMESPACE,
         canonicalScope: 'scope',
         retention: normalizeALRuntimeStoreRetention(),
         supersedenceTrackTtlMs: 60_000,
@@ -101,14 +102,14 @@ describe('the sent-position mutations of one admission', () => {
 
         const [position, head] = mutations.computeStateWrites([
             ...toALOutboundSentPositionMutations(POSITIONS, deadlineAtMs).slice(0, 1),
-            { kind: 'set-ordering-head', trackKey: TRACK_KEY, seq: 5, expireAtTimestamp: deadlineAtMs }
+            { kind: 'set-ordering-head', trackKey: TRACK_KEY, seq: 5, observedSeq: 4, expireAtTimestamp: deadlineAtMs }
         ], NOW_MS);
 
         expect(position).toEqual({
             key: toALOutboundSentPositionKey(NAMESPACE, TRACK_KEY, 'b'),
             value: { seq: 5 },
             expireAtTimestamp: NOW_MS + DEFAULT_AL_REPOSITORY_TTL_MS,
-            supersedenceGuard: undefined
+            guard: undefined
         });
         expect(position?.expireAtTimestamp).toBe(head?.expireAtTimestamp);
     });

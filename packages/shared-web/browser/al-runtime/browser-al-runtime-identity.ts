@@ -41,6 +41,14 @@ export function toBrowserRtcOverlayALRuntimeStoreId(
     return toALRuntimeStoreId(`browser-rtc-overlay:${sessionId}`);
 }
 
+/**
+ * The namespace of the session's ordering-track heads, one head per track for both outbound carriers: they share the
+ * session's database and object store, so either carrier's commit reaches the same row (S4-R6).
+ */
+export function toBrowserSessionALOrderingHeadNamespace(sessionId: string): string {
+    return toBrowserALRuntimeNamespace(toBrowserSessionALOrderingHeadName(sessionId));
+}
+
 export function toBrowserALRuntimeEntryKeyPrefix(name: string): string {
     return `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${name}:`;
 }
@@ -54,7 +62,8 @@ export function toBrowserSessionALRuntimeStoreIds(
 export function toBrowserSessionALRuntimeEntryKeyPrefixes(
     sessionId: string
 ): readonly string[] {
-    return toBrowserSessionALRuntimeStoreIds(sessionId).map(toBrowserALRuntimeEntryKeyPrefix);
+    return [...toBrowserSessionALRuntimeStoreIds(sessionId), toBrowserSessionALOrderingHeadName(sessionId)]
+        .map(toBrowserALRuntimeEntryKeyPrefix);
 }
 
 /** The namespace an admission store built from this store id actually enqueues work under. */
@@ -72,6 +81,10 @@ export function toBrowserSessionALRuntimeWorkNamespaces(
             `${toBrowserALRuntimeNamespace(storeId)}:outbound:admission`
         )
     ];
+}
+
+function toBrowserSessionALOrderingHeadName(sessionId: string): string {
+    return `browser-session-ordering-heads:${sessionId}`;
 }
 
 /** Both carriers' durable and checkpoint stores. */

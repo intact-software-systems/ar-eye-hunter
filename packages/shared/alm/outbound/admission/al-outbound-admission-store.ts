@@ -81,6 +81,12 @@ export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
     readonly canonicalScope: string;
     readonly namespace: string;
+    /**
+     * Where the heads of the sender's ordering tracks live when several carrier pairs of one session share them over
+     * one backend, so one track takes each sequence once whichever carrier mints it. Absent, the pair's own namespace:
+     * no other pair sequences its sender's tracks.
+     */
+    readonly orderingHeadNamespace?: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
@@ -175,10 +181,14 @@ export interface ALOutboundSupersedenceReadState {
     readonly replacesReplacement?: ALReplacementSupersedenceValue;
 }
 
-/** The sequence one admission minted on its track: the head its commit writes under the sender fence. */
+/**
+ * The sequence one admission minted or guarded on its track: the head its commit writes, only over the head this read
+ * saw (`observedSeq`, undefined for none), since another carrier pair of the session may move the same head.
+ */
 export interface ALOutboundOrderingHead {
     readonly trackKey: string;
     readonly seq: number;
+    readonly observedSeq: number | undefined;
 }
 
 /** The positions one admission read on its track: each planned recipient's prior sequence, `0` for none. */
@@ -492,15 +502,18 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             retention: input.retention,
             decodePrepared: input.decodePrepared
         });
+        const orderingHeadNamespace = input.orderingHeadNamespace ?? input.namespace;
         this.reads = new ALOutboundAdmissionReads({
             nowMs: input.nowMs,
             namespace: input.namespace,
+            orderingHeadNamespace,
             canonicalScope: input.canonicalScope,
             backend: input.backend,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs
         });
         this.mutations = new ALOutboundAdmissionMutations({
             namespace: input.namespace,
+            orderingHeadNamespace,
             canonicalScope: input.canonicalScope,
             retention: input.retention,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
@@ -832,16 +845,16 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
     }
 
-    /** One bundle's pending-admission row, observed effect rows, shared supersedence observation and message identity. */
+    /** One bundle's pending-admission row, observed effect rows, guarded shared rows and message identity. */
     private async readBundleFenceError(
         tx: ALAdmissionWorkWriteContext,
         candidate: ALOutboundCommitCandidate<TPrepared>
     ): Promise<Error | undefined> {
         const { bundle, effects, mutations } = candidate;
-        const [pending, issues, observationConflict, identityConflict] = await Promise.all([
+        const [pending, issues, guardConflict, identityConflict] = await Promise.all([
             bundle.pendingAdmission ? tx.readWork(bundle.pendingAdmission.key) : undefined,
             this.effectStore.validateObservedWork(tx, effects),
-            this.mutations.readCurrentObservationConflict(tx, mutations),
+            this.mutations.readGuardConflict(tx, mutations),
             this.mutations.readMessageIdentityConflict(tx, bundle.mutations)
         ]);
         if (bundle.pendingAdmission && (!pending || !hasSameResourceEntryValue(pending, bundle.pendingAdmission))) {
@@ -850,7 +863,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         if (issues.length > 0) {
             return new ALAdmissionBackendConflictError(issues.map((issue) => issue.message).join('; '));
         }
-        const fenced = observationConflict ?? identityConflict;
+        const fenced = guardConflict ?? identityConflict;
         if (fenced === undefined) {
             return undefined;
         }

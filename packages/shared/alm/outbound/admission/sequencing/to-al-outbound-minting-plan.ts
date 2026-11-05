@@ -15,9 +15,10 @@ export function isALOutboundSequencedRoomSend(msg: ALMessage): boolean {
 
 /**
  * The browser carriers' first admission of their own sequenced room send: it asks the outbound for the track's
- * sequence and runs on the durable lane whatever the message's durability, so the head and the sent positions outlive a
- * reload in the one store that holds them (P1: the lanes share no atomic commit). Any later plan keeps the policy its
- * admission captured; a dropping plan writes nothing.
+ * sequence and runs on the durable lane whatever the message's durability, so the head both carriers share and the
+ * sent positions outlive a reload in the one store that holds them (the lanes share no atomic commit). A hand-over
+ * carries the sequence another carrier's admission fixed, and any later plan keeps the policy its admission captured;
+ * a dropping plan writes nothing.
  */
 export function toALOutboundMintingPlan<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
