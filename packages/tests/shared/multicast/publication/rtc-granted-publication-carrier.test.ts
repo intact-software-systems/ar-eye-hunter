@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
+import type {
+    ALOutboundDispatchPlan,
+    ALOutboundRepairRequest
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -15,7 +20,10 @@ import { createRtcGrantedTopicsFixture } from '../rtc-granted-topic-reader-fixtu
 import {
     createFrozenGrantedMulticast,
     createPublicationRoomSnapshot,
-    PUBLICATION_TOPIC_ID
+    PUBLICATION_TOPIC_ID,
+    PUBLISH_AND_SUBSCRIBE,
+    PUBLISH_ONLY,
+    SUBSCRIBE_ONLY
 } from '../rtc-publication-proof-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from '../rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../rtc-topic-subscription-reader-fixtures.ts';
@@ -107,9 +115,64 @@ describe('RtcGrantedPublicationCarrier', () => {
     });
 });
 
-function createKeylessCarrier(): RtcGrantedPublicationCarrier {
+describe('a granted publication\'s repair a relay asks for a recipient below it (S4ii-R3)', () => {
+    /** Origin `a` froze `leaf` into its receipted publication, sent through the publish-only relay `r`; `late` joined after. */
+    const REPAIRED = createFrozenGrantedMulticast({
+        senderId: 'a',
+        resourceId: 'feed-repair',
+        recipientPeerIds: ['a', 'leaf'],
+        snapshotVersion: 3,
+        ack: 'receiver'
+    });
+    const ROOM = createPublicationRoomSnapshot({
+        sessionIds: ['a', 'r', 'leaf', 'late'],
+        snapshotVersion: 3,
+        keys: {},
+        grants: { a: PUBLISH_AND_SUBSCRIBE, r: PUBLISH_ONLY, leaf: SUBSCRIBE_ONLY, late: SUBSCRIBE_ONLY }
+    });
+    /** The copy the overlay planned toward the requester, the relay. */
+    const PLANNED: ALOutboundDispatchPlan<ALOutboundTransportMessage> = {
+        msg: REPAIRED,
+        dropReasonCode: undefined,
+        lane: 'volatile',
+        preparedMessages: [],
+        ackTracking: { enabled: true, timeoutMs: 1_000, maxAttempts: 1, expectedPeerIds: ['leaf'], nextHopPeerIds: ['r'], mode: 'receiver' }
+    };
+
+    function planRelayRepair(logicalRecipientPeerId: string | undefined) {
+        const request: ALOutboundRepairRequest = {
+            trigger: 'nack',
+            repair: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
+            requestedByPeerId: 'r',
+            ...(logicalRecipientPeerId === undefined ? {} : { logicalRecipientPeerId }),
+            failedPeerIds: [],
+            completedHopPeerIds: [],
+            orderingTrackKey: 'room.granted-feed:a:1',
+            missingRanges: [{ from: 2, to: 2 }]
+        };
+        return createKeylessCarrier(ROOM).planRepair(REPAIRED, request, () => PLANNED);
+    }
+
+    it('sends the copy to the relay for a recipient the origin froze into the message', () => {
+        expect(planRelayRepair('leaf')).toBe(PLANNED);
+    });
+
+    it('sends no copy for a recipient outside the frozen audience, whichever relay asks', () => {
+        expect(planRelayRepair('late')).toBeUndefined();
+    });
+
+    it('admits a requester that names no other recipient on itself, as before: a relay outside the audience gets no copy', () => {
+        expect(planRelayRepair(undefined)).toBeUndefined();
+    });
+});
+
+function createKeylessCarrier(snapshot?: GroupSnapshot): RtcGrantedPublicationCarrier {
+    const groupCache = new LatestRepository<string, GroupSnapshot>();
+    if (snapshot !== undefined) {
+        groupCache.accept(snapshot.group.groupId, snapshot);
+    }
     return new RtcGrantedPublicationCarrier({
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        groupCache,
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
         publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
         publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
