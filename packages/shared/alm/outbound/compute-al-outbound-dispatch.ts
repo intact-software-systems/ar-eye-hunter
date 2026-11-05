@@ -1,14 +1,12 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
-import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
-    toALOutboundOrderingHeadMutations,
-    toALOutboundSentPositionMutations,
+    toALOutboundOrderingTrackMutations,
     type ALOutboundAdmissionMutation
 } from './admission/al-outbound-admission-mutations.ts';
 import type {
@@ -196,20 +194,7 @@ function computeMessageMutations<TPrepared>(
         },
         toSentMessageMutation(read, canonicalEntry)
     ];
-    const trackKey = toALOrderingTrackKey(read.msg);
-    if (trackKey && read.msg.ordering?.seq !== undefined && expiresAtMs !== undefined) {
-        mutations.push(
-            {
-                kind: 'set-ordering-message',
-                trackKey,
-                seq: read.msg.ordering.seq,
-                msgId: read.msg.id.msgId,
-                expireAtTimestamp: expiresAtMs
-            },
-            ...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs),
-            ...toALOutboundSentPositionMutations(read.sentPositions, expiresAtMs)
-        );
-    }
+    mutations.push(...toALOutboundOrderingTrackMutations(read, expiresAtMs));
     appendSupersedenceMutations(mutations, read);
     return mutations;
 }

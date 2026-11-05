@@ -26,7 +26,11 @@ import {
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
-import type { ALOutboundOrderingHead, ALOutboundSentPositions } from './al-outbound-admission-store.ts';
+import type {
+    ALOutboundMessageReadDto,
+    ALOutboundOrderingHead,
+    ALOutboundSentPositions
+} from './al-outbound-admission-store.ts';
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
@@ -133,7 +137,27 @@ export type ALOutboundCommitFenceIssue =
     | Readonly<{ kind: 'conflict'; message: string; }>
     | Readonly<{ kind: 'corruption'; key: string; message: string; }>;
 
-export function toALOutboundOrderingHeadMutations(
+/**
+ * The track rows a sequenced message's admission writes: the row naming its sequence's message, and the head and the
+ * sent positions this read minted or recorded. A message with no track or no deadline writes none.
+ */
+export function toALOutboundOrderingTrackMutations<TPrepared>(
+    read: Pick<ALOutboundMessageReadDto<TPrepared>, 'msg' | 'orderingHead' | 'sentPositions'>,
+    expiresAtMs: number | undefined
+): readonly ALOutboundAdmissionMutation[] {
+    const trackKey = toALOrderingTrackKey(read.msg);
+    const seq = read.msg.ordering?.seq;
+    if (!trackKey || seq === undefined || expiresAtMs === undefined) {
+        return [];
+    }
+    return [
+        { kind: 'set-ordering-message', trackKey, seq, msgId: read.msg.id.msgId, expireAtTimestamp: expiresAtMs },
+        ...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs),
+        ...toALOutboundSentPositionMutations(read.sentPositions, expiresAtMs)
+    ];
+}
+
+function toALOutboundOrderingHeadMutations(
     head: ALOutboundOrderingHead | undefined,
     expireAtTimestamp: number
 ): readonly ALOutboundAdmissionMutation[] {
