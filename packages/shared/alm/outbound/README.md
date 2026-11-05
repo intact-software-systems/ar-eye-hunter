@@ -829,11 +829,16 @@ the same sender version. A commit that loses the fence retains the request witho
 keeps `recordsSentPositions`), and its replay reads the positions again. On RTC the carrier then signs the stamped
 frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored
 canonical carries the proof over the sequence and the record, and every re-plan, dequeue and repair resends it as
-stored (D519). A signer's refusal there drops the frame `refused/unsupported`; the refusals a fallback should take over
-(shape, leader, a page that cannot sign) run before admission in `admitLeg`. A granted publication enters only as a
-leg: `enqueueIfAbsent` refuses one without a proof `refused/unsupported` before admission. A retained request, the
-planned-message check and a canonical row's replacement compare a copy to its request without what its admission
-added (`toALOutboundRequestComparableMessage`: a minted sequence, the record and the proof its request did not carry).
+stored (D519). The refusals `admitLeg` can know (shape, leader, a page that cannot sign) run before admission; a signer
+that still cannot sign in the admission (`sign-failed`, a snapshot that moved) drops the frame `refused/unsupported`
+like them. That drop names the request, never the stamped frame: its sequence and record belong to positions the
+aborted admission never committed, and it carries no proof. Under `rtc-with-ws-fallback` WS takes that request over and
+stamps its own copy (D498); under `rtc` alone the send settles `rejected`. A granted publication enters only as a leg:
+`enqueueIfAbsent` refuses one without a proof `refused/unsupported` before admission. A planner's message is checked
+against its source with only a minted sequence removed (`validateALOutboundPlannedMessage`), so a planner that adds a
+record or a proof is refused; a retained request, an admitted copy and a canonical row's replacement are compared to
+the request without what its admission added (`toALOutboundRequestComparableMessage`: a minted sequence, and the record
+and the proof the request did not carry).
 
 Known limitations:
 

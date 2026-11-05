@@ -174,6 +174,7 @@ describe('the signing of an admitted frame', () => {
         await runOutboundWorkTask(runtime);
 
         expect(refused.verdict).toEqual({ kind: 'refused', reason: 'unsupported', detail: 'sign-failed: the key is gone' });
+        expect(refused.message).toEqual(frame);
         expect(refused.entries).toEqual([]);
         expect(await stores.admissionStore.readSentMessage(frame.id.msgId)).toBeUndefined();
         expect(await readSentPositions(stores, { ...frame, ordering: { ...frame.ordering, seq: 1 } }, ['b', 'c'])).toEqual({

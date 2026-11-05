@@ -226,10 +226,18 @@ export function toALOutboundRequestComparableMessage(original: ALMessage, candid
     const unrecorded = original.ordering?.priorSeqByRecipient === undefined
         ? toALUnrecordedMessage(unsigned)
         : unsigned;
+    return toALOutboundUnmintedMessage(original, unrecorded);
+}
+
+/**
+ * The candidate without a sequence minted on the track its request named without one: the one addition an outbound
+ * makes before its planner's message is checked. Every other field stays, so a stated sequence still differs.
+ */
+export function toALOutboundUnmintedMessage(original: ALMessage, candidate: ALMessage): ALMessage {
     return toALSequenceMintTrackKey(original) !== undefined &&
-            toALOrderingTrackKey(unrecorded) === toALSequenceMintTrackKey(original)
-        ? toALUnsequencedMessage(unrecorded)
-        : unrecorded;
+            toALOrderingTrackKey(candidate) === toALSequenceMintTrackKey(original)
+        ? toALUnsequencedMessage(candidate)
+        : candidate;
 }
 
 function toALUnsignedMessage(message: ALMessage): ALMessage {

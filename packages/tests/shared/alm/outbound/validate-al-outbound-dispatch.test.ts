@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
-import { validateALOutboundPlannedMessage } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
+import {
+    validateALOutboundAdmittedMessage,
+    validateALOutboundPlannedMessage
+} from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const UNFROZEN: ALTargets = { mode: 'multicast', groupRef: ROOM };
@@ -37,11 +40,23 @@ describe('planned outbound message authority', () => {
         }
     );
 
-    it('accepts the record and the proof a first admission adds to a request that carried neither', () => {
+    it('accepts in an admitted copy the record and the proof its admission added to a request that carried neither', () => {
         const request = withOrdering(withTargets(FROZEN), { orderingKey: 'feed', epoch: 1, seq: 2 });
         const admitted = { ...withOrdering(request, { ...request.ordering, priorSeqByRecipient: { c: 0 } }), proof: PROOF };
 
-        expect(validateALOutboundPlannedMessage(request, admitted)).toEqual([]);
+        expect(validateALOutboundAdmittedMessage(request, admitted)).toEqual([]);
+    });
+
+    it.each([
+        {
+            label: 'a record',
+            change: (message: ALMessage) => withOrdering(message, { ...message.ordering, priorSeqByRecipient: { c: 0 } })
+        },
+        { label: 'a proof', change: (message: ALMessage) => ({ ...message, proof: PROOF }) }
+    ])('refuses a planner that adds $label to a bare request, which only an admission adds', ({ change }) => {
+        const request = withOrdering(withTargets(FROZEN), { orderingKey: 'feed', epoch: 1, seq: 2 });
+
+        expect(validateALOutboundPlannedMessage(request, change(request))).toHaveLength(1);
     });
 
     it.each([
@@ -54,7 +69,7 @@ describe('planned outbound message authority', () => {
         const request = withOrdering(withTargets(FROZEN), { orderingKey: 'feed', epoch: 1, seq: 2, priorSeqByRecipient: { c: 0 } });
         const signed = { ...request, proof: PROOF };
 
-        expect(validateALOutboundPlannedMessage(signed, change(signed))).toHaveLength(1);
+        expect(validateALOutboundAdmittedMessage(signed, change(signed))).toHaveLength(1);
     });
 
     it('refuses any other change beside a freeze', () => {
