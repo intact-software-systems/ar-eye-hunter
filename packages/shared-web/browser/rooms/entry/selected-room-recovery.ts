@@ -1,6 +1,5 @@
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import { isGroupActive } from '@shared/api/group-client-views.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../../api/http-error.ts';
@@ -10,6 +9,7 @@ import type { RallarWsLifecycleKind } from '../../rallar-realtime-facade.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
 import { requireOwnWsConnectionGenerationId } from '../require-own-ws-connection-generation-id.ts';
+import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 import { createStateGroupPresenceCommand } from '../room-group-state-workflows.ts';
 import { captureRoomSession, type RoomSessionFence } from '../room-session-fence.ts';
 

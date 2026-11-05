@@ -157,50 +157,31 @@ export class JsonWebSocketClient {
     }
 
     private addSocketEventListeners(socket: WebSocket): void {
-        socket.addEventListener('open', (event: Event) => this.notifyOpen(event));
+        socket.addEventListener('open', (event: Event) => this.notifyLifecycle((callback) => callback.onOpen?.(event)));
         socket.addEventListener('message', (event: MessageEvent) => this.dispatchMessage(socket, event));
-        socket.addEventListener('error', (event: Event) => this.notifyError(event));
+        socket.addEventListener(
+            'error',
+            (event: Event) => this.notifyLifecycle((callback) => callback.onError?.(event))
+        );
         socket.addEventListener('close', (event: CloseEvent) => {
             // A delayed close from the previous socket must not invalidate its live replacement.
             if (this.ws && this.ws !== socket) {
                 return;
             }
-            this.notifyClose(event);
+            this.notifyLifecycle((callback) => callback.onClose?.(event));
             if (this.ws === socket) {
                 this.ws = undefined;
             }
         });
     }
 
-    private notifyOpen(event: Event): void {
+    private notifyLifecycle(deliver: (callback: WebSocketClientCallbacks) => void): void {
         for (const callback of this.webSocketClientCallbacks.values()) {
             try {
-                callback.onOpen?.(event);
+                deliver(callback);
             }
             catch (error) {
-                console.error('Callback onOpen failed:', error);
-            }
-        }
-    }
-
-    private notifyError(event: Event): void {
-        for (const callback of this.webSocketClientCallbacks.values()) {
-            try {
-                callback.onError?.(event);
-            }
-            catch (error) {
-                console.error('Callback onError failed:', error);
-            }
-        }
-    }
-
-    private notifyClose(event: CloseEvent): void {
-        for (const callback of this.webSocketClientCallbacks.values()) {
-            try {
-                callback.onClose?.(event);
-            }
-            catch (error) {
-                console.error('Callback onClose failed:', error);
+                console.error('WebSocket lifecycle callback failed:', error);
             }
         }
     }
