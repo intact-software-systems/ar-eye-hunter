@@ -279,13 +279,19 @@ function toRepairHintEffect(
  * The hint a peer's gap NACK or repair request raises. The gap is the hint's identity, so its payload
  * follows the gap too, never the control: `nack` names missing ranges, `repair` asks for the message
  * itself. The two controls a receiver sends for one gap thus build one hint, written once and absorbed
- * the second time rather than refused as conflicting content.
+ * the second time rather than refused as conflicting content. A relay's gap NACK also names the
+ * recipient it asks the repair for, which the responder admits the copy on (S4ii-R3).
  */
 export function toALOutboundControlRepairHint(control: ALNackPayload | ALRepairPayload): ALOutboundRepairHint {
     const missingRanges = control.missingRanges ?? [];
+    const relayedForPeerId =
+        'logicalRecipientPeerId' in control && control.logicalRecipientPeerId !== control.fromPeerId
+            ? control.logicalRecipientPeerId
+            : undefined;
     return {
         trigger: missingRanges.length > 0 ? 'nack' : 'repair',
         requestedByPeerId: control.fromPeerId,
+        ...(relayedForPeerId === undefined ? {} : { logicalRecipientPeerId: relayedForPeerId }),
         orderingTrackKey: control.orderingKey,
         missingRanges,
         failedPeerIds: []

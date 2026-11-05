@@ -258,6 +258,11 @@ export interface ALOutboundRepairHint {
      */
     readonly trigger: ALOutboundRepairTrigger;
     readonly requestedByPeerId?: string;
+    /**
+     * The recipient a relay's gap NACK asks the repair for, which the responder admits the copy on while the copy
+     * goes to the requester; absent, the requester is the recipient.
+     */
+    readonly logicalRecipientPeerId?: string;
     readonly failedPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingRanges: readonly ALSeqRange[];
