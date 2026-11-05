@@ -4,7 +4,10 @@ import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
 export interface ALInboundOrderingPosition {
     readonly trackKey: string;
     readonly seq: number;
-    /** The prior the copy's record named for this recipient; `null` when no authority recorded the copy. */
+    /**
+     * The prior the copy's record named for this recipient (the observation's optional `priorSeq`); `null` where that
+     * field is absent: no authority recorded the copy.
+     */
     readonly priorSeq: number | null;
     readonly status: 'entered' | 'omitted' | 'witnessed' | 'before-entry';
 }

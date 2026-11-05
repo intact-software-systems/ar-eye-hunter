@@ -424,6 +424,27 @@ describe('a recorded ordered track at its frozen recipients', () => {
         // A before-entry NACK places its recipient outside; it never ends the receipt as a refusal would.
         expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: [], outside: ['c'], complete: false });
     });
+
+    it('answers each arrival of a copy below its position: a refused copy keeps no row that would make a retry a duplicate', async () => {
+        const chain = await createRelayChain(['a', 'r', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
+        const relay = createChainHop(chain, { selfPeerId: 'r', neighbourPeerIds: ['a', 'c'] });
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['r'], topicSubscriptions: ACTIVE_TOKEN });
+        const [below, entry] = await signTrack(chain, [
+            { seq: 3, recipientPeerIds: ['c'], priorSeqByRecipient: { c: 0 }, nextHopPeerId: 'r' },
+            { seq: 5, recipientPeerIds: ['c'], priorSeqByRecipient: { c: 0 }, nextHopPeerId: 'r' }
+        ]);
+        await relay.receive(entry!, 'a');
+        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
+        await relay.receive(below!, 'a');
+        const belowCopy = (await relay.readSent('c'))[1]!;
+
+        await leaf.receive(belowCopy, 'r');
+        await leaf.receive(belowCopy, 'r');
+
+        expect(readOrderingPositions(leaf)).toEqual([['entered', 5, 0], ['before-entry', 3, 0], ['before-entry', 3, 0]]);
+        expect(toControlTuples(await leaf.readSentControls('r')).filter(([type]) => type === 'nack'))
+            .toEqual([['nack', 'c', 'before-entry'], ['nack', 'c', 'before-entry']]);
+    });
 });
 
 describe('a receipted granted send its own RTC origin signs', () => {
