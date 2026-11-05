@@ -78,8 +78,8 @@ import {
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 import { computeALOrderingPriorSeqRecord } from './compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
-import { computeALOutboundSequenceMint } from './compute-al-outbound-sequence-mint.ts';
 import { decodeALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
+import { computeALOutboundSequenceMint } from './sequencing/compute-al-outbound-sequence-mint.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 

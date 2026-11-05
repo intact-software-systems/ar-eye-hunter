@@ -26,8 +26,8 @@ import type {
 import { isALDeliveryAdmissionFallbackVerdict } from '../alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
-import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
-import { toALOutboundMintingPlan } from '../alm/outbound/admission/to-al-outbound-minting-plan.ts';
+import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/sequencing/compute-al-outbound-ordering-refusal.ts';
+import { toALOutboundMintingPlan } from '../alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundDispatchPlan,

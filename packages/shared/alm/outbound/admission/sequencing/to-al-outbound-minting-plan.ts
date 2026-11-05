@@ -1,5 +1,5 @@
-import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import type { ALMessage } from '../../../../al-contracts/al-contract.ts';
+import type { ALOutboundDispatchPlan } from '../../al-outbound-message-runtime.ts';
 
 /**
  * A room send that names its ordering key: its sender's outbound owns the track's sequence, minting the next one for a

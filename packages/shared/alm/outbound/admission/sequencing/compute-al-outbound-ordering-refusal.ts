@@ -1,7 +1,7 @@
-import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALQosNormalizationResult } from '../../../al-contracts/al-policy.ts';
-import { Either } from '../../../resilience/Either.ts';
-import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
+import type { ALMessage } from '../../../../al-contracts/al-contract.ts';
+import type { ALQosNormalizationResult } from '../../../../al-contracts/al-policy.ts';
+import { Either } from '../../../../resilience/Either.ts';
+import type { ALOutboundDispatchPlan } from '../../al-outbound-message-runtime.ts';
 import { isALOutboundSequencedRoomSend } from './to-al-outbound-minting-plan.ts';
 
 export interface ComputeALOutboundOrderingRefusalInput {

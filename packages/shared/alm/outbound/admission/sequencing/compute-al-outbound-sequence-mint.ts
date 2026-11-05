@@ -1,6 +1,6 @@
-import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
-import type { ALOutboundMessageReadDto } from './al-outbound-admission-store.ts';
-import type { ALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
+import type { ALOutboundDispatchPlan } from '../../al-outbound-message-runtime.ts';
+import type { ALOutboundMessageReadDto } from '../al-outbound-admission-store.ts';
+import type { ALOutboundTrackPositionRow } from '../decode-al-outbound-track-position-row.ts';
 
 /** A first admission of a plan whose outbound owns its track, and the head that track has reached; absent for none. */
 export interface ALOutboundSequenceMintInput<TPrepared> {

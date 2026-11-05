@@ -18,7 +18,7 @@ import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { ALOutboundAdmissionMutations } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/to-al-outbound-minting-plan.ts';
+import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 

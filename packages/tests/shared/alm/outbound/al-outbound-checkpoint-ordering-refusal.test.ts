@@ -13,7 +13,7 @@ import {
 } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, type ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
-import { computeALOutboundOrderingRefusal } from '@shared/alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
+import { computeALOutboundOrderingRefusal } from '@shared/alm/outbound/admission/sequencing/compute-al-outbound-ordering-refusal.ts';
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
 import {

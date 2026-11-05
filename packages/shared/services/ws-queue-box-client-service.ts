@@ -33,7 +33,7 @@ import {
     type ALInboundRuntimeDiagnosticsSink
 } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { toALOutboundMintingPlan } from '../alm/outbound/admission/to-al-outbound-minting-plan.ts';
+import { toALOutboundMintingPlan } from '../alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundMessageRuntime,
