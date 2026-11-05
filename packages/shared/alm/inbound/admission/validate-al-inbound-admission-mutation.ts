@@ -8,7 +8,7 @@ import { decodeALInboundControlOwnerIndex, decodeALInboundSource } from '../al-i
 import {
     canALInboundDeliveryComplete,
     computeALInboundWitnessedCompletedThrough
-} from './compute-al-inbound-completed-through.ts';
+} from './al-inbound-delivery-progress.ts';
 
 /** Every reason one mutation may not be committed, in the order the bundle rejects them. */
 export function validateALInboundAdmissionMutation(
@@ -117,10 +117,9 @@ function isObservedProgressStep(completedThrough: number, bundle: ALInboundCommi
         return false;
     }
     const witnessedPosition = bundle.mutations.find((candidate) => candidate.kind === 'set-ordering')?.snapshot;
-    const delivers = bundle.mutations.some((candidate) =>
-        candidate.kind === 'set-buffered' && candidate.snapshot.seq <= completedThrough
-    );
-    return completedThrough === observedCompletedThrough || (witnessedPosition !== undefined && !delivers &&
+    // Of the admissions that move a track, only a witness retains no slot for its copy.
+    const witnessed = !bundle.mutations.some((candidate) => candidate.kind === 'set-buffered');
+    return completedThrough === observedCompletedThrough || (witnessedPosition !== undefined && witnessed &&
         completedThrough === computeALInboundWitnessedCompletedThrough({
                 completedThrough: observedCompletedThrough,
                 previousPosition: observed.ordering.snapshot?.lastContiguousSeq ?? 0,

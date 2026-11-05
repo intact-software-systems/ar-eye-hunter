@@ -8,7 +8,7 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../al-admission-work-backend.ts';
-import { computeALOrderingDeliveryPredecessorSeq } from './admission/compute-al-inbound-completed-through.ts';
+import { computeALOrderingDeliveryPredecessorSeq } from './admission/al-inbound-delivery-progress.ts';
 import type { ALInboundDeliveryPredecessor, ALInboundOrderedDeliveryRead } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {

@@ -8,7 +8,7 @@ import {
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { computeALInboundWitnessedCompletedThrough } from './admission/compute-al-inbound-completed-through.ts';
+import { computeALInboundWitnessedCompletedThrough } from './admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,

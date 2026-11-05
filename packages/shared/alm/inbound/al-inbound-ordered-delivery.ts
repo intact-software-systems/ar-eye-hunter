@@ -2,11 +2,11 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, type ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { canALInboundDeliveryComplete } from './admission/al-inbound-delivery-progress.ts';
 import {
     computeALInboundBufferedRelease,
     type ALInboundBufferedRelease
 } from './admission/compute-al-inbound-admission.ts';
-import { canALInboundDeliveryComplete } from './admission/compute-al-inbound-completed-through.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundBufferedReleaseReadDto } from './al-inbound-admission-store.ts';
 import { shouldRetryALInboundDelivery, type ALInboundEffectIntent } from './al-inbound-effect-intent.ts';

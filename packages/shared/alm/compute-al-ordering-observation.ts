@@ -35,7 +35,13 @@ interface ALOrderingTrackInput {
     readonly priorSeq: number | undefined;
 }
 
-const UNTRACKED: ALOrderingAcceptance = { observation: { status: 'untracked', missingRanges: [], releasableSeqs: [] } };
+const UNTRACKED: ALOrderingAcceptance = Object.freeze({
+    observation: Object.freeze({
+        status: 'untracked',
+        missingRanges: Object.freeze([]),
+        releasableSeqs: Object.freeze([])
+    })
+});
 
 /**
  * A recipient opens a recorded track at its first copy (`entered`), delivers a copy whose record names its own position
