@@ -13,9 +13,11 @@ describe('the prior-sequence record an authority signs on an ordered copy', () =
         expect(computeALOrderingPriorSeqRecord({ trackKey: TRACK_KEY, seq: 5, priorSeqByRecipient: { b: 4 } })).toEqual({});
     });
 
-    it('lists a recipient never sent the track as 0, even on its first sequence', () => {
-        expect(computeALOrderingPriorSeqRecord({ trackKey: TRACK_KEY, seq: 1, priorSeqByRecipient: { b: 0, c: 0 } }))
-            .toEqual({ b: 0, c: 0 });
+    it('omits a recipient never sent the track on its first sequence: seq - 1 is already 0', () => {
+        expect(computeALOrderingPriorSeqRecord({ trackKey: TRACK_KEY, seq: 1, priorSeqByRecipient: { b: 0, c: 0 } })).toEqual({});
+    });
+
+    it('lists a recipient never sent the track as 0 on a later sequence', () => {
         expect(computeALOrderingPriorSeqRecord({ trackKey: TRACK_KEY, seq: 5, priorSeqByRecipient: { b: 0 } })).toEqual({ b: 0 });
     });
 
