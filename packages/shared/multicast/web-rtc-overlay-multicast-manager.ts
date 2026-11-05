@@ -23,6 +23,7 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
+import { isALDeliveryAdmissionFallbackVerdict } from '../alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
@@ -121,7 +122,8 @@ import {
     toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
     toRtcFrozenAudienceRepairPlan,
-    toRtcOriginFrozenMessage
+    toRtcOriginFrozenMessage,
+    toRtcSentPositionRecordingPlan
 } from './web-rtc-overlay-frozen-audience.ts';
 import {
     planRtcFailedPeerRepair,
@@ -363,7 +365,8 @@ export class WebRtcOverlayMulticastManager {
     /**
      * One sender carrier leg. A granted publication is frozen to its subscribers and signed once, in its first
      * admission, after that admission's read stamped it; or refused as unsupported before admission, the refusal a
-     * fallback carrier takes over.
+     * fallback carrier takes over. A refusal its admission makes (a signer that cannot sign there) is taken over too,
+     * with the leg its sender gave.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
@@ -380,7 +383,11 @@ export class WebRtcOverlayMulticastManager {
                     reason: 'unsupported',
                     detail
                 }),
-            async (carried) => await this.enqueueCarriedLegIfAbsent(carried, carrierGap)
+            async (carried) => {
+                const result = await this.enqueueCarriedLegIfAbsent(carried, carrierGap);
+                // A refusal a fallback carrier takes over names the leg its sender gave, as `admitLeg`'s refusals do.
+                return isALDeliveryAdmissionFallbackVerdict(result.verdict) ? { ...result, message: msg } : result;
+            }
         );
     }
 
@@ -754,11 +761,12 @@ export class WebRtcOverlayMulticastManager {
         const { availability, policy, message: msg } = this.toRtcOriginAdmittedMessage(original, null);
         const plan = this.computeOriginRefusal({ msg, original, policy, storedSend: RTC_STORED_SEND_STAGES.has(stage) })
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
-        const planned = toRtcFrozenAudienceDispatchPlan(
+        const selfPeerId = this.connectionService.input.sessionId;
+        const frozen = toRtcFrozenAudienceDispatchPlan(
             toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
-            this.connectionService.input.sessionId,
-            stage === 'admission'
+            selfPeerId
         );
+        const planned = stage === 'admission' ? toRtcSentPositionRecordingPlan(frozen, selfPeerId) : frozen;
         this.#publications.assertSignedPlanKept(original, planned);
         return planned;
     }

@@ -21,7 +21,8 @@ import {
     computeRtcGrantedPublicationRefusal,
     resolveRtcGrantedLeaderRefusal,
     resolveRtcGrantedPublicationShapeRefusal,
-    RTC_GRANTED_PUBLICATION_REFUSALS
+    RTC_GRANTED_PUBLICATION_REFUSALS,
+    type RtcGrantedPublicationRefusalInput
 } from './compute-rtc-granted-publication-refusal.ts';
 import { computeRtcPublicationAdmission } from './compute-rtc-publication-admission.ts';
 import { computeRtcRepairRefusal, type RtcRepairRefusal } from './compute-rtc-repair-refusal.ts';
@@ -55,14 +56,6 @@ export namespace RtcGrantedPublicationCarrier {
         readonly selfSessionId: string;
         /** The clock an origin reads its own session's lease by when it signs. */
         readonly clock: ALOutboundMessageRuntime.Clock;
-    }
-
-    /** The message an origin carries, the one its sender gave, and whether the plan re-sends a stored copy. */
-    export interface OriginRefusalInput {
-        readonly carried: ALMessage;
-        readonly original: ALMessage;
-        /** A re-plan or dequeue of a stored own message, which re-reads the origin's `publish` (S3-R8). */
-        readonly storedSend: boolean;
     }
 
     /** Whether a repair may serve `peerId` under the receipt the repair tracks. */
@@ -272,13 +265,13 @@ export class RtcGrantedPublicationCarrier {
      * while it holds `publish`; any other message passes.
      */
     computeOriginRefusal(
-        input: RtcGrantedPublicationCarrier.OriginRefusalInput
+        input: RtcGrantedPublicationRefusalInput
     ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
         const { carried } = input;
         if (!this.isGrantedPublication(carried)) {
             return Either.ofRight(carried);
         }
-        return computeRtcGrantedPublicationRefusal(carried, input.original, input.storedSend).flatMap(
+        return computeRtcGrantedPublicationRefusal(input).flatMap(
             (refusal) => Either.ofLeft(refusal),
             (signed) => input.storedSend ? this.readOwnRepairRefusal(signed) : Either.ofRight(signed)
         );

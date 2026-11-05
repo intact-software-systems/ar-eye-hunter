@@ -216,33 +216,42 @@ function toUnfrozenMulticastMessage(msg: ALMessage): ALMessage {
 
 /**
  * Under `receiver` and `leader` the origin's receipt counts the frozen logical recipients, not the next hops a plan
- * reaches, so every plan of its own frozen multicast expects exactly that audience. The origin finalizes that audience,
- * so its first admission (`firstAdmission`) of a frame on a track records the sent position of every frozen recipient,
- * granted topic or not (S4-R1, S4-R10).
+ * reaches, so every plan of its own frozen multicast expects exactly that audience.
  */
 export function toRtcFrozenAudienceDispatchPlan(
     plan: ALOutboundDispatchPlan<ALOutboundTransportMessage>,
-    selfPeerId: string,
-    firstAdmission: boolean
+    selfPeerId: string
 ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
     const frozen = resolveALFrozenMulticastAudience(plan.msg.targets);
-    if (frozen === undefined || plan.msg.id.senderId !== selfPeerId) {
+    if (
+        plan.ackTracking === undefined || !isALLogicalReceiptMode(plan.ackTracking.mode) || frozen === undefined ||
+        plan.msg.id.senderId !== selfPeerId
+    ) {
         return plan;
     }
-    const tracking = plan.ackTracking;
-    const tracked = tracking === undefined || !isALLogicalReceiptMode(tracking.mode)
+    return { ...plan, ackTracking: { ...plan.ackTracking, expectedPeerIds: frozen.recipientPeerIds } };
+}
+
+/**
+ * The origin finalizes its own frozen audience, so the plan of a frame's first admission on a track records the sent
+ * position of every frozen recipient, granted topic or not (S4-R1, S4-R10); any other plan records nothing.
+ */
+export function toRtcSentPositionRecordingPlan(
+    plan: ALOutboundDispatchPlan<ALOutboundTransportMessage>,
+    selfPeerId: string
+): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+    const frozen = resolveALFrozenMulticastAudience(plan.msg.targets);
+    const tracked = (toALOrderingTrackKey(plan.msg) ?? toALSequenceMintTrackKey(plan.msg)) !== undefined;
+    return frozen === undefined || !tracked || plan.msg.id.senderId !== selfPeerId || plan.dropReasonCode !== undefined
         ? plan
-        : { ...plan, ackTracking: { ...tracking, expectedPeerIds: frozen.recipientPeerIds } };
-    const recorded = firstAdmission && plan.dropReasonCode === undefined &&
-        (toALOrderingTrackKey(plan.msg) ?? toALSequenceMintTrackKey(plan.msg)) !== undefined;
-    return recorded ? { ...tracked, recordsSentPositions: frozen.recipientPeerIds } : tracked;
+        : { ...plan, recordsSentPositions: frozen.recipientPeerIds };
 }
 
 export function toRtcFrozenAudienceRepairPlan(
     plan: ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined,
     selfPeerId: string
 ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
-    return plan === undefined ? undefined : toRtcFrozenAudienceDispatchPlan(plan, selfPeerId, false);
+    return plan === undefined ? undefined : toRtcFrozenAudienceDispatchPlan(plan, selfPeerId);
 }
 
 /**

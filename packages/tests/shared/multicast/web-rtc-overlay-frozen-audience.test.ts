@@ -25,8 +25,8 @@ import {
     computeFrozenAudience,
     computeRtcFrozenAudienceRefusal,
     computeRtcLeaderRefusal,
-    toRtcFrozenAudienceDispatchPlan,
-    toRtcFrozenRoomMessage
+    toRtcFrozenRoomMessage,
+    toRtcSentPositionRecordingPlan
 } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {
@@ -589,17 +589,26 @@ describe('the sent positions an RTC origin records for its frozen audience', () 
         vi.useRealTimers();
     });
 
-    it('records every frozen recipient of a keyed frame at its first admission alone', () => {
+    it('records every frozen recipient of the origin\'s own keyed frame, and nothing for any other plan', () => {
         const keyed = toKeyedFrame({ ...createOriginReceiverMulticast('keyed'), targets: toOriginFrozenTargets(['b', 'c'], 4) });
         const plan = { msg: keyed, dropReasonCode: undefined, lane: 'durable' as const, preparedMessages: [] };
 
-        expect(toRtcFrozenAudienceDispatchPlan(plan, 'a', true).recordsSentPositions).toEqual(['b', 'c']);
-        expect(toRtcFrozenAudienceDispatchPlan(plan, 'a', false).recordsSentPositions).toBeUndefined();
-        expect(toRtcFrozenAudienceDispatchPlan({ ...plan, msg: { ...keyed, ordering: undefined } }, 'a', true).recordsSentPositions)
+        expect(toRtcSentPositionRecordingPlan(plan, 'a').recordsSentPositions).toEqual(['b', 'c']);
+        expect(toRtcSentPositionRecordingPlan({ ...plan, msg: { ...keyed, ordering: undefined } }, 'a').recordsSentPositions)
             .toBeUndefined();
-        expect(toRtcFrozenAudienceDispatchPlan({ ...plan, dropReasonCode: 'no-route' }, 'a', true).recordsSentPositions)
+        expect(toRtcSentPositionRecordingPlan({ ...plan, msg: createOriginReceiverMulticast('unfrozen') }, 'a').recordsSentPositions)
             .toBeUndefined();
-        expect(toRtcFrozenAudienceDispatchPlan(plan, 'r', true).recordsSentPositions).toBeUndefined();
+        expect(toRtcSentPositionRecordingPlan({ ...plan, dropReasonCode: 'no-route' }, 'a').recordsSentPositions).toBeUndefined();
+        expect(toRtcSentPositionRecordingPlan(plan, 'r').recordsSentPositions).toBeUndefined();
+    });
+
+    it('records nothing when the origin re-plans a stored keyed frame', () => {
+        const fixture = createFixture();
+        const stored = toKeyedFrame({ ...createOriginReceiverMulticast('stored'), targets: toOriginFrozenTargets(['b', 'c'], 4) });
+
+        // The stage planner is the manager's own; element access reaches it without widening its type.
+        expect(fixture.manager['planOutgoingMessage'](stored, 'replan').recordsSentPositions).toBeUndefined();
+        expect(fixture.manager['planOutgoingMessage'](stored, 'admission').recordsSentPositions).toEqual(['b', 'c']);
     });
 
     it('stamps a keyed members-topic multicast with its record, carried unsigned to every frozen recipient', async () => {

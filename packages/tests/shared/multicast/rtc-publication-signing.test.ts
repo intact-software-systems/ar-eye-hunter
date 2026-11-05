@@ -122,6 +122,21 @@ describe('the RTC origin of a granted publication', () => {
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
     });
 
+    it('refuses a leg its admission cannot sign as unsupported, naming the leg its sender gave and storing nothing', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(toUnsignableCrypto(crypto), toKeyedSnapshot(crypto));
+        const message = toFeedFrame(createGrantedMulticast('none'), 1);
+
+        const refused = await enqueueLegAndDrain(fixture, message, 'hand-over');
+
+        expect(refused.verdict).toEqual({ kind: 'refused', reason: 'unsupported', detail: expect.stringMatching(/^sign-failed: /) });
+        expect(refused.message).toEqual(message);
+        expect(refused.entries).toEqual([]);
+        expect(isALDeliveryAdmissionFallbackVerdict(refused.verdict)).toBe(true);
+        expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
+    });
+
     it('freezes a granted publication to the live sessions whose principal holds subscribe before it signs that audience', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
         const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, { b: SUBSCRIBE_ONLY }));
