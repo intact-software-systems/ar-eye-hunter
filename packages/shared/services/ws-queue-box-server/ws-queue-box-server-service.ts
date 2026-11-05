@@ -914,7 +914,13 @@ export class WsQueueBoxServerService {
             await this.writeOutsideAudience(canonical, [prepared.peerId]);
             return { status: 'no-targets', submissionAttempted: false, reason: 'A later row of the track reached it' };
         }
-        const message = copy.right;
+        return this.sendRecipientCopy({ prepared, lifecycle, message: copy.right });
+    }
+
+    /** One recipient's copy on its socket, with the transport evidence a receipt observer asks for. */
+    private sendRecipientCopy(
+        { prepared, lifecycle, message }: Omit<WsQueueBoxServerPreparedRecipientInput, 'transport'>
+    ): ALOutboundSettledSendResult {
         const facts = this.receiptObserver === undefined ? undefined : toALOutboundReceiptFacts(message);
         const transport: JsonWebSocketServer.SendEvidence | undefined = facts === undefined
             ? undefined

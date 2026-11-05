@@ -121,6 +121,17 @@ interface ALOutboundSentPositionRecording {
     readonly stampsCopy: boolean;
 }
 
+/** A row records until it holds positions; only a first admission that is no dequeue stamps its copy too. */
+function toALOutboundSentPositionRecording<TPrepared>(
+    input: ALOutboundOutgoingReadInput<TPrepared>,
+    stored: ALStoredOutboundMessage | undefined
+): ALOutboundSentPositionRecording {
+    return {
+        unrecorded: stored === undefined || stored.sentPositions === null,
+        stampsCopy: stored === undefined && input.intent !== 'dequeue'
+    };
+}
+
 /** Assembles outbound decisions in a caller-owned read session; the write owner re-reads its fences. */
 export class ALOutboundAdmissionReads<TPrepared> {
     private readOperationCount = 0;
@@ -171,10 +182,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
             computeALOutboundDispatchPlan(input, canonical, stored),
             stored === undefined
         );
-        const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, {
-            unrecorded: stored === undefined || stored.sentPositions === null,
-            stampsCopy: stored === undefined && input.intent !== 'dequeue'
-        });
+        const recording = toALOutboundSentPositionRecording(input, stored);
+        const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, recording);
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
 
         return {
