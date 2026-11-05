@@ -36,6 +36,8 @@ const TOPIC_SUBSCRIPTION_IDS = [
     'subscription-token-count',
     'subscription-revoke-disconnected',
     'subscription-reconnect',
+    'subscription-ordered-entry',
+    'subscription-ordered-omission',
     'subscription-successor'
 ] as const;
 

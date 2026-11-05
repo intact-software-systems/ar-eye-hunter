@@ -86,9 +86,14 @@ describe('ALM run on an agent per role', () => {
     it('selects exactly the topic subscription cells for the four-role family on every carrier', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const fourRole = toScenarios(carrier).filter((scenario) => scenario.laneFamily === 'four-role');
-            expect(fourRole.map((scenario) => scenario.scenarioKey), carrier).toEqual(
-                ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect']
-            );
+            expect(fourRole.map((scenario) => scenario.scenarioKey), carrier).toEqual([
+                'subscription-delivery',
+                'subscription-token-count',
+                'subscription-revoke-disconnected',
+                'subscription-reconnect',
+                'subscription-ordered-entry',
+                'subscription-ordered-omission'
+            ]);
             expect(fourRole.every((scenario) => scenario.publisherB !== undefined && scenario.sibling !== undefined), carrier)
                 .toBe(true);
         }

@@ -83,16 +83,14 @@ const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'] as c
 const AUDIENCE_KEYS = ['principal-delivery', 'fixed-list-delivery', 'world-routing'] as const;
 
 /** The topic subscription cells run on every carrier, on four roles. */
-const FOUR_ROLE_KEYS_BY_CARRIER = {
-    ws: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect'],
-    rtc: ['subscription-delivery', 'subscription-token-count', 'subscription-revoke-disconnected', 'subscription-reconnect'],
-    'rtc-with-ws-fallback': [
-        'subscription-delivery',
-        'subscription-token-count',
-        'subscription-revoke-disconnected',
-        'subscription-reconnect'
-    ]
-} as const;
+const FOUR_ROLE_KEYS = [
+    'subscription-delivery',
+    'subscription-token-count',
+    'subscription-revoke-disconnected',
+    'subscription-reconnect',
+    'subscription-ordered-entry',
+    'subscription-ordered-omission'
+] as const;
 
 /**
  * A granted topic rides RTC as a signed room multicast: its cells run over rtc, the two-agent ones before the
@@ -371,9 +369,7 @@ describe('alm-conformance recipe family', () => {
                     ...(carrier === 'rtc-with-ws-fallback'
                         ? []
                         : ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-flush-on-hide-${role}`)),
-                    ...FOUR_ROLE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
-                        ['sender', 'receiver', 'sibling', 'publisher-b'].map((role) => `alm-${carrier}-${key}-${role}`)
-                    ),
+                    ...FOUR_ROLE_KEYS.flatMap((key) => ['sender', 'receiver', 'sibling', 'publisher-b'].map((role) => `alm-${carrier}-${key}-${role}`)),
                     // One RTC peer per session: the successor page runs over ws alone.
                     ...(carrier === 'ws'
                         ? ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)
@@ -405,7 +401,7 @@ describe('alm-conformance recipe family', () => {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = threeAgentIds.includes(scenario.scenarioId);
                 const twoPages = ['durable-takeover', 'flush-on-hide', 'subscription-successor'].includes(scenario.scenarioId);
-                const fourRoles = FOUR_ROLE_KEYS_BY_CARRIER.ws.some((scenarioId) => scenarioId === scenario.scenarioId);
+                const fourRoles = FOUR_ROLE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 const twoSessions = fourRoles || AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
@@ -718,7 +714,7 @@ describe('alm-conformance recipe family', () => {
             ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             ...CLAIM_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             'durable-takeover',
-            ...FOUR_ROLE_KEYS_BY_CARRIER['rtc-with-ws-fallback']
+            ...FOUR_ROLE_KEYS
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
@@ -772,7 +768,7 @@ describe('alm-conformance recipe family', () => {
             // The granted rtc cells.
             ...[...GRANTED_RTC_TWO_AGENT_KEYS, ...GRANTED_RTC_THREE_AGENT_KEYS].map(() => ['full']),
             // The topic subscription cells, now that a receipted granted send rides rtc.
-            ...FOUR_ROLE_KEYS_BY_CARRIER.rtc.map(() => ['full'])
+            ...FOUR_ROLE_KEYS.map(() => ['full'])
         ]);
     });
 
