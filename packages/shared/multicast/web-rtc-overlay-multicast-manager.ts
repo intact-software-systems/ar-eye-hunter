@@ -768,8 +768,7 @@ export class WebRtcOverlayMulticastManager {
             toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
             selfPeerId
         );
-        const minting = toALOutboundMintingPlan(frozen, stage, selfPeerId);
-        const planned = stage === 'admission' ? toRtcSentPositionRecordingPlan(minting, selfPeerId) : minting;
+        const planned = toRtcSentPositionRecordingPlan(toALOutboundMintingPlan(frozen, stage, selfPeerId));
         this.#publications.assertSignedPlanKept(original, planned);
         return planned;
     }
