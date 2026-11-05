@@ -214,12 +214,12 @@ function toTrackedDispatch(seq: number, followsBatchPredecessor: boolean): ALOut
 
 it('leaves a row that follows its batch predecessor to the next pass, unread, when the predecessor is not among the dispatches', async () => {
     const { admission, store } = createDispatchFixture();
-    const reads = vi.spyOn(store, 'readOutgoingDecision');
+    const readsBefore = store.getReadOperationCount();
 
     const [left] = await admission.commitAllSettled([toTrackedDispatch(2, true)]);
 
     expect(left).toMatchObject({ status: 'rejected', reason: expect.any(NotReadyException) });
-    expect(reads).not.toHaveBeenCalled();
+    expect(store.getReadOperationCount()).toBe(readsBefore);
     admission.dispose();
 });
 
