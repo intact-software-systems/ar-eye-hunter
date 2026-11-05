@@ -755,6 +755,9 @@ and `subscription-ordered-omission` pass over the three carriers on the local
 lane. S4-ii re-asserts a reopened socket's room presence (D506), so a reconnect
 reads as an omission on a lane, and has relays re-originate gap NACKs toward the
 origin. Decisions D524–D537 are in the roadmap.
+Under `rtc-with-ws-fallback` a recipient the WS server left out of a WS-leg send
+reads a gap the RTC origin cannot serve and its track stalls until resync or
+expiry, instead of losing the frame (D525); S4-ii closes it.
 
 ### Later outcomes
 
