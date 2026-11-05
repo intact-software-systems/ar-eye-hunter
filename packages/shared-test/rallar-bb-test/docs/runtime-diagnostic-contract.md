@@ -513,8 +513,8 @@ publication succeed. The event's `data` is the event itself:
   names the recipient's own position as its prior, delivered across the
   sequences never meant for it), `witnessed` (a frozen recipient that may not
   deliver, its position moved to `seq`; only a copy that moved it) or
-  `before-entry` (a frozen copy below the recipient's position, refused with
-  that NACK). `priorSeq` is the prior the copy's record named for this
+  `before-entry` (a recorded frozen copy below the recipient's position,
+  refused with that NACK). `priorSeq` is the prior the copy's record named for this
   recipient, `seq - 1` when the record lists it not, and `null` when no
   authority recorded the copy. `workerId` is the inbound lane's owner (the
   volatile lane's ends `/volatile`), which can differ from the

@@ -339,8 +339,10 @@ claimed. A tracked row may answer `follows-batch-predecessor`: its carrier admit
 the track (`seq − 1`), which the same batch claimed. Such a row commits in its predecessor's group, whose positions
 chain in sequence order, and after it when the group's members commit alone. When the predecessor reaches no commit
 ahead of it, the row is left to the next pass as `not-ready`, uncharged. The WS server answers so for a row that
-records positions; a row whose predecessor is outside the batch and unrecorded waits as `not-ready`. Either way a
-track's positions are written in sequence order. Each row's after-admission effect then runs in the same follower
+records positions; a row whose predecessor is outside the batch and unrecorded is `held`: the authority names the one
+read that releases it (the predecessor's sent row), and the claim's 50 ms re-check reads that row alone rather than
+the whole authority. Either way a track's positions are written in sequence order.
+Each row's after-admission effect then runs in the same follower
 order, so a recipient receives the rows of a track that one batch admits in sequence order.
 
 ## Canonical message storage
@@ -457,8 +459,9 @@ with the attempt budget spent, repair admission deletes the receipt and repair-a
 states `receipt-exhausted` once. A late ACK cannot resurrect that terminal receipt. An ACK before
 that terminal commit can still complete a live receipt, but an ACK at or after the message deadline
 is refused even if a receipt can still be read. Every carrier discards `acceptControlMessage`'s answer, so repair
-admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
-reasons) for every control it decides. A committed `resync-required` NACK is a hop's refusal of a
+admission records it as the `control-admission` outbound diagnostic (outcome, a rejection's
+reasons, and a NACK's own reason and the track it asks about) for every control it decides.
+A committed `resync-required` NACK is a hop's refusal of a
 retained send (D50): it states a `relay-rejected` settlement, which ends a receipt-tracked handle
 `rejected`, and like a `stale` NACK it ends the receipt row and its repair attempts, so nothing resends
 the message. A multi-recipient receipt therefore keeps the recipient evidence it had at the rejection:
@@ -617,9 +620,12 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   send (D143, D159). A multicast an RTC origin froze that falls back to WS keeps its frozen set
   narrowed to the sessions the server authorizes: a frozen audience narrows what the admitting
   authority allows and never widens it, and an empty intersection means nobody, never "no filter".
-- The outbound authority checks (`validateALOutboundPlannedMessage`, canonical reuse) accept exactly one
-  difference between an original and its planned or stored copy: unfrozen to frozen. A copy that drops
-  or changes a frozen audience still differs.
+- The outbound authority checks split by stage. A planner's message is checked strictly against its source
+  (`validateALOutboundPlannedMessage`): it may freeze an unfrozen audience and carry a sequence minted on the track
+  its source named without one, nothing else. An admitted or stored copy, and canonical reuse, are checked leniently
+  against the request (`validateALOutboundAdmittedMessage`, `toALOutboundRequestComparableMessage`): they may also
+  carry the prior-sequence record and the proof the admission added. A copy that drops or changes a frozen audience,
+  the key, the epoch, a stated sequence, a stated record or a carried proof still differs.
 - RTC peer ingress refuses a room multicast that carries no frozen audience (`malformed`).
 - Under `receiver` the origin's receipt row expects exactly the frozen recipients. The set a relay
   forwards over is the sessions authorized now, a late joiner included, but only a session of the
@@ -849,7 +855,13 @@ sender version, after the sequence is known, stamps the copy's `ordering.priorSe
 `computeALOrderingPriorSeqRecord` (a recipient last sent below `seq - 1`, `0` for one never sent; so a track's first
 frame carries `{}`), and its commit moves each recipient below the sequence to it beside the ordering head, fenced by
 the same sender version. A commit that loses the fence retains the request without the record (the captured policy
-keeps `recordsSentPositions`), and its replay reads the positions again. On RTC the carrier then signs the stamped
+keeps `recordsSentPositions`), and its replay reads the positions again. When both browser carriers share the head
+(`orderingHeadNamespace`), a minting admission whose plan records no recipient -- the WS leg, which hands its audience
+to the server -- also moves the track's room-wide sent position (`toALOutboundRoomSentPositionKey`) beside the head,
+under the head's guard, and a recording admission reads each recipient no lower than it: the RTC record then never
+lists a recipient behind a sequence the WS leg sent the room, so a recipient whose WS copy is in flight asks a gap that
+copy closes instead of reading an omission. A pair whose head is its own (the WS server) has no room-wide position.
+On RTC the carrier then signs the stamped
 frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored
 canonical carries the proof over the sequence and the record, and every re-plan, dequeue and repair resends it as
 stored (D519). The refusals `admitLeg` can know (shape, leader, a page that cannot sign) run before admission; a signer
@@ -870,7 +882,8 @@ whenever the stored row holds no positions yet, and stamps nothing on the stored
 the sent row (`ALStoredOutboundMessage.sentPositions`, `null` when nothing was recorded, which a row written before
 reads as) and on every `send-prepared` payload, and the WS server derives each recipient's copy from them
 ([`toWsQueueBoxServerRecipientCopy`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-recipient-copy.ts):
-that recipient's entry and no proof, or nothing when its position is already past the sequence). Members of one
+that recipient's entry, or nothing when its position is already past the sequence). No copy carries the origin's
+proof, and a copy of a row no dequeue recorded (a live-only hand-over) carries no record either. Members of one
 dequeue group that record on one track chain their reads in sequence order, so each recipient's row is written once
 per group, at the highest sequence
 ([`compute-al-outbound-group-sent-positions.ts`](./lane/compute-al-outbound-group-sent-positions.ts)). In a cluster

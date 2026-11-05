@@ -292,8 +292,8 @@ with a terminal ACK once its subtree answered (a leaf at once), but of status `s
 which completes the hop and confirms no recipient: no relay passes it upward and the origin counts nobody for it
 (PL11). Such a recipient witnesses the copy's ordering track: its position moves to the copy, nothing is buffered
 and no gap is ever asked for, so a copy past where a gap would have been is answered the same way. A recipient
-that receives a frozen copy below the position it entered the track at answers `before-entry` for itself, which
-places it outside the audience as `not-subscribed` does. A relay admits a child's outside-audience NACK
+that receives a recorded frozen copy below the position it entered the track at answers `before-entry` for itself,
+which places it outside the audience as `not-subscribed` does. A relay admits a child's outside-audience NACK
 (`not-subscribed`, `before-entry`) -- the NACKs inbound control admission handles; every other NACK stays its
 outbound owner's -- from a child hop its row waits on and for a recipient of the frozen audience whose
 confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`, and
@@ -536,13 +536,16 @@ equals `L` is released as its successor, and delivery progress jumps to a delive
 completed ([`al-inbound-delivery-progress.ts`](./admission/al-inbound-delivery-progress.ts)). A witness moves its
 position to the copy and buffers, asks and releases nothing; its progress passes the copy only when nothing below is
 pending delivery, so a session that witnessed while its own deliveries were pending, and is a recipient again,
-resyncs its next delivered copy. A frozen copy below a recipient's position is `stale` and answers a `before-entry`
-NACK (above, under the relay). After each committed admission, replays included,
+resyncs its next delivered copy. A recorded frozen copy below a recipient's position is `stale` and answers a
+`before-entry` NACK (above, under the relay); an unrecorded stale copy is dropped with no NACK, as before recorded
+tracks, and so is a WS copy, which carries no frozen audience: over `ws` the server skips a copy below a recorded
+position before it is sent. After each committed admission, replays included,
 [`toALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
 diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
 refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
-carrier. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it, and the
-lost copy answers `before-entry` when it arrives.
+carrier. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it; the lost
+copy, arriving later, answers `before-entry` on a frozen copy (RTC, or a handed-over frozen leg), and over plain `ws` it
+is dropped `stale` with no NACK and stays unconfirmed in the origin's receipt.
 
 **Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
 releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release

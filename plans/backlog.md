@@ -194,10 +194,15 @@ and it has no status list.
   its own deliveries are pending and then becomes a recipient again resyncs its
   next delivered copy.
 - A lost entry frame (S4-i, D527): a receiver whose entry frame is lost and
-  whose next frame arrives first enters past it and answers the lost frame
-  `before-entry`; under `rtc-with-ws-fallback` a server copy whose record meets
-  the receiver's position can be read as an omission while the origin's RTC
-  frame for the next sequence is still in flight.
+  whose next frame arrives first enters past it; the lost frame answers
+  `before-entry` on a frozen copy (RTC, a handed-over frozen leg) and over plain
+  `ws` is dropped `stale` with no NACK and stays unconfirmed. Under
+  `rtc-with-ws-fallback` a server copy whose record meets the receiver's
+  position can be read as an omission while the origin's RTC frame for an
+  earlier sequence is still in flight, since the server's record does not count
+  the RTC origin's sends; the RTC record already counts the WS leg's (D525), so
+  a server-side room-wide position fed by the browser's RTC sends would close
+  the mirror.
 - A stuck predecessor on a WS track (S4-i, D524): an admitted row that ends
   without recording (dropped at dequeue, a non-retryable corruption, superseded
   or cancelled) holds its track's later rows at dequeue until its own deadline,

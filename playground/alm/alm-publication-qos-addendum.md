@@ -732,11 +732,11 @@ and no proof; a row whose unrecorded track predecessor is outside its dequeue
 batch waits until that predecessor records. A recipient with no position enters
 a recorded track at its first copy, delivers a copy whose record names its
 position as `omitted`, asks a gap only up to a prior ahead of it, and answers a
-frozen copy below its position with a `before-entry` NACK, which relays carry
-like `not-subscribed` and the origin records outside the audience. A frozen
-recipient that may not deliver witnesses: its position moves, nothing is
-buffered and no gap is asked. A relay observes nothing and forwards a track it
-never saw. The WS server sends nothing to a recipient whose recorded position is
+recorded frozen copy below its position with a `before-entry` NACK, which
+relays carry like `not-subscribed` and the origin records outside the
+audience. A frozen recipient that may not deliver witnesses: its position
+moves, nothing is buffered and no gap is asked. A relay observes nothing and
+forwards a track it never saw. The WS server sends nothing to a recipient whose recorded position is
 past the copy's sequence, and, on a relayed browser-origin row with a logical
 receipt, records that recipient, and a session its dequeue re-check dropped,
 outside the receipt's audience, never unconfirmed, when the session is

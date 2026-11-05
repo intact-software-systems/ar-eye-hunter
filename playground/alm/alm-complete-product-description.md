@@ -865,9 +865,10 @@ of a row its outbound admitted and sends each recipient its own entry, without
 the proof. A recipient with no position enters a recorded track at its first
 copy without asking for history; a copy whose record meets its position
 delivers as an omission; a frozen recipient that may not deliver witnesses the
-copy; a relay observes nothing and forwards (D526–D528). A copy below a
-recipient's position answers a `before-entry` NACK that relays carry and the
-origin records outside the audience; the WS server sends nothing below a
+copy; a relay observes nothing and forwards (D526–D528). A recorded frozen
+copy below a recipient's position answers a `before-entry` NACK that relays
+carry and the origin records outside the audience; over `ws`, whose copies
+carry no frozen audience, the WS server sends nothing below a
 recorded position and, on a relayed browser-origin row with a logical receipt,
 records a skipped or re-check-dropped session outside the receipt's audience
 (D530, D532). The inbound `ordering-position` diagnostic

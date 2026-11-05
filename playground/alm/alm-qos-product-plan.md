@@ -151,7 +151,7 @@ different content, and never retracts a delivery (D85). For ALM that means four 
   (`packages/shared/al-contracts/al-runtime.ts`).
   - An application counter restored from a checkpoint would reuse positions on the same track.
   - The receiver drops those messages as `ordering-rejected`, with no ACK; a frozen recipient answers its own
-    copy below its position with a `before-entry` NACK, any other receiver with no NACK
+    recorded copy below its position with a `before-entry` NACK, any other receiver with no NACK
     (`packages/shared/al-contracts/al-policy.ts`).
   - `local-checkpoint` therefore refuses ordered and latest-wins sends.
 - **Replays are duplicates.** For every tier, a receiver's dedup retention covers the message's

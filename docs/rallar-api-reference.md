@@ -1879,12 +1879,13 @@ key alone is refused `unsupported`, since the checkpoint lane keeps no head. A
 send that states `seq` keeps it while it lies above the head, which moves to
 it; one at or below the head would reuse a position the track already sent, so
 it is refused before any carrier with
-`failure: { kind: 'refused', reason: 'unsupported' }`. A copy handed over to WS
-after its RTC admission keeps the sequence that admission fixed. An RTC room
-send that states `seq` without a key orders on the room's default key; a WS
-send states its key beside a `seq` (`missing-ordering-key`), and a WS send
-outside a room, which no outbound sequences, states both or neither
-(`missing-seq`).
+`failure: { kind: 'refused', reason: 'unsupported' }`. A room send's stated
+`seq` starts at 1: `0` is refused at the call (`invalid-track-seq`). A copy
+handed over to WS after its RTC admission keeps the sequence that admission
+fixed. An RTC room send that states `seq` without a key orders on the room's
+default key; a WS send states its key beside a `seq` (`missing-ordering-key`),
+and a WS send outside a room, which no outbound sequences, states both or
+neither (`missing-seq`).
 
 The receiver delivers a track's messages in sequence from the last contiguous
 one and buffers what arrives early. Three limits bound the buffer
@@ -1903,14 +1904,21 @@ records and signs it in the admission that mints or guards the sequence, the
 signature covering it; the WS server records at the first dequeue of a row its
 outbound admitted (a relayed browser-origin row or its own publication), for
 the audience the dequeue re-check narrowed, and sends each recipient a copy that
-carries only that recipient's entry and no `proof`, the server's own word. A
-recipient reads its prior from the record, or `seq - 1` when the record lists
-it not:
+carries only that recipient's entry. No WS copy carries a `proof`: a server copy
+is the server's own word, and a copy of a row no dequeue recorded (a live-only
+hand-over) carries no record either. Under `rtc-with-ws-fallback` the RTC
+origin's record also counts the sequences its session's WS leg sent the room,
+whose audience only the server knows: it lists no recipient behind the last of
+them, so a recipient waiting for that WS copy asks a gap the copy closes rather
+than reading an omission. The server's record of a WS copy counts only the
+server's own copies, so the two may differ; a prior behind the recipient's
+position says nothing it does not know. A recipient reads its prior from the
+record, or `seq - 1` when the record lists it not:
 
-- **No position yet, on a recorded copy**: it enters the track at that copy (`entered`), whatever
-  the sequence, and asks for nothing below it. The application's own state read
-  supplies the past; a session is never sent a sequence admitted before the
-  authority first sent it one.
+- **No position yet, on a recorded copy**: it enters the track at that copy
+  (`entered`), whatever the sequence, and asks for nothing below it. The
+  application's own state read supplies the past; a session is never sent a
+  sequence admitted before the authority first sent it one.
 - **Prior equal to its position**: the sequences between were never meant for
   it, so the copy delivers in order (`omitted`), and a buffered copy whose own
   prior meets the position is released the same way.
@@ -1922,28 +1930,39 @@ A frozen recipient that may not deliver -- a granted session without an active
 token -- witnesses the copy: its position moves, nothing is buffered and no gap
 is asked, so on activation it neither delivers nor asks for what it witnessed.
 A peer outside the frozen audience and a pure relay observe nothing and forward
-whatever the track. A recipient that receives a frozen copy below its position
-answers a `before-entry` NACK for itself and asks no repair; relays carry it
-toward the origin as they carry `not-subscribed`, and the receipt records the
-recipient in `outsideAudienceRecipientPeerIds`, never failing the message.
+whatever the track. A recipient that receives a recorded frozen copy below its
+position answers a `before-entry` NACK for itself and asks no repair; relays
+carry it toward the origin as they carry `not-subscribed`, and the receipt
+records the recipient in `outsideAudienceRecipientPeerIds`, never failing the
+message. A stale copy no authority recorded is dropped with no NACK, as before
+recorded tracks.
 
-The WS server sends nothing to a recipient whose recorded position is past the
-copy's sequence (a later row of the track already reached it) and resends a
-copy to one at that sequence. A tracked row it admitted waits at dequeue until
-the row before it on the track recorded, unless that row is in the same dequeue
-batch, whose rows of one track commit and are sent in sequence order. The
+WS copies carry no frozen audience, so over plain `ws` the server answers for
+the recipient instead: it sends nothing to a recipient whose recorded position
+is past the copy's sequence (a later row of the track already reached it),
+records it outside on a relayed browser-origin row with a logical receipt (the
+server's own publications record no outside class), and resends a copy to one
+at that sequence. A tracked row it admitted waits at dequeue until the row
+before it on the track recorded, re-reading that row alone, unless that row is
+in the same dequeue batch, whose rows of one track commit and are sent in
+sequence order. The
 inbound diagnostics state every `entered`, `omitted`, `witnessed` and
 `before-entry` as an `ordering-position` event.
 
-**Limits:** a row a server producer writes straight to the outbox (Relic's
-round transitions, state-sync) records no positions, so its copies carry no
-record and its receivers keep the rule from their own position; a live-only
-send records none; in a cluster positions are recorded only for sessions
-connected to the dequeuing instance; a receiver whose entry frame is lost and
-whose next frame arrives first enters past it, and the lost frame answers
-`before-entry` if it arrives; the WS dequeue wait checks the immediate
-predecessor only, and a predecessor that ends without recording holds its
-track's later rows until its own deadline.
+**Limits:** a row a server producer writes straight to the outbox (Relic's round
+transitions, state-sync) records no positions, so its copies carry no record and
+its receivers keep the rule from their own position; a live-only send records
+none; in a cluster positions are recorded only for sessions connected to the
+dequeuing instance; a receiver whose entry frame is lost and whose next frame
+arrives first enters past it, and the lost frame, arriving later, answers
+`before-entry` on a frozen copy (RTC, or a handed-over frozen leg) and over
+plain `ws` is dropped `stale` with no NACK and stays unconfirmed, repaired by
+nothing; under `rtc-with-ws-fallback` a server copy whose record meets the
+receiver's position can be read as an omission while the RTC frame for an
+earlier sequence is in flight, since the server's record does not count the RTC
+origin's sends, and that frame then arrives stale; the WS dequeue wait checks
+the immediate predecessor only, and a predecessor that ends without recording
+holds its track's later rows until its own deadline.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the
