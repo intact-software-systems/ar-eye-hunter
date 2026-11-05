@@ -130,6 +130,23 @@ export function toRepairDispatchWait(
     });
 }
 
+/**
+ * No repair dispatched any message of the cell's type from this page, and no gap NACK about the cell's tracks reached
+ * it, whatever its origin made of one: a NACK whose repair was refused dispatches nothing, yet its admission states
+ * the NACK's reason and track. The first wait listens one window, the second reads the history that window kept.
+ * A minted send names no index to pin either by.
+ */
+export function toNoGapRepairWaits(step: AlmConformanceStepInput): readonly RallarBlackBoxTestWaitCommand[] {
+    const noGapNack = toDiagnosticWait({
+        step,
+        name: 'no-gap-nack',
+        topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        contains: `"nackReason":"gap","nackOrderingKey":"${step.scenarioKey}:`,
+        absent: true
+    });
+    return [toNoRepairDispatchWait(step, 'no-repair-dispatch'), { ...noGapNack, timeoutMs: 0 }];
+}
+
 /** No repair dispatched any message of the cell's type from this page: a minted send names no index to pin it by. */
 export function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
     return toDiagnosticWait({

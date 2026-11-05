@@ -1,9 +1,5 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
-import {
-    decodeALPeerControlMessage,
-    parseALControlMessage,
-    type ALPeerControlMessage
-} from '../../al-contracts/al-control.ts';
+import { decodeALPeerControlMessage, type ALPeerControlMessage } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
@@ -24,7 +20,6 @@ import type {
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import {
-    controlTargetMsgId,
     toALOutboundControlRepairHint,
     type ALOutboundControlSource
 } from './compute-al-outbound-control-admission.ts';
@@ -109,12 +104,11 @@ export class ALOutboundRepairAdmission<TPrepared> {
             : { kind: 'not-handled' };
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control: msg,
-            targetMsgId: controlTargetMsgId(control),
-            receiptPhase: undefined,
+            parsed: control,
             admitted
         });
         if (admitted.kind === 'committed') {
-            await this.scheduleNotYetInSyncRetryIfRequired(msg);
+            await this.scheduleNotYetInSyncRetryIfRequired(control);
         }
         return admitted;
     }
@@ -126,16 +120,16 @@ export class ALOutboundRepairAdmission<TPrepared> {
     async replayControlAdmission(payload: ALOutboundPendingControl): Promise<ALWorkOutcome> {
         const replayed = await this.dependencies.controlAdmission.replay(payload);
         const control = decodeALPeerControlMessage(payload.msg).right;
-        if (replayed.admitted !== null && control !== undefined) {
-            writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
-                control: payload.msg,
-                targetMsgId: controlTargetMsgId(control),
-                receiptPhase: undefined,
-                admitted: replayed.admitted
-            });
+        if (replayed.admitted === null || control === undefined) {
+            return replayed.outcome;
         }
-        if (replayed.admitted?.kind === 'committed') {
-            await this.scheduleNotYetInSyncRetryIfRequired(payload.msg);
+        writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
+            control: payload.msg,
+            parsed: control,
+            admitted: replayed.admitted
+        });
+        if (replayed.admitted.kind === 'committed') {
+            await this.scheduleNotYetInSyncRetryIfRequired(control);
         }
         return replayed.outcome;
     }
@@ -177,17 +171,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return planned !== undefined && !planned.dropReason && planned.preparedMessages.length > 0;
     }
 
-    private async scheduleNotYetInSyncRetryIfRequired(
-        controlMessage: ALMessage
-    ): Promise<void> {
-        const parsed = parseALControlMessage(controlMessage);
-        if (parsed?.type !== 'nack' || parsed.payload.reason !== 'not-yet-in-sync') {
-            return;
+    private async scheduleNotYetInSyncRetryIfRequired(control: ALPeerControlMessage): Promise<void> {
+        if (control.type === 'nack' && control.payload.reason === 'not-yet-in-sync') {
+            await this.scheduleNotYetInSyncRetry(control.payload.msgId);
         }
-
-        const msgId = parsed.payload.msgId;
-
-        await this.scheduleNotYetInSyncRetry(msgId);
     }
 
     private async scheduleNotYetInSyncRetry(msgId: string): Promise<void> {

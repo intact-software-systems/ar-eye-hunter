@@ -1,19 +1,18 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import type { ALParsedControlMessage } from '../../../al-contracts/al-control.ts';
 import { toALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
     type ALOutboundRuntimeDiagnosticsSink
 } from '../al-outbound-message-runtime.ts';
+import { controlTargetMsgId } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 
 export interface ALOutboundControlAdmissionDiagnosticInput {
     /** The control message itself: its id is the join key to the inbound `admission-outcome` that routed it. */
     readonly control: ALMessage;
-    /** The outbound message the control answers. */
-    readonly targetMsgId: string;
-    /** The receipt's phase for a WS server receipt; `undefined` for every other control, which has none. */
-    readonly receiptPhase: ALReceiptPayload['phase'] | undefined;
+    /** The control as its admission decoded it: it names the outbound message it answers. */
+    readonly parsed: ALParsedControlMessage;
     readonly admitted: ALOutboundControlAdmissionResult;
 }
 
@@ -22,17 +21,21 @@ export function writeALOutboundControlAdmissionDiagnostic(
     diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
     input: ALOutboundControlAdmissionDiagnosticInput
 ): void {
-    const { control, admitted } = input;
+    const { control, parsed, admitted } = input;
     writeALOutboundRuntimeDiagnostic(diagnostics, {
         kind: 'control-admission',
         msgId: control.id.msgId,
         typeId: control.payload.typeId,
-        targetMsgId: input.targetMsgId,
+        targetMsgId: controlTargetMsgId(parsed),
         outcome: admitted.kind,
         reason: admitted.kind === 'rejected' ? admitted.reason : 'none',
-        // Straight after the reason, so a match on `typeId`, `targetMsgId`, `outcome`, `reason` and `phase` in their
-        // emitted order finds a receipt; the trace appends after both, so it moves neither match.
-        ...(input.receiptPhase === undefined ? {} : { phase: input.receiptPhase }),
+        // Straight after the reason, so a match on `typeId`, `targetMsgId`, `outcome`, `reason` and then a receipt's
+        // `phase` or a NACK's reason and track in their emitted order finds it; the trace appends after them all.
+        ...(parsed.type === 'receipt' ? { phase: parsed.payload.phase } : {}),
+        ...(parsed.type === 'nack' ? { nackReason: parsed.payload.reason } : {}),
+        ...(parsed.type === 'nack' && parsed.payload.orderingKey !== undefined
+            ? { nackOrderingKey: parsed.payload.orderingKey }
+            : {}),
         ...toALMessageTrace(control)
     });
 }

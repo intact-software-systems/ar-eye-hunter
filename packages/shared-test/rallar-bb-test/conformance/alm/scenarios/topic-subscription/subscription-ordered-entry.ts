@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toNoRepairDispatchWait } from '../../alm-conformance-diagnostic-waits.ts';
+import { toNoGapRepairWaits } from '../../alm-conformance-diagnostic-waits.ts';
 import { ALM_CONFORMANCE_FOUR_ROLE_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -40,7 +40,7 @@ const PUBLISHED_BEFORE_ENTRY = 'published-2';
  * only once the receiver said both were confirmed and then hears `p3` of each and neither earlier publication. Over ws
  * the server's first copy to the sibling records no position for it, so the sibling enters at `p3` with prior `0`.
  * Over RTC the origin freezes the sibling into `p1` and `p2`, which it witnesses with each prior the origin recorded,
- * so `p3` follows in order. No producer dispatches a repair, and each loop holds the count identity.
+ * so `p3` follows in order. No producer is asked a gap or dispatches a repair, and each loop holds the count identity.
  */
 export const subscriptionOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-ordered-entry',
@@ -78,7 +78,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
             confirmations: 2,
             outsideAudience: computeUnelectedOutsideCount(producer, 1)
         }),
-        toNoRepairDispatchWait(producer, 'no-repair-dispatch')
+        ...toNoGapRepairWaits(producer)
     ];
 }
 

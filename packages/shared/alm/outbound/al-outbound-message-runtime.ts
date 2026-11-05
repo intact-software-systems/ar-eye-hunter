@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
-import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
+import { decodeALControlMessage, type ALNackPayload, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput,
@@ -392,6 +392,10 @@ export type ALOutboundRuntimeDiagnosticsEvent =
              * so absence means "not a receipt" rather than a missing phase.
              */
             phase?: ALReceiptPayload['phase'];
+            /** The NACK's own reason, present exactly when the control is a NACK. */
+            nackReason?: ALNackPayload['reason'];
+            /** The track a NACK asks about, present exactly when the NACK names one (a gap's). */
+            nackOrderingKey?: string;
         }>
         /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
         & ALMessageTrace

@@ -519,7 +519,8 @@ describe('ALM ordered subscription entry conformance', () => {
                     ...toPublishSteps(`${track}-p2`),
                     'cue-entered-received',
                     ...toPublishSteps(`${track}-p3`),
-                    'no-repair-dispatch'
+                    'no-repair-dispatch',
+                    'no-gap-nack'
                 ]);
             }
             // Publisher-b may publish both before the sibling listens, so the receiver, listening first, relays them.
@@ -598,7 +599,8 @@ describe('ALM ordered subscription entry conformance', () => {
                 ...toPublishSteps(`${track}-p4`),
                 'cue-resubscribed-received',
                 ...toPublishSteps(`${track}-p5`),
-                'no-repair-dispatch'
+                'no-repair-dispatch',
+                'no-gap-nack'
             ]);
         }
         expect(toStepNames(receiver)).toEqual([
@@ -746,6 +748,25 @@ describe('ALM ordered subscription entry conformance', () => {
             [true, 0]
         ]);
     });
+
+    it.each(['subscription-ordered-entry', 'subscription-ordered-omission'])(
+        'asserts in %s that no gap NACK about the cell\'s tracks reached either producer, from the history the repair wait kept',
+        (cell) => {
+            const scenario = findOrderedScenario('rtc', cell);
+            for (const [role] of PRODUCER_TRACKS) {
+                expect(findStep(requireRoleRecipe(scenario, role), 'no-gap-nack')).toMatchObject({
+                    kind: 'wait',
+                    absent: true,
+                    timeoutMs: 0,
+                    match: {
+                        kind: 'diagnostic',
+                        topic: 'rallar.browser.alm.outbound_diagnostics',
+                        contains: `"nackReason":"gap","nackOrderingKey":"${cell}:`
+                    }
+                });
+            }
+        }
+    );
 
     it('asserts no repair dispatch of the cell\'s type on either producer', () => {
         const scenario = findOrderedScenario('rtc-with-ws-fallback', 'subscription-ordered-omission');

@@ -162,7 +162,7 @@ every session the page opens. The event's `data` is the event itself:
   commit-scoped kinds, so a hold is charged to the work behind it rather than
   guessed at from a duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
-  `control-admission` (after a receipt's `phase`), `receipt-confirmation`,
+  `control-admission` (after a receipt's `phase` or a NACK's two fields), `receipt-confirmation`,
   `congestion` and `rtc-ack-submission`. `publication-staging` is the one
   message-scoped kind without the pair: it carries the value's `traceId` before
   `atMs` and no `corrId`, and `publication-opportunity` names no message.
@@ -275,7 +275,9 @@ every session the page opens. The event's `data` is the event itself:
   storage-queue regime (`pageRegime`, `alm-observation-artifact.md`)
 
 - `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
-  `reason`, and for a receipt `phase` (below): one event for every inbound
+  `reason`, for a receipt `phase` (below), and for a NACK `nackReason`, the
+  NACK's own reason, then `nackOrderingKey`, the track key a gap NACK names
+  (absent when the NACK names none): one event for every inbound
   ACK, NACK, repair or receipt control the outbound owner decides, recorded
   when it decides it. Every carrier discards
   that verdict: when captured, the inbound topic's `admission-outcome` for the

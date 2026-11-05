@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
-import { toNoRepairDispatchWait } from '../../alm-conformance-diagnostic-waits.ts';
+import { toNoGapRepairWaits } from '../../alm-conformance-diagnostic-waits.ts';
 import { ALM_CONFORMANCE_FOUR_ROLE_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -77,7 +77,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
         toCueWait(producer, 'resubscribed'),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
-        toNoRepairDispatchWait(producer, 'no-repair-dispatch')
+        ...toNoGapRepairWaits(producer)
     ];
 }
 
