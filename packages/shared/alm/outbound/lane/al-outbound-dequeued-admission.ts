@@ -15,10 +15,6 @@ import type {
     ALOutboundEffectSnapshot
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../admission/al-outbound-admission-validation.ts';
-import {
-    toALOrderingBatchSequences,
-    type ALOrderingBatchSequences
-} from '../admission/compute-al-ordering-prior-seq-record.ts';
 import type { ALOutboundDispatchAdmission } from '../al-outbound-dispatch-admission.ts';
 import type {
     ALOutboundDequeueAuthority,
@@ -27,7 +23,11 @@ import type {
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
-import { toALOutboundFollowerOrder } from './compute-al-outbound-group-sent-positions.ts';
+import {
+    toALOrderingBatchSequences,
+    toALOutboundFollowerOrder,
+    type ALOrderingBatchSequences
+} from './compute-al-outbound-group-sent-positions.ts';
 import {
     readALOutboundDequeueWait,
     toALOutboundDequeueFrontOutcome,

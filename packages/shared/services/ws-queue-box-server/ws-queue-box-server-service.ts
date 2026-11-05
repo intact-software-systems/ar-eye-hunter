@@ -32,10 +32,6 @@ import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create
 import type { ALOutboundPlanningAuthority } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
-    isALOrderingPredecessorInBatch,
-    type ALOrderingBatchSequences
-} from '../../alm/outbound/admission/compute-al-ordering-prior-seq-record.ts';
-import {
     ALOutboundMessageRuntime,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
@@ -53,6 +49,10 @@ import {
     createALOutboundReceiptWorkEvidence,
     toALOutboundReceiptFacts
 } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
+import {
+    isALOrderingPredecessorInBatch,
+    type ALOrderingBatchSequences
+} from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import { AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS } from '../../alm/outbound/lane/read-al-outbound-dequeue-wait.ts';
 import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';

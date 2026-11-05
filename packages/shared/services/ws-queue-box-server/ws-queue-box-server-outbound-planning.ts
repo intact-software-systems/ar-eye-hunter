@@ -16,7 +16,6 @@ import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-suppo
 import type { ALStoredOutboundMessage } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
-import { isALOutboundRowUnrecorded } from '../../alm/outbound/admission/compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import type {
     ALOutboundAckTrackingPlan,
@@ -29,6 +28,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../../alm/outbound/al-outbound-transport-message.ts';
+import { isALOutboundRowUnrecorded } from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';

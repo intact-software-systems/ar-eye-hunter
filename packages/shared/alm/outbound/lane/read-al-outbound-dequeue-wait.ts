@@ -2,11 +2,11 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import type { ALOutboundEffectSnapshot } from '../admission/al-outbound-admission-store.ts';
-import type { ALOrderingBatchSequences } from '../admission/compute-al-ordering-prior-seq-record.ts';
 import type {
     ALOutboundMessageRuntime,
     ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
+import type { ALOrderingBatchSequences } from './compute-al-outbound-group-sent-positions.ts';
 
 export const AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS = 50;
 

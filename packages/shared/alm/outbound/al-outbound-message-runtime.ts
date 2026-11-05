@@ -45,7 +45,6 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
 import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
-import type { ALOrderingBatchSequences } from './admission/compute-al-ordering-prior-seq-record.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
@@ -60,6 +59,7 @@ import type { ALOutboundDequeuedAdmission } from './lane/al-outbound-dequeued-ad
 import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
+import type { ALOrderingBatchSequences } from './lane/compute-al-outbound-group-sent-positions.ts';
 
 export type {
     ALOutboundControlAdmission,
