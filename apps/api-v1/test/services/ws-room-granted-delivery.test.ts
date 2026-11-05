@@ -547,6 +547,24 @@ Deno.test('an unsubscribe the re-check finds records the dropped session outside
     });
 });
 
+Deno.test('a subscribed session connected to another instance is never recorded outside by this instance', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        // Carol's live session is on another instance: this instance's re-check finds no socket of hers, which excludes nothing.
+        const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
+        const message = feedMessage({ senderId: 'alice', msgId: 'receipted-elsewhere' });
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) > 0);
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await settle();
+
+        const receipts = readReceipts(frames.alice);
+        assert.deepEqual(receipts[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
+        assert.equal(receipts.some((receipt) => receipt.phase === 'complete'), false);
+        assert.equal(receipts.some((receipt) => receipt.outsideAudienceRecipientPeerIds.includes('carol')), false);
+    });
+});
+
 Deno.test('a members-topic outbox row is narrowed by the durable filter only', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);

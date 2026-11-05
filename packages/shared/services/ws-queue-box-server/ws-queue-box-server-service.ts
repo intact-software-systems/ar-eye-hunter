@@ -877,7 +877,9 @@ export class WsQueueBoxServerService {
 
     /**
      * Records each session the server sent its origin's row nothing outside the audience of the receipt the origin
-     * awaits (S4-R9); the server's own rows and rows no receipt counts recipients of have none to record in.
+     * awaits (S4-R9); the server's own rows and rows no receipt counts recipients of have none to record in. Only a
+     * session connected here is this instance's to judge: its re-check sees every other instance's session as not
+     * here, which is no exclusion, so that session stays expected and its own instance answers for it.
      */
     async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
         const originPeerId = message.id.senderId;
@@ -887,7 +889,10 @@ export class WsQueueBoxServerService {
         ) {
             return;
         }
-        for (const recipientPeerId of sessionIds.filter((sessionId) => sessionId !== originPeerId)) {
+        const judged = sessionIds.filter((sessionId) =>
+            sessionId !== originPeerId && this.socket.connections.get(sessionId)?.isOpen === true
+        );
+        for (const recipientPeerId of judged) {
             await this.ackRelay.writeServerAck(toWsQueueBoxServerOutsideAudienceAck({
                 message,
                 recipientPeerId,
