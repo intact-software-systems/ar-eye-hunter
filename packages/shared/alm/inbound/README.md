@@ -298,7 +298,8 @@ places it outside the audience as `not-subscribed` does. A relay admits a child'
 outbound owner's -- from a child hop its row waits on and for a recipient of the frozen audience whose
 confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`, and
 re-originates it to its parent from itself naming the same recipient and reason, once per recipient, and as
-`not-subscribed` in its answer to a retried copy, since the row records who is outside, not why; the NACK completes no hop, and no confirming ACK for that recipient is admitted after
+`not-subscribed` in its answer to a retried copy, since the row records who is outside, not why (the origin
+records the recipient outside under either reason); the NACK completes no hop, and no confirming ACK for that recipient is admitted after
 it (PL9, PL16). A row stored before `outsideAudiencePeerIds` existed reads none. The row stays until it
 expires, so a child ACK that arrives after completion is still relayed, and a
 retried copy of the message is answered from it
