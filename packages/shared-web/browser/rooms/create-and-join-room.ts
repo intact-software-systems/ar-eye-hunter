@@ -11,8 +11,8 @@ import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
-import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
 import { leaveRoom } from './leave-room.ts';
+import type { BrowserRoomPresenceReassertion } from './presence-reassertion/browser-room-presence-reassertion.ts';
 import type { RallarCreateRoomInput, RallarRoomSwitchPartialFailureError } from './rallar-room-contracts.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';

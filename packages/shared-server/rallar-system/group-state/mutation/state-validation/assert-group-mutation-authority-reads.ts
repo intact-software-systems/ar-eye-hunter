@@ -58,16 +58,14 @@ function assertTopicSubscriptionTargetReads({
     identities
 }: AssertGroupMutationAuthorityReadsInput): void {
     const subscription = read.targetTopicSubscription;
-    if (!readsTopicSubscriptionTarget(command)) {
-        if (subscription !== null) {
-            throw new TypeError('Topic subscription read differs from the command read scope');
-        }
+    if (subscription === null) {
         return;
     }
-    if (subscription !== null) {
-        const key = groupStateTopicSubscriptionStorageKey(ref, command.sessionId, command.input.topicId);
-        assertTopicSubscriptionRow(subscription, key, identities.targetPrincipalId);
+    if (!readsTopicSubscriptionTarget(command)) {
+        throw new TypeError('Topic subscription read differs from the command read scope');
     }
+    const key = groupStateTopicSubscriptionStorageKey(ref, command.sessionId, command.input.topicId);
+    assertTopicSubscriptionRow(subscription, key, identities.targetPrincipalId);
 }
 
 /** Exactly the commands that assert a connection generation read the target session's active client-state rows. */

@@ -43,7 +43,7 @@ import {
     removeGroupStateSnapshotIfUnchanged,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
+import type { BrowserRoomPresenceReassertion } from './presence-reassertion/browser-room-presence-reassertion.ts';
 import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';

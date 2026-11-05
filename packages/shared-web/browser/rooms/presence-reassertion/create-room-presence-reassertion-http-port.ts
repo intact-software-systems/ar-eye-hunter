@@ -1,8 +1,8 @@
 import { toStateScope } from '@shared/api/api-type-utils.ts';
 
+import { readRoomSessionPresence } from '../join-room.ts';
+import { createStateGroupPresenceCommand } from '../room-group-state-workflows.ts';
 import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
-import { readRoomSessionPresence } from './read-room-session-presence.ts';
-import { createStateGroupPresenceCommand } from './room-group-state-workflows.ts';
 
 /** The re-assertion's presence connect and arrival wait over the room flows' own REST commands. */
 export function createRoomPresenceReassertionHttpPort(): BrowserRoomPresenceReassertion.PresencePort {

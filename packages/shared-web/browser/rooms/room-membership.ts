@@ -1,5 +1,5 @@
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
-import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
+import type { BrowserRoomPresenceReassertion } from './presence-reassertion/browser-room-presence-reassertion.ts';
 import type {
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,

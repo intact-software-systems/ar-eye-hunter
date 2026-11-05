@@ -4,7 +4,7 @@ import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/sta
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 
-import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
+import type { BrowserRoomPresenceReassertion } from './presence-reassertion/browser-room-presence-reassertion.ts';
 import type { RallarLeaveRoomOptions } from './rallar-room-contracts.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 import { leaveStateGroup, type StateGroupWorkflowValue } from './room-group-state-workflows.ts';

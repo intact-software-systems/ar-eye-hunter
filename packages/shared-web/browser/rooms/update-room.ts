@@ -8,7 +8,7 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
-import type { BrowserRoomPresenceReassertion } from './browser-room-presence-reassertion.ts';
+import type { BrowserRoomPresenceReassertion } from './presence-reassertion/browser-room-presence-reassertion.ts';
 import type {
     RallarRoomLifecycleOptions,
     RallarRoomTargetInput,

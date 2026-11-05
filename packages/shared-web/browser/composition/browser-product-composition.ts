@@ -9,8 +9,8 @@ import { BrowserRallarPeopleRuntime } from '@shared-web/browser/people/browser-r
 import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
-import { BrowserRoomPresenceReassertion } from '@shared-web/browser/rooms/browser-room-presence-reassertion.ts';
-import { createRoomPresenceReassertionHttpPort } from '@shared-web/browser/rooms/room-presence-reassertion-http-port.ts';
+import { BrowserRoomPresenceReassertion } from '@shared-web/browser/rooms/presence-reassertion/browser-room-presence-reassertion.ts';
+import { createRoomPresenceReassertionHttpPort } from '@shared-web/browser/rooms/presence-reassertion/create-room-presence-reassertion-http-port.ts';
 import type { RallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';

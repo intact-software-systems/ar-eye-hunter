@@ -3,7 +3,10 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { RallarLifecycleParticipant } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
-import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+
+import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 
 export namespace BrowserRoomPresenceReassertion {
     export interface Input {
@@ -151,7 +154,7 @@ export class BrowserRoomPresenceReassertion
             snapshot = await this.#input.presence.connectPresence(request);
         }
         catch (error) {
-            return toRefusedPresenceAnswer(error);
+            return toRefusedPresenceAnswer(toError(error));
         }
         return snapshot !== undefined && await this.#input.presence.readSessionPresent(snapshot, request)
             ? 'present'
@@ -174,7 +177,7 @@ interface ReassertAttempt {
  * A 400, 403 or 404 is the server's refusal, except `stale-generation`: a newer socket opened while this connect was in
  * flight, and that open re-asserts. Any other failure leaves the room for the next open.
  */
-function toRefusedPresenceAnswer(error: unknown): PresenceAnswer {
+function toRefusedPresenceAnswer(error: Error): PresenceAnswer {
     if (!(error instanceof ApiHttpError) || ![400, 403, 404].includes(error.status)) {
         return 'unchanged';
     }

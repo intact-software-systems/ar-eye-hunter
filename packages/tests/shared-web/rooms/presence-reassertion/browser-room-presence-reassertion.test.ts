@@ -3,26 +3,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import { BrowserRoomPresenceReassertion } from '@shared-web/browser/rooms/browser-room-presence-reassertion.ts';
+import { BrowserRoomPresenceReassertion } from '@shared-web/browser/rooms/presence-reassertion/browser-room-presence-reassertion.ts';
 import {
     setBrowserStateReadDiagnosticsSink,
     type BrowserStateReadDiagnosticEvent
 } from '@shared-web/browser/state-read/diagnostics.ts';
-import { requireRecord } from '@shared/api/exact-object-decoding.ts';
+import { requireEpoch, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { JsonWebSocketClient, WebSocketClientCallbacks } from '@shared/websocket/json-web-socket-client.ts';
 
-import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
-import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
-import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
-import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from './room-workflow-test-runtime.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../../api-middleware-test-double.ts';
+import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
+import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
+import { createRoomSnapshot, getRoomWorkflowMocks, resetRoomWorkflowTestRuntime } from '../room-workflow-test-runtime.ts';
 
 /** One REST call the facade made, as the room fixture server saw it. */
 interface HttpRequest {
     readonly url: string;
     readonly method: string;
-    readonly body: Readonly<Record<string, unknown>>;
+    readonly body: object;
 }
 
 /** How the fake room answers one presence connect: arrival, a summary that never lists it, or an HTTP refusal. */
@@ -207,13 +207,14 @@ describe('room flows keep the entered-rooms register', () => {
         });
         const facade = createRallarFacade();
         await facade.rooms.join({ roomRef: ROOM_REF, leaveCurrent: false });
-        const joinedGeneration = requests.filter(isPresenceConnect).at(-1)?.body.generationId;
+        const joinedGeneration = requireRecord(requests.filter(isPresenceConnect).at(-1)?.body, 'Joined presence')
+            .generationId;
 
         await reopenFacadeSocket();
         await vi.waitFor(() => expect(requests.filter(isPresenceConnect)).toHaveLength(2));
-        const reasserted = requests.filter(isPresenceConnect)[1]?.body;
-        expect(reasserted?.connectionGenerationId).toBe('ws-generation-session-1');
-        expect(reasserted?.generationId).not.toBe(joinedGeneration);
+        const reasserted = requireRecord(requests.filter(isPresenceConnect)[1]?.body, 'Re-asserted presence');
+        expect(reasserted.connectionGenerationId).toBe('ws-generation-session-1');
+        expect(reasserted.generationId).not.toBe(joinedGeneration);
 
         await facade.rooms.leave({ roomRef: ROOM_REF });
         await reopenFacadeSocket();
@@ -235,10 +236,9 @@ function isPresenceConnect(request: HttpRequest): boolean {
 
 /** The fixture server publishes the generation and lease of a presence connect at the next presence revision. */
 function withPresenceGeneration(snapshot: GroupSnapshot, request: HttpRequest): GroupSnapshot {
-    const { generationId, expiresAtEpochMs } = request.body;
-    if (typeof generationId !== 'string' || typeof expiresAtEpochMs !== 'number') {
-        throw new Error('A presence connect names its generation and lease.');
-    }
+    const { generationId, expiresAtEpochMs } = requireRecord(request.body, 'Presence request');
+    requireString(generationId, 'generationId');
+    requireEpoch(expiresAtEpochMs, 'expiresAtEpochMs');
     const presenceRevision = snapshot.causalRevision.presenceRevision + 1;
     return {
         ...snapshot,
