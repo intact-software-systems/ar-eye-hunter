@@ -457,34 +457,34 @@ describe('a granted publication\'s admission on its room plan', () => {
             });
         });
 
-        it('answers a copy an ordering gap held back not-subscribed instead of asking for the gap, and keeps its ACK', () => {
-            const ordered = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'gapped' }, roomRef, 'chat.v1', {}, {
+        it('answers a witnessed ordered copy not-subscribed and keeps its ACK: a witness holds no gap back', () => {
+            const ordered = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'witnessed' }, roomRef, 'chat.v1', {}, {
                 ack: 'receiver',
                 reliability: 'at-least-once',
                 ttlMs: 30_000,
                 orderingKey: 'room-track',
                 seq: 2
             });
-            const gapped = planALMessageHandling(ordered, {
+            const witnessed = planALMessageHandling(ordered, {
                 nowMs,
                 selfPeerId: 'leaf',
                 fromPeerId: 'origin',
                 connectedPeerIds: ['origin'],
                 groupMemberPeerIds: ['origin', 'leaf'],
                 orderingObservation: {
-                    status: 'gap',
+                    status: 'witnessed',
                     trackKey: 'room-track',
                     seq: 2,
-                    expectedSeq: 1,
-                    lastContiguousSeq: 0,
-                    missingRanges: [{ from: 1, to: 1 }],
+                    expectedSeq: 3,
+                    lastContiguousSeq: 2,
+                    missingRanges: [],
                     releasableSeqs: []
                 }
             });
 
-            const answered = toRtcPublicationHandlingPlan(gapped, notSubscribed, 'origin');
+            const answered = toRtcPublicationHandlingPlan(witnessed, notSubscribed, 'origin');
 
-            expect([gapped.localDelivery.deferred, gapped.ack.enabled, gapped.nack.reason]).toEqual([true, false, 'gap']);
+            expect([witnessed.localDelivery.deferred, witnessed.nack.enabled]).toEqual([false, false]);
             expect(answered).toMatchObject({
                 localDelivery: { enabled: false, deferred: false },
                 ack: { enabled: true, algo: 'receiver', toPeerId: 'origin' },
