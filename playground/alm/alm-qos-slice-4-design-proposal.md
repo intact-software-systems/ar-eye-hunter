@@ -37,14 +37,17 @@ rejoins a room (its proof is the fixture).
 - **Track and position.** A track is `${orderingKey}:${senderId}:${epoch ?? 0}`, named by no topic, audience or
   generation (`AC/al-runtime.ts:73-97`); its snapshot is `{ lastContiguousSeq, bufferedSeqs, updatedAtMs }` (`:53-57`).
   A receiver with no snapshot expects `1` (`ALM/compute-al-ordering-observation.ts:33-41`); a sequence more than 256
-  past the expected one, or a full buffer, is `resync-required` (`:44-55`, `:86-88`; `AC/al-message-resource-limits.ts:19-24`),
+  past the expected one, or a full buffer, is `resync-required` (`:44-55`, `:86-88`;
+  `AC/al-message-resource-limits.ts:19-24`),
   a drop that stops forwarding (`AC/al-policy.ts:538-540`; `ALM/inbound/al-inbound-message-admission.ts:114-115`). A gap
   defers delivery only for a logical recipient and NACKs the immediate hop (`al-policy.ts:572-582`, `:638-645`).
 - **Every admitted frame moves the track.** The ordering acceptance is applied whatever the plan delivers
   (`ALM/inbound/al-inbound-planner-snapshot.ts:120-135`) and written whenever it yields a snapshot
   (`ALM/inbound/admission/al-inbound-delivery-mutations.ts:45-51`): a relay, a forward-only peer and a frozen
-  recipient with a `pending` token (`MC/publication/compute-rtc-publication-admission.ts:104-122`) all advance it, so two
-  subscribers of one topic end at different positions under different trees (`MC/rtc-room-snapshot-admission.ts:281-283`).
+  recipient with a `pending` token (`MC/publication/compute-rtc-publication-admission.ts:104-122`) all advance it, so
+  two
+  subscribers of one topic end at different positions under different trees
+  (`MC/rtc-room-snapshot-admission.ts:281-283`).
 - **Browser positions are the application's.** A browser send passes `input.seq` through
   (`packages/shared-web/browser/messages/browser-rallar-message-sender.ts:496-498`, `:524-527`); a WS send states both
   halves or neither (`browser-message-input-validator.ts:132-152`). Only the WS server mints, for its own publications,
@@ -52,44 +55,53 @@ rejoins a room (its proof is the fixture).
   session and written in the fenced commit (`ALM/outbound/admission/al-outbound-admission-reads.ts:433-454`;
   `al-outbound-admission-mutations.ts:236-246`), expiring with the sent row (`:363-371`). "The browser's outbound never
   mints" (`ALM/outbound/README.md:815`). No browser code in `apps/*/src` sets an ALM `orderingKey`; Relic's server sets
-  `{ orderingKey, epoch: round, seq: 1 | 2 }` (`packages/relic-hunters/server/compute-relic-game-publications.ts:264-278`).
+  `{ orderingKey, epoch: round, seq: 1 | 2 }`
+  (`packages/relic-hunters/server/compute-relic-game-publications.ts:264-278`).
 - **Two audience authorities.** RTC: the origin freezes live sessions whose principal holds `subscribe` and signs
   (`MC/publication/rtc-granted-publication-carrier.ts:104-134`; `compute-granted-subscribe-holders.ts:8-21`); a frozen
   recipient without an active token forwards, delivers nothing and answers `not-subscribed` (D518). WS: the server
-  intersects live, leased, generation-matched subscriptions per pass (`packages/shared-server/rallar-system/websocket/room-publication/compute-room-publication-admission.ts:59-86`),
+  intersects live, leased, generation-matched subscriptions per pass
+  (`packages/shared-server/rallar-system/websocket/room-publication/compute-room-publication-admission.ts:59-86`),
   captures the audience and generations beside the row (`websocket/router/publish-rallar-server-ws-message.ts:153-165`,
   `:214-235`; `ALM/outbound/admission/al-outbound-admission-validation.ts:37-56`) and only narrows it afterwards
   (`QBS/ws-queue-box-server-dequeue-authority.ts:118-145`; D498). The route and the socket admission read independently
   (`websocket/router/rallar-server-ws-router.ts:197-266`). No version orders "S subscribed" against "the sender froze"
   (a subscribe bumps nothing, D504), and the origin never sees subscription rows (D508).
 - **Repair floors that exist.** The WS server serves a gap only to requesters inside the row's `admittedAudience`
-  (`QBS/ws-queue-box-server-outbound-planning.ts:249-290`; pinned `packages/tests/shared/services/ws-queue-box-server-ordered-repair.test.ts:163-176`:
+  (`QBS/ws-queue-box-server-outbound-planning.ts:249-290`; pinned
+  `packages/tests/shared/services/ws-queue-box-server-ordered-repair.test.ts:163-176`:
   the joiner gets nothing and stalls). An RTC responder serves a target only inside the signed frozen audience and
   holding `subscribe` (`MC/publication/compute-rtc-repair-target-admission.ts:31-47`) — a frozen holder whose token was
-  `pending` is admitted. A control addressed to a peer other than the stored owner is refused (`ALM/outbound/validate-al-outbound-control-admission.ts:32-34`),
+  `pending` is admitted. A control addressed to a peer other than the stored owner is refused
+  (`ALM/outbound/validate-al-outbound-control-admission.ts:32-34`),
   so a downstream gap NACK addressed to a relay is never served; the relay plans a repair whose result is discarded
   (`al-outbound-repair-admission.ts:131-166`). Over WS a client's NACK for a `trusted-server` frame names the message's
   `senderId` (`packages/shared/services/ws-queue-box-client-service.ts:316`).
 - **The signed envelope.** `ordering` is signed field by field through an exhaustive class record
   (`AC/publication-proof/al-publication-proof.ts:52-67`, `:97-101`): a new `ALOrdering` key does not compile until
   classified. No plan may change a signed field (`:155-160`); repair resends the stored signed envelope (D519). The
-  persisted decoder accepts exactly `orderingKey`, `epoch`, `seq` in `ordering` (`AC/al-message-persistence-validation.ts:191-196`).
+  persisted decoder accepts exactly `orderingKey`, `epoch`, `seq` in `ordering`
+  (`AC/al-message-persistence-validation.ts:191-196`).
 - **Receipts.** A `not-subscribed` NACK and the `subtree-complete-not-subscribed` completion place the recipient
   outside the audience, never confirmed (`ALM/outbound/transition-al-outbound-pending-ack.ts:139`, `:157-161`;
   `QBS/ws-queue-box-server-receipt-aggregation.ts:640-652`); a session the dequeue re-check drops "stays expected in
   the receipt its admission wrote" (`ws-queue-box-server-dequeue-authority.ts:118-123`).
 - **Subscription row.** `{ sessionId, principalId, topicId, connectionGenerationId, leaseExpiresAtEpochMs,
-  admittedAtGroupRevision }`, answer `{ outcome }` (`packages/shared/api/group-publication/group-topic-subscriptions.ts:14-33`);
+  admittedAtGroupRevision }`, answer `{ outcome }`
+  (`packages/shared/api/group-publication/group-topic-subscriptions.ts:14-33`);
   rebuilt on every renewal (`GS/mutation/subscription/compute-group-topic-subscription-mutation.ts:60-86`); the write is
   the row alone (`:149-167`). `admittedAtGroupRevision` has no production reader. A same-session WS reconnect leaves
-  room presence closed (D506; `GS/presence/group-session-cleanup.ts:20-35`; `packages/shared/api/group-presence/is-live-room-session.ts:4-6`),
+  room presence closed (D506; `GS/presence/group-session-cleanup.ts:20-35`;
+  `packages/shared/api/group-presence/is-live-room-session.ts:4-6`),
   so the reopened session is in neither audience.
 - **Harness.** No conformance cell sends an ordered granted publication (`toGrantedSend`,
   `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/topic-subscription-publications.ts:246-263`);
-  message events carry no ordering fields (`packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-typed-channels.ts:283-291`);
+  message events carry no ordering fields
+  (`packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-typed-channels.ts:283-291`);
   the inbound diagnostic union has no ordering kind (`ALM/inbound/al-inbound-runtime-diagnostics.ts:103-125`). Cells
   run only in the non-blocking observation job at `smoke` (`.github/workflows/alm-conformance-observation.yml:10-13`,
-  `:27-28`); no hosted entry carries four-role cells (`apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts:76-79`, D505).
+  `:27-28`); no hosted entry carries four-role cells
+  (`apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts:76-79`, D505).
 - **A defect fixed on S3-ii after the surveys.** At `c673b4997` a frozen, not-subscribed recipient that observed a
   gap kept the gap NACK (`rtc-room-snapshot-admission.ts:145-163`) and so sent neither NACK
   (`compute-al-inbound-admission.ts:192-194`); `60992a663` makes it answer `not-subscribed` and end its hop confirming
@@ -167,8 +179,10 @@ asks for a gap nobody serves until its 60-minute track TTL — today's behaviour
 - **(a) Recommended.** A delivering or deferred admission observes as today. A frozen recipient that delivers
   nothing (`forward-not-subscribed`) **witnesses**: its position moves to `seq`, nothing is buffered, no gap NACK, and
   its completion confirms nobody — the S3-ii fix's invariant, so the branch at
-  `rtc-room-snapshot-admission.ts:150-163` has one input and is deleted. A peer outside the frozen audience and a pure relay observe nothing and always forward.
-  The WS server keeps observing its clients' tracks as their ordering hop (`ws-queue-box-client-own-hop-retry.test.ts:147`);
+  `rtc-room-snapshot-admission.ts:150-163` has one input and is deleted. A peer outside the frozen audience and a pure
+  relay observe nothing and always forward.
+  The WS server keeps observing its clients' tracks as their ordering hop
+  (`ws-queue-box-client-own-hop-retry.test.ts:147`);
   the role is a composition input of the inbound runtime, not a per-frame inference.
 - (b) No observation for any non-delivering admission. Then a session whose token was `pending` while frames were
   frozen to it has no position at activation and asks for them: the lost-while-pending replay the surveys infer.
