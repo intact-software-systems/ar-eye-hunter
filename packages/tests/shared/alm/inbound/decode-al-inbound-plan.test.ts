@@ -10,7 +10,7 @@ const message = newALUnicastMessage('origin', newALRoute('app.topic', 'context',
 const planned = planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self', fromPeerId: 'origin' });
 
 /** The plan as an admission row stores it: JSON, so an absent field is gone rather than undefined. */
-function toStoredPlan(changes: Partial<ALMessageHandlingPlan>): unknown {
+function toStoredPlan(changes: Partial<ALMessageHandlingPlan>): object {
     return JSON.parse(JSON.stringify({ ...planned, ...changes }));
 }
 

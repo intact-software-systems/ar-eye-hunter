@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { PersistedALValue } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
+
+interface MalformedPriorSeqs {
+    readonly label: string;
+    readonly record: PersistedALValue;
+}
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
@@ -15,7 +21,7 @@ const ORDERED: ALMessage = newALBroadcastMessage(
     { groupRef: ROOM, ordering: { orderingKey: 'game-1', epoch: 2, seq: 5 } }
 );
 
-function withPriorSeqs(priorSeqByRecipient: unknown): unknown {
+function withPriorSeqs(priorSeqByRecipient: PersistedALValue): object {
     return { ...ORDERED, ordering: { ...ORDERED.ordering, priorSeqByRecipient } };
 }
 
@@ -30,7 +36,7 @@ describe('the prior sequences an authority recorded on an ordered copy', () => {
         expect(decodeALMessageValue(withPriorSeqs({})).right).toEqual(withPriorSeqs({}));
     });
 
-    it.each([
+    it.each<MalformedPriorSeqs>([
         { label: 'a fractional sequence', record: { 'session-b': 1.5 } },
         { label: 'a negative sequence', record: { 'session-b': -1 } },
         { label: 'a sequence past the safe integers', record: { 'session-b': Number.MAX_SAFE_INTEGER + 1 } },
