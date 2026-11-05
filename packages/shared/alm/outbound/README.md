@@ -174,7 +174,8 @@ every server message keeps its one backend.
 
 - **Routing by durability.** An admission goes to the lane its plan's `lane` names, and every
   browser planner states `lane` as `resolveALOutboundStoreDurability(effective.durability.algo)`: the
-  message's effective durability alone. `local-outbox` and `local-inbox` name `durable` and go to
+  message's effective durability, except a first admission of its own room send that names an ordering key, which
+  owns its track's sequence and names `durable` whatever its durability (`toALOutboundMintingPlan`). `local-outbox` and `local-inbox` name `durable` and go to
   IndexedDB; `volatile`, the default for every send that names none, goes to memory; `local-checkpoint`
   names `checkpoint` and goes to the checkpoint lane; a runtime without one sends it to its volatile
   lane, `durable: false`, and a runtime with neither memory pair (the one-lane Node compositions, whose
@@ -185,11 +186,12 @@ every server message keeps its one backend.
   typed send is at-least-once, receipted and volatile (D2, D52), and a lane send that names no
   durability is volatile too (R-S3a-0). The plan is computed once and handed to that lane's admission. The admission verdict's
   `durable` says whether rows were persisted: the memory lane states every admission `durable: false`.
-- **A `local-checkpoint` send carries no client sequence.** A restored checkpoint could send a `seq`
+- **A `local-checkpoint` send carries no client sequence and asks for none.** A restored checkpoint could send a `seq`
   again for different content, so both browser planners refuse a `local-checkpoint` send that carries
-  one as `unsupported` ([`computeALOutboundOrderingRefusal`](./admission/compute-al-outbound-ordering-refusal.ts)).
-  An ordering key alone carries no position (every room send carries its group key), and a superseded
-  unsent copy was never seen outside the runtime, so both pass.
+  one, and a room send that names its ordering key alone (asking its outbound to mint from a head the checkpoint
+  lane cannot keep), as `unsupported`
+  ([`computeALOutboundOrderingRefusal`](./admission/sequencing/compute-al-outbound-ordering-refusal.ts)). A
+  superseded unsent copy was never seen outside the runtime, so it passes.
 - **Grouped sends.** A group whose members differ in durability commits as one group per lane: there
   is no cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
 - **Controls, receipts and retransmission** go to the memory lane, volatile or checkpoint, that owns
@@ -808,8 +810,8 @@ sessions, the last settlement kind and whether the receipt ran out (D61, D73).
 **Server-minted sequences.** A message the WS server publishes itself that names `ordering.orderingKey` (and
 an `epoch`) without a `seq` asks the server's outbound for the sequence (D150). The server's planner marks the plan
 `mintsSequence` only at admission (`phase: 'immediate'`) and only when the message's `senderId` is the server's own
-peer id; a relayed browser send that carries a key and no `seq` (an RTC room multicast and its WS fallback carry the
-group key) passes through unsequenced, as it came, and so does a row a producer wrote straight to the outbox. An
+peer id; a relayed browser send that carries a key and no `seq` passes through unsequenced, as it came, and so does a
+row a producer wrote straight to the outbox. An
 admission of a marked plan that finds no sent row for the `msgId` reads the track's ordering-head row
 (`toALOutboundOrderingHeadKey(namespace, trackKey)`, the track named by `toALSequenceMintTrackKey`: key, sender and
 epoch, as `toALOrderingTrackKey` names it once the `seq` exists) in the session that reads the sender version, and
@@ -820,12 +822,14 @@ attempt that commits: a commit that loses the fence retains its pending admissio
 asked for it (no `seq`, and the captured policy keeps `mintsSequence`), and the work queue's replay of that admission
 mints again when it commits, replacing the retained request in the canonical row by the minted message (the only
 change a pending canonical row accepts). An admission of a `msgId` that already has its sent row mints nothing and
-answers with the stored message. The head row expires as the sent row does: a durable pair keeps it
-`max(deadline, sentMessageTtlMs, controlHistoryTtlMs)` past the mint, and a receiver's ordering-track TTL defaults to
+answers with the stored message. The head row keeps the receivers' track retention: a durable pair keeps it
+`max(deadline, repositoryTtlMs, controlHistoryTtlMs)` past the mint, and a receiver's ordering-track TTL defaults to
 the repository TTL (60 minutes), so a receiver remembers a track as long as its sender keeps the head. Two limits
 remain: sequences follow commit order, so under contention two publications of one track can commit out of publish order
 (a first-in-first-out mint per track is a follow-up), and a track silent for over an hour restarts at 1 on both sides.
-The browser's outbound never mints: no browser planner marks a plan.
+Each browser carrier marks the first admission of its own room send that names an ordering key
+(`toALOutboundMintingPlan`): a key alone takes the next sequence, and a stated `seq` at or below the head is refused
+`unsupported` while one above it moves the head (`computeALOutboundSequenceMint`).
 
 **Sent positions (S4-R1, S4-R2).** The authority that finalizes a copy's audience records, per track and recipient,
 the last sequence it sent that recipient. A plan names those recipients in `recordsSentPositions` (the RTC origin at
