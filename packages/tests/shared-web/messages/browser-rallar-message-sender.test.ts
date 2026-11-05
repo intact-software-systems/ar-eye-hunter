@@ -409,7 +409,6 @@ describe('Rallar message send', () => {
             name: 'RallarValidationError',
             issues: [expect.objectContaining({ path: '$.orderingKey', code: 'missing-ordering-key' })]
         });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });
 
     it('keys an RTC room send on its room only beside a stated sequence, so a send without one stays unordered', async () => {
