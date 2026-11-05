@@ -1,28 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { Temporal } from '@js-temporal/polyfill';
-
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
     newALAckControlMessage
 } from '@shared/al-contracts/al-control.ts';
-import {
-    createInMemoryALAdmissionState,
-    InMemoryAdmissionBackend,
-    type ALAdmissionMemoryState
-} from '@shared/alm/al-admission-backend.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createVolatileALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { toALInboundMessageKey } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
-import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toALInboundMessageOwnerKey } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import {
     toALInboundControlAcksKey,
     toALInboundControlOwnersKey,
     toALInboundControlPendingKey
 } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
 import {
     createOriginReceiverMulticast,
@@ -31,6 +21,7 @@ import {
     enqueueAndDrain
 } from './rtc-origin-overlay-fixture.ts';
 import {
+    createObservedVolatileInboundPair,
     createRtcRelayOverlayFixture,
     type RtcRelayOverlayFixture
 } from './rtc-relay-overlay-fixture.ts';
@@ -44,11 +35,6 @@ interface RelayedMessage {
     readonly state: ALAdmissionMemoryState;
     readonly copy: ALMessage;
     readonly admittedAtMs: number;
-}
-
-interface ObservedVolatileInboundPair {
-    readonly state: ALAdmissionMemoryState;
-    readonly stores: ALVolatileInboundRuntimeStores;
 }
 
 describe('the rows an RTC relay keeps for one relayed volatile message (C14)', () => {
@@ -99,7 +85,7 @@ describe('the rows an RTC relay keeps for one relayed volatile message (C14)', (
 async function relayOneMessage(): Promise<RelayedMessage> {
     const snapshot = createOriginSnapshot(['a', 'r', 'b', 'c'], 4);
     const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r', 'c'] });
-    const pair = createObservedVolatileInboundPair();
+    const pair = createObservedVolatileInboundPair(RELAY_NAMESPACE);
     const relay = createRtcRelayOverlayFixture({
         selfPeerId: 'r',
         snapshot,
@@ -111,32 +97,6 @@ async function relayOneMessage(): Promise<RelayedMessage> {
     const admittedAtMs = Date.now();
     await relay.receive(copy, 'a');
     return { relay, state: pair.state, copy, admittedAtMs };
-}
-
-/** The relay session's memory pair, whose admission map the test reads back. */
-function createObservedVolatileInboundPair(): ObservedVolatileInboundPair {
-    const state = createInMemoryALAdmissionState(
-        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(Date.now()))
-    );
-    const backend = new InMemoryAdmissionBackend(state, Date.now);
-    return {
-        state,
-        stores: {
-            admissionStore: createVolatileALInboundAdmissionStore({
-                nowMs: Date.now,
-                namespace: RELAY_NAMESPACE,
-                backend,
-                orderingTrackTtlMs: 5 * 60_000,
-                supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention(),
-                maxOrderingTracks: undefined,
-                maxDeliveredMarkers: undefined
-            }),
-            workQueue: backend.workQueue,
-            evictExpired: () => backend.evictExpired(),
-            budget: undefined
-        }
-    };
 }
 
 /** Each row's kind: the key segment after the namespace, with the second segment under `control`. */
