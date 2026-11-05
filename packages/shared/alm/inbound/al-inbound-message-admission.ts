@@ -8,6 +8,7 @@ import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import { computeALInboundAdmission } from './admission/compute-al-inbound-admission.ts';
+import { toALInboundOrderingPosition } from './admission/to-al-inbound-ordering-position.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts';
@@ -20,7 +21,6 @@ import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-in
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
-import { toALInboundOrderingPosition } from './to-al-inbound-ordering-position.ts';
 
 /** A replay that never reached a commit wrote nothing, so it has no work to announce. */
 const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {

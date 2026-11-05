@@ -41,6 +41,7 @@ import {
     evictALInboundOrderingTracksPastCap,
     type ALInboundOrderingTracksReport
 } from './admission/evict-al-inbound-ordering-tracks-past-cap.ts';
+import type { ALOrderingObserver } from './admission/resolve-al-ordering-observer-role.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import {
     readALInboundStoredMessage,
@@ -73,7 +74,6 @@ import {
     type ALInboundControlSubject,
     type PendingControlValue
 } from './control/al-inbound-control-rows.ts';
-import type { ALOrderingObserver } from './resolve-al-ordering-observer-role.ts';
 
 export interface ALInboundMessageOwner {
     readonly msgId: string;

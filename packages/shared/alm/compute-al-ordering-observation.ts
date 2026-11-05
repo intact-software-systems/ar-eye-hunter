@@ -235,21 +235,3 @@ function toOrderingNoop(
         }
     };
 }
-
-/**
- * The sequence a tracked copy's delivery waits on: none before an entry (`0`), the record's prior after an omission or
- * a gap that ended at it, `seq - 1` otherwise. Read from the observation its admission recorded on the copy's slot.
- */
-export function computeALOrderingDeliveryPredecessorSeq(observation: ALOrderingObservation): number | undefined {
-    const { status, seq, priorSeq, lastContiguousSeq } = observation;
-    if (seq === undefined) {
-        return undefined;
-    }
-    if (status === 'entered') {
-        return 0;
-    }
-    if (status === 'omitted' || (status === 'gap' && priorSeq !== undefined && priorSeq > (lastContiguousSeq ?? 0))) {
-        return priorSeq;
-    }
-    return seq - 1;
-}

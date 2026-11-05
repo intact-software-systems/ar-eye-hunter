@@ -10,13 +10,16 @@ import {
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import { isALInboundDeliveringPlan } from './admission/al-inbound-not-subscribed-plan.ts';
+import {
+    resolveALOrderingObserverRole,
+    type ALOrderingObserver
+} from './admission/resolve-al-ordering-observer-role.ts';
 import type {
     ALInboundBufferedReleaseReadDto,
     ALInboundOrderedDeliveryRead,
     ALInboundSupersedenceReadState
 } from './al-inbound-admission-store.ts';
 import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
-import { resolveALOrderingObserverRole, type ALOrderingObserver } from './resolve-al-ordering-observer-role.ts';
 
 export interface ALInboundPlannerSnapshot {
     readonly msg: ALMessage;

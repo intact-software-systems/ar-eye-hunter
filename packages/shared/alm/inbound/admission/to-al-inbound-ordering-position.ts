@@ -1,4 +1,4 @@
-import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import type { ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
 
 /** A recipient's position event on a track, as its committed admission decided it. */
 export interface ALInboundOrderingPosition {

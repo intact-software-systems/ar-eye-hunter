@@ -1,6 +1,6 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import type { ALOrderingObserverRole } from '../../al-contracts/al-runtime.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALOrderingObserverRole } from '../../../al-contracts/al-runtime.ts';
 
 /**
  * Which tracks an inbound runtime observes, fixed where it is composed: `addressed` for a session, which observes only

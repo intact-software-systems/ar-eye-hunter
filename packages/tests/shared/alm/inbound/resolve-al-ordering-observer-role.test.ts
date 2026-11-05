@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALOrderingObserverRole } from '@shared/al-contracts/al-runtime.ts';
-import { resolveALOrderingObserverRole } from '@shared/alm/inbound/resolve-al-ordering-observer-role.ts';
+import { resolveALOrderingObserverRole } from '@shared/alm/inbound/admission/resolve-al-ordering-observer-role.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const FROZEN_TO_SELF: ALTargets = { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['self', 'other'], snapshotVersion: 3 };

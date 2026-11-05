@@ -16,6 +16,7 @@ import type { ALStorageRecoveryLane, ALStorageRecoveryReporter } from '../storag
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
+import type { ALOrderingObserver } from './admission/resolve-al-ordering-observer-role.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import type { ALInboundResyncRequired } from './al-inbound-resync-required.ts';
 import {
@@ -37,7 +38,6 @@ import {
     toALInboundReceiver,
     type ALInboundReceiver
 } from './read-al-inbound-message-authorization.ts';
-import type { ALOrderingObserver } from './resolve-al-ordering-observer-role.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
