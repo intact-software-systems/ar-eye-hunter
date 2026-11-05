@@ -190,7 +190,7 @@ export class WsQueueBoxServerOutboundPlanning {
             );
         }
         const recipients = resolved.right;
-        const sentPositionRecipients = toSentPositionRecipients(message, phase, admittedAudience);
+        const sentPositionRecipients = toSentPositionRecipients(message, request);
         return {
             msg: message,
             dropReasonCode: undefined,
@@ -355,16 +355,22 @@ export class WsQueueBoxServerOutboundPlanning {
 
 /**
  * The dequeue sends the audience the re-check narrowed (D498), so it fixes those recipients' positions on a tracked
- * row (S4-R1); an immediate send is live-only and records nothing (D508).
+ * row this outbound admitted (S4-R1); an immediate send is live-only and records nothing (D508), and neither does a
+ * producer-written row (T3-R4).
  */
 function toSentPositionRecipients(
     message: ALMessage,
-    phase: WsQueueBoxServerOutboundPhase,
-    admittedAudience: readonly string[] | undefined
+    { phase, admittedAudience, referenceKey }: WsQueueBoxServerOutboundPlanning.Request
 ): readonly string[] | undefined {
-    return phase === 'dequeue' && admittedAudience !== undefined && toALOrderingTrackKey(message) !== undefined
+    return phase === 'dequeue' && admittedAudience !== undefined && toALOrderingTrackKey(message) !== undefined &&
+            isWsQueueBoxServerAdmittedRow(referenceKey)
         ? admittedAudience.filter((peerId) => peerId !== message.id.senderId)
         : undefined;
+}
+
+/** A row the WS outbound admitted, named by its canonical key, as opposed to a row a producer wrote to the outbox. */
+function isWsQueueBoxServerAdmittedRow(referenceKey: Key | undefined): boolean {
+    return referenceKey?.topicId === 'AL_OUTBOUND_MESSAGE';
 }
 
 /** The authority a dispatch carries on to its captured policy, each field only when the request names it. */
