@@ -65,8 +65,16 @@ it('delivers a durable move notice through prepared native sends only to current
         await service.dispose();
         await engine.stop();
     });
-    expect(service.sendToTargetsWithResult({ message, recipientScope: scope, recipientPrincipalId: 'bob', recipientSessionIds: recipients }).sentCount).toBe(0);
-    expect(service.sendToTargetsWithResult({ message, recipientSessionIds: recipients }).sentCount).toBe(0);
+    expect(
+        service.sendToTargetsWithResult({
+            message,
+            sentPositions: null,
+            recipientScope: scope,
+            recipientPrincipalId: 'bob',
+            recipientSessionIds: recipients
+        }).sentCount
+    ).toBe(0);
+    expect(service.sendToTargetsWithResult({ message, sentPositions: null, recipientSessionIds: recipients }).sentCount).toBe(0);
     await stores.workQueue.enqueue(entry);
     await engine.executeOnce();
     await expect.poll(() => natives.get('replacement')!.sent.length).toBe(1);

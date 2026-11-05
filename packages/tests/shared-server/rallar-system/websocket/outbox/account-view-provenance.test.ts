@@ -202,7 +202,8 @@ describe('account view invalidation authority', () => {
             message,
             key: entry.key,
             policy,
-            eligibleSessionIds: policy.admittedAudience
+            eligibleSessionIds: policy.admittedAudience,
+            sentPositions: null
         }));
         expect(result.sentCount).toBe(1);
         expect(natives.get('alice')!.sent).toHaveLength(1);

@@ -84,6 +84,7 @@ it('writes only frozen generations, and drops a failed socket so its replacement
     });
     const send = {
         message: input.message,
+        sentPositions: null,
         recipientSessionIds: input.audience.recipientSessionIds,
         recipientScope: input.scope,
         roomSessionGenerations: input.audience.generations,

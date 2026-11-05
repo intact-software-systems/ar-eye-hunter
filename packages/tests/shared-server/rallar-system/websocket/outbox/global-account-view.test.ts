@@ -134,7 +134,7 @@ it('rejects missing, mixed, malformed and mismatched account authority at live s
             { message: { ...fixture.message, payload: { ...fixture.message.payload, typeId: 'forged' } }, accountView: ACCOUNT }
         ]
     ) {
-        expect(node.service.sendToTargetsWithResult(input).sentCount).toBe(0);
+        expect(node.service.sendToTargetsWithResult({ ...input, sentPositions: null }).sentCount).toBe(0);
     }
     const prepared = { kind: 'account-view', accountView: ACCOUNT, message: toALOutboundTransportMessage(fixture.message) };
     expect(() =>
@@ -235,7 +235,7 @@ it('rechecks authenticated account expiry immediately before native submission',
         node.proofs.set('ar', { scope: { applicationId: 'ar', workspaceId: 'default' }, principalId: 'alice', expiresAtEpochMs: 0 });
         return encode(message);
     });
-    expect(node.service.sendToTargetsWithResult({ message: fixture.message, accountView: ACCOUNT }).sentCount).toBe(0);
+    expect(node.service.sendToTargetsWithResult({ message: fixture.message, accountView: ACCOUNT, sentPositions: null }).sentCount).toBe(0);
     expect(native.sent).toHaveLength(0);
 });
 

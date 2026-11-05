@@ -18,6 +18,7 @@ export function writeViewResync(service: WsQueueBoxServerService, input: ViewRes
     );
     service.sendToTargetsWithResult({
         message: { ...message, id: { ...message.id, msgId: input.messageId, ts: input.createdAtEpochMs } },
+        sentPositions: null,
         requireAuthenticatedRecipient: true
     });
 }

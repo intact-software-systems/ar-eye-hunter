@@ -982,6 +982,7 @@ export class WsQueueBoxServerService {
         const result = this.liveDelivery.sendToTargetsWithResult({
             message,
             accountView: prepared.accountView,
+            sentPositions: null,
             expiresAtMs: lifecycle.expiresAtMs
         });
         if (result.failedCount > 0) {
