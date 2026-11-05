@@ -11,6 +11,7 @@ import {
     type PersistedALValue
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { AL_MESSAGE_DROP_REASON_CODES, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import type { ALOrderingObservationStatus } from '../../al-contracts/al-runtime.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
@@ -34,6 +35,19 @@ const PLAN_FIELDS = [
     'ownership',
     'orderingRuntime'
 ] as const;
+
+/** Keyed by every status, so a new one fails to compile here until a stored plan may carry it. */
+const ORDERING_OBSERVATION_STATUSES: Readonly<Record<ALOrderingObservationStatus, true>> = {
+    untracked: true,
+    'in-order': true,
+    gap: true,
+    duplicate: true,
+    stale: true,
+    'resync-required': true,
+    entered: true,
+    omitted: true,
+    witnessed: true
+};
 
 const EFFECTIVE_OPTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
     delivery: [],
@@ -197,11 +211,7 @@ function assertOrderingObservation(value: PersistedALValue): void {
         'releasableSeqs',
         'priorSeq'
     ], ['status', 'missingRanges', 'releasableSeqs']);
-    requireVariant(
-        ordering.status,
-        ['untracked', 'in-order', 'gap', 'duplicate', 'stale', 'resync-required', 'entered', 'omitted', 'witnessed'],
-        'ordering status'
-    );
+    requireVariant(ordering.status, Object.keys(ORDERING_OBSERVATION_STATUSES), 'ordering status');
     requireOptionalPersistedALNonEmptyString(ordering.trackKey, 'ordering track key');
     requireOptionalPersistedALSafeInteger(ordering.seq, 0, 'ordering sequence');
     requireOptionalPersistedALSafeInteger(ordering.expectedSeq, 0, 'ordering expected sequence');
