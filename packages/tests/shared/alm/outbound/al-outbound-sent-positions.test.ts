@@ -93,20 +93,19 @@ describe('the sent positions an admission records on its track', () => {
         expect(await readSentPositions(stores, keyed.message, ['b'])).toEqual({ b: 0 });
     });
 
-    it('reads no position on a re-admission of a sent frame and answers with the stored envelope', async () => {
+    it('answers a re-admission of a sent frame with the stored signed envelope, though its recipients moved since', async () => {
         const stores = createDefaultOutboundTestStores();
-        const { runtime, signed } = createRecordingRuntime(stores, signWithTestProof);
+        const { runtime } = createRecordingRuntime(stores, signWithTestProof);
         const frame = createFeedFrame('seq-1', 1, ['b', 'c']);
         const admitted = await runtime.enqueueIfAbsent(frame);
         await runtime.enqueueIfAbsent(createFeedFrame('seq-2', 2, ['b']));
-        const reads = vi.spyOn(stores.backend, 'read');
 
         const again = await runtime.enqueueIfAbsent(frame);
 
         expect(again.verdict.kind).toBe('duplicate');
         expect(again.message).toEqual(admitted.message);
-        expect(reads.mock.calls.map(([key]) => key).filter((key) => key.includes(':sent-position:'))).toEqual([]);
-        expect(signed.map((message) => message.id.msgId)).toEqual([frame.id.msgId, 'seq-2']);
+        expect((await stores.admissionStore.readSentMessage(frame.id.msgId))?.msg).toEqual(admitted.message);
+        expect(await readSentPositions(stores, admitted.message, ['b', 'c'])).toEqual({ b: 2, c: 1 });
     });
 
     it('records once when a lost fence retries the admission: the replay reads the positions the winner moved', async () => {
