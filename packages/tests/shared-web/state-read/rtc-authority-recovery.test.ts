@@ -553,7 +553,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             if (scenario === 'ordered-latest') {
                 // The origin recorded the superseded sequence as sent, and the receiver holds no position on the
                 // track, so the replacement opens it there: nothing below it is a gap to ask for.
-                expect(controls.filter((control) => control.type === 'nack' || control.type === 'repair')).toEqual([]);
+                expect(controls.filter((control) => control?.type === 'nack' || control?.type === 'repair')).toEqual([]);
             }
             await receiver.transferTo(sender);
             await vi.advanceTimersByTimeAsync(100);
