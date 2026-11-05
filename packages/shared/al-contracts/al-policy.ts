@@ -1,5 +1,6 @@
 import type { ALMessage, ALTargets } from './al-contract.ts';
 import type { ALInboundNackPlanReason } from './al-control-value-codec.ts';
+import { resolveALFrozenMulticastAudience } from './al-frozen-multicast-audience.ts';
 
 import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } from './al-runtime.ts';
 import { toALSeqRangesText } from './al-seq-range.ts';
@@ -354,6 +355,8 @@ interface ALMessageDeliveryPolicy {
 interface ALMessageRejection {
     readonly orderingRuntime: ALOrderingObservation;
     readonly drop: ALMessageDrop | undefined;
+    /** Whether the message's frozen audience names this peer. */
+    readonly frozenRecipient: boolean;
 }
 
 const LOW_PRIORITY_OVERLOAD_THRESHOLD = 0;
@@ -391,7 +394,12 @@ export function planALMessageHandling(
         dropReasonCode: drop?.code,
         ...delivery,
         ack: planAck(result.effective, context, delivery),
-        nack: planNack(result.effective, context, { orderingRuntime, drop }),
+        nack: planNack(result.effective, context, {
+            orderingRuntime,
+            drop,
+            frozenRecipient: resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds
+                .includes(context.selfPeerId) === true
+        }),
         repair: drop
             ? { enabled: false, algo: 'none' }
             : planRepair(result.effective, msg.targets, missesOwnedChild),
@@ -633,6 +641,11 @@ function planNack(
 
     if (drop?.code === 'resync-required') {
         return { enabled: true, toPeerId: context.fromPeerId, reason: 'resync-required', missingRanges: [] };
+    }
+
+    // A frozen copy below the position the recipient entered the track at is one it was never owed.
+    if (drop?.code === 'ordering-rejected' && orderingRuntime.status === 'stale' && rejection.frozenRecipient) {
+        return { enabled: true, toPeerId: context.fromPeerId, reason: 'before-entry', missingRanges: [] };
     }
 
     if (!drop && orderingRuntime.status === 'gap' && effective.repair.algo !== 'none') {

@@ -13,6 +13,7 @@ import type {
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
+import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
@@ -27,7 +28,7 @@ import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-cla
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
-    acceptALOutboundNotSubscribedNack,
+    acceptALOutboundOutsideAudienceNack,
     acceptALOutboundPendingAckSnapshot,
     isALOutboundReceiptComplete,
     toALOutboundAcknowledgementFact,
@@ -241,14 +242,14 @@ function computePendingAckWrite(
         return {
             kind: 'set',
             value: isALImpliedNotSubscribedNack(ack, owedPeerIds)
-                ? acceptALOutboundNotSubscribedNack(next, ack.logicalRecipientPeerId)
+                ? acceptALOutboundOutsideAudienceNack(next, ack.logicalRecipientPeerId)
                 : next
         };
     }
-    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'not-subscribed' && read.pending) {
+    if (read.parsed.type === 'nack' && isALOutsideAudienceNackReason(read.parsed.payload.reason) && read.pending) {
         return {
             kind: 'set',
-            value: acceptALOutboundNotSubscribedNack(read.pending, read.parsed.payload.logicalRecipientPeerId)
+            value: acceptALOutboundOutsideAudienceNack(read.pending, read.parsed.payload.logicalRecipientPeerId)
         };
     }
     return read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload) && read.pending

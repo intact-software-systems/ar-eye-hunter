@@ -24,6 +24,13 @@ describe('computeRtcRepairTargetAdmission', () => {
         expect(computeRtcRepairTargetAdmission(toInput(createRoom({ c: SUBSCRIBE_ONLY }), 'c')).right).toBe('admitted');
     });
 
+    // A witness (frozen in while its token was pending) would be served by this rule; it is never served only because
+    // its witnessed position asks for nothing below it.
+    it('admits a frozen recipient by its grant alone, reading no token it held at the freeze', () => {
+        expect(computeRtcRepairTargetAdmission(toInput(createRoom({ b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }), 'b')).right)
+            .toBe('admitted');
+    });
+
     it('refuses a target outside the frozen audience of a receiver receipt, a subscriber included: a repair never widens it', () => {
         expect(computeRtcRepairTargetAdmission(toInput(createRoom({ d: PUBLISH_AND_SUBSCRIBE }), 'd')).left)
             .toEqual({ kind: 'outside-frozen-audience' });

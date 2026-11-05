@@ -51,6 +51,8 @@ interface ReceiptedPublicationInput {
 
 interface OrderedReceiptedPublicationInput extends ReceiptedPublicationInput {
     readonly seq: number;
+    /** The record the origin signs into the frame; absent, no authority recorded the copy. */
+    readonly priorSeqByRecipient?: Readonly<Record<string, number>>;
 }
 
 /** The origin's receipt for a frame, fed the controls its next hop sent it. */
@@ -200,9 +202,9 @@ describe('a receipted granted publication at a frozen recipient that is not subs
     });
 
     it.each<[string, readonly number[]]>([
-        ['its first copy arriving past a gap', [2]],
-        ['a later copy arriving past a gap', [1, 3]]
-    ])('answers not-subscribed and confirms nobody on an ordered track, with %s', async (_shape, seqs) => {
+        ['its first copy arriving where a gap would have been', [2]],
+        ['a later copy arriving past where a gap would have been', [1, 3]]
+    ])('witnesses an ordered copy, answering not-subscribed and confirming nobody, with %s', async (_shape, seqs) => {
         const chain = await createRelayChain(['a', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
         const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'] });
         const frames: ALMessage[] = [];
@@ -222,7 +224,8 @@ describe('a receipted granted publication at a frozen recipient that is not subs
         }));
 
         expect(leaf.delivered).toEqual([]);
-        // A session not entitled to the track never asks for its history.
+        expect(readOrderingPositions(leaf)).toEqual(seqs.map((seq) => ['witnessed', seq, null]));
+        // A witness never asks for the track's history: its position moved past the would-be gap.
         expect(toControlTuples(gappedControls).toSorted()).toEqual([
             ['ack', 'c', 'subtree-complete-not-subscribed'],
             ['nack', 'c', 'not-subscribed']
@@ -231,7 +234,7 @@ describe('a receipted granted publication at a frozen recipient that is not subs
         expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: [], outside: ['c'], complete: false });
     });
 
-    it('ends a not-subscribed relay\'s hop past a gap with a completion that confirms nobody, its leaf answering likewise', async () => {
+    it('ends a not-subscribed relay\'s hop past a would-be gap with a completion that confirms nobody, its leaf answering likewise', async () => {
         const chain = await createRelayChain(['a', 'q', 'l'], { a: PUBLISH_AND_SUBSCRIBE, q: SUBSCRIBE_ONLY, l: SUBSCRIBE_ONLY });
         const q = createChainHop(chain, { selfPeerId: 'q', neighbourPeerIds: ['a', 'l'] });
         const l = createChainHop(chain, { selfPeerId: 'l', neighbourPeerIds: ['q'] });
@@ -324,6 +327,89 @@ describe('a receipted granted publication at a frozen recipient that is not subs
 
         expect(await relay.readSent('c')).toHaveLength(1);
         expect(toControlTuples(await relay.readSentControls('a')).filter(([type]) => type === 'nack')).toEqual([]);
+    });
+});
+
+describe('a recorded ordered track at its frozen recipients', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('witnesses 1 and 2 while its token is pending, then delivers 3 in order once active, never asking for 1 or 2', async () => {
+        const chain = await createRelayChain(['a', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
+        const token = createSwitchableTopicSubscriptions();
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'], topicSubscriptions: token.reader });
+        const frames = await signTrack(chain, [1, 2, 3].map((seq) => ({ seq, recipientPeerIds: ['c'], priorSeqByRecipient: {} })));
+
+        await leaf.receive(frames[0]!, 'a');
+        await leaf.receive(frames[1]!, 'a');
+        token.activate();
+        await leaf.receive(frames[2]!, 'a');
+
+        expect(leaf.delivered.map((message) => message.ordering?.seq)).toEqual([3]);
+        expect(readOrderingPositions(leaf)).toEqual([['witnessed', 1, 0], ['witnessed', 2, 1]]);
+        expect(toControlTuples(await leaf.readSentControls('a')).filter(isRepairRequest)).toEqual([]);
+    });
+
+    it('delivers a subscriber\'s copy past the sends it was excluded from as an omission, asking for none of them', async () => {
+        const chain = await createRelayChain(['a', 'b', 'c'], { a: PUBLISH_AND_SUBSCRIBE, b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY });
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'], topicSubscriptions: ACTIVE_TOKEN });
+        const frames = await signTrack(chain, [
+            { seq: 1, recipientPeerIds: ['b', 'c'], priorSeqByRecipient: {} },
+            { seq: 2, recipientPeerIds: ['b', 'c'], priorSeqByRecipient: {} },
+            { seq: 5, recipientPeerIds: ['b', 'c'], priorSeqByRecipient: { c: 2 } }
+        ]);
+
+        for (const frame of frames) {
+            await leaf.receive(frame, 'a');
+        }
+
+        expect(leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 5]);
+        expect(readOrderingPositions(leaf)).toEqual([['entered', 1, 0], ['omitted', 5, 2]]);
+        expect(toControlTuples(await leaf.readSentControls('a')).filter(isRepairRequest)).toEqual([]);
+    });
+
+    it('opens the track at an entry frame lost in transit when its repaired copy arrives alone', async () => {
+        const chain = await createRelayChain(['a', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'], topicSubscriptions: ACTIVE_TOKEN });
+        const [entry] = await signTrack(chain, [{ seq: 7, recipientPeerIds: ['c'], priorSeqByRecipient: { c: 0 } }]);
+
+        // The first copy is lost; the origin's retry is the only copy that arrives.
+        await leaf.receive(entry!, 'a');
+
+        expect(leaf.delivered.map((message) => message.ordering?.seq)).toEqual([7]);
+        expect(readOrderingPositions(leaf)).toEqual([['entered', 7, 0]]);
+        expect(toControlTuples(await leaf.readSentControls('a')).filter(isRepairRequest)).toEqual([]);
+    });
+
+    it('answers a copy below its position before-entry, carried through a relay and recorded outside at the origin, never ending its receipt', async () => {
+        const chain = await createRelayChain(['a', 'r', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
+        const relay = createChainHop(chain, { selfPeerId: 'r', neighbourPeerIds: ['a', 'c'] });
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['r'], topicSubscriptions: ACTIVE_TOKEN });
+        const [below, entry] = await signTrack(chain, [
+            { seq: 3, recipientPeerIds: ['c'], priorSeqByRecipient: { c: 0 }, nextHopPeerId: 'r' },
+            { seq: 5, recipientPeerIds: ['c'], priorSeqByRecipient: { c: 0 }, nextHopPeerId: 'r' }
+        ]);
+        const origin = await createOriginReceipt(below!, { expectedPeerIds: ['c'], nextHopPeerIds: ['r'] });
+
+        await relay.receive(entry!, 'a');
+        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
+        await relay.receive(below!, 'a');
+        await leaf.receive((await relay.readSent('c'))[1]!, 'r');
+        await deliverEach((await leaf.readSent('r')).filter((control) => toControlledMsgIdOf(control) === below!.id.msgId), relay, 'c');
+        await origin.accept((await relay.readSent('a')).filter((control) => toControlledMsgIdOf(control) === below!.id.msgId));
+
+        expect(leaf.delivered.map((message) => message.ordering?.seq)).toEqual([5]);
+        expect(readOrderingPositions(leaf)).toEqual([['entered', 5, 0], ['before-entry', 3, 0]]);
+        expect(toControlTuples(await relay.readSentControls('a')).filter(([type]) => type === 'nack')).toEqual([['nack', 'c', 'before-entry']]);
+        // A before-entry NACK places its recipient outside; it never ends the receipt as a refusal would.
+        expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: [], outside: ['c'], complete: false });
     });
 });
 
@@ -434,9 +520,38 @@ async function signOrderedReceiptedPublication(chain: RelayChain, input: Ordered
     return await signPublication(chain.keys.a!, {
         ...frozen,
         delivery: { ack: 'receiver', reliability: 'at-least-once' },
-        ordering: { orderingKey: 'feed-track', seq: input.seq },
+        ordering: {
+            orderingKey: 'feed-track',
+            seq: input.seq,
+            ...(input.priorSeqByRecipient === undefined ? {} : { priorSeqByRecipient: input.priorSeqByRecipient })
+        },
         forwarding: { ...frozen.forwarding, nextHopPeerIds: [input.nextHopPeerId] }
     });
+}
+
+interface TrackFrameInput {
+    readonly seq: number;
+    readonly recipientPeerIds: readonly string[];
+    readonly priorSeqByRecipient: Readonly<Record<string, number>>;
+    /** Absent, the origin's only next hop is the first recipient. */
+    readonly nextHopPeerId?: string;
+}
+
+/** The origin's signed frames of one recorded track, one message per sequence. */
+async function signTrack(chain: RelayChain, frames: readonly TrackFrameInput[]): Promise<readonly ALMessage[]> {
+    const signed: ALMessage[] = [];
+    for (const frame of frames) {
+        signed.push(
+            await signOrderedReceiptedPublication(chain, {
+                resourceId: `feed-${frame.seq}`,
+                recipientPeerIds: frame.recipientPeerIds,
+                nextHopPeerId: frame.nextHopPeerId ?? frame.recipientPeerIds.at(-1)!,
+                seq: frame.seq,
+                priorSeqByRecipient: frame.priorSeqByRecipient
+            })
+        );
+    }
+    return signed;
 }
 
 /** The origin's own `receiver` receipt for the frame, as its RTC dispatch tracks it. */
@@ -514,6 +629,33 @@ function toControlTuples(controls: readonly ALPeerControlMessage[]): readonly (r
             ? ['nack', control.payload.logicalRecipientPeerId, control.payload.reason]
             : ['repair', control.payload.fromPeerId, control.payload.reason]
     );
+}
+
+/** The message a sent control answers; undefined for a data copy. */
+function toControlledMsgIdOf(message: ALMessage): string | undefined {
+    const control = decodeALControlMessage(message).right;
+    return control === undefined || control.type === 'receipt' ? undefined : toControlledMsgId(control);
+}
+
+/** A NACK or repair that asks the origin for history, as opposed to one placing the recipient outside. */
+function isRepairRequest(control: readonly string[]): boolean {
+    return control[0] === 'repair' || (control[0] === 'nack' && control[2] !== 'not-subscribed');
+}
+
+/** Each `ordering-position` the session stated, as its status, sequence and the record's prior for it. */
+function readOrderingPositions(fixture: RtcRelayOverlayFixture): readonly (readonly [string, number, number | null])[] {
+    return fixture.diagnostics.flatMap((event) => event.kind === 'ordering-position' ? [[event.status, event.seq, event.priorSeq] as const] : []);
+}
+
+/** A token the test activates, as the tab's held subscription does once its subscribe call answers. */
+function createSwitchableTopicSubscriptions(): Readonly<{ reader: RtcTopicSubscriptionReader; activate: () => void; }> {
+    let active = false;
+    return {
+        reader: { isSubscriptionActive: (_groupRef, topicId) => active && topicId === PUBLICATION_TOPIC_ID },
+        activate: () => {
+            active = true;
+        }
+    };
 }
 
 /** A `not-subscribed` NACK from the leaf `c` naming a peer the frame never froze. */

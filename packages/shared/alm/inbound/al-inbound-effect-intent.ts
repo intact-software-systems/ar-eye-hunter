@@ -178,8 +178,11 @@ function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
         isALOutsideAudienceNackReason(reason);
 }
 
-/** A relay's `not-subscribed` NACK again for a recipient below it, answering a retried copy as it answers ACKs. */
-export function toALInboundRelayedNotSubscribedEffect(
+/**
+ * A relay's NACK again for a recipient below it that its row records outside, answering a retried copy as it answers
+ * ACKs. The row records who is outside, not why, so it repeats the outside class as `not-subscribed`.
+ */
+export function toALInboundRelayedOutsideAudienceEffect(
     input: ALInboundControlEffectInput,
     relayed: Readonly<{ toPeerId: string; peerId: string; }>
 ): ALInboundEffectIntent {

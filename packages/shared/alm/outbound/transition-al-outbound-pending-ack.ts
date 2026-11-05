@@ -136,8 +136,8 @@ export function acceptALOutboundPendingAckSnapshot(
     return { ...input.current, ackedPeerIds: [...ackedPeerIds] };
 }
 
-/** A `not-subscribed` NACK places its recipient outside the audience: neither confirmed nor still owed (PL10). */
-export function acceptALOutboundNotSubscribedNack(
+/** An outside-audience NACK places its recipient outside the audience: neither confirmed nor still owed (PL10). */
+export function acceptALOutboundOutsideAudienceNack(
     current: ALOutboundPendingAckSnapshot,
     logicalRecipientPeerId: string
 ): ALOutboundPendingAckSnapshot {

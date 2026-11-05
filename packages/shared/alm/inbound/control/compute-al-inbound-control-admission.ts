@@ -151,7 +151,8 @@ function computeUpwardAcknowledgementWork(
         [
             ...transition.relayedOutsidePeerIds.map((peerId) => ({
                 kind: 'nack' as const,
-                logicalRecipientPeerId: peerId
+                logicalRecipientPeerId: peerId,
+                reason: 'not-subscribed' as const
             })),
             ...toALInboundUpwardAcks(transition).map((ack) => ({ kind: 'ack' as const, ack }))
         ],

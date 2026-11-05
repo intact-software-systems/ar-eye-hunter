@@ -6,11 +6,12 @@ import {
 } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
+import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
 import { isALOutboundExpectedRepairPeer } from './control/is-al-outbound-expected-repair-peer.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
-import { validateALOutboundNotSubscribedNack } from './control/validate-al-outbound-not-subscribed-nack.ts';
+import { validateALOutboundOutsideAudienceNack } from './control/validate-al-outbound-outside-audience-nack.ts';
 import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
@@ -48,8 +49,8 @@ export function validateALOutboundControlAdmission(
         }
         return [...issues, ...validateAcknowledgedReceipt(read, payload)];
     }
-    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'not-subscribed') {
-        return [...issues, ...validateALOutboundNotSubscribedNack(read, read.parsed.payload)];
+    if (read.parsed.type === 'nack' && isALOutsideAudienceNackReason(read.parsed.payload.reason)) {
+        return [...issues, ...validateALOutboundOutsideAudienceNack(read, read.parsed.payload)];
     }
     const payload = read.parsed.payload;
     if (!isTrustedRelayRejection(read) && !isALOutboundExpectedRepairPeer(read, payload.fromPeerId)) {

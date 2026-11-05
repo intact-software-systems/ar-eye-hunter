@@ -290,13 +290,15 @@ that says why: under `receiver` and `leader` it sends its hop a `not-subscribed`
 confirms itself -- no `accepted`, no `delivered`, on a retried copy neither. Its hop still ends as any hop does,
 with a terminal ACK once its subtree answered (a leaf at once), but of status `subtree-complete-not-subscribed`,
 which completes the hop and confirms no recipient: no relay passes it upward and the origin counts nobody for it
-(PL11). A copy that arrives past an ordering gap is answered the same way: its gap NACK, which would ask for
-history the session is not entitled to, gives way to the `not-subscribed` NACK, and its hop ends with that status.
-A relay admits a child's `not-subscribed` NACK -- the one NACK inbound control admission handles; every
-other NACK stays its outbound owner's -- from a child hop its row waits on and for a recipient of the frozen
-audience whose confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`,
-and re-originates it to its parent from itself naming the same recipient, once per recipient and again in its
-answer to a retried copy; the NACK completes no hop, and no confirming ACK for that recipient is admitted after
+(PL11). Such a recipient witnesses the copy's ordering track: its position moves to the copy, nothing is buffered
+and no gap is ever asked for, so a copy past where a gap would have been is answered the same way. A recipient
+that receives a frozen copy below the position it entered the track at answers `before-entry` for itself, which
+places it outside the audience as `not-subscribed` does. A relay admits a child's outside-audience NACK
+(`not-subscribed`, `before-entry`) -- the NACKs inbound control admission handles; every other NACK stays its
+outbound owner's -- from a child hop its row waits on and for a recipient of the frozen audience whose
+confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`, and
+re-originates it to its parent from itself naming the same recipient and reason, once per recipient, and as
+`not-subscribed` in its answer to a retried copy, since the row records who is outside, not why; the NACK completes no hop, and no confirming ACK for that recipient is admitted after
 it (PL9, PL16). A row stored before `outsideAudiencePeerIds` existed reads none. The row stays until it
 expires, so a child ACK that arrives after completion is still relayed, and a
 retried copy of the message is answered from it

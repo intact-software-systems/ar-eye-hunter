@@ -169,10 +169,10 @@ function toOwedUpwardRecipientPeerIds(
 }
 
 /**
- * An admitted `not-subscribed` NACK names a recipient that delivered nothing, which the row relays upward and records.
+ * An admitted outside-audience NACK names a recipient that delivered nothing, which the row relays upward and records.
  * It completes no hop: the child's own hop-completion ACK does, once its subtree answered.
  */
-export function acceptALPendingNotSubscribedNack(
+export function acceptALPendingOutsideAudienceNack(
     current: ALPendingAckSnapshot,
     nack: ALNackPayload
 ): ALPendingAckSnapshot {

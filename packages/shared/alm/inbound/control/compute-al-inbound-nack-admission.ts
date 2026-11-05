@@ -6,21 +6,22 @@ import type {
 } from '../../../al-contracts/al-control.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
+import type { ALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
 import type {
     ALInboundCommitBundle,
     ALInboundControlOwnerIndex,
     ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
 import type { ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
-import { acceptALPendingNotSubscribedNack } from '../transition-al-pending-ack.ts';
+import { acceptALPendingOutsideAudienceNack } from '../transition-al-pending-ack.ts';
 import type { PendingControlValue } from './al-inbound-control-rows.ts';
 import { toALInboundControlObservations } from './compute-al-inbound-control-admission.ts';
 import { toALInboundUpwardControlWork } from './to-al-inbound-upward-control-work.ts';
 
 export interface ALInboundNackAdmissionRead {
     readonly namespace: string;
-    /** A child's `not-subscribed` NACK, for itself or for a recipient below it. */
-    readonly nack: ALNackPayload;
+    /** A child's outside-audience NACK, for itself or for a recipient below it. */
+    readonly nack: ALNackPayload & Readonly<{ reason: ALOutsideAudienceNackReason; }>;
     readonly controlOwners: ALInboundControlOwnerIndex;
     readonly owner: ALInboundMessageOwner;
     readonly pending: ALPendingAckSnapshot | undefined;
@@ -39,12 +40,14 @@ export interface ALInboundNackAdmissionCandidate {
     readonly pendingExpireAtTimestamp: number;
 }
 
-/** A relay passes a child's `not-subscribed` NACK upward as it passes a child's ACK (PL9). */
+/** A relay passes a child's outside-audience NACK upward, keeping its reason, as it passes a child's ACK (PL9). */
 export function computeALInboundNackAdmission(
     read: ALInboundNackAdmissionRead,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
-    const pending = read.pending === undefined ? undefined : acceptALPendingNotSubscribedNack(read.pending, read.nack);
+    const pending = read.pending === undefined
+        ? undefined
+        : acceptALPendingOutsideAudienceNack(read.pending, read.nack);
     return {
         read,
         pending: pending === undefined ? undefined : { kind: 'pending', value: pending },
@@ -59,7 +62,7 @@ export function computeALInboundNackAdmission(
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
             },
-            [{ kind: 'nack', logicalRecipientPeerId: read.nack.logicalRecipientPeerId }],
+            [{ kind: 'nack', logicalRecipientPeerId: read.nack.logicalRecipientPeerId, reason: read.nack.reason }],
             retention
         ),
         acceptance: { handled: true, completedPendingAcks: [] },
