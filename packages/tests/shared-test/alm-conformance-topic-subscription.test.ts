@@ -749,7 +749,7 @@ describe('ALM ordered subscription entry conformance', () => {
         ]);
     });
 
-    it.each(['subscription-ordered-entry', 'subscription-ordered-omission'])(
+    it.each(['subscription-ordered-entry', 'subscription-ordered-omission'] as const)(
         'asserts in %s that no gap NACK about the cell\'s tracks reached either producer, from the history the repair wait kept',
         (cell) => {
             const scenario = findOrderedScenario('rtc', cell);
