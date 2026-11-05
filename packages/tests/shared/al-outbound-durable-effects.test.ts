@@ -598,7 +598,8 @@ describe('AL outbound durable effect lifecycle', () => {
             attemptIdentity: 'initial',
             prepared,
             preparedFingerprint,
-            phase: 'immediate'
+            phase: 'immediate',
+            sentPositions: null
         } as const;
         const effectId = toALOutboundEffectId([
             'send',

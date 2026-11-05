@@ -488,8 +488,8 @@ export namespace ALOutboundMessageRuntime {
     export interface SendLifecycle {
         readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;
-        /** The positions the message's recording read, from which each copy's entry is derived; undefined: none. */
-        readonly sentPositions: Readonly<Record<string, number>> | undefined;
+        /** The positions the message's recording read, from which each copy's entry is derived; `null`: none. */
+        readonly sentPositions: Readonly<Record<string, number>> | null;
         /** This message's own signal: `cancel(msgId, traceId)` aborts it directly; disposal aborts every live one. */
         readonly signal: AbortSignal;
         readonly expiresAtMs: number | undefined;

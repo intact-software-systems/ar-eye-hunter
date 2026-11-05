@@ -45,7 +45,7 @@ describe('persisted ALM prepared fingerprints', () => {
         expect(decodeALOutboundEffectPayload(stored, `send:message:immediate:initial:0:${fingerprint}`, {
             message: MESSAGE,
             decodePrepared: (value) => value
-        })).toEqual(stored);
+        })).toEqual({ ...stored, sentPositions: null });
 
         stored.prepared.payload['\u00e9'] = 'changed';
         expect(() =>

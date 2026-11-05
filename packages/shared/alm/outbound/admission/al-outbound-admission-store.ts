@@ -257,10 +257,10 @@ export type ALOutboundDurableEffect<TPrepared> =
         attemptIdentity: string;
         phase: ALOutboundDispatchPhase;
         /**
-         * The positions the message's recording read, from which each copy's entry is derived. Absent when nothing
-         * recorded them, and on every row an older build wrote, so such a row keeps reading as it always did.
+         * The positions the message's recording read, from which each copy's entry is derived; `null` when nothing
+         * recorded them. The row omits a `null` (`toALOutboundStoredEffectPayload`), as an older build wrote it.
          */
-        sentPositions?: Readonly<Record<string, number>>;
+        sentPositions: Readonly<Record<string, number>> | null;
     }>
     | Readonly<{
         kind: 'ack-timeout';

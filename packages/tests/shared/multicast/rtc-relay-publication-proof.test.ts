@@ -382,7 +382,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         // The native send is the manager's own; element access reaches it without widening its type.
         const sent = await chain.origin.manager['sendPreparedMessage'](
             copy,
-            { canonicalMessage: admitted.message, sentPositions: undefined, signal: new AbortController().signal, expiresAtMs, leaseUntilMs: undefined },
+            { canonicalMessage: admitted.message, sentPositions: null, signal: new AbortController().signal, expiresAtMs, leaseUntilMs: undefined },
             null
         );
 

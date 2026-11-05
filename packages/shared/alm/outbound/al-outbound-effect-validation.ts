@@ -233,7 +233,7 @@ function decodeALOutboundSendEffect<TPrepared>(
         preparedFingerprint: payload.preparedFingerprint,
         attemptIdentity: payload.attemptIdentity as string,
         phase: payload.phase,
-        ...(sentPositions === null ? {} : { sentPositions })
+        sentPositions
     };
 }
 

@@ -225,7 +225,7 @@ function computePreparedEffects<TPrepared>(
                 preparedFingerprint,
                 attemptIdentity,
                 phase,
-                ...(sentPositions === null ? {} : { sentPositions })
+                sentPositions
             }
         };
     });

@@ -289,6 +289,7 @@ describe('PostgreSQL outbound admission', () => {
                         kind: 'send-prepared',
                         message: toALOutboundMessageReference(store.canonicalScope, bundle.canonicalEntry!, msg),
                         attemptIdentity: 'initial',
+                        sentPositions: null,
                         prepared,
                         preparedFingerprint,
                         phase: 'immediate'
