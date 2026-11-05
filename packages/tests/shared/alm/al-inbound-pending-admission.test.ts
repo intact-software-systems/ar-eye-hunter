@@ -168,7 +168,14 @@ it('refuses to report pending when an existing admission attempt completed after
     expect(terminal?.status).toBe(EntityStatus.COMPLETED);
     const nowMs = Date.now();
     const prePlan = dependencies.planIncomingMessage(fixture.message, fixture.work.payload.source, { nowMs });
-    const admissionRead = await stores.admissionStore.readIncomingMessage({ msg: fixture.message, source: fixture.work.payload.source, nowMs, prePlan });
+    const admissionRead = await stores.admissionStore.readIncomingMessage({
+        selfPeerId: 'receiver',
+        orderingObserver: 'addressed',
+        msg: fixture.message,
+        source: fixture.work.payload.source,
+        nowMs,
+        prePlan
+    });
     expect(admissionRead.dedupExpiresAt).toBeUndefined();
 
     const admission = new ALInboundMessageAdmission({ ...dependencies, workPort: createTestALInboundWorkPort({ carrier: 'rtc', ...stores, nowMs: Date.now }) });
@@ -265,6 +272,8 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
 
     const nowMs = Date.now();
     const read = await stores.admissionStore.readIncomingMessage({
+        selfPeerId: 'receiver',
+        orderingObserver: 'addressed',
         msg: message,
         source,
         nowMs,
@@ -409,6 +418,7 @@ function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessag
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
         }),
         carrier: 'rtc',
+        orderingObserver: 'addressed',
         planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, { ...observations, selfPeerId: 'receiver', fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId }),
         dispatchInboxEntry: async (entry: ResourceEntry) => {

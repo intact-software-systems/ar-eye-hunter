@@ -218,6 +218,7 @@ function createControlRecoveryRuntime(
         acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
     });
     const runtime = new ALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         ...resources,
         carrier: 'rtc',
         planIncomingMessage: (message, _source, observations) =>

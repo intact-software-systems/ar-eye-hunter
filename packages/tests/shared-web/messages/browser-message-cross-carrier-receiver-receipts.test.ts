@@ -489,6 +489,7 @@ async function createReceiptLoopReceiver(
         }
     });
     const rtc = new ALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: peerId,
             stores: peer.inboundStores,

@@ -37,6 +37,7 @@ import {
     toALInboundReceiver,
     type ALInboundReceiver
 } from './read-al-inbound-message-authorization.ts';
+import type { ALOrderingObserver } from './resolve-al-ordering-observer-role.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -132,6 +133,8 @@ export namespace ALInboundMessageRuntime {
     export interface Dependencies extends Resources {
         /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
         readonly carrier: ALDeliveryCarrier;
+        /** Which tracks this runtime observes: a session's own copies, or every track it orders as its clients' hop. */
+        readonly orderingObserver: ALOrderingObserver;
         readonly planIncomingMessage: ALInboundPlanner;
         /**
          * Awaited on each message object before this runtime plans it, so a carrier's synchronous planner reads

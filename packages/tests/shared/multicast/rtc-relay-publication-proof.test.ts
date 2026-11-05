@@ -100,6 +100,26 @@ describe('a granted RTC publication at its relays and receivers', () => {
         expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
     });
 
+    it('forwards a recorded track at a pure relay 300 sequences past anything it saw, observing nothing of it', async () => {
+        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const relay = createRelayHop(chain, { selfPeerId: 'r' });
+        const receiver = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
+        const first = await publishOrderedFromOrigin(chain, 1);
+        const far = await publishOrderedFromOrigin(chain, 301);
+
+        await relay.receive(first, 'a');
+        await relay.receive(far, 'a');
+        const forwarded = await relay.readSent('c');
+        for (const copy of forwarded) {
+            await receiver.receive(copy, 'r');
+        }
+
+        expect(forwarded.map((copy) => copy.ordering)).toEqual([first.ordering, far.ordering]);
+        expect(far.ordering?.priorSeqByRecipient).toEqual({ c: 1 });
+        expect(relay.diagnostics.filter((event) => event.kind === 'ordering-position')).toEqual([]);
+        expect(receiver.delivered.map((message) => message.ordering?.seq)).toEqual([1, 301]);
+    });
+
     it('only forwards at a publisher-only relay, and delivers at a subscribed one only while its token is active', async () => {
         const chain = await createRelayChain({ a: PUBLISH_AND_SUBSCRIBE, r: PUBLISH_ONLY, c: SUBSCRIBE_ONLY });
         const publisherOnly = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
@@ -460,6 +480,25 @@ function createRelayHop(chain: RelayChain, input: RelayHopInput): RtcRelayOverla
 async function publishFromOrigin(chain: RelayChain, resourceId: string, ack: 'none' | 'receiver' = 'none'): Promise<ALMessage> {
     const sentBefore = chain.origin.channels.r!.sent.length;
     await admitAtOrigin(chain, resourceId, ack);
+    return chain.origin.channels.r!.sent[sentBefore]!;
+}
+
+/** The transport copy the signing origin sends `r` for one granted room multicast on its recorded track, at `seq`. */
+async function publishOrderedFromOrigin(chain: RelayChain, seq: number): Promise<ALMessage> {
+    const sentBefore = chain.origin.channels.r!.sent.length;
+    const admitted = await chain.origin.manager.enqueueLegIfAbsent(
+        newALMulticastMessage(
+            'a',
+            { topicId: PUBLICATION_TOPIC_ID, resourceId: `feed-${seq}`, contextId: ORIGIN_ROOM.groupId },
+            ORIGIN_ROOM,
+            GRANTED_TYPE_ID,
+            { text: `feed ${seq}` },
+            { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-feed-${seq}`, orderingKey: 'feed-track', seq }
+        ),
+        'hold'
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
     return chain.origin.channels.r!.sent[sentBefore]!;
 }
 

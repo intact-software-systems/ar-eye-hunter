@@ -56,6 +56,8 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
             overlayNeighborPeerIds: DOWNSTREAM_PEER_IDS
         });
     const read = await admissionStore.readIncomingMessage({
+        selfPeerId: INBOUND_TEST_EFFECT_PREPARATION.selfPeerId,
+        orderingObserver: 'addressed',
         msg,
         source: RTC_ARRIVAL,
         nowMs,

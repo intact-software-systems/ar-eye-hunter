@@ -46,6 +46,9 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                     fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId
                 });
             const admission = new ALInboundMessageAdmission({
+                orderingObserver: 'addressed',
+                diagnostics: undefined,
+                effectWorkerId: 'al-inbound:test',
                 admissionStore: store,
                 workPort: createTestALInboundWorkPort({
                     carrier: 'rtc',

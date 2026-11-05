@@ -575,7 +575,7 @@ async function readAdmission(input: AdmissionReadInput): Promise<PreparedAdmissi
         nowMs = Date.now()
     } = input;
     const prePlan = planIncomingMessage(message, source, { nowMs });
-    const read = await store.readIncomingMessage({ msg: message, source, nowMs, prePlan });
+    const read = await store.readIncomingMessage({ selfPeerId: 'receiver', orderingObserver: 'addressed', msg: message, source, nowMs, prePlan });
     const plan = planIncomingMessage(message, source, computeALInboundPlanningObservations(read));
     return {
         read,
@@ -600,6 +600,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
         createStorageRecovery: undefined,
         volatileStores: undefined,
         carrier: 'ws',
+        orderingObserver: 'addressed',
         planIncomingMessage,
         dispatchInboxEntry: async () => {},
         sendControlMessages: async () => {},

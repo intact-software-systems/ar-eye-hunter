@@ -259,6 +259,7 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
 
 function createRuntime(stores: ALInboundRuntimeStores, received: string[], controls: ALMessage[] = []) {
     const runtime = createDefaultALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'receiver',
         stores,
@@ -294,7 +295,7 @@ async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promis
     const nowMs = Date.now();
     const source = SCOPED_WS_SOURCE;
     const prePlan = planALMessageHandling(message, { selfPeerId: 'receiver', fromPeerId: 'sender', nowMs });
-    const read = await store.readIncomingMessage({ msg: message, source, nowMs, prePlan });
+    const read = await store.readIncomingMessage({ selfPeerId: 'receiver', orderingObserver: 'addressed', msg: message, source, nowMs, prePlan });
     const plan = planALMessageHandling(message, {
         selfPeerId: 'receiver',
         fromPeerId: 'sender',

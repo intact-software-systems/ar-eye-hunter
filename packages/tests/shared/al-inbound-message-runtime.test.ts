@@ -297,6 +297,8 @@ describe('ALInboundMessageRuntime', () => {
         const original = createOrderedMessage(1, 'pending');
         const pendingMessage = { ...original, id: { ...original.id, msgId: 'missing-msg' } };
         const read = await stores.admissionStore.readIncomingMessage({
+            selfPeerId: 'self',
+            orderingObserver: 'addressed',
             msg: pendingMessage,
             source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
             nowMs: Date.now(),
@@ -975,6 +977,7 @@ function createInboundHarness(
     const controlAcceptances: ALControlAcceptance[] = [];
 
     const runtime = createDefaultALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',
 

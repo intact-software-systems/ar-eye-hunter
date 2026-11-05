@@ -148,6 +148,7 @@ export class WebRtcRxStreamerService {
             {
                 ...dependencies.inboundRuntime,
                 carrier: 'rtc',
+                orderingObserver: 'addressed',
                 planIncomingMessage: (msg, source, observations) => {
                     return this.multicast.planIncomingMessage(msg, source, observations);
                 },

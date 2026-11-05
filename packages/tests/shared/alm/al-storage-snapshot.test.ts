@@ -320,6 +320,7 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
         namespace: INBOUND_NAMESPACE
     });
     const runtime = new ALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier: 'ws',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: SELF_PEER_ID,

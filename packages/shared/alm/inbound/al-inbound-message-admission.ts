@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -14,10 +15,12 @@ import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
 import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
+import { recordALInboundDiagnostic } from './al-inbound-runtime-diagnostics.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
+import { toALInboundOrderingPosition } from './to-al-inbound-ordering-position.ts';
 
 /** A replay that never reached a commit wrote nothing, so it has no work to announce. */
 const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
@@ -48,6 +51,9 @@ export namespace ALInboundMessageAdmission {
             | 'readRelayedAckRejection'
             | 'readRelayedRepairRequestRejection'
             | 'onResyncRequired'
+            | 'orderingObserver'
+            | 'diagnostics'
+            | 'effectWorkerId'
         > {
         readonly workPort: ALWorkQueuePort;
     }
@@ -104,7 +110,14 @@ export class ALInboundMessageAdmission {
         }
         await this.dependencies.verifyPublicationProof?.(admitted);
         const facts = readALInboundEffectFacts(nowMs, effectPreparation);
-        const read = await admissionStore.readIncomingMessage({ msg: admitted, source, nowMs, prePlan });
+        const read = await admissionStore.readIncomingMessage({
+            msg: admitted,
+            source,
+            nowMs,
+            prePlan,
+            selfPeerId: effectPreparation.selfPeerId,
+            orderingObserver: this.dependencies.orderingObserver
+        });
         if (this.shutdown.signal.aborted) {
             return Either.ofRight({ kind: 'completed', acceptance: { kind: 'disposed' }, wroteWork: false });
         }
@@ -138,6 +151,7 @@ export class ALInboundMessageAdmission {
             });
         }
         this.recordResyncRequired(msg, source, plan);
+        this.recordOrderingPosition(msg, source, plan);
         return Either.ofRight({
             kind: 'completed',
             acceptance: toAdmissionAcceptance(plan),
@@ -158,6 +172,24 @@ export class ALInboundMessageAdmission {
         });
         if (cursor !== undefined) {
             this.dependencies.onResyncRequired?.({ msg, cursor });
+        }
+    }
+
+    /** After the commit, so the position it states is the one the store holds. */
+    private recordOrderingPosition(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        plan: ALMessageHandlingPlan
+    ): void {
+        const position = toALInboundOrderingPosition(plan);
+        if (position !== null) {
+            recordALInboundDiagnostic(this.dependencies.diagnostics, {
+                kind: 'ordering-position',
+                workerId: this.dependencies.effectWorkerId,
+                ...position,
+                carrier: toALDeliveryCarrier(source),
+                ...toALMessageTrace(msg)
+            });
         }
     }
 

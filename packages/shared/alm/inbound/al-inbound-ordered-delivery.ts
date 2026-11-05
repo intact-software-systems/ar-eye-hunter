@@ -6,6 +6,7 @@ import {
     computeALInboundBufferedRelease,
     type ALInboundBufferedRelease
 } from './admission/compute-al-inbound-admission.ts';
+import { canALInboundDeliveryComplete } from './admission/compute-al-inbound-completed-through.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
 import type { ALInboundBufferedReleaseReadDto } from './al-inbound-admission-store.ts';
 import { shouldRetryALInboundDelivery, type ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
@@ -213,7 +214,12 @@ export class ALInboundOrderedDelivery {
         if (seq <= completedThrough) {
             return 'completed';
         }
-        if (seq !== completedThrough + 1 || this.dependencies.signal.aborted) {
+        const completes = canALInboundDeliveryComplete({
+            completedThrough,
+            seq,
+            observation: read.snapshot.plan.orderingRuntime
+        });
+        if (!completes || this.dependencies.signal.aborted) {
             return 'retry';
         }
         const status = await this.dependencies.admissionStore.commitMutations({

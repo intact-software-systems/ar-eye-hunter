@@ -551,51 +551,13 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
             const controls = receiver.messages().map(parseALControlMessage);
             if (scenario === 'ordered-latest') {
-                expect(receiver.delivered).toEqual([]);
-                expect(controls).toContainEqual({
-                    type: 'nack',
-                    payload: expect.objectContaining({
-                        msgId: replacement.id.msgId,
-                        reason: 'gap',
-                        orderingKey: '["app","workspace","room"]:sender:0',
-                        expectedSeq: 1,
-                        missingRanges: [{ from: 1, to: 1 }]
-                    })
-                });
-                expect(controls).toContainEqual({
-                    type: 'repair',
-                    payload: expect.objectContaining({
-                        msgId: replacement.id.msgId,
-                        orderingKey: '["app","workspace","room"]:sender:0',
-                        expectedSeq: 1,
-                        missingRanges: [{ from: 1, to: 1 }]
-                    })
-                });
+                // The origin recorded the superseded sequence as sent, and the receiver holds no position on the
+                // track, so the replacement opens it there: nothing below it is a gap to ask for.
+                expect(controls.filter((control) => control.type === 'nack' || control.type === 'repair')).toEqual([]);
             }
-            const settlementsBeforeRepair = sender.settlements.length;
             await receiver.transferTo(sender);
             await vi.advanceTimersByTimeAsync(100);
             await sender.transferTo(receiver);
-            if (scenario === 'ordered-latest') {
-                expect(sender.outboundDiagnostics).toContainEqual(expect.objectContaining({
-                    kind: 'commit-phases',
-                    msgId: old.id.msgId,
-                    origin: 'repair',
-                    commitOutcome: 'committed'
-                }));
-                expect(sender.messages().map((message) => message.id.msgId)).toEqual([replacement.id.msgId]);
-                expect(sender.settlements.slice(settlementsBeforeRepair)).toContainEqual(expect.objectContaining({
-                    kind: 'attempt-settled',
-                    msgId: old.id.msgId,
-                    outcome: 'superseded',
-                    submissionAttempted: false,
-                    willRetry: false
-                }));
-            }
-            if (scenario === 'ordered-latest') {
-                expect(receiver.delivered).toEqual([]);
-                return;
-            }
             expect(receiver.admissions).toContainEqual(expect.objectContaining({
                 kind: 'admission-outcome',
                 msgId: replacement.id.msgId,

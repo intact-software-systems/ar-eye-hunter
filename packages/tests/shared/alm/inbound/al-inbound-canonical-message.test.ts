@@ -205,6 +205,8 @@ describe('inbound canonical message ownership', () => {
         const nowMs = Date.now();
         const source = SCOPED_WS_SOURCE;
         const read = await fixture.admissionStore.readIncomingMessage({
+            selfPeerId: 'receiver',
+            orderingObserver: 'addressed',
             msg: message,
             source,
             nowMs,
@@ -296,6 +298,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier: 'ws',
         ...resources,
         planIncomingMessage,
@@ -319,6 +322,8 @@ async function admitMessage(
 ): Promise<ALInboundCommitBundle> {
     const source = SCOPED_WS_SOURCE;
     const read = await admissionStore.readIncomingMessage({
+        selfPeerId: 'receiver',
+        orderingObserver: 'addressed',
         msg,
         source,
         nowMs,

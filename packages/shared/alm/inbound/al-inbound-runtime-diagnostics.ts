@@ -123,7 +123,10 @@ export type ALInboundRuntimeDiagnosticsEvent =
     )
     | (
         & Readonly<{
-            /** A recipient's position event on a recorded track: entry, omission, witness, or a copy below it. */
+            /**
+             * A recipient's position event on a recorded track: entry, omission, witness, or a copy below it. The
+             * admission emits it after its commit, so a replayed pending admission reports its position too.
+             */
             kind: 'ordering-position';
             workerId: string;
             trackKey: string;

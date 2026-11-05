@@ -102,6 +102,7 @@ class AcknowledgementFixture {
     constructor(input: AcknowledgementFixture.Input = {}) {
         this.nowMs = input.nowMs ?? Date.now;
         this.runtime = new ALInboundMessageRuntime({
+            orderingObserver: 'addressed',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'relay',
                 stores: { admissionStore: this.store, workQueue: this.state.workQueue },
@@ -147,6 +148,8 @@ class AcknowledgementFixture {
         const nowMs = this.nowMs();
         const expireAtTimestamp = nowMs + 60_000;
         const read = await this.store.readIncomingMessage({
+            selfPeerId: 'relay',
+            orderingObserver: 'addressed',
             msg: this.message,
             source: this.source,
             nowMs,

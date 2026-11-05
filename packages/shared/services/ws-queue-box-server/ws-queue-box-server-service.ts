@@ -491,6 +491,7 @@ export class WsQueueBoxServerService {
         return new ALInboundMessageRuntime({
             ...dependencies.inboundRuntime,
             carrier: 'ws',
+            orderingObserver: 'every-track',
             readPendingAdmissionAuthority: (message, source) =>
                 this.inboundAuthority.readPendingAdmissionAuthority(message, source),
             planIncomingMessage: (message, fromPeerId, runtime) =>

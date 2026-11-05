@@ -473,6 +473,8 @@ async function readIncoming(store: ALInboundAdmissionStore): Promise<ALInboundAd
     const msg = { ...original, id: { ...original.id, msgId: 'msg-1' } };
     const nowMs = Date.now();
     return await store.readIncomingMessage({
+        selfPeerId: 'self',
+        orderingObserver: 'addressed',
         msg,
         source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
         nowMs,

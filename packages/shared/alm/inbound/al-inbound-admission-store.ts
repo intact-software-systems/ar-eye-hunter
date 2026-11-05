@@ -73,6 +73,7 @@ import {
     type ALInboundControlSubject,
     type PendingControlValue
 } from './control/al-inbound-control-rows.ts';
+import type { ALOrderingObserver } from './resolve-al-ordering-observer-role.ts';
 
 export interface ALInboundMessageOwner {
     readonly msgId: string;
@@ -176,6 +177,8 @@ export interface ReadALInboundMessageInput {
     readonly source: ALInboundMessageRuntime.Source;
     readonly nowMs: number;
     readonly prePlan: ALMessageHandlingPlan;
+    readonly selfPeerId: string;
+    readonly orderingObserver: ALOrderingObserver;
 }
 
 export interface ALInboundAdmissionRead extends ALInboundPlannerSnapshot {
@@ -1066,11 +1069,13 @@ interface ToALInboundAdmissionReadInput {
 }
 
 function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALInboundAdmissionRead {
-    const { msg, source, nowMs, prePlan } = observed.request;
+    const { msg, source, nowMs, prePlan, selfPeerId, orderingObserver } = observed.request;
     const { ordering, supersedence, dedupExpiresAt, claim, pendingAck, acks, controlOwners } = observed;
     return {
         namespace: observed.namespace,
         msg,
+        selfPeerId,
+        orderingObserver,
         fromPeerId: source.kind === 'trusted-server' ? msg.id.senderId : source.peerId,
         source,
         prePlan,

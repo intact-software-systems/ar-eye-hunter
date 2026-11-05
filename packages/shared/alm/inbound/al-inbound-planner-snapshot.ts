@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
-import type { ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
+import type { ALOrderingObservationStatus, ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
 import { computeALOrderingObservation, type ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
 import {
@@ -9,17 +9,21 @@ import {
     computeALSupersedenceObservation,
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
+import { isALInboundDeliveringPlan } from './admission/al-inbound-not-subscribed-plan.ts';
 import type {
     ALInboundBufferedReleaseReadDto,
     ALInboundOrderedDeliveryRead,
     ALInboundSupersedenceReadState
 } from './al-inbound-admission-store.ts';
 import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
+import { resolveALOrderingObserverRole, type ALOrderingObserver } from './resolve-al-ordering-observer-role.ts';
 
 export interface ALInboundPlannerSnapshot {
     readonly msg: ALMessage;
     readonly prePlan: ALMessageHandlingPlan;
     readonly nowMs: number;
+    readonly selfPeerId: string;
+    readonly orderingObserver: ALOrderingObserver;
     readonly orderingTrackKey: string | undefined;
     readonly orderingSnapshot: ALOrderingTrackSnapshot | undefined;
     readonly bufferedSnapshots: readonly ALBufferedOrderedMessageSnapshot[];
@@ -126,11 +130,19 @@ export function computeALInboundOrderingAcceptance(
         msg: read.msg,
         nowMs: read.nowMs,
         trackTtlMs: read.orderingTrackTtlMs,
-        apply
+        apply,
+        role: resolveALOrderingObserverRole({
+            msg: read.msg,
+            selfPeerId: read.selfPeerId,
+            delivering: isALInboundDeliveringPlan(read.prePlan),
+            observer: read.orderingObserver
+        }),
+        selfPeerId: read.selfPeerId,
+        bufferedPriorSeqs: toBufferedPriorSeqs(read)
     });
     if (
         !read.prePlan.localDelivery.enabled ||
-        (ordering.observation.status !== 'gap' && ordering.observation.status !== 'in-order') ||
+        !RETAINED_ORDERING_STATUSES.has(ordering.observation.status) ||
         canRetainOrderedMessage(read)
     ) {
         return ordering;
@@ -138,6 +150,26 @@ export function computeALInboundOrderingAcceptance(
     return {
         observation: { ...ordering.observation, status: 'resync-required', missingRanges: [], releasableSeqs: [] }
     };
+}
+
+/** The statuses that retain the copy in a buffered slot until its delivery: delivered now, or held for a gap. */
+const RETAINED_ORDERING_STATUSES: ReadonlySet<ALOrderingObservationStatus> = new Set([
+    'gap',
+    'in-order',
+    'entered',
+    'omitted'
+]);
+
+/** Each buffered copy's own prior for this receiver, from the record it carries. */
+function toBufferedPriorSeqs(read: ALInboundPlannerSnapshot): Readonly<Record<number, number>> {
+    const priorSeqs: Record<number, number> = {};
+    for (const buffered of read.bufferedSnapshots) {
+        const record = buffered.msg.ordering?.priorSeqByRecipient;
+        if (record !== undefined) {
+            priorSeqs[buffered.seq] = record[read.selfPeerId] ?? buffered.seq - 1;
+        }
+    }
+    return priorSeqs;
 }
 
 function canRetainOrderedMessage(read: ALInboundPlannerSnapshot): boolean {

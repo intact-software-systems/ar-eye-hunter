@@ -436,6 +436,8 @@ async function readInboundDecision(store: ALInboundAdmissionStore, message: ALMe
     const nowMs = Date.now();
     const context = toInboundPlanningContext(message, nowMs);
     const read = await store.readIncomingMessage({
+        selfPeerId: 'receiver',
+        orderingObserver: 'addressed',
         msg: message,
         source: {
             kind: 'ws-client',

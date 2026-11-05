@@ -105,6 +105,7 @@ function createRuntime(
 ): InboundControlRuntime {
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const runtime = createDefaultALInboundMessageRuntime({
+        orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',
         stores,
@@ -149,6 +150,8 @@ async function seedPendingAcknowledgement(stores: ALInboundRuntimeStores): Promi
     const message = createRelayedMessage();
     const source = { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: SCOPE } as const;
     const read = await stores.admissionStore.readIncomingMessage({
+        selfPeerId: 'self',
+        orderingObserver: 'addressed',
         msg: message,
         source,
         nowMs: Date.now(),
