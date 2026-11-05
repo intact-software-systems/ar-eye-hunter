@@ -5,7 +5,7 @@ import {
     decodeALAdmissionString
 } from '../../al-admission-value-validation.ts';
 
-/** A sequence one ordering track has reached: its head, or the last one sent to one of its recipients. */
+/** A sequence one ordering track has reached: its head, the last one sent to one of its recipients, or to the room. */
 export interface ALOutboundTrackPositionRow {
     readonly seq: number;
 }

@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
+import { newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
 import type { ALStoreDurability } from '@shared/al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     ALOutboundAdmissionMutations,
+    toALOutboundOrderingTrackMutations,
     toALOutboundSentPositionMutations
 } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     toALOutboundOrderingHeadKey,
+    toALOutboundOrderingMessageKey,
+    toALOutboundRoomSentPositionKey,
     toALOutboundSentPositionKey
 } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import {
@@ -18,6 +23,7 @@ import {
 } from '@shared/alm/outbound/admission/decode-al-outbound-track-position-row.ts';
 
 const NAMESPACE = 'outbound';
+const SESSION_HEADS = 'session-heads';
 const NOW_MS = 1_700_000_000_000;
 const TRACK_KEY = 'room-1:session-a:1';
 
@@ -112,6 +118,40 @@ describe('the sent-position mutations of one admission', () => {
             guard: undefined
         });
         expect(position?.expireAtTimestamp).toBe(head?.expireAtTimestamp);
+    });
+
+    it('moves the room-wide sent position beside the head it moves with, unguarded, under the head\'s retention', () => {
+        const mutations = new ALOutboundAdmissionMutations({
+            namespace: NAMESPACE,
+            orderingHeadNamespace: SESSION_HEADS,
+            canonicalScope: 'scope',
+            retention: normalizeALRuntimeStoreRetention(),
+            supersedenceTrackTtlMs: 60_000,
+            durability: 'durable'
+        });
+        const sent = newALMulticastMessage(
+            'session-a',
+            newALRoute('room.chat', 'room-1', 'room-position'),
+            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, orderingKey: 'chat' }
+        );
+        const msg = { ...sent, ordering: { ...sent.ordering, seq: 5 } };
+        const trackKey = toALOrderingTrackKey(msg)!;
+        const head = { trackKey, seq: 5, observedSeq: 4, movesRoomSentPosition: true };
+
+        const writes = mutations.computeStateWrites(
+            toALOutboundOrderingTrackMutations({ msg, orderingHead: head, sentPositions: undefined }, NOW_MS + 1_000),
+            NOW_MS
+        );
+
+        expect(writes.map(({ key, value, guard }) => ({ key, value, guard: guard?.kind }))).toEqual([
+            { key: toALOutboundOrderingMessageKey(NAMESPACE, trackKey, 5), value: msg.id.msgId, guard: undefined },
+            { key: toALOutboundOrderingHeadKey(SESSION_HEADS, trackKey), value: { seq: 5 }, guard: 'ordering-head' },
+            { key: toALOutboundRoomSentPositionKey(SESSION_HEADS, trackKey), value: { seq: 5 }, guard: undefined }
+        ]);
+        expect(writes[2]?.expireAtTimestamp).toBe(writes[1]?.expireAtTimestamp);
     });
 
     it('keeps a durable row to a deadline past the repository TTL', () => {

@@ -39,6 +39,7 @@ import {
 import {
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
+    toALOutboundRoomSentPositionKey,
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
 import {
@@ -65,6 +66,7 @@ export type ALOutboundAdmissionMutation =
         seq: number;
         expireAtTimestamp: number;
     }>
+    | Readonly<{ kind: 'set-room-sent-position'; trackKey: string; seq: number; expireAtTimestamp: number; }>
     | Readonly<{
         kind: 'set-msg-owner';
         msgId: string;
@@ -179,15 +181,16 @@ function toALOutboundOrderingHeadMutations(
     head: ALOutboundOrderingHead | undefined,
     expireAtTimestamp: number
 ): readonly ALOutboundAdmissionMutation[] {
-    return head === undefined
-        ? []
-        : [{
-            kind: 'set-ordering-head',
-            trackKey: head.trackKey,
-            seq: head.seq,
-            observedSeq: head.observedSeq,
-            expireAtTimestamp
-        }];
+    if (head === undefined) {
+        return [];
+    }
+    const { trackKey, seq } = head;
+    return [
+        { kind: 'set-ordering-head', trackKey, seq, observedSeq: head.observedSeq, expireAtTimestamp },
+        ...(head.movesRoomSentPosition
+            ? [{ kind: 'set-room-sent-position', trackKey, seq, expireAtTimestamp } as const]
+            : [])
+    ];
 }
 
 /** Moves each recorded recipient to the sequence it was sent; one already at or past it keeps its position. */
@@ -322,6 +325,7 @@ export class ALOutboundAdmissionMutations {
                 };
             case 'set-ordering-head':
             case 'set-sent-position':
+            case 'set-room-sent-position':
                 return this.computeTrackPositionWrite(mutation, nowMs);
             case 'set-msg-owner':
                 return this.computeMessageOwnerWrite(mutation, nowMs);
@@ -349,10 +353,14 @@ export class ALOutboundAdmissionMutations {
      * The track's head and each recipient's sent position share the receivers' track retention, the repository TTL,
      * so a durable pair continues a track across a reload or a quiet hour for as long as a receiver keeps its position.
      * The sender-version fence serializes this pair's writers, so a position is a plain set; the head may be shared
-     * with another carrier pair of the session, so it is written only over the head the admission read.
+     * with another carrier pair of the session, so it is written only over the head the admission read. The room-wide
+     * sent position moves only with that guarded head, in the same commit, so it needs no guard of its own.
      */
     private computeTrackPositionWrite(
-        mutation: Extract<ALOutboundAdmissionMutation, { kind: 'set-ordering-head' | 'set-sent-position'; }>,
+        mutation: Extract<
+            ALOutboundAdmissionMutation,
+            { kind: 'set-ordering-head' | 'set-sent-position' | 'set-room-sent-position'; }
+        >,
         nowMs: number
     ): ALOutboundStateWrite {
         const expireAtTimestamp = this.computeMessageRowExpiryMs(
@@ -363,6 +371,14 @@ export class ALOutboundAdmissionMutations {
         if (mutation.kind === 'set-sent-position') {
             return {
                 key: toALOutboundSentPositionKey(this.namespace, mutation.trackKey, mutation.recipientPeerId),
+                value: { seq: mutation.seq },
+                expireAtTimestamp,
+                guard: undefined
+            };
+        }
+        if (mutation.kind === 'set-room-sent-position') {
+            return {
+                key: toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, mutation.trackKey),
                 value: { seq: mutation.seq },
                 expireAtTimestamp,
                 guard: undefined

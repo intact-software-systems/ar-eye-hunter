@@ -18,6 +18,7 @@ import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { ALOutboundAdmissionMutations } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundPlanner } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { computeALOutboundSequenceMint } from '@shared/alm/outbound/admission/sequencing/compute-al-outbound-sequence-mint.ts';
 import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -318,6 +319,31 @@ describe('a browser room send that asks its outbound for a sequence', () => {
             nowMs + DEFAULT_AL_REPOSITORY_TTL_MS,
             nowMs + DEFAULT_AL_REPOSITORY_TTL_MS
         ]);
+    });
+});
+
+describe('the room-wide sent position a mint moves', () => {
+    const plan: ALOutboundDispatchPlan<OutboundTestPayload> = {
+        msg: createRoomSend('room-position', { orderingKey: 'chat' }),
+        dropReasonCode: undefined,
+        lane: 'durable',
+        preparedMessages: [],
+        mintsSequence: true
+    };
+
+    it.each([
+        { label: 'a shared head minted by a plan that records no recipient', sharesHead: true, records: false, moves: true },
+        { label: 'a shared head minted by a plan that records its recipients', sharesHead: true, records: true, moves: false },
+        { label: 'a pair\'s own head', sharesHead: false, records: false, moves: false }
+    ])('is moved for $label: $moves', ({ sharesHead, records, moves }) => {
+        const minted = computeALOutboundSequenceMint({
+            plan: records ? { ...plan, recordsSentPositions: ['b'] } : plan,
+            trackKey: 'chat',
+            head: { seq: 4 },
+            sharesHead
+        });
+
+        expect(minted.orderingHead).toEqual({ trackKey: 'chat', seq: 5, observedSeq: 4, movesRoomSentPosition: moves });
     });
 });
 

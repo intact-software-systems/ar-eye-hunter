@@ -19,6 +19,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { computeALOrderingObservation } from '@shared/alm/compute-al-ordering-observation.ts';
 import type {
     ALOutboundCommitBundle,
     ALOutboundPlanner
@@ -121,6 +122,46 @@ describe('one ordering head per session track, whichever carrier mints on it', (
         expect(admitted.message.ordering?.seq).toBe(3);
         expect(origin.channels.b!.sent.map((sent) => sent.ordering?.seq)).toEqual([3]);
     });
+
+    it('never declares an omission of a sequence the WS leg sent the room: the RTC record states it as sent', async () => {
+        const stores = createSessionCarrierStores();
+        const ws = createCarrierRuntime(stores.ws);
+        const origin = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 1),
+            nextHopPeerIds: ['b'],
+            stores: stores.rtc
+        });
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-1'), 'hand-over');
+        await vi.waitFor(() => expect(origin.channels.b!.sent).toHaveLength(1));
+        // A keyed room send refused on RTC before its admission is minted on WS from the shared head.
+        expect(await enqueueMintedSeq(ws, createRoomBroadcast('fallback-2'))).toBe(2);
+
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-3'), 'hand-over');
+        await vi.waitFor(() => expect(origin.channels.b!.sent).toHaveLength(2));
+        const third = origin.channels.b!.sent[1]!;
+
+        expect([third.ordering?.seq, third.ordering?.priorSeqByRecipient]).toEqual([3, {}]);
+        // b holds 1 while the WS copy of 2 is in flight: it asks for 2 rather than reading an omission.
+        expect(observeAtRecipient(third, 'b', 1).status).toBe('gap');
+    });
+
+    it('states the WS leg\'s room send as sent to a recipient the RTC leg never sent the track', async () => {
+        const stores = createSessionCarrierStores();
+        const ws = createCarrierRuntime(stores.ws);
+        const origin = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 1),
+            nextHopPeerIds: ['b'],
+            stores: stores.rtc
+        });
+        await enqueueMintedSeq(ws, createRoomBroadcast('fallback-1'));
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-2'), 'hand-over');
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-3'), 'hand-over');
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-4'), 'hand-over');
+        await vi.waitFor(() => expect(origin.channels.b!.sent).toHaveLength(3));
+
+        expect(origin.channels.b!.sent.map((sent) => [sent.ordering?.seq, sent.ordering?.priorSeqByRecipient]))
+            .toEqual([[2, {}], [3, {}], [4, {}]]);
+    });
 });
 
 /** Both carriers' durable pairs of one session: their own namespaces over one store, one namespace for heads. */
@@ -179,6 +220,21 @@ async function enqueueMintedSeq(
     const result = await runtime.enqueueIfAbsent(message);
     expect(result.verdict.kind, result.reason).toBe('admitted');
     return result.message.ordering?.seq;
+}
+
+/** What a recipient holding `lastContiguousSeq` on the track reads from a delivered copy. */
+function observeAtRecipient(message: ALMessage, selfPeerId: string, lastContiguousSeq: number) {
+    const nowMs = Date.now();
+    return computeALOrderingObservation({
+        snapshot: { lastContiguousSeq, bufferedSeqs: [], updatedAtMs: nowMs },
+        msg: message,
+        nowMs,
+        trackTtlMs: 60_000,
+        apply: true,
+        role: 'recipient',
+        selfPeerId,
+        bufferedPriorSeqs: {}
+    }).observation;
 }
 
 /** A WS room broadcast of the session on the ordering key `chat`, asking its outbound for the sequence. */

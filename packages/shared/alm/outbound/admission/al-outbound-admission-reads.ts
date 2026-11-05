@@ -73,6 +73,7 @@ import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-cap
 import {
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
+    toALOutboundRoomSentPositionKey,
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
@@ -88,6 +89,11 @@ export interface CreateALOutboundAdmissionReadsInput {
     readonly namespace: string;
     /** Where the sender's ordering-track heads live: this pair's namespace, or the one its session's pairs share. */
     readonly orderingHeadNamespace: string;
+    /**
+     * Another carrier pair of the session mints on these heads: a sequence one of them sent to an audience it did not
+     * record is one any recipient may hold, so this pair's records never state a recipient behind it.
+     */
+    readonly sharesOrderingHead: boolean;
     readonly canonicalScope: string;
     readonly backend: ALAdmissionWorkBackend;
     readonly supersedenceTrackTtlMs: number;
@@ -141,6 +147,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     private readonly nowMs: () => number;
     private readonly namespace: string;
     private readonly orderingHeadNamespace: string;
+    private readonly sharesOrderingHead: boolean;
     private readonly canonicalScope: string;
     private readonly backend: ALAdmissionWorkBackend;
     private readonly supersedenceTrackTtlMs: number;
@@ -149,6 +156,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         this.nowMs = input.nowMs;
         this.namespace = input.namespace;
         this.orderingHeadNamespace = input.orderingHeadNamespace;
+        this.sharesOrderingHead = input.sharesOrderingHead;
         this.canonicalScope = input.canonicalScope;
         this.backend = input.backend;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
@@ -476,7 +484,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             toALOutboundOrderingHeadKey(this.orderingHeadNamespace, trackKey),
             decodeALOutboundTrackPositionRow
         );
-        return computeALOutboundSequenceMint({ plan, trackKey, head });
+        return computeALOutboundSequenceMint({ plan, trackKey, head, sharesHead: this.sharesOrderingHead });
     }
 
     /**
@@ -512,21 +520,36 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return { plan: { ...plan, msg: { ...plan.msg, ordering } }, sentPositions };
     }
 
-    /** Each recipient's last sequence sent on the track, `0` for one never sent it: one indexed read per recipient. */
+    /**
+     * Each recipient's last sequence sent on the track, `0` for one never sent it: one indexed read per recipient. On a
+     * shared head, a recipient behind the track's room-wide sent position is read at it: another carrier sent the room
+     * that sequence, to an audience only the server knows.
+     */
     private async readSentPositions(
         session: ALAdmissionReadSession,
         trackKey: string,
         recipientPeerIds: readonly string[]
     ): Promise<Readonly<Record<string, number>>> {
-        const positions = await Promise.all(recipientPeerIds.map(async (recipientPeerId) => {
-            const position = await this.readValue(
-                session,
-                toALOutboundSentPositionKey(this.namespace, trackKey, recipientPeerId),
-                decodeALOutboundTrackPositionRow
-            );
-            return [recipientPeerId, position?.seq ?? 0] as const;
-        }));
-        return Object.fromEntries(positions);
+        const [roomPosition, ...positions] = await Promise.all([
+            this.sharesOrderingHead
+                ? this.readValue(
+                    session,
+                    toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, trackKey),
+                    decodeALOutboundTrackPositionRow
+                )
+                : undefined,
+            ...recipientPeerIds.map((recipientPeerId) =>
+                this.readValue(
+                    session,
+                    toALOutboundSentPositionKey(this.namespace, trackKey, recipientPeerId),
+                    decodeALOutboundTrackPositionRow
+                )
+            )
+        ]);
+        return Object.fromEntries(recipientPeerIds.map((recipientPeerId, index) => [
+            recipientPeerId,
+            Math.max(positions[index]?.seq ?? 0, roomPosition?.seq ?? 0)
+        ]));
     }
 
     /** Without a known origin there is no receipt row to address; the rest is keyed by the message alone. */

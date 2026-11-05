@@ -83,8 +83,8 @@ export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly namespace: string;
     /**
      * Where the heads of the sender's ordering tracks live when several carrier pairs of one session share them over
-     * one backend, so one track takes each sequence once whichever carrier mints it. Absent, the pair's own namespace:
-     * no other pair sequences its sender's tracks.
+     * one store, so one track takes each sequence once whichever carrier mints it, and where the track's room-wide sent
+     * position lives beside each head. Absent, the pair's own namespace: no other pair sequences its sender's tracks.
      */
     readonly orderingHeadNamespace?: string;
     readonly backend: ALAdmissionWorkBackend;
@@ -189,6 +189,11 @@ export interface ALOutboundOrderingHead {
     readonly trackKey: string;
     readonly seq: number;
     readonly observedSeq: number | undefined;
+    /**
+     * The session's carriers share the head and this admission records none of its recipients: the commit also moves
+     * the track's room-wide sent position to `seq`, so a carrier that records never states a recipient behind it.
+     */
+    readonly movesRoomSentPosition: boolean;
 }
 
 /** The positions one admission read on its track: each planned recipient's prior sequence, `0` for none. */
@@ -507,6 +512,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             nowMs: input.nowMs,
             namespace: input.namespace,
             orderingHeadNamespace,
+            sharesOrderingHead: input.orderingHeadNamespace !== undefined,
             canonicalScope: input.canonicalScope,
             backend: input.backend,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs
