@@ -847,7 +847,8 @@ export class WsQueueBoxServerService {
 
     /**
      * A held send re-checks its one session when the session's socket opens, as every other attempt does (D498), and
-     * sends it its own copy; a session the re-check drops, or one a later row of the track reached, is recorded outside.
+     * sends it its own copy; a session the re-check drops, or one a later row of the track reached, is recorded
+     * outside.
      */
     private async sendHeldRow(
         { message, entry, policy, sentPositions }: WsQueueBoxServerService.HeldRowSend
