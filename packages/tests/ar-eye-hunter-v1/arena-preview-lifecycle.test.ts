@@ -10,15 +10,15 @@ import {
     vi
 } from 'vitest';
 
-import { createTournamentArena, type TournamentArena } from '@ar-eye-hunter/tournament-arena.ts';
-import type { ArenaTournamentClient } from '../../../apps/ar-eye-hunter-v1/src/game/tournament/arena-tournament-client.ts';
 import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
+import { createTournamentArena, type TournamentArena } from '@ar-eye-hunter/tournament-arena.ts';
 import { createDefaultArenaAudioSettings } from '../../../apps/ar-eye-hunter-v1/src/game/arena-audio.ts';
 import { createDefaultMobileControlSettings } from '../../../apps/ar-eye-hunter-v1/src/game/mobile-input.ts';
 import type { BabylonArenaProps } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-scene-contracts.ts';
 import { ArenaSceneRuntime } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-scene-runtime.ts';
 import { applyLook } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-scene-step.ts';
 import { ArenaTouchInput } from '../../../apps/ar-eye-hunter-v1/src/game/scene/arena-touch-input.ts';
+import type { ArenaTournamentClient } from '../../../apps/ar-eye-hunter-v1/src/game/tournament/arena-tournament-client.ts';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => vi.restoreAllMocks());
@@ -76,8 +76,11 @@ it('aims a native touch shot from the latest accepted targets before another fra
         vi.spyOn(fixture.engine, 'getRenderingCanvas').mockReturnValue(fixture.canvas);
         vi.spyOn(fixture.canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1280, 720));
         const initial = createTournamentArena({
-            gameId: 'game', principalIds: ['one', 'two'], seed: 44,
-            startedAtEpochMs: 1000, durationMs: 60000
+            gameId: 'game',
+            principalIds: ['one', 'two'],
+            seed: 44,
+            startedAtEpochMs: 1000,
+            durationMs: 60000
         });
         const state: TournamentArena = {
             ...initial,
@@ -105,9 +108,14 @@ it('aims a native touch shot from the latest accepted targets before another fra
                 }
             }
         };
-        fixture.canvas.dispatchEvent(new PointerEvent('pointerdown', {
-            pointerType: 'touch', clientX: 640, clientY: 360, button: 0
-        }));
+        fixture.canvas.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                pointerType: 'touch',
+                clientX: 640,
+                clientY: 360,
+                button: 0
+            })
+        );
         expect(controls).toHaveLength(1);
         expect(controls[0].controls.fire).toBe(true);
         expect(controls[0].yaw).toBeCloseTo(Math.atan2(1, 20));

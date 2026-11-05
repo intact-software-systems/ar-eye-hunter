@@ -6,8 +6,8 @@ import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import { decodeViewWatchFamily, decodeViewWatchRequest } from '@shared/api/views/view-watch.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
-import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toApiMutationFailureResponse, toApiMutationRouteFailure } from '../routes/api-mutation-route-failure.ts';
+import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 
 export interface ViewWatchRouteDependencies {
     readonly mutation: Pick<ViewWatchService['mutate'], 'submit'>;

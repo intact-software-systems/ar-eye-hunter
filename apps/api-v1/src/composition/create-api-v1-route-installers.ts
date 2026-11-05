@@ -1,10 +1,10 @@
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../view-watch/register-view-watch-routes.ts';
 import {
     registerTournamentRoutes,
     type TournamentRouteDependencies
 } from '../tournaments/register-tournament-routes.ts';
+import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../view-watch/register-view-watch-routes.ts';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
