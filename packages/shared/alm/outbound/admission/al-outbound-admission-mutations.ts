@@ -20,12 +20,9 @@ import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-rec
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import {
     toALOutboundMessageOwnerKey,
-    toALOutboundOrderingHeadKey,
-    toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
-    toALOutboundSentPositionKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
@@ -35,6 +32,11 @@ import {
     type ALOutboundCapturedPolicy,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
+import {
+    toALOutboundOrderingHeadKey,
+    toALOutboundOrderingMessageKey,
+    toALOutboundSentPositionKey
+} from './al-outbound-ordering-track-keys.ts';
 import type { ALOutboundOrderingHeadRow } from './decode-al-outbound-ordering-head.ts';
 import type { ALOutboundSentPositionRow } from './decode-al-outbound-sent-position.ts';
 

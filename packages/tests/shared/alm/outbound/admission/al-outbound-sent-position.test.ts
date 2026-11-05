@@ -4,14 +4,14 @@ import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts
 import type { ALStoreDurability } from '@shared/al-contracts/al-policy.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
-    toALOutboundOrderingHeadKey,
-    toALOutboundSentPositionKey
-} from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
-import {
     ALOutboundAdmissionMutations,
     toALOutboundSentPositionMutations
 } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import {
+    toALOutboundOrderingHeadKey,
+    toALOutboundSentPositionKey
+} from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import { decodeALOutboundSentPosition } from '@shared/alm/outbound/admission/decode-al-outbound-sent-position.ts';
 
 const NAMESPACE = 'outbound';

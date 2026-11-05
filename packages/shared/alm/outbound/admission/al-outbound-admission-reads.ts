@@ -44,12 +44,9 @@ import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fing
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 import {
     toALOutboundControlHistoryKey,
-    toALOutboundOrderingHeadKey,
-    toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
-    toALOutboundSentPositionKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey,
     toALOutboundVersionKey,
@@ -73,6 +70,11 @@ import {
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-captured-policy-timing.ts';
+import {
+    toALOutboundOrderingHeadKey,
+    toALOutboundOrderingMessageKey,
+    toALOutboundSentPositionKey
+} from './al-outbound-ordering-track-keys.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import { decodeALOutboundOrderingHead } from './decode-al-outbound-ordering-head.ts';

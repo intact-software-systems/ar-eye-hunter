@@ -8,16 +8,6 @@ export function toALOutboundVersionKey(namespace: string, senderId: string): str
     return `${namespace}:version:${senderId}`;
 }
 
-/** The last sequence the outbound minted on one track; written beside the sender version that fences it. */
-export function toALOutboundOrderingHeadKey(namespace: string, trackKey: string): string {
-    return `${namespace}:ordering-head:${trackKey}`;
-}
-
-/** The last sequence the outbound sent one recipient on one track; written beside the head under the same fence. */
-export function toALOutboundSentPositionKey(namespace: string, trackKey: string, recipientPeerId: string): string {
-    return `${namespace}:sent-position:${JSON.stringify([trackKey, recipientPeerId])}`;
-}
-
 export function toALOutboundSentMessageKey(namespace: string, msgId: string): string {
     return `${namespace}:sent:${msgId}`;
 }
@@ -54,8 +44,4 @@ export function toALOutboundSupersedenceReplacementKey(namespace: string, msgId:
 
 export function toALOutboundControlHistoryKey(namespace: string, kind: string, msgId: string): string {
     return `${namespace}:control:${kind}:${msgId}`;
-}
-
-export function toALOutboundOrderingMessageKey(namespace: string, trackKey: string, seq: number): string {
-    return `${namespace}:ordering-message:${JSON.stringify([trackKey, seq])}`;
 }
