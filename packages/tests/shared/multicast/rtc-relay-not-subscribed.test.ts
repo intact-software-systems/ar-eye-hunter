@@ -433,7 +433,7 @@ async function signOrderedReceiptedPublication(chain: RelayChain, input: Ordered
     });
     return await signPublication(chain.keys.a!, {
         ...frozen,
-        delivery: { ...frozen.delivery, reliability: 'at-least-once' },
+        delivery: { ack: 'receiver', reliability: 'at-least-once' },
         ordering: { orderingKey: 'feed-track', seq: input.seq },
         forwarding: { ...frozen.forwarding, nextHopPeerIds: [input.nextHopPeerId] }
     });
