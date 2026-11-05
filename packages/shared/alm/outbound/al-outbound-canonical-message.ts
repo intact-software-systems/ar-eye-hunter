@@ -182,9 +182,10 @@ export function decodeALOutboundCanonicalMessage(
 }
 
 /**
- * Whether a candidate may replace the canonical row it differs from: a replay that minted its sequence, activating
- * a pending row that still holds the message as its sender asked for it and differing from it by the minted
- * sequence alone; or a plan that froze the audience of a room send the row holds without one.
+ * Whether a candidate may replace the canonical row it differs from: a replay whose admission added to its request,
+ * activating a pending row that still holds the message as its sender asked for it and differing from it by what that
+ * admission added alone (a minted sequence, a recorded record, a proof); or a plan that froze the audience of a room
+ * send the row holds without one.
  */
 export function isALOutboundCanonicalReplacement(
     activatesPendingRow: boolean,
@@ -196,14 +197,13 @@ export function isALOutboundCanonicalReplacement(
     }
     const candidate = decodePersistedALMessageRow(entry);
     const freezes = resolveALFrozenMulticastAudience(candidate.targets) !== undefined;
-    const mints = activatesPendingRow && expected.status === EntityStatus.COMPLETED &&
-        candidate.ordering?.seq !== undefined;
-    if (!freezes && !mints) {
+    const admits = activatesPendingRow && expected.status === EntityStatus.COMPLETED;
+    if (!freezes && !admits) {
         return false;
     }
     const requested = decodeALOutboundRetainedMessage(expected);
     return (freezes && isALFreezeOfMessage(requested, candidate)) ||
-        (mints && jsonEquals(requested, toALSequenceMintComparableMessage(requested, candidate)));
+        (admits && jsonEquals(requested, toALOutboundRequestComparableMessage(requested, candidate)));
 }
 
 function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
@@ -216,19 +216,44 @@ function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
 }
 
 /**
- * The candidate as the original would compare to it: a sequence minted on the track its original named
- * without one is removed, so a minted copy matches its request while a copy that changes the key, the epoch
- * or a stated sequence still differs.
+ * The candidate as its request would compare to it: what an admission adds to a request is removed -- a sequence
+ * minted on the track its request named without one, and the prior-sequence record and the proof its request does
+ * not carry -- so an admitted copy matches its request while a copy that changes the key, the epoch, a stated
+ * sequence, a stated record or a carried proof still differs.
  */
-export function toALSequenceMintComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
-    if (
-        toALSequenceMintTrackKey(original) === undefined || candidate.ordering?.seq === undefined ||
-        toALOrderingTrackKey(candidate) !== toALSequenceMintTrackKey(original)
-    ) {
-        return candidate;
+export function toALOutboundRequestComparableMessage(original: ALMessage, candidate: ALMessage): ALMessage {
+    const unsigned = original.proof === undefined ? toALUnsignedMessage(candidate) : candidate;
+    const unrecorded = original.ordering?.priorSeqByRecipient === undefined
+        ? toALUnrecordedMessage(unsigned)
+        : unsigned;
+    return toALSequenceMintTrackKey(original) !== undefined &&
+            toALOrderingTrackKey(unrecorded) === toALSequenceMintTrackKey(original)
+        ? toALUnsequencedMessage(unrecorded)
+        : unrecorded;
+}
+
+function toALUnsignedMessage(message: ALMessage): ALMessage {
+    if (message.proof === undefined) {
+        return message;
     }
-    const { seq: _seq, ...ordering } = candidate.ordering;
-    return { ...candidate, ordering };
+    const { proof: _proof, ...unsigned } = message;
+    return unsigned;
+}
+
+function toALUnrecordedMessage(message: ALMessage): ALMessage {
+    if (message.ordering?.priorSeqByRecipient === undefined) {
+        return message;
+    }
+    const { priorSeqByRecipient: _priorSeqByRecipient, ...ordering } = message.ordering;
+    return { ...message, ordering };
+}
+
+function toALUnsequencedMessage(message: ALMessage): ALMessage {
+    if (message.ordering?.seq === undefined) {
+        return message;
+    }
+    const { seq: _seq, ...ordering } = message.ordering;
+    return { ...message, ordering };
 }
 
 function outboundMessageIdentity(message: ALMessage): string {

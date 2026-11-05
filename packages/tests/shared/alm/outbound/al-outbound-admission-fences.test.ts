@@ -435,6 +435,7 @@ function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatch
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,
+        signAdmittedMessage: undefined,
         diagnostics: undefined,
         settlements: () => {}
     });

@@ -76,6 +76,7 @@ import {
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
+import { computeALOrderingPriorSeqRecord } from './compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import { decodeALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
 
@@ -157,11 +158,12 @@ export class ALOutboundAdmissionReads<TPrepared> {
             stored,
             observedEntry: observedCanonicalEntry
         });
-        const { plan, orderingHead } = await this.readSequenceMint(
+        const minted = await this.readSequenceMint(
             session,
             computeALOutboundDispatchPlan(input, canonical, stored),
             stored === undefined
         );
+        const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, stored === undefined);
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
 
         return {
@@ -175,8 +177,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
             nowMs,
             clientRecord,
             plan,
-            orderingHead,
-            sentPositions: undefined,
+            orderingHead: minted.orderingHead,
+            sentPositions,
             sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
             repairs,
@@ -454,6 +456,32 @@ export class ALOutboundAdmissionReads<TPrepared> {
             plan: { ...plan, msg: { ...plan.msg, ordering: { ...plan.msg.ordering, seq } } },
             orderingHead: { trackKey, seq }
         };
+    }
+
+    /**
+     * An admission whose plan names the recipients it records stamps the copy with the record of their positions on
+     * its track (`computeALOrderingPriorSeqRecord`), read in this session after the sequence is known. Only a message
+     * with no sent row records -- a first attempt, or the replay of the request a lost commit retained -- so a
+     * re-admission keeps the record its row holds. The commit moves each recipient to the copy's sequence under the
+     * sender version this session read.
+     */
+    private async readSentPositionRecord(
+        session: ALAdmissionReadSession,
+        plan: ALOutboundDispatchPlan<TPrepared>,
+        unadmitted: boolean
+    ): Promise<Pick<ALOutboundMessageReadDto<TPrepared>, 'plan' | 'sentPositions'>> {
+        const trackKey = toALOrderingTrackKey(plan.msg);
+        const seq = plan.msg.ordering?.seq;
+        if (plan.recordsSentPositions === undefined || !unadmitted || trackKey === undefined || seq === undefined) {
+            return { plan, sentPositions: undefined };
+        }
+        const sentPositions = {
+            trackKey,
+            seq,
+            priorSeqByRecipient: await this.readSentPositions(session, trackKey, plan.recordsSentPositions)
+        };
+        const ordering = { ...plan.msg.ordering, priorSeqByRecipient: computeALOrderingPriorSeqRecord(sentPositions) };
+        return { plan: { ...plan, msg: { ...plan.msg, ordering } }, sentPositions };
     }
 
     /** Each recipient's last sequence sent on the track, `0` for one never sent it: one indexed read per recipient. */

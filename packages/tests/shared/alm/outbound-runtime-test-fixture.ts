@@ -99,6 +99,8 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly afterDequeueAdmission?: ALOutboundMessageRuntime.Dependencies<TPrepared>['afterDequeueAdmission'];
     readonly readDequeueAuthority?: ALOutboundMessageRuntime.Dependencies<TPrepared>['readDequeueAuthority'];
     readonly dequeueTiming?: ALOutboundMessageRuntime.Dependencies<TPrepared>['dequeueTiming'];
+    /** The signer of a first admission's frame; absent, as for every carrier but RTC, the frame is committed as read. */
+    readonly signAdmittedMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['signAdmittedMessage'];
     readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['sendPreparedMessage'];
 }
 
@@ -212,6 +214,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             afterDequeueAdmission: options.afterDequeueAdmission,
             readDequeueAuthority: options.readDequeueAuthority,
             dequeueTiming: options.dequeueTiming,
+            signAdmittedMessage: options.signAdmittedMessage,
             sendPreparedMessage: options.sendPreparedMessage
         })
     );

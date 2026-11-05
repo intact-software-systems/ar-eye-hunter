@@ -10,7 +10,7 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALOutboundCommitBundle, ALOutboundMessageReadDto } from './admission/al-outbound-admission-store.ts';
-import { toALSequenceMintComparableMessage } from './al-outbound-canonical-message.ts';
+import { toALOutboundRequestComparableMessage } from './al-outbound-canonical-message.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 
 /** Checks the candidate against its captured read; never repairs or rewrites it. */
@@ -63,7 +63,9 @@ export function validateALOutboundPlannedMessage(
         (original.constraints?.expiresAtMs !== undefined && deadline! > original.constraints.expiresAtMs) ||
         !jsonEquals(
             toMessageAuthority(original),
-            toMessageAuthority(toALFreezeComparableMessage(original, toALSequenceMintComparableMessage(original, msg)))
+            toMessageAuthority(
+                toALFreezeComparableMessage(original, toALOutboundRequestComparableMessage(original, msg))
+            )
         ) ||
         !(original.diagnostics?.visitedPeerIds ?? []).every((peerId, index) =>
             msg.diagnostics?.visitedPeerIds?.[index] === peerId

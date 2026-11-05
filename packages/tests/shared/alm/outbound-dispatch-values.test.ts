@@ -94,6 +94,7 @@ describe('outbound dispatch value ownership', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
+            signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });
@@ -185,6 +186,7 @@ describe('outbound dispatch value ownership', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
+            signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });

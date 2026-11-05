@@ -15,7 +15,7 @@ import {
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
     toALOutboundMessageReference,
-    toALSequenceMintComparableMessage
+    toALOutboundRequestComparableMessage
 } from './al-outbound-canonical-message.ts';
 
 export interface ALOutboundCanonicalReadInput {
@@ -94,7 +94,7 @@ function validateCanonicalReuse(
         : original;
     return jsonEquals(
             observed,
-            toALFreezeComparableMessage(observed, toALSequenceMintComparableMessage(observed, canonical))
+            toALFreezeComparableMessage(observed, toALOutboundRequestComparableMessage(observed, canonical))
         )
         ? Either.ofRight(canonical)
         : Either.ofLeft(new TypeError('Canonical identity has conflicting content'));

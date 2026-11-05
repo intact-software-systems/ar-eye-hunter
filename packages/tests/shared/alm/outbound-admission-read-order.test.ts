@@ -46,6 +46,7 @@ describe('outbound admission observation order', () => {
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
                 browserLocks: undefined,
+                signAdmittedMessage: undefined,
                 diagnostics: undefined,
                 settlements: () => {}
             });
@@ -139,6 +140,7 @@ describe('outbound admission observation order', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
+            signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });
@@ -208,6 +210,7 @@ describe('outbound admission observation order', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
+            signAdmittedMessage: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });

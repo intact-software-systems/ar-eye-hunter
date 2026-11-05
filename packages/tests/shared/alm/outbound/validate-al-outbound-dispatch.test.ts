@@ -6,6 +6,7 @@ import { validateALOutboundPlannedMessage } from '@shared/alm/outbound/validate-
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const UNFROZEN: ALTargets = { mode: 'multicast', groupRef: ROOM };
 const FROZEN: ALTargets = { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['b', 'c'], snapshotVersion: 4 };
+const PROOF = { alg: 'ES256', keyId: 'k'.repeat(43), signature: 'Q'.repeat(86) } as const;
 
 describe('planned outbound message authority', () => {
     it('accepts the origin freezing an unfrozen multicast audience', () => {
@@ -36,12 +37,36 @@ describe('planned outbound message authority', () => {
         }
     );
 
+    it('accepts the record and the proof a first admission adds to a request that carried neither', () => {
+        const request = withOrdering(withTargets(FROZEN), { orderingKey: 'feed', epoch: 1, seq: 2 });
+        const admitted = { ...withOrdering(request, { ...request.ordering, priorSeqByRecipient: { c: 0 } }), proof: PROOF };
+
+        expect(validateALOutboundPlannedMessage(request, admitted)).toEqual([]);
+    });
+
+    it.each([
+        {
+            label: 'rewrites the record its request stated',
+            change: (message: ALMessage) => withOrdering(message, { ...message.ordering, priorSeqByRecipient: { c: 1 } })
+        },
+        { label: 'replaces the proof its request carried', change: (message: ALMessage) => ({ ...message, proof: { ...PROOF, signature: 'g'.repeat(86) } }) }
+    ])('refuses a plan that $label', ({ change }) => {
+        const request = withOrdering(withTargets(FROZEN), { orderingKey: 'feed', epoch: 1, seq: 2, priorSeqByRecipient: { c: 0 } });
+        const signed = { ...request, proof: PROOF };
+
+        expect(validateALOutboundPlannedMessage(signed, change(signed))).toHaveLength(1);
+    });
+
     it('refuses any other change beside a freeze', () => {
         const planned = { ...withTargets(FROZEN), payload: { typeId: 'chat', resource: '{"changed":true}' } };
 
         expect(validateALOutboundPlannedMessage(withTargets(UNFROZEN), planned)).toHaveLength(1);
     });
 });
+
+function withOrdering(message: ALMessage, ordering: NonNullable<ALMessage['ordering']>): ALMessage {
+    return { ...message, ordering };
+}
 
 function withTargets(targets: ALTargets): ALMessage {
     return {

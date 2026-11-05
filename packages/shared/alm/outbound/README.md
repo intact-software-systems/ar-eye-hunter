@@ -557,7 +557,8 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
 - A granted publication narrows that audience at the same freeze to the live sessions whose principal holds
   effective `subscribe` on its topic in the origin's cached snapshot
   ([`computeGrantedSubscribeHolders`](../../multicast/publication/compute-granted-subscribe-holders.ts), passed as
-  `subscribeHolders`; `null` for any other send), before the origin signs it, so the signed targets and the receipt
+  `subscribeHolders`; `null` for any other send) when the leg is admitted (`admitLeg`), before its first admission
+  signs it (`signAdmitted`, after that admission's read stamped it), so the signed targets and the receipt
   row's expected set are the narrowed audience, receipted or not. A granted `group-leader` send whose room's director
   holds no `subscribe` is refused before freezing as `refused/unsupported`, which a fallback carrier takes over
   ([`resolveRtcGrantedLeaderRefusal`](../../multicast/publication/compute-rtc-granted-publication-refusal.ts)); a
@@ -588,9 +589,10 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   `refused/unsupported`, naming the bound, in every ack mode and before anything is persisted or sent
   (`computeRtcFrozenAudienceRefusal`). That is the refusal a fallback takes over: `rtc-with-ws-fallback`
   delivers over WS, whose audience travels off the wire (below), and `rtc` alone settles `rejected`
-  with the typed reason. A signed granted publication is the exception: its origin signs the frozen
-  audience before that refusal runs, so past the bound the signed message fails its own envelope
-  decode (`AL collection exceeds the entry limit`), the send ends `failed` and no carrier takes it over.
+  with the typed reason. A granted publication is the exception: its leg admission freezes the audience
+  before that refusal runs, and the refusal keeps an audience its sender gave frozen, so past the bound the
+  message fails its own envelope decode (`AL collection exceeds the entry limit`), the send ends `failed`
+  and no carrier takes it over.
 - The WS server freezes a room message at its admission stamp from the sessions it authorizes,
   narrowed for a principal broadcast that names its room to that principal's sessions (the group
   snapshot's `activeSessions[].principalId`), for a room broadcast that carries
@@ -815,6 +817,23 @@ the repository TTL (60 minutes), so a receiver remembers a track as long as its 
 remain: sequences follow commit order, so under contention two publications of one track can commit out of publish order
 (a first-in-first-out mint per track is a follow-up), and a track silent for over an hour restarts at 1 on both sides.
 The browser's outbound never mints: no browser planner marks a plan.
+
+**Sent positions (S4-R1, S4-R2).** The authority that finalizes a copy's audience records, per track and recipient,
+the last sequence it sent that recipient. A plan names those recipients in `recordsSentPositions` (the RTC origin at
+its first admission of a frozen multicast on a track, granted topic or members topic alike); an admission of it that
+finds no sent row reads each recipient's sent-position row (`toALOutboundSentPositionKey`) in the session that reads the
+sender version, after the sequence is known, stamps the copy's `ordering.priorSeqByRecipient` with
+`computeALOrderingPriorSeqRecord` (a recipient last sent below `seq - 1`, `0` for one never sent; so a track's first
+frame carries `{}`), and its commit moves each recipient below the sequence to it beside the ordering head, fenced by
+the same sender version. A commit that loses the fence retains the request without the record (the captured policy
+keeps `recordsSentPositions`), and its replay reads the positions again. On RTC the carrier then signs the stamped
+frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored
+canonical carries the proof over the sequence and the record, and every re-plan, dequeue and repair resends it as
+stored (D519). A signer's refusal there drops the frame `refused/unsupported`; the refusals a fallback should take over
+(shape, leader, a page that cannot sign) run before admission in `admitLeg`. A granted publication enters only as a
+leg: `enqueueIfAbsent` refuses one without a proof `refused/unsupported` before admission. A retained request, the
+planned-message check and a canonical row's replacement compare a copy to its request without what its admission
+added (`toALOutboundRequestComparableMessage`: a minted sequence, the record and the proof its request did not carry).
 
 Known limitations:
 

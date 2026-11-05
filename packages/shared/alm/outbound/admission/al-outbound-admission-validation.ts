@@ -43,6 +43,8 @@ export interface ALOutboundCapturedPolicy {
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
     /** Kept only for a WS server publication whose admission mints its sequence, so a retained replay mints too. */
     readonly mintsSequence?: true;
+    /** Kept only for an admission that records its recipients' sent positions, so a retained replay records too. */
+    readonly recordsSentPositions?: readonly string[];
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
     /**
@@ -64,6 +66,7 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         repairTracking: plan.repairTracking ?? null,
         supersedenceTracking: plan.supersedenceTracking ?? null,
         ...(plan.mintsSequence ? { mintsSequence: true } : {}),
+        ...(plan.recordsSentPositions === undefined ? {} : { recordsSentPositions: plan.recordsSentPositions }),
         ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
         ...(plan.admittedConnectionGenerationIds === undefined
             ? {}
@@ -163,6 +166,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'supersedenceTracking'
     ], [
         'mintsSequence',
+        'recordsSentPositions',
         'admittedAudience',
         'admittedConnectionGenerationIds',
         'recipientScope',
@@ -178,6 +182,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             throw new TypeError('Session-global authority cannot carry a scoped authority');
         }
     }
+    requireOptionalPersistedALUniqueStringArray(policy.recordsSentPositions, 'captured recorded recipients');
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
     if (policy.admittedConnectionGenerationIds !== undefined) {
         decodeALOutboundCapturedConnectionGenerations(policy.admittedConnectionGenerationIds, policy.admittedAudience);

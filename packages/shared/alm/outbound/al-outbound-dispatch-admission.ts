@@ -32,7 +32,7 @@ import { captureALOutboundPolicy } from './admission/al-outbound-admission-valid
 import {
     toALOutboundCanonicalKey,
     toALOutboundMessageReference,
-    toALSequenceMintComparableMessage
+    toALOutboundRequestComparableMessage
 } from './al-outbound-canonical-message.ts';
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import {
@@ -125,6 +125,8 @@ export namespace ALOutboundDispatchAdmission {
         readonly browserLocks: ALBrowserLocks | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly dequeueTiming?: ALOutboundDequeuedAdmission.TimingSink;
+        /** The carrier's signer of a first admission's frame; `undefined` commits the frame as read. */
+        readonly signAdmittedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['signAdmittedMessage'];
         readonly settlements: ALOutboundSettlementEmitter;
     }
 }
@@ -378,7 +380,13 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return await phases.withReadPhase(() =>
             this.admissionStore.readOutgoingDecision(
                 this.toOutgoingReadInput(dispatch),
-                (read) => this.readDispatchDecision(dispatch, this.toDispatchInput(dispatch, read, this.readNowMs()))
+                async (read) => {
+                    const signed = await this.signAdmittedRead(read);
+                    return await this.readDispatchDecision(
+                        dispatch,
+                        this.toDispatchInput(dispatch, signed, this.readNowMs())
+                    );
+                }
             )
         );
     }
@@ -392,9 +400,38 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return { kind: 'settled', result: ALOutboundDispatchAdmission.toDisposedResult() };
         }
         return await phases.withReadPhase(async () => {
-            const read = await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch));
+            const read = await this.signAdmittedRead(
+                await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch))
+            );
             return await this.readDispatchDecision(dispatch, this.toDispatchInput(dispatch, read, this.readNowMs()));
         });
+    }
+
+    /**
+     * A first admission signs its frame after the read stamped it, so the canonical row every later stage resends
+     * already carries the proof (D519); a re-admission keeps the envelope its row holds and a dropping plan signs
+     * nothing. A signer's refusal is the plan's `unsupported` drop.
+     */
+    private async signAdmittedRead(
+        read: ALOutboundMessageReadDto<TPrepared>
+    ): Promise<ALOutboundMessageReadDto<TPrepared>> {
+        const sign = this.dependencies.signAdmittedMessage;
+        if (sign === undefined || read.storedMessage !== undefined || read.plan.dropReasonCode !== undefined) {
+            return read;
+        }
+        return (await sign(read.msg)).fold(
+            (detail): ALOutboundMessageReadDto<TPrepared> => ({
+                ...read,
+                plan: {
+                    msg: read.msg,
+                    dropReason: detail,
+                    dropReasonCode: 'unsupported',
+                    lane: 'volatile',
+                    preparedMessages: []
+                }
+            }),
+            (msg) => ({ ...read, msg, plan: { ...read.plan, msg } })
+        );
     }
 
     /** Everything one dispatch decides on its read: its retained pending admission (read), compute and validate. */
@@ -593,9 +630,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         read: ALOutboundMessageReadDto<TPrepared>,
         dispatchAtMs: number
     ): ComputeALOutboundDispatchInput<TPrepared> {
-        // A replay that minted replaces the request its retained canonical row holds; a plan that froze a held
-        // row's audience replaces the row.
-        const entry = read.orderingHead === undefined && read.canonicalEntry &&
+        // A replay whose admission added to its request replaces the request its retained canonical row holds; a plan
+        // that froze a held row's audience replaces the row.
+        const entry = !hasALOutboundAdmissionAdditions(read) && read.canonicalEntry &&
                 !isALOutboundCanonicalRowFrozenBy(read.canonicalEntry, read.msg)
             ? read.canonicalEntry
             : this.dependencies.toOutboxEntry(read.msg);
@@ -748,9 +785,20 @@ export function isALOutboundCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, 
     return isALFreezeOfMessage(canonical, msg);
 }
 
-/** The message as its sender asked for it: a sequence this read minted is not part of it until a commit lands. */
+/**
+ * The message as its sender asked for it: what this admission added -- a minted sequence, a recorded record, a proof
+ * -- is not part of it until a commit lands.
+ */
 function toALOutboundRequestedMessage<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): ALMessage {
-    return read.orderingHead === undefined ? read.msg : toALSequenceMintComparableMessage(read.originalMsg, read.msg);
+    return hasALOutboundAdmissionAdditions(read)
+        ? toALOutboundRequestComparableMessage(read.originalMsg, read.msg)
+        : read.msg;
+}
+
+/** Whether a first admission added to its request: it minted a sequence, recorded positions or signed the frame. */
+function hasALOutboundAdmissionAdditions<TPrepared>(read: ALOutboundMessageReadDto<TPrepared>): boolean {
+    return read.orderingHead !== undefined || read.sentPositions !== undefined ||
+        (read.storedMessage === undefined && read.originalMsg.proof === undefined && read.msg.proof !== undefined);
 }
 
 /** Independent reads must agree on the sender version before their bundles can share one commit fence. */

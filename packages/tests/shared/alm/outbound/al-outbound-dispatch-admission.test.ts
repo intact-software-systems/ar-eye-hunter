@@ -50,6 +50,7 @@ function createDispatchFixture(): DispatchFixture {
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,
+        signAdmittedMessage: undefined,
         diagnostics: (event) => diagnostics.push(event),
         settlements: () => {}
     });

@@ -55,6 +55,7 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
                 | 'dequeueTiming'
                 | 'readDequeueAuthority'
                 | 'settlements'
+                | 'signAdmittedMessage'
             >
         > {
     readonly outbox: QueueBoxResourceEntryRepository;

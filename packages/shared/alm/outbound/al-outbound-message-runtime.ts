@@ -20,6 +20,7 @@ import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import type { QRtcDataChannel } from '../../webrtc/qrtc-data-channel.ts';
 import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
@@ -198,6 +199,12 @@ export interface ALOutboundDispatchPlan<TPrepared> {
      * for a message it publishes itself; absent, a keyed message without a sequence stays unsequenced.
      */
     readonly mintsSequence?: true;
+    /**
+     * The recipients whose sent positions this admission records on the message's track: a first admission reads
+     * each one's prior sequence, stamps the copy's `ordering.priorSeqByRecipient` and moves each to the copy's
+     * sequence in its commit. Stated only by a planner that finalizes the audience; absent, nothing is recorded.
+     */
+    readonly recordsSentPositions?: readonly string[];
     /**
      * The audience a server admitted the message to, carried beside the message rather than on the wire,
      * where a large room would exceed the collection limit. The owner keeps it with the captured policy and
@@ -538,6 +545,12 @@ export namespace ALOutboundMessageRuntime {
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
+        /**
+         * Signs a first admission's frame after its read stamped it, once: every later stage resends the stored signed
+         * canonical. Left: why it could not, which drops the frame `unsupported`. Absent (WS client and server), the
+         * frame is committed as read.
+         */
+        readonly signAdmittedMessage?: (msg: ALMessage) => Promise<Either<string, ALMessage>>;
         readonly readDequeueAuthority?: ALOutboundDequeueAuthorityReader;
         /** Runs in global row order once the row committed, with the captured policy that commit wrote. */
         readonly afterDequeueAdmission:

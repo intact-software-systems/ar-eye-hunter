@@ -8,6 +8,7 @@ import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.t
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import {
     toALOutboundOrderingHeadMutations,
+    toALOutboundSentPositionMutations,
     type ALOutboundAdmissionMutation
 } from './admission/al-outbound-admission-mutations.ts';
 import type {
@@ -196,13 +197,17 @@ function computeMessageMutations<TPrepared>(
     ];
     const trackKey = toALOrderingTrackKey(read.msg);
     if (trackKey && read.msg.ordering?.seq !== undefined && expiresAtMs !== undefined) {
-        mutations.push({
-            kind: 'set-ordering-message',
-            trackKey,
-            seq: read.msg.ordering.seq,
-            msgId: read.msg.id.msgId,
-            expireAtTimestamp: expiresAtMs
-        }, ...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs));
+        mutations.push(
+            {
+                kind: 'set-ordering-message',
+                trackKey,
+                seq: read.msg.ordering.seq,
+                msgId: read.msg.id.msgId,
+                expireAtTimestamp: expiresAtMs
+            },
+            ...toALOutboundOrderingHeadMutations(read.orderingHead, expiresAtMs),
+            ...toALOutboundSentPositionMutations(read.sentPositions, expiresAtMs)
+        );
     }
     appendSupersedenceMutations(mutations, read);
     return mutations;

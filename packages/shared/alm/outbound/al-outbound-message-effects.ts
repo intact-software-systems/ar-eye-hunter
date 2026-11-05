@@ -356,6 +356,7 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         repairTracking: pending.policy.repairTracking ?? undefined,
         supersedenceTracking: pending.policy.supersedenceTracking ?? undefined,
         mintsSequence: pending.policy.mintsSequence,
+        recordsSentPositions: pending.policy.recordsSentPositions,
         admittedAudience: pending.policy.admittedAudience,
         admittedConnectionGenerationIds: pending.policy.admittedConnectionGenerationIds,
         recipientScope: pending.policy.recipientScope,
