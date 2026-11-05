@@ -13,6 +13,7 @@ import type { RallarSessionController } from '@shared-web/browser/session/rallar
 import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { SelectedRoomRecovery } from '../rooms/entry/selected-room-recovery.ts';
 
 import type { RallarTargetedChannelDefinition } from '../rallar-facade-contract.ts';
@@ -75,6 +76,7 @@ export function createBrowserRoomsComposition(
 ): BrowserRoomsComposition {
     const recovery = new SelectedRoomRecovery({
         selected: input.state.selectedForRecovery,
+        timers: createDefaultTimers(),
         requireSession: input.session.requireSession,
         connect: input.session.acquireConnection,
         readPublicationKey: input.session.readPublicationKey,

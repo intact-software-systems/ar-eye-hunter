@@ -1,5 +1,6 @@
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadline.ts';
 import type { AuthenticatedResource } from './authenticated-resource.ts';
 
 export namespace SubscribeViewDeadline {
@@ -25,21 +26,9 @@ export function subscribeViewDeadline<View>(input: SubscribeViewDeadline.Input<V
         cancelDeadline = null;
         const remaining = view === null ? null : input.remainingMs(view);
         if (remaining !== null) {
-            cancelDeadline = scheduleViewDeadline(input.timers, Math.max(0, remaining), input.refresh);
+            cancelDeadline = scheduleAtDeadline(input.timers, input.timers.nowMs() + remaining, input.refresh);
         }
     }));
     subscriptions.add(() => cancelDeadline?.());
     return () => subscriptions.unsubscribe();
-}
-
-/** Native timers use a signed 32-bit delay; long reservations must not become immediate refresh loops. */
-function scheduleViewDeadline(timers: Timers, delayMs: number, refresh: () => void | Promise<void>): () => void {
-    const deadline = timers.nowMs() + delayMs;
-    let cancel: () => void;
-    const schedule = (): void => {
-        const remaining = Math.max(0, deadline - timers.nowMs());
-        cancel = timers.schedule(remaining > 2_147_483_647 ? schedule : refresh, Math.min(remaining, 2_147_483_647));
-    };
-    schedule();
-    return () => cancel();
 }

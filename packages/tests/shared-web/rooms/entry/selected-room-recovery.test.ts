@@ -2,6 +2,7 @@ import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { SelectedRoomRecovery } from '@shared-web/browser/rooms/entry/selected-room-recovery.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { afterEach, expect, it, vi } from 'vitest';
+import { createManualTimers } from '../../../shared/resilience/manual-timers.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 
@@ -25,8 +26,10 @@ function fixture() {
     let selected: GroupRef | undefined = room;
     let session = ctx.session;
     const adopted: GroupSnapshot[] = [];
+    const timers = createManualTimers(0);
     const owner = new SelectedRoomRecovery({
         selected: () => selected,
+        timers,
         requireSession: () => session,
         connect: async () => ctx,
         readPublicationKey: async () => null,
@@ -39,6 +42,7 @@ function fixture() {
     return {
         owner,
         adopted,
+        timers,
         select(ref: GroupRef | undefined) {
             selected = ref;
         },
@@ -183,4 +187,40 @@ it('does not hold a replacement account behind a previous account’s outstandin
     await test.owner.changeRoom(async () => test.select(undefined));
     reply.resolve(pointRead(snapshot));
     expect(test.adopted).toEqual([]);
+});
+
+it('retries a transiently failed restore on the same socket instead of staying absent', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const test = fixture();
+    let unavailable = 3;
+    const reads = Promise.withResolvers<void>();
+    const methods: string[] = [];
+    vi.stubGlobal('fetch', async (_url: RequestInfo | URL, init?: RequestInit) => {
+        methods.push(init?.method ?? 'GET');
+        if (init?.method === 'GET') {
+            if (unavailable > 0) {
+                unavailable--;
+                if (unavailable === 0) {
+                    reads.resolve();
+                }
+                return new Response('unavailable', { status: 503 });
+            }
+            return pointRead(snapshot);
+        }
+        const { generationId, connectionGenerationId } = JSON.parse(String(init?.body));
+        return Response.json({
+            ...snapshot,
+            onlineMemberCount: 2,
+            activeSessions: [...snapshot.activeSessions, { ...initial.activeSessions[1], generationId, connectionGenerationId }]
+        });
+    });
+    test.owner.onSocket('close');
+    test.owner.onSocket('open');
+    await reads.promise;
+    await test.owner.changeRoom(async () => {});
+    expect(test.adopted).toEqual([]);
+    await test.timers.advance(1_000);
+    await test.owner.changeRoom(async () => {});
+    expect(methods).toEqual(['GET', 'GET', 'GET', 'GET', 'PUT']);
+    expect(test.adopted.at(-1)?.activeSessions.some((row) => row.principalId === 'watcher')).toBe(true);
 });

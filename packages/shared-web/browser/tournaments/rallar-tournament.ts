@@ -12,11 +12,11 @@ import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
-import { changeSelectedViewWatch } from '../api/change-selected-view-watch.ts';
 import { SelectedViewWatch } from '../api/selected-view-watch.ts';
 import { subscribeViewDeadline } from '../api/subscribe-view-deadline.ts';
 import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
 import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
+import { writeSelectedViewWatch } from '../api/write-selected-view-watch.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarConnectionOperations } from '../rallar-connection-facade.ts';
@@ -72,7 +72,7 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
                 subscribeViewInvalidations({ browser, scope: config.scope, resource: 'tournament', changed }),
             watch: new SelectedViewWatch({
                 createId: () => crypto.randomUUID(),
-                change: (input) => changeSelectedViewWatch({ ...config.scope, family: 'tournament' }, input)
+                change: (input) => writeSelectedViewWatch({ ...config.scope, family: 'tournament' }, input)
             }),
             readConnectionGeneration: async (signal) => {
                 const context = await browser.connect({ scope: config.scope, signal });
@@ -89,6 +89,7 @@ export class RallarTournament extends AuthenticatedResource<TournamentSnapshot, 
         const ref = decodeTournamentRef({ ...config.scope, tournamentId: config.tournamentId });
         super(dependencies, {
             scope: config.scope,
+            changeResult: 'read',
             subscribeRefresh: (refresh) => this.subscribeRefresh(refresh)
         }, {
             async read(attempt) {

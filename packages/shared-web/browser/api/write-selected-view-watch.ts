@@ -13,7 +13,7 @@ export interface SelectedViewWatchRoute extends StateScope {
 }
 
 /** Retrying a lost response keeps the same command key and conditional predecessor. */
-export async function changeSelectedViewWatch(
+export async function writeSelectedViewWatch(
     route: SelectedViewWatchRoute,
     input: SelectedViewWatch.ChangeInput
 ): Promise<ViewWatchResult> {

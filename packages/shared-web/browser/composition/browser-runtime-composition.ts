@@ -124,7 +124,6 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
         resolveOperationScope: runtime.resolveOperationScope
     };
     const authRuntime: RallarAuthRuntimePort = {
-        readAuthExpiryTimer: runtime.readAuthExpiryTimer,
         setAuthExpiryTimer: runtime.setAuthExpiryTimer,
         clearAuthExpiryTimer: runtime.clearAuthExpiryTimer,
         readAuthEndPromise: runtime.readAuthEndPromise,

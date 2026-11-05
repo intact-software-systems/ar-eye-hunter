@@ -1,8 +1,10 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ViewWatchRequest, ViewWatchResult } from '@shared/api/views/view-watch.ts';
 import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
+import { isDefinitiveApiMutationFailure } from './is-definitive-api-mutation-failure.ts';
 
 export namespace SelectedViewWatch {
     export interface Selection {
@@ -78,14 +80,7 @@ export class SelectedViewWatch {
         }
         return this.calls.admit(registration.key, async () => {
             const signal = AbortSignal.timeout(10_000);
-            if (registration.pending !== null) {
-                const pending = { ...registration.pending, signal };
-                const result = await this.dependencies.change(pending);
-                this.validateResult(pending, result);
-                if (result.status === 'applied') {
-                    registration.ownedRegistrationId = result.registrationId;
-                }
-            }
+            await this.replayPending(registration, signal);
             if (registration.ownedRegistrationId === null) {
                 return;
             }
@@ -94,8 +89,27 @@ export class SelectedViewWatch {
                 null,
                 signal
             );
-            this.validateResult(input, await this.dependencies.change(input));
+            this.assertCommandResult(input, await this.dependencies.change(input));
         });
+    }
+
+    /** An unresolved replay must not keep the earlier owned registration alive; its clear still runs. */
+    private async replayPending(registration: WatchRegistration, signal: AbortSignal): Promise<void> {
+        if (registration.pending === null) {
+            return;
+        }
+        const pending = { ...registration.pending, signal };
+        registration.pending = null;
+        try {
+            const result = await this.dependencies.change(pending);
+            this.assertCommandResult(pending, result);
+            if (result.status === 'applied') {
+                registration.ownedRegistrationId = result.registrationId;
+            }
+        }
+        catch (error) {
+            console.warn('Selected preview registration replay failed before cleanup', toError(error));
+        }
     }
 
     private async reconcile(registration: WatchRegistration, selection: SelectedViewWatch.Selection): Promise<void> {
@@ -117,8 +131,7 @@ export class SelectedViewWatch {
                     ? { ...registration.pending, signal: selection.signal }
                     : this.createChange(registration, selection.resourceId, selection.signal);
                 registration.pending = pending;
-                const result = await this.dependencies.change(pending);
-                this.validateResult(pending, result);
+                const result = await this.writePending(registration, pending);
                 registration.registrationId = result.registrationId;
                 registration.resourceId = result.resourceId;
                 registration.pending = null;
@@ -130,6 +143,24 @@ export class SelectedViewWatch {
                     throw new WatchRegistrationConflict('Preview selection changed before registration');
                 }
             });
+    }
+
+    /** A definitive refusal ends the command identity; only an unresolved outcome keeps it for replay. */
+    private async writePending(
+        registration: WatchRegistration,
+        pending: SelectedViewWatch.ChangeInput
+    ): Promise<ViewWatchResult> {
+        try {
+            const result = await this.dependencies.change(pending);
+            this.assertCommandResult(pending, result);
+            return result;
+        }
+        catch (error) {
+            if (registration.pending === pending && isDefinitiveApiMutationFailure(toError(error))) {
+                registration.pending = null;
+            }
+            throw error;
+        }
     }
 
     private createChange(
@@ -149,7 +180,7 @@ export class SelectedViewWatch {
         };
     }
 
-    private validateResult(input: SelectedViewWatch.ChangeInput, result: ViewWatchResult): void {
+    private assertCommandResult(input: SelectedViewWatch.ChangeInput, result: ViewWatchResult): void {
         if (
             result.requestId !== input.requestId ||
             (result.status === 'applied' && (result.resourceId !== input.request.resourceId ||

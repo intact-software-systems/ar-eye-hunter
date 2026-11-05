@@ -52,7 +52,11 @@ function browser(): ResourceBrowser {
             timers: createDefaultTimers(),
             createId: () => crypto.randomUUID()
         },
-        { scope: { applicationId: 'game', workspaceId: 'default' }, subscribeRefresh: (listener) => changes.subscribe(listener).unsubscribe },
+        {
+            scope: { applicationId: 'game', workspaceId: 'default' },
+            changeResult: 'read',
+            subscribeRefresh: (listener) => changes.subscribe(listener).unsubscribe
+        },
         api
     );
     cleanups.push(() => owner.stop());

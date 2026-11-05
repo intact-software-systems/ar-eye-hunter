@@ -68,7 +68,7 @@ export class RallarMatchmaking extends AuthenticatedResource<MatchmakingSnapshot
     }
 
     constructor(dependencies: RallarMatchmaking.Dependencies, config: RallarMatchmaking.Config) {
-        super(dependencies, { scope: config.scope, subscribeRefresh: dependencies.onChanged }, {
+        super(dependencies, { scope: config.scope, changeResult: 'read', subscribeRefresh: dependencies.onChanged }, {
             async read(attempt) {
                 const snapshot = decodeMatchmakingSnapshot(await dependencies.api.read(attempt));
                 assertMatchmakingAccountScope(snapshot, attempt);

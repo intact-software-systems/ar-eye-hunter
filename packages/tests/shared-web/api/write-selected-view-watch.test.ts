@@ -1,5 +1,5 @@
-import { changeSelectedViewWatch } from '@shared-web/browser/api/change-selected-view-watch.ts';
 import { sendApiHttpRequest } from '@shared-web/browser/api/send-api-http-request.ts';
+import { writeSelectedViewWatch } from '@shared-web/browser/api/write-selected-view-watch.ts';
 import { beforeEach, expect, it, vi } from 'vitest';
 vi.mock('@shared-web/browser/api-client-config.ts', () => ({ readApiBaseUrl: () => 'http://api.test' }));
 vi.mock('@shared-web/browser/api/send-api-http-request.ts', () => ({ sendApiHttpRequest: vi.fn() }));
@@ -16,7 +16,7 @@ it.each(['session-preview', 'tournament'] as const)('preserves %s registration i
         resourceId: 'selected-resource'
     });
     const request = { resourceId: 'selected-resource', connectionGenerationId: 'connection-1', expectedRegistrationId: 'previous' };
-    await expect(changeSelectedViewWatch({ ...scope, family }, { requestId, request, session, signal: new AbortController().signal }))
+    await expect(writeSelectedViewWatch({ ...scope, family }, { requestId, request, session, signal: new AbortController().signal }))
         .resolves.toMatchObject({ status: 'applied', registrationId: requestId });
     expect(sendApiHttpRequest).toHaveBeenCalledTimes(2);
     for (const [call] of vi.mocked(sendApiHttpRequest).mock.calls) {

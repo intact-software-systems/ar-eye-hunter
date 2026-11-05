@@ -63,7 +63,11 @@ export class RallarFriends extends AuthenticatedResource<FriendsView, FriendsReq
     }
 
     constructor(dependencies: RallarFriends.Dependencies, config: RallarFriends.Config) {
-        super(dependencies, { scope: config.scope, subscribeRefresh: (refresh) => this.subscribeRefresh(refresh) }, {
+        super(dependencies, {
+            scope: config.scope,
+            changeResult: 'read',
+            subscribeRefresh: (refresh) => this.subscribeRefresh(refresh)
+        }, {
             async read(attempt) {
                 const view = decodeFriendsView(await dependencies.api.read(attempt));
                 if (view.principalId !== attempt.session.clientId) {

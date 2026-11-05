@@ -71,7 +71,11 @@ export class RallarParty extends AuthenticatedResource<PartyView, PartyRequest> 
     }
 
     constructor(dependencies: RallarParty.Dependencies, config: RallarParty.Config) {
-        super(dependencies, { scope: config.scope, subscribeRefresh: (refresh) => this.subscribeRefresh(refresh) }, {
+        super(dependencies, {
+            scope: config.scope,
+            changeResult: 'read',
+            subscribeRefresh: (refresh) => this.subscribeRefresh(refresh)
+        }, {
             async read(attempt) {
                 const view = decodePartyView(await dependencies.api.read(attempt));
                 if (!isSameGroupScope(view.scope, attempt.scope) || view.principalId !== attempt.session.clientId) {

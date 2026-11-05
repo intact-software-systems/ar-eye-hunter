@@ -2,11 +2,12 @@ import { isSameGroupRef, isSameGroupScope } from '@shared/api/api-type-utils.ts'
 import type { GroupSessionPage, GroupSessionPreview } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { AuthenticatedResource } from '../../api/authenticated-resource.ts';
 import type { RallarScheduledSessions } from './rallar-scheduled-sessions.ts';
 
 export namespace ScheduledSessionViewReader {
     export interface ReadInput {
-        readonly attempt: RallarScheduledSessions.Attempt;
+        readonly attempt: AuthenticatedResource.ReadInput;
         readonly isCurrent: () => boolean;
     }
     export interface PagesInput extends ReadInput {
@@ -71,7 +72,7 @@ export class ScheduledSessionViewReader {
     }
 
     /** Replaces the loaded range as one projection, preserving pagination and rejecting repeated cursors. */
-    async readPages(input: ScheduledSessionViewReader.PagesInput): Promise<ScheduledSessionViewReader.Page | null> {
+    async readPages(input: ScheduledSessionViewReader.PagesInput): Promise<ScheduledSessionViewReader.Page> {
         const { attempt } = input;
         const sessions: GroupSessionPreview[] = [];
         let cursor: string | null = null;
@@ -85,7 +86,7 @@ export class ScheduledSessionViewReader {
                 signal: attempt.signal
             });
             if (!input.isCurrent()) {
-                return null;
+                throw new DOMException('A newer session read superseded this page range', 'AbortError');
             }
             const receivedAtEpochMs = this.dependencies.timers.nowMs();
             for (const session of result.sessions) {

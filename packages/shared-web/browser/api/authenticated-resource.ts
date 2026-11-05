@@ -45,8 +45,8 @@ export namespace AuthenticatedResource {
     }
     export interface Config {
         readonly scope: StateScope;
-        /** A live resource receives the committed result on its subscribed stream. */
-        readonly changeResult?: 'stream';
+        /** `read` re-reads the view after a committed change; `stream` receives it on the subscribed refresh. */
+        readonly changeResult: 'read' | 'stream';
         subscribeRefresh(listener: () => Promise<void>): () => void;
     }
 }
@@ -143,6 +143,12 @@ export class AuthenticatedResource<View, Request> {
         return covered;
     }
 
+    /** The owner's read input changed: reads of the previous input are superseded by one current read. */
+    refreshForNewInput(): Promise<void> {
+        this.revision++;
+        return this.refresh();
+    }
+
     act(request: Request): Promise<void> {
         return this.state.busy || this.pending !== null
             ? Promise.resolve()
@@ -192,6 +198,7 @@ export class AuthenticatedResource<View, Request> {
         if (!this.current(attempt) || revision !== this.revision) {
             return;
         }
+        // Only a streamed view can replace the state while this read is in flight.
         const previousView = this.state.view;
         try {
             const view = await this.api.read(attempt);
@@ -207,8 +214,7 @@ export class AuthenticatedResource<View, Request> {
             if (this.current(attempt) && revision === this.revision) {
                 const failure = toError(error);
                 this.invalidateLostAuthority(failure);
-                const superseded = this.config.changeResult === 'stream' && previousView !== this.state.view &&
-                    isRetryableApiViewFailure(failure);
+                const superseded = previousView !== this.state.view && isRetryableApiViewFailure(failure);
                 this.publish({ ...this.state, view: superseded ? this.state.view : null, error: failure.message });
             }
         }
@@ -220,7 +226,8 @@ export class AuthenticatedResource<View, Request> {
             return;
         }
         this.pending = pending;
-        if (this.config.changeResult !== 'stream') {
+        const readsResult = this.config.changeResult === 'read';
+        if (readsResult) {
             this.revision++;
         }
         this.publish({ ...this.state, busy: true, retryPending: false, error: null });
@@ -233,7 +240,7 @@ export class AuthenticatedResource<View, Request> {
                 return;
             }
             this.pending = null;
-            if (this.config.changeResult !== 'stream') {
+            if (readsResult) {
                 this.revision++;
                 await this.refresh();
             }

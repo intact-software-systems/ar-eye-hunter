@@ -1,3 +1,4 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { SelectedViewWatch } from '@shared-web/browser/api/selected-view-watch.ts';
 import type { RallarRoomEntry } from '@shared-web/browser/rooms/entry/rallar-room-entry.ts';
 import { RallarScheduledSessions } from '@shared-web/browser/rooms/sessions/rallar-scheduled-sessions.ts';
@@ -356,5 +357,15 @@ describe('scheduled-session browser ownership', () => {
         await first;
         expect(test.enter).not.toHaveBeenCalled();
         expect(test.owner.getState()).toMatchObject({ sessions: [], selected: null, busy: false });
+    });
+
+    it('reports a policy refusal without losing the loaded sessions or keeping the intent', async () => {
+        const test = new ScheduleBrowserFixture();
+        await test.owner.start();
+        await test.owner.select(ref);
+        test.api.change.mockRejectedValueOnce(new ApiHttpError('POST', '/session', 403, 'Only the organizer can cancel'));
+        await test.owner.act('cancel');
+        expect(test.owner.getState()).toMatchObject({ sessions: [preview], selected: preview, busy: false, retryPending: false });
+        expect(test.owner.getState().error).toContain('Only the organizer can cancel');
     });
 });

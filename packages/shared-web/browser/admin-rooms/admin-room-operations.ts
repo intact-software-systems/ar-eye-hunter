@@ -60,6 +60,7 @@ export class AdminRoomOperations extends AuthenticatedResource<AdminRoomOperatio
     constructor(dependencies: AuthenticatedResource.Dependencies, config: AdminRoomOperations.Config) {
         super(dependencies, {
             scope: config.scope,
+            changeResult: 'read',
             subscribeRefresh: (run) =>
                 startRepeating({
                     timers: dependencies.timers,

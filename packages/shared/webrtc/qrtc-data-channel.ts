@@ -1,5 +1,7 @@
 import type { ApiJsonValue } from '../api/api-json-value.ts';
 import { validateJsonMessageSize } from '../api/json-message-validation.ts';
+import { createDefaultTimers, type Timers } from '../resilience/timers.ts';
+import { scheduleAtDeadline } from '../resilience/timing/schedule-at-deadline.ts';
 import { toError } from '../resilience/to-error.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 
@@ -220,7 +222,7 @@ export class QRtcDataChannel {
         RtcDataChannelSendQueue.QueuedSend<RtcQueuedPayload>,
         () => void
     >();
-    private queueExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+    private cancelQueueExpiry: (() => void) | undefined;
     private readonly openWaiters: RtcDataChannelOpenWaiter[] = [];
     private readonly counters = createInitialCounters();
     private readonly flowControlPolicy: Required<RtcDataChannelFlowControlPolicy>;
@@ -228,6 +230,7 @@ export class QRtcDataChannel {
     public readonly peerConnection: QRtcPeerConnection;
     public readonly input: QRtcDataChannel.InputDto;
     private readonly now: () => number;
+    private readonly timers: Timers;
 
     constructor(
         peerConnection: QRtcPeerConnection,
@@ -237,6 +240,7 @@ export class QRtcDataChannel {
         this.peerConnection = peerConnection;
         this.input = input;
         this.now = now;
+        this.timers = { ...createDefaultTimers(), nowMs: now };
         this.flowControlPolicy = { ...DEFAULT_FLOW_CONTROL, ...input.flowControl };
         this.status = {
             state: RtcSessionState.Idle,
@@ -1105,20 +1109,17 @@ export class QRtcDataChannel {
     }
 
     private scheduleQueueExpiry(): void {
-        if (this.queueExpiryTimer !== undefined) {
-            clearTimeout(this.queueExpiryTimer);
-            this.queueExpiryTimer = undefined;
-        }
+        this.cancelQueueExpiry?.();
+        this.cancelQueueExpiry = undefined;
         const expiryAtMs = this.sendQueue.nextExpiryAtMs();
         if (expiryAtMs === undefined) {
             return;
         }
-        const delayMs = Math.min(2_147_483_647, Math.max(0, expiryAtMs - this.now()));
-        this.queueExpiryTimer = setTimeout(() => {
-            this.queueExpiryTimer = undefined;
+        this.cancelQueueExpiry = scheduleAtDeadline(this.timers, expiryAtMs, () => {
+            this.cancelQueueExpiry = undefined;
             this.expireQueuedSends();
             this.scheduleQueueExpiry();
-        }, delayMs);
+        });
     }
 
     private clearQueuedSends(status: 'closed' | 'failed', reason: string): void {

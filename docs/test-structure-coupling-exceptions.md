@@ -5952,7 +5952,7 @@ moved or changed test.
       "domain": "Selected-view watch transport",
       "owner": "Rallar browser maintainers",
       "summary": "AppInbox watch-registration requests carry stable request identity and CAS predecessor.",
-      "semanticCoverage": "packages/tests/shared-web/api/change-selected-view-watch.test.ts#preserves %s registration identity and predecessor after a lost acknowledgement",
+      "semanticCoverage": "packages/tests/shared-web/api/write-selected-view-watch.test.ts#preserves %s registration identity and predecessor after a lost acknowledgement",
       "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
       "interactionRequirement": {
         "interactionKind": "count",
@@ -11844,15 +11844,15 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#subscribes before reading, covers a push during that read, and detaches on stop"
     },
     {
-      "id": "test-structure-coupling-0437620feb09efdb",
-      "path": "packages/tests/shared-web/api/change-selected-view-watch.test.ts",
+      "id": "test-structure-coupling-001decba6417a4c7",
+      "path": "packages/tests/shared-web/api/write-selected-view-watch.test.ts",
       "kind": "mock-invocation-count-or-order",
       "contract": "view-watch-lost-acknowledgement-retry",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
       "rationale": "The two attempts are the injected lost acknowledgement and recovery; accompanying per-call payload assertions bind both to the same command.",
-      "semanticCoverage": "packages/tests/shared-web/api/change-selected-view-watch.test.ts#preserves %s registration identity and predecessor after a lost acknowledgement"
+      "semanticCoverage": "packages/tests/shared-web/api/write-selected-view-watch.test.ts#preserves %s registration identity and predecessor after a lost acknowledgement"
     },
     {
       "id": "test-structure-coupling-67794a7aa9618006",

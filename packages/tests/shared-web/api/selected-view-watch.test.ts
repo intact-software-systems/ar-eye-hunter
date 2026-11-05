@@ -1,7 +1,8 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { SelectedViewWatch } from '@shared-web/browser/api/selected-view-watch.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ViewWatchResult } from '@shared/api/views/view-watch.ts';
-import { describe, expect, it, onTestFinished, vi, type Mock } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi, type Mock } from 'vitest';
 
 const session: AuthSession = {
     clientId: 'alice',
@@ -35,6 +36,10 @@ function fixture(): WatchFixture {
     const change = vi.fn<SelectedViewWatch.Dependencies['change']>((call) => Promise.resolve(applied(call)));
     return { owner: new SelectedViewWatch({ change, createId: () => crypto.randomUUID() }), change };
 }
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
 
 describe('selected preview watch lifecycle', () => {
     it('awaits committed registration and reuses it until the selection or connection changes', async () => {
@@ -179,5 +184,40 @@ describe('selected preview watch lifecycle', () => {
         await old;
         await test.owner.select({ ...input, session: { ...session, clientId: 'bob', sessionId: 'bob-session' } });
         expect(test.change).toHaveBeenCalledTimes(2);
+    });
+
+    // A refused replacement must not leave the earlier owned registration behind on the server.
+    it('clears the owned registration when a replacement selection was refused', async () => {
+        const test = fixture();
+        await test.owner.select({ ...input, resourceId: 'earlier' });
+        const owned = test.change.mock.calls[0]![0].requestId;
+        test.change.mockRejectedValueOnce(new ApiHttpError('POST', '/view-watches', 403, 'denied'));
+        await expect(test.owner.select(input)).rejects.toThrow();
+        await test.owner.release();
+        const calls = test.change.mock.calls.map(([call]) => call);
+        expect(calls).toHaveLength(3);
+        expect(calls[2]!.request).toMatchObject({ resourceId: null, expectedRegistrationId: owned });
+    });
+
+    it('still clears the owned registration when the uncertain replacement replay fails', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const test = fixture();
+        await test.owner.select({ ...input, resourceId: 'earlier' });
+        const owned = test.change.mock.calls[0]![0].requestId;
+        test.change.mockRejectedValueOnce(new Error('Response lost')).mockRejectedValueOnce(new Error('Still lost'));
+        await expect(test.owner.select(input)).rejects.toThrow('Response lost');
+        await test.owner.release();
+        const calls = test.change.mock.calls.map(([call]) => call);
+        expect(calls[2]!.requestId).toBe(calls[1]!.requestId);
+        expect(calls.at(-1)!.request).toMatchObject({ resourceId: null, expectedRegistrationId: owned });
+    });
+
+    it('uses a new command identity after a definitive refusal', async () => {
+        const test = fixture();
+        test.change.mockRejectedValueOnce(new ApiHttpError('POST', '/view-watches', 403, 'denied'));
+        await expect(test.owner.select(input)).rejects.toThrow();
+        await test.owner.select(input);
+        const [refused, retried] = test.change.mock.calls.map(([call]) => call);
+        expect(retried!.requestId).not.toBe(refused!.requestId);
     });
 });
