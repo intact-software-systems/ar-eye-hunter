@@ -451,7 +451,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         ]);
     });
 
-    it('keeps one ordering head per session track for both carriers, and purges it with the session', async () => {
+    it('keeps one ordering head and one room-wide sent position per session track for both carriers, and purges them with the session', async () => {
         const sessionId = `shared-head-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
         const wsStore = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
@@ -467,7 +467,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: SCOPE, storage: diagnosticsPorts.storage });
 
         expect(seqs).toEqual([1, 2, 3]);
-        expect(headsBeforePurge).toHaveLength(1);
+        // The WS leg records no recipients, so its mints move the room-wide position beside the shared head.
+        expect(headsBeforePurge.map((key) => key.slice(headPrefix.length).split(':')[0]).toSorted())
+            .toEqual(['ordering-head', 'room-sent-position']);
         expect(await readBrowserALRuntimeEntryKeys(headPrefix)).toEqual([]);
     });
 
