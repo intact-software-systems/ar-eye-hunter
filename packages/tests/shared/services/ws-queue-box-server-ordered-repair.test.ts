@@ -222,6 +222,26 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readMsgIds(server.sockets.c)).toEqual([]);
     });
 
+    it('serves a ranged repair of a keyed publication no receipt tracks to a requester of its audience, and refuses one outside', async () => {
+        const server = await createOrderedServer();
+        for (const seq of [1, 2, 3]) {
+            await publishEvent(server, roundEvent(`event-${seq}`, 'none'), ADMITTED_AUDIENCE);
+        }
+        const gap = { msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }] } as const;
+
+        await receiveNack(server, { ...gap, fromPeerId: 'c' });
+        await receiveNack(server, { ...gap, fromPeerId: 'b' });
+
+        await expect.poll(() => runEngine(server, () => readSeqs(server.sockets.b))).toEqual([1, 2, 3, 2]);
+        await settle(server);
+        expect(server.controlAdmissions.map(({ msgId, outcome }) => [msgId, outcome])).toEqual([
+            ['nack-event-3-c', 'not-handled'],
+            ['nack-event-3-b', 'committed']
+        ]);
+        expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
+        expect(readSeqs(server.sockets.c)).toEqual([]);
+    });
+
     it('ends the whole receipt of a message one receiver NACKs resync-required, so no recipient is retried', async () => {
         const server = await createOrderedServer();
         await publishEvents(server, 3);
@@ -538,14 +558,15 @@ function browserEvent(seq: number, msgId = `a-event-${seq}`): ALMessage {
     return { ...message, id: { ...message.id, msgId } };
 }
 
-function roundEvent(msgId: string): ALMessage {
+/** The server's own keyed round event; `ack: 'none'` asks no receipt of its recipients. */
+function roundEvent(msgId: string, ack: 'receiver' | 'none' = 'receiver'): ALMessage {
     const message = newALBroadcastMessage(
         SERVER_ID,
         newALRoute('room.round.event', ROOM.groupId, msgId),
         'room',
         'round.event.v1',
         { msgId },
-        { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: ORDERING }
+        { groupRef: ROOM, reliability: 'at-least-once', ack, ttlMs: EVENT_TTL_MS, ordering: ORDERING }
     );
     return { ...message, id: { ...message.id, msgId } };
 }
