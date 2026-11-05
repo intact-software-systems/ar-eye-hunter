@@ -52,6 +52,7 @@ import type { RelicHuntersRuntime } from '../../../apps/relic-hunters-v1/src/gam
 import { useRelicHunters } from '../../../apps/relic-hunters-v1/src/game/use-relic-hunters.ts';
 import type { RelicPreferences } from '../../../apps/relic-hunters-v1/src/game/use-relic-preferences.ts';
 import { useRelicTurn } from '../../../apps/relic-hunters-v1/src/game/use-relic-turn.ts';
+import { ViewPushBrowser } from '../shared-web/api/view-push-browser.ts';
 import { createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
@@ -98,6 +99,7 @@ const mockRallar = vi.hoisted(() => ({
     channels: {
         room: vi.fn()
     },
+    ws: { onLifecycle: vi.fn<ViewPushBrowser['ws']['onLifecycle']>() },
     rtc: {
         onStatus: vi.fn(),
         waitForRoomLane: vi.fn()
@@ -145,6 +147,7 @@ describe('useRelicHunters auth lifecycle', () => {
         window.history.replaceState(null, '', '/');
         mockRallar.auth.restore.mockReturnValue(session);
         mockRallar.session.mockReturnValue(session);
+        mockRallar.ws.onLifecycle.mockImplementation(new ViewPushBrowser(mockRallar.session).ws.onLifecycle);
         mockRallar.auth.onChange.mockImplementation((listener) => {
             authListeners.add(listener);
             return () => authListeners.delete(listener);
@@ -647,8 +650,13 @@ describe('useRelicHunters auth lifecycle', () => {
         await renderHook();
         await waitForState(() => current?.diagnostics.snapshotReady === true && channels.has('relic-room-1'));
         const late = Promise.withResolvers<RelicPublicSnapshot | undefined>();
-        vi.mocked(fetchRelicSnapshot).mockReturnValueOnce(late.promise);
+        const requested = Promise.withResolvers<string>();
+        vi.mocked(fetchRelicSnapshot).mockImplementationOnce((roomId) => {
+            requested.resolve(roomId);
+            return late.promise;
+        });
         await act(async () => requireResync(requireChannel(channels, 'relic-room-1')));
+        expect(await requested.promise).toBe('relic-room-1');
 
         await rooms.enter('relic-room-2');
         await waitForState(() => current?.snapshot?.roomId === 'relic-room-2');

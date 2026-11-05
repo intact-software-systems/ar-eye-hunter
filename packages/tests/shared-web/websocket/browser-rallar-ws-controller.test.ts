@@ -432,10 +432,15 @@ describe('Rallar WS lifecycle', () => {
         });
 
         unsubscribeStatus();
-        expect(removedCallbackIds).toEqual([]);
-
         unsubscribeLifecycle();
-        expect(removedCallbackIds).toEqual(['rallar:ws:status']);
+        const observedStatuses = [...statuses];
+        const observedLifecycle = [...lifecycles];
+        callbacks?.onOpen?.(new Event('open'));
+        expect(statuses).toEqual(observedStatuses);
+        expect(lifecycles).toEqual(observedLifecycle);
+        // The facade still owns room recovery. Disconnect releases its transport registration.
+        await facade.disconnect();
+        expect(removedCallbackIds).toContain('rallar:ws:status');
     });
 
     it('waits for WS open without implicitly connecting', async () => {
