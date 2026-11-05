@@ -153,6 +153,26 @@ export class WsQueueBoxServerAckRelay {
         return Either.ofRight(true);
     }
 
+    /**
+     * The server's own ACK for a recipient it sent nothing: counted here when this instance aggregates the receipt,
+     * else handed once to the instance that does. It speaks for the server, so no session budget or proof applies.
+     */
+    async writeServerAck(message: ALMessage): Promise<void> {
+        const control = decodeALControlMessage(message).right;
+        if (control?.type !== 'ack') {
+            return;
+        }
+        const publish = this.#publishRelayedAck;
+        if (publish === undefined || this.#receipts.holdsReceiptFor(control.payload)) {
+            await this.#receipts.acceptControlMessage(message);
+            return;
+        }
+        const published = await publish(message);
+        if (published.left !== undefined) {
+            console.warn(`AL server acknowledgement ${message.id.msgId} was not relayed: ${published.left}`);
+        }
+    }
+
     /** A handed-over ACK: counted against this instance's aggregate, or dropped without an answer. */
     async acceptRelayedAck(message: ALMessage, relayPublisherId?: string): Promise<void> {
         const control = decodeALControlMessage(message).right;

@@ -19,6 +19,7 @@ import {
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
 import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import {
     ALInboundMessageRuntime,
@@ -65,6 +66,8 @@ import {
     toWsQueueBoxServerCapturedSendInput,
     toWsQueueBoxServerHeldSessionPolicy
 } from './scope/to-ws-queue-box-server-captured-send-input.ts';
+import { toWsQueueBoxServerRecipientCopy } from './scope/to-ws-queue-box-server-recipient-copy.ts';
+import { toWsQueueBoxServerOutsideAudienceAck } from './to-ws-queue-box-server-outside-audience-ack.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -263,6 +266,7 @@ export class WsQueueBoxServerService {
     public readonly socket: JsonWebSocketServer;
     public readonly name: string;
     private readonly inboundNamespace: string;
+    private readonly newControlId: () => string;
 
     constructor(dependencies: WsQueueBoxServerService.Dependencies) {
         this.clock = dependencies.outboundRuntime.clock;
@@ -273,6 +277,7 @@ export class WsQueueBoxServerService {
         this.socket = dependencies.socket;
         this.name = dependencies.name;
         this.inboundNamespace = dependencies.inboundRuntime.admissionStore.namespace;
+        this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
         this.readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
         this.forwardsRoomScopedMessages = dependencies.forwardsRoomScopedMessages;
         const liveDeliveryOwners = this.createLiveDeliveryOwners(dependencies);
@@ -427,7 +432,11 @@ export class WsQueueBoxServerService {
                     this.creationNow()
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
-            readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
+            readDequeueAuthority: async (message, entry) => {
+                const read = await this.dequeueAuthority.readDequeueAuthority(message, entry);
+                await this.writeOutsideAudience(message, read.dropped);
+                return read.authority;
+            },
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
             planDequeuedMessage: (message, authority) => this.planWorkDispatch(message, authority, 'dequeue'),
             afterDequeueAdmission: async (message, entry, committedPolicy) => {
@@ -439,7 +448,7 @@ export class WsQueueBoxServerService {
             planRepairMessage: async (message, request) =>
                 this.outboundPlanning.planRepairMessage(message, {
                     ...request,
-                    admittedAudience: await this.dequeueAuthority.readCurrentAudience(message, request)
+                    admittedAudience: await this.readCurrentAudience(message, request)
                 })
         });
     }
@@ -833,13 +842,46 @@ export class WsQueueBoxServerService {
     private async sendHeldRow(
         { message, entry, policy }: WsQueueBoxServerService.HeldRowSend
     ): Promise<void> {
-        const admittedAudience = await this.dequeueAuthority.readCurrentAudience(message, policy);
+        const admittedAudience = await this.readCurrentAudience(message, policy);
         this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
             message,
             key: entry.key,
             policy: { ...policy, admittedAudience },
             eligibleSessionIds: undefined
         }));
+    }
+
+    /** The sessions this attempt may send; each one the re-check dropped is recorded outside the audience. */
+    private async readCurrentAudience(
+        message: ALMessage,
+        authority: WsQueueBoxServerDequeueAuthority.AudienceAuthority
+    ): Promise<readonly string[] | undefined> {
+        const audience = await this.dequeueAuthority.readCurrentAudience(message, authority);
+        await this.writeOutsideAudience(message, audience.dropped);
+        return audience.eligible;
+    }
+
+    /**
+     * Records each session the server sent its origin's row nothing outside the audience of the receipt the origin
+     * awaits (S4-R9); the server's own rows and rows no receipt counts recipients of have none to record in.
+     */
+    private async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
+        const originPeerId = message.id.senderId;
+        if (
+            originPeerId === this.name ||
+            !isALLogicalReceiptMode(this.outboundPlanning.resolvePolicy(message).effective.ack.algo)
+        ) {
+            return;
+        }
+        for (const recipientPeerId of sessionIds.filter((sessionId) => sessionId !== originPeerId)) {
+            await this.ackRelay.writeServerAck(toWsQueueBoxServerOutsideAudienceAck({
+                message,
+                recipientPeerId,
+                serverPeerId: this.name,
+                controlId: this.newControlId(),
+                nowMs: this.clock.nowMs()
+            }));
+        }
     }
 
     private async sendPreparedMessage(
@@ -862,7 +904,17 @@ export class WsQueueBoxServerService {
         >,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
-        const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
+        const canonical = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
+        const copy = toWsQueueBoxServerRecipientCopy({
+            message: canonical,
+            recipientPeerId: prepared.peerId,
+            sentPositions: lifecycle.sentPositions
+        });
+        if (copy.right === undefined) {
+            await this.writeOutsideAudience(canonical, [prepared.peerId]);
+            return { status: 'no-targets', submissionAttempted: false, reason: 'A later row of the track reached it' };
+        }
+        const message = copy.right;
         const facts = this.receiptObserver === undefined ? undefined : toALOutboundReceiptFacts(message);
         const transport: JsonWebSocketServer.SendEvidence | undefined = facts === undefined
             ? undefined

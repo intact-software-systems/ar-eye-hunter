@@ -14,7 +14,8 @@ import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import type { WsServerAckRelayPublisher } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
+import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
+import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
@@ -324,6 +325,95 @@ describe('WS server ACK relay across instances', () => {
             { phase: 'admitted', expected: ['b', 'c'], confirmed: [] },
             { phase: 'timed-out', expected: ['b', 'c'], confirmed: ['b'] }
         ]);
+    });
+});
+
+describe('the server own ACK for a session it sent nothing', () => {
+    /** An aggregation that holds the receipt of `a`'s `room-message-1` to `b` and `c`, or none. */
+    function createRelay(
+        holdsReceipt: boolean
+    ): { readonly relay: WsQueueBoxServerAckRelay; readonly published: ALMessage[]; readonly receipts: ALMessage[]; } {
+        const published: ALMessage[] = [];
+        const receipts: ALMessage[] = [];
+        const aggregation = new WsQueueBoxServerReceiptAggregation({
+            serverPeerId: 'server',
+            clock: { nowMs: () => 1_000 },
+            newControlId: () => 'receipt',
+            qosProvider: undefined,
+            queueEngine: new InboxOutboxEngine(),
+            enqueueOutbox: async (message) => {
+                receipts.push(message);
+                return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, entries: [], trackedReceiptAlgo: 'none', message };
+            },
+            acceptServerControl: async () => ({ kind: 'committed' }),
+            acceptServerReceipt: async () => ({ kind: 'committed' })
+        });
+        onTestFinished(() => aggregation.dispose());
+        if (holdsReceipt) {
+            aggregation.recordAdmission({
+                msgId: 'room-message-1',
+                originPeerId: 'a',
+                traceId: 'trace-room-message-1',
+                expectedRecipientPeerIds: ['b', 'c'],
+                snapshotVersion: 1,
+                deadlineAtMs: 30_000
+            });
+        }
+        const relay = new WsQueueBoxServerAckRelay({
+            serverPeerId: 'server',
+            clock: { nowMs: () => 1_000 },
+            readIngressAudience: () => Promise.resolve(undefined),
+            receipts: aggregation,
+            publishRelayedAck: async (message) => {
+                published.push(message);
+                return Either.ofRight('published');
+            }
+        });
+        return { relay, published, receipts };
+    }
+
+    function toServerAck(logicalRecipientPeerId: string): ALMessage {
+        return newALAckControlMessage(
+            { v: 4, msgId: `outside-${logicalRecipientPeerId}`, senderId: 'server', ts: 1_000, traceId: 'trace-room-message-1' },
+            {
+                ackedMsgId: 'room-message-1',
+                fromPeerId: 'server',
+                toPeerId: 'a',
+                originPeerId: 'a',
+                logicalRecipientPeerId,
+                carrier: 'ws',
+                status: 'subtree-complete-not-subscribed',
+                observedAtEpochMs: 1_000
+            }
+        );
+    }
+
+    it('counts it against the aggregate this instance holds and hands nothing over', async () => {
+        const { relay, published } = createRelay(true);
+
+        await relay.writeServerAck(toServerAck('c'));
+
+        expect(published).toEqual([]);
+        const lateConfirmation: ALAckPayload = {
+            ackedMsgId: 'room-message-1',
+            fromPeerId: 'c',
+            toPeerId: 'a',
+            originPeerId: 'a',
+            logicalRecipientPeerId: 'c',
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: 1_000
+        };
+        expect(relay.readRelayedAckRejection(lateConfirmation)?.message)
+            .toBe('AL acknowledgement answers for a peer the receipt already records outside the audience');
+    });
+
+    it('hands it once to the instance that aggregates the receipt, without a session budget or proof', async () => {
+        const { relay, published } = createRelay(false);
+
+        await relay.writeServerAck(toServerAck('c'));
+
+        expect(published.map((message) => message.id.msgId)).toEqual(['outside-c']);
     });
 });
 

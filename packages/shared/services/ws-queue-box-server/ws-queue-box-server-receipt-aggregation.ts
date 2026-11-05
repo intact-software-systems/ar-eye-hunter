@@ -77,6 +77,11 @@ interface WsQueueBoxServerReceiptCountObservation {
     readonly outcome: 'rejected' | 'partial' | 'complete';
 }
 
+interface WsQueueBoxServerReceiptAckValidationContext {
+    readonly nowMs: number;
+    readonly serverPeerId: string;
+}
+
 interface WsQueueBoxServerReceiptCountDecision {
     readonly result: Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck>;
     readonly observation: Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }> | undefined;
@@ -220,7 +225,7 @@ export class WsQueueBoxServerReceiptAggregation {
     ): ALMessageRejection | undefined {
         const nowMs = this.#dependencies.clock.nowMs();
         const aggregate = this.#aggregates.readAt(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId), nowMs);
-        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, nowMs);
+        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.toAckValidationContext(nowMs));
         if (issues.length === 0) {
             return undefined;
         }
@@ -294,7 +299,7 @@ export class WsQueueBoxServerReceiptAggregation {
             ? toImmutableWsQueueBoxServerReceiptAggregate(aggregate)
             : undefined;
         const ackFacts = this.#dependencies.receiptObserver ? toImmutableWsQueueBoxServerReceiptAck(ack) : undefined;
-        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, nowMs);
+        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.toAckValidationContext(nowMs));
         let result: Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck>;
         let after = aggregate;
         let outcome: WsQueueBoxServerReceiptCountObservation['outcome'];
@@ -331,6 +336,10 @@ export class WsQueueBoxServerReceiptAggregation {
                 outcome
             })
         };
+    }
+
+    private toAckValidationContext(nowMs: number): WsQueueBoxServerReceiptAckValidationContext {
+        return { nowMs, serverPeerId: this.#dependencies.serverPeerId };
     }
 
     private toCountObservation(
@@ -565,7 +574,7 @@ function toWsQueueBoxServerReceiptDispatchPlan(
 function validateWsQueueBoxServerReceiptAck(
     aggregate: WsQueueBoxServerReceiptAggregate | undefined,
     ack: ALAckPayload,
-    nowMs: number
+    { nowMs, serverPeerId }: WsQueueBoxServerReceiptAckValidationContext
 ): readonly WsQueueBoxServerReceiptAggregation.AckValidationIssue[] {
     if (aggregate === undefined) {
         return [{ code: 'aggregate-absent', message: 'AL acknowledgement names no receipt this server aggregates' }];
@@ -577,7 +586,7 @@ function validateWsQueueBoxServerReceiptAck(
             message: 'AL acknowledgement is not addressed to the origin it names'
         });
     }
-    if (ack.fromPeerId !== ack.logicalRecipientPeerId) {
+    if (ack.fromPeerId !== ack.logicalRecipientPeerId && !isWsQueueBoxServerOutsideAudienceAck(ack, serverPeerId)) {
         issues.push({
             code: 'sender-recipient-mismatch',
             message: 'AL acknowledgement speaks for another recipient than its sender'
@@ -605,6 +614,11 @@ function validateWsQueueBoxServerReceiptAck(
         issues.push({ code: 'deadline-expired', message: 'AL acknowledgement arrived after its receipt deadline' });
     }
     return issues;
+}
+
+/** The server speaks for a recipient only to say it sent that recipient nothing, which confirms nobody. */
+function isWsQueueBoxServerOutsideAudienceAck(ack: ALAckPayload, serverPeerId: string): boolean {
+    return ack.fromPeerId === serverPeerId && !isALRecipientConfirmationAck(ack);
 }
 
 /**

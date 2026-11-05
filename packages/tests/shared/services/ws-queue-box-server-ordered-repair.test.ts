@@ -2,7 +2,12 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage, type ALNackReason } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    type ALAckPayload,
+    type ALNackReason
+} from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -29,6 +34,8 @@ const ACK_TIMEOUT_MS = 2_000;
 const CLOCK_STEP_MS = 250;
 const ORDERING = { orderingKey: 'game-1', epoch: 1 };
 const TRACK_KEY = 'game-1:server:1';
+/** Client `a`'s track on the same key, which the server relays. */
+const A_TRACK_KEY = 'game-1:a:1';
 /** `a` and `b` were in the room when the events were published; `c` joined afterwards. */
 const ADMITTED_AUDIENCE = ['a', 'b'];
 /** A retransmit's attempt id names the repair hint that asked for it: requester `b`, then the hint's ranges. */
@@ -43,6 +50,8 @@ interface OrderedServer {
     readonly clock: { nowMs: number; };
     readonly controlAdmissions: ControlAdmission[];
     readonly settlements: ALDeliverySettlement[];
+    /** Every ACK the receipt path counted or refused, the server's own included. */
+    readonly countedAcks: ALAckPayload[];
 }
 
 interface NackInput {
@@ -50,6 +59,9 @@ interface NackInput {
     readonly msgId: string;
     readonly reason: ALNackReason;
     readonly missingRanges: readonly ALSeqRange[];
+    /** The origin of the track the NACK names; the server unless named. */
+    readonly toPeerId?: string;
+    readonly trackKey?: string;
 }
 
 /** The retransmits one repair hint produced, in the order they were sent. */
@@ -160,19 +172,96 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
     });
 
-    it('does not handle a gap NACK from a session that joined after the publication, and sends it nothing', async () => {
+    it('sends a session admitted from event 4 that event with its own entry and nothing below it', async () => {
         const server = await createOrderedServer();
         await publishEvents(server, 3);
 
-        await receiveNack(server, { fromPeerId: 'c', msgId: 'event-3', reason: 'gap', missingRanges: [{ from: 1, to: 2 }] });
-
-        await expect.poll(() => runEngine(server, () => server.controlAdmissions)).toEqual([
-            expect.objectContaining({ targetMsgId: 'event-3', outcome: 'not-handled' })
-        ]);
+        await publishEvent(server, roundEvent('event-4'), ['a', 'b', 'c']);
         await settle(server);
-        expect(readSeqs(server.sockets.c)).toEqual([]);
-        expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
-        expect(readSeqs(server.sockets.b)).toEqual([1, 2, 3]);
+
+        expect(readFrames(server.sockets.c, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
+        expect(readMsgIds(server.sockets.c)).toEqual(['event-4']);
+        expect(readFrames(server.sockets.b, 'event-4')).toEqual([{ ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3, 4]);
+    });
+
+    it('resends an unconfirmed copy on the receipt retry with the entry its first dequeue fixed', async () => {
+        const server = await createOrderedServer();
+        await publishEvents(server, 2);
+        await publishEvent(server, roundEvent('event-3'), ['a']);
+        await publishEvent(server, roundEvent('event-4'), ['a', 'b']);
+        for (const msgId of ['event-1', 'event-2', 'event-3', 'event-4']) {
+            await receiveAck(server, msgId, 'a');
+        }
+        await receiveAck(server, 'event-1', 'b');
+        await receiveAck(server, 'event-2', 'b');
+
+        server.clock.nowMs += ACK_TIMEOUT_MS + CLOCK_STEP_MS;
+
+        // `b` already stands at 4 when the retry runs: a copy at its position is a retry, not an exclusion.
+        await expect.poll(() => runEngine(server, () => readFrames(server.sockets.b, 'event-4').length)).toBe(2);
+        expect(readFrames(server.sockets.b, 'event-4')).toEqual([
+            { ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined },
+            { ordering: { ...ORDERING, seq: 4, priorSeqByRecipient: { b: 2 } }, proof: undefined }
+        ]);
+    });
+
+    it('skips a recipient a later row of its track already reached, and never moves it back', async () => {
+        const server = await createOrderedServer();
+        await publishEvent(server, browserEvent(2), ['b']);
+
+        await publishEvent(server, browserEvent(1), ['b', 'c'], ['c']);
+        await settle(server);
+
+        expect(readFrames(server.sockets.b, 'a-event-1')).toEqual([]);
+        expect(server.settlements).toContainEqual(expect.objectContaining({ kind: 'attempt-settled', msgId: 'a-event-1', outcome: 'no-targets' }));
+        // The server's own word on the receipt path: it sent `b` nothing, which places `b` outside the audience.
+        expect(server.countedAcks).toContainEqual(expect.objectContaining({
+            ackedMsgId: 'a-event-1',
+            fromPeerId: SERVER_ID,
+            toPeerId: 'a',
+            logicalRecipientPeerId: 'b',
+            status: 'subtree-complete-not-subscribed'
+        }));
+        expect(readFrames(server.sockets.c, 'a-event-1')).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
+
+        await publishEvent(server, browserEvent(3), ['b', 'c']);
+
+        expect(readFrames(server.sockets.b, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.c, 'a-event-3')).toEqual([{ ordering: { ...ORDERING, seq: 3, priorSeqByRecipient: { c: 1 } }, proof: undefined }]);
+    });
+
+    it('sends a handed-over signed frame with the server own entry for each recipient and no proof', async () => {
+        const server = await createOrderedServer();
+        const event = browserEvent(2);
+        const handedOver: ALMessage = {
+            ...event,
+            targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['b', 'c'], snapshotVersion: 1 },
+            ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } },
+            proof: { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 'S'.repeat(85) + 'A' }
+        };
+
+        await publishEvent(server, handedOver, ['b', 'c']);
+
+        expect(readFrames(server.sockets.b, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { b: 0 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.c, 'a-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
+    });
+
+    it('serves the gap NACK a session of the admitted audience sends the origin of a relayed track, and refuses one outside it', async () => {
+        const server = await createOrderedServer();
+        for (const seq of [1, 2, 3]) {
+            await publishEvent(server, browserEvent(seq), ['b']);
+        }
+        const gap = { msgId: 'a-event-3', reason: 'gap', missingRanges: [{ from: 2, to: 2 }], toPeerId: 'a', trackKey: A_TRACK_KEY } as const;
+
+        const served = await server.service.acceptIncomingMessage(toNack(server, { ...gap, fromPeerId: 'b' }), 'b');
+        const refused = await server.service.acceptIncomingMessage(toNack(server, { ...gap, fromPeerId: 'c' }), 'c');
+
+        expect(served.left).toBeUndefined();
+        expect(refused.left).toEqual({ code: 'unauthorized', message: 'AL repair request names no relayed message admitted to its sender' });
+        await expect.poll(() => runEngine(server, () => readMsgIds(server.sockets.b))).toEqual(['a-event-1', 'a-event-2', 'a-event-3', 'a-event-2']);
+        await settle(server);
+        expect(readMsgIds(server.sockets.c)).toEqual([]);
     });
 
     it('ends the whole receipt of a message one receiver NACKs resync-required, so no recipient is retried', async () => {
@@ -211,6 +300,7 @@ async function createOrderedServer(): Promise<OrderedServer> {
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const controlAdmissions: ControlAdmission[] = [];
     const settlements: ALDeliverySettlement[] = [];
+    const countedAcks: ALAckPayload[] = [];
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
@@ -234,14 +324,20 @@ async function createOrderedServer(): Promise<OrderedServer> {
             }
         },
         outboundSettlements: (settlement) => settlements.push(settlement),
+        receiptObserver: (observation) => {
+            if (observation.kind === 'ack-count') {
+                countedAcks.push(observation.ack);
+            }
+        },
         targetResolver: {
             requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
+            resolveGroupRecipients: recipients,
             resolveBroadcastRecipients: recipients
         }
     });
     onTestFinished(() => service.dispose());
-    return { service, engine, sockets, clock, controlAdmissions, settlements };
+    return { service, engine, sockets, clock, controlAdmissions, settlements, countedAcks };
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */
@@ -252,14 +348,44 @@ async function publishEvents(
 ): Promise<readonly ALMessage['ordering'][]> {
     const minted: ALMessage['ordering'][] = [];
     for (let index = 1; index <= count; index += 1) {
-        const result = await server.service.enqueueOutboxIfAbsent(
-            roundEvent(`event-${index}`),
-            { admittedAudience: audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
-        );
-        minted.push(result.message.ordering);
+        minted.push(await publishEvent(server, roundEvent(`event-${index}`), audience));
     }
-    await expect.poll(() => runEngine(server, () => audience.map((peerId) => readSeqs(server.sockets[peerId]!).length))).toEqual(audience.map(() => count));
     return minted;
+}
+
+/**
+ * Admits one row to the audience and waits until it reached every recipient it sends: rows of a track that record
+ * positions commit one after another, and the frozen clock keeps the receipts' timeouts ahead of their sends.
+ */
+async function publishEvent(
+    server: OrderedServer,
+    message: ALMessage,
+    audience: readonly string[],
+    recipients: readonly string[] = audience
+): Promise<ALMessage['ordering']> {
+    const result = await server.service.enqueueOutboxIfAbsent(
+        message,
+        { admittedAudience: audience, admittedConnectionGenerationIds: undefined, recipientScope: undefined }
+    );
+    await expect.poll(
+        () => runEngine(server, () => recipients.every((peerId) => readMsgIds(server.sockets[peerId]!).includes(message.id.msgId))),
+        { interval: 5 }
+    ).toBe(true);
+    return result.message.ordering;
+}
+
+/** Client `a`'s keyed room event at the sequence `a` stated, as the server relays it. */
+function browserEvent(seq: number): ALMessage {
+    const msgId = `a-event-${seq}`;
+    const message = newALBroadcastMessage(
+        'a',
+        newALRoute('room.round.event', ROOM.groupId, msgId),
+        'room',
+        'round.event.v1',
+        { msgId },
+        { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: { ...ORDERING, seq } }
+    );
+    return { ...message, id: { ...message.id, msgId } };
 }
 
 function roundEvent(msgId: string): ALMessage {
@@ -276,7 +402,11 @@ function roundEvent(msgId: string): ALMessage {
 
 /** The receiver's NACK as its WS client sends it: addressed to the server, naming the server's track. */
 async function receiveNack(server: OrderedServer, input: NackInput): Promise<void> {
-    const nack = newALNackControlMessage(
+    await server.sockets[input.fromPeerId]!.receive(JSON.stringify(toNack(server, input)));
+}
+
+function toNack(server: OrderedServer, input: NackInput): ALMessage {
+    return newALNackControlMessage(
         {
             v: 4,
             msgId: `nack-${input.msgId}-${input.fromPeerId}`,
@@ -288,15 +418,23 @@ async function receiveNack(server: OrderedServer, input: NackInput): Promise<voi
             msgId: input.msgId,
             fromPeerId: input.fromPeerId,
             logicalRecipientPeerId: input.fromPeerId,
-            toPeerId: SERVER_ID,
+            toPeerId: input.toPeerId ?? SERVER_ID,
             reason: input.reason,
             observedAtEpochMs: server.clock.nowMs,
-            ...(input.missingRanges.length === 0
-                ? {}
-                : { orderingKey: TRACK_KEY, expectedSeq: input.missingRanges[0]!.from, missingRanges: input.missingRanges })
+            ...(input.missingRanges.length === 0 ? {} : {
+                orderingKey: input.trackKey ?? TRACK_KEY,
+                expectedSeq: input.missingRanges[0]!.from,
+                missingRanges: input.missingRanges
+            })
         }
     );
-    await server.sockets[input.fromPeerId]!.receive(JSON.stringify(nack));
+}
+
+/** The frames of the track a socket received, as sent: each copy's ordering and proof. */
+function readFrames(socket: SimulatedWebSocket, msgId: string): readonly Pick<ALMessage, 'ordering' | 'proof'>[] {
+    return socket.sent.map((frame) => decodePersistedALMessage(frame))
+        .filter((message) => message.id.msgId === msgId)
+        .map((message) => ({ ordering: message.ordering, proof: message.proof }));
 }
 
 async function receiveAck(server: OrderedServer, ackedMsgId: string, recipient: string): Promise<void> {

@@ -405,6 +405,37 @@ describe('WS server receipt aggregate', () => {
         }]);
     });
 
+    it('records a session the server sent nothing outside the audience from the server own ACK, expected set unchanged', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
+        aggregation.recordAdmission(admission());
+
+        await aggregation.acceptControlMessage(
+            aggregateAckControl(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' }))
+        );
+        await aggregation.acceptControlMessage(aggregateAckControl(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })));
+
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)))).toMatchObject([{
+            phase: 'complete',
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b'],
+            outsideAudienceRecipientPeerIds: ['c']
+        }]);
+    });
+
+    it('refuses a server ACK that would confirm a recipient: the server speaks for one only to say it sent it nothing', () => {
+        const aggregation = createAggregation();
+        aggregation.recordAdmission(admission());
+
+        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'server', logicalRecipientPeerId: 'c' }))?.message)
+            .toBe('AL acknowledgement speaks for another recipient than its sender');
+        expect(
+            aggregation.readRelayedAckRejection(
+                aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'c', status: 'subtree-complete-not-subscribed' })
+            )?.message
+        ).toBe('AL acknowledgement speaks for another recipient than its sender');
+    });
+
     it('keeps a receipt whose every recipient answered outside open until its deadline, as it confirmed nobody', async () => {
         const enqueued: ALMessage[] = [];
         const aggregation = createAggregation(enqueued);
