@@ -341,6 +341,17 @@ describe('a recorded ordered track at its frozen recipients', () => {
         vi.useRealTimers();
     });
 
+    it('states one witnessed position for a copy and none for its receipt-retried duplicate', async () => {
+        const chain = await createRelayChain(['a', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
+        const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'] });
+        const [frame] = await signTrack(chain, [{ seq: 1, recipientPeerIds: ['c'], priorSeqByRecipient: {} }]);
+
+        await leaf.receive(frame!, 'a');
+        await leaf.receive(frame!, 'a');
+
+        expect(readOrderingPositions(leaf)).toEqual([['witnessed', 1, 0]]);
+    });
+
     it('witnesses 1 and 2 while its token is pending, then delivers 3 in order once active, never asking for 1 or 2', async () => {
         const chain = await createRelayChain(['a', 'c'], { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_ONLY });
         const token = createSwitchableTopicSubscriptions();
@@ -404,6 +415,8 @@ describe('a recorded ordered track at its frozen recipients', () => {
         await leaf.receive((await relay.readSent('c'))[1]!, 'r');
         await deliverEach((await leaf.readSent('r')).filter((control) => toControlledMsgIdOf(control) === below!.id.msgId), relay, 'c');
         await origin.accept((await relay.readSent('a')).filter((control) => toControlledMsgIdOf(control) === below!.id.msgId));
+        // A retried copy of the entry is a duplicate: it commits no position, so it states none.
+        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
 
         expect(leaf.delivered.map((message) => message.ordering?.seq)).toEqual([5]);
         expect(readOrderingPositions(leaf)).toEqual([['entered', 5, 0], ['before-entry', 3, 0]]);
