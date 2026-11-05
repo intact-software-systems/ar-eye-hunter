@@ -367,8 +367,8 @@ export class WebRtcOverlayMulticastManager {
     /**
      * One sender carrier leg. A granted publication is frozen to its subscribers and signed once, in its first
      * admission, after that admission's read stamped it; or refused as unsupported before admission, the refusal a
-     * fallback carrier takes over. A refusal its admission makes (a signer that cannot sign there) is taken over too,
-     * with the leg its sender gave.
+     * fallback carrier takes over. Every fallback verdict its carried leg reaches (a signer that cannot sign in the
+     * admission among them) names the leg its sender gave, as those refusals do.
      */
     async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Promise<ALOutboundEnqueueResult> {
         if (this.disposed || !this.#publications.isGrantedPublication(msg)) {
@@ -387,7 +387,6 @@ export class WebRtcOverlayMulticastManager {
                 }),
             async (carried) => {
                 const result = await this.enqueueCarriedLegIfAbsent(carried, carrierGap);
-                // A refusal a fallback carrier takes over names the leg its sender gave, as `admitLeg`'s refusals do.
                 return isALDeliveryAdmissionFallbackVerdict(result.verdict) ? { ...result, message: msg } : result;
             }
         );

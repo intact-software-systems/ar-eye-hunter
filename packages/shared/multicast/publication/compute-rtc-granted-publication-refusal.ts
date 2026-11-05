@@ -59,13 +59,13 @@ export interface RtcGrantedPublicationRefusalInput {
 export function computeRtcGrantedPublicationRefusal(
     input: RtcGrantedPublicationRefusalInput
 ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
-    const { carried: msg, original } = input;
+    const { carried, original } = input;
     const refusal = resolveRtcGrantedPublicationShapeRefusal(original) ??
-        (input.storedSend && msg.proof === undefined ? RTC_GRANTED_PUBLICATION_REFUSALS.unsigned : undefined);
+        (input.storedSend && carried.proof === undefined ? RTC_GRANTED_PUBLICATION_REFUSALS.unsigned : undefined);
     return refusal === undefined
-        ? Either.ofRight(msg)
+        ? Either.ofRight(carried)
         : Either.ofLeft({
-            msg: { ...msg, targets: original.targets },
+            msg: { ...carried, targets: original.targets },
             dropReason: refusal,
             dropReasonCode: 'unsupported',
             lane: 'volatile',
