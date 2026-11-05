@@ -7,11 +7,11 @@ import {
     decodeALAdmissionString
 } from '@shared/alm/al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '@shared/alm/decode-al-admission-resource-entry-key.ts';
+import { decodeALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     decodeALAccountViewAuthority,
     type ALAccountViewAuthority
-} from '@shared/alm/outbound/admission/al-account-view-authority.ts';
-import { decodeALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+} from '@shared/alm/outbound/admission/al-outbound-scope-authority.ts';
 import {
     decodeALSessionInvalidationAuthority,
     type ALSessionInvalidationAuthority

@@ -1,57 +1,71 @@
 import type { GroupScope } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import {
     encodeLiveWsNotice,
     MAX_FRAGMENTED_LIVE_WS_NOTICE_BYTES,
     MAX_LIVE_WS_NOTICE_BYTES,
-    type LiveWsAudience,
+    type GenerationRoomLiveWsAudience,
+    type LiveWsPublicationBase,
     type LiveWsPublicationInput
 } from './live-ws-notice.ts';
 
-type RoomSnapshotPublication =
-    & LiveWsPublicationInput
-    & Readonly<{
-        audience: Extract<LiveWsAudience, { mode: 'generation-room'; }>;
-        scope: GroupScope;
-    }>;
+export interface RoomSnapshotPublication extends LiveWsPublicationBase {
+    readonly audience: GenerationRoomLiveWsAudience;
+    readonly scope: GroupScope;
+}
 
-interface Batch {
+interface RecipientBatch {
     readonly ids: string[];
-    readonly generations: Map<string, string>;
     bytes: number;
 }
 
-/** One logical application frame, disjoint recipient partitions. Keep ordinary NOTIFY inline whenever one recipient fits. */
-export function* partitionRoomSnapshotPublication(input: LiveWsPublicationInput): Generator<RoomSnapshotPublication> {
-    if (input.audience.mode !== 'generation-room' || !input.scope) {
-        throw new TypeError('Expected a scoped room snapshot');
-    }
-    const { recipientSessionIds, generations } = input.audience;
+export function isRoomSnapshotPublication(input: LiveWsPublicationInput): input is RoomSnapshotPublication {
+    return input.audience.mode === 'generation-room' && input.scope !== undefined;
+}
+
+/**
+ * One logical frame across disjoint recipient partitions, each kept inline whenever its recipients fit. Every partition
+ * is computed before any is published, so a recipient that fits no notice refuses the whole publication.
+ */
+export function partitionRoomSnapshotPublication(
+    publication: RoomSnapshotPublication
+): Either<string, readonly RoomSnapshotPublication[]> {
+    const { recipientSessionIds, generations } = publication.audience;
     if (
         new Set(recipientSessionIds).size !== recipientSessionIds.length ||
-        Object.keys(generations).length !== recipientSessionIds.length
+        Object.keys(generations).length !== recipientSessionIds.length ||
+        !recipientSessionIds.every((id) => Object.hasOwn(generations, id) && generations[id].length > 0)
     ) {
-        throw new TypeError('Room snapshot audience differs from its frozen generations');
+        return Either.ofLeft('Room snapshot audience differs from its frozen generations');
     }
     const empty: RoomSnapshotPublication = {
-        ...input,
-        scope: input.scope,
-        audience: { ...input.audience, recipientSessionIds: [], generations: {} }
+        ...publication,
+        audience: { ...publication.audience, recipientSessionIds: [], generations: {} }
     };
     const encoded = encodeLiveWsNotice(empty);
     if (encoded.kind === 'oversize') {
-        throw new RangeError('An empty room snapshot envelope exceeds the private publication limit');
+        return Either.ofLeft('An empty room snapshot envelope exceeds the private publication limit');
     }
-    const baseBytes = new TextEncoder().encode(encoded.serialized).length;
-    let batch: Batch = { ids: [], generations: new Map(), bytes: baseBytes };
+    const batches = toRecipientBatches(new TextEncoder().encode(encoded.serialized).length, publication.audience);
+    return batches.left === undefined
+        ? Either.ofRight(batches.right!.map((batch) => toPartition(empty, batch.ids, generations)))
+        : Either.ofLeft(batches.left);
+}
+
+function toRecipientBatches(
+    baseBytes: number,
+    { recipientSessionIds, generations }: GenerationRoomLiveWsAudience
+): Either<string, readonly RecipientBatch[]> {
+    const batches: RecipientBatch[] = [{ ids: [], bytes: baseBytes }];
     let cap = MAX_LIVE_WS_NOTICE_BYTES - 1;
     for (const id of recipientSessionIds) {
-        if (!Object.hasOwn(generations, id) || !generations[id]) {
-            throw new TypeError('A room snapshot recipient has no generation');
-        }
-        const rowBytes = stringBytes(id) * 2 + stringBytes(generations[id]) + 1;
+        // The serialized notice grows by the quoted id in both the session list and the generation map, the quoted
+        // generation and the map's colon; every recipient after a batch's first adds one comma to each of the two.
+        const rowBytes = toJsonStringBytes(id) * 2 + toJsonStringBytes(generations[id]) + 1;
+        let batch = batches[batches.length - 1];
         if (batch.ids.length > 0 && batch.bytes + rowBytes + 2 > cap) {
-            yield toPartition(empty, batch);
-            batch = { ids: [], generations: new Map(), bytes: baseBytes };
+            batch = { ids: [], bytes: baseBytes };
+            batches.push(batch);
         }
         if (batch.ids.length === 0) {
             cap = baseBytes + rowBytes < MAX_LIVE_WS_NOTICE_BYTES
@@ -60,25 +74,28 @@ export function* partitionRoomSnapshotPublication(input: LiveWsPublicationInput)
         }
         batch.bytes += rowBytes + (batch.ids.length === 0 ? 0 : 2);
         if (batch.bytes > cap) {
-            throw new RangeError('A single room snapshot recipient exceeds the private publication limit');
+            return Either.ofLeft('A single room snapshot recipient exceeds the private publication limit');
         }
         batch.ids.push(id);
-        batch.generations.set(id, generations[id]);
     }
-    yield toPartition(empty, batch);
+    return Either.ofRight(batches);
 }
 
-function stringBytes(value: string): number {
+function toJsonStringBytes(value: string): number {
     return new TextEncoder().encode(JSON.stringify(value)).length;
 }
 
-function toPartition(empty: RoomSnapshotPublication, batch: Batch): RoomSnapshotPublication {
+function toPartition(
+    empty: RoomSnapshotPublication,
+    ids: readonly string[],
+    generations: Readonly<Record<string, string>>
+): RoomSnapshotPublication {
     return {
         ...empty,
         audience: {
             ...empty.audience,
-            recipientSessionIds: batch.ids,
-            generations: Object.fromEntries(batch.generations)
+            recipientSessionIds: ids,
+            generations: Object.fromEntries(ids.map((id) => [id, generations[id]]))
         }
     };
 }

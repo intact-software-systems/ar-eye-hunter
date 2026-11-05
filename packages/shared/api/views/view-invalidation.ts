@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AppTopics } from '../api-config.ts';
 import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
 import { decodeStateScope, type StateScope } from '../state-types.ts';
+import { hasServerRoomSnapshotTopic } from './server-room-snapshot.ts';
 
 export namespace ViewInvalidation {
     export interface ScopedAccount {
@@ -92,6 +93,17 @@ export function decodeViewResync(value: unknown): ViewResync {
         throw new TypeError('Unsupported view resync version');
     }
     return { version: 1 };
+}
+
+/** Either half naming the topic routes the envelope to the view owner, whose decoder then requires both. */
+export function hasViewInvalidatedTopic(message: ALMessage): boolean {
+    return message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated;
+}
+
+/** Only the server publishes these, to sockets it selects itself: no client ingress and no relay to a resolved peer. */
+export function hasServerPushedViewTopic(message: ALMessage): boolean {
+    return hasViewInvalidatedTopic(message) || hasServerRoomSnapshotTopic(message) ||
+        message.route.topicId === AppTopics.viewResync || message.payload.typeId === AppTopics.viewResync;
 }
 
 /** Validates both the untrusted payload and the exact own-account transport target. */

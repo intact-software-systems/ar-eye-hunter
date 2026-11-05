@@ -2,10 +2,9 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import { AppTopics } from '../../api/api-config.ts';
 import { hasGroupMoveChangedTopic } from '../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../api/state-types.ts';
-import { hasServerRoomSnapshotTopic } from '../../api/views/server-room-snapshot.ts';
+import { hasServerPushedViewTopic } from '../../api/views/view-invalidation.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
@@ -187,11 +186,7 @@ export class WsQueueBoxServerLiveDelivery {
 
     sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
         const { peerId, message, encoded, inboundScope } = input;
-        if (
-            hasServerRoomSnapshotTopic(message) || hasGroupMoveChangedTopic(message) ||
-            message.route.topicId === AppTopics.viewInvalidated ||
-            message.payload.typeId === AppTopics.viewInvalidated
-        ) {
+        if (hasServerPushedViewTopic(message) || hasGroupMoveChangedTopic(message)) {
             return 0;
         }
         if (

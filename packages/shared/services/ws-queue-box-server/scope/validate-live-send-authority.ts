@@ -1,57 +1,87 @@
 import { isALWorldBroadcast } from '../../../al-contracts/is-al-world-broadcast.ts';
-import { validateALAccountViewMessage } from '../../../alm/outbound/admission/al-account-view-authority.ts';
 import { validateALOutboundRecipientScope } from '../../../alm/outbound/admission/al-outbound-admission-validation.ts';
+import {
+    validateALAccountViewMessage,
+    type ALAccountViewAuthority
+} from '../../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
-import { AppTopics } from '../../../api/api-config.ts';
 import {
     hasGroupMoveChangedTopic,
     matchesGroupMoveChangedRecipient
 } from '../../../api/mutation/group-move-changed.ts';
-import { hasServerRoomSnapshotTopic, isServerRoomSnapshotMessage } from '../../../api/views/server-room-snapshot.ts';
-import { decodeViewInvalidationMessage } from '../../../api/views/view-invalidation.ts';
+import { hasServerRoomSnapshotTopic } from '../../../api/views/server-room-snapshot.ts';
+import { hasViewInvalidatedTopic } from '../../../api/views/view-invalidation.ts';
 import type { WsServerLiveSendInputDto } from '../ws-queue-box-server-contracts.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
+import { validateViewInvalidationAudience } from './validate-view-invalidation-authority.ts';
 
+/**
+ * A generation-fenced room send and an account view each exclude every other audience authority, so their own
+ * validators answer alone; any other send collects the issues of every authority it carries.
+ */
 export function validateLiveSendAuthority(input: WsServerLiveSendInputDto): readonly string[] {
+    if (hasServerRoomSnapshotTopic(input.message) || input.roomSessionGenerations !== undefined) {
+        return validateGenerationFencedRoomAuthority(input);
+    }
+    const accountView = input.accountView;
+    if (accountView !== undefined) {
+        return validateAccountViewSendAuthority(input, accountView);
+    }
+    return [
+        ...(hasViewInvalidatedTopic(input.message)
+            ? validateViewInvalidationAudience(input.message, input.recipientScope, input.recipientPrincipalId)
+            : []),
+        ...(hasGroupMoveChangedTopic(input.message) && (input.sessionInvalidation !== undefined ||
+                !matchesGroupMoveChangedRecipient(input.message, input.recipientScope, input.recipientPrincipalId))
+            ? ['Move Together requires its exact current scoped account audience']
+            : []),
+        ...validateRecipientScopeAuthority(input)
+    ];
+}
+
+/** The captured room audience with each recipient's connection generation; it carries no other authority. */
+function validateGenerationFencedRoomAuthority(input: WsServerLiveSendInputDto): readonly string[] {
     const issues: string[] = [];
+    const target = input.message.targets;
+    const groupRef = target?.mode === 'broadcast' && target.scope === 'room' ? target.groupRef : undefined;
     if (
-        hasServerRoomSnapshotTopic(input.message) || input.roomSessionGenerations !== undefined ||
-        input.roomSnapshotProducer !== undefined
+        groupRef === undefined || groupRef.applicationId !== input.recipientScope?.applicationId ||
+        groupRef.workspaceId !== input.recipientScope.workspaceId
     ) {
-        return validateRoomSnapshotAuthority(input);
-    }
-    if (input.accountView !== undefined) {
-        const mixed = input.recipientScope !== undefined || input.inboundScope !== undefined ||
-            input.recipientPrincipalId !== undefined || input.sessionInvalidation !== undefined ||
-            input.recipientSessionIds !== undefined || input.admittedPeerIds !== undefined;
-        return mixed
-            ? ['Account view cannot carry another audience authority']
-            : validateALAccountViewMessage(input.message, input.accountView);
+        issues.push('A generation-fenced send requires a room broadcast within its recipient scope');
     }
     if (
-        input.message.route.topicId === AppTopics.viewInvalidated ||
-        input.message.payload.typeId === AppTopics.viewInvalidated
+        input.requireAuthenticatedRecipient !== true || input.recipientSessionIds === undefined ||
+        input.roomSessionGenerations === undefined
     ) {
-        try {
-            const notice = decodeViewInvalidationMessage(input.message);
-            if (
-                notice.scope === null || (notice.principalId ?? undefined) !== input.recipientPrincipalId ||
-                notice.scope.applicationId !== input.recipientScope?.applicationId ||
-                notice.scope.workspaceId !== input.recipientScope.workspaceId
-            ) {
-                return ['Account view requires its exact authority'];
-            }
-        }
-        catch {
-            return ['Account view requires a valid envelope and authority'];
-        }
+        issues.push('A generation-fenced send requires authenticated recipients and their captured generations');
     }
     if (
-        hasGroupMoveChangedTopic(input.message) && (input.sessionInvalidation !== undefined ||
-            !matchesGroupMoveChangedRecipient(input.message, input.recipientScope, input.recipientPrincipalId))
+        input.sessionInvalidation !== undefined || input.accountView !== undefined ||
+        input.recipientPrincipalId !== undefined || input.admittedPeerIds !== undefined
     ) {
-        return ['Move Together requires its exact current scoped account audience'];
+        issues.push('A generation-fenced send cannot carry another audience authority');
     }
+    return issues;
+}
+
+function validateAccountViewSendAuthority(
+    input: WsServerLiveSendInputDto,
+    accountView: ALAccountViewAuthority
+): readonly string[] {
+    const issues = [...validateALAccountViewMessage(input.message, accountView)];
+    if (
+        input.recipientScope !== undefined || input.inboundScope !== undefined ||
+        input.recipientPrincipalId !== undefined || input.sessionInvalidation !== undefined ||
+        input.recipientSessionIds !== undefined || input.admittedPeerIds !== undefined
+    ) {
+        issues.push('Account view cannot carry another audience authority');
+    }
+    return issues;
+}
+
+function validateRecipientScopeAuthority(input: WsServerLiveSendInputDto): readonly string[] {
+    const issues: string[] = [];
     if (input.sessionInvalidation !== undefined) {
         issues.push(...validateALSessionInvalidationMessage(input.message, input.sessionInvalidation));
         if (input.recipientScope !== undefined || input.inboundScope !== undefined) {
@@ -68,18 +98,4 @@ export function validateLiveSendAuthority(input: WsServerLiveSendInputDto): read
         issues.push('Principal audience requires its scope');
     }
     return issues;
-}
-
-function validateRoomSnapshotAuthority(input: WsServerLiveSendInputDto): readonly string[] {
-    const target = input.message.targets;
-    return isServerRoomSnapshotMessage(input.message, input.roomSnapshotProducer) && target?.mode === 'broadcast' &&
-            target.groupRef !== undefined && input.recipientScope !== undefined &&
-            target.groupRef.applicationId === input.recipientScope.applicationId &&
-            target.groupRef.workspaceId === input.recipientScope.workspaceId &&
-            input.requireAuthenticatedRecipient === true && input.recipientSessionIds !== undefined &&
-            input.roomSessionGenerations !== undefined && input.sessionInvalidation === undefined &&
-            input.accountView === undefined && input.recipientPrincipalId === undefined &&
-            input.admittedPeerIds === undefined
-        ? []
-        : ['Server room snapshots require a scoped, generation-fenced room audience'];
 }

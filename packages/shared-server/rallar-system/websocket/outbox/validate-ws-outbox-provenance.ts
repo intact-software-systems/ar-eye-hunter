@@ -1,8 +1,9 @@
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
-import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { hasGroupMoveChangedTopic } from '@shared/api/mutation/group-move-changed.ts';
 import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
+import { hasViewInvalidatedTopic } from '@shared/api/views/view-invalidation.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { validateWsOutboxProvenanceTarget } from './validate-ws-outbox-provenance-target.ts';
@@ -78,16 +79,11 @@ function validateViewProducer(message: ALMessage, proof: WsOutboxProvenance): re
     if (
         (proof.producerKind === 'view-invalidation') !==
             (proof.target.kind === 'scoped-account-view' || proof.target.kind === 'account-view' ||
-                (proof.target.kind === 'scoped-world-broadcast' &&
-                    message.route.topicId === AppTopics.viewInvalidated &&
-                    message.payload.typeId === AppTopics.viewInvalidated))
+                (proof.target.kind === 'scoped-world-broadcast' && hasViewInvalidatedTopic(message)))
     ) {
         issues.push('View invalidation producer differs from its account or public catalog authority');
     }
-    if (
-        (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) &&
-        proof.producerKind !== 'view-invalidation'
-    ) {
+    if (hasViewInvalidatedTopic(message) && proof.producerKind !== 'view-invalidation') {
         issues.push('Reserved view topics require their committed view publisher');
     }
     return issues;

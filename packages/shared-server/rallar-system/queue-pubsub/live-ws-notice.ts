@@ -11,14 +11,16 @@ export const MAX_LIVE_WS_NOTICE_BYTES = 8_000;
 // The AL envelope is already bounded at 128 KiB. The private notice also carries the frozen room generations.
 export const MAX_FRAGMENTED_LIVE_WS_NOTICE_BYTES = 256 * 1024;
 
+/** A server topic's room audience: each recipient session with the connection generation admission captured. */
+export interface GenerationRoomLiveWsAudience {
+    readonly mode: 'generation-room';
+    readonly groupRef: GroupRef;
+    readonly recipientSessionIds: readonly string[];
+    readonly generations: Readonly<Record<string, string>>;
+}
+
 export type LiveWsAudience =
-    | {
-        readonly mode: 'generation-room';
-        readonly producerId: string;
-        readonly groupRef: GroupRef;
-        readonly recipientSessionIds: readonly string[];
-        readonly generations: Readonly<Record<string, string>>;
-    }
+    | GenerationRoomLiveWsAudience
     | { readonly mode: 'room'; readonly groupRef: GroupRef; readonly recipientSessionIds: readonly string[]; }
     | { readonly mode: 'peer'; readonly recipientSessionIds: readonly string[]; }
     | {
@@ -81,7 +83,7 @@ export type LiveWsNotice =
         readonly inbound: LiveWsInboundReference;
     });
 
-interface LiveWsPublicationBase {
+export interface LiveWsPublicationBase {
     readonly channel: string;
     readonly publisherId: string;
     readonly expiresAtMs: number;

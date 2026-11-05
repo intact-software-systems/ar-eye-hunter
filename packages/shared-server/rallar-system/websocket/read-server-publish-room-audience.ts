@@ -1,6 +1,5 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
 
 import type { GroupPublicationAuthority } from '../group-state/group-state-service-contracts.ts';
 import { toMembersTopicPublicationAuthority } from './room-publication/compute-room-publication-admission.ts';
@@ -22,7 +21,7 @@ export interface ServerPublishRoomAudienceDependencies {
 /**
  * The named room's audience for a server producer, read the way the room authorizer reads a sender's room (D58, Q7):
  * every live member session on a `members` topic, the subscribed ones on a `granted` topic that lists the producer
- * (D496, D489).
+ * (D496, D489), and on a `server` topic each live member session with its live connection generation.
  */
 export function createServerPublishRoomAudienceReader(
     dependencies: ServerPublishRoomAudienceDependencies
@@ -41,7 +40,7 @@ async function readServerPublishAuthority(
     groupRef: GroupRef,
     input: RallarServerWsPublishAudienceInputDto
 ): Promise<GroupPublicationAuthority | undefined> {
-    if (input.topic.participation === 'granted' || hasServerRoomSnapshotTopic(input.message)) {
+    if (input.topic.participation !== 'members') {
         return await dependencies.readPublicationAuthority(groupRef, input.message.route.topicId);
     }
     const snapshot = await dependencies.readGroupSnapshot(groupRef);

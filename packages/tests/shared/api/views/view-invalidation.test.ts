@@ -1,6 +1,11 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { decodeViewInvalidation, decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
+import {
+    decodeViewInvalidation,
+    decodeViewInvalidationMessage,
+    hasServerPushedViewTopic,
+    hasViewInvalidatedTopic
+} from '@shared/api/views/view-invalidation.ts';
 import { expect, it } from 'vitest';
 
 const notice = { version: 1, resource: 'friends', scope: null, principalId: 'alice', changeId: 'friend-change' };
@@ -60,4 +65,22 @@ it('accepts only identity-free public catalog hints bound to their scoped world 
             decodeViewInvalidationMessage({ ...broadcast, payload: { ...broadcast.payload, resource: JSON.stringify({ ...publicNotice, ...replacement }) } })
         ).toThrow();
     }
+});
+
+it('names a server-pushed view by either half of its envelope, and only the server pushes view, resync and room snapshot topics', () => {
+    const relabel = (topicId: string, typeId: string): ALMessage => ({
+        ...message,
+        route: { ...message.route, topicId },
+        payload: { ...message.payload, typeId }
+    });
+
+    expect(hasViewInvalidatedTopic(relabel('room.chat', AppTopics.viewInvalidated))).toBe(true);
+    expect(hasViewInvalidatedTopic(relabel(AppTopics.viewInvalidated, 'chat.v1'))).toBe(true);
+    expect(hasViewInvalidatedTopic(relabel(AppTopics.viewResync, AppTopics.viewResync))).toBe(false);
+    for (const topicId of [AppTopics.viewInvalidated, AppTopics.viewResync, AppTopics.serverRoomSnapshot]) {
+        expect(hasServerPushedViewTopic(relabel(topicId, 'chat.v1'))).toBe(true);
+        expect(hasServerPushedViewTopic(relabel('room.chat', topicId))).toBe(true);
+    }
+    expect(hasServerPushedViewTopic(relabel(AppTopics.groupMoveChanged, AppTopics.groupMoveChanged))).toBe(false);
+    expect(hasServerPushedViewTopic(relabel('room.chat', 'chat.v1'))).toBe(false);
 });

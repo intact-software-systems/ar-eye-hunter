@@ -18,7 +18,7 @@ import type {
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
-import { decodeALAccountViewAuthority, type ALAccountViewAuthority } from './al-account-view-authority.ts';
+import { decodeALAccountViewAuthority, type ALAccountViewAuthority } from './al-outbound-scope-authority.ts';
 import {
     decodeALSessionInvalidationAuthority,
     type ALSessionInvalidationAuthority

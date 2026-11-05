@@ -42,8 +42,9 @@ export namespace RoomPublicationAdmission {
  * The one WS publication decision (D487): a `members` topic reaches the room's authorized audience; a `granted` topic
  * admits a session holding effective `publish` or a listed server producer, and reaches only the sessions of the
  * principals holding effective `subscribe` that hold a live subscription asserted by one of their live connection
- * generations (D489). A group that is not active (archived, deleted, expired) holds no effective grant (D485).
- * Targeting and the leader receipt only narrow either audience.
+ * generations (D489). A group that is not active (archived, deleted, expired) holds no effective grant (D485). A
+ * `server` topic admits only a listed server producer and reaches every member session on the connection generation
+ * its room presence records, while that generation is live. Targeting and the leader receipt only narrow any audience.
  */
 export function computeRoomPublicationAdmission(
     input: RoomPublicationAdmission.Input
@@ -51,7 +52,7 @@ export function computeRoomPublicationAdmission(
     if (input.topic.participation === 'members') {
         return Either.ofRight(computeRoomPublicationAudience(input));
     }
-    const refusal = resolveGrantedPublisherRefusal(input, input.topic.serverProducerIds);
+    const refusal = resolveRestrictedPublisherRefusal(input, input.topic);
     return refusal === undefined ? Either.ofRight(computeRoomPublicationAudience(input)) : Either.ofLeft(refusal);
 }
 
@@ -62,6 +63,9 @@ export function computeRoomPublicationAudience(
     const audience = toAuthorizedRoomAudience(input.snapshot, input.message, input.nowEpochMs);
     if (input.topic.participation === 'members') {
         return audience;
+    }
+    if (input.topic.participation === 'server') {
+        return toGenerationFencedRoomAudience(audience, input.liveSessionGenerations);
     }
     const { snapshot, topic } = input;
     if (requireActiveGroup(snapshot.group, input.nowEpochMs) !== undefined) {
@@ -81,6 +85,23 @@ export function computeRoomPublicationAudience(
         sessions: subscribed.map(({ session }) => session),
         recipientConnectionGenerationIds: Object.fromEntries(
             subscribed.map(({ session, connectionGenerationId }) => [session.sessionId, connectionGenerationId])
+        )
+    };
+}
+
+function toGenerationFencedRoomAudience(
+    audience: RallarServerWsRoomAudience,
+    liveSessionGenerations: RoomPublicationAdmission.Input['liveSessionGenerations']
+): RallarServerWsRoomAudience {
+    const sessions = audience.sessions.filter(({ sessionId, connectionGenerationId }) =>
+        Object.hasOwn(liveSessionGenerations, sessionId) &&
+        liveSessionGenerations[sessionId].includes(connectionGenerationId)
+    );
+    return {
+        ...audience,
+        sessions,
+        recipientConnectionGenerationIds: Object.fromEntries(
+            sessions.map((session) => [session.sessionId, session.connectionGenerationId])
         )
     };
 }
@@ -110,27 +131,31 @@ export function toUngroupedRoomPublicationRefusal(topicId: string): RoomPublicat
     return { code: 'unsupported', logMessage: `Granted WS topic ${topicId} needs a room GroupRef.` };
 }
 
-function resolveGrantedPublisherRefusal(
+function resolveRestrictedPublisherRefusal(
     input: RoomPublicationAdmission.Input,
-    serverProducerIds: readonly string[]
+    topic: Exclude<RoomPublicationAdmission.Input['topic'], { participation: 'members'; }>
 ): RoomPublicationAdmission.Refusal | undefined {
-    const { topic, publisher } = input;
+    const { publisher } = input;
+    const { topicId } = topic;
     if (readALTargetGroupRef(input.message) === undefined) {
-        return toUngroupedRoomPublicationRefusal(topic.topicId);
+        return toUngroupedRoomPublicationRefusal(topicId);
     }
     if (publisher.kind === 'server-producer') {
-        return publisher.producerId !== undefined && serverProducerIds.includes(publisher.producerId)
+        return publisher.producerId !== undefined && topic.serverProducerIds.includes(publisher.producerId)
             ? undefined
             : {
                 code: 'topic-not-granted',
-                logMessage: `Server producer ${publisher.producerId ?? '(none)'} may not publish on ${topic.topicId}.`
+                logMessage: `Server producer ${publisher.producerId ?? '(none)'} may not publish on ${topicId}.`
             };
     }
+    if (topic.participation === 'server') {
+        return { code: 'topic-not-granted', logMessage: `Session ${publisher.sessionId} may not publish ${topicId}.` };
+    }
     return requireActiveGroup(input.snapshot.group, input.nowEpochMs) === undefined &&
-            resolveGroupPublicationPermissions(input.snapshot, publisher.principalId, topic.topicId).publish
+            resolveGroupPublicationPermissions(input.snapshot, publisher.principalId, topicId).publish
         ? undefined
         : {
             code: 'no-publish-grant',
-            logMessage: `Session ${publisher.sessionId} holds no publish grant on ${topic.topicId}.`
+            logMessage: `Session ${publisher.sessionId} holds no publish grant on ${topicId}.`
         };
 }

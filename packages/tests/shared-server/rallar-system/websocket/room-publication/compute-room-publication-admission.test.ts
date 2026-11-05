@@ -316,6 +316,51 @@ describe('computeRoomPublicationAudience: the granted intersection', () => {
     });
 });
 
+describe('computeRoomPublicationAdmission: a server topic', () => {
+    const SERVER: RoomPublicationAdmission.Input['topic'] = {
+        topicId: 'rallar.server.room-snapshot',
+        participation: 'server',
+        serverProducerIds: ['room-producer']
+    };
+
+    function admitOnServerTopic(snapshot: GroupSnapshot, publisher: RoomPublicationAdmission.Publisher) {
+        // Every session but none-1 is live on the connection generation its room presence records; none-1 reconnected.
+        const liveSessionGenerations = Object.fromEntries(snapshot.activeSessions.map((candidate) => [
+            candidate.sessionId,
+            [candidate.sessionId === 'none-1' ? 'replacement-generation' : candidate.connectionGenerationId]
+        ]));
+        return computeRoomPublicationAdmission({
+            snapshot,
+            subscriptions: [],
+            liveSessionGenerations,
+            topic: SERVER,
+            publisher,
+            message: { targets: roomBroadcast(snapshot) },
+            nowEpochMs: NOW
+        });
+    }
+
+    it('a listed producer reaches every member session on its recorded, still live connection generation', () => {
+        const snapshot = createGrantedSnapshot();
+
+        const admission = admitOnServerTopic(snapshot, { kind: 'server-producer', producerId: 'room-producer' });
+
+        const fenced = snapshot.activeSessions.filter((candidate) => candidate.sessionId !== 'none-1');
+        expect(toSessionIds(admission.right?.sessions)).toEqual(toSessionIds(fenced));
+        expect(admission.right?.recipientConnectionGenerationIds).toEqual(
+            Object.fromEntries(fenced.map((candidate) => [candidate.sessionId, candidate.connectionGenerationId]))
+        );
+    });
+
+    it('an unlisted producer and every session, grant holders included, are topic-not-granted', () => {
+        const snapshot = createGrantedSnapshot();
+
+        expect(admitOnServerTopic(snapshot, { kind: 'server-producer', producerId: 'other' }).left?.code).toBe('topic-not-granted');
+        expect(admitOnServerTopic(snapshot, { kind: 'server-producer', producerId: undefined }).left?.code).toBe('topic-not-granted');
+        expect(admitOnServerTopic(snapshot, session(snapshot, 'pub-1')).left?.code).toBe('topic-not-granted');
+    });
+});
+
 function grantedAudience(
     snapshot: GroupSnapshot,
     authority: SubscriptionAuthority

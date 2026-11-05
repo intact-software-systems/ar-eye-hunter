@@ -16,8 +16,6 @@ import type { LiveWsNoticeTransport } from '../../queue-pubsub/live-ws-notice.ts
 import type { RoomPublicationAdmission } from '../room-publication/compute-room-publication-admission.ts';
 import type { WsGrantedTopicSet } from '../room-publication/ws-granted-topic-set.ts';
 
-import type { ServerRoomSnapshotProducer } from '@shared/api/views/server-room-snapshot.ts';
-
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
 
 export interface RallarServerWsPublishInputDto {
@@ -102,10 +100,12 @@ export type RallarServerWsAuthorizer<T extends RallarServerWsPayload> = (
 /**
  * Who a topic's room publications reach: every live session of the room's active members, or only the sessions of
  * the principals a publication grant names, published only by grant holders and the listed server producers (D486).
+ * A `server` topic is reserved: only its listed server producers publish it, live, to every live member session on the
+ * connection generation its room presence records, so a reconnected socket re-reads authority instead.
  */
 export type RallarServerWsTopicAccess =
     | Readonly<{ participation: 'members'; }>
-    | Readonly<{ participation: 'granted'; serverProducerIds: readonly string[]; }>;
+    | Readonly<{ participation: 'granted' | 'server'; serverProducerIds: readonly string[]; }>;
 
 export type RallarServerWsTopicMetadata =
     & Readonly<{
@@ -206,8 +206,6 @@ export interface RallarServerWsProxyRule<T extends RallarServerWsPayload> {
 }
 
 export interface RallarServerWsRouterOptions {
-    /** Only the application embedding this server may publish room snapshots under this producer and scope. */
-    readonly roomSnapshotProducer?: ServerRoomSnapshotProducer;
     readonly maxPayloadBytes?: number;
     readonly sendNacks?: boolean;
     readonly allowImplicitUserTopics?: boolean;

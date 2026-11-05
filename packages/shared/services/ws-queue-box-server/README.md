@@ -17,7 +17,7 @@ runtimes. A supplied engine retains its other tasks.
 | Direct/live/control send                    | [target resolution](./ws-queue-box-server-target-resolution.ts) and [recipient selection](./ws-queue-box-server-recipient-selection.ts)                                                                                                            | [Live delivery](./ws-queue-box-server-live-delivery.ts) checks the current recipient and sends; [control delivery](./ws-queue-box-server-control-delivery.ts) uses the live target or owned cluster outbox. [Delivery reporting](./ws-queue-box-server-delivery-reporting.ts) exposes existing outcome ports. |
 
 Account-wide view notices have a distinct `accountView` authority decoded by
-[`ALAccountViewAuthority`](../../alm/outbound/admission/al-account-view-authority.ts).
+[`ALAccountViewAuthority`](../../alm/outbound/admission/al-outbound-scope-authority.ts).
 Their exact reserved envelope is unicast to the account, with `scope: null` in the
 notice. The committed producer proof and captured AL policy contain no session
 list or recipient scope. Cluster key delivery and the standalone `account-view`

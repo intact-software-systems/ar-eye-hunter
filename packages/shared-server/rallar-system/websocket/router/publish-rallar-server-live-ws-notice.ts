@@ -6,9 +6,13 @@ import {
     encodeLiveWsNotice,
     type LiveWsAudience,
     type LiveWsInboundReference,
+    type LiveWsNotice,
     type LiveWsPublicationInput
 } from '../../queue-pubsub/live-ws-notice.ts';
-import { partitionRoomSnapshotPublication } from '../../queue-pubsub/partition-room-snapshot-publication.ts';
+import {
+    isRoomSnapshotPublication,
+    partitionRoomSnapshotPublication
+} from '../../queue-pubsub/partition-room-snapshot-publication.ts';
 import type { PublishRallarServerWsMessageInput } from './publish-rallar-server-ws-message.ts';
 import type { RallarServerWsPublishResult } from './rallar-server-ws-router-contracts.ts';
 import { readLiveWsPublicationAudience, resolveLiveWsPublicationScope } from './read-live-ws-publication-audience.ts';
@@ -64,13 +68,12 @@ async function writeLiveWsNotice(
     publication: NonNullable<PublishRallarServerWsMessageInput['livePublication']>,
     notice: LiveWsPublicationInput
 ): Promise<RallarServerWsPublishResult> {
-    const partitions = notice.audience.mode === 'generation-room' ? partitionRoomSnapshotPublication(notice) : [notice];
-    for (const part of partitions) {
-        const encoded = encodeLiveWsNotice(part);
-        if (encoded.kind === 'oversize') {
-            return failedLivePublication(input, `Live WS notice is oversized (${encoded.inlineBytes} bytes).`);
-        }
-        await publication.transport.publish(encoded.notice);
+    const encoded = toEncodedLiveWsNotices(notice);
+    if (encoded.left !== undefined) {
+        return failedLivePublication(input, encoded.left);
+    }
+    for (const part of encoded.right!) {
+        await publication.transport.publish(part);
     }
     const localFailureReason = sendLocalPublishedLiveWsNotice(input, notice);
     return {
@@ -80,6 +83,25 @@ async function writeLiveWsNotice(
         entries: [],
         ...(localFailureReason === undefined ? {} : { reason: localFailureReason })
     };
+}
+
+/** Every part encodes before any is published, so an oversized part never leaves a partial publication. */
+function toEncodedLiveWsNotices(notice: LiveWsPublicationInput): Either<string, readonly LiveWsNotice[]> {
+    const parts: Either<string, readonly LiveWsPublicationInput[]> = isRoomSnapshotPublication(notice)
+        ? partitionRoomSnapshotPublication(notice)
+        : Either.ofRight([notice]);
+    if (parts.left !== undefined) {
+        return Either.ofLeft(parts.left);
+    }
+    const encoded: LiveWsNotice[] = [];
+    for (const part of parts.right!) {
+        const result = encodeLiveWsNotice(part);
+        if (result.kind === 'oversize') {
+            return Either.ofLeft(`Live WS notice is oversized (${result.inlineBytes} bytes).`);
+        }
+        encoded.push(result.notice);
+    }
+    return Either.ofRight(encoded);
 }
 
 function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): Either<string, LiveWsPublicationInput> {
@@ -115,7 +137,6 @@ function sendLocalPublishedLiveWsNotice(
             recipientPrincipalId: notice.audience.mode === 'principal'
                 ? notice.audience.principalRef.principalId
                 : undefined,
-            roomSnapshotProducer: notice.audience.mode === 'generation-room' ? input.roomSnapshotProducer : undefined,
             roomSessionGenerations: notice.audience.mode === 'generation-room'
                 ? notice.audience.generations
                 : undefined,

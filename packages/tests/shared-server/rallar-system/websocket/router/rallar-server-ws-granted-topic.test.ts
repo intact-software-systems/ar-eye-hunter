@@ -83,9 +83,9 @@ describe('a granted WS topic (D486, D487)', () => {
                 participation: 'granted',
                 serverProducerIds: []
             })
-        ).toThrow(/both members and granted/u);
+        ).toThrow(/one participation/u);
         expect(() => fixture.router.defineTopic({ topicId: FEED, typeId: 'other.v1', participation: 'members' }))
-            .toThrow(/both members and granted/u);
+            .toThrow(/one participation/u);
     });
 
     it('an implicit room topic is members', async () => {

@@ -1,5 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
-import type { ALAccountViewAuthority } from '../../alm/outbound/admission/al-account-view-authority.ts';
+import type { ALAccountViewAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
@@ -229,10 +229,21 @@ export class WsQueueBoxServerOutboundPlanning {
             representNoCurrentRecipient: phase === 'dequeue',
             allowClusterRecipients: phase === 'dequeue' && request.clusterPublisherRegistered,
             audience,
-            capturedSessions: isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey) ||
-                request.principalTargetId !== undefined || request.sessionInvalidation !== undefined ||
-                this.#targetResolution.requiresFrozenAudience(message)
+            capturedSessions: this.readsCapturedSessions(message, request)
         };
+    }
+
+    /** A row whose audience was captured at admission resends only to those sessions, never re-resolving its targets. */
+    private readsCapturedSessions(
+        message: ALMessage,
+        request: Pick<
+            WsQueueBoxServerOutboundPlanning.Request,
+            'principalTargetId' | 'sessionInvalidation' | 'referenceKey'
+        >
+    ): boolean {
+        return isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey) ||
+            request.principalTargetId !== undefined || request.sessionInvalidation !== undefined ||
+            this.#targetResolution.requiresFrozenAudience(message);
     }
 
     private toPreparedRecipients(
@@ -265,20 +276,7 @@ export class WsQueueBoxServerOutboundPlanning {
         if (validateWsQueueBoxServerRecipientAuthority(message, request, request.referenceKey).length > 0) {
             return undefined;
         }
-        const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey);
-        const requested = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
-        const eligibleRequested = request.admittedAudience === undefined
-            ? requested
-            : requested.filter((peerId) => request.admittedAudience?.includes(peerId));
-        const recipients = request.accountView !== undefined
-            ? []
-            : directBroadcast || request.principalTargetId !== undefined ||
-                    request.sessionInvalidation !== undefined || this.#targetResolution.requiresFrozenAudience(message)
-            ? this.#targetResolution.resolveCapturedSessionRecipients(
-                message,
-                eligibleRequested
-            )
-            : this.#targetResolution.resolveRepairRecipients(message, eligibleRequested);
+        const recipients = this.readRepairRecipients(message, request);
         if (recipients.length === 0 && request.accountView === undefined) {
             return undefined;
         }
@@ -302,6 +300,23 @@ export class WsQueueBoxServerOutboundPlanning {
             ),
             repairTracking: request.repair
         };
+    }
+
+    /** An account view selects its principal's current sockets at the send, so its repair names no recipient here. */
+    private readRepairRecipients(
+        message: ALMessage,
+        request: ALOutboundRepairRequest
+    ): readonly WsServerResolvedRecipient[] {
+        if (request.accountView !== undefined) {
+            return [];
+        }
+        const requested = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
+        const eligible = request.admittedAudience === undefined
+            ? requested
+            : requested.filter((peerId) => request.admittedAudience?.includes(peerId));
+        return this.readsCapturedSessions(message, request)
+            ? this.#targetResolution.resolveCapturedSessionRecipients(message, eligible)
+            : this.#targetResolution.resolveRepairRecipients(message, eligible);
     }
 
     isBroadcastWithoutRecipients(message: ALMessage, error: string): boolean {

@@ -7,6 +7,7 @@ import {
 } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { requireEpoch, requireExactKeys, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { decodeBase64Url, toBase64Url } from '@shared/encoding/base64url.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 
@@ -45,12 +46,18 @@ export function fragmentPostgresNativeFrame(text: string, expiresAtMs: number): 
     }));
 }
 
-/** Ephemeral state owned by one LISTEN subscription. No partial frame leaves the transport. */
+/**
+ * Ephemeral state owned by one LISTEN subscription. No partial frame leaves the transport. A partial frame that stalls
+ * must report its gap when it stalls, not on a later read, so it keeps its own timer under a byte budget; completed
+ * frames only suppress late duplicates until they expire.
+ */
 export class PostgresNativeFrameFragments {
     private readonly pending = new Map<string, PartialFrame>();
     private readonly timers = createDefaultBackgroundTimers();
     private allocated = 0;
-    private readonly completed = new Map<string, number>();
+    private readonly completed = new LatestRepository<string, true>({
+        maxEntries: AL_PUBLICATION_STAGE_LIMITS.maxStagedValues
+    });
     private readonly onGap: () => void;
 
     constructor(onGap: () => void) {
@@ -61,7 +68,7 @@ export class PostgresNativeFrameFragments {
         for (const hash of this.pending.keys()) {
             this.release(hash);
         }
-        this.completed.clear();
+        this.completed.clearAll();
     }
 
     read(value: JsonWireValue, nowMs: number): JsonWireValue | undefined {
@@ -69,7 +76,7 @@ export class PostgresNativeFrameFragments {
             return value;
         }
         const part = decodeNativeFramePart(value, nowMs);
-        if (!part || this.completed.has(part.hash)) {
+        if (!part || this.completed.readAt(part.hash, nowMs) !== undefined) {
             return undefined;
         }
         const decoded = decodeBase64Url(part.data).right;
@@ -109,29 +116,19 @@ export class PostgresNativeFrameFragments {
             ) {
                 throw new TypeError('Fragmented notice is not the authorized room publication');
             }
-            this.remember(part.hash, part.expiresAtMs, nowMs);
+            // A late duplicate must not start a partial transfer and report a false delivery gap.
+            this.completed.acceptAt({
+                key: part.hash,
+                value: true,
+                nowEpochMs: nowMs,
+                expireAtEpochMs: part.expiresAtMs
+            });
             return restored;
         }
         catch {
             this.onGap();
             return undefined;
         }
-    }
-
-    private remember(hash: string, expiry: number, nowMs: number): void {
-        // A late duplicate must not start a partial transfer and report a false delivery gap.
-        for (const [id, until] of this.completed) {
-            if (until <= nowMs) {
-                this.completed.delete(id);
-            }
-        }
-        if (this.completed.size >= AL_PUBLICATION_STAGE_LIMITS.maxStagedValues) {
-            const oldest = this.completed.keys().next().value;
-            if (oldest !== undefined) {
-                this.completed.delete(oldest);
-            }
-        }
-        this.completed.set(hash, expiry);
     }
 
     private start(part: NativeFramePart, nowMs: number): PartialFrame | undefined {

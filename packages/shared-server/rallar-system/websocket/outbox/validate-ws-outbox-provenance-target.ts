@@ -1,12 +1,11 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { validateALAccountViewMessage } from '@shared/alm/outbound/admission/al-account-view-authority.ts';
+import { validateALAccountViewMessage } from '@shared/alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { hasGroupMoveChangedTopic, matchesGroupMoveChangedRecipient } from '@shared/api/mutation/group-move-changed.ts';
 import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 
-import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
+import { decodeViewInvalidationMessage, hasViewInvalidatedTopic } from '@shared/api/views/view-invalidation.ts';
 
 import type { WsOutboxProvenance } from './ws-outbox-provenance.ts';
 
@@ -87,9 +86,7 @@ function validateWorldTarget(
     target: Extract<WsOutboxProvenance['target'], { kind: 'scoped-world-broadcast'; }>
 ): readonly string[] {
     const targets = message.targets;
-    if (
-        message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated
-    ) {
+    if (hasViewInvalidatedTopic(message)) {
         try {
             const notice = decodeViewInvalidationMessage(message);
             return notice.principalId === null && notice.scope.applicationId === target.scope.applicationId &&

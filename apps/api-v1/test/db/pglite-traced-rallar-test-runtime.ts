@@ -12,10 +12,7 @@ import type {
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
-import {
-    createDefaultRallarServer,
-    type CreateDefaultRallarServerInput
-} from '../../src/composition/create-default-rallar-server.ts';
+import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
@@ -50,13 +47,11 @@ export async function createPGliteTracedRallarServer(
 
 /** Embedders install their own handlers after shared setup and before sealing the app inbox. */
 export async function preparePGliteTracedRallarServer(
-    environmentSource: DecodeApiV1ConfigurationInput['environmentSource'],
-    ws?: CreateDefaultRallarServerInput['ws']
+    environmentSource: DecodeApiV1ConfigurationInput['environmentSource']
 ): Promise<PGliteTracedRallarServer> {
     const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const engineStopped = Promise.withResolvers<void>();
     const rallar = await createDefaultRallarServer({
-        ws,
         configuration: decodeApiV1Configuration({
             ...validDecodeApiV1ConfigurationInput(),
             environmentSource,

@@ -9,6 +9,7 @@ import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-sys
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -86,7 +87,6 @@ function clusterPublisher(node: ArenaTournamentClusterNode): RallarServerWsRoute
         activeSessions: base.activeSessions.map((session) => ({ ...session, ...roomRef }))
     };
     return new RallarServerWsRouter(node.service, {
-        roomSnapshotProducer: { scope, producerId: ARENA_TOURNAMENT_SNAPSHOT_SENDER },
         grantedTopics: new WsGrantedTopicSet(),
         livePublication: { transport: node.transport, channel: node.channel, publisherId: node.id },
         readServerPublishAudience: createServerPublishRoomAudienceReader({
@@ -102,6 +102,12 @@ function clusterPublisher(node: ArenaTournamentClusterNode): RallarServerWsRoute
                 }
             })
         })
+    }).defineTopic({
+        topicId: AppTopics.serverRoomSnapshot,
+        scope: 'room',
+        fanout: 'live-only',
+        participation: 'server',
+        serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_SENDER]
     });
 }
 

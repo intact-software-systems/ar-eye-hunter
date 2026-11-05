@@ -1,6 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { resolveWsQueueBoxServerProvenScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import { resolveLiveWsRoomGroupRef } from '../../queue-pubsub/live-ws-audience.ts';
@@ -57,16 +56,11 @@ function toRoomLiveWsPublicationAudience(input: PublishRallarServerWsMessageInpu
         topic: input.topic,
         nowEpochMs: input.nowEpochMs
     });
-    if (hasServerRoomSnapshotTopic(input.message)) {
+    if (input.topic.participation === 'server') {
         const captured = input.audience.recipientConnectionGenerationIds;
-        const producer = input.roomSnapshotProducer;
-        if (!captured || !producer) {
-            return undefined;
-        }
         const sessions = recipientSessionIds.filter((id) => Object.hasOwn(captured, id) && captured[id].length > 0);
         return {
             mode: 'generation-room',
-            producerId: producer.producerId,
             groupRef,
             recipientSessionIds: sessions,
             generations: Object.fromEntries(sessions.map((id) => [id, captured[id]]))

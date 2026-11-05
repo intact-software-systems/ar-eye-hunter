@@ -173,9 +173,6 @@ export function sendReceivedLiveWsNotice(
         recipientPrincipalId: audience.mode === 'principal'
             ? audience.principalRef.principalId
             : undefined,
-        roomSnapshotProducer: audience.mode === 'generation-room'
-            ? { producerId: audience.producerId, scope: audience.groupRef }
-            : undefined,
         roomSessionGenerations: audience.mode === 'generation-room' ? audience.generations : undefined,
         requireAuthenticatedRecipient: true
     });

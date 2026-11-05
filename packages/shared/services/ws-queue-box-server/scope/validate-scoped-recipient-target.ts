@@ -6,13 +6,14 @@ import {
     matchesGroupMoveChangedRecipient
 } from '../../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../../api/state-types.ts';
-import { decodeViewInvalidationMessage } from '../../../api/views/view-invalidation.ts';
+import { hasViewInvalidatedTopic } from '../../../api/views/view-invalidation.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
     isWsQueueBoxServerDirectWorldBroadcastRow,
     readWsQueueBoxServerScopedTargetScope
 } from './requires-ws-queue-box-server-recipient-scope.ts';
+import { validateViewInvalidationAudience } from './validate-view-invalidation-authority.ts';
 
 interface ScopedRecipientTargetInput {
     readonly message: ALMessage;
@@ -33,8 +34,10 @@ export function validateScopedRecipientTarget(input: ScopedRecipientTargetInput)
             ? []
             : ['Prepared Move Together notice differs from its scoped account and connection'];
     }
-    if (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) {
-        return validatePreparedViewTarget(input);
+    if (hasViewInvalidatedTopic(message)) {
+        return addressesItsConnection
+            ? validateViewInvalidationAudience(message, scope, principalTargetId)
+            : ['Scoped prepared view differs from its connection'];
     }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
         const targetScope = readWsQueueBoxServerScopedTargetScope(message);
@@ -66,18 +69,4 @@ export function validateScopedRecipientTarget(input: ScopedRecipientTargetInput)
     return targets?.mode !== 'unicast' || input.peerId !== targets.toPeerId
         ? ['Persisted scoped recipient differs from unicast target']
         : [];
-}
-
-function validatePreparedViewTarget(input: ScopedRecipientTargetInput): readonly string[] {
-    try {
-        const notice = decodeViewInvalidationMessage(input.message);
-        return notice.scope !== null && input.principalTargetId === (notice.principalId ?? undefined) &&
-                input.peerId === input.connectionId && input.scope.applicationId === notice.scope.applicationId &&
-                input.scope.workspaceId === notice.scope.workspaceId
-            ? []
-            : ['Scoped prepared view differs from its exact principal and scope'];
-    }
-    catch {
-        return ['Scoped prepared view is malformed'];
-    }
 }

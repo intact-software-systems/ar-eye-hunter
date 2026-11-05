@@ -3,7 +3,7 @@ import { issueTracedTestSession, preparePGliteTracedRallarServer, waitFor } from
 import { decodeArenaTournamentSnapshot, type ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
 import { decodeArenaTournamentFrame } from '@ar-eye-hunter/arena-tournament-stream.ts';
 import { AR_EYE_TOURNAMENT_DATA_BINDING } from '@ar-eye-hunter/server/arena-tournament-room.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { decodeTournamentMutationResult } from '@shared/api/tournaments/tournament-mutation-result.ts';
 import type { TournamentRequest } from '@shared/api/tournaments/tournament-request.ts';
 import { decodeTournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
@@ -19,7 +19,14 @@ Deno.test({
         const server = await preparePGliteTracedRallarServer({
             group: { roomOwnedAppDataBindings: [{ ...AR_EYE_TOURNAMENT_DATA_BINDING }] },
             tournaments: { profiles: [{ ...ARENA_TOURNAMENT_GAME_PROFILE, noShowGraceMs: 600000 }] }
-        }, { roomSnapshotProducer: ARENA_TOURNAMENT_SNAPSHOT_PRODUCER });
+        });
+        server.rallar.ws.defineTopic({
+            topicId: AppTopics.serverRoomSnapshot,
+            scope: 'room',
+            fanout: 'live-only',
+            participation: 'server',
+            serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_PRODUCER.producerId]
+        });
         const published: ArenaTournamentSnapshot[] = [];
         const services = createArenaTournamentServices({
             database: server.sql,

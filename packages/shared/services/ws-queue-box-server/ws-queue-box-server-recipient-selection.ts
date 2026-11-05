@@ -36,11 +36,12 @@ export class WsQueueBoxServerRecipientSelection {
     }
 
     resolveLiveRecipients(input: WsServerLiveSendInputDto): readonly WsServerResolvedRecipient[] {
-        const { message, recipientSessionIds, admittedPeerIds, inboundScope, recipientPrincipalId } = input;
-        if (input.accountView !== undefined) {
+        const { message, recipientSessionIds, admittedPeerIds, inboundScope, recipientPrincipalId, accountView } =
+            input;
+        if (accountView !== undefined) {
             return [...this.#socket.connections.values()]
                 .map((connection) => ({ peerId: connection.id, connectionId: connection.id }))
-                .filter((recipient) => this.isCurrentAuthorized(recipient, undefined, input.accountView!.principalId));
+                .filter((recipient) => this.isCurrentAuthorized(recipient, undefined, accountView.principalId));
         }
         // Explicit authority, including an empty audience, replaces cache-based target resolution.
         const frozenSessionIds = recipientSessionIds ??

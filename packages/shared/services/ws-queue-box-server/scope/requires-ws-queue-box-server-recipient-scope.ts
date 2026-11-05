@@ -1,10 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
 import { isALWorldBroadcast } from '../../../al-contracts/is-al-world-broadcast.ts';
-import { validateALAccountViewMessage } from '../../../alm/outbound/admission/al-account-view-authority.ts';
 import type { ALOutboundCapturedPolicy } from '../../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     resolveALOutboundScopeAuthority,
+    validateALAccountViewMessage,
     type ALOutboundScopeAuthority
 } from '../../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
@@ -15,6 +15,7 @@ import {
 } from '../../../api/mutation/group-move-changed.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { hasServerRoomSnapshotTopic } from '../../../api/views/server-room-snapshot.ts';
+import { hasViewInvalidatedTopic } from '../../../api/views/view-invalidation.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
 import { validateViewInvalidationAuthority } from './validate-view-invalidation-authority.ts';
 
@@ -72,8 +73,7 @@ export function validateWsQueueBoxServerRecipientAuthority(
         return ['Server room snapshots require live-only delivery'];
     }
     if (
-        (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) &&
-        authority.accountView === undefined &&
+        hasViewInvalidatedTopic(message) && authority.accountView === undefined &&
         authority.recipientScope === undefined
     ) {
         return ['Account view requires authenticated principal delivery'];
@@ -132,7 +132,7 @@ function validateWsQueueBoxServerScopedRowAuthority(
     input: ValidateWsQueueBoxServerScopedRowAuthorityInput
 ): readonly string[] {
     const { message, scope, admittedAudience, referenceKey } = input;
-    if (message.route.topicId === AppTopics.viewInvalidated || message.payload.typeId === AppTopics.viewInvalidated) {
+    if (hasViewInvalidatedTopic(message)) {
         return validateViewInvalidationAuthority(message, scope, admittedAudience);
     }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {

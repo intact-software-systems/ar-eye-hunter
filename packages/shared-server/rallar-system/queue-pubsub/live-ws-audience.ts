@@ -2,7 +2,7 @@ import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
-import { hasServerRoomSnapshotTopic, isServerRoomSnapshotMessage } from '@shared/api/views/server-room-snapshot.ts';
+import { hasServerRoomSnapshotTopic } from '@shared/api/views/server-room-snapshot.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
 import type { LiveWsAudience } from './live-ws-notice.ts';
 
@@ -18,14 +18,12 @@ export function decodeLiveWsAudience(value: JsonWireValue, scope: GroupScope | u
     }
     if (
         value.mode === 'generation-room' &&
-        hasKeys(value, ['mode', 'producerId', 'groupRef', 'recipientSessionIds', 'generations']) &&
-        scope && isNonEmptyString(value.producerId) && isGroupRef(value.groupRef, scope) &&
-        isSessionIds(value.recipientSessionIds) &&
+        hasKeys(value, ['mode', 'groupRef', 'recipientSessionIds', 'generations']) &&
+        scope !== undefined && isGroupRef(value.groupRef, scope) && isSessionIds(value.recipientSessionIds) &&
         isGenerationMap(value.generations, value.recipientSessionIds)
     ) {
         return {
             mode: 'generation-room',
-            producerId: value.producerId,
             groupRef: value.groupRef,
             recipientSessionIds: value.recipientSessionIds,
             generations: value.generations
@@ -65,14 +63,12 @@ export function resolveLiveWsRoomGroupRef(message: ALMessage): GroupRef | undefi
     return message.targets?.mode === 'unicast' ? undefined : readALTargetGroupRef(message);
 }
 
+/** A room snapshot never crosses the cluster without the generation fence its admission captured. */
 export function matchesLiveWsAudience(message: ALMessage, audience: LiveWsAudience): boolean {
-    if (hasServerRoomSnapshotTopic(message) || audience.mode === 'generation-room') {
-        const groupRef = resolveLiveWsRoomGroupRef(message);
-        return audience.mode === 'generation-room' &&
-            isServerRoomSnapshotMessage(message, { producerId: audience.producerId, scope: audience.groupRef }) &&
-            groupRef !== undefined && isSameGroupRef(groupRef, audience.groupRef);
+    if (hasServerRoomSnapshotTopic(message) && audience.mode !== 'generation-room') {
+        return false;
     }
-    if (audience.mode === 'room') {
+    if (audience.mode === 'room' || audience.mode === 'generation-room') {
         const groupRef = resolveLiveWsRoomGroupRef(message);
         return groupRef !== undefined && isSameGroupRef(groupRef, audience.groupRef);
     }

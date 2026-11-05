@@ -1,5 +1,8 @@
 import { decodeLiveWsNotice, encodeLiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import { partitionRoomSnapshotPublication } from '@shared-server/rallar-system/queue-pubsub/partition-room-snapshot-publication.ts';
+import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
+import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { computeServerRoomPublicationAudience } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -28,7 +31,7 @@ function publication(size: number) {
         publisherId: 'server-a',
         expiresAtMs: message.constraints!.expiresAtMs!,
         scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
-        audience: { mode: 'generation-room' as const, producerId: 'room-producer', groupRef, recipientSessionIds: ['alice', 'spectator'], generations }
+        audience: { mode: 'generation-room' as const, groupRef, recipientSessionIds: ['alice', 'spectator'], generations }
     };
 }
 
@@ -44,11 +47,11 @@ describe('server-only native room notice', () => {
         expect(encoded.notice).toMatchObject({ audience: large.audience });
     });
 
-    it('rejects a native notice with only session IDs, extra generations, a foreign sender or wrong target scope', () => {
+    // The producer is admitted once, by the topic registry at publication; the notice carries only the fenced audience.
+    it('rejects a native notice with only session IDs, extra generations or wrong target scope', () => {
         const input = publication(20);
         expect(() => encodeLiveWsNotice({ ...input, audience: { mode: 'room', groupRef, recipientSessionIds: ['alice'] } })).toThrow();
         expect(() => encodeLiveWsNotice({ ...input, audience: { ...input.audience, generations: { ...generations, outsider: 'not-admitted' } } })).toThrow();
-        expect(() => encodeLiveWsNotice({ ...input, message: { ...input.message, id: { ...input.message.id, senderId: 'alice' } } })).toThrow();
         expect(() => encodeLiveWsNotice({ ...input, scope: { ...input.scope, workspaceId: 'elsewhere' } })).toThrow();
     });
 });
@@ -88,10 +91,9 @@ it('writes only frozen generations, and drops a failed socket so its replacement
         recipientSessionIds: input.audience.recipientSessionIds,
         recipientScope: input.scope,
         roomSessionGenerations: input.audience.generations,
-        roomSnapshotProducer: { producerId: input.audience.producerId, scope: input.scope },
         requireAuthenticatedRecipient: true
     };
-    expect(service.sendToTargetsWithResult({ ...send, roomSnapshotProducer: undefined }).sentCount).toBe(0);
+    expect(service.sendToTargetsWithResult({ ...send, roomSessionGenerations: undefined }).sentCount).toBe(0);
     expect(service.sendToTargetsWithResult(send).sentCount).toBe(2);
     expect(clients.get('outsider')!.sent).toEqual([]);
     const spectator = clients.get('spectator')!;
@@ -115,7 +117,7 @@ it('does not grant a replacement socket room frames from its predecessor room pr
     const result = computeServerRoomPublicationAudience({
         message,
         producerId: 'room-producer',
-        topic: { participation: 'members' },
+        topic: { participation: 'server', serverProducerIds: ['room-producer'] },
         nowEpochMs: Date.now(),
         authority: {
             snapshot,
@@ -135,7 +137,7 @@ it('partitions large captured audiences without losing or duplicating a session,
     for (const size of [20, 11000]) {
         const input = publication(size);
         const audience = { ...input.audience, recipientSessionIds: ids, generations: Object.fromEntries(ids.map((id) => [id, 'g-' + id])) };
-        const partitions = [...partitionRoomSnapshotPublication({ ...input, audience })];
+        const partitions = partitionRoomSnapshotPublication({ ...input, audience }).right!;
         expect(partitions.length).toBeGreaterThan(1);
         expect(partitions.flatMap((part) => part.audience.recipientSessionIds)).toEqual(ids);
         expect(partitions.map((part) => encodeLiveWsNotice(part).kind)).toEqual(partitions.map(() => size === 20 ? 'inline' : 'fragmented'));
@@ -153,4 +155,70 @@ it('rejects live room snapshots in captured durable admission and persisted repa
     };
     expect(validateWsQueueBoxServerRecipientAuthority(message, { admittedAudience: ['other'] }, message.route)).not.toEqual([]);
     expect(() => decodeWsQueueBoxServerPreparedMessage(prepared, message, message.route)).toThrow(/live/i);
+});
+
+it('refuses the whole partitioned publication when one recipient fits no private notice', () => {
+    const input = publication(20);
+    const huge = 'session-' + 'x'.repeat(300_000);
+    const oversized = partitionRoomSnapshotPublication({
+        ...input,
+        audience: { ...input.audience, recipientSessionIds: ['alice', huge], generations: { alice: 'generation-a', [huge]: 'g' } }
+    });
+    const ungenerated = partitionRoomSnapshotPublication({ ...input, audience: { ...input.audience, generations: { alice: 'generation-a' } } });
+
+    expect(oversized.left).toMatch(/single room snapshot recipient/u);
+    expect(ungenerated.left).toMatch(/frozen generations/u);
+});
+
+it('publishes a registered server topic only for its listed producer, only live, to each member on its recorded generation', async () => {
+    const snapshot = createGroupSnapshot(2, ['current', 'reconnected']);
+    const room = { applicationId: snapshot.group.applicationId, workspaceId: snapshot.group.workspaceId, groupId: snapshot.group.groupId };
+    const socket = new JsonWebSocketServer();
+    const clients = new Map<string, TestWebSocket>();
+    // The reconnected session's socket is a replacement its room presence has not recorded yet.
+    for (const [id, generationId] of [['current', 'ws-generation-current'], ['reconnected', 'replacement']]) {
+        const native = new TestWebSocket('ws://test/socket');
+        native.open();
+        socket.addConnection(new ConnectionContext({ id, generationId, socket: native }));
+        clients.set(id, native);
+    }
+    const engine = new InboxOutboxEngine();
+    const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+    const service = createDefaultWsQueueBoxServerService({
+        name: 'server-node',
+        socket,
+        queueEngine: engine,
+        outbox: stores.workQueue,
+        outboundStores: stores,
+        inboundVolatileStores: undefined,
+        readAuthenticatedConnectionScope: () => ({
+            scope: { applicationId: room.applicationId, workspaceId: room.workspaceId },
+            expiresAtEpochMs: Date.now() + 60000
+        })
+    });
+    onTestFinished(async () => {
+        await service.dispose();
+        await engine.stop();
+    });
+    const router = new RallarServerWsRouter(service, {
+        grantedTopics: new WsGrantedTopicSet(),
+        readServerPublishAudience: createServerPublishRoomAudienceReader({
+            readGroupSnapshot: async () => snapshot,
+            readPublicationAuthority: async () => ({
+                snapshot,
+                subscriptions: [],
+                liveSessionGenerations: { current: ['ws-generation-current'], reconnected: ['replacement'] }
+            }),
+            nowEpochMs: Date.now
+        })
+    }).defineTopic({ topicId: topic, scope: 'room', fanout: 'live-only', participation: 'server', serverProducerIds: ['room-producer'] });
+    const message = newALBroadcastMessage('room-producer', newALRoute(topic, room.groupId, 'game'), 'room', topic, {}, { groupRef: room, ttlMs: 5000 });
+
+    expect(await router.publish({ message, producerId: 'intruder', fanout: 'live-only' })).toMatchObject({ status: 'refused', refusal: 'topic-not-granted' });
+    expect((await router.publish({ message, producerId: 'room-producer', fanout: 'outbox' })).status).toBe('failed');
+    expect(clients.get('current')!.sent).toEqual([]);
+    expect((await router.publish({ message, producerId: 'room-producer', fanout: 'live-only' })).status).toBe('sent-live');
+    expect([clients.get('current')!.sent.length, clients.get('reconnected')!.sent.length]).toEqual([1, 0]);
+    expect(() => router.defineTopic({ topicId: 'room.feed', scope: 'room', fanout: 'live-only', participation: 'server', serverProducerIds: [] }))
+        .toThrow(/reserved live room topic/u);
 });

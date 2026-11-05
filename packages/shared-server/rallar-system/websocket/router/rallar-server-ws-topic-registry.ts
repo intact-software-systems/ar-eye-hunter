@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
-import { assertValidRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import { assertValidRallarWsUserTopicId, isReservedRallarWsTopicId } from '@shared/api/rallar-validation.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { WsGrantedTopicSet } from '../room-publication/ws-granted-topic-set.ts';
@@ -53,7 +53,6 @@ export class RallarServerWsTopicRegistry {
     define<T extends RallarServerWsPayload>(
         definition: RallarServerWsTopicDefinition<T>
     ): void {
-        assertValidRallarWsUserTopicId(definition.topicId, '$.topicId');
         this.assertDefinable(definition);
         if (definition.participation === 'granted') {
             this.grantedTopics.add(definition.topicId);
@@ -214,8 +213,24 @@ export class RallarServerWsTopicRegistry {
         return suppressDefaultFanout || (rule.suppressDefaultFanout ?? false);
     }
 
-    /** Grants are per exact room topic, so a granted topic is room-scoped and its topic id has one participation. */
+    /**
+     * Grants are per exact room topic, so a granted topic is room-scoped and its topic id has one participation. A
+     * server topic is a reserved live room topic, so no client ingress ever reaches it and no outbox stores it.
+     */
     private assertDefinable(definition: RallarServerWsTopicMetadata): void {
+        if (definition.participation === 'server') {
+            if (
+                !isReservedRallarWsTopicId(definition.topicId) || definition.scope !== 'room' ||
+                definition.fanout !== 'live-only'
+            ) {
+                throw new Error(
+                    `Server Rallar WS topic must be a reserved live room topic: ${toSelectorKey(definition)}`
+                );
+            }
+        }
+        else {
+            assertValidRallarWsUserTopicId(definition.topicId, '$.topicId');
+        }
         if (definition.participation === 'granted' && definition.scope !== 'room') {
             throw new Error(`Granted Rallar WS topic must be scoped to a room: ${toSelectorKey(definition)}`);
         }
@@ -224,7 +239,7 @@ export class RallarServerWsTopicRegistry {
             throw new Error(`Rallar WS topic already defined: ${toSelectorKey(definition)}`);
         }
         if (registered.some((candidate) => candidate.participation !== definition.participation)) {
-            throw new Error(`Rallar WS topic ${definition.topicId} cannot be both members and granted`);
+            throw new Error(`Rallar WS topic ${definition.topicId} has one participation`);
         }
     }
 
@@ -247,9 +262,9 @@ export function resolveRallarServerWsTopicFanout(
 export function toRallarServerWsTopicAccess(
     definition: RallarServerWsTopicAccess
 ): RallarServerWsTopicAccess {
-    return definition.participation === 'granted'
-        ? { participation: 'granted', serverProducerIds: [...definition.serverProducerIds] }
-        : { participation: 'members' };
+    return definition.participation === 'members'
+        ? { participation: 'members' }
+        : { participation: definition.participation, serverProducerIds: [...definition.serverProducerIds] };
 }
 
 function resolveRallarServerWsRuleFanout(

@@ -16,7 +16,7 @@ Deno.test('oversized native frame crosses bounded PostgreSQL notifications and e
         expiresAtMs: message.constraints!.expiresAtMs!,
         message,
         scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
-        audience: { mode: 'generation-room', producerId: PRODUCER_ID, groupRef, recipientSessionIds: ['alice'], generations: { alice: 'g-a' } }
+        audience: { mode: 'generation-room', groupRef, recipientSessionIds: ['alice'], generations: { alice: 'g-a' } }
     });
     assert.equal(encoded.kind, 'fragmented');
     if (encoded.kind !== 'fragmented') {

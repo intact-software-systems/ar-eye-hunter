@@ -1,11 +1,11 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../alm/al-admission-value-validation.ts';
+import { decodeALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     decodeALAccountViewAuthority,
     validateALAccountViewMessage
-} from '../../alm/outbound/admission/al-account-view-authority.ts';
-import { decodeALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
+} from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import {
     decodeALSessionInvalidationAuthority,
     validateALSessionInvalidationMessage

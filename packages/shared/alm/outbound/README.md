@@ -768,7 +768,7 @@ target, a principal or world broadcast. A raw `WS_OUTBOX` row without producer p
 unicast `router.publish` that names no group and carries no scope returns `failed` (D103).
 
 The reserved account-wide view notice uses a separate
-[`accountView`](./admission/al-account-view-authority.ts) authority: version and
+[`accountView`](./admission/al-outbound-scope-authority.ts) authority: version and
 principal ID, mutually exclusive with scoped/session authority and frozen
 recipients. Its unicast account target and exact payload must agree with the
 committed proof. Capture, dequeue and repair preserve that authority. The

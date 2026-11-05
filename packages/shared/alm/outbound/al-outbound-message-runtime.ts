@@ -38,13 +38,13 @@ import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatil
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALWorkObservationDeferral } from '../work/al-work-handler.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
-import type { ALAccountViewAuthority } from './admission/al-account-view-authority.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
+import type { ALAccountViewAuthority } from './admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
