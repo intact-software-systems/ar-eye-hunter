@@ -194,17 +194,19 @@ function assertOrderingObservation(value: PersistedALValue): void {
         'expectedSeq',
         'lastContiguousSeq',
         'missingRanges',
-        'releasableSeqs'
+        'releasableSeqs',
+        'priorSeq'
     ], ['status', 'missingRanges', 'releasableSeqs']);
     requireVariant(
         ordering.status,
-        ['untracked', 'in-order', 'gap', 'duplicate', 'stale', 'resync-required'],
+        ['untracked', 'in-order', 'gap', 'duplicate', 'stale', 'resync-required', 'entered', 'omitted', 'witnessed'],
         'ordering status'
     );
     requireOptionalPersistedALNonEmptyString(ordering.trackKey, 'ordering track key');
     requireOptionalPersistedALSafeInteger(ordering.seq, 0, 'ordering sequence');
     requireOptionalPersistedALSafeInteger(ordering.expectedSeq, 0, 'ordering expected sequence');
     requireOptionalPersistedALSafeInteger(ordering.lastContiguousSeq, -1, 'ordering contiguous sequence');
+    requireOptionalPersistedALSafeInteger(ordering.priorSeq, 0, 'ordering prior sequence');
     decodeALAdmissionSeqRanges(ordering.missingRanges);
     decodeALAdmissionArray(ordering.releasableSeqs, decodeALAdmissionNumber);
 }
