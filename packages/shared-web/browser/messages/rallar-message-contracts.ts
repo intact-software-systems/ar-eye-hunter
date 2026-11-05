@@ -96,9 +96,9 @@ export interface RallarRtcSendInput<T> extends RallarMessageSendBase<T>, RallarR
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
-    /** The send's position on its track, kept above the track's head; absent beside a key, the outbound mints the next. */
+    /** The send's position on its track, kept above the track's head; absent beside a key, the outbound mints one. */
     readonly seq?: number;
-    /** The track the send is ordered on; absent beside a `seq`, the room's track; absent with it, the send is unordered. */
+    /** The send's track; beside a `seq` it defaults to the room's track, and alone it asks for a sequence. */
     readonly orderingKey?: string;
     readonly nextHopPeerIds?: readonly string[];
     readonly overlayId?: string;
@@ -111,7 +111,7 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T>, RallarRo
     readonly minSnapshotVersion?: number;
     /** The one session or server a send addresses; absent, the send reaches its scope. */
     readonly peerId?: string;
-    /** Stated only beside `orderingKey`, and kept above the track's head; absent beside a key, the outbound mints the next. */
+    /** Stated only beside `orderingKey`, kept above the track's head; absent beside a key, the outbound mints one. */
     readonly seq?: number;
     /** The track the broadcast is ordered on; absent, the broadcast is unordered. */
     readonly orderingKey?: string;

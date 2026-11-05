@@ -453,10 +453,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 
     /**
-     * An admission whose plan owns its track reads the head it reached: a message naming no sequence takes the next one,
-     * and a stated one must lie above it (`computeALOutboundSequenceMint`). Only a message with no sent row reads it --
-     * a first attempt, or the replay of the request a lost commit retained -- so a re-admission keeps the sequence its
-     * row holds. The commit writes the head under the sender version this session read.
+     * An admission whose plan owns its track reads the head it reached: a message naming no sequence takes the next
+     * one, and a stated one must lie above it (`computeALOutboundSequenceMint`). Only a message with no sent row
+     * reads it -- a first attempt, or the replay of the request a lost commit retained -- so a re-admission keeps the
+     * sequence its row holds. The commit writes the head under the sender version this session read.
      */
     private async readSequenceMint(
         session: ALAdmissionReadSession,
