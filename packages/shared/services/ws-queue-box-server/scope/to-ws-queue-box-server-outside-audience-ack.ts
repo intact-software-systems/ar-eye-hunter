@@ -1,5 +1,5 @@
-import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '../../al-contracts/al-control.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../../al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '../../../al-contracts/al-control.ts';
 
 export interface ToWsQueueBoxServerOutsideAudienceAckInput {
     /** The row the server sent the recipient nothing of. */
