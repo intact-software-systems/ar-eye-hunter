@@ -9,14 +9,11 @@ import { serveApiApplication } from '@api-v1/src/runtime/serve-api-application.t
 import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-middleware.ts';
 import { requireApiAuthSession } from '@api-v1/src/services/request-auth-service.ts';
 import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
+import { ARENA_TOURNAMENT_SNAPSHOT_SENDER } from '@ar-eye-hunter/arena-tournament-stream.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { registerArenaTournamentRoutes } from './arena-tournament-routes.ts';
-import {
-    ARENA_TOURNAMENT_GAME_PROFILE,
-    ARENA_TOURNAMENT_SNAPSHOT_PRODUCER,
-    createArenaTournamentServices
-} from './create-arena-tournament-services.ts';
+import { ARENA_TOURNAMENT_GAME_PROFILE, createArenaTournamentServices } from './create-arena-tournament-services.ts';
 
 const configured = await readApiV1Configuration({
     environment: Deno.env,
@@ -51,7 +48,7 @@ rallar.ws.defineTopic({
     scope: 'room',
     fanout: 'live-only',
     participation: 'server',
-    serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_PRODUCER.producerId]
+    serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_SENDER]
 });
 const services = createArenaTournamentServices({
     database: databaseLifecycle.database,

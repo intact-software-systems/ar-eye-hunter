@@ -2,6 +2,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { RuntimeStateGuardedBatchGuard } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateObservation } from '../../runtime-state/observation/runtime-state-observation.ts';
 import { isClientSnapshotPresent } from '../client-state/is-client-snapshot-present.ts';
 import type { ClientMutationCommand, ClientMutationRead } from '../client-state/mutation/client-mutation-contracts.ts';
 import { computeClientPresenceTransition } from '../client-state/mutation/client-presence-transition.ts';
@@ -37,11 +38,17 @@ export async function readFriendsPresence(
     return { own, peers };
 }
 
+/** A presence notice and the peer profiles its audience depends on without rewriting them. */
+export interface FriendsPresencePublication {
+    readonly publication: GuardedViewPublication;
+    readonly observations: readonly RuntimeStateObservation[];
+}
+
 export function computeFriendsPresencePublication(
     command: ClientMutationCommand,
     read: ClientMutationRead,
     snapshot: ClientSnapshot
-): GuardedViewPublication | null {
+): FriendsPresencePublication | null {
     const presence = read.friendsPresence;
     if (presence === null) {
         return null;
@@ -70,17 +77,19 @@ export function computeFriendsPresencePublication(
         serviceId: command.facts.serviceId,
         traceId: command.facts.traceId
     });
-    // Even hidden/absent profiles fence a concurrent visibility change or friendship acceptance.
-    return computeGuardedViewPublication({
-        guard: toFriendsProfileGuard(presence.own),
-        effects: [
-            ...peers.map((peer) => ({
-                ...toFriendsProfileGuard(peer),
-                effectId: `friend:${peer.profile.principalId}`
-            })),
-            ...publication.provenance
-        ]
-    }, publication.outbox);
+    // Visibility and friendship changes publish to peers who then read this presence; only a write-write conflict
+    // on the own row stops one committing between this mutation's audience check and its commit unseen.
+    return {
+        publication: computeGuardedViewPublication({
+            guard: toFriendsProfileGuard(presence.own),
+            effects: publication.provenance
+        }, publication.outbox),
+        observations: presence.peers.map(({ entry, profile }) => ({
+            namespace: FRIENDS_PROFILE_NAMESPACE,
+            key: friendsProfileKey(profile.principalId),
+            entry
+        }))
+    };
 }
 
 function toFriendsProfileGuard(read: FriendsProfileRead): RuntimeStateGuardedBatchGuard {

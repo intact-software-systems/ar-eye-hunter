@@ -109,6 +109,7 @@ function assertAppliedWriteResult(value: ValidationRecord): void {
             'stateSync',
             'outbox',
             'viewPublication',
+            'viewObservations',
             'viewWatchCleanup',
             'principalAudienceSessionIds',
             'persistence'

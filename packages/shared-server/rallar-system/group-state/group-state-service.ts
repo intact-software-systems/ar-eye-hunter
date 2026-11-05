@@ -50,7 +50,7 @@ import {
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 import { GroupRetentionService } from './retention/group-retention-service.ts';
-import { readsGroupSessionViewAudience } from './schedule/compute-group-session-view-publication.ts';
+import { isGroupSessionViewAudienceCommand } from './schedule/compute-group-session-view-publication.ts';
 import { GroupSessionDirectory } from './schedule/group-session-directory.ts';
 import { readGroupSessionViewAudience } from './schedule/read-group-session-view-audience.ts';
 
@@ -406,7 +406,7 @@ async function readGroupMutationFences(
         : null;
     const sessionViewAudience = initialRead.idempotency === null && initialRead.group !== null &&
             readGroupSessionSchedule(initialRead.group.value.metadata) !== null &&
-            readsGroupSessionViewAudience(command)
+            isGroupSessionViewAudienceCommand(command)
         ? await readGroupSessionViewAudience(runtime, command.aggregateRef, ingress.facts.attemptAtEpochMs)
         : null;
     const read = { ...initialRead, connectTriggerLatch, sessionViewAudience };

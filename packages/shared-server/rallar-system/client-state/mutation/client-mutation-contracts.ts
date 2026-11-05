@@ -14,6 +14,7 @@ import type {
 } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateObservations } from '../../../runtime-state/observation/runtime-state-observation.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
@@ -309,6 +310,7 @@ export type ClientMutationDomainAppliedWrite = Readonly<{
     receipt: ClientMutationReceipt;
     idempotency: ClientMutationIdempotencyRecord | null;
     viewPublication: GuardedViewPublication | null;
+    viewObservations: RuntimeStateObservations;
     viewWatchCleanup: RuntimeStateGuardedBatchWrite | null;
     stateSync: readonly ComputedClientStateSync[];
     outbox: readonly ClientMutationOutboxWrite[];

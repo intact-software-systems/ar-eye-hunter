@@ -42,6 +42,7 @@ import {
 } from '../parties/party-service-fixture.ts';
 
 const scope = { applicationId: ref.applicationId, workspaceId: ref.workspaceId };
+const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 interface FriendsPresenceFixture {
     readonly party: PartyServiceFixture;
@@ -234,6 +235,65 @@ it.each(['hidden', 'absent'] as const)('makes a previously read %s visibility ch
             .toEqual(
                 kind === 'hidden' ? [{ principalId: 'alice', scope: null }, { principalId: 'bob', scope: null }] : [{ principalId: 'alice', scope: null }]
             );
+    }
+    finally {
+        await storage.close();
+    }
+});
+
+it('observes peer consent without rewriting it, so presence leaves every friend profile revision untouched', async () => {
+    const storage = await createResourceInboxTestStorage('friends_presence_peer_observation');
+    try {
+        const test = await fixture(storage);
+        await shareOnline(test, true);
+        const bob = await test.party.profiles.readProfile('bob');
+        const attempt = await test.prepare(disconnect());
+        expect(attempt.mutation.outcome === 'write' && JSON.parse(attempt.mutation.viewObservations.observationsJson))
+            .toEqual([expect.objectContaining({ key: friendsProfileKey('bob'), revision: bob.entry!.revision })]);
+        await test.write(attempt);
+        expect((await test.notices()).map((notice) => notice.principalId)).toEqual(['bob']);
+        expect(await test.party.profiles.readProfile('bob')).toEqual(bob);
+    }
+    finally {
+        await storage.close();
+    }
+});
+
+postgresIt('makes presence retry when a visibility change holding the own profile commits before it', async () => {
+    const storage = await createResourceInboxTestStorage('friends_presence_inflight_visibility', 3);
+    try {
+        const test = await fixture(storage);
+        const visibility = await prepareVisibility(test);
+        const presence = await test.prepare(disconnect());
+        let release!: () => void;
+        const released = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let held!: () => void;
+        const holding = new Promise<void>((resolve) => {
+            held = resolve;
+        });
+        const committed = storage.sql.begin(async (transaction) => {
+            await writeFriendsMutation(transaction, visibility);
+            held();
+            await released;
+        });
+        await holding;
+        const blocked = test.write(presence).then(() => 'applied', (error: unknown) => error);
+        await vi.waitFor(async () => {
+            const [row] = await storage.sql<{ waiting: number; }[]>`
+                select count(*)::int as waiting from pg_stat_activity where wait_event_type = 'Lock'`;
+            expect(row.waiting).toBeGreaterThan(0);
+        });
+        release();
+        await committed;
+        expect(await blocked).toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect((await test.notices()).map(({ principalId, scope }) => `${principalId}:${scope === null}`).sort()).toEqual([
+            'alice:true',
+            'bob:true'
+        ]);
+        await test.write(await test.prepare(disconnect()));
+        expect((await test.notices()).filter((notice) => notice.scope !== null).map((notice) => notice.principalId)).toEqual(['bob']);
     }
     finally {
         await storage.close();

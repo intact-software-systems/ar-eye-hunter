@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import { computeFriendsMutation, validateFriendsMutation } from '@shared-server/rallar-system/friends/compute-friends-mutation.ts';
 import type { FriendsMutationRead, FriendsProfileRead } from '@shared-server/rallar-system/friends/friends-mutation-contracts.ts';
 import {
@@ -90,13 +91,33 @@ describe('private friends mutations', () => {
             [{ principalId: 'alice', status: 'incoming' }]
         ]);
         expect(before.actor.profile.contacts).toEqual([]);
-        expect(computed.storage?.guardSqlDescriptor.expireAtTimestamp).toBe('1970-01-01T00:00:10.000Z');
-        expect(
-            computed.storage?.effectSqlDescriptors.filter((effect) => effect.namespace === FRIENDS_PROFILE_NAMESPACE).map((effect) =>
-                JSON.parse(effect.value!).principalId
-            )
-        ).toEqual(['alice', 'bob']);
-        expect(computed.storage?.effectSqlDescriptors.every((effect) => typeof effect.expireAtTimestamp === 'string')).toBe(true);
+        const writes = [computed.storage!.guardSqlDescriptor, ...computed.storage!.effectSqlDescriptors];
+        expect(writes.filter((row) => row.namespace === FRIENDS_PROFILE_NAMESPACE).map((row) => JSON.parse(row.value!).principalId)).toEqual(['alice', 'bob']);
+        expect(writes.every((row) => typeof row.expireAtTimestamp === 'string')).toBe(true);
+        expect(JSON.parse(computed.observations.observationsJson)).toEqual([
+            { namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE, key: 'session=alice-session', revision: 0, value: '{}', expires: '1970-01-01T00:00:10.000Z' }
+        ]);
+    });
+
+    it('observes the session, an unchanged profile and the visibility audience instead of rewriting them', () => {
+        const friend = { principalId: 'bob', status: 'friend' } as const;
+        const bob = observedProfile({ principalId: 'bob', shareOnline: false, contacts: [{ principalId: 'alice', status: 'friend' }], invitations: [] });
+        const before = read({ action: 'visibility', shareOnline: true });
+        const actor = observedProfile({ ...before.actor.profile, contacts: [friend] });
+        const visible = computeFriendsMutation({ ...before, actor, target: null, peers: [bob] });
+        const rows = [visible.storage!.guardSqlDescriptor, ...visible.storage!.effectSqlDescriptors];
+        expect(rows.filter((row) => row.namespace !== 'ws-outbox-provenance').map((row) => row.key)).toEqual([friendsProfileKey('alice')]);
+        expect(JSON.parse(visible.observations.observationsJson).map(({ key }: { key: string; }) => key)).toEqual([
+            'session=alice-session',
+            friendsProfileKey('bob')
+        ]);
+        const quiet = computeFriendsMutation({ ...before, actor: observedProfile({ ...actor.profile, shareOnline: true }), target: null, peers: [] });
+        expect(quiet.result.status).toBe('applied');
+        expect(quiet.storage).toBeNull();
+        expect(JSON.parse(quiet.observations.observationsJson).map(({ key }: { key: string; }) => key)).toEqual([
+            'session=alice-session',
+            friendsProfileKey('alice')
+        ]);
     });
 
     it('refuses absent authority, self requests and capacity without prepared writes', () => {

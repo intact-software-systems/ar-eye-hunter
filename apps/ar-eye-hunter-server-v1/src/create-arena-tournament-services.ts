@@ -1,4 +1,3 @@
-import { ARENA_TOURNAMENT_SNAPSHOT_SENDER } from '@ar-eye-hunter/arena-tournament-stream.ts';
 import { installArenaTournamentClock } from '@ar-eye-hunter/server/arena-tournament-deadline.ts';
 import { registerArenaTournamentInbox } from '@ar-eye-hunter/server/arena-tournament-inbox.ts';
 import {
@@ -34,11 +33,6 @@ export const ARENA_TOURNAMENT_GAME_PROFILE = {
     },
     rulesId: AR_EYE_TOURNAMENT_RULES_ID,
     gameLifecycleTopic: 'app:ar-eye:tournament-lifecycle'
-};
-
-export const ARENA_TOURNAMENT_SNAPSHOT_PRODUCER = {
-    producerId: ARENA_TOURNAMENT_SNAPSHOT_SENDER,
-    scope: ARENA_TOURNAMENT_GAME_PROFILE.scope
 };
 
 export interface CreateArenaTournamentServicesInput {

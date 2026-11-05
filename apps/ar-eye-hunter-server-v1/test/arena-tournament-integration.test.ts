@@ -1,7 +1,7 @@
 import { requireApiAuthSession } from '@api-v1/src/services/request-auth-service.ts';
 import { issueTracedTestSession, preparePGliteTracedRallarServer, waitFor } from '@api-v1/test/db/pglite-traced-rallar-test-runtime.ts';
 import { decodeArenaTournamentSnapshot, type ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
-import { decodeArenaTournamentFrame } from '@ar-eye-hunter/arena-tournament-stream.ts';
+import { ARENA_TOURNAMENT_SNAPSHOT_SENDER, decodeArenaTournamentFrame } from '@ar-eye-hunter/arena-tournament-stream.ts';
 import { AR_EYE_TOURNAMENT_DATA_BINDING } from '@ar-eye-hunter/server/arena-tournament-room.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { decodeTournamentMutationResult } from '@shared/api/tournaments/tournament-mutation-result.ts';
@@ -9,7 +9,7 @@ import type { TournamentRequest } from '@shared/api/tournaments/tournament-reque
 import { decodeTournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
 import assert from 'node:assert/strict';
 import { registerArenaTournamentRoutes } from '../src/arena-tournament-routes.ts';
-import { ARENA_TOURNAMENT_GAME_PROFILE, ARENA_TOURNAMENT_SNAPSHOT_PRODUCER, createArenaTournamentServices } from '../src/create-arena-tournament-services.ts';
+import { ARENA_TOURNAMENT_GAME_PROFILE, createArenaTournamentServices } from '../src/create-arena-tournament-services.ts';
 
 Deno.test({
     name: 'committed bracket start reaches the native arena through the embedded durable worker',
@@ -25,7 +25,7 @@ Deno.test({
             scope: 'room',
             fanout: 'live-only',
             participation: 'server',
-            serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_PRODUCER.producerId]
+            serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_SENDER]
         });
         const published: ArenaTournamentSnapshot[] = [];
         const services = createArenaTournamentServices({

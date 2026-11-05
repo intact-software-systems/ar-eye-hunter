@@ -22,7 +22,7 @@ export interface GroupSessionViewChange {
     readonly reservations: GroupSessionReservationWrite | null;
 }
 
-export function readsGroupSessionViewAudience(command: GroupMutationCommand): boolean {
+export function isGroupSessionViewAudienceCommand(command: GroupMutationCommand): boolean {
     return command.operation !== 'connectPresence' && command.operation !== 'heartbeatPresence' &&
         command.operation !== 'disconnectPresence' && command.operation !== 'subscribeGroupTopic' &&
         command.operation !== 'unsubscribeGroupTopic';

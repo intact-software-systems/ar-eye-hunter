@@ -6,12 +6,14 @@ import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarde
 import type {
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchGuard,
-    RuntimeStateGuardedBatchUpdate,
     RuntimeStateGuardedBatchWrite
 } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import {
+    computeRuntimeStateObservations,
+    type RuntimeStateObservation
+} from '../../runtime-state/observation/runtime-state-observation.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { materializeGroupStateAuthorityGuard } from '../group-state/persistence/aggregate/group-aggregate-repository.ts';
-
 import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { computeViewInvalidationPublication } from '../websocket/outbox/compute-view-invalidation-publication.ts';
 import { computeFriendProfiles } from './compute-friend-profiles.ts';
@@ -56,6 +58,7 @@ export function computeFriendsMutation(read: FriendsMutationRead): FriendsMutati
         profiles,
         outbox: publication.outbox,
         storage: computeFriendsStorage(read, profiles, publication.provenance),
+        observations: computeRuntimeStateObservations(computeFriendsObservations(read, profiles)),
         result: { ...identity, status: 'applied' }
     };
 }
@@ -65,6 +68,7 @@ function refusedFriendsMutation(read: FriendsMutationRead, code: FriendsRefusal)
         read,
         profiles: [],
         storage: null,
+        observations: computeRuntimeStateObservations([]),
         outbox: [],
         result: { principalId: read.input.principalId, requestId: read.input.requestId, status: 'refused', code }
     };
@@ -77,10 +81,7 @@ export function validateFriendsMutation(computed: FriendsMutationComputed): read
 }
 
 function exceedsFriendsCapacity(read: FriendsMutationRead, profile: FriendsProfile): boolean {
-    const previous = profile.principalId === read.actor.profile.principalId ? read.actor.profile : read.target?.profile;
-    if (previous === undefined) {
-        throw new TypeError('Friends capacity requires the captured account predecessor');
-    }
+    const previous = toFriendsProfileRead(read, profile).profile;
     // Lowered limits prevent growth, but must never prevent withdrawing consent or online sharing.
     return (profile.contacts.length > read.config.maxContacts && profile.contacts.length > previous.contacts.length) ||
         (profile.invitations.length > read.config.maxInvitations &&
@@ -91,22 +92,34 @@ function computeFriendsStorage(
     read: FriendsMutationRead,
     profiles: readonly FriendsProfile[],
     provenance: readonly RuntimeStateGuardedBatchEffect[]
-): RuntimeStateGuardedBatchWrite {
-    const writes = profiles.map((profile) => toFriendsProfileWrite(read, profile)).toSorted((a, b) =>
-        a.key < b.key ? -1 : a.key > b.key ? 1 : 0
-    );
-    const [guard, ...effects] = [...computeFriendsAuthorityGuards(read), ...writes];
-    return computeRuntimeStateGuardedBatchWrite({
-        guard: guard!,
+): RuntimeStateGuardedBatchWrite | null {
+    const writes = profiles.filter((profile) => isFriendsProfileChanged(read, profile))
+        .map((profile) => toFriendsProfileWrite(read, profile))
+        .toSorted((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+    const destination = read.input.request.action === 'invite' && read.destination !== null
+        ? [materializeGroupStateAuthorityGuard(read.destination.authorityGuard)]
+        : [];
+    const [guard, ...effects] = [...destination, ...writes];
+    return guard === undefined ? null : computeRuntimeStateGuardedBatchWrite({
+        guard,
         effects: [...effects.map((effect, index) => ({ ...effect, effectId: `friends:${index}` })), ...provenance]
     });
 }
 
-function toFriendsProfileWrite(read: FriendsMutationRead, profile: FriendsProfile): RuntimeStateGuardedBatchGuard {
+function toFriendsProfileRead(read: FriendsMutationRead, profile: FriendsProfile): FriendsProfileRead {
     const previous = profile.principalId === read.actor.profile.principalId ? read.actor : read.target;
     if (previous === null || previous.profile.principalId !== profile.principalId) {
-        throw new TypeError('Friends write has no captured account predecessor');
+        throw new TypeError('Friends profile has no captured account predecessor');
     }
+    return previous;
+}
+
+function isFriendsProfileChanged(read: FriendsMutationRead, profile: FriendsProfile): boolean {
+    return !jsonEquals(profile, toFriendsProfileRead(read, profile).profile);
+}
+
+function toFriendsProfileWrite(read: FriendsMutationRead, profile: FriendsProfile): RuntimeStateGuardedBatchGuard {
+    const previous = toFriendsProfileRead(read, profile);
     const canonical = decodeFriendsProfile(profile, profile.principalId);
     const write = {
         namespace: FRIENDS_PROFILE_NAMESPACE,
@@ -128,36 +141,25 @@ function isFriendsAuthorityCurrent(read: FriendsMutationRead): boolean {
         session.expiresAtEpochMs > read.nowEpochMs;
 }
 
-function computeFriendsAuthorityGuards(read: FriendsMutationRead): readonly RuntimeStateGuardedBatchUpdate[] {
+/** The session, unchanged profiles and visibility audience the decision read; none is rewritten to fence it. */
+function computeFriendsObservations(
+    read: FriendsMutationRead,
+    profiles: readonly FriendsProfile[]
+): readonly RuntimeStateObservation[] {
     const session = read.session;
     if (session === null) {
         throw new TypeError('Accepted friends mutation requires a captured session');
     }
-    const guards: RuntimeStateGuardedBatchUpdate[] = [{
-        operation: 'update',
-        namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
-        key: session.entry.key,
-        value: session.entry.value,
-        expectedRevision: session.entry.revision,
-        expireAtTimestamp: session.entry.expireAtTimestamp
-    }];
-    if (read.input.request.action === 'invite' && read.destination !== null) {
-        guards.push(materializeGroupStateAuthorityGuard(read.destination.authorityGuard));
-    }
-    for (const peer of computeMutualFriendsViewPeers(read)) {
-        if (peer.entry === null) {
-            throw new TypeError('Mutual friendship requires a persisted peer profile');
-        }
-        guards.push({
-            operation: 'update',
+    const unchanged = profiles.filter((profile) => !isFriendsProfileChanged(read, profile))
+        .map((profile) => toFriendsProfileRead(read, profile));
+    return [
+        { namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE, key: session.entry.key, entry: session.entry },
+        ...[...unchanged, ...computeMutualFriendsViewPeers(read)].map(({ entry, profile }) => ({
             namespace: FRIENDS_PROFILE_NAMESPACE,
-            key: peer.entry.key,
-            value: peer.entry.value,
-            expectedRevision: peer.entry.revision,
-            expireAtTimestamp: peer.entry.expireAtTimestamp
-        });
-    }
-    return guards;
+            key: friendsProfileKey(profile.principalId),
+            entry
+        }))
+    ];
 }
 
 function computeMutualFriendsViewPeers(read: FriendsMutationRead): readonly FriendsProfileRead[] {
@@ -167,12 +169,8 @@ function computeMutualFriendsViewPeers(read: FriendsMutationRead): readonly Frie
 }
 
 function computeFriendsViewAudience(read: FriendsMutationRead, profiles: readonly FriendsProfile[]): readonly string[] {
-    const changed = profiles.filter((profile) =>
-        !jsonEquals(
-            profile,
-            profile.principalId === read.actor.profile.principalId ? read.actor.profile : read.target?.profile
-        )
-    ).map((profile) => profile.principalId);
+    const changed = profiles.filter((profile) => isFriendsProfileChanged(read, profile))
+        .map((profile) => profile.principalId);
     return read.input.request.action === 'visibility' && changed.includes(read.input.principalId)
         ? [...changed, ...computeMutualFriendsViewPeers(read).map(({ profile }) => profile.principalId)]
         : changed;

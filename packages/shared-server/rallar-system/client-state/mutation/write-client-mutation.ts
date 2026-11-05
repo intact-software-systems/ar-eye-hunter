@@ -1,6 +1,7 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { readRuntimeStateObservationsCurrent } from '../../../runtime-state/postgres/read-runtime-state-observations-current.ts';
 import { writeRuntimeStateGuardedBatch } from '../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 import { writeAppOutboxInserts } from '../../app-outbox/app-outbox-insert.ts';
 import { ClientStateEventCollisionError } from '../../state-events/client-state-event-store.ts';
@@ -25,6 +26,7 @@ export async function writeClientMutation(
     for (const operation of computed.persistence.runtimeWrites) {
         await writeRuntimeState(transaction, operation);
     }
+    await requireClientMutationObservationsCurrent(transaction, computed);
     if (computed.outcome === 'write') {
         if (computed.viewPublication !== null) {
             await writeGuardedViewPublicationStorage(transaction, computed.viewPublication.storage);
@@ -34,6 +36,19 @@ export async function writeClientMutation(
         }
     }
     return await writeClientMutationRecords(transaction, computed);
+}
+
+/** Rows the mutation's view audience was computed from commit only while they still hold; none is rewritten. */
+export async function requireClientMutationObservationsCurrent(
+    transaction: PSqlSql,
+    computed: ClientMutationComputedWrite
+): Promise<void> {
+    if (
+        computed.outcome === 'write' &&
+        !(await readRuntimeStateObservationsCurrent(transaction, computed.viewObservations))
+    ) {
+        throw new RuntimeStateWriteConflictError();
+    }
 }
 
 /** The event and outbox rows alone, for a transaction whose guarded batch writes the mutation's runtime rows. */
