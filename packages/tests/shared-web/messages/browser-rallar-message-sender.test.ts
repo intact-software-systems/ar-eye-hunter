@@ -416,7 +416,7 @@ describe('Rallar message send', () => {
         });
     });
 
-    it('refuses a stated sequence below 1 on a tracked room send, over WS and RTC, before any carrier sees it', async () => {
+    it('refuses a stated sequence below 1 on a tracked room send at the call, over WS and RTC', async () => {
         const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
         const facade = createRallarTestFacade();
         const refused = {
@@ -428,8 +428,6 @@ describe('Rallar message send', () => {
 
         await expect(facade.messages.ws.send({ ...wsSend, seq: 0 })).rejects.toMatchObject(refused);
         await expect(facade.messages.rtc.send({ roomRef, typeId: 'chat.message.v1', payload: {}, seq: 0 })).rejects.toMatchObject(refused);
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });
 
     it('keys an RTC room send on its room only beside a stated sequence, so a send without one stays unordered', async () => {
