@@ -64,6 +64,25 @@ describe('RtcPublicationProofVerifier', () => {
         }
     );
 
+    it.each(
+        [
+            ['rewrote', { b: 2 }],
+            ['dropped', undefined]
+        ] as const
+    )('refuses a copy whose prior-sequence record a relay %s, and still verifies the signed one', async (_change, record) => {
+        const fixture = await createVerifierFixture();
+        const feed = createFeed('feed-1');
+        const signed = await signPublication(fixture.sender, {
+            ...feed,
+            ordering: { orderingKey: 'feed', epoch: 1, seq: 3, priorSeqByRecipient: { b: 1 } }
+        });
+        const relayed: ALMessage = { ...signed, ordering: { ...signed.ordering, priorSeqByRecipient: record } };
+
+        expect(await fixture.verifier.verifyPublicationProof(signed)).toBe(true);
+        expect(await fixture.verifier.verifyPublicationProof(relayed)).toBe(false);
+        expect(fixture.verifier.getVerifiedSignature(relayed)).toBe(false);
+    });
+
     it('answers a second, equal message object from its verdict: one digest, no key and no verify', async () => {
         const fixture = await createVerifierFixture();
         const signed = await signPublication(fixture.sender, createFeed('feed-1'));

@@ -29,7 +29,11 @@ import { computeRtcRepairTargetAdmission } from './compute-rtc-repair-target-adm
 import type { RtcGrantedTopicReader } from './rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
 import type { RtcTopicSubscriptionReader } from './rtc-topic-subscription-reader.ts';
-import { signRtcPublication, type RtcPublicationSigningFailure } from './sign-rtc-publication.ts';
+import {
+    resolveRtcPublicationSigningRefusal,
+    signRtcPublication,
+    type RtcPublicationSigningFailure
+} from './sign-rtc-publication.ts';
 
 /**
  * Why a granted leg is not signed: a shape RTC cannot carry (not a room multicast), or its origin could not sign it.
@@ -77,8 +81,8 @@ export namespace RtcGrantedPublicationCarrier {
 }
 
 /**
- * The RTC carrier's granted publications: an origin signs one as its admission carries it, and a relay or receiver
- * verifies its proof before it plans it, forwarding or delivering only an admitted frame.
+ * The RTC carrier's granted publications: an origin admits one as a leg and signs it in its first admission, and a
+ * relay or receiver verifies its proof before it plans it, forwarding or delivering only an admitted frame.
  */
 export class RtcGrantedPublicationCarrier {
     readonly #dependencies: Omit<RtcGrantedPublicationCarrier.Dependencies, 'publicationCrypto'>;
@@ -96,15 +100,15 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * A granted leg is refused for the shape its sender gave before any freezing or signing work, else frozen to the
-     * live sessions whose principal holds `subscribe` on its topic and signed as `toAdmittedMessage` carries it: the
-     * signed audience is already the narrowed one. A `group-leader` leg whose leader holds no `subscribe` is refused
-     * before freezing. Left: the refusal's detail, which a fallback carrier takes over.
+     * A granted leg is refused for the shape its sender gave before any freezing work, then for a `group-leader` leg
+     * whose leader holds no `subscribe`, then when its origin cannot sign at all; else it is frozen to the live
+     * sessions whose principal holds `subscribe` on its topic as `toAdmittedMessage` carries it. Its admission signs
+     * that narrowed audience (`signAdmitted`). Left: the refusal's detail, which a fallback carrier takes over.
      */
-    async signLeg(
+    admitLeg(
         msg: ALMessage,
         toAdmittedMessage: (msg: ALMessage, subscribeHolders: ReadonlySet<string>) => ALMessage
-    ): Promise<Either<string, ALMessage>> {
+    ): Either<string, ALMessage> {
         const shapeRefusal = resolveRtcGrantedPublicationShapeRefusal(msg);
         if (shapeRefusal !== undefined) {
             return Either.ofLeft(toRtcGrantedLegRefusalDetail({ kind: 'unsupported-shape', message: shapeRefusal }));
@@ -114,22 +118,38 @@ export class RtcGrantedPublicationCarrier {
         const subscribeHolders = snapshot === null
             ? new Set<string>()
             : computeGrantedSubscribeHolders(snapshot, msg.route.topicId, nowEpochMs);
-        const leaderRefusal = resolveRtcGrantedLeaderRefusal({
-            msg,
-            snapshot,
-            selfSessionId: this.#dependencies.selfSessionId,
-            subscribeHolders
-        });
+        const { selfSessionId } = this.#dependencies;
+        const leaderRefusal = resolveRtcGrantedLeaderRefusal({ msg, snapshot, selfSessionId, subscribeHolders });
         if (leaderRefusal !== undefined) {
             return Either.ofLeft(leaderRefusal);
         }
-        const admitted = toAdmittedMessage(msg, subscribeHolders);
-        const signed = await signRtcPublication({
+        const signingRefusal = resolveRtcPublicationSigningRefusal({
             crypto: this.#publicationCrypto,
             snapshot,
-            selfSessionId: this.#dependencies.selfSessionId,
-            nowEpochMs,
-            message: admitted
+            selfSessionId,
+            nowEpochMs
+        });
+        return signingRefusal === undefined
+            ? Either.ofRight(toAdmittedMessage(msg, subscribeHolders))
+            : Either.ofLeft(toRtcGrantedLegRefusalDetail(signingRefusal));
+    }
+
+    /**
+     * Signs the session's own granted publication as its first admission carries it, after the read stamped its
+     * sequence and record; any other frame -- not granted, or a relayed one that keeps its origin's proof -- passes.
+     * Left: why it could not sign, which drops the frame `unsupported`.
+     */
+    async signAdmitted(msg: ALMessage): Promise<Either<string, ALMessage>> {
+        const { selfSessionId, clock } = this.#dependencies;
+        if (!this.isGrantedPublication(msg) || msg.id.senderId !== selfSessionId) {
+            return Either.ofRight(msg);
+        }
+        const signed = await signRtcPublication({
+            crypto: this.#publicationCrypto,
+            snapshot: this.readRoomSnapshot(msg),
+            selfSessionId,
+            nowEpochMs: clock.nowMs(),
+            message: msg
         });
         return signed.mapLeft(toRtcGrantedLegRefusalDetail);
     }
@@ -248,8 +268,8 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * The origin carries a granted publication only in the shape it signed, and re-sends a stored one only while it
-     * holds `publish`; any other message passes.
+     * The origin carries a granted publication only as a room multicast, re-sends a stored one only signed and only
+     * while it holds `publish`; any other message passes.
      */
     computeOriginRefusal(
         input: RtcGrantedPublicationCarrier.OriginRefusalInput
@@ -258,7 +278,7 @@ export class RtcGrantedPublicationCarrier {
         if (!this.isGrantedPublication(carried)) {
             return Either.ofRight(carried);
         }
-        return computeRtcGrantedPublicationRefusal(carried, input.original).flatMap(
+        return computeRtcGrantedPublicationRefusal(carried, input.original, input.storedSend).flatMap(
             (refusal) => Either.ofLeft(refusal),
             (signed) => input.storedSend ? this.readOwnRepairRefusal(signed) : Either.ofRight(signed)
         );

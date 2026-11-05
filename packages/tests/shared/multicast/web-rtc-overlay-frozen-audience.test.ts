@@ -25,6 +25,7 @@ import {
     computeFrozenAudience,
     computeRtcFrozenAudienceRefusal,
     computeRtcLeaderRefusal,
+    toRtcFrozenAudienceDispatchPlan,
     toRtcFrozenRoomMessage
 } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
@@ -575,4 +576,47 @@ function createSnapshotWithRefusedSessions(): GroupSnapshot {
 
 function toRemovedMember(member: GroupMember): GroupMember {
     return { ...member, status: 'removed', left: null, removed: member.updated, banned: null };
+}
+
+describe('the sent positions an RTC origin records for its frozen audience', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('records every frozen recipient of a keyed frame at its first admission alone', () => {
+        const keyed = toKeyedFrame({ ...createOriginReceiverMulticast('keyed'), targets: toOriginFrozenTargets(['b', 'c'], 4) });
+        const plan = { msg: keyed, dropReasonCode: undefined, lane: 'durable' as const, preparedMessages: [] };
+
+        expect(toRtcFrozenAudienceDispatchPlan(plan, 'a', true).recordsSentPositions).toEqual(['b', 'c']);
+        expect(toRtcFrozenAudienceDispatchPlan(plan, 'a', false).recordsSentPositions).toBeUndefined();
+        expect(toRtcFrozenAudienceDispatchPlan({ ...plan, msg: { ...keyed, ordering: undefined } }, 'a', true).recordsSentPositions)
+            .toBeUndefined();
+        expect(toRtcFrozenAudienceDispatchPlan({ ...plan, dropReasonCode: 'no-route' }, 'a', true).recordsSentPositions)
+            .toBeUndefined();
+        expect(toRtcFrozenAudienceDispatchPlan(plan, 'r', true).recordsSentPositions).toBeUndefined();
+    });
+
+    it('stamps a keyed members-topic multicast with its record, carried unsigned to every frozen recipient', async () => {
+        const fixture = createFixture();
+
+        const admitted = await enqueueLegAndDrain(fixture, toKeyedFrame(createOriginReceiverMulticast('members-keyed')));
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.ordering).toEqual({ orderingKey: 'chat', epoch: 1, seq: 1, priorSeqByRecipient: {} });
+        expect(admitted.message.proof).toBeUndefined();
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent].map((sent) => sent.ordering)).toEqual([
+            admitted.message.ordering,
+            admitted.message.ordering
+        ]);
+    });
+});
+
+function toKeyedFrame(message: ALMessage): ALMessage {
+    return { ...message, ordering: { orderingKey: 'chat', epoch: 1, seq: 1 } };
 }

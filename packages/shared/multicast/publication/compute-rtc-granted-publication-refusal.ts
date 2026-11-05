@@ -43,16 +43,18 @@ export function resolveRtcGrantedPublicationShapeRefusal(msg: ALMessage): string
 }
 
 /**
- * RTC carries a granted publication only as a signed room multicast; any other is refused as unsupported, the refusal
- * a fallback carrier takes over. Its shape is judged, and the refusal named, by the targets its sender gave, never by
- * the multicast the origin froze them to.
+ * RTC carries a granted publication only as a room multicast, and a stored one (`storedSend`) only signed: a first
+ * admission carries it unsigned, since its admission signs it after the read stamped it. Any other is refused as
+ * unsupported, the refusal a fallback carrier takes over. Its shape is judged, and the refusal named, by the targets
+ * its sender gave, never by the multicast the origin froze them to.
  */
 export function computeRtcGrantedPublicationRefusal(
     msg: ALMessage,
-    original: ALMessage
+    original: ALMessage,
+    storedSend: boolean
 ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
     const refusal = resolveRtcGrantedPublicationShapeRefusal(original) ??
-        (msg.proof === undefined ? RTC_GRANTED_PUBLICATION_REFUSALS.unsigned : undefined);
+        (storedSend && msg.proof === undefined ? RTC_GRANTED_PUBLICATION_REFUSALS.unsigned : undefined);
     return refusal === undefined
         ? Either.ofRight(msg)
         : Either.ofLeft({

@@ -12,6 +12,7 @@ import {
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import { resolveALOutboundStoreDurability, type ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../al-contracts/al-runtime.ts';
 import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
@@ -192,9 +193,12 @@ export function computeRtcLeaderRefusal(
         });
 }
 
-/** A refusal names the targets its sender gave; a signed message keeps the audience its origin signed. */
+/**
+ * A refusal names the targets its sender gave: an audience this plan froze is undone, one its sender gave frozen -- a
+ * granted leg's, or a signed stored copy's -- is kept.
+ */
 function toUnfrozenRoomMessage(msg: ALMessage, original: ALMessage): ALMessage {
-    if (msg.proof !== undefined) {
+    if (resolveALFrozenMulticastAudience(original.targets) !== undefined) {
         return msg;
     }
     return original.targets?.mode === 'broadcast'
@@ -212,27 +216,33 @@ function toUnfrozenMulticastMessage(msg: ALMessage): ALMessage {
 
 /**
  * Under `receiver` and `leader` the origin's receipt counts the frozen logical recipients, not the next hops a plan
- * reaches, so every plan of its own frozen multicast expects exactly that audience.
+ * reaches, so every plan of its own frozen multicast expects exactly that audience. The origin finalizes that audience,
+ * so its first admission (`firstAdmission`) of a frame on a track records the sent position of every frozen recipient,
+ * granted topic or not (S4-R1, S4-R10).
  */
 export function toRtcFrozenAudienceDispatchPlan(
     plan: ALOutboundDispatchPlan<ALOutboundTransportMessage>,
-    selfPeerId: string
+    selfPeerId: string,
+    firstAdmission: boolean
 ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
     const frozen = resolveALFrozenMulticastAudience(plan.msg.targets);
-    if (
-        plan.ackTracking === undefined || !isALLogicalReceiptMode(plan.ackTracking.mode) || frozen === undefined ||
-        plan.msg.id.senderId !== selfPeerId
-    ) {
+    if (frozen === undefined || plan.msg.id.senderId !== selfPeerId) {
         return plan;
     }
-    return { ...plan, ackTracking: { ...plan.ackTracking, expectedPeerIds: frozen.recipientPeerIds } };
+    const tracking = plan.ackTracking;
+    const tracked = tracking === undefined || !isALLogicalReceiptMode(tracking.mode)
+        ? plan
+        : { ...plan, ackTracking: { ...tracking, expectedPeerIds: frozen.recipientPeerIds } };
+    const recorded = firstAdmission && plan.dropReasonCode === undefined &&
+        (toALOrderingTrackKey(plan.msg) ?? toALSequenceMintTrackKey(plan.msg)) !== undefined;
+    return recorded ? { ...tracked, recordsSentPositions: frozen.recipientPeerIds } : tracked;
 }
 
 export function toRtcFrozenAudienceRepairPlan(
     plan: ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined,
     selfPeerId: string
 ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
-    return plan === undefined ? undefined : toRtcFrozenAudienceDispatchPlan(plan, selfPeerId);
+    return plan === undefined ? undefined : toRtcFrozenAudienceDispatchPlan(plan, selfPeerId, false);
 }
 
 /**

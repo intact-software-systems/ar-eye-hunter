@@ -29,6 +29,7 @@ import {
 } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
 import {
+    createOriginOverlay,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     ORIGIN_ROOM,
@@ -300,6 +301,76 @@ describe('the RTC origin of a granted publication', () => {
     });
 });
 
+describe('the ordering record of a granted publication its RTC origin signs', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('signs a keyed frame over its sequence and its record, which every stored and sent copy carries', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+
+        const admitted = await enqueueLegAndDrain(fixture, toFeedFrame(createGrantedMulticast('none'), 1), 'hold');
+        const stored = await readStoredMessage(fixture, admitted.entries[0]!);
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.ordering).toEqual({ orderingKey: 'feed', epoch: 1, seq: 1, priorSeqByRecipient: {} });
+        expect(toALPublicationProofSigningInput(admitted.message)).toContain('["ordering.priorSeqByRecipient",{}]');
+        const copies = [...fixture.channels.b!.sent, ...fixture.channels.c!.sent];
+        expect(copies).toHaveLength(2);
+        for (const carried of [stored, ...copies]) {
+            expect(carried.ordering).toEqual(admitted.message.ordering);
+            expect(carried.proof).toEqual(admitted.message.proof);
+            expect((await verifyProof(crypto, carried)).left).toBeUndefined();
+        }
+    });
+
+    it('names in the next signed frame a subscriber the narrowed frame before it left out', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, { b: SUBSCRIBE_ONLY }));
+        const first = await enqueueLegAndDrain(fixture, toFeedFrame(createGrantedMulticast('none'), 1), 'hold');
+        fixture.groups.accept('room', toKeyedSnapshot(crypto, { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }, 4));
+
+        const second = await enqueueLegAndDrain(fixture, toFeedFrame(createGrantedMulticast('none'), 2), 'hold');
+
+        expect(first.message.targets).toEqual(toOriginFrozenTargets(['b'], 3));
+        expect(second.verdict.kind, second.reason).toBe('admitted');
+        expect(second.message.targets).toEqual(toOriginFrozenTargets(['b', 'c'], 4));
+        expect(second.message.ordering?.priorSeqByRecipient).toEqual({ c: 0 });
+        expect((await verifyProof(crypto, second.message)).left).toBeUndefined();
+        expect(fixture.channels.c!.sent.at(-1)?.ordering).toEqual(second.message.ordering);
+    });
+
+    it('resends the stored signed envelope byte for byte when it re-plans it and when a held frame is dequeued', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+        fixture.overlays.delete('room');
+
+        const held = await enqueueLegAndDrain(fixture, toFeedFrame(createDurableGrantedMulticast(), 1), 'hold');
+        const stored = await readStoredMessage(fixture, held.entries[0]!);
+        // The stage planner is the manager's own; element access reaches it without widening its type.
+        const replanned = fixture.manager['planOutgoingMessage'](stored, 'replan');
+        fixture.overlays.accept('room', createOriginOverlay(['b', 'c']));
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(held.verdict, held.reason).toMatchObject({ kind: 'admitted', durable: true });
+        expect(stored.ordering).toEqual({ orderingKey: 'feed', epoch: 1, seq: 1, priorSeqByRecipient: {} });
+        expect(replanned.msg).toEqual(stored);
+        const dequeued = [...fixture.channels.b!.sent, ...fixture.channels.c!.sent];
+        expect(dequeued).toHaveLength(2);
+        for (const carried of dequeued) {
+            expect(toALPublicationProofSigningInput(carried)).toBe(toALPublicationProofSigningInput(stored));
+            expect(carried.proof).toEqual(stored.proof);
+        }
+    });
+});
+
 describe('signRtcPublication', () => {
     it('signs a frozen room multicast with the key its own snapshot names', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
@@ -372,18 +443,29 @@ function createGrantedFixture(crypto: PublicationCrypto, snapshot: GroupSnapshot
 
 /**
  * The room of `a`, `b` and `c` whose snapshot attests `a`'s page key; `grants` is each principal's permissions on the
- * granted topic, absent, `b` and `c` may subscribe.
+ * granted topic, absent, `b` and `c` may subscribe; `snapshotVersion`, absent, 3.
  */
 function toKeyedSnapshot(
     crypto: AvailablePublicationCrypto,
-    grants: Readonly<Record<string, GroupPublicationTopicPermissions>> = { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }
+    grants: Readonly<Record<string, GroupPublicationTopicPermissions>> = { b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY },
+    snapshotVersion = 3
 ): GroupSnapshot {
     return createPublicationRoomSnapshot({
         sessionIds: ['a', 'b', 'c'],
-        snapshotVersion: 3,
+        snapshotVersion,
         keys: { a: toGroupPresencePublicationKey(crypto)! },
         grants: { a: PUBLISH_ONLY, ...grants }
     });
+}
+
+/** A frame of the `feed` track at `seq`. */
+function toFeedFrame(message: ALMessage, seq: number): ALMessage {
+    return { ...message, id: { ...message.id, msgId: `${message.id.msgId}-${seq}` }, ordering: { orderingKey: 'feed', epoch: 1, seq } };
+}
+
+/** A granted room multicast its sender keeps in the local outbox, so a carrier gap holds it for a dequeue. */
+function createDurableGrantedMulticast(): ALMessage {
+    return { ...createGrantedMulticast('none'), qos: { durability: { algo: 'local-outbox' } } };
 }
 
 function createGrantedMulticast(ack: ALAckMode): ALMessage {

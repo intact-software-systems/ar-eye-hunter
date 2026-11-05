@@ -22,15 +22,21 @@ describe('computeRtcGrantedPublicationRefusal', () => {
     it.each<ALAckMode>(['none', 'receiver', 'group-leader'])('carries a signed room multicast asking ack %s unchanged', (ack) => {
         const message = { ...createMulticast(ack), proof: PROOF };
 
-        expect(computeRtcGrantedPublicationRefusal(message, message).right).toBe(message);
+        expect(computeRtcGrantedPublicationRefusal(message, message, true).right).toBe(message);
     });
 
-    it.each<[string, ALMessage, string]>([
-        ['a unicast', { ...createUnicast(), proof: PROOF }, RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
-        ['a room broadcast', { ...createRoomBroadcast(), proof: PROOF }, RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
-        ['a multicast without a proof', createMulticast('none'), RTC_GRANTED_PUBLICATION_REFUSALS.unsigned]
-    ])('refuses %s as unsupported on the volatile lane with no copies', (_name, message, detail) => {
-        expect(computeRtcGrantedPublicationRefusal(message, message).left).toEqual({
+    it('carries a first admission\'s room multicast unsigned, which its admission signs after the read', () => {
+        const message = createMulticast('none');
+
+        expect(computeRtcGrantedPublicationRefusal(message, message, false).right).toBe(message);
+    });
+
+    it.each<[string, ALMessage, boolean, string]>([
+        ['a unicast', createUnicast(), false, RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
+        ['a room broadcast', { ...createRoomBroadcast(), proof: PROOF }, true, RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast],
+        ['a stored multicast without a proof', createMulticast('none'), true, RTC_GRANTED_PUBLICATION_REFUSALS.unsigned]
+    ])('refuses %s as unsupported on the volatile lane with no copies', (_name, message, storedSend, detail) => {
+        expect(computeRtcGrantedPublicationRefusal(message, message, storedSend).left).toEqual({
             msg: message,
             dropReason: detail,
             dropReasonCode: 'unsupported',
@@ -43,7 +49,7 @@ describe('computeRtcGrantedPublicationRefusal', () => {
         const original = createRoomBroadcast();
         const frozen: ALMessage = { ...original, targets: toOriginFrozenTargets(['b', 'c'], 3) };
 
-        expect(computeRtcGrantedPublicationRefusal(frozen, original).left).toMatchObject({
+        expect(computeRtcGrantedPublicationRefusal(frozen, original, false).left).toMatchObject({
             msg: { ...frozen, targets: original.targets },
             dropReason: RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast
         });
