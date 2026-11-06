@@ -284,7 +284,10 @@ every session the page opens. The event's `data` is the event itself:
   same control reads `not-handled`/`control` whatever the outbound owner answered,
   so it does not report that outbound verdict. `msgId` is the control's own id,
   the join key when both events are present, and `targetMsgId` is the sent message it
-  answers. `outcome` is `committed`, `pending-control` (a conflict retained as
+  answers. Its bounded dimensions are `outcome`, `phase` and `nackReason`;
+  `nackOrderingKey`, `targetMsgId` and the free-text `reason` are not. A relay's
+  re-originated gap NACK reads `nackReason: gap` at the origin, like the
+  recipient's own. `outcome` is `committed`, `pending-control` (a conflict retained as
   `admit-control` work, which the outbound drain replays), `rejected`, or
   `not-handled` (the control's repair authority failed, or a NACK the origin
   leaves to its hop: the WS server's advisory `not-yet-in-sync` NACK on a room
@@ -519,7 +522,11 @@ publication succeed. The event's `data` is the event itself:
   authority recorded the copy. `workerId` is the inbound lane's owner (the
   volatile lane's ends `/volatile`), which can differ from the
   `admission-outcome` of the same copy: join the two by `traceId` and
-  `corrId`, never by `workerId`. A relay states none: it observes no track
+  `corrId`, never by `workerId`. A relay states none: it observes no track.
+  Its bounded dimensions are `status` (four values) and `carrier` (`rtc`,
+  `ws`); `workerId`, `trackKey` and the trace are identifiers, and `seq` and
+  `priorSeq` are values, never metric labels. The page counts these events by
+  `status` in `stats.rallar.alm.ordering`
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
   touched work, the same five fields the outbound topic reports for its own
