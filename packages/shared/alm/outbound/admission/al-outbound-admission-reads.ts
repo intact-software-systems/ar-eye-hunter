@@ -79,7 +79,12 @@ import {
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 import { computeALOrderingPriorSeqRecord } from './compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
-import { decodeALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
+import {
+    decodeALOutboundRoomSentPositionRow,
+    decodeALOutboundTrackPositionRow,
+    type ALOutboundRoomSentPositionRow,
+    type ALOutboundTrackPositionRow
+} from './decode-al-outbound-track-position-row.ts';
 import { computeALOutboundSequenceMint } from './sequencing/compute-al-outbound-sequence-mint.ts';
 import { toALOutboundSentPositionPriors } from './to-al-outbound-sent-position-priors.ts';
 
@@ -524,31 +529,51 @@ export class ALOutboundAdmissionReads<TPrepared> {
 
     /**
      * Each recipient's last sequence sent on the track, `0` for one never sent it: one indexed read per recipient. On a
-     * shared head, a recipient behind the track's room-wide sent position is read at it: another carrier sent the room
-     * that sequence, to an audience only the server knows.
+     * shared head, a recipient is also read at the last sequence another carrier's receipt named it in, and no lower
+     * than the track's room-wide sent position while no receipt has named who that sequence reached.
      */
     private async readSentPositions(
         session: ALAdmissionReadSession,
         trackKey: string,
         recipientPeerIds: readonly string[]
     ): Promise<Readonly<Record<string, number>>> {
-        const [roomPosition, ...positions] = await Promise.all([
+        const [roomPosition, positions, sharedPositions] = await Promise.all([
+            this.sharesOrderingHead ? this.readRoomSentPosition(session, trackKey) : undefined,
+            this.readTrackPositions(session, this.namespace, trackKey, recipientPeerIds),
             this.sharesOrderingHead
-                ? this.readValue(
-                    session,
-                    toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, trackKey),
-                    decodeALOutboundTrackPositionRow
-                )
-                : undefined,
-            ...recipientPeerIds.map((recipientPeerId) =>
+                ? this.readTrackPositions(session, this.orderingHeadNamespace, trackKey, recipientPeerIds)
+                : []
+        ]);
+        return toALOutboundSentPositionPriors({ recipientPeerIds, positions, sharedPositions, roomPosition });
+    }
+
+    private async readRoomSentPosition(
+        session: ALAdmissionReadSession,
+        trackKey: string
+    ): Promise<ALOutboundRoomSentPositionRow | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, trackKey),
+            decodeALOutboundRoomSentPositionRow
+        );
+    }
+
+    /** Each recipient's sent-position row in one namespace, in `recipientPeerIds` order. */
+    private async readTrackPositions(
+        session: ALAdmissionReadSession,
+        namespace: string,
+        trackKey: string,
+        recipientPeerIds: readonly string[]
+    ): Promise<readonly (ALOutboundTrackPositionRow | undefined)[]> {
+        return await Promise.all(
+            recipientPeerIds.map((recipientPeerId) =>
                 this.readValue(
                     session,
-                    toALOutboundSentPositionKey(this.namespace, trackKey, recipientPeerId),
+                    toALOutboundSentPositionKey(namespace, trackKey, recipientPeerId),
                     decodeALOutboundTrackPositionRow
                 )
             )
-        ]);
-        return toALOutboundSentPositionPriors({ recipientPeerIds, positions, roomPosition });
+        );
     }
 
     /** Without a known origin there is no receipt row to address; the rest is keyed by the message alone. */

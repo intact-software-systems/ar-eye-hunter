@@ -308,6 +308,7 @@ describe('a browser room send that asks its outbound for a sequence', () => {
             },
             {
                 kind: 'set-sent-position',
+                namespace: 'pair',
                 trackKey: 'chat:session-a:0',
                 recipientPeerId: 'b',
                 seq: 3,

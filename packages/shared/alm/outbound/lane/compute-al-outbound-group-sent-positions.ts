@@ -136,14 +136,17 @@ function toSequenceOrder(reads: readonly ALOutboundGroupMemberRead[]): readonly 
         .sort((left, right) => reads[left]!.sentPositions!.seq - reads[right]!.sentPositions!.seq);
 }
 
-/** The group's bundles with each `(track, recipient)` position row written once: at the highest sequence it reaches. */
+/**
+ * The group's bundles with each `(namespace, track, recipient)` position row written once: at the highest sequence it
+ * reaches.
+ */
 export function toALOutboundGroupPositionWrites<TPrepared>(
     bundles: readonly ALOutboundCommitBundle<TPrepared>[]
 ): readonly ALOutboundCommitBundle<TPrepared>[] {
     const highest = new Map<string, number>();
     for (const mutation of bundles.flatMap((bundle) => bundle.mutations)) {
         if (mutation.kind === 'set-sent-position') {
-            const rowKey = JSON.stringify([mutation.trackKey, mutation.recipientPeerId]);
+            const rowKey = JSON.stringify([mutation.namespace, mutation.trackKey, mutation.recipientPeerId]);
             highest.set(rowKey, Math.max(highest.get(rowKey) ?? 0, mutation.seq));
         }
     }
@@ -151,7 +154,8 @@ export function toALOutboundGroupPositionWrites<TPrepared>(
         ...bundle,
         mutations: bundle.mutations.filter((mutation) =>
             mutation.kind !== 'set-sent-position' ||
-            highest.get(JSON.stringify([mutation.trackKey, mutation.recipientPeerId])) === mutation.seq
+            highest.get(JSON.stringify([mutation.namespace, mutation.trackKey, mutation.recipientPeerId])) ===
+                mutation.seq
         )
     }));
 }

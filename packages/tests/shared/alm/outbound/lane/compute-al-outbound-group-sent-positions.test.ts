@@ -37,7 +37,7 @@ function positionsOf(read: ALOutboundGroupMemberRead): Readonly<Record<string, n
 }
 
 function positionWrite(recipientPeerId: string, seq: number): ALOutboundAdmissionMutation {
-    return { kind: 'set-sent-position', trackKey: TRACK_KEY, recipientPeerId, seq, expireAtTimestamp: 1 };
+    return { kind: 'set-sent-position', namespace: 'pair', trackKey: TRACK_KEY, recipientPeerId, seq, expireAtTimestamp: 1 };
 }
 
 describe('the sent positions of one commit group', () => {
