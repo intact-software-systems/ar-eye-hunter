@@ -38,11 +38,13 @@ import {
     createPassThroughALOutboundRuntimeDiagnosticsSink,
     toRallarDiagnosticsPorts
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { toALOutboundSentPositionMutations } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -451,25 +453,27 @@ describe('Browser AL runtime IndexedDB stores', () => {
         ]);
     });
 
-    it('keeps one ordering head and one room-wide sent position per session track for both carriers, and purges them with the session', async () => {
+    it('keeps one ordering head, one room-wide sent position and the receipted recipients\' positions per session track for both carriers, and purges them with the session', async () => {
         const sessionId = `shared-head-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
         const wsStore = resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore;
         const overlayStore = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId).admissionStore;
 
-        const seqs = [
+        const sends = [
             await commitMintedRoomSend(wsStore, sessionId, 'ws-1'),
             await commitMintedRoomSend(overlayStore, sessionId, 'overlay-2'),
             await commitMintedRoomSend(wsStore, sessionId, 'ws-3')
         ];
+        await commitReceiptedSentPosition(wsStore, sends[2]!, 'b');
         const headPrefix = `${toBrowserSessionALOrderingHeadNamespace(sessionId)}:`;
         const headsBeforePurge = await readBrowserALRuntimeEntryKeys(headPrefix);
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: SCOPE, storage: diagnosticsPorts.storage });
 
-        expect(seqs).toEqual([1, 2, 3]);
-        // The WS leg records no recipients, so its mints move the room-wide position beside the shared head.
+        expect(sends.map((sent) => sent.ordering?.seq)).toEqual([1, 2, 3]);
+        // The WS leg records no recipients, so its mints move the room-wide position beside the shared head; its
+        // admitted receipt then names who the server sent, and their positions join the head's namespace.
         expect(headsBeforePurge.map((key) => key.slice(headPrefix.length).split(':')[0]).toSorted())
-            .toEqual(['ordering-head', 'room-sent-position']);
+            .toEqual(['ordering-head', 'room-sent-position', 'sent-position']);
         expect(await readBrowserALRuntimeEntryKeys(headPrefix)).toEqual([]);
     });
 
@@ -909,7 +913,7 @@ async function commitMintedRoomSend(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
     sessionId: string,
     resourceId: string
-): Promise<number | undefined> {
+): Promise<ALMessage> {
     const message = newALMulticastMessage(
         sessionId,
         { topicId: 'room.chat', resourceId, contextId: 'room-1' },
@@ -931,7 +935,34 @@ async function commitMintedRoomSend(
             )
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
-    return (await admissionStore.readSentMessage(message.id.msgId))?.msg.ordering?.seq;
+    return (await admissionStore.readSentMessage(message.id.msgId))!.msg;
+}
+
+/** The shared-head position the WS leg's admitted receipt writes for one recipient it names, at the receipted sequence. */
+async function commitReceiptedSentPosition(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
+    receipted: ALMessage,
+    recipientPeerId: string
+): Promise<void> {
+    const { clientRecord } = await admissionStore.readReceiptAdmission({
+        originPeerId: receipted.id.senderId,
+        msgId: receipted.id.msgId,
+        phase: 'admitted',
+        expectedRecipientPeerIds: [recipientPeerId]
+    });
+    const positions = {
+        trackKey: toALOrderingTrackKey(receipted)!,
+        seq: receipted.ordering!.seq!,
+        priorSeqByRecipient: { [recipientPeerId]: 0 }
+    };
+    expect(
+        await admissionStore.commitBundle({
+            senderId: receipted.id.senderId,
+            expectedVersion: clientRecord?.version,
+            mutations: toALOutboundSentPositionMutations(positions, receipted.constraints!.expiresAtMs!, 'ordering-head'),
+            durableEffects: []
+        })
+    ).toBe('committed');
 }
 
 function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {

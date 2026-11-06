@@ -8,26 +8,18 @@ import {
 } from 'vitest';
 
 import {
-    AL_WS_CLIENT_CAPABILITIES,
-    toALCarrierQosInputProvider
-} from '@shared/al-contracts/al-carrier-capabilities.ts';
-import {
     newALBroadcastMessage,
     newALMulticastMessage,
     newALRoute,
+    type ALAckMode,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
-import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { computeALOrderingObservation } from '@shared/alm/compute-al-ordering-observation.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
-import type {
-    ALOutboundCommitBundle,
-    ALOutboundPlanner
-} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
+import type { ALOutboundCommitBundle } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundMessageRuntime,
     ALOutboundRuntimeStores
@@ -39,7 +31,6 @@ import {
 import { createInMemoryALAdmissionState } from '@shared/mod.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
 import '../../../setup-browser-indexeddb.ts';
 import {
@@ -47,33 +38,20 @@ import {
     createRtcOriginOverlayFixture,
     ORIGIN_ROOM
 } from '../../multicast/rtc-origin-overlay-fixture.ts';
-import { createOutboundTestRuntimeFor, readOutboundTestAdmission } from '../outbound-runtime-test-fixture.ts';
+import {
+    createOutboundTestRuntimeFor,
+    createServerReceipt,
+    createSharedHeadCarrierStores,
+    createWsClientMintingPlanner,
+    readOutboundTestAdmission,
+    type SharedHeadCarrierStores
+} from '../outbound-runtime-test-fixture.ts';
 
-/** The browser session both carriers send for, and the namespace its tracks' heads share. */
+/** The browser session both carriers send for. */
 const SESSION_ID = 'a';
-const SESSION_HEADS = 'browser:session-a-ordering';
 
-const WS_CONTEXT = {
-    sessionId: SESSION_ID,
-    serverPeerId: 'server',
-    socketOpen: true,
-    nowMs: Date.now(),
-    backpressured: false,
-    qosProvider: toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, undefined)
-};
-
-/** A carrier runtime planning as the WS client does: its dispatch plan, then the minting plan at a first admission. */
-const WS_CLIENT_PLANNER: ALOutboundPlanner<ALOutboundTransportMessage> = (msg, authority) =>
-    toALOutboundMintingPlan(
-        toWsQueueBoxClientDispatchPlan(msg, { ...WS_CONTEXT, nowMs: Date.now() }),
-        authority === undefined ? 'admission' : 'replan',
-        SESSION_ID
-    );
-
-interface SessionCarrierStores {
-    readonly ws: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
-    readonly rtc: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
-}
+/** Both carrier runtimes plan as the WS client does, so each mints the session's keyed room sends. */
+const WS_CLIENT_PLANNER = createWsClientMintingPlanner(SESSION_ID);
 
 describe('one ordering head per session track, whichever carrier mints on it', () => {
     afterEach(() => {
@@ -170,19 +148,56 @@ describe('one ordering head per session track, whichever carrier mints on it', (
         expect(origin.channels.b!.sent.map((sent) => [sent.ordering?.seq, sent.ordering?.priorSeqByRecipient]))
             .toEqual([[2, {}], [3, {}], [4, {}]]);
     });
+
+    it('reads the recipients the WS leg\'s admitted receipt named at its sequence and one it left out at its own position', async () => {
+        const stores = createSessionCarrierStores();
+        const ws = createCarrierRuntime(stores.ws);
+        const origin = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b', 'c', 'd'], 1),
+            nextHopPeerIds: ['b'],
+            stores: stores.rtc
+        });
+        const fallback = createRoomBroadcast('fallback-1', 'all-logical-recipients');
+        expect(await enqueueMintedSeq(ws, fallback)).toBe(1);
+        // The server sent the WS leg to b and c only: d was outside the room audience it routed.
+        expect(await ws.acceptReceipt(createServerReceipt(fallback, 'admitted', ['b', 'c']))).toEqual({ kind: 'committed' });
+
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-2'), 'hand-over');
+        await vi.waitFor(() => expect(origin.channels.b!.sent).toHaveLength(1));
+        const second = origin.channels.b!.sent[0]!;
+
+        // b and c read 1 (seq - 1, left out of the record); d reads its own position, none.
+        expect([second.ordering?.seq, second.ordering?.priorSeqByRecipient]).toEqual([2, { d: 0 }]);
+    });
+
+    it('does not stall a recipient the WS leg left out on the sequence it never sent it', async () => {
+        const stores = createSessionCarrierStores();
+        const ws = createCarrierRuntime(stores.ws);
+        const origin = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b', 'c', 'd'], 1),
+            nextHopPeerIds: ['b'],
+            stores: stores.rtc
+        });
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-1'), 'hand-over');
+        await vi.waitFor(() => expect(origin.channels.b!.sent).toHaveLength(1));
+        const fallback = createRoomBroadcast('fallback-2', 'all-logical-recipients');
+        expect(await enqueueMintedSeq(ws, fallback)).toBe(2);
+        await ws.acceptReceipt(createServerReceipt(fallback, 'admitted', ['b', 'c']));
+
+        await origin.manager.enqueueLegIfAbsent(createRoomMulticast('rtc-3'), 'hand-over');
+        await vi.waitFor(() => expect(origin.channels.b!.sent).toHaveLength(2));
+        const third = origin.channels.b!.sent[1]!;
+
+        expect([third.ordering?.seq, third.ordering?.priorSeqByRecipient]).toEqual([3, { d: 1 }]);
+        // d holds 1 and was never sent 2: it reads the omission and delivers 3 rather than asking for 2.
+        expect(observeAtRecipient(third, 'd', 1).status).toBe('omitted');
+        expect(observeAtRecipient(third, 'b', 1).status).toBe('gap');
+    });
 });
 
-/** Both carriers' durable pairs of one session: their own namespaces over one store, one namespace for heads. */
-function createSessionCarrierStores(backend: ALAdmissionWorkBackend = createMemoryBackend()): SessionCarrierStores {
-    const createCarrierStores = (carrier: string) =>
-        createDefaultInMemoryALOutboundRuntimeStores({
-            outboundBackend: backend,
-            namespace: `browser:${carrier}:${SESSION_ID}`,
-            canonicalScope: `browser-session:${SESSION_ID}`,
-            orderingHeadNamespace: SESSION_HEADS,
-            decodePrepared: decodeALOutboundTransportMessage
-        });
-    return { ws: createCarrierStores('ws-client'), rtc: createCarrierStores('rtc-overlay') };
+/** Both carriers' durable pairs of the session over one backend, minting on one head per track. */
+function createSessionCarrierStores(backend: ALAdmissionWorkBackend = createMemoryBackend()): SharedHeadCarrierStores {
+    return createSharedHeadCarrierStores(SESSION_ID, backend);
 }
 
 function createMemoryBackend(): ALAdmissionWorkBackend {
@@ -262,14 +277,14 @@ function observeAtRecipient(message: ALMessage, selfPeerId: string, lastContiguo
 }
 
 /** A WS room broadcast of the session on the ordering key `chat`, asking its outbound for the sequence. */
-function createRoomBroadcast(name: string): ALMessage {
+function createRoomBroadcast(name: string, ack?: ALAckMode): ALMessage {
     return newALBroadcastMessage(
         SESSION_ID,
         newALRoute('room.chat', ORIGIN_ROOM.groupId, name),
         'room',
         'chat.message.v1',
         { name },
-        { groupRef: ORIGIN_ROOM, ttlMs: 30_000, ordering: { orderingKey: 'chat' } }
+        { groupRef: ORIGIN_ROOM, ttlMs: 30_000, ack, ordering: { orderingKey: 'chat' } }
     );
 }
 
