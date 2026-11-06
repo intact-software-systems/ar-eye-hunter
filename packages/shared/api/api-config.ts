@@ -35,11 +35,13 @@ export type EnqueuedType = (typeof EnqueuedType)[keyof typeof EnqueuedType];
 
 export const AppTopics = {
     rtcSignaling: 'rtc-signaling',
+    serverRoomSnapshot: 'rallar.server.room-snapshot',
     clientStateSnapshot: 'client-state.snapshot',
     clientStateEvent: 'client-state.event',
     groupStateSnapshot: 'group-state.snapshot',
     groupStateEvent: 'group-state.event',
-    groupMoveChanged: 'group-move.changed',
+    viewInvalidated: 'view.invalidated',
+    viewResync: 'view.resync',
     groupDirectorySnapshot: 'group-directory.snapshot',
     overlayTopology: 'overlay.topology',
     rtt: 'rtt'

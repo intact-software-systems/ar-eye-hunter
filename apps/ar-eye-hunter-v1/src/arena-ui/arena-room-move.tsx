@@ -22,7 +22,7 @@ export function ArenaRoomMove({ arena, party }: ArenaRoomMoveProps) {
                 throw new Error(reason);
             }
             return await run();
-        }, { scope: ARENA_ROOM_SCOPE, refreshIntervalMs: 15000 })
+        }, { scope: ARENA_ROOM_SCOPE })
     );
     return (
         <RoomMovePanel

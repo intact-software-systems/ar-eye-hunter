@@ -6,6 +6,7 @@ import { writeRuntimeStateConditionalBatch } from '../../runtime-state/postgres/
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import type { AppInboxCommandAttempt, AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts';
 import { toAppInboxCommandAttempt } from '../app-inbox/app-inbox-contracts.ts';
+import { writeAppOutboxInserts } from '../app-outbox/app-outbox-insert.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
@@ -17,12 +18,11 @@ import type { PartyRepository } from '../parties/persistence/party-repository.ts
 import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import {
+    computeMatchmakingExpiry,
     computeMatchmakingMutation,
     validateMatchmakingMutation,
     writeMatchmakingMutation
 } from './compute-matchmaking-mutation.ts';
-import { computeMatchmakingStorage } from './compute-matchmaking-storage.ts';
-import { computeMatchmaking } from './compute-matchmaking.ts';
 import { readMatchmakingAdmission } from './matchmaking-admission.ts';
 import { decodeMatchmakingCommand, decodeMatchmakingResult, type MatchmakingCommand } from './matchmaking-command.ts';
 import { decodeMatchmakingDeadline, type MatchmakingDeadline } from './matchmaking-deadline.ts';
@@ -130,28 +130,23 @@ export class MatchmakingService {
         if (nowEpochMs < command.dueAtEpochMs) {
             throw new Error('Matchmaking deadline is not due');
         }
-        const read = await this.dependencies.repository.read(command.scope);
-        const input = {
-            partySearches: read.partySearches,
-            pool: read.pool,
+        const read = {
+            pool: await this.dependencies.repository.read(command.scope),
             policy: this.config.defaultPolicy,
             nowEpochMs,
-            command: { action: 'expire' as const }
+            serviceId: this.config.serviceId,
+            traceId: context.message.id.traceId,
+            finishedRetentionMs: this.config.finishedRetentionMs
         };
-        const transition = computeMatchmaking(input);
-        const storageInput = { read, transition, finishedRetentionMs: this.config.finishedRetentionMs };
-        const computed = computeMatchmakingStorage(storageInput);
-        const issue = validateComputedProjection(
-            computeMatchmakingStorage({ ...storageInput, transition: computeMatchmaking(input) }),
-            computed,
-            'Matchmaking expiry'
-        )[0];
+        const computed = computeMatchmakingExpiry(read);
+        const issue = validateComputedProjection(computeMatchmakingExpiry(read), computed, 'Matchmaking expiry')[0];
         if (issue !== undefined) {
             throw issue.cause;
         }
         return await this.dependencies.appInbox.commit(context, command, async (transaction) => {
-            if (transition.finished.length > 0) {
-                await writeRuntimeStateConditionalBatch(transaction, computed);
+            if (computed.storage !== null) {
+                await writeRuntimeStateConditionalBatch(transaction, computed.storage);
+                await writeAppOutboxInserts(transaction, computed.outbox);
             }
         });
     }

@@ -22,7 +22,7 @@ export function assertClientPersistenceShape(value: ValidationValue): void {
     );
     requireExactKeys(
         persistence,
-        ['runtimeWrites', 'eventWrite'],
+        ['runtimeWrites', 'eventWrite', 'outboxWrites'],
         'Client mutation computed.persistence'
     );
     if (!Array.isArray(persistence.runtimeWrites)) {
@@ -31,6 +31,9 @@ export function assertClientPersistenceShape(value: ValidationValue): void {
         );
     }
     persistence.runtimeWrites.forEach(assertClientRuntimeWriteShape);
+    if (!Array.isArray(persistence.outboxWrites)) {
+        throw new ClientMutationRejectedError('Client mutation persistence.outboxWrites must be an array');
+    }
     if (persistence.eventWrite === null) {
         return;
     }

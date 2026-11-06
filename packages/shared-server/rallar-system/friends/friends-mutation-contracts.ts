@@ -1,5 +1,7 @@
 import type { FriendsMutationResult, FriendsRequest } from '@shared/api/friends/friends-request.ts';
 import type { RuntimeStateGuardedBatchWrite } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateObservations } from '../../runtime-state/observation/runtime-state-observation.ts';
+import type { AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import type { GroupStateAuthoritativeSnapshot } from '../group-state/persistence/group-state-persistence-contracts.ts';
 
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
@@ -29,6 +31,10 @@ export interface FriendsProfileRead {
 }
 
 export interface FriendsMutationRead {
+    readonly serviceId: string;
+    readonly traceId: string;
+    readonly finishedRetentionMs: number;
+    readonly peers: readonly FriendsProfileRead[];
     readonly input: FriendsCommand;
     readonly actor: FriendsProfileRead;
     readonly target: FriendsProfileRead | null;
@@ -43,5 +49,7 @@ export interface FriendsMutationComputed {
     readonly read: FriendsMutationRead;
     readonly profiles: readonly FriendsProfile[];
     readonly storage: RuntimeStateGuardedBatchWrite | null;
+    readonly observations: RuntimeStateObservations;
+    readonly outbox: readonly AppOutboxInsert[];
     readonly result: FriendsMutationResult;
 }

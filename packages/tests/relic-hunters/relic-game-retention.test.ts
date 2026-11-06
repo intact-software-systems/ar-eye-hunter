@@ -98,7 +98,8 @@ describe('Relic room retirement and save authority', () => {
 });
 
 function retentionOwner(fixture: Awaited<ReturnType<typeof createGameFixture>>): GroupRetentionService {
-    return new GroupRetentionService({ repository: fixture.repository, groupOwnedAppData: fixture.data }, {
+    return new GroupRetentionService({ runtime: fixture.runtime, repository: fixture.repository, groupOwnedAppData: fixture.data }, {
+        finishedRetentionMs: 60000,
         serviceId: 'relic-retention-test',
         now: () => fixture.nowEpochMs
     });

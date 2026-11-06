@@ -67,3 +67,10 @@ function assertFriendInvitations(invitations: readonly FriendInvitation[], conta
         seen.add(invitation.invitationId);
     }
 }
+
+/** Both current profiles must retain friendship before any friend-only data is disclosed. */
+export function areMutualFriends(actor: FriendsProfile, peer: FriendsProfile | null): boolean {
+    return peer !== null &&
+        actor.contacts.some((contact) => contact.principalId === peer.principalId && contact.status === 'friend') &&
+        peer.contacts.some((contact) => contact.principalId === actor.principalId && contact.status === 'friend');
+}

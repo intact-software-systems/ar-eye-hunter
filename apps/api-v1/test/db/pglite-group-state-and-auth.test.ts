@@ -661,9 +661,9 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     await withPGliteSql(async (sql) => {
         const repository = new PSqlRuntimeStateRepository(sql);
 
-        await repository.upsert('runtime-smoke', 'b', '{"value":2}', FUTURE_MS);
-        await repository.upsert('runtime-smoke', 'a', '{"value":1}', FUTURE_MS);
-        await repository.upsert('runtime-smoke', 'a', '{"value":3}', FUTURE_MS);
+        await repository.upsert({ namespace: 'runtime-smoke', key: 'b', value: '{"value":2}', expireAtTimestamp: FUTURE_MS });
+        await repository.upsert({ namespace: 'runtime-smoke', key: 'a', value: '{"value":1}', expireAtTimestamp: FUTURE_MS });
+        await repository.upsert({ namespace: 'runtime-smoke', key: 'a', value: '{"value":3}', expireAtTimestamp: FUTURE_MS });
 
         const entry = await repository.findEntry('runtime-smoke', 'a');
         assert.equal(entry?.value, '{"value":3}');
@@ -687,7 +687,7 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
         await assert.rejects(
             async () => {
                 await repository.begin(async (txRepository) => {
-                    await txRepository.upsert('runtime-smoke', 'rollback', 'value', FUTURE_MS);
+                    await txRepository.upsert({ namespace: 'runtime-smoke', key: 'rollback', value: 'value', expireAtTimestamp: FUTURE_MS });
                     throw new Error('rollback runtime state');
                 });
             },
@@ -695,7 +695,7 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
         );
         assert.equal(await repository.findEntry('runtime-smoke', 'rollback'), undefined);
 
-        await repository.upsert('runtime-smoke', 'expired', 'expired', PAST_MS);
+        await repository.upsert({ namespace: 'runtime-smoke', key: 'expired', value: 'expired', expireAtTimestamp: PAST_MS });
         assert.equal(await repository.deleteExpired('runtime-smoke'), 1);
         assert.equal(await repository.findEntry('runtime-smoke', 'expired'), undefined);
     });

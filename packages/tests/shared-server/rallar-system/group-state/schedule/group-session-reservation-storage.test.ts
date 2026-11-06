@@ -11,12 +11,14 @@ const value = { ...ref, scheduleRevision: 1, principalIds: ['alice'] };
 describe('private session reservation storage', () => {
     it('reads the exact scoped private row and includes it in room retirement', async () => {
         const harness = await createAuthorityHarness([]);
-        await harness.runtimeRepository.upsert(namespace, key, JSON.stringify(value), NEVER_EXPIRE_AT_TIMESTAMP);
+        await harness.runtimeRepository.upsert({ namespace, key, value: JSON.stringify(value), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         await harness.runtimeRepository.upsert(
-            namespace,
-            'app=app:ws=other:group=session-room',
-            JSON.stringify({ ...value, workspaceId: 'other' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace,
+                key: 'app=app:ws=other:group=session-room',
+                value: JSON.stringify({ ...value, workspaceId: 'other' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         expect((await harness.repository.findSessionReservationsEntry(ref))?.value).toEqual(value);
@@ -37,7 +39,7 @@ describe('private session reservation storage', () => {
         { ...value, extra: true }
     ])('fails as typed corruption for an invalid stored row %j', async (corrupt) => {
         const harness = await createAuthorityHarness([]);
-        await harness.runtimeRepository.upsert(namespace, key, JSON.stringify(corrupt), NEVER_EXPIRE_AT_TIMESTAMP);
+        await harness.runtimeRepository.upsert({ namespace, key, value: JSON.stringify(corrupt), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
 
         await expect(harness.repository.findSessionReservationsEntry(ref)).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption'

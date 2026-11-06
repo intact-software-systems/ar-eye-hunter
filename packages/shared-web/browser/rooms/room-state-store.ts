@@ -74,6 +74,7 @@ export class RoomStateStore implements RallarRoomStateStorePort {
         console.error('Error notifying Rallar room state listener', error);
     });
     private readonly input: RoomStateStore.Input;
+    private selection: { session: string; room: GroupRef; } | undefined;
     private clearedSelectionSession: string | undefined;
 
     constructor(input: RoomStateStore.Input) {
@@ -188,7 +189,21 @@ export class RoomStateStore implements RallarRoomStateStorePort {
         };
     }
 
+    /** Raw explicit selection survives a socket outage; membership alone never selects a room. */
+    selectedForRecovery(): GroupRef | undefined {
+        const session = this.input.readSession();
+        if (!session || this.selection?.session !== toAuthSessionKey(session) || this.clearedSelectionSession) {
+            return undefined;
+        }
+        const current = this.input.runtime.currentRoomRef();
+        return current && isSameGroupRef(current, this.selection.room) ? this.selection.room : undefined;
+    }
+
     setCurrentRoom(snapshot: GroupSnapshot): void {
+        const session = this.input.readSession();
+        const { applicationId, workspaceId, groupId } = snapshot.group;
+        this.selection = session &&
+            { session: toAuthSessionKey(session), room: { applicationId, workspaceId, groupId } };
         this.clearedSelectionSession = undefined;
         this.input.runtime.setCurrentRoom(snapshot);
     }

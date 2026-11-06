@@ -16,6 +16,17 @@ runtimes. A supplied engine retains its other tasks.
 | Receiver ACK and receipt                    | [ACK relay](./ws-queue-box-server-ack-relay.ts) owns shared ingress-audience proof, relay budget and actual publication; [receipt aggregation](./ws-queue-box-server-receipt-aggregation.ts) owns the one frozen audience/count/deadline lifecycle | Aggregation creates admitted/complete/timed-out receipts and enqueues through the existing outbound owner; terminal receipts then settle the server's pending row. Enqueue is separate from later publication or sender acknowledgement.                                                                      |
 | Direct/live/control send                    | [target resolution](./ws-queue-box-server-target-resolution.ts) and [recipient selection](./ws-queue-box-server-recipient-selection.ts)                                                                                                            | [Live delivery](./ws-queue-box-server-live-delivery.ts) checks the current recipient and sends; [control delivery](./ws-queue-box-server-control-delivery.ts) uses the live target or owned cluster outbox. [Delivery reporting](./ws-queue-box-server-delivery-reporting.ts) exposes existing outcome ports. |
 
+Account-wide view notices have a distinct `accountView` authority decoded by
+[`ALAccountViewAuthority`](../../alm/outbound/admission/al-outbound-scope-authority.ts).
+Their exact reserved envelope is unicast to the account, with `scope: null` in the
+notice. The committed producer proof and captured AL policy contain no session
+list or recipient scope. Cluster key delivery and the standalone `account-view`
+prepared effect both enter live delivery, where recipient selection reads only
+this node's current authenticated sockets. Final submission rechecks account,
+auth expiry, message expiry and the selected socket generation. Repair retains
+the same account authority and resolves the local sockets again. Scoped notices
+continue to use their exact scoped principal authority.
+
 Supporting translations remain beside their owner: [inbound planning](./ws-queue-box-server-inbound-plan.ts),
 [inbound recipient projection](./ws-queue-box-server-inbound-recipients.ts),
 [addressee authorization](./to-ws-queue-box-server-addressee-authorization.ts),

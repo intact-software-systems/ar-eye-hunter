@@ -7,8 +7,12 @@ import {
 import { decodePartyView, type PartyView } from '@shared/api/parties/party-view.ts';
 import type { PartyRef, PartyRefusal, PartyRosterIntent } from '@shared/api/parties/party.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
+import { subscribeViewDeadline } from '../api/subscribe-view-deadline.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { partyHttpApi } from './party-http-api.ts';
@@ -29,12 +33,16 @@ const REFUSAL_MESSAGES: Readonly<Record<PartyRefusal, string>> = {
 };
 
 export namespace RallarParty {
+    export interface Config {
+        readonly scope: StateScope;
+    }
     export interface Api {
         read(input: AuthenticatedResource.ReadInput): Promise<PartyView>;
         change(input: AuthenticatedResource.ChangeInput<PartyRequest>): Promise<PartyMutationResult>;
     }
     export interface Dependencies extends AuthenticatedResource.Dependencies {
         readonly api: Api;
+        onChanged(listener: () => Promise<void>): () => void;
     }
 }
 
@@ -42,16 +50,19 @@ export namespace RallarParty {
 export class RallarParty extends AuthenticatedResource<PartyView, PartyRequest> {
     private readonly scope: StateScope;
     private readonly createId: () => string;
+    private readonly partyDependencies: RallarParty.Dependencies;
 
     static createBrowser(
-        browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
-        config: AuthenticatedResource.Config
+        browser: SubscribeViewRecovery.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
+        config: RallarParty.Config
     ): RallarParty {
         return new RallarParty({
             auth: {
                 session: () => browser.session(),
                 onChange: (listener, options) => browser.auth.onChange(listener, options)
             },
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'party', changed }),
             api: partyHttpApi,
             activity: new BrowserActivity(),
             timers: createDefaultTimers(),
@@ -59,8 +70,12 @@ export class RallarParty extends AuthenticatedResource<PartyView, PartyRequest> 
         }, config);
     }
 
-    constructor(dependencies: RallarParty.Dependencies, config: AuthenticatedResource.Config) {
-        super(dependencies, config, {
+    constructor(dependencies: RallarParty.Dependencies, config: RallarParty.Config) {
+        super(dependencies, {
+            scope: config.scope,
+            changeResult: 'read',
+            subscribeRefresh: (refresh) => this.subscribeRefresh(refresh)
+        }, {
             async read(attempt) {
                 const view = decodePartyView(await dependencies.api.read(attempt));
                 if (!isSameGroupScope(view.scope, attempt.scope) || view.principalId !== attempt.session.clientId) {
@@ -80,8 +95,25 @@ export class RallarParty extends AuthenticatedResource<PartyView, PartyRequest> 
                 return result.code === null ? null : REFUSAL_MESSAGES[result.code];
             }
         });
+        this.partyDependencies = dependencies;
         this.scope = config.scope;
         this.createId = dependencies.createId;
+    }
+
+    private subscribeRefresh(refresh: () => Promise<void>): () => void {
+        const subscriptions = new SubscriptionScope();
+        subscriptions.add(this.partyDependencies.onChanged(refresh));
+        subscriptions.add(subscribeViewDeadline<PartyView>({
+            onChange: (listener) => this.onChange(listener),
+            timers: this.partyDependencies.timers,
+            remainingMs: (view) => {
+                const deadlines = [...view.invitations, ...(view.party?.invitations ?? [])]
+                    .map((invitation) => invitation.expiresAtEpochMs);
+                return deadlines.length === 0 ? null : Math.min(...deadlines) - view.observedAtEpochMs;
+            },
+            refresh
+        }));
+        return () => subscriptions.unsubscribe();
     }
 
     create(): Promise<void> {

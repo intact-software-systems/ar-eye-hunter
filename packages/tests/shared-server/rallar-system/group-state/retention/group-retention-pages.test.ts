@@ -23,7 +23,7 @@ describe('bounded retention repository pages', () => {
         const other = { ...group, applicationId: 'z:app', workspaceId: '%workspace', groupId: 'same:room' };
         await fixture.repository.insertGroup(other);
         const expiredKey = 'app=aaa:ws=default:group=expired';
-        await fixture.runtime.upsert(GROUPS_NAMESPACE, expiredKey, '{}', Date.now() - 1_000);
+        await fixture.runtime.upsert({ namespace: GROUPS_NAMESPACE, key: expiredKey, value: '{}', expireAtTimestamp: Date.now() - 1_000 });
 
         const expired = await fixture.repository.listGroupsPage({ limit: 1 });
         expect(expired).toEqual({ groups: [], nextKey: expiredKey });
@@ -41,10 +41,12 @@ describe('bounded retention repository pages', () => {
         await seedRetentionRoom(fixture);
         const group = await fixture.repository.findGroup(RETENTION_REF);
         await fixture.runtime.upsert(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(RETENTION_REF),
-            JSON.stringify({ ...group, [field]: 'wrong-slot' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(RETENTION_REF),
+                value: JSON.stringify({ ...group, [field]: 'wrong-slot' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(fixture.repository.listGroupsPage({ limit: 100 })).rejects.toMatchObject({
@@ -57,10 +59,12 @@ describe('bounded retention repository pages', () => {
         await seedRetentionRoom(fixture);
         const group = await fixture.repository.findGroup(RETENTION_REF);
         await fixture.runtime.upsert(
-            GROUPS_NAMESPACE,
-            'app=%72etention-app:ws=retention-workspace:group=temporary-room',
-            JSON.stringify(group),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: 'app=%72etention-app:ws=retention-workspace:group=temporary-room',
+                value: JSON.stringify(group),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(fixture.repository.listGroupsPage({ limit: 100 })).rejects.toMatchObject({

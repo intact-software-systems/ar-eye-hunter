@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-view-push-2-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "Private view push and reconnect, two agents",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "private-view-push-and-recovery",
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "private-view-push-and-recovery",
+        "name": "Private view push and reconnect recovery",
+        "continueOnFailure": false,
+        "metadata": {
+          "profile": "view-push",
+          "scope": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "hetzner-headless-room"
+          },
+          "freshAgentRequired": true
+        },
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "view-push-baseline",
+            "timeoutMs": 15000,
+            "request": {
+              "method": "POST",
+              "path": "/api/friends/requests/view-push-{runtimeIdentity}-baseline",
+              "headers": {
+                "x-request-id": "view-push-{runtimeIdentity}-baseline"
+              },
+              "body": {
+                "action": "visibility",
+                "shareOnline": false
+              }
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            }
+          },
+          {
+            "kind": "ws.open",
+            "commandId": "view-push-open-initial",
+            "connection": "view-push",
+            "timeoutMs": 15000,
+            "url": "{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}&applicationId=rallar-server&workspaceId=default"
+          },
+          {
+            "kind": "http.request",
+            "commandId": "view-push-visible",
+            "timeoutMs": 15000,
+            "request": {
+              "method": "POST",
+              "path": "/api/friends/requests/view-push-{runtimeIdentity}-visible",
+              "headers": {
+                "x-request-id": "view-push-{runtimeIdentity}-visible"
+              },
+              "body": {
+                "action": "visibility",
+                "shareOnline": true
+              }
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            }
+          },
+          {
+            "kind": "wait",
+            "commandId": "view-push-notice",
+            "timeoutMs": 15000,
+            "match": {
+              "topic": "rallar.bb.ws.message",
+              "connection": "view-push",
+              "payloadPath": "data",
+              "contains": "\"traceId\":\"{resultCache.view-push-visible.value.body.requestId}\""
+            }
+          },
+          {
+            "kind": "assert",
+            "commandId": "view-push-topic",
+            "source": "resultCache.view-push-notice.value.event.payload.data",
+            "operator": "contains",
+            "expected": "\"topicId\":\"view.invalidated\""
+          },
+          {
+            "kind": "assert",
+            "commandId": "view-push-type",
+            "source": "resultCache.view-push-notice.value.event.payload.data",
+            "operator": "contains",
+            "expected": "\"typeId\":\"view.invalidated\""
+          },
+          {
+            "kind": "assert",
+            "commandId": "view-push-private-target",
+            "source": "resultCache.view-push-notice.value.event.payload.data",
+            "operator": "contains",
+            "expected": "\"mode\":\"unicast\""
+          },
+          {
+            "kind": "http.request",
+            "commandId": "view-push-read-live",
+            "timeoutMs": 15000,
+            "request": {
+              "method": "GET",
+              "path": "/api/friends/apps/rallar-server/workspaces/default"
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            }
+          },
+          {
+            "kind": "assert",
+            "commandId": "view-push-assert-live",
+            "source": "resultCache.view-push-read-live.value.body.shareOnline",
+            "operator": "equals",
+            "expected": true
+          },
+          {
+            "kind": "ws.close",
+            "commandId": "view-push-disconnect",
+            "connection": "view-push",
+            "code": 1000,
+            "reason": "offline mutation proof"
+          },
+          {
+            "kind": "wait",
+            "commandId": "view-push-await-disconnect",
+            "timeoutMs": 10000,
+            "match": {
+              "topic": "rallar.bb.ws.closed",
+              "connection": "view-push"
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "view-push-offline",
+            "timeoutMs": 15000,
+            "request": {
+              "method": "POST",
+              "path": "/api/friends/requests/view-push-{runtimeIdentity}-offline",
+              "headers": {
+                "x-request-id": "view-push-{runtimeIdentity}-offline"
+              },
+              "body": {
+                "action": "visibility",
+                "shareOnline": false
+              }
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            }
+          },
+          {
+            "kind": "ws.open",
+            "commandId": "view-push-open-reconnect",
+            "connection": "view-push",
+            "timeoutMs": 15000,
+            "url": "{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}&applicationId=rallar-server&workspaceId=default"
+          },
+          {
+            "kind": "http.request",
+            "commandId": "view-push-read-recovered",
+            "timeoutMs": 15000,
+            "request": {
+              "method": "GET",
+              "path": "/api/friends/apps/rallar-server/workspaces/default"
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            }
+          },
+          {
+            "kind": "assert",
+            "commandId": "view-push-assert-recovered",
+            "source": "resultCache.view-push-read-recovered.value.body.shareOnline",
+            "operator": "equals",
+            "expected": false
+          },
+          {
+            "kind": "ws.close",
+            "commandId": "view-push-close",
+            "connection": "view-push",
+            "code": 1000,
+            "reason": "proof complete"
+          }
+        ]
+      },
+      "profile": "ws",
+      "variables": {}
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "variables": {},
+  "roleAssignments": [],
+  "ackTimeoutMs": 30000,
+  "barrier": {
+    "enabled": true,
+    "timeoutMs": 15000
+  },
+  "startMode": "manual",
+  "groupAssertions": [],
+  "metadata": {
+    "createdBy": "rallar-black-box-hetzner-manifest-catalog",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": false,
+    "expectedFailure": false,
+    "freshAgentsRequired": true
+  },
+  "description": "Two fresh accounts observe their own committed view invalidations, then recover offline changes through canonical reads after reconnect."
+}

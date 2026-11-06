@@ -18,6 +18,7 @@ import type {
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
+import { decodeALAccountViewAuthority, type ALAccountViewAuthority } from './al-outbound-scope-authority.ts';
 import {
     decodeALSessionInvalidationAuthority,
     type ALSessionInvalidationAuthority
@@ -70,6 +71,7 @@ export interface ALOutboundCapturedPolicy {
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+    readonly accountView?: ALAccountViewAuthority;
 }
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
@@ -85,6 +87,7 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         ...(plan.admittedConnectionGenerationIds === undefined
             ? {}
             : { admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds }),
+        ...(plan.accountView === undefined ? {} : { accountView: decodeALAccountViewAuthority(plan.accountView) }),
         ...(plan.sessionInvalidation === undefined
             ? {}
             : { sessionInvalidation: decodeALSessionInvalidationAuthority(plan.sessionInvalidation) }),
@@ -142,7 +145,8 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         admittedConnectionGenerationIds: policy.admittedConnectionGenerationIds,
         recipientScope: policy.recipientScope,
         principalTargetId: policy.principalTargetId,
-        sessionInvalidation: policy.sessionInvalidation
+        sessionInvalidation: policy.sessionInvalidation,
+        accountView: policy.accountView
     };
 }
 
@@ -189,8 +193,19 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'admittedConnectionGenerationIds',
         'recipientScope',
         'principalTargetId',
-        'sessionInvalidation'
+        'sessionInvalidation',
+        'accountView'
     ]);
+    if (policy.accountView !== undefined) {
+        decodeALAccountViewAuthority(policy.accountView);
+        if (
+            policy.recipientScope !== undefined || policy.principalTargetId !== undefined ||
+            policy.sessionInvalidation !== undefined || policy.admittedAudience !== undefined ||
+            policy.admittedConnectionGenerationIds !== undefined
+        ) {
+            throw new TypeError('Account-view authority cannot carry scoped, session or frozen audience authority');
+        }
+    }
     if (policy.mintsSequence !== undefined && policy.mintsSequence !== true) {
         throw new TypeError('Captured sequence minting is invalid');
     }

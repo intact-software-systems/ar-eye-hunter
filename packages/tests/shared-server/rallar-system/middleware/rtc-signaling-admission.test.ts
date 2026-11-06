@@ -31,6 +31,10 @@ const invalidIngressCases = [
     'topic',
     'payload-type',
     'page',
+    'room-frame-route',
+    'room-frame-type',
+    AppTopics.viewInvalidated,
+    AppTopics.viewResync,
     AppTopics.overlayTopology,
     AppTopics.groupStateSnapshot,
     AppTopics.groupDirectorySnapshot,
@@ -121,6 +125,9 @@ function signalingMessage(): ALMessage {
 }
 
 function invalidMessage(message: ALMessage, corruption: InvalidIngressCase): ALMessage {
+    if (corruption === AppTopics.viewInvalidated || corruption === AppTopics.viewResync) {
+        return { ...message, route: { ...message.route, topicId: corruption }, payload: { ...message.payload, typeId: corruption, resource: '{"version":1}' } };
+    }
     if (isStateSnapshotTopic(corruption) || corruption === 'page') {
         return {
             ...message,
@@ -133,6 +140,10 @@ function invalidMessage(message: ALMessage, corruption: InvalidIngressCase): ALM
         };
     }
     switch (corruption) {
+        case 'room-frame-route':
+            return { ...message, route: { ...message.route, topicId: AppTopics.serverRoomSnapshot } };
+        case 'room-frame-type':
+            return { ...message, payload: { ...message.payload, typeId: AppTopics.serverRoomSnapshot } };
         case 'topic':
             return { ...message, route: { ...message.route, topicId: 'app.other' } };
         case 'payload-type':

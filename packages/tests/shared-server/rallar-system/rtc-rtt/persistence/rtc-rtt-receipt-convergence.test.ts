@@ -181,19 +181,21 @@ describe('RTC RTT receipt convergence', () => {
                 };
                 const receiptId = toRtcRttMutationReceiptId(rtt);
                 await runtimeRepository.upsert(
-                    RTC_RTT_RECEIPTS_NAMESPACE,
-                    receiptId,
-                    JSON.stringify({
-                        receiptId,
-                        sessionIdFrom: rtt.sessionIdFrom,
-                        sessionIdTo: rtt.sessionIdTo,
-                        measurementVersion: rtt.version,
-                        affectedGroupRefs: [],
-                        acceptedAtEpochMs: 1,
-                        outcome: 'accepted',
-                        commandHash: `sha256:${'A'.repeat(64)}`
-                    }),
-                    9_000
+                    {
+                        namespace: RTC_RTT_RECEIPTS_NAMESPACE,
+                        key: receiptId,
+                        value: JSON.stringify({
+                            receiptId,
+                            sessionIdFrom: rtt.sessionIdFrom,
+                            sessionIdTo: rtt.sessionIdTo,
+                            measurementVersion: rtt.version,
+                            affectedGroupRefs: [],
+                            acceptedAtEpochMs: 1,
+                            outcome: 'accepted',
+                            commandHash: `sha256:${'A'.repeat(64)}`
+                        }),
+                        expireAtTimestamp: 9_000
+                    }
                 );
 
                 const read = surface === 'direct'

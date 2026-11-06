@@ -1,3 +1,4 @@
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
@@ -127,7 +128,7 @@ describe('formation timer work handler', () => {
                     submittedCommands.push(command);
                 }
             },
-            formationAutomation: unusedFormationAutomation(),
+            formationAutomation: createFormationAutomation(),
             nowEpochMs: () => nowEpochMs
         });
         const message = newALUntargetedMessage(
@@ -206,7 +207,7 @@ describe('formation timer work handler', () => {
                     throw new Error('A behind snapshot must not submit a command');
                 }
             },
-            formationAutomation: unusedFormationAutomation(),
+            formationAutomation: createFormationAutomation(),
             nowEpochMs: () => nowEpochMs
         });
 
@@ -243,7 +244,7 @@ describe('formation timer work handler', () => {
                     throw new Error('A superseded timer must not submit a command');
                 }
             },
-            formationAutomation: unusedFormationAutomation(),
+            formationAutomation: createFormationAutomation(),
             nowEpochMs: () => nowEpochMs
         });
 
@@ -357,42 +358,24 @@ interface TracedTimerHarnessInput {
     readonly planned: 'active' | null;
 }
 
-async function createTracedTimerHarness(input: TracedTimerHarnessInput) {
+interface TracedTimerHarness {
+    readonly handler: ReturnType<typeof createFormationTimerWorkHandler>;
+    readonly entry: ReturnType<typeof computeFormationTimerEntry>;
+    readonly submissions: GroupSystemCommandSubmission[];
+}
+
+async function createTracedTimerHarness(input: TracedTimerHarnessInput): Promise<TracedTimerHarness> {
     const nowEpochMs = 2_000;
-    const base = createTopologyTestGroupSnapshot();
-    const group = {
-        ...base,
-        group: createTestGroup({
-            ...base.group,
-            lifecycleState: input.lifecycleState,
-            formationEpoch: 3,
-            formationAttemptCount: 1,
-            establishmentStartedAtEpochMs: 1_000,
-            snapshotVersion: 8
-        })
-    };
-    const planned: RallarOverlayTopologySnapshot | null = input.planned === null ? null : {
-        groupRef: group.group,
-        overlayId: toScopedOverlayId(group.group),
-        name: 'candidate',
-        topology: 'tree',
-        degreeLimit: 2,
-        activeSessionIds: [],
-        nextHopsBySessionId: {},
-        version: 1,
-        state: 'active',
-        sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 0 },
-        createdByClientId: 'server',
-        createdAtEpochMs: 1_000,
-        updatedAtEpochMs: 1_000
-    };
+    const { group, planned } = createTracedTimerSnapshots(input);
     const runtime = new FakeRuntimeStateRepository();
     const identity = { groupRef: toCanonicalGroupRef(group.group), formationEpoch: 3, triggerGeneration: 'plan-1' };
     await runtime.upsert(
-        GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-        toGroupConnectTriggerStorageKey(identity),
-        JSON.stringify({ ...identity, notBeforeEpochMs: 1_000, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+            key: toGroupConnectTriggerStorageKey(identity),
+            value: JSON.stringify({ ...identity, notBeforeEpochMs: 1_000, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
     const submissions: GroupSystemCommandSubmission[] = [];
     const submitCommand = async (submission: GroupSystemCommandSubmission) => {
@@ -431,10 +414,6 @@ async function createTracedTimerHarness(input: TracedTimerHarnessInput) {
     return { handler, entry, submissions };
 }
 
-function unusedFormationAutomation(): GroupFormationAutomationPort {
-    return createFormationAutomation();
-}
-
 function createFormationAutomation(commands?: GroupMutationCommand[]): GroupFormationAutomationPort {
     return {
         latches: new GroupConnectTriggerLatchRepository(new FakeRuntimeStateRepository()),
@@ -448,4 +427,40 @@ function createFormationAutomation(commands?: GroupMutationCommand[]): GroupForm
         },
         nowEpochMs: () => 0
     };
+}
+
+interface TracedTimerSnapshots {
+    readonly group: GroupSnapshot;
+    readonly planned: RallarOverlayTopologySnapshot | null;
+}
+
+function createTracedTimerSnapshots(input: TracedTimerHarnessInput): TracedTimerSnapshots {
+    const base = createTopologyTestGroupSnapshot();
+    const group = {
+        ...base,
+        group: createTestGroup({
+            ...base.group,
+            lifecycleState: input.lifecycleState,
+            formationEpoch: 3,
+            formationAttemptCount: 1,
+            establishmentStartedAtEpochMs: 1_000,
+            snapshotVersion: 8
+        })
+    };
+    const planned: RallarOverlayTopologySnapshot | null = input.planned === null ? null : {
+        groupRef: group.group,
+        overlayId: toScopedOverlayId(group.group),
+        name: 'candidate',
+        topology: 'tree',
+        degreeLimit: 2,
+        activeSessionIds: [],
+        nextHopsBySessionId: {},
+        version: 1,
+        state: 'active',
+        sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 0 },
+        createdByClientId: 'server',
+        createdAtEpochMs: 1_000,
+        updatedAtEpochMs: 1_000
+    };
+    return { group, planned };
 }

@@ -69,6 +69,7 @@ export interface BrowserRuntimeFoundation {
 export interface BrowserStateComposition {
     readonly stateStore: RallarStatePort;
     readonly roomStateStore: RallarRoomStateStorePort;
+    readonly selectedForRecovery: () => GroupRef | undefined;
     readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
     readonly readDefaults: () => RallarDefaults | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
@@ -123,7 +124,6 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
         resolveOperationScope: runtime.resolveOperationScope
     };
     const authRuntime: RallarAuthRuntimePort = {
-        readAuthExpiryTimer: runtime.readAuthExpiryTimer,
         setAuthExpiryTimer: runtime.setAuthExpiryTimer,
         clearAuthExpiryTimer: runtime.clearAuthExpiryTimer,
         readAuthEndPromise: runtime.readAuthEndPromise,
@@ -175,6 +175,7 @@ export function createBrowserStateComposition(
     return {
         stateStore,
         roomStateStore,
+        selectedForRecovery: () => roomStateStore.selectedForRecovery(),
         roomLayoutSlots,
         readDefaults,
         resolveDefaultRoomRef,

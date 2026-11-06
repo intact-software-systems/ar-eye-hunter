@@ -1,6 +1,7 @@
 import { decodePartyView, type PartyView } from '@shared/api/parties/party-view.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
+import { isPartyMemberPresent } from './is-party-member-present.ts';
 import type { PartyRepository } from './persistence/party-repository.ts';
 
 export namespace PartyReader {
@@ -47,11 +48,7 @@ export class PartyReader {
                 leaderPrincipalId: party.leaderPrincipalId!,
                 members: party.members.map((member, index) => {
                     const snapshot = snapshots[index];
-                    const present = snapshot?.principal.status === 'active' &&
-                        snapshot.activeSessions.some((session) =>
-                            session.status === 'active' && session.disconnectedAtEpochMs === null &&
-                            session.expiresAtEpochMs > observedAtEpochMs
-                        );
+                    const present = isPartyMemberPresent(snapshot ?? null, observedAtEpochMs);
                     return {
                         ...member,
                         displayName: snapshot?.principal.displayName?.trim() || member.principalId,

@@ -169,10 +169,12 @@ describe('Postgres transaction write boundary', () => {
         expect(validateAppInboxCompletion(completionInput, completion)).toEqual([]);
         const result = await transactionWriter.writeComputedMutation(context, completion, async (transaction) => {
             await new PSqlRuntimeStateRepository(transaction).insertIfAbsent(
-                'app-inbox-transaction',
-                'aggregate-1',
-                JSON.stringify({ state: 'accepted' }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'app-inbox-transaction',
+                    key: 'aggregate-1',
+                    value: JSON.stringify({ state: 'accepted' }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
         });
 
@@ -193,10 +195,7 @@ async function runMutation(database: ReturnType<typeof createTransactionalDataba
         const results = new ResourceInboxResultsRepository(transaction);
 
         await runtime.insertIfAbsent(
-            'transaction-test',
-            'aggregate-1',
-            JSON.stringify({ state: 'accepted' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            { namespace: 'transaction-test', key: 'aggregate-1', value: JSON.stringify({ state: 'accepted' }), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
         await events.appendClientEvent(clientEvent);
         await inbox.entries.writeIfAbsentOrMatch(outboxEntry);
@@ -213,7 +212,14 @@ async function runMutation(database: ReturnType<typeof createTransactionalDataba
     });
 }
 
-function createTransactionalDatabase(options: Readonly<{ failCompletion?: boolean; }> = {}) {
+interface TransactionalDatabase {
+    readonly sql: PSqlSql;
+    readonly beginCalls: number;
+    readonly committed: TransactionState;
+    readonly statementTransactions: PSqlSql[];
+}
+
+function createTransactionalDatabase(options: Readonly<{ failCompletion?: boolean; }> = {}): TransactionalDatabase {
     let committed = createState();
     committed.inbox.set(toKey(incomingEntry.key), toResourceInboxRow(incomingEntry, 1n));
     let beginCalls = 0;
@@ -323,7 +329,7 @@ function insertTransactionRuntimeState(state: TransactionState, values: readonly
     }
     state.runtime.set(storageKey, {
         value: readString(value, 'runtime value'),
-        expireAt: readDate(expireAt, 'runtime expiry'),
+        expireAt: new Date(readString(expireAt, 'prepared runtime expiry')),
         revision: 0
     });
     return [{ revision: 0 }];

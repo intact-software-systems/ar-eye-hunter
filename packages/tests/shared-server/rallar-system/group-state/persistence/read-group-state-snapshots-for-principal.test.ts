@@ -2,6 +2,7 @@ import {
     groupStateGroupStorageKey,
     groupStateScopeStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE
@@ -160,10 +161,7 @@ describe('group-state snapshots for a principal', () => {
         const expiredGroupKey = groupStateGroupStorageKey({ ...SCOPE, groupId: 'expired' });
         const expiredGroup = await runtime.findEntry(GROUPS_NAMESPACE, expiredGroupKey);
         await runtime.upsert(
-            GROUPS_NAMESPACE,
-            expiredGroupKey,
-            requireValue(expiredGroup),
-            Date.now() - 1
+            { namespace: GROUPS_NAMESPACE, key: expiredGroupKey, value: requireValue(expiredGroup), expireAtTimestamp: Date.now() - 1 }
         );
         const expiredMemberKey = groupStateMemberStorageKey({
             ...SCOPE,
@@ -172,10 +170,7 @@ describe('group-state snapshots for a principal', () => {
         });
         const expiredMember = await runtime.findEntry(MEMBERS_NAMESPACE, expiredMemberKey);
         await runtime.upsert(
-            MEMBERS_NAMESPACE,
-            expiredMemberKey,
-            requireValue(expiredMember),
-            Date.now() - 1
+            { namespace: MEMBERS_NAMESPACE, key: expiredMemberKey, value: requireValue(expiredMember), expireAtTimestamp: Date.now() - 1 }
         );
 
         const snapshots = await groups.listSnapshotsForPrincipal(SCOPE, 'alice');
@@ -200,16 +195,15 @@ describe('group-state snapshots for a principal', () => {
             leftIds: []
         });
         await runtime.upsert(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey({ ...SCOPE, groupId: 'unrelated' }),
-            '{',
-            NEVER_EXPIRES_MS
+            { namespace: GROUPS_NAMESPACE, key: groupStateGroupStorageKey({ ...SCOPE, groupId: 'unrelated' }), value: '{', expireAtTimestamp: NEVER_EXPIRES_MS }
         );
         await runtime.upsert(
-            MEMBERS_NAMESPACE,
-            groupStateMemberStorageKey({ ...SCOPE, groupId: 'unrelated', principalId: 'erin' }),
-            '{',
-            NEVER_EXPIRES_MS
+            {
+                namespace: MEMBERS_NAMESPACE,
+                key: groupStateMemberStorageKey({ ...SCOPE, groupId: 'unrelated', principalId: 'erin' }),
+                value: '{',
+                expireAtTimestamp: NEVER_EXPIRES_MS
+            }
         );
 
         const snapshots = await groups.listSnapshotsForPrincipal(SCOPE, 'alice');
@@ -241,7 +235,7 @@ describe('group-state snapshots for a principal', () => {
             activeIds: ['bob'],
             leftIds: []
         });
-        await runtime.upsert(namespace, toStorageKey(), '{', NEVER_EXPIRES_MS);
+        await runtime.upsert({ namespace, key: toStorageKey(), value: '{', expireAtTimestamp: NEVER_EXPIRES_MS });
 
         await expect(groups.listSnapshotsForPrincipal(SCOPE, 'alice')).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption',
@@ -259,12 +253,14 @@ describe('group-state snapshots for a principal', () => {
         });
         const groupKey = groupStateGroupStorageKey({ ...SCOPE, groupId: 'room-one' });
         await runtime.upsert(
-            GROUPS_NAMESPACE,
-            groupKey,
-            JSON.stringify(
-                createTestGroup({ ...SCOPE, groupId: 'room-two', ownerPrincipalId: 'alice' })
-            ),
-            NEVER_EXPIRES_MS
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupKey,
+                value: JSON.stringify(
+                    createTestGroup({ ...SCOPE, groupId: 'room-two', ownerPrincipalId: 'alice' })
+                ),
+                expireAtTimestamp: NEVER_EXPIRES_MS
+            }
         );
 
         await expect(groups.listSnapshotsForPrincipal(SCOPE, 'alice')).rejects.toMatchObject({
@@ -439,7 +435,12 @@ interface MemberInput {
     readonly workspaceId?: string;
 }
 
-function createRuntime() {
+interface PrincipalReadTestRuntime {
+    readonly runtime: PrincipalReadRuntime;
+    readonly groups: GroupStateRepository;
+}
+
+function createRuntime(): PrincipalReadTestRuntime {
     const runtime = new PrincipalReadRuntime();
     return { runtime, groups: createTestGroupStateRepository(runtime) };
 }
@@ -527,9 +528,14 @@ function member(input: MemberInput): GroupMember {
         : { ...common, status: 'left', left: audit() };
 }
 
+interface RosterProjection {
+    readonly groupId: string;
+    readonly members: readonly string[];
+}
+
 function toRoster(
     snapshot: GroupSnapshot
-): Readonly<{ groupId: string; members: readonly string[]; }> {
+): RosterProjection {
     return {
         groupId: snapshot.group.groupId,
         members: snapshot.members.map((entry) => `${entry.principalId}:${entry.status}`).sort()

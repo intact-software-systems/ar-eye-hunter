@@ -27,6 +27,10 @@
       "env": "RALLAR_BOB_PASSWORD",
       "default": "secret",
       "secret": true
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
     }
   },
   "execution": {
@@ -43,6 +47,10 @@
         "Content-Type": "application/json"
       },
       "timeoutMs": 10000
+    },
+    "bobPreviewSocket": {
+      "type": "ws",
+      "timeoutMs": 20000
     }
   },
   "postRunAssertions": [
@@ -52,7 +60,7 @@
       "eq": 0
     }
   ],
-  "description": "Scheduled sessions: private account discovery, reserved capacity, pre-lobby denial, idempotent replay, rescheduling and reconfirmation, cancellation, and claimed lobby seats.",
+  "description": "Scheduled sessions: private account discovery, reserved capacity, pre-lobby denial, idempotent replay, rescheduling and reconfirmation, cancellation, and claimed lobby seats. Nonmember preview watches use the current authenticated socket generation, replay exactly, reject stale replacement tokens, publish only redacted own-account WS hints, and never create personal session intent.",
   "steps": [
     {
       "name": "loginAlice",
@@ -269,6 +277,363 @@
           "nextKey": null
         },
         "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "createPreviewWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-session-preview-ticket-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobPreviewTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "derivePreviewWsUrl",
+      "type": "set",
+      "output": "bobPreviewWsUrl",
+      "secret": true,
+      "redactAs": "bobPreviewWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobPreviewTicket"
+            }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
+        ]
+      }
+    },
+    {
+      "name": "openPreviewSocket",
+      "type": "ws.open",
+      "connection": "bobPreviewSocket",
+      "request": {
+        "url": "{bobPreviewWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        },
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "readPreviewConnectionGeneration",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobConnectionGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{bobSessionId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "watchUnreservedPreview",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/view-watches/session-preview/requests/bb-session-preview-watch-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "resourceId": "future-{runId}",
+          "connectionGenerationId": "{bobConnectionGenerationId}",
+          "expectedRegistrationId": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "requestId": "bb-session-preview-watch-{runId}",
+          "registrationId": "bb-session-preview-watch-{runId}",
+          "resourceId": "future-{runId}"
+        }
+      }
+    },
+    {
+      "name": "replayPreviewWatch",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/view-watches/session-preview/requests/bb-session-preview-watch-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "resourceId": "future-{runId}",
+          "connectionGenerationId": "{bobConnectionGenerationId}",
+          "expectedRegistrationId": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "requestId": "bb-session-preview-watch-{runId}",
+          "registrationId": "bb-session-preview-watch-{runId}",
+          "resourceId": "future-{runId}"
+        }
+      }
+    },
+    {
+      "name": "stalePreviewReplacement",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/view-watches/session-preview/requests/bb-session-stale-watch-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "resourceId": "lobby-{runId}",
+          "connectionGenerationId": "{bobConnectionGenerationId}",
+          "expectedRegistrationId": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "conflict",
+          "registrationId": "bb-session-preview-watch-{runId}",
+          "resourceId": "future-{runId}"
+        }
+      }
+    },
+    {
+      "name": "watchDoesNotSaveSession",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-sessions",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessions": [],
+          "nextKey": null
+        },
+        "comparison": "compatible-complete"
+      }
+    },
+    {
+      "name": "renameWatchedPreview",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/requests/bb-session-rename-watched-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}",
+          "x-request-id": "bb-session-preview-changed-{runId}"
+        },
+        "body": {
+          "displayName": "Scheduled future updated"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "unreservedWatcherReceivesChange",
+      "type": "ws.wait",
+      "connection": "bobPreviewSocket",
+      "expect": {
+        "connection": "bobPreviewSocket",
+        "withinMs": 10000,
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "id": {
+            "traceId": "bb-session-preview-changed-{runId}"
+          },
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "principalId": "{bobClientId}"
+            }
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "sessions",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": "{bobClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "changedPreviewStillNotParticipation",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/session",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "displayName": "Scheduled future updated",
+          "participation": "none",
+          "canEnter": false
+        }
+      }
+    },
+    {
+      "name": "clearPreviewWatch",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/view-watches/session-preview/requests/bb-session-clear-watch-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "resourceId": null,
+          "connectionGenerationId": "{bobConnectionGenerationId}",
+          "expectedRegistrationId": "bb-session-preview-watch-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "applied",
+          "registrationId": null,
+          "resourceId": null
+        }
+      }
+    },
+    {
+      "name": "renameAfterWatchCleared",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/future-{runId}/requests/bb-session-rename-cleared-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}",
+          "x-request-id": "bb-session-preview-cleared-{runId}"
+        },
+        "body": {
+          "displayName": "Scheduled future"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "clearedWatcherReceivesNoChange",
+      "type": "ws.wait",
+      "connection": "bobPreviewSocket",
+      "expect": {
+        "connection": "bobPreviewSocket",
+        "withinMs": 1500,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "absent": {
+          "id": {
+            "traceId": "bb-session-preview-cleared-{runId}"
+          },
+          "route": {
+            "topicId": "view.invalidated"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "principalId": "{bobClientId}"
+            }
+          },
+          "payload": {
+            "typeId": "view.invalidated",
+            "resource": {
+              "version": 1,
+              "resource": "sessions",
+              "scope": {
+                "applicationId": "{applicationId}",
+                "workspaceId": "{workspaceId}"
+              },
+              "principalId": "{bobClientId}"
+            }
+          }
+        }
       }
     },
     {
@@ -885,6 +1250,15 @@
       },
       "expect": {
         "status": 400
+      }
+    },
+    {
+      "name": "closePreviewSocket",
+      "type": "ws.close",
+      "connection": "bobPreviewSocket",
+      "request": {
+        "code": 1000,
+        "reason": "session-preview-complete"
       }
     }
   ]

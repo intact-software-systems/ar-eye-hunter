@@ -37,6 +37,7 @@ import type {
 import type { RallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 import type { StoredGroupSessionIntent } from '../schedule/group-session-intent-storage.ts';
 import type { StoredGroupSessionReservations } from '../schedule/group-session-reservation-storage.ts';
+import type { GroupSessionViewAudience } from '../schedule/read-group-session-view-audience.ts';
 
 import type {
     RuntimeStateGuardedBatchEffect,
@@ -475,6 +476,7 @@ export interface GroupMutationIdempotencyRecord {
 }
 
 export interface GroupMutationRead {
+    readonly sessionViewAudience: GroupSessionViewAudience | null;
     readonly sessionIntent: RuntimeStateEntryValue<StoredGroupSessionIntent> | null;
     readonly sessionReservations: RuntimeStateEntryValue<StoredGroupSessionReservations> | null;
     readonly idempotency: RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | null;
@@ -669,6 +671,7 @@ export type GroupTopicSubscriptionDeleteEffect = Readonly<{
 }>;
 
 export interface GroupMutationDomainWrite {
+    readonly viewProvenance: readonly RuntimeStateGuardedBatchEffect[];
     readonly sessionIntentEffect: RuntimeStateGuardedBatchEffect | null;
     readonly sessionReservationWrite: GroupSessionReservationWrite | null;
     readonly outcome: 'write';

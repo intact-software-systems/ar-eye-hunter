@@ -125,6 +125,6 @@ function isScope(value: JsonWireValue): value is JsonWireObject & GroupScope {
         isNonEmptyNoticeWireString(value.applicationId) && isNonEmptyNoticeWireString(value.workspaceId);
 }
 
-function isAudienceMode(value: JsonWireValue): value is LiveWsAudience['mode'] {
+function isAudienceMode(value: JsonWireValue): value is Exclude<LiveWsAudience['mode'], 'generation-room'> {
     return value === 'room' || value === 'peer' || value === 'principal' || value === 'broad';
 }

@@ -6,7 +6,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { Group } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './create-persistence-mutation-read.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('keeps absent and explicit sentinel workspaces isolated at the repository boundary', async () => {
@@ -62,10 +62,12 @@ describe('GroupStateRepository persistence', () => {
         };
 
         await runtime.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(absentRef),
-            JSON.stringify(explicitSentinelGroup),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey(absentRef),
+                value: JSON.stringify(explicitSentinelGroup),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
 
         await expect(repository.findGroup(absentRef)).rejects.toMatchObject({
@@ -306,10 +308,7 @@ describe('GroupStateRepository persistence', () => {
             expireAtTimestamp: Number.MAX_SAFE_INTEGER
         });
         await expect(validRuntime.insertIfAbsent(
-            validWrite.namespace,
-            validWrite.key,
-            validWrite.value,
-            validWrite.expireAtTimestamp
+            { namespace: validWrite.namespace, key: validWrite.key, value: validWrite.value, expireAtTimestamp: validWrite.expireAtTimestamp }
         )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, requestId)
@@ -333,10 +332,12 @@ describe('GroupStateRepository persistence', () => {
             expireAtTimestamp: Number.MAX_SAFE_INTEGER
         });
         await expect(validRuntime.insertIfAbsent(
-            authorityFencedNoOpWrite.namespace,
-            authorityFencedNoOpWrite.key,
-            authorityFencedNoOpWrite.value,
-            authorityFencedNoOpWrite.expireAtTimestamp
+            {
+                namespace: authorityFencedNoOpWrite.namespace,
+                key: authorityFencedNoOpWrite.key,
+                value: authorityFencedNoOpWrite.value,
+                expireAtTimestamp: authorityFencedNoOpWrite.expireAtTimestamp
+            }
         )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, fencedRequestId)
@@ -364,10 +365,12 @@ describe('GroupStateRepository persistence', () => {
             expireAtTimestamp: Number.MAX_SAFE_INTEGER
         });
         await expect(validRuntime.insertIfAbsent(
-            absentRejectedWrite.namespace,
-            absentRejectedWrite.key,
-            absentRejectedWrite.value,
-            absentRejectedWrite.expireAtTimestamp
+            {
+                namespace: absentRejectedWrite.namespace,
+                key: absentRejectedWrite.key,
+                value: absentRejectedWrite.value,
+                expireAtTimestamp: absentRejectedWrite.expireAtTimestamp
+            }
         )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, absentRequestId)
@@ -384,10 +387,12 @@ describe('GroupStateRepository persistence', () => {
 
             const readRuntime = new FakeRuntimeStateRepository();
             await readRuntime.upsert(
-                'group-state:idempotent',
-                groupStateIdempotencyStorageKey(ref, requestId),
-                JSON.stringify(invalid),
-                Number.MAX_SAFE_INTEGER
+                {
+                    namespace: 'group-state:idempotent',
+                    key: groupStateIdempotencyStorageKey(ref, requestId),
+                    value: JSON.stringify(invalid),
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER
+                }
             );
             const readRepository = createTestGroupStateRepository(readRuntime);
             for (

@@ -32,7 +32,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
-import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../../../group-state/group-barrier-repository.ts';
 import { createTestGroupStateService } from '../../../group-state/group-state-test-runtime.ts';
 import { convergeSummaryForTest } from '../../../group-state/presence/group-presence-test-runtime.ts';
 

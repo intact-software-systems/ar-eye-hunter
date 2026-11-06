@@ -1,8 +1,9 @@
 import { requireApiAuthSession } from '@api-v1/src/services/request-auth-service.ts';
 import { issueTracedTestSession, preparePGliteTracedRallarServer, waitFor } from '@api-v1/test/db/pglite-traced-rallar-test-runtime.ts';
-import { decodeArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
-import { AR_EYE_TOURNAMENT_DATA_BINDING } from '@ar-eye-hunter/server/arena-tournament-mutation.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import { decodeArenaTournamentSnapshot, type ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
+import { ARENA_TOURNAMENT_SNAPSHOT_SENDER, decodeArenaTournamentFrame } from '@ar-eye-hunter/arena-tournament-stream.ts';
+import { AR_EYE_TOURNAMENT_DATA_BINDING } from '@ar-eye-hunter/server/arena-tournament-room.ts';
+import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { decodeTournamentMutationResult } from '@shared/api/tournaments/tournament-mutation-result.ts';
 import type { TournamentRequest } from '@shared/api/tournaments/tournament-request.ts';
 import { decodeTournamentSnapshot } from '@shared/api/tournaments/tournament-snapshot.ts';
@@ -19,11 +20,27 @@ Deno.test({
             group: { roomOwnedAppDataBindings: [{ ...AR_EYE_TOURNAMENT_DATA_BINDING }] },
             tournaments: { profiles: [{ ...ARENA_TOURNAMENT_GAME_PROFILE, noShowGraceMs: 600000 }] }
         });
+        server.rallar.ws.defineTopic({
+            topicId: AppTopics.serverRoomSnapshot,
+            scope: 'room',
+            fanout: 'live-only',
+            participation: 'server',
+            serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_SENDER]
+        });
+        const published: ArenaTournamentSnapshot[] = [];
         const services = createArenaTournamentServices({
             database: server.sql,
             groups: server.rallar.runtime.groupsRepository,
             sessions: server.rallar.runtime.authSessionRepository,
             appInbox: server.rallar.appInbox,
+            ws: {
+                publish: async (input) => {
+                    const receipt = await server.rallar.ws.publish(input);
+                    published.push(await decodeArenaTournamentFrame(JSON.parse(input.message.payload.resource)));
+                    return receipt;
+                }
+            },
+            registerStop: (stop) => server.rallar.runtime.backgroundTasks.register(stop),
             outbox: server.rallar.runtime.outboxQueueReader,
             bindings: [AR_EYE_TOURNAMENT_DATA_BINDING],
             serviceId: 'arena-integration',
@@ -53,7 +70,7 @@ Deno.test({
                 assert.equal(response.status, 200, await response.clone().text());
                 assert.equal(decodeTournamentMutationResult(await response.json(), { ref, requestId }).status, 'applied');
             };
-            await change(players[0], { type: 'create', title: 'Native arena cup' });
+            await change(players[0], { type: 'create', title: 'Server room cup' });
             for (const player of players) {
                 await change(player, { type: 'register' });
             }
@@ -81,6 +98,10 @@ Deno.test({
             assert.deepEqual(arena.binding, attempt.binding);
             assert.equal(arena.state!.arena.match?.status, 'active');
             assert.equal((await server.app.request(arenaPath, { headers: headers(players[2]) })).status, 403);
+            await change(players[0], { type: 'cancel' });
+            const terminal = await waitFor('durable native cancellation', async () => published.find((frame) => frame.status === 'cancelled'));
+            assert.deepEqual(terminal.binding, attempt.binding);
+            assert.ok(terminal.attemptRevision > arena.attemptRevision);
         }
         finally {
             await server.stop();

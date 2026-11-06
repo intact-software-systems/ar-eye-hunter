@@ -5,7 +5,19 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { FriendsView } from '@shared/api/friends/friends-view.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+
+interface BrowserFixture {
+    readonly owner: RallarFriends;
+    readonly api: {
+        readonly read: Mock<RallarFriends.Api['read']>;
+        readonly change: Mock<RallarFriends.Api['change']>;
+    };
+    readonly enter: Mock<RallarFriends.Dependencies['entry']['enter']>;
+    changeAuth(next: AuthSession | undefined): void;
+    activity(next: boolean): void;
+    changed(): void;
+}
 
 const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'alice-session', accessToken: 'test', expiresAtEpochMs: 9_999_999_999_999 };
 const scope = { applicationId: 'game', workspaceId: 'default' };
@@ -18,6 +30,7 @@ const invitation = {
     expiresAtEpochMs: 9999999999999
 };
 const view: FriendsView = {
+    observedAtEpochMs: 1000,
     principalId: 'alice',
     shareOnline: false,
     contacts: [{ principalId: 'bob', username: 'bob', displayName: 'Bob', status: 'friend', presence: 'hidden' }],
@@ -29,7 +42,7 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-function browser() {
+function browser(): BrowserFixture {
     let session: AuthSession | undefined = alice;
     let active = true;
     const authChanges = new SynchronousNotifications<RallarAuthState>((error) => {
@@ -38,24 +51,29 @@ function browser() {
     const activityChanges = new SynchronousNotifications<void>((error) => {
         throw error;
     });
+    const changes = new SynchronousNotifications<void>((error) => {
+        throw error;
+    });
     const api = {
         read: vi.fn<RallarFriends.Api['read']>(async ({ session: caller }) => ({ ...view, principalId: caller.clientId })),
         change: vi.fn<RallarFriends.Api['change']>(async ({ session: caller, requestId }) => ({ principalId: caller.clientId, requestId, status: 'applied' }))
     };
-    const enter = vi.fn();
+    const enter = vi.fn<RallarFriends.Dependencies['entry']['enter']>();
     const owner = new RallarFriends({
         auth: { session: () => session, onChange: (listener) => authChanges.subscribe(listener).unsubscribe },
         activity: { isActive: () => active, onChange: (listener) => activityChanges.subscribe(listener).unsubscribe },
         api,
         entry: { enter },
+        onChanged: (listener) => changes.subscribe(listener).unsubscribe,
         timers: createDefaultTimers(),
         createId: () => crypto.randomUUID()
-    }, { scope, refreshIntervalMs: 30000 });
+    }, { scope });
     cleanups.push(() => owner.stop());
     return {
         owner,
         api,
         enter,
+        changed: () => changes.publishLatest(),
         changeAuth(next: AuthSession | undefined) {
             session = next;
             authChanges.publishLatest({ authenticated: next !== undefined, reason: next ? 'login' : 'logout', session: next });
@@ -130,8 +148,13 @@ describe('friends browser lifecycle', () => {
     it('discards late reads and pending writes on account replacement', async () => {
         const test = browser();
         const late = Promise.withResolvers<FriendsView>();
-        test.api.read.mockReturnValueOnce(late.promise);
+        const started = Promise.withResolvers<void>();
+        test.api.read.mockImplementationOnce(() => {
+            started.resolve();
+            return late.promise;
+        });
         const start = test.owner.start();
+        await started.promise;
         test.changeAuth({ ...alice, clientId: 'carol', sessionId: 'carol-session' });
         await test.owner.refresh();
         late.resolve(view);
@@ -156,18 +179,42 @@ describe('friends browser lifecycle', () => {
         expect(test.enter).toHaveBeenCalledWith({ intent: 'join', roomRef: invitation.roomRef, joinCode: null, participation: 'player' });
     });
 
-    it('polls only while foreground and online and clears private views after a failed read', async () => {
+    it('stays idle without polling, reacts to push only when active, and clears private views after a failed read', async () => {
         vi.useFakeTimers();
         const test = browser();
         await test.owner.start();
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(test.api.read).toHaveBeenCalledTimes(1);
         test.activity(false);
+        test.changed();
         await vi.advanceTimersByTimeAsync(60000);
         expect(test.api.read).toHaveBeenCalledTimes(1);
         test.activity(true);
         await test.owner.refresh();
         expect(test.api.read).toHaveBeenCalledTimes(2);
+        test.api.read.mockResolvedValueOnce({ ...view, contacts: [] });
+        test.changed();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(test.owner.getState().view?.contacts).toEqual([]);
         test.api.read.mockRejectedValueOnce(new Error('Unavailable'));
         await test.owner.refresh();
         expect(test.owner.getState()).toMatchObject({ view: null, error: 'Unavailable' });
+    });
+    it('rechecks an invitation once at its server deadline despite browser clock skew', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(9_000_000);
+        const test = browser();
+        test.api.read.mockResolvedValueOnce({
+            ...view,
+            observedAtEpochMs: 1000,
+            invitations: [{ ...invitation, expiresAtEpochMs: 2000 }]
+        }).mockResolvedValue({ ...view, observedAtEpochMs: 2000, invitations: [] });
+        await test.owner.start();
+        await vi.advanceTimersByTimeAsync(999);
+        expect(test.owner.getState().view?.invitations).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(test.owner.getState().view?.invitations).toEqual([]);
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(test.api.read).toHaveBeenCalledTimes(2);
     });
 });

@@ -1,3 +1,4 @@
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import type {
     Group,
     GroupEvent,
@@ -5,6 +6,10 @@ import type {
 } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import {
+    computeViewInvalidationPublication,
+    type ViewInvalidationPublication
+} from '../../websocket/outbox/compute-view-invalidation-publication.ts';
 
 import { computeRoomOwnedAppDataDelete } from '../../../app-data/room-owned-app-data.ts';
 import { computeRuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
@@ -13,7 +18,7 @@ import type {
     RuntimeStateGuardedBatchUpdate
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatch } from '../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
-import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { groupStateEventWorkspaceKey } from '../../state-events/postgres/group-state-event-workspace-key.ts';
 import type { GroupMutationReceipt } from '../mutation/group-mutation-contracts.ts';
 import { groupStateUpdateGroupDescriptor } from '../persistence/aggregate/group-aggregate-write-descriptors.ts';
@@ -43,35 +48,27 @@ export function computeGroupRetentionWrite(
         throw new TypeError('Retention write requires its observed group');
     }
     const event = toRetentionEvent(read, group);
-    const entry = computeGroupPresenceSummaryEntry(
-        {
-            effectKind: 'group-presence-summary',
-            aggregateRef: read.ingress.command.groupRef,
-            commandId: read.ingress.commandId,
-            createdAtEpochMs: event.occurredAtEpochMs,
-            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-            acceptedCausalRevision: event.causalRevision,
-            event
-        },
-        read.ingress.serviceId,
-        read.traceId
-    );
+    const publication = computeRetentionViewPublication(read, group);
+    const outboxWrites = [
+        ...computeRetentionPresenceOutbox(read, event),
+        ...publication.outbox
+    ];
     const receipt = toGroupRetentionReceipt(read, {
         group,
         outcome: 'applied',
-        outboxIds: group.status === 'deleted' ? [] : [entry.key.resourceId]
+        outboxIds: outboxWrites.map((write) => write.entry.key.resourceId)
     });
     const effects = group.status === 'deleted'
         ? computeRetirementDeletes(read)
         : group.status === 'archived'
         ? computeArchivePresenceFences(read)
         : [];
-    effects.push(computeRetentionReceiptEffect(read, receipt));
+    effects.push(computeRetentionReceiptEffect(read, receipt), ...publication.provenance);
     return {
         outcome: 'write',
         group,
         receipt,
-        outboxWrites: group.status === 'deleted' ? [] : [computeAppOutboxInsert(entry)],
+        outboxWrites,
         ownedAppDataWrites: group.status === 'deleted'
             ? read.ownedAppData.flatMap((row) => computeRoomOwnedAppDataDelete(row) ?? [])
             : [],
@@ -227,4 +224,50 @@ function computeRetentionReceiptEffect(
             }
         })
     };
+}
+
+function computeRetentionViewPublication(read: GroupRetentionService.Read, group: Group): ViewInvalidationPublication {
+    if (read.authority.group?.value.status === group.status || readGroupSessionSchedule(group.metadata) === null) {
+        return { outbox: [], provenance: [] };
+    }
+    if (read.sessionViewAudience === null) {
+        throw new TypeError('Retired scheduled sessions require their captured audience');
+    }
+    return computeViewInvalidationPublication({
+        resource: 'sessions',
+        scope: { applicationId: group.applicationId, workspaceId: group.workspaceId },
+        principalIds: [
+            group.ownerPrincipalId,
+            ...read.sessionViewAudience.principalIds,
+            ...read.authority.members.map(({ value }) => value.principalId)
+        ],
+        changeId: read.ingress.commandHash,
+        createdAtEpochMs: read.attemptAtEpochMs,
+        retentionMs: read.publicationRetentionMs,
+        serviceId: read.ingress.serviceId,
+        traceId: read.traceId
+    });
+}
+
+function computeRetentionPresenceOutbox(
+    read: GroupRetentionService.Read,
+    event: GroupEvent
+): readonly AppOutboxInsert[] {
+    if (event.eventType === 'group-deleted') {
+        return [];
+    }
+    const entry = computeGroupPresenceSummaryEntry(
+        {
+            effectKind: 'group-presence-summary',
+            aggregateRef: read.ingress.command.groupRef,
+            commandId: read.ingress.commandId,
+            createdAtEpochMs: event.occurredAtEpochMs,
+            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
+            acceptedCausalRevision: event.causalRevision,
+            event
+        },
+        read.ingress.serviceId,
+        read.traceId
+    );
+    return [computeAppOutboxInsert(entry)];
 }

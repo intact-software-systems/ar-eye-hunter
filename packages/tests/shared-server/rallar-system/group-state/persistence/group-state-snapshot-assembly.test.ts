@@ -11,7 +11,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import type { AuditStamp, Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
 import {
     applyPublicationMutation,
@@ -19,7 +19,7 @@ import {
     seedGrantRoom,
     writeGrantRow
 } from '../mutation/group-publication-grant-test-runtime.ts';
-import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './create-persistence-mutation-read.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('fails closed when persisted active membership exceeds maxMembers', async () => {
@@ -76,10 +76,12 @@ describe('GroupStateRepository persistence', () => {
 
         const groupRuntime = new FakeRuntimeStateRepository();
         await groupRuntime.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(ref),
-            JSON.stringify(incompleteGroup),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify(incompleteGroup),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
         const groupRepository = createTestGroupStateRepository(groupRuntime);
         for (
@@ -124,26 +126,27 @@ describe('GroupStateRepository persistence', () => {
         };
         const sessionRuntime = new FakeRuntimeStateRepository();
         await sessionRuntime.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(ref),
-            JSON.stringify(completeGroup),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify(completeGroup),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
         await sessionRuntime.upsert(
-            'group-state:members',
-            groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
-            JSON.stringify(completeMember),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:members',
+                key: groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
+                value: JSON.stringify(completeMember),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
         const sessionKey = groupStatePresenceSessionStorageKey({
             ...ref,
             sessionId: incompleteSession.sessionId
         });
         await sessionRuntime.upsert(
-            'group-state:sessions',
-            sessionKey,
-            JSON.stringify(incompleteSession),
-            Number.MAX_SAFE_INTEGER
+            { namespace: 'group-state:sessions', key: sessionKey, value: JSON.stringify(incompleteSession), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
         );
         const sessionRepository = createTestGroupStateRepository(sessionRuntime);
         for (
@@ -264,16 +267,15 @@ describe('GroupStateRepository persistence', () => {
         for (const testCase of incompleteChildren) {
             const runtime = new FakeRuntimeStateRepository();
             await runtime.upsert(
-                'group-state:groups',
-                groupStateGroupStorageKey(ref),
-                JSON.stringify(completeGroup),
-                Number.MAX_SAFE_INTEGER
+                {
+                    namespace: 'group-state:groups',
+                    key: groupStateGroupStorageKey(ref),
+                    value: JSON.stringify(completeGroup),
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER
+                }
             );
             await runtime.upsert(
-                testCase.namespace,
-                testCase.key,
-                JSON.stringify(testCase.value),
-                Number.MAX_SAFE_INTEGER
+                { namespace: testCase.namespace, key: testCase.key, value: JSON.stringify(testCase.value), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
             );
             const repository = createTestGroupStateRepository(runtime);
             for (const read of testCase.reads(repository)) {
@@ -303,16 +305,15 @@ describe('GroupStateRepository persistence', () => {
             workspaceId: '_'
         };
         await runtime.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(ref),
-            JSON.stringify(group),
-            Number.MAX_SAFE_INTEGER
+            { namespace: 'group-state:groups', key: groupStateGroupStorageKey(ref), value: JSON.stringify(group), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
         );
         await runtime.upsert(
-            'group-state:members',
-            groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
-            JSON.stringify(wrongScopeMember),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:members',
+                key: groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
+                value: JSON.stringify(wrongScopeMember),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
 
         await expect(

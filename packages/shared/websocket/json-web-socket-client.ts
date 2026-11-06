@@ -31,6 +31,7 @@ export class JsonWebSocketClient {
     public ws?: WebSocket = undefined;
     private connectPromise?: Promise<void> = undefined;
     private readonly urlProvider: WebSocketUrlProvider;
+    private resolvedRequestId: string | undefined;
     private readonly faultPort: TransportFaultPort;
 
     private readonly webSocketClientCallbacks = new Map<string, WebSocketClientCallbacks>();
@@ -80,6 +81,11 @@ export class JsonWebSocketClient {
     // Connect, send and close
     // --------------------
 
+    /** Whether a URL, and so any ticket it carries, was already issued for this connect request identity. */
+    isUrlResolvedFor(requestId: string | undefined): boolean {
+        return requestId !== undefined && this.resolvedRequestId === requestId;
+    }
+
     async connect(options: WebSocketConnectOptions = {}): Promise<void> {
         if (this.ws?.readyState === WebSocket.OPEN) {
             return Promise.resolve();
@@ -105,6 +111,7 @@ export class JsonWebSocketClient {
 
     private async openSocket(options: WebSocketConnectOptions): Promise<void> {
         const nextUrl = await this.urlProvider(options);
+        this.resolvedRequestId = options.requestId;
         if (options.signal?.aborted) {
             throw new Error('WebSocket connect aborted.');
         }
@@ -157,46 +164,31 @@ export class JsonWebSocketClient {
     }
 
     private addSocketEventListeners(socket: WebSocket): void {
-        socket.addEventListener('open', (event: Event) => this.notifyOpen(event));
+        socket.addEventListener('open', (event: Event) => this.notifyLifecycle((callback) => callback.onOpen?.(event)));
         socket.addEventListener('message', (event: MessageEvent) => this.dispatchMessage(socket, event));
-        socket.addEventListener('error', (event: Event) => this.notifyError(event));
+        socket.addEventListener(
+            'error',
+            (event: Event) => this.notifyLifecycle((callback) => callback.onError?.(event))
+        );
         socket.addEventListener('close', (event: CloseEvent) => {
-            this.notifyClose(event);
+            // A delayed close from the previous socket must not invalidate its live replacement.
+            if (this.ws && this.ws !== socket) {
+                return;
+            }
+            this.notifyLifecycle((callback) => callback.onClose?.(event));
             if (this.ws === socket) {
                 this.ws = undefined;
             }
         });
     }
 
-    private notifyOpen(event: Event): void {
+    private notifyLifecycle(deliver: (callback: WebSocketClientCallbacks) => void): void {
         for (const callback of this.webSocketClientCallbacks.values()) {
             try {
-                callback.onOpen?.(event);
+                deliver(callback);
             }
             catch (error) {
-                console.error('Callback onOpen failed:', error);
-            }
-        }
-    }
-
-    private notifyError(event: Event): void {
-        for (const callback of this.webSocketClientCallbacks.values()) {
-            try {
-                callback.onError?.(event);
-            }
-            catch (error) {
-                console.error('Callback onError failed:', error);
-            }
-        }
-    }
-
-    private notifyClose(event: CloseEvent): void {
-        for (const callback of this.webSocketClientCallbacks.values()) {
-            try {
-                callback.onClose?.(event);
-            }
-            catch (error) {
-                console.error('Callback onClose failed:', error);
+                console.error('WebSocket lifecycle callback failed:', error);
             }
         }
     }

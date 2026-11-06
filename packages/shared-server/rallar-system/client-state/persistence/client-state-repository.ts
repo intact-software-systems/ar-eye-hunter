@@ -16,13 +16,9 @@ import type {
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
-import { clientStateIdempotencyStorageKey } from './client-state-idempotency-storage-key.ts';
 import { clientStateInstanceStorageKey } from './client-state-instance-storage-key.ts';
-import { type ClientMutationIdempotencyRecord } from './client-state-persistence-contracts.ts';
 import { clientStatePrincipalStorageKey } from './client-state-principal-storage-key.ts';
-import { assertCanonicalClientStateIdempotencyRecord } from './client-state-repository-reads.ts';
 import {
-    CLIENT_STATE_IDEMPOTENT_NAMESPACE,
     CLIENT_STATE_INSTANCES_NAMESPACE,
     CLIENT_STATE_PRINCIPALS_NAMESPACE,
     CLIENT_STATE_SESSIONS_NAMESPACE
@@ -41,27 +37,15 @@ export class ClientStateRepository extends ClientStateSnapshotRepository {
         super(repository, events);
     }
 
-    async insertIdempotentClientStateWritten(
-        ref: ClientPrincipalRef,
-        requestId: string,
-        record: ClientMutationIdempotencyRecord,
-        purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        assertCanonicalClientStateIdempotencyRecord(record, ref, requestId);
-        return await this.putValueIfAbsent(
-            CLIENT_STATE_IDEMPOTENT_NAMESPACE,
-            clientStateIdempotencyStorageKey(ref, requestId),
-            record,
-            purgeAfterEpochMs
-        );
-    }
-
     async insertPrincipal(principal: ClientPrincipal): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedClientPrincipal(principal, principal);
         return await this.putValueIfAbsent(
-            CLIENT_STATE_PRINCIPALS_NAMESPACE,
-            clientStatePrincipalStorageKey(principal),
-            principal
+            {
+                namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
+                key: clientStatePrincipalStorageKey(principal),
+                value: principal,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
@@ -71,11 +55,13 @@ export class ClientStateRepository extends ClientStateSnapshotRepository {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedClientPrincipal(principal, principal);
         return await this.putValueIfRevision(
-            CLIENT_STATE_PRINCIPALS_NAMESPACE,
-            clientStatePrincipalStorageKey(principal),
-            principal,
-            NEVER_EXPIRE_AT_TIMESTAMP,
-            expectedRevision
+            {
+                namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
+                key: clientStatePrincipalStorageKey(principal),
+                value: principal,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                expectedRevision
+            }
         );
     }
 
@@ -93,9 +79,12 @@ export class ClientStateRepository extends ClientStateSnapshotRepository {
     async insertInstance(instance: ClientInstance): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedClientInstance(instance, instance);
         return await this.putValueIfAbsent(
-            CLIENT_STATE_INSTANCES_NAMESPACE,
-            clientStateInstanceStorageKey(instance),
-            instance
+            {
+                namespace: CLIENT_STATE_INSTANCES_NAMESPACE,
+                key: clientStateInstanceStorageKey(instance),
+                value: instance,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
@@ -105,11 +94,13 @@ export class ClientStateRepository extends ClientStateSnapshotRepository {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedClientInstance(instance, instance);
         return await this.putValueIfRevision(
-            CLIENT_STATE_INSTANCES_NAMESPACE,
-            clientStateInstanceStorageKey(instance),
-            instance,
-            NEVER_EXPIRE_AT_TIMESTAMP,
-            expectedRevision
+            {
+                namespace: CLIENT_STATE_INSTANCES_NAMESPACE,
+                key: clientStateInstanceStorageKey(instance),
+                value: instance,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                expectedRevision
+            }
         );
     }
 
@@ -127,10 +118,12 @@ export class ClientStateRepository extends ClientStateSnapshotRepository {
     async insertSession(session: ClientSession): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedClientSession(session, session);
         return await this.putValueIfAbsent(
-            CLIENT_STATE_SESSIONS_NAMESPACE,
-            clientStateSessionStorageKey(session),
-            session,
-            toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs)
+            {
+                namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+                key: clientStateSessionStorageKey(session),
+                value: session,
+                expireAtTimestamp: toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs)
+            }
         );
     }
 
@@ -140,11 +133,13 @@ export class ClientStateRepository extends ClientStateSnapshotRepository {
     ): Promise<RuntimeStateConditionalWriteResult> {
         validatePersistedClientSession(session, session);
         return await this.putValueIfRevision(
-            CLIENT_STATE_SESSIONS_NAMESPACE,
-            clientStateSessionStorageKey(session),
-            session,
-            toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs),
-            expectedRevision
+            {
+                namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+                key: clientStateSessionStorageKey(session),
+                value: session,
+                expireAtTimestamp: toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs),
+                expectedRevision
+            }
         );
     }
 

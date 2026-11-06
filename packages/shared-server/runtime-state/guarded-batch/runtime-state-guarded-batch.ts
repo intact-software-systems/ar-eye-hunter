@@ -5,7 +5,8 @@ export interface RuntimeStateGuardedBatchIdentity {
 
 /**
  * Applies where the key holds no row or an expired one, since every read takes an expired row for absent. The row
- * lands at revision 0, or one past the expired row it replaces, so a writer still holding that revision cannot match.
+ * lands at revision 0, or one past a still-present expired row it replaces. Physical deletion followed by insertion
+ * can reset revision to 0; use an exact update with a unique stored incarnation when that reset must be fenced.
  */
 export type RuntimeStateGuardedBatchInsert =
     & RuntimeStateGuardedBatchIdentity
@@ -23,6 +24,18 @@ export type RuntimeStateGuardedBatchUpdate =
         value: string;
         expireAtTimestamp: number;
     }>;
+
+/**
+ * Revision plus exact stored value. Callers fencing physical deletion/recreation must include a unique incarnation
+ * in that value: a recreated row with both the same revision and the same value still matches.
+ */
+export interface RuntimeStateGuardedBatchExactUpdate extends RuntimeStateGuardedBatchIdentity {
+    readonly operation: 'update-exact';
+    readonly expectedRevision: number;
+    readonly expectedValue: string;
+    readonly value: string;
+    readonly expireAtTimestamp: number;
+}
 
 export type RuntimeStateGuardedBatchDelete =
     & RuntimeStateGuardedBatchIdentity
@@ -42,6 +55,7 @@ export type RuntimeStateGuardedBatchPut =
 export type RuntimeStateGuardedBatchGuard =
     | RuntimeStateGuardedBatchInsert
     | RuntimeStateGuardedBatchUpdate
+    | RuntimeStateGuardedBatchExactUpdate
     | RuntimeStateGuardedBatchDelete;
 
 export type RuntimeStateGuardedBatchEffect =
@@ -49,6 +63,7 @@ export type RuntimeStateGuardedBatchEffect =
     & (
         | RuntimeStateGuardedBatchInsert
         | RuntimeStateGuardedBatchUpdate
+        | RuntimeStateGuardedBatchExactUpdate
         | RuntimeStateGuardedBatchDelete
         | RuntimeStateGuardedBatchPut
     );
@@ -64,6 +79,7 @@ export interface RuntimeStateGuardedBatchSqlDescriptor {
     readonly namespace: string;
     readonly key: string;
     readonly expectedRevision?: number;
+    readonly expectedValue?: string;
     readonly value?: string;
     readonly expireAtTimestamp?: string;
 }
@@ -76,7 +92,7 @@ export interface RuntimeStateGuardedBatchWrite extends RuntimeStateGuardedBatch 
 export type RuntimeStateGuardedBatchGuardResult =
     | Readonly<{
         status: 'applied';
-        operation: 'insert' | 'update';
+        operation: 'insert' | 'update' | 'update-exact';
         namespace: string;
         key: string;
         resultingRevision: number;
@@ -100,7 +116,7 @@ export type RuntimeStateGuardedBatchEffectResult =
     | Readonly<{
         status: 'applied';
         effectId: string;
-        operation: 'insert' | 'update' | 'put';
+        operation: 'insert' | 'update' | 'update-exact' | 'put';
         namespace: string;
         key: string;
         resultingRevision: number;

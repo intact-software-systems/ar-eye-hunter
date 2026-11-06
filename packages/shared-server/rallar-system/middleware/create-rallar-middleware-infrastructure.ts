@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
+import { hasServerPushedViewTopic } from '@shared/api/views/view-invalidation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -10,6 +11,7 @@ import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-serve
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { writeViewResync } from '../websocket/write-view-resync.ts';
 
 import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-command-identity.ts';
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
@@ -18,7 +20,7 @@ import { validateRtcSignalingMessage } from '../communication/decode-rtc-signali
 import { isInstanceLocalRtcSignal } from '../communication/is-instance-local-rtc-signal.ts';
 import { nowMs } from '../observability/timing.ts';
 import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
-import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
+import { installLiveWsNoticeSubscriber, sendReceivedLiveWsNotice } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
 import { createRelayedAckPublisher } from '../queue-pubsub/relayed-ack-notice.ts';
@@ -79,6 +81,11 @@ export function createRallarMiddlewareInfrastructure(
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,
+            onSubscribed: () =>
+                writeViewResync(wsQBoxServerService, {
+                    messageId: crypto.randomUUID(),
+                    createdAtEpochMs: (options.now ?? Date.now)()
+                }),
             filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
             wsQBoxServerService,
             receiptObserver: options.wsReceiptObserver,
@@ -209,27 +216,22 @@ function installMiddlewareLiveWsNoticeSubscriber(
     const targetResolution = new WsQueueBoxServerTargetResolution({ socket: webSocketServer, targetResolver });
     return installLiveWsNoticeSubscriber({
         ...options.liveWsNoticeSubscriber,
+        onSubscribed: () =>
+            writeViewResync(wsQBoxServerService, {
+                messageId: crypto.randomUUID(),
+                createdAtEpochMs: (options.now ?? Date.now)()
+            }),
         inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
         resolveBroadRecipientSessionIds: (message) =>
             targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
-        sendToTargetsWithResult: ({ message, recipientSessionIds, notice, audience }) => {
-            wsQBoxServerService.sendToTargetsWithResult({
-                message,
-                sentPositions: null,
-                expiresAtMs: notice.expiresAtMs,
-                recipientSessionIds,
-                inboundScope: message.targets?.mode === 'unicast' ? notice.scope : undefined,
-                recipientScope: notice.scope,
-                recipientPrincipalId: audience.mode === 'principal'
-                    ? audience.principalRef.principalId
-                    : undefined,
-                requireAuthenticatedRecipient: true
-            });
-        }
+        sendToTargetsWithResult: (delivery) => sendReceivedLiveWsNotice(wsQBoxServerService, delivery)
     });
 }
 
 function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
+    if (hasServerPushedViewTopic(message)) {
+        return Either.ofLeft({ code: 'unauthorized', message: 'Account view notices are server publications only' });
+    }
     if (
         isStateSnapshotTopic(message.route.topicId) || isStateSnapshotTopic(message.payload.typeId) ||
         message.route.topicId === AppTopics.clientStateEvent || message.payload.typeId === AppTopics.clientStateEvent ||

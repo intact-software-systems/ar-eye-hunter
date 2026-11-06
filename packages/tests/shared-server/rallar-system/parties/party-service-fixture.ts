@@ -34,7 +34,7 @@ export async function createRuntime(storage: ResourceInboxTestStorage, players: 
     return fixture;
 }
 
-class PartyServiceFixture {
+export class PartyServiceFixture {
     readonly clock = { now: Date.now() };
     readonly timing: RallarTimingEvent[] = [];
     readonly runtime: PSqlRuntimeStateRepository;
@@ -80,7 +80,7 @@ class PartyServiceFixture {
             clients: this.clients,
             nowEpochMs: () => this.clock.now,
             timing: (event) => this.timing.push(event)
-        }, { defaultPolicy: { ...policy, maxMembers: players }, policiesByApplication: {}, finishedRetentionMs: 60000 });
+        }, { serviceId: 'party-test', defaultPolicy: { ...policy, maxMembers: players }, policiesByApplication: {}, finishedRetentionMs: 60000 });
     }
 
     private createMatchmakingService(players: number): MatchmakingService {
@@ -108,15 +108,17 @@ class PartyServiceFixture {
             await this.seedClientIdentity(principalId);
             await this.seedClientSession(session);
             await this.runtime.upsert(
-                'friends:profiles',
-                `principal=${principalId}`,
-                JSON.stringify({
-                    principalId,
-                    shareOnline: false,
-                    contacts: ['alice', 'bob'].includes(principalId) ? [{ principalId: principalId === 'alice' ? 'bob' : 'alice', status: 'friend' }] : [],
-                    invitations: []
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: 'friends:profiles',
+                    key: `principal=${principalId}`,
+                    value: JSON.stringify({
+                        principalId,
+                        shareOnline: false,
+                        contacts: ['alice', 'bob'].includes(principalId) ? [{ principalId: principalId === 'alice' ? 'bob' : 'alice', status: 'friend' }] : [],
+                        invitations: []
+                    }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
         }
     }

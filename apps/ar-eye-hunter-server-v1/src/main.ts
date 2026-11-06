@@ -9,6 +9,8 @@ import { serveApiApplication } from '@api-v1/src/runtime/serve-api-application.t
 import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-middleware.ts';
 import { requireApiAuthSession } from '@api-v1/src/services/request-auth-service.ts';
 import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
+import { ARENA_TOURNAMENT_SNAPSHOT_SENDER } from '@ar-eye-hunter/arena-tournament-stream.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { registerArenaTournamentRoutes } from './arena-tournament-routes.ts';
 import { ARENA_TOURNAMENT_GAME_PROFILE, createArenaTournamentServices } from './create-arena-tournament-services.ts';
@@ -41,11 +43,20 @@ const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     statementCensus: undefined
 });
 const rallar = await createDefaultRallarServer({ configuration, databaseLifecycle });
+rallar.ws.defineTopic({
+    topicId: AppTopics.serverRoomSnapshot,
+    scope: 'room',
+    fanout: 'live-only',
+    participation: 'server',
+    serverProducerIds: [ARENA_TOURNAMENT_SNAPSHOT_SENDER]
+});
 const services = createArenaTournamentServices({
     database: databaseLifecycle.database,
     groups: rallar.runtime.groupsRepository,
     sessions: rallar.runtime.authSessionRepository,
     appInbox: rallar.appInbox,
+    ws: rallar.ws,
+    registerStop: (stop) => rallar.runtime.backgroundTasks.register(stop),
     outbox: rallar.runtime.outboxQueueReader,
     bindings: configuration.group.roomOwnedAppDataBindings,
     serviceId: myServerId,

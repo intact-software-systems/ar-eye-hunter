@@ -21,10 +21,7 @@ describe('group topology config repository corruption handling', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new ExposedLiveValueRepository(runtimeRepository);
         await runtimeRepository.insertIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            'malformed',
-            '{',
-            NEVER_EXPIRE_AT_TIMESTAMP
+            { namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE, key: 'malformed', value: '{', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
         const entry = await runtimeRepository.findEntry(GROUP_TOPOLOGY_CONFIG_NAMESPACE, 'malformed');
 
@@ -38,18 +35,20 @@ describe('group topology config repository corruption handling', () => {
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const groupRef = createTopologyTestGroupRef('workspace-1');
         await runtimeRepository.insertIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            repository.configKey(groupRef),
-            JSON.stringify({
-                groupRef,
-                config: createTopologyTestEffectiveConfig('tree'),
-                version: 1,
-                createdAtEpochMs: 1,
-                updatedAtEpochMs: 1,
-                updatedByPrincipalId: 'noncanonical-owner',
-                unexpected: true
-            }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: repository.configKey(groupRef),
+                value: JSON.stringify({
+                    groupRef,
+                    config: createTopologyTestEffectiveConfig('tree'),
+                    version: 1,
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 1,
+                    updatedByPrincipalId: 'noncanonical-owner',
+                    unexpected: true
+                }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(repository.findConfig(groupRef)).rejects.toThrow(
@@ -62,10 +61,12 @@ describe('group topology config repository corruption handling', () => {
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const groupRef = createTopologyTestGroupRef('workspace-1');
         await runtimeRepository.insertIfAbsent(
-            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            repository.configKey(groupRef),
-            JSON.stringify({ version: 7 }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: repository.configKey(groupRef),
+                value: JSON.stringify({ version: 7 }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(repository.listGenerationSources('config')).rejects.toThrow(
@@ -83,19 +84,21 @@ describe('group topology config repository corruption handling', () => {
             const wrongScope = createTopologyTestGroupRef('workspace-2');
             const key = repository.overrideKey(requested);
             await runtimeRepository.insertIfAbsent(
-                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
-                key,
-                JSON.stringify({
-                    groupRef: wrongScope,
-                    config: createTopologyTestEffectiveConfig('tree'),
-                    version: 7,
-                    createdAtEpochMs: 1,
-                    updatedAtEpochMs: 1,
-                    updatedByPrincipalId: 'noncanonical-owner',
-                    requestId: null,
-                    expiresAtEpochMs: 1_000
-                }),
-                1_000
+                {
+                    namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                    key,
+                    value: JSON.stringify({
+                        groupRef: wrongScope,
+                        config: createTopologyTestEffectiveConfig('tree'),
+                        version: 7,
+                        createdAtEpochMs: 1,
+                        updatedAtEpochMs: 1,
+                        updatedByPrincipalId: 'noncanonical-owner',
+                        requestId: null,
+                        expiresAtEpochMs: 1_000
+                    }),
+                    expireAtTimestamp: 1_000
+                }
             );
 
             await expect(repository.findOverride(requested)).rejects.toThrow(
@@ -118,10 +121,7 @@ describe('group topology config repository corruption handling', () => {
             try {
                 const { runtimeRepository, seeded } = createExpiredCorruptionScenario(boundary);
                 await runtimeRepository.insertIfAbsent(
-                    seeded.namespace,
-                    seeded.key,
-                    JSON.stringify(seeded.value),
-                    1_000
+                    { namespace: seeded.namespace, key: seeded.key, value: JSON.stringify(seeded.value), expireAtTimestamp: 1_000 }
                 );
 
                 await expect(seeded.read()).rejects.toBeInstanceOf(
@@ -183,10 +183,7 @@ describe('group topology config repository corruption handling', () => {
                     read: () => repository.findInvariantGenerationEntry(groupRef)
                 };
             await runtimeRepository.insertIfAbsent(
-                seeded.namespace,
-                seeded.key,
-                JSON.stringify(seeded.value),
-                NEVER_EXPIRE_AT_TIMESTAMP - 1
+                { namespace: seeded.namespace, key: seeded.key, value: JSON.stringify(seeded.value), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP - 1 }
             );
 
             await expect(seeded.read()).rejects.toBeInstanceOf(
@@ -220,10 +217,7 @@ describe('group topology config repository corruption handling', () => {
                 ...(target === 'override' ? { expiresAtEpochMs: 20_000 } : {})
             };
             await runtimeRepository.insertIfAbsent(
-                namespace,
-                key,
-                JSON.stringify(value),
-                target === 'config' ? NEVER_EXPIRE_AT_TIMESTAMP - 1 : 10_000
+                { namespace, key, value: JSON.stringify(value), expireAtTimestamp: target === 'config' ? NEVER_EXPIRE_AT_TIMESTAMP - 1 : 10_000 }
             );
 
             const read = boundary === 'source'
@@ -248,7 +242,12 @@ interface ExpiredCorruptionSeed {
     readonly read: () => Promise<void>;
 }
 
-function createExpiredCorruptionScenario(boundary: ExpiredCorruptionBoundary) {
+interface ExpiredCorruptionScenario {
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly seeded: ExpiredCorruptionSeed;
+}
+
+function createExpiredCorruptionScenario(boundary: ExpiredCorruptionBoundary): ExpiredCorruptionScenario {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const repository = new GroupTopologyConfigRepository(runtimeRepository);
     const groupRef = createTopologyTestGroupRef('workspace-1');

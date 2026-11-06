@@ -276,6 +276,7 @@ function createFixtureTournament(gameId: string): ArenaTournamentSnapshot {
             principalIds: ['host', 'opponent']
         },
         status: 'playing',
+        attemptRevision: 1,
         observedAtEpochMs: now,
         state: createTournamentArena({ gameId, principalIds: ['host', 'opponent'], seed: 44, startedAtEpochMs: now, durationMs: 60_000 })
     };

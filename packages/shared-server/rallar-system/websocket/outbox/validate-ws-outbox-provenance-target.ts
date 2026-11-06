@@ -1,7 +1,10 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { validateALAccountViewMessage } from '@shared/alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
+
+import { decodeViewInvalidationMessage, hasViewInvalidatedTopic } from '@shared/api/views/view-invalidation.ts';
 
 import type { WsOutboxProvenance } from './ws-outbox-provenance.ts';
 
@@ -9,15 +12,15 @@ export function validateWsOutboxProvenanceTarget(
     message: ALMessage,
     target: WsOutboxProvenance['target']
 ): readonly string[] {
+    if (target.kind === 'account-view') {
+        return validateALAccountViewMessage(message, target.accountView);
+    }
     if (target.kind === 'exact-invalidated-session') {
         return validateALSessionInvalidationMessage(message, target.sessionInvalidation);
     }
     const targets = message.targets;
     if (target.kind === 'scoped-world-broadcast') {
-        return targets?.mode === 'broadcast' && targets.scope === 'world' &&
-                message.route.contextId === target.scope.applicationId
-            ? []
-            : ['WS provenance target differs from scoped world identity'];
+        return validateWorldTarget(message, target);
     }
     if (target.kind === 'scoped-principal-unicast') {
         return targets?.mode === 'unicast' && targets.toPeerId === target.peerId &&
@@ -30,6 +33,9 @@ export function validateWsOutboxProvenanceTarget(
                 isSameGroupRef(targets.groupRef, target.groupRef)
             ? []
             : ['WS provenance target differs from scoped room identity'];
+    }
+    if (target.kind === 'scoped-account-view') {
+        return validateAccountViewTarget(message, target);
     }
     if (target.kind === 'scoped-principal-broadcast') {
         const principalRef = targets?.mode === 'broadcast' && targets.scope === 'principal'
@@ -50,4 +56,44 @@ export function validateWsOutboxProvenanceTarget(
             targets.toPeerId === target.peerId && target.admittedAudience.every((peerId) => peerId === target.peerId)
         ? []
         : ['WS provenance target differs from public unicast identity'];
+}
+
+function validateAccountViewTarget(
+    message: ALMessage,
+    target: Extract<WsOutboxProvenance['target'], { kind: 'scoped-account-view'; }>
+): readonly string[] {
+    try {
+        const notice = decodeViewInvalidationMessage(message);
+        return notice.scope !== null && notice.principalId === target.principalRef.principalId &&
+                notice.scope.applicationId === target.principalRef.applicationId &&
+                notice.scope.workspaceId === target.principalRef.workspaceId
+            ? []
+            : ['Account view scope or principal differs from its provenance'];
+    }
+    catch {
+        return ['Account view invalidation payload or target is malformed'];
+    }
+}
+
+function validateWorldTarget(
+    message: ALMessage,
+    target: Extract<WsOutboxProvenance['target'], { kind: 'scoped-world-broadcast'; }>
+): readonly string[] {
+    const targets = message.targets;
+    if (hasViewInvalidatedTopic(message)) {
+        try {
+            const notice = decodeViewInvalidationMessage(message);
+            return notice.principalId === null && notice.scope.applicationId === target.scope.applicationId &&
+                    notice.scope.workspaceId === target.scope.workspaceId
+                ? []
+                : ['Public catalog scope differs from its provenance'];
+        }
+        catch {
+            return ['Public catalog envelope is malformed'];
+        }
+    }
+    return targets?.mode === 'broadcast' && targets.scope === 'world' &&
+            message.route.contextId === target.scope.applicationId
+        ? []
+        : ['WS provenance target differs from scoped world identity'];
 }

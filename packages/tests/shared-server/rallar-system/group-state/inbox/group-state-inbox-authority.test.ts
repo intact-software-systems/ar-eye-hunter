@@ -133,10 +133,7 @@ describe('GroupStateInboxService authenticated authority', () => {
             computedAtEpochMs: harness.nowEpochMs
         }, 0);
         await harness.runtimeRepository.upsert(
-            summaryWrite.namespace,
-            summaryWrite.key,
-            summaryWrite.value,
-            summaryWrite.expireAtTimestamp
+            { namespace: summaryWrite.namespace, key: summaryWrite.key, value: summaryWrite.value, expireAtTimestamp: summaryWrite.expireAtTimestamp }
         );
 
         const updated = await processAuthenticated({

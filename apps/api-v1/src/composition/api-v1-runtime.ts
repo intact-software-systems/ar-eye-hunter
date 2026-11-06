@@ -24,6 +24,7 @@ import type {
     RtcTopologyExecutionRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { type RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
+import type { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
@@ -47,6 +48,7 @@ export interface ApiV1Runtime extends
     readonly rtcTopologyReplay: NonNullable<RallarMiddlewareRuntime['rtcTopologyReplay']>;
     readonly appAuthInboxService: AppAuthInboxService;
     readonly appInbox: RallarServerAppInbox;
+    readonly viewWatches: ViewWatchService;
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
@@ -63,6 +65,7 @@ export interface ApiV1Runtime extends
 export interface RequireApiV1RuntimeInput {
     readonly runtime: RallarMiddlewareRuntime;
     readonly appInbox: RallarServerAppInbox;
+    readonly viewWatches: ViewWatchService;
     readonly authSessionRepository: AuthSessionRepository;
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
@@ -102,6 +105,7 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
     return {
         ...runtime,
         appInbox: input.appInbox,
+        viewWatches: input.viewWatches,
         clientStateService: runtime.clientStateService,
         groupStateService: runtime.groupStateService,
         rtcTopologyPublicationRepository: runtime.rtcTopologyPublicationRepository,

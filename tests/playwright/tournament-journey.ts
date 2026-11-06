@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { TournamentMatch } from '../../packages/shared/api/tournaments/tournament-types.ts';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { localStartInput } from './local-start-input.ts';
 import { openArenaOperations } from './room-player-journey.ts';
 
@@ -8,6 +9,58 @@ export async function registerTournament(
     players: readonly [Page, Page, Page, Page],
     game: 'arena' | 'relic'
 ): Promise<string> {
+    const { host, title, linkGuest } = await createTournamentPreview(players, game);
+    await verifyNarrowTournamentNavigation(host);
+    await panel(host).getByRole('button', { name: 'Publish tournament', exact: true }).click();
+    await expect(panel(host).getByText('Published in Discover', { exact: true })).toBeVisible();
+    for (const [index, page] of players.entries()) {
+        if (index !== 0) {
+            await panel(page).getByRole('article', { name: `Tournament ${title}`, exact: true }).getByRole('button', {
+                name: 'Open tournament',
+                exact: true
+            }).click();
+        }
+        await expect(panel(page).getByRole('article', { name: 'Tournament bracket', exact: true })).toContainText(
+            title
+        );
+        await expect(panel(page).getByRole('button', { name: 'Enter tournament match', exact: true })).toHaveCount(0);
+        await expect(panel(host).locator('ol li')).toHaveCount(index);
+        if (index === 2) {
+            await linkGuest.context().setOffline(true);
+        }
+        await panel(page).getByRole('button', { name: 'Register for tournament', exact: true }).click();
+        await expect(panel(host).locator('ol li')).toHaveCount(index + 1);
+        if (index === 2) {
+            await expect(panel(linkGuest).locator('ol li')).toHaveCount(index);
+            await linkGuest.context().setOffline(false);
+        }
+        if (index < 3) {
+            await expect(panel(linkGuest).locator('ol li')).toHaveCount(index + 1);
+        }
+        if (index === 1) {
+            await withdrawAndRegisterAgain(page, title);
+        }
+    }
+    await recoverTournamentFromHistory({ page: host, game, title, completedMatch: false });
+    await expect(panel(host).locator('ol li')).toHaveCount(4);
+    await panel(host).getByRole('button', { name: 'Unlist tournament', exact: true }).click();
+    await expect(panel(host).getByText('Unlisted · available through its share link', { exact: true })).toBeVisible();
+    await expect(panel(players[1]).getByRole('article', { name: `Tournament ${title}`, exact: true })).toHaveCount(0);
+    await expect(panel(players[1]).locator('ol li')).toHaveCount(4);
+    await panel(host).getByRole('button', { name: 'Launch bracket', exact: true }).click();
+    return title;
+}
+
+interface TournamentPreview {
+    readonly host: Page;
+    readonly title: string;
+    readonly linkGuest: Page;
+}
+
+async function createTournamentPreview(
+    players: readonly [Page, Page, Page, Page],
+    game: 'arena' | 'relic'
+): Promise<TournamentPreview> {
     for (const [index, page] of players.entries()) {
         await registerHunter(page, game, index);
     }
@@ -19,7 +72,6 @@ export async function registerTournament(
     const share = panel(host).getByLabel('Tournament share link', { exact: true });
     await expect(share).toHaveValue(/#rallar-tournament\?/);
     await expect(panel(host).getByText('Unlisted · available through its share link', { exact: true })).toBeVisible();
-    await panel(players[1]).getByRole('button', { name: 'Refresh tournaments', exact: true }).click();
     await expect(panel(players[1]).getByRole('article', { name: `Tournament ${title}`, exact: true })).toHaveCount(0);
     // An unlisted share link stays usable without adding an entrant or changing rooms.
     const linkGuest = players[3];
@@ -29,37 +81,8 @@ export async function registerTournament(
         title
     );
     await expect(panel(host).locator('ol li')).toHaveCount(0);
-    await verifyNarrowTournamentNavigation(host);
-    await panel(host).getByRole('button', { name: 'Publish tournament', exact: true }).click();
-    await expect(panel(host).getByText('Published in Discover', { exact: true })).toBeVisible();
-    for (const [index, page] of players.entries()) {
-        if (index !== 0) {
-            await panel(page).getByRole('button', { name: 'Refresh tournaments', exact: true }).click();
-            await panel(page).getByRole('article', { name: `Tournament ${title}`, exact: true }).getByRole('button', {
-                name: 'Open tournament',
-                exact: true
-            }).click();
-        }
-        await expect(panel(page).getByRole('article', { name: 'Tournament bracket', exact: true })).toContainText(
-            title
-        );
-        await expect(panel(page).getByRole('button', { name: 'Enter tournament match', exact: true })).toHaveCount(0);
-        await expect(panel(host).locator('ol li')).toHaveCount(index);
-        await panel(page).getByRole('button', { name: 'Register for tournament', exact: true }).click();
-        await expect(panel(host).locator('ol li')).toHaveCount(index + 1);
-        if (index === 1) {
-            await withdrawAndRegisterAgain(page, title);
-        }
-    }
-    await recoverTournamentFromHistory({ page: host, game, title, completedMatch: false });
-    await expect(panel(host).locator('ol li')).toHaveCount(4);
-    await panel(host).getByRole('button', { name: 'Unlist tournament', exact: true }).click();
-    await expect(panel(host).getByText('Unlisted · available through its share link', { exact: true })).toBeVisible();
-    await panel(players[1]).getByRole('button', { name: 'Refresh tournaments', exact: true }).click();
-    await expect(panel(players[1]).getByRole('article', { name: `Tournament ${title}`, exact: true })).toHaveCount(0);
-    await expect(panel(players[1]).locator('ol li')).toHaveCount(4);
-    await panel(host).getByRole('button', { name: 'Launch bracket', exact: true }).click();
-    return title;
+    await assertIdleViewReads(linkGuest, 'tournaments');
+    return { host, title, linkGuest };
 }
 
 async function verifyNarrowTournamentNavigation(page: Page): Promise<void> {

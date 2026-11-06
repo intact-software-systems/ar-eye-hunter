@@ -38,6 +38,8 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { Try } from '@shared/resilience/Either.ts';
+import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
+import { scheduleAtDeadline } from '@shared/resilience/timing/schedule-at-deadline.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
@@ -70,8 +72,6 @@ export interface RallarSessionAuthLifecycle {
     ): RallarUnsubscribe;
 }
 
-const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
-
 export namespace BrowserSessionAuthLifecycle {
     export interface Input {
         readonly sessionDeliveries: BrowserSessionDeliveries;
@@ -91,10 +91,12 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         console.error('Error notifying Rallar state listener', error)
     );
     private readonly input: BrowserSessionAuthLifecycle.Input;
+    private readonly timers: Timers;
     private loginGeneration = 0;
 
     public constructor(input: BrowserSessionAuthLifecycle.Input) {
         this.input = input;
+        this.timers = { ...createDefaultTimers(), nowMs: input.nowMs };
     }
 
     public async connect(
@@ -311,14 +313,14 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         if (!session) {
             return;
         }
-        const delayMs = Math.max(0, session.expiresAtEpochMs - this.input.nowMs());
         this.input.authRuntime.setAuthExpiryTimer(
-            setTimeout(
+            scheduleAtDeadline(
+                this.timers,
+                session.expiresAtEpochMs,
                 () =>
                     void this.expireAuthSessionIfCurrent(session).catch((error) =>
                         console.error('Failed to expire the Rallar auth session', error)
-                    ),
-                Math.min(delayMs, MAX_AUTH_EXPIRY_TIMEOUT_MS)
+                    )
             )
         );
     }

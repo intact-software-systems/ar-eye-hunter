@@ -82,6 +82,13 @@ function validateGuardResult(
         throw invalidResult('guard status is invalid');
     }
 
+    return validateAppliedGuardResult(guard, result);
+}
+
+function validateAppliedGuardResult(
+    guard: RuntimeStateGuardedBatchGuard,
+    result: JsonWireObject
+): RuntimeStateGuardedBatchGuardResult {
     if (guard.operation === 'delete') {
         requireExactResultKeys(
             result,
@@ -108,7 +115,10 @@ function validateGuardResult(
         'guard'
     );
     const resultingRevision = requireResultRevision(result.resultingRevision, 'guard resulting revision');
-    if (guard.operation === 'update' && resultingRevision !== guard.expectedRevision + 1) {
+    if (
+        (guard.operation === 'update' || guard.operation === 'update-exact') &&
+        resultingRevision !== guard.expectedRevision + 1
+    ) {
         throw invalidResult('guard resulting revision does not match');
     }
     return {
@@ -175,6 +185,14 @@ function validateEffectResult(
         throw invalidResult(`${label} status is invalid after an applied guard`);
     }
 
+    return validateAppliedEffectResult(effect, result, label);
+}
+
+function validateAppliedEffectResult(
+    effect: RuntimeStateGuardedBatchEffect,
+    result: JsonWireObject,
+    label: string
+): RuntimeStateGuardedBatchEffectResult {
     if (effect.operation === 'delete') {
         requireExactResultKeys(
             result,
@@ -206,7 +224,7 @@ function validateEffectResult(
         `${label} resulting revision`
     );
     if (
-        effect.operation === 'update' &&
+        (effect.operation === 'update' || effect.operation === 'update-exact') &&
         resultingRevision !== effect.expectedRevision + 1
     ) {
         throw invalidResult(`${label} update resulting revision does not match`);

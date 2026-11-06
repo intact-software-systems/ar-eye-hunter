@@ -2,7 +2,11 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import type { FriendsProfileRead } from './friends-mutation-contracts.ts';
-import { decodeFriendsProfile, FRIENDS_PROFILE_NAMESPACE, friendsProfileKey } from './friends-profile.ts';
+import {
+    decodeFriendsProfile,
+    FRIENDS_PROFILE_NAMESPACE,
+    friendsProfileKey
+} from './friends-profile.ts';
 
 export class FriendsRepository {
     private readonly repository: Pick<RuntimeStateRepositoryLike, 'readRuntimeStateBatch'>;
@@ -17,6 +21,9 @@ export class FriendsRepository {
 
     /** One SQL snapshot keeps mirrored consent coherent while another transaction changes both accounts. */
     async readProfiles(principalIds: readonly string[]): Promise<readonly FriendsProfileRead[]> {
+        if (principalIds.length === 0) {
+            return [];
+        }
         const selectors = [...new Set(principalIds)].map((principalId) => ({
             selectorId: friendsProfileKey(principalId),
             kind: 'key' as const,
@@ -35,12 +42,15 @@ export class FriendsRepository {
             if (selection === undefined || selection.entries.length > 1) {
                 throw new Error('Friends profile batch slot is invalid');
             }
-            return decodeStoredFriendsProfile(principalId, selection.entries[0]);
+            return decodeFriendsProfileRead(principalId, selection.entries[0]);
         });
     }
 }
 
-function decodeStoredFriendsProfile(principalId: string, entry: RuntimeStateEntry | undefined): FriendsProfileRead {
+export function decodeFriendsProfileRead(
+    principalId: string,
+    entry: RuntimeStateEntry | undefined
+): FriendsProfileRead {
     if (entry === undefined) {
         return { entry: null, profile: { principalId, shareOnline: false, contacts: [], invitations: [] } };
     }

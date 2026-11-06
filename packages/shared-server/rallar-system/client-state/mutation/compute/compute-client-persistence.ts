@@ -28,6 +28,13 @@ interface ClientRuntimeInsertInput {
     readonly expireAtEpochMs: number;
 }
 
+interface ClientRuntimeCandidateInput<T extends object> {
+    readonly namespace: string;
+    readonly key: string;
+    readonly candidate: Exclude<ConditionalCandidate<T>, { operation: 'none'; }>;
+    readonly expireAtEpochMs: number;
+}
+
 export function computeClientPersistence(
     computed: ClientMutationDomainWrite,
     facts: Pick<ClientMutationFacts, 'disconnectedSessionRetentionMs' | 'expireAtEpochMs'>
@@ -43,16 +50,17 @@ export function computeClientPersistence(
                 value: computed.idempotency,
                 expireAtEpochMs: facts.expireAtEpochMs
             })],
-            eventWrite: null
+            eventWrite: null,
+            outboxWrites: []
         };
     }
 
-    const runtimeWrites: ClientRuntimePersistenceOperation[] = [runtimeCandidate(
-        CLIENT_STATE_PRINCIPALS_NAMESPACE,
-        clientStatePrincipalStorageKey(computed.principal.value),
-        computed.principal,
-        NEVER_EXPIRE_AT_TIMESTAMP
-    )];
+    const runtimeWrites: ClientRuntimePersistenceOperation[] = [runtimeCandidate({
+        namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
+        key: clientStatePrincipalStorageKey(computed.principal.value),
+        candidate: computed.principal,
+        expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
+    })];
     appendInstanceWrite(runtimeWrites, computed.instance);
     appendSessionWrite(runtimeWrites, computed.session, facts.disconnectedSessionRetentionMs);
     if (computed.idempotency) {
@@ -68,6 +76,7 @@ export function computeClientPersistence(
     }
     return {
         runtimeWrites,
+        outboxWrites: [...computed.outbox.map(({ write }) => write), ...computed.viewPublication?.outbox ?? []],
         eventWrite: {
             event: computed.event,
             workspaceKey: clientStateWorkspaceStorageKey(computed.event.workspaceId),
@@ -83,12 +92,12 @@ function appendInstanceWrite(
     if (candidate.operation === 'none') {
         return;
     }
-    writes.push(runtimeCandidate(
-        CLIENT_STATE_INSTANCES_NAMESPACE,
-        clientStateInstanceStorageKey(candidate.value),
+    writes.push(runtimeCandidate({
+        namespace: CLIENT_STATE_INSTANCES_NAMESPACE,
+        key: clientStateInstanceStorageKey(candidate.value),
         candidate,
-        NEVER_EXPIRE_AT_TIMESTAMP
-    ));
+        expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
+    }));
 }
 
 function appendSessionWrite(
@@ -99,20 +108,18 @@ function appendSessionWrite(
     if (candidate.operation === 'none') {
         return;
     }
-    writes.push(runtimeCandidate(
-        CLIENT_STATE_SESSIONS_NAMESPACE,
-        clientStateSessionStorageKey(candidate.value),
+    writes.push(runtimeCandidate({
+        namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+        key: clientStateSessionStorageKey(candidate.value),
         candidate,
-        toClientSessionPurgeAfterEpochMs(candidate.value, disconnectedRetentionMs)
-    ));
+        expireAtEpochMs: toClientSessionPurgeAfterEpochMs(candidate.value, disconnectedRetentionMs)
+    }));
 }
 
 function runtimeCandidate<T extends object>(
-    namespace: string,
-    key: string,
-    candidate: Exclude<ConditionalCandidate<T>, { operation: 'none'; }>,
-    expireAtEpochMs: number
+    input: ClientRuntimeCandidateInput<T>
 ): ClientRuntimePersistenceOperation {
+    const { namespace, key, candidate, expireAtEpochMs } = input;
     const stored = {
         namespace,
         key,

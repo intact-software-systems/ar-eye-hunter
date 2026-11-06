@@ -3112,13 +3112,19 @@ The server application exposes:
   and `'granted'`, which requires `scope: 'room'` and `serverProducerIds`, admits
   only principals holding effective `publish`, and the server producers it lists,
   and reaches only the live sessions of principals holding `subscribe` that
-  subscribed to the topic. Defining
-  one `topicId` with two participations, or a granted topic without a room scope,
-  throws.
+  subscribed to the topic, and `'server'`, which requires a reserved topic id
+  (such as `rallar.server.room-snapshot`), `scope: 'room'` and
+  `fanout: 'live-only'`, admits only the server producers its
+  `serverProducerIds` lists, refuses every session publisher with
+  `topic-not-granted`, and reaches the live sessions of the room's active
+  members, each only on the connection generation its room presence records
+  while that generation is still an active client connection. Defining
+  one `topicId` with two participations, a granted topic without a room scope,
+  or a server topic that is not a reserved live room topic, throws.
 - `ws.removeTopic(selector)`
 - `ws.on(selector, handler)`
 - `ws.proxy(rule)`
-- `ws.publish({ message, scope?, fanout?, producerId? })`; on a granted topic a room publish whose `producerId` the topic does not list returns `status: 'refused'` with `refusal: 'topic-not-granted'` when the router has a `readServerPublishAudience` (API-v1 wires it; a `none` fanout sends nothing anyway), one that names no room `refusal: 'unsupported'`, and a refused publish writes nothing; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`; a message whose `ordering` states `orderingKey` (and `epoch`) without `seq` is sequenced by the server at `outbox` admission and refused at `live-only` and `none` (see "Ordering, Repair And Resynchronization"); an `outbox` publish result's message is the admitted one and carries the minted `seq`, while a `live-only` or `none` publish returns the caller's message
+- `ws.publish({ message, scope?, fanout?, producerId? })`; on a granted or server topic a room publish whose `producerId` the topic does not list returns `status: 'refused'` with `refusal: 'topic-not-granted'` when the router has a `readServerPublishAudience` (API-v1 wires it; a `none` fanout sends nothing anyway), one that names no room `refusal: 'unsupported'`, and a refused publish writes nothing; `scope` is only for a unicast that names no group, and a message that names a group takes its scope from `targets.groupRef`; a message whose `ordering` states `orderingKey` (and `epoch`) without `seq` is sequenced by the server at `outbox` admission and refused at `live-only` and `none` (see "Ordering, Repair And Resynchronization"); an `outbox` publish result's message is the admitted one and carries the minted `seq`, while a `live-only` or `none` publish returns the caller's message
 - `ws.status()`
 - `appData.define/open/lookup/close(...)`
 - the repository manager as `repositories`

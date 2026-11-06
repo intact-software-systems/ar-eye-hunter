@@ -19,11 +19,20 @@ import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-tar
 /** Auth invalidation is a separate session-global authority from ordinary scoped delivery. */
 export type WsOutboxProducerAuthority =
     | {
+        readonly admittedAudience: undefined;
+        readonly recipientScope: undefined;
+        readonly accountView: NonNullable<ALOutboundDequeueAuthority['accountView']>;
+        readonly sessionInvalidation?: never;
+        readonly principalTargetId?: never;
+        readonly broadWorld?: never;
+    }
+    | {
         readonly admittedAudience: readonly string[];
         readonly recipientScope: StateScope;
         readonly sessionInvalidation?: never;
         readonly principalTargetId?: never;
         readonly broadWorld?: never;
+        readonly accountView?: never;
     }
     | {
         readonly admittedAudience: readonly string[];
@@ -31,6 +40,7 @@ export type WsOutboxProducerAuthority =
         readonly sessionInvalidation?: never;
         readonly principalTargetId: string;
         readonly broadWorld?: never;
+        readonly accountView?: never;
     }
     | {
         readonly admittedAudience: undefined;
@@ -38,6 +48,7 @@ export type WsOutboxProducerAuthority =
         readonly sessionInvalidation?: never;
         readonly principalTargetId?: never;
         readonly broadWorld: true;
+        readonly accountView?: never;
     }
     | {
         /** A direct room broadcast: its wire groupRef scopes it. */
@@ -46,6 +57,7 @@ export type WsOutboxProducerAuthority =
         readonly sessionInvalidation?: never;
         readonly principalTargetId?: never;
         readonly broadWorld?: never;
+        readonly accountView?: never;
     }
     | {
         readonly admittedAudience: readonly string[];
@@ -53,6 +65,7 @@ export type WsOutboxProducerAuthority =
         readonly sessionInvalidation: NonNullable<ALOutboundDequeueAuthority['sessionInvalidation']>;
         readonly principalTargetId?: never;
         readonly broadWorld?: never;
+        readonly accountView?: never;
     };
 
 export type WsOutboxProducerProvenanceReader = (
@@ -118,7 +131,8 @@ export class WsQueueBoxServerDequeueAuthority {
                     admittedAudience: audience.eligible,
                     recipientScope: policy.recipientScope,
                     principalTargetId: policy.principalTargetId,
-                    sessionInvalidation: policy.sessionInvalidation
+                    sessionInvalidation: policy.sessionInvalidation,
+                    accountView: policy.accountView
                 },
                 dropped: audience.dropped
             };

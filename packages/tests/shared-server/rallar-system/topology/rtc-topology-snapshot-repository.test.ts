@@ -229,10 +229,7 @@ describe('RTC topology snapshot repository', () => {
             const wrong = createTopologySnapshot({ ...requested, groupId: 'wrong-room' }, 1);
             const key = repository.snapshotKey(requested);
             await runtimeRepository.upsert(
-                RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                key,
-                JSON.stringify(wrong),
-                9_000
+                { namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, key, value: JSON.stringify(wrong), expireAtTimestamp: 9_000 }
             );
 
             await expect(repository.findSnapshot(requested)).rejects.toMatchObject({
@@ -252,10 +249,12 @@ describe('RTC topology snapshot repository', () => {
         const repository = new RtcTopologySnapshotRepository(runtimeRepository);
         const snapshot = createTopologySnapshot(createGroupRef(), 1);
         await runtimeRepository.upsert(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-            repository.snapshotKey(snapshot.groupRef),
-            JSON.stringify(snapshot),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+                key: repository.snapshotKey(snapshot.groupRef),
+                value: JSON.stringify(snapshot),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         await expect(repository.listSnapshotEntries()).resolves.toHaveLength(1);
@@ -321,10 +320,7 @@ describe('RTC topology snapshot repository', () => {
                     const publication = createPublication(snapshot, `work-${defect}`);
                     const key = repository.publicationKey(publication.groupRef, publication.publicationId);
                     await runtimeRepository.upsert(
-                        RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                        key,
-                        JSON.stringify(publication),
-                        9_000
+                        { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, key, value: JSON.stringify(publication), expireAtTimestamp: 9_000 }
                     );
 
                     await expect(
@@ -341,10 +337,7 @@ describe('RTC topology snapshot repository', () => {
                 const repository = new RtcTopologySnapshotRepository(runtimeRepository);
                 const key = repository.snapshotKey(snapshot.groupRef);
                 await runtimeRepository.upsert(
-                    RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                    key,
-                    JSON.stringify(snapshot),
-                    NEVER_EXPIRE_AT_TIMESTAMP
+                    { namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, key, value: JSON.stringify(snapshot), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
                 );
                 const read = surface === 'direct'
                     ? repository.findSnapshot(snapshot.groupRef)
@@ -385,10 +378,12 @@ describe('RTC topology snapshot repository', () => {
             );
             const tampered = { ...publication, publicationId: 'random-noncanonical-publication-id' };
             await runtimeRepository.upsert(
-                RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                repository.publicationKey(tampered.groupRef, tampered.publicationId),
-                JSON.stringify(tampered),
-                Date.now() + 60_000
+                {
+                    namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                    key: repository.publicationKey(tampered.groupRef, tampered.publicationId),
+                    value: JSON.stringify(tampered),
+                    expireAtTimestamp: Date.now() + 60_000
+                }
             );
 
             const read = surface === 'direct'

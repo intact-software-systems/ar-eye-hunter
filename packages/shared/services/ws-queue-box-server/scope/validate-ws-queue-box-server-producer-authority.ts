@@ -21,7 +21,7 @@ export function validateWsQueueBoxServerProducerAuthority(
     referenceKey: Key
 ): readonly string[] {
     const issues = validateWsQueueBoxServerRecipientAuthority(message, authority, referenceKey);
-    if (issues.length > 0 || authority.sessionInvalidation !== undefined) {
+    if (issues.length > 0 || authority.sessionInvalidation !== undefined || authority.accountView !== undefined) {
         return issues;
     }
     if (isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey)) {

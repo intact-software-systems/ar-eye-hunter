@@ -165,6 +165,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             admittedConnectionGenerationIds: read.plan?.admittedConnectionGenerationIds,
             recipientScope: read.plan?.recipientScope,
             sessionInvalidation: read.plan?.sessionInvalidation,
+            accountView: read.plan?.accountView,
             completedHopPeerIds: [],
             repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
         });

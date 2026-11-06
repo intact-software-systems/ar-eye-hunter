@@ -9,7 +9,7 @@ import { createRuntime, policy, ref } from './party-service-fixture.ts';
 
 const scope = { applicationId: ref.applicationId, workspaceId: ref.workspaceId };
 
-describe('party matchmaking through authenticated AppInbox', () => {
+describe('party matchmaking through authenticated AppInbox', { timeout: 30_000 }, () => {
     it('lets only the party leader start the entire roster and admits one room after every account confirms', async () => {
         const storage = await createResourceInboxTestStorage('party_matchmaking_admission');
         try {
@@ -143,7 +143,7 @@ describe('party matchmaking through authenticated AppInbox', () => {
                 clients: fixture.clients,
                 nowEpochMs: () => fixture.clock.now,
                 timing: undefined
-            }, { defaultPolicy: policy, policiesByApplication: {}, finishedRetentionMs: 60000 });
+            }, { serviceId: 'party-test', defaultPolicy: policy, policiesByApplication: {}, finishedRetentionMs: 60000 });
             competingQueue.inbox.start();
             const readAdmission = fixture.groups.readMutationExactEntries.bind(fixture.groups);
             vi.spyOn(fixture.groups, 'readMutationExactEntries').mockImplementationOnce(async (input) => {

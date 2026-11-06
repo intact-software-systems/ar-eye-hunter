@@ -56,12 +56,24 @@ processes and release the run database.
   It writes `auth-logout-cluster-proof.json` beneath its artifact directory and
   records the committed notice while the unrelated C socket stays open.
 
-Both commands require an available PostgreSQL server. They use the runner's
+- `npm run test:api-v1:black-box:postgres:view-push` runs
+  [private view push and recovery](./cluster-proofs/api-v1-view-push-cluster-proof.mts).
+  A is the only queue worker; B and C receive private account updates while a live
+  same-room outsider receives room controls but no private view hint. C restarts
+  with the same auth session and reads the committed change. B is suspended while
+  its exact database LISTEN backend is terminated and a mutation completes on A;
+  B then resumes and receives resync on its original WebSocket. The proof records
+  the old/new backend IDs and zero socket closes in `view-push-cluster-proof.json`.
+  Failures record the phase and socket diagnostics alongside managed process logs.
+  The PostgreSQL Release Gate runs this proof and uploads its artifacts. Use
+  `-- --artifact-dir=/absolute/path --run-id=label` for an explicit artifact location.
+
+All commands require an available PostgreSQL server. They use the runner's
 local default connection unless `DATABASE_URL` selects another server.
-The package `check:deno` command type checks both executable entries without
+The package `check:deno` command type checks these executable entries without
 starting services.
 
-No CI lane runs either proof; they are manual acceptance runs (owner: Knut-Helge Vik). They are not
+No CI lane runs the group-delta or auth-logout proofs; those two are manual acceptance runs (owner: Knut-Helge Vik). They are not
 `*.test` files, so `tests/manual-suites.json`, which only claims test files, cannot list them.
 
 ## Recipe execution and observations

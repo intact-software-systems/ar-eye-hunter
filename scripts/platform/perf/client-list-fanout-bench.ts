@@ -11,7 +11,9 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 
@@ -97,22 +99,7 @@ async function main(): Promise<void> {
         });
     }
 
-    await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
-    await Deno.writeTextFile(
-        OUT,
-        `${
-            JSON.stringify(
-                {
-                    benchmark: 'client-list-snapshots-fanout',
-                    clients: CLIENTS,
-                    runs: RUNS,
-                    results
-                },
-                null,
-                2
-            )
-        }\n`
-    );
+    await writeBenchmarkResults(results);
 }
 
 class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
@@ -220,10 +207,7 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
     }
 
     upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<void> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -238,10 +222,7 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
     }
 
     insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
@@ -258,11 +239,7 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
     }
 
     upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -418,3 +395,22 @@ const BENCHMARK_AUDIT_STAMP: AuditStamp = {
 };
 
 await main();
+
+async function writeBenchmarkResults(results: readonly RunResult[]): Promise<void> {
+    await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
+    await Deno.writeTextFile(
+        OUT,
+        `${
+            JSON.stringify(
+                {
+                    benchmark: 'client-list-snapshots-fanout',
+                    clients: CLIENTS,
+                    runs: RUNS,
+                    results
+                },
+                null,
+                2
+            )
+        }\n`
+    );
+}

@@ -12,19 +12,23 @@ import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService, type GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 
 /** The trace every test expansion carries, as the reserved row's envelope would. */
 export const SUMMARY_EXPANSION_TRACE_ID = 'trace-group-presence-test-runtime';
 
+interface CreatePresenceTestServiceInput {
+    readonly runtimeRepository: GroupBarrierRepository;
+    readonly nowEpochMs: number | (() => number);
+    readonly attemptCount: number;
+    readonly injectedRandomId: (() => string) | undefined;
+    readonly timing: ((event: RallarTimingEvent) => void) | undefined;
+}
+
 export function createService(
-    runtimeRepository: GroupBarrierRepository,
-    nowEpochMs: number | (() => number),
-    attemptCount = 1,
-    injectedRandomId?: () => string,
-    timing?: (event: RallarTimingEvent) => void
+    { runtimeRepository, nowEpochMs, attemptCount, injectedRandomId, timing }: CreatePresenceTestServiceInput
 ): GroupStateTestService {
     let id = 0;
     const currentNow = () => (typeof nowEpochMs === 'function' ? nowEpochMs() : nowEpochMs);
@@ -165,7 +169,7 @@ export async function seedOpenGroup(
     groupId: string,
     maxMembers = 10
 ): Promise<void> {
-    await createService(runtime, 1_000).createGroup(SCOPE, {
+    await createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).createGroup(SCOPE, {
         groupId,
         displayName: groupId,
         kind: 'room',
@@ -204,10 +208,7 @@ export async function corruptFirstEntry({
         throw new TypeError(`Expected ${namespace} entry to be a JSON object`);
     }
     await runtime.upsert(
-        namespace,
-        entry.key,
-        JSON.stringify(corrupt(persisted)),
-        entry.expireAtTimestamp
+        { namespace, key: entry.key, value: JSON.stringify(corrupt(persisted)), expireAtTimestamp: entry.expireAtTimestamp }
     );
 }
 

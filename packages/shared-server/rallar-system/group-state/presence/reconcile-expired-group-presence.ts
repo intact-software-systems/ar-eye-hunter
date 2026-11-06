@@ -1,33 +1,53 @@
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
-import { tryRunInIntervals } from '@shared/resilience/try-with-policy.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
+import { startDrainableRepeating } from '@shared/resilience/timing/start-drainable-repeating.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 export const DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS = 60_000;
 
-export interface PresenceExpiryReconciliationOptions {
-    readonly intervalMsecs?: number;
-    readonly now?: () => number;
+export interface PresenceExpiryServices {
+    readonly appClientInboxService: Pick<RallarMiddlewareRuntime['appClientInboxService'], 'enqueueExpiredSessions'>;
+    readonly groupStateInboxService: Pick<
+        RallarMiddlewareRuntime['groupStateInboxService'],
+        'enqueueExpiredPresenceSessions'
+    >;
 }
 
-export async function initPresenceExpiryReconciliation(
-    runtime: Pick<RallarMiddlewareRuntime, 'appClientInboxService' | 'groupStateInboxService'>,
-    options: PresenceExpiryReconciliationOptions = {}
-): Promise<void> {
-    const now = options.now ?? (() => Date.now());
+export interface PresenceExpiryReconciliationInput {
+    readonly runtime: PresenceExpiryServices;
+    readonly timers: Timers;
+    readonly intervalMs: number;
+    readonly nowEpochMs: () => number;
+    readonly onFailure: (error: Error) => void;
+}
 
-    await tryRunInIntervals({
-        handler: () => enqueuePresenceExpiryReconciliation(runtime, now()),
-        intervalMsecs: options.intervalMsecs ?? DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS,
-        retryIntervalMsecs: 10_000,
-        maxAttempts: Number.MAX_VALUE
+/** Stop owns the in-flight enqueue as well as the next scheduled reconciliation. */
+export function startPresenceExpiryReconciliation(input: PresenceExpiryReconciliationInput): () => Promise<void> {
+    return startDrainableRepeating({
+        timers: input.timers,
+        intervalMs: input.intervalMs,
+        firstRun: 'now',
+        retryBackoff: { baseMs: 10000, maxMs: 20000 },
+        onFailure: input.onFailure,
+        run: () => enqueuePresenceExpiryReconciliation(input.runtime, input.nowEpochMs())
     });
 }
 
 export async function enqueuePresenceExpiryReconciliation(
-    runtime: Pick<RallarMiddlewareRuntime, 'appClientInboxService' | 'groupStateInboxService'>,
+    runtime: PresenceExpiryServices,
     atEpochMs: number
 ): Promise<void> {
-    await Promise.all([
+    const outcomes = await Promise.allSettled([
         runtime.appClientInboxService.enqueueExpiredSessions(atEpochMs),
         runtime.groupStateInboxService.enqueueExpiredPresenceSessions(atEpochMs)
     ]);
+    const failures = outcomes.filter((outcome) => outcome.status === 'rejected').map((outcome) =>
+        toError(outcome.reason)
+    );
+    if (failures.length === 1) {
+        throw failures[0];
+    }
+    if (failures.length > 1) {
+        throw new AggregateError(failures, 'Presence expiry enqueues failed');
+    }
 }

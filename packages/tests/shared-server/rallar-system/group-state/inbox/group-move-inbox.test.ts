@@ -1,3 +1,4 @@
+import type { GroupMoveHistoryDeadline } from '@shared-server/rallar-system/group-state/move/group-move-deadline.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -78,6 +79,28 @@ describe('group moves through AppInbox', () => {
                 harness.sessions.owner
             )
         ).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('replays a due terminal-history reminder through AppInbox without duplicating its scoped notices', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        const deadline: GroupMoveHistoryDeadline = {
+            kind: 'terminal-retention',
+            source: request('cancel').source,
+            moveId: 'collected-move',
+            moveCreatedAtEpochMs: harness.nowEpochMs - 1000,
+            completedAtEpochMs: harness.nowEpochMs - 100,
+            dueAtEpochMs: harness.nowEpochMs,
+            principalIds: ['owner']
+        };
+        async function deliver(traceId: string): Promise<void> {
+            await harness.service.enqueueGroupMoveExpiry(deadline, traceId);
+            await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        }
+        await deliver('first-retirement');
+        const notices = [...harness.database.outboxEntries.values()].filter((entry) => entry.key.topicId === 'view.invalidated');
+        expect(notices).toHaveLength(1);
+        await deliver('retry-after-restart');
+        expect([...harness.database.outboxEntries.values()].filter((entry) => entry.key.topicId === 'view.invalidated')).toEqual(notices);
     });
 
     it('keeps the exact actor session in logical command identity', () => {

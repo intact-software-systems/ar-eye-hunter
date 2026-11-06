@@ -60,18 +60,20 @@ describe('group topology config repository reads and writes', () => {
         ];
         for (const [index, groupRef] of refs.entries()) {
             await runtimeRepository.insertIfAbsent(
-                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-                groupStateGroupStorageKey(groupRef),
-                JSON.stringify({
-                    groupRef,
-                    config: createTopologyTestEffectiveConfig('tree'),
-                    version: index + 1,
-                    createdAtEpochMs: 1,
-                    updatedAtEpochMs: 1,
-                    updatedByPrincipalId: 'owner',
-                    requestId: null
-                }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                    key: groupStateGroupStorageKey(groupRef),
+                    value: JSON.stringify({
+                        groupRef,
+                        config: createTopologyTestEffectiveConfig('tree'),
+                        version: index + 1,
+                        createdAtEpochMs: 1,
+                        updatedAtEpochMs: 1,
+                        updatedByPrincipalId: 'owner',
+                        requestId: null
+                    }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
         }
 
@@ -126,10 +128,7 @@ describe('group topology config repository reads and writes', () => {
         };
         const key = target === 'config' ? repository.configKey(groupRef) : repository.overrideKey(groupRef);
         await runtimeRepository.insertIfAbsent(
-            namespace,
-            key,
-            JSON.stringify(predecessor),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            { namespace, key, value: JSON.stringify(predecessor), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
 
         await expect(

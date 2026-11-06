@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import {
     describe,
     expect,
@@ -7,7 +8,7 @@ import {
     vi
 } from 'vitest';
 
-import { installQueueBoxPubSubBridge, toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import {
     computeWsOutboxProvenanceDigest,
@@ -305,7 +306,7 @@ class RoomFixture {
     readonly native = new Map<string, TestWebSocket>();
     readonly authentication = { scope: SCOPE, expiresAtEpochMs: Date.now() + 60_000 };
     readonly stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
-    readonly reader = new WsOutboxProvenanceReader({ repository: this.repository, nowMs: Date.now });
+    readonly reader = new WsOutboxProvenanceReader({ repository: this.repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     readonly outcomes: WsOutboxDeliveryOutcome[] = [];
     readonly retiredCompletions: Promise<PromiseSettledResult<void>[]>[] = [];
     engine = new InboxOutboxEngine();
@@ -392,7 +393,12 @@ class RoomFixture {
         const entry = corruption === 'forged-canonical-key' ? { ...raw, key: { ...raw.key, topicId: 'AL_OUTBOUND_MESSAGE' } } : raw;
         const proof = createProof(message, entry, { audience, wrongRoom: corruption === 'wrong-room' });
         if (corruption !== 'missing') {
-            await this.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(entry.key), JSON.stringify(proof), proof.expiresAtMs);
+            await this.repository.upsert({
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            });
         }
         await this.stores.workQueue.enqueue(entry);
         return { message, entry };

@@ -18,7 +18,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { auditStamp, createMutationCommand, createMutationFacts, createMutationRead, memberFor } from '../group-state-concurrency-test-fixtures.ts';
 import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
-import { createPersistenceMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
+import { createPersistenceMutationRead } from './create-persistence-mutation-read.ts';
 
 describe('GroupStateRepository persistence', () => {
     it('rejects contradictory persisted terminal member audits', () => {
@@ -75,13 +75,15 @@ describe('GroupStateRepository persistence', () => {
         };
 
         await runtime.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey({
-                ...absentScope,
-                groupId: explicitSentinelGroup.groupId
-            }),
-            JSON.stringify(explicitSentinelGroup),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:groups',
+                key: groupStateGroupStorageKey({
+                    ...absentScope,
+                    groupId: explicitSentinelGroup.groupId
+                }),
+                value: JSON.stringify(explicitSentinelGroup),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
 
         for (
@@ -187,10 +189,7 @@ describe('GroupStateRepository persistence', () => {
         for (const testCase of cases) {
             const runtime = new FakeRuntimeStateRepository();
             await runtime.upsert(
-                testCase.namespace,
-                testCase.key,
-                JSON.stringify(testCase.value),
-                Number.MAX_SAFE_INTEGER
+                { namespace: testCase.namespace, key: testCase.key, value: JSON.stringify(testCase.value), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
             );
             const repository = createTestGroupStateRepository(runtime);
             for (const read of testCase.reads(repository)) {
@@ -222,7 +221,7 @@ describe('GroupStateRepository persistence', () => {
             ] as const
         ) {
             const runtime = new FakeRuntimeStateRepository();
-            await runtime.upsert('group-state:groups', key, value, Number.MAX_SAFE_INTEGER);
+            await runtime.upsert({ namespace: 'group-state:groups', key, value, expireAtTimestamp: Number.MAX_SAFE_INTEGER });
             await expect(read(createTestGroupStateRepository(runtime))).rejects.toMatchObject({
                 code: 'group-state-repository-invariant-corruption',
                 storageKey: key
@@ -247,7 +246,7 @@ describe('GroupStateRepository persistence', () => {
         ) {
             expect(corruptText).not.toBe(storedText);
             const runtime = new FakeRuntimeStateRepository();
-            await runtime.upsert('group-state:groups', key, corruptText, Number.MAX_SAFE_INTEGER);
+            await runtime.upsert({ namespace: 'group-state:groups', key, value: corruptText, expireAtTimestamp: Number.MAX_SAFE_INTEGER });
             await expect(createTestGroupStateRepository(runtime).findGroup(ref)).rejects.toMatchObject({
                 code: 'group-state-repository-invariant-corruption',
                 storageKey: key
@@ -287,10 +286,12 @@ describe('GroupStateRepository persistence', () => {
         for (const read of ['value', 'entry'] as const) {
             const runtime = new FakeRuntimeStateRepository();
             await runtime.upsert(
-                'group-state:idempotent',
-                groupStateIdempotencyStorageKey(ref, requestId),
-                JSON.stringify(identityFreeRecord),
-                Number.MAX_SAFE_INTEGER
+                {
+                    namespace: 'group-state:idempotent',
+                    key: groupStateIdempotencyStorageKey(ref, requestId),
+                    value: JSON.stringify(identityFreeRecord),
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER
+                }
             );
             const repository = createTestGroupStateRepository(runtime);
             const result = read === 'value'
@@ -321,7 +322,7 @@ describe('GroupStateRepository persistence', () => {
         const storedText = JSON.stringify(computed.idempotency);
         const readStored = async (text: string) => {
             const runtime = new FakeRuntimeStateRepository();
-            await runtime.upsert('group-state:idempotent', key, text, Number.MAX_SAFE_INTEGER);
+            await runtime.upsert({ namespace: 'group-state:idempotent', key, value: text, expireAtTimestamp: Number.MAX_SAFE_INTEGER });
             return await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
                 ref,
                 command.requestId

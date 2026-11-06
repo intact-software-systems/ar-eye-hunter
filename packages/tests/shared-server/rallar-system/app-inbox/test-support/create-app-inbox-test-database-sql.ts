@@ -140,7 +140,7 @@ async function executeRuntimeStateWriteSql({
         const key = readStringParameter(values[1], 'Runtime-state key');
         const value = readStringParameter(values[2], 'Runtime-state value');
         const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
-        const result = await repository.insertIfAbsent(namespace, key, value, expireAt.getTime());
+        const result = await repository.insertIfAbsent({ namespace, key, value, expireAtTimestamp: expireAt.getTime() });
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }
     const insertsAbsentOrExpiredEntry = query.includes('insert into runtime_state_store') &&
@@ -154,8 +154,8 @@ async function executeRuntimeStateWriteSql({
         const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
         const current = await repository.findEntry(namespace, key);
         const result = current === undefined || current.expireAtTimestamp > Date.now()
-            ? await repository.insertIfAbsent(namespace, key, value, expireAt.getTime())
-            : await repository.upsertIfRevision(namespace, key, value, expireAt.getTime(), current.revision);
+            ? await repository.insertIfAbsent({ namespace, key, value, expireAtTimestamp: expireAt.getTime() })
+            : await repository.upsertIfRevision({ namespace, key, value, expireAtTimestamp: expireAt.getTime(), expectedRevision: current.revision });
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }
     if (query.includes('insert into runtime_state_store') && query.includes('do update set')) {
@@ -164,7 +164,7 @@ async function executeRuntimeStateWriteSql({
         const key = readStringParameter(values[1], 'Runtime-state key');
         const value = readStringParameter(values[2], 'Runtime-state value');
         const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
-        await repository.upsert(namespace, key, value, expireAt.getTime());
+        await repository.upsert({ namespace, key, value, expireAtTimestamp: expireAt.getTime() });
         return [];
     }
     return undefined;

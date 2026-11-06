@@ -27,6 +27,17 @@ export interface RuntimeStateEntryRead<T> {
     readonly expiredEntry: RuntimeStateEntry | undefined;
 }
 
+export interface RuntimeStateJsonWriteInput {
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: object;
+    readonly expireAtTimestamp: number;
+}
+
+export interface RuntimeStateJsonRevisionWriteInput extends RuntimeStateJsonWriteInput {
+    readonly expectedRevision: number;
+}
+
 export class RuntimeStateJsonStore {
     protected readonly repository: RuntimeStateRepositoryLike;
 
@@ -35,50 +46,30 @@ export class RuntimeStateJsonStore {
     }
 
     protected async putValue(
-        namespace: string,
-        key: string,
-        value: object,
-        expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateJsonWriteInput
     ): Promise<void> {
         await this.repository.upsert(
-            namespace,
-            key,
-            encodeRuntimeStateJsonValue(value),
-            expireAtTimestamp
+            { namespace, key, value: encodeRuntimeStateJsonValue(value), expireAtTimestamp }
         );
     }
 
     protected async putValueIfAbsent(
-        namespace: string,
-        key: string,
-        value: object,
-        expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateJsonWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
         const serializedValue = encodeRuntimeStateJsonValue(value);
         return await repository.insertIfAbsent(
-            namespace,
-            key,
-            serializedValue,
-            expireAtTimestamp
+            { namespace, key, value: serializedValue, expireAtTimestamp }
         );
     }
 
     protected async putValueIfRevision(
-        namespace: string,
-        key: string,
-        value: object,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateJsonRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
         const serializedValue = encodeRuntimeStateJsonValue(value);
         return await repository.upsertIfRevision(
-            namespace,
-            key,
-            serializedValue,
-            expireAtTimestamp,
-            expectedRevision
+            { namespace, key, value: serializedValue, expireAtTimestamp, expectedRevision }
         );
     }
 

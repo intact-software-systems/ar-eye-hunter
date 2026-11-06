@@ -45,7 +45,7 @@ describe('AppInbox expired row replacement', () => {
         if (!seeded) {
             throw new Error('Expected seeded client session');
         }
-        await runtime.upsert('client-state:sessions', seeded.key, seeded.value, nowEpochMs - 1);
+        await runtime.upsert({ namespace: 'client-state:sessions', key: seeded.key, value: seeded.value, expireAtTimestamp: nowEpochMs - 1 });
         const expired = await runtime.findEntry('client-state:sessions', seeded.key);
         expect(expired?.revision).toBe(seeded.revision + 1);
         await expect(
@@ -156,7 +156,7 @@ describe('AppInbox expired row replacement', () => {
                 if (!current) {
                     throw new Error('Expected expired auth session index');
                 }
-                await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
+                await runtime.upsert({ namespace, key, value: current.value, expireAtTimestamp: current.expireAtTimestamp });
             }
         };
         const pending = service.issueSession({
@@ -303,10 +303,7 @@ describe('AppInbox expired row replacement', () => {
             }
             const staleAcceptedGroupRevision = readStaleAcceptedGroupRevision(staleWorkEntry.resource);
             await runtime.upsert(
-                'group-state:groups',
-                groupBeforeExpiry.key,
-                groupBeforeExpiry.value,
-                nowEpochMs - 1
+                { namespace: 'group-state:groups', key: groupBeforeExpiry.key, value: groupBeforeExpiry.value, expireAtTimestamp: nowEpochMs - 1 }
             );
             const expiredGroup = await runtime.findEntry('group-state:groups', groupBeforeExpiry.key);
             if (!expiredGroup) {
@@ -333,7 +330,7 @@ describe('AppInbox expired row replacement', () => {
                     if (!current) {
                         throw new Error('Expected old group presence summary');
                     }
-                    await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
+                    await runtime.upsert({ namespace, key, value: current.value, expireAtTimestamp: current.expireAtTimestamp });
                 }
             };
             const replacement = await create('replace-group', 'New room');

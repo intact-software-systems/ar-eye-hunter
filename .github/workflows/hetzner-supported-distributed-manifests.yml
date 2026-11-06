@@ -78,6 +78,8 @@ jobs:
       ref: ${{ github.sha }}
       operator_phase: prepare
       rollout_before_run: true
+      # An isolated validation room must not become the public SPA's configured room.
+      preserve_public_settings: ${{ github.event_name == 'workflow_dispatch' }}
       run_id: main-${{ github.run_id }}-${{ github.run_attempt }}-prepare
       agent_prefix: controller
       manifest_path: apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json

@@ -1,11 +1,12 @@
 import { toAuthAppInboxType } from '../auth/inbox/auth-app-inbox-routing.ts';
+import type { AuthMutationIntent } from '../auth/mutation/auth-mutation-contracts.ts';
 import { decodeAuthMutationIntent } from '../auth/mutation/decode-auth-mutation-intent.ts';
 import { decodeCrdtMutationCommand } from '../crdt/mutation/crdt-mutation-command-codec.ts';
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
 import { decodeGroupMutationDescriptor } from '../group-state/inbox/decode-group-state-inbox-authority.ts';
 import { decodeGroupMoveCommand } from '../group-state/move/group-move-command.ts';
-import { decodeGroupMoveDeadline } from '../group-state/move/group-move-outbox.ts';
+import { decodeGroupMoveDeadline } from '../group-state/move/group-move-deadline.ts';
 import { assertGroupMutationCommand } from '../group-state/mutation/command-validation/assert-group-mutation-command.ts';
 import { decodeGroupQuickJoinCommand } from '../group-state/quick-join/group-quick-join-codec.ts';
 import { decodeGroupRetentionCommand } from '../group-state/retention/group-retention-service.ts';
@@ -237,7 +238,7 @@ function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[
     return Array.isArray(value);
 }
 
-function toStableAuthIntent(intent: ReturnType<typeof decodeAuthMutationIntent>): JsonWireValue {
+function toStableAuthIntent(intent: AuthMutationIntent): JsonWireValue {
     switch (intent.kind) {
         case 'register-user':
             return {

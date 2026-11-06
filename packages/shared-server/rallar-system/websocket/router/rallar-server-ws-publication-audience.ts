@@ -54,7 +54,7 @@ export async function readRallarServerWsPublicationAudience(
     input: ReadRallarServerWsPublicationAudienceInput
 ): Promise<Either<RallarServerWsPublicationRefusal, RallarServerWsPublicationAudience>> {
     const groupRef = readALTargetGroupRef(input.message);
-    if (input.origin !== 'admitted' && input.topic.participation === 'granted' && !groupRef) {
+    if (input.origin !== 'admitted' && input.topic.participation !== 'members' && !groupRef) {
         const refusal = toUngroupedRoomPublicationRefusal(input.message.route.topicId);
         return Either.ofLeft({ reason: refusal.logMessage, refusal: refusal.code });
     }
@@ -73,10 +73,10 @@ export async function readRallarServerWsPublicationAudience(
             ? Either.ofRight({ frozen: authorization.audience })
             : Either.ofLeft({ reason: authorization.logMessage, refusal: undefined });
     }
-    if (input.topic.participation === 'granted' && input.readServerPublishAudience === undefined) {
+    if (input.topic.participation !== 'members' && input.readServerPublishAudience === undefined) {
         return Either.ofLeft({
             reason:
-                `No server publish audience reader is composed for granted WS topic ${input.message.route.topicId}.`,
+                `No server publish audience reader is composed for restricted WS topic ${input.message.route.topicId}.`,
             refusal: 'unsupported'
         });
     }
@@ -121,7 +121,7 @@ function toRouteAdmittedSessionIds(
     audience: RallarServerWsRoomAudience,
     topic: RallarServerWsTopicAccess
 ): readonly string[] {
-    return topic.participation === 'granted'
+    return topic.participation !== 'members'
         ? admittedPeerIds.filter((sessionId) => Object.hasOwn(audience.recipientConnectionGenerationIds, sessionId))
         : admittedPeerIds;
 }

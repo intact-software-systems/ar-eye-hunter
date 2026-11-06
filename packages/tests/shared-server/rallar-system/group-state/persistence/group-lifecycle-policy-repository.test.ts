@@ -26,10 +26,12 @@ async function storeRaw(
     value: JsonWireValue
 ): Promise<void> {
     await repository.runtimeRepository.upsert(
-        GROUP_LIFECYCLE_POLICIES_NAMESPACE,
-        groupStateGroupStorageKey(ref),
-        JSON.stringify(value),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: GROUP_LIFECYCLE_POLICIES_NAMESPACE,
+            key: groupStateGroupStorageKey(ref),
+            value: JSON.stringify(value),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
 }
 

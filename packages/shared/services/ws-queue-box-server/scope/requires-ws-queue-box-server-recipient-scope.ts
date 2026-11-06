@@ -4,11 +4,15 @@ import { isALWorldBroadcast } from '../../../al-contracts/is-al-world-broadcast.
 import type { ALOutboundCapturedPolicy } from '../../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     resolveALOutboundScopeAuthority,
+    validateALAccountViewMessage,
     type ALOutboundScopeAuthority
 } from '../../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import { validateALSessionInvalidationMessage } from '../../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { StateScope } from '../../../api/state-types.ts';
+import { hasServerRoomSnapshotTopic } from '../../../api/views/server-room-snapshot.ts';
+import { hasViewInvalidatedTopic } from '../../../api/views/view-invalidation.ts';
 import type { Key } from '../../../queuebox/ResourceEntry.ts';
+import { validateViewInvalidationAuthority } from './validate-view-invalidation-authority.ts';
 
 /** A unicast that names no group needs the scope its producer proved; a fully decoded AL control envelope is exempt. */
 export function requiresWsQueueBoxServerRecipientScope(message: ALMessage): boolean {
@@ -56,16 +60,29 @@ export function validateWsQueueBoxServerRecipientAuthority(
     message: ALMessage,
     authority: Pick<
         ALOutboundCapturedPolicy,
-        'admittedAudience' | 'recipientScope' | 'principalTargetId' | 'sessionInvalidation'
+        'admittedAudience' | 'recipientScope' | 'principalTargetId' | 'sessionInvalidation' | 'accountView'
     >,
     referenceKey: Key | undefined
 ): readonly string[] {
+    if (hasServerRoomSnapshotTopic(message)) {
+        return ['Server room snapshots require live-only delivery'];
+    }
+    if (
+        hasViewInvalidatedTopic(message) && authority.accountView === undefined &&
+        authority.recipientScope === undefined
+    ) {
+        return ['Account view requires authenticated principal delivery'];
+    }
     const resolved = resolveALOutboundScopeAuthority(message, authority);
     if (resolved.left) {
         return resolved.left;
     }
     const scope = resolved.right!;
     switch (scope.kind) {
+        case 'account-view':
+            return authority.admittedAudience === undefined
+                ? validateALAccountViewMessage(message, scope.accountView)
+                : ['Account view cannot freeze a session audience'];
         case 'session-invalidation':
             return authority.admittedAudience?.length === 1 &&
                     authority.admittedAudience[0] === scope.sessionInvalidation.sessionId
@@ -103,6 +120,9 @@ function validateWsQueueBoxServerScopedRowAuthority(
     input: ValidateWsQueueBoxServerScopedRowAuthorityInput
 ): readonly string[] {
     const { message, scope, admittedAudience, referenceKey } = input;
+    if (hasViewInvalidatedTopic(message)) {
+        return validateViewInvalidationAuthority(message, scope, admittedAudience);
+    }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
         return validateWsQueueBoxServerDirectPrincipalBroadcastAuthority(
             message,

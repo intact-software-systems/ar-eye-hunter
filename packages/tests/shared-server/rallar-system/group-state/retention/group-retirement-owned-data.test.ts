@@ -56,6 +56,7 @@ describe('transactional deletion of room-owned rows', () => {
         const ownedLatch = await seedLatch(fixture, RETENTION_REF);
         const foreignLatch = await seedLatch(fixture, foreignRef);
         const retention = new GroupRetentionService({
+            runtime: fixture.runtime,
             repository: fixture.repository,
             groupOwnedAppData: new RoomOwnedAppData(appData, [{
                 applicationId: RETENTION_REF.applicationId,
@@ -63,7 +64,7 @@ describe('transactional deletion of room-owned rows', () => {
                 namespace: own.namespace,
                 storeName: own.storeName
             }])
-        }, { serviceId: 'test', now: () => fixture!.nowEpochMs });
+        }, { finishedRetentionMs: 60000, serviceId: 'test', now: () => fixture!.nowEpochMs });
         const ingress = retention.capture({ groupRef: RETENTION_REF, requestId: 'delete-owned', observedAtEpochMs: fixture.nowEpochMs });
         const read = await retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retirement-owned-data' });
         const computed = retention.compute(read);
@@ -116,7 +117,8 @@ describe('transactional deletion of room-owned rows', () => {
             namespace: key.namespace,
             storeName: key.storeName
         }]);
-        const retention = new GroupRetentionService({ repository: fixture.repository, groupOwnedAppData: owned }, {
+        const retention = new GroupRetentionService({ runtime: fixture.runtime, repository: fixture.repository, groupOwnedAppData: owned }, {
+            finishedRetentionMs: 60000,
             serviceId: 'test',
             now: () => fixture!.nowEpochMs
         });
@@ -167,7 +169,12 @@ async function seedLatch(fixture: RetentionDatabaseFixture, groupRef: typeof RET
         supersedesLayoutIdentity: null
     };
     const key = toGroupConnectTriggerStorageKey(latch);
-    await fixture.runtime.upsert(GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE, key, JSON.stringify(latch), NEVER_EXPIRE_AT_TIMESTAMP);
+    await fixture.runtime.upsert({
+        namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+        key,
+        value: JSON.stringify(latch),
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+    });
     expect(key.startsWith(groupStateGroupStorageKey(groupRef))).toBe(true);
     return key;
 }
@@ -186,7 +193,7 @@ async function seedGrant(fixture: RetentionDatabaseFixture, groupRef: typeof RET
         }
     };
     const key = groupStatePublicationGrantStorageKey(groupRef, 'owner');
-    await fixture.runtime.upsert(PUBLICATION_GRANTS_NAMESPACE, key, JSON.stringify(grant), NEVER_EXPIRE_AT_TIMESTAMP);
+    await fixture.runtime.upsert({ namespace: PUBLICATION_GRANTS_NAMESPACE, key, value: JSON.stringify(grant), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
     return key;
 }
 
@@ -199,6 +206,11 @@ async function seedSubscription(fixture: RetentionDatabaseFixture, groupRef: typ
         leaseExpiresAtEpochMs: fixture.nowEpochMs + 120_000
     };
     const key = groupStateTopicSubscriptionStorageKey(groupRef, subscription.sessionId, subscription.topicId);
-    await fixture.runtime.upsert(SUBSCRIPTIONS_NAMESPACE, key, JSON.stringify(subscription), subscription.leaseExpiresAtEpochMs);
+    await fixture.runtime.upsert({
+        namespace: SUBSCRIPTIONS_NAMESPACE,
+        key,
+        value: JSON.stringify(subscription),
+        expireAtTimestamp: subscription.leaseExpiresAtEpochMs
+    });
     return key;
 }

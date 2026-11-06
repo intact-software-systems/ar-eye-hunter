@@ -1,4 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import {
     decodeGroupSessionPage,
     decodeGroupSessionPreview
@@ -13,6 +14,7 @@ import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-requ
 import { Command } from '@shared/cache/Command.ts';
 import { readApiBaseUrl } from '../../api-client-config.ts';
 import { ApiHttpError } from '../../api/http-error.ts';
+import { readApiView } from '../../api/read-api-view.ts';
 import { sendApiHttpRequest } from '../../api/send-api-http-request.ts';
 import { toStateGroupHttpPath, toStateScopeHttpPath } from '../../api/state-http-path.ts';
 import { roomGroupStateHttpApi } from '../room-group-state-http-api.ts';
@@ -29,12 +31,12 @@ async function listSessions(
     { scope, after, session, signal }: RallarScheduledSessions.ListInput
 ): Promise<GroupSessionPage> {
     const query = after === null ? '' : `?after=${encodeURIComponent(after)}`;
-    const response = await sendApiHttpRequest<never, unknown>({
+    const response = await readApiView({
+        timeoutMs: 10000,
         baseUrl: readApiBaseUrl(),
         path: `${toStateScopeHttpPath(scope)}/group-sessions${query}`,
-        method: 'GET',
-        body: undefined,
-        options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) }
+        session,
+        signal
     });
     return decodeGroupSessionPage(response);
 }
@@ -45,12 +47,12 @@ async function readSession(
     signal: AbortSignal
 ): Promise<GroupSessionPreview | null> {
     try {
-        const response = await sendApiHttpRequest<never, unknown>({
+        const response = await readApiView({
+            timeoutMs: 10000,
             baseUrl: readApiBaseUrl(),
             path: `${toStateGroupHttpPath(ref, ref.groupId)}/session`,
-            method: 'GET',
-            body: undefined,
-            options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) }
+            session,
+            signal
         });
         return decodeGroupSessionPreview(response);
     }
@@ -92,7 +94,7 @@ async function changeSession({ ref, request, session, signal }: RallarScheduledS
     }
     const requestId = request.requestId;
     await new Command(async (attemptSignal) => {
-        const response = await sendApiHttpRequest<GroupSessionChange, unknown>({
+        const response = await sendApiHttpRequest<GroupSessionChange, ApiJsonValue>({
             baseUrl: readApiBaseUrl(),
             path: toApiMutationRequestPath(`${toStateGroupHttpPath(ref, ref.groupId)}/session`, requestId),
             method: 'POST',

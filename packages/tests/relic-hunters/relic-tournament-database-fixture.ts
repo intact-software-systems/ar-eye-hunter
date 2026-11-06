@@ -30,10 +30,12 @@ export async function createTournamentGameFixture(): Promise<TournamentGameFixtu
         principalIds: [game.owner.clientId, guest.clientId]
     };
     await game.runtime.upsert(
-        TOURNAMENT_ATTEMPTS_NAMESPACE,
-        groupStateGroupStorageKey(game.ref),
-        JSON.stringify({ binding, status: 'playing', startedAtEpochMs: game.nowEpochMs }),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+            key: groupStateGroupStorageKey(game.ref),
+            value: JSON.stringify({ binding, status: 'playing', startedAtEpochMs: game.nowEpochMs }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
     return Object.assign(game, { binding, guest, tournaments: new TournamentResultRepository(game.runtime) });
 }

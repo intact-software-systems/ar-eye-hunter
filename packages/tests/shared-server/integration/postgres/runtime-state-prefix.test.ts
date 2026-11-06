@@ -6,7 +6,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 
-import { createRuntimeStatePostgresSql, type PostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -29,7 +29,7 @@ type GlobalEnv = Readonly<{
 
 describe('Postgres runtime-state prefix selection', () => {
     postgresIt('matches hierarchical child keys literally under the database collation', async () => {
-        const sql = await createSql(requireDatabaseUrl());
+        const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
         const repository = new PSqlRuntimeStateRepository(sql);
         const namespace = `runtime-prefix-${crypto.randomUUID()}`;
         const parentPrefix = 'app=rallar-server:ws=default:group=room-1:';
@@ -38,9 +38,9 @@ describe('Postgres runtime-state prefix selection', () => {
         const siblingKey = 'app=rallar-server:ws=default:group=room-10:member=bob';
 
         try {
-            await repository.upsert(namespace, firstChildKey, '{"member":"alice"}', FUTURE_MS);
-            await repository.upsert(namespace, secondChildKey, '{"member":"bob"}', FUTURE_MS);
-            await repository.upsert(namespace, siblingKey, '{"member":"bob"}', FUTURE_MS);
+            await repository.upsert({ namespace, key: firstChildKey, value: '{"member":"alice"}', expireAtTimestamp: FUTURE_MS });
+            await repository.upsert({ namespace, key: secondChildKey, value: '{"member":"bob"}', expireAtTimestamp: FUTURE_MS });
+            await repository.upsert({ namespace, key: siblingKey, value: '{"member":"bob"}', expireAtTimestamp: FUTURE_MS });
 
             const entries = await repository.findEntriesByPrefix(namespace, parentPrefix);
             const firstPage = await repository.findEntriesByPrefixPage(
@@ -76,7 +76,7 @@ describe('Postgres runtime-state prefix selection', () => {
     });
 
     postgresIt('uses the composite C-collated index for selective prefix ranges', async () => {
-        const sql = await createSql(requireDatabaseUrl());
+        const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
         const namespace = `runtime-prefix-plan-${crypto.randomUUID()}`;
         const prefix = 'app=ops:';
         const prefixEnd = 'app=ops;';
@@ -137,7 +137,7 @@ describe('Postgres runtime-state prefix selection', () => {
     });
 
     postgresIt('reports scoped runtime state under the database collation', async () => {
-        const sql = await createSql(requireDatabaseUrl());
+        const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
         const repository = new PSqlRuntimeStateRepository(sql);
         const applicationId = `runtime-prefix-admin-${crypto.randomUUID()}`;
         const workspaceId = 'default';
@@ -147,51 +147,61 @@ describe('Postgres runtime-state prefix selection', () => {
 
         try {
             await repository.upsert(
-                'client-state:principals',
-                `${scopePrefix}principal=alice`,
-                JSON.stringify({ applicationId, workspaceId, principalId: 'alice' }),
-                FUTURE_MS
+                {
+                    namespace: 'client-state:principals',
+                    key: `${scopePrefix}principal=alice`,
+                    value: JSON.stringify({ applicationId, workspaceId, principalId: 'alice' }),
+                    expireAtTimestamp: FUTURE_MS
+                }
             );
             await repository.upsert(
-                'client-state:sessions',
-                `${scopePrefix}principal=alice:instance=browser:session=alice-session`,
-                JSON.stringify({
-                    applicationId,
-                    workspaceId,
-                    principalId: 'alice',
-                    clientInstanceId: 'browser',
-                    sessionId: 'alice-session',
-                    status: 'active',
-                    expiresAtEpochMs: liveSessionExpiry
-                }),
-                FUTURE_MS
-            );
-            await repository.upsert(
-                'group-state:groups',
-                `${scopePrefix}group=room-1`,
-                JSON.stringify(groupFixture({ applicationId, workspaceId, groupId: 'room-1' })),
-                FUTURE_MS
-            );
-            await repository.upsert(
-                'group-state:members',
-                `${scopePrefix}group=room-1:member=alice`,
-                JSON.stringify(
-                    activeMemberFixture({ applicationId, workspaceId, groupId: 'room-1' }, 'alice')
-                ),
-                FUTURE_MS
-            );
-            await repository.upsert(
-                'group-state:sessions',
-                `${scopePrefix}group=room-1:session=alice-session`,
-                JSON.stringify(
-                    activePresenceFixture({
-                        ref: { applicationId, workspaceId, groupId: 'room-1' },
+                {
+                    namespace: 'client-state:sessions',
+                    key: `${scopePrefix}principal=alice:instance=browser:session=alice-session`,
+                    value: JSON.stringify({
+                        applicationId,
+                        workspaceId,
                         principalId: 'alice',
+                        clientInstanceId: 'browser',
                         sessionId: 'alice-session',
+                        status: 'active',
                         expiresAtEpochMs: liveSessionExpiry
-                    })
-                ),
-                FUTURE_MS
+                    }),
+                    expireAtTimestamp: FUTURE_MS
+                }
+            );
+            await repository.upsert(
+                {
+                    namespace: 'group-state:groups',
+                    key: `${scopePrefix}group=room-1`,
+                    value: JSON.stringify(groupFixture({ applicationId, workspaceId, groupId: 'room-1' })),
+                    expireAtTimestamp: FUTURE_MS
+                }
+            );
+            await repository.upsert(
+                {
+                    namespace: 'group-state:members',
+                    key: `${scopePrefix}group=room-1:member=alice`,
+                    value: JSON.stringify(
+                        activeMemberFixture({ applicationId, workspaceId, groupId: 'room-1' }, 'alice')
+                    ),
+                    expireAtTimestamp: FUTURE_MS
+                }
+            );
+            await repository.upsert(
+                {
+                    namespace: 'group-state:sessions',
+                    key: `${scopePrefix}group=room-1:session=alice-session`,
+                    value: JSON.stringify(
+                        activePresenceFixture({
+                            ref: { applicationId, workspaceId, groupId: 'room-1' },
+                            principalId: 'alice',
+                            sessionId: 'alice-session',
+                            expiresAtEpochMs: liveSessionExpiry
+                        })
+                    ),
+                    expireAtTimestamp: FUTURE_MS
+                }
             );
 
             const state = await new PSqlAdminStateReader(sql, {
@@ -228,7 +238,7 @@ describe('Postgres runtime-state prefix selection', () => {
     });
 
     postgresIt('isolates lookalike client-state workspace prefixes', async () => {
-        const sql = await createSql(requireDatabaseUrl());
+        const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
         const repository = new PSqlRuntimeStateRepository(sql);
         const namespace = `runtime-workspace-isolation-${crypto.randomUUID()}`;
         const applicationId = `runtime-workspace-app-${crypto.randomUUID()}`;
@@ -244,10 +254,12 @@ describe('Postgres runtime-state prefix selection', () => {
                 expect(clientStateWorkspaceStorageKey(workspaceId)).toBe(workspaceKey);
                 const scopePrefix = `app=${applicationId}:ws=${workspaceKey}:`;
                 await repository.upsert(
-                    namespace,
-                    `${scopePrefix}principal=shared-principal`,
-                    JSON.stringify({ applicationId, workspaceId, principalId: 'shared-principal' }),
-                    FUTURE_MS
+                    {
+                        namespace,
+                        key: `${scopePrefix}principal=shared-principal`,
+                        value: JSON.stringify({ applicationId, workspaceId, principalId: 'shared-principal' }),
+                        expireAtTimestamp: FUTURE_MS
+                    }
                 );
             }
 
@@ -341,10 +353,6 @@ function auditStamp(): AuditStamp {
         traceId: null,
         requestId: null
     };
-}
-
-async function createSql(databaseUrl: string): Promise<PostgresSql> {
-    return await createRuntimeStatePostgresSql(databaseUrl);
 }
 
 function requireDatabaseUrl(): string {

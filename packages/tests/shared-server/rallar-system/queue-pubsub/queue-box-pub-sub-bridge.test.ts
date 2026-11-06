@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import {
     describe,
     expect,
@@ -10,7 +11,6 @@ import {
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     installQueueBoxPubSubBridge,
-    toPubSubMessage,
     type QueueBoxPubSubWsService
 } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';

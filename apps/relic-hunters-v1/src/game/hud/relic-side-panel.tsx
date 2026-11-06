@@ -89,19 +89,14 @@ export function RelicSidePanel({ game, turn, preferences, playback }: RelicSideP
 function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game' | 'preferences'>) {
     const [scheduledSessions] = useState(() =>
         RallarScheduledSessions.createBrowser(rallar, game.roomEntry, {
-            scope: RELIC_ROOM_SCOPE,
-            refreshIntervalMs: 5_000
+            scope: RELIC_ROOM_SCOPE
         })
     );
-    const [party] = useState(() =>
-        RallarParty.createBrowser(rallar, { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 1000 })
-    );
+    const [party] = useState(() => RallarParty.createBrowser(rallar, { scope: RELIC_ROOM_SCOPE }));
     const [matchmaking] = useState(() =>
-        RallarMatchmaking.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 1000 })
+        RallarMatchmaking.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE })
     );
-    const [friends] = useState(() =>
-        RallarFriends.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE, refreshIntervalMs: 30_000 })
-    );
+    const [friends] = useState(() => RallarFriends.createBrowser(rallar, game.roomEntry, { scope: RELIC_ROOM_SCOPE }));
     return (
         <>
             <RelicRoomEntry game={game} />
@@ -109,8 +104,7 @@ function RelicRoomPanels({ game, preferences }: Pick<RelicSidePanelProps, 'game'
                 <BrowserTournamentPanel
                     browser={rallar}
                     entry={game.roomEntry}
-                    catalogConfig={{ scope: RELIC_ROOM_SCOPE, limit: 20, refreshIntervalMs: 30000, timeoutMs: 10000 }}
-                    bracketRefreshIntervalMs={1000}
+                    catalogConfig={{ scope: RELIC_ROOM_SCOPE, limit: 20, timeoutMs: 10000 }}
                 />
             )}
             {game.session && <PartyPanel owner={party} friends={friends} />}

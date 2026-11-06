@@ -46,7 +46,7 @@ import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/Res
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createPSqlAdmissionTestStorage } from '../../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService } from './group-presence-test-runtime.ts';
 
@@ -552,7 +552,7 @@ async function seedConnectedGroup(input: SeedConnectedGroupInput): Promise<Seede
     const widen = (identifier: string): string => input.identifiers === 'widest' ? identifier.padEnd(RALLAR_ROUTE_ID_MAX_LENGTH, '-') : identifier;
     const groupId = widen(input.groupId);
     const runtime = new GroupBarrierRepository();
-    const service = createService(runtime, now);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: now, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.createGroup(SCOPE, {
         groupId,
         displayName: groupId,
@@ -582,7 +582,7 @@ async function seedConnectedGroup(input: SeedConnectedGroupInput): Promise<Seede
     }
     for (const namespace of Object.values(GroupNamespaces)) {
         for (const entry of await runtime.findAllEntries(namespace)) {
-            await repository.upsert(namespace, entry.key, entry.value, entry.expireAtTimestamp);
+            await repository.upsert({ namespace, key: entry.key, value: entry.value, expireAtTimestamp: entry.expireAtTimestamp });
         }
     }
     const ref = groupRef(groupId);

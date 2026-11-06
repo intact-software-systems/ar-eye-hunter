@@ -264,10 +264,12 @@ describe('PSql admission optimistic retry', () => {
         vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (candidate) => {
             expect(candidate.expectedVersion).toBeUndefined();
             await repository.upsert(
-                store.namespace,
-                `${store.namespace}:version:self`,
-                JSON.stringify({ senderId: 'self', version: 1 }),
-                Date.now() + 60_000
+                {
+                    namespace: store.namespace,
+                    key: `${store.namespace}:version:self`,
+                    value: JSON.stringify({ senderId: 'self', version: 1 }),
+                    expireAtTimestamp: Date.now() + 60_000
+                }
             );
             return await commit(candidate);
         });
@@ -383,10 +385,12 @@ function conflictNextAdmissionCommit(
     const begin = storage.sql.begin;
     vi.spyOn(storage.sql, 'begin').mockImplementationOnce(async (write) => {
         await storage.repository.upsert(
-            scope.namespace,
-            `${scope.namespace}:version:${scope.senderId}`,
-            JSON.stringify({ senderId: scope.senderId, version: 1 }),
-            nowMs() + 60_000
+            {
+                namespace: scope.namespace,
+                key: `${scope.namespace}:version:${scope.senderId}`,
+                value: JSON.stringify({ senderId: scope.senderId, version: 1 }),
+                expireAtTimestamp: nowMs() + 60_000
+            }
         );
         return await begin(write);
     });
@@ -426,15 +430,17 @@ function conflictNextInboundCommit({ storage, namespace, msg, nowMs }: Conflicti
     const begin = storage.sql.begin;
     vi.spyOn(storage.sql, 'begin').mockImplementationOnce(async (write) => {
         await storage.repository.upsert(
-            namespace,
-            `${namespace}:msg-owner:${encodeURIComponent(msg.id.msgId)}:${encodeURIComponent(msg.id.senderId)}`,
-            JSON.stringify({
-                msgId: msg.id.msgId,
-                senderId: msg.id.senderId,
-                source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: AUTHENTICATED_SCOPE },
-                supersedenceKey: null
-            }),
-            nowMs() + 60_000
+            {
+                namespace,
+                key: `${namespace}:msg-owner:${encodeURIComponent(msg.id.msgId)}:${encodeURIComponent(msg.id.senderId)}`,
+                value: JSON.stringify({
+                    msgId: msg.id.msgId,
+                    senderId: msg.id.senderId,
+                    source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: AUTHENTICATED_SCOPE },
+                    supersedenceKey: null
+                }),
+                expireAtTimestamp: nowMs() + 60_000
+            }
         );
         return await begin(write);
     });

@@ -3,19 +3,20 @@ import { decodeFriendsView } from '@shared/api/friends/friends-view.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { readApiBaseUrl } from '../api-client-config.ts';
+import { readApiView } from '../api/read-api-view.ts';
 import { sendApiHttpRequest } from '../api/send-api-http-request.ts';
 import type { RallarFriends } from './rallar-friends.ts';
 
 export const friendsHttpApi: RallarFriends.Api = {
     async read({ scope, session, signal }) {
-        const response = await sendApiHttpRequest<never, unknown>({
+        const response = await readApiView({
+            timeoutMs: 10000,
             baseUrl: readApiBaseUrl(),
             path: `/api/friends/apps/${encodeURIComponent(scope.applicationId)}/workspaces/${
                 encodeURIComponent(scope.workspaceId)
             }`,
-            method: 'GET',
-            body: undefined,
-            options: { authSession: session, signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) }
+            session,
+            signal
         });
         return decodeFriendsView(response);
     },

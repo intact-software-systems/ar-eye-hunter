@@ -252,10 +252,7 @@ describe('GroupStateRepository persistence', () => {
 
             const listRuntime = new FakeRuntimeStateRepository();
             await listRuntime.upsert(
-                testCase.namespace,
-                testCase.aliasKey,
-                JSON.stringify(testCase.value),
-                Number.MAX_SAFE_INTEGER
+                { namespace: testCase.namespace, key: testCase.aliasKey, value: JSON.stringify(testCase.value), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
             );
             const listRepository = createTestGroupStateRepository(listRuntime);
             for (const read of testCase.lists(listRepository)) {
@@ -269,16 +266,15 @@ describe('GroupStateRepository persistence', () => {
 
         const snapshotRuntime = new FakeRuntimeStateRepository();
         await snapshotRuntime.upsert(
-            'group-state:groups',
-            groupStateGroupStorageKey(ref),
-            JSON.stringify(group),
-            Number.MAX_SAFE_INTEGER
+            { namespace: 'group-state:groups', key: groupStateGroupStorageKey(ref), value: JSON.stringify(group), expireAtTimestamp: Number.MAX_SAFE_INTEGER }
         );
         await snapshotRuntime.upsert(
-            'group-state:members',
-            `${groupStateGroupStorageKey(ref)}:member=%61lice`,
-            JSON.stringify(member),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: 'group-state:members',
+                key: `${groupStateGroupStorageKey(ref)}:member=%61lice`,
+                value: JSON.stringify(member),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
         const snapshotRepository = createTestGroupStateRepository(snapshotRuntime);
         for (
@@ -330,19 +326,7 @@ function createMutationRead(): GroupMutationRead {
         created: audit,
         updated: audit
     });
-    const actorMember = {
-        ...groupRef('pure-room'),
-        principalId: 'alice',
-        role: 'owner' as const,
-        status: 'active' as const,
-        invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
-        left: null,
-        removed: null,
-        banned: null,
-        joined: audit,
-        updated: audit
-    };
+    const actorMember = createOwnerMember(audit);
     return {
         idempotency: null,
         group: storedEntry(groupStorageKey(), group),
@@ -367,6 +351,7 @@ function createMutationRead(): GroupMutationRead {
         targetPublicationGrant: null,
         sessionReservations: null,
         sessionIntent: null,
+        sessionViewAudience: null,
         targetTopicSubscription: null,
         targetClientSessions: null,
         targetPrincipalSubscriptions: null,
@@ -377,4 +362,20 @@ function createMutationRead(): GroupMutationRead {
         connectTriggerLatch: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
+}
+
+function createOwnerMember(audit: AuditStamp): GroupMember {
+    return {
+        ...groupRef('pure-room'),
+        principalId: 'alice',
+        role: 'owner' as const,
+        status: 'active' as const,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null,
+        joined: audit,
+        updated: audit
+    };
 }

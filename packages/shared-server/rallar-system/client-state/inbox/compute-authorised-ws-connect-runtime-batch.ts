@@ -46,7 +46,8 @@ export function computeAuthorisedWsConnectRuntimeBatch(
         ...clientRows
             .filter((row) => row !== principal)
             .map((row) => ({ ...toClientRuntimeRow(row), effectId: `client:${row.namespace}` })),
-        ...input.sidecarWrites.map(toClientSnapshotProvenanceEffect)
+        ...input.sidecarWrites.map(toClientSnapshotProvenanceEffect),
+        ...input.writes.flatMap(toClientViewEffects)
     ];
     return computeRuntimeStateGuardedBatchWrite(validateRuntimeStateGuardedBatch({
         guard: principal === undefined ? ticket : toClientRuntimeRow(principal),
@@ -64,4 +65,30 @@ function toClientRuntimeRow(row: ClientRuntimePersistenceOperation): RuntimeStat
     return row.kind === 'insert'
         ? { ...stored, operation: 'insert' }
         : { ...stored, operation: 'update', expectedRevision: row.expectedRevision };
+}
+
+function toClientViewEffects(
+    write: ClientMutationComputedWrite,
+    index: number
+): readonly RuntimeStateGuardedBatchEffect[] {
+    if (write.outcome !== 'write' || write.viewPublication === null) {
+        return [];
+    }
+    const storage = write.viewPublication.storage;
+    const rows = 'operation' in storage ? [storage] : [storage.guard, ...storage.effects];
+    return rows.map((row, rowIndex) => {
+        if (row.operation !== 'insert' && row.operation !== 'update') {
+            throw new TypeError('Connect view publication requires conditional insert/update rows');
+        }
+        const fields = {
+            namespace: row.namespace,
+            key: row.key,
+            value: row.value,
+            expireAtTimestamp: row.expireAtTimestamp,
+            effectId: `client-view:${index}:${rowIndex}`
+        };
+        return row.operation === 'insert'
+            ? { ...fields, operation: 'insert' }
+            : { ...fields, operation: 'update', expectedRevision: row.expectedRevision };
+    });
 }

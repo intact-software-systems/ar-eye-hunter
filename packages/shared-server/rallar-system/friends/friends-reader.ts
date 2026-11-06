@@ -3,8 +3,9 @@ import type { FriendContact } from '@shared/api/friends/friendship.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
-import { isClientSnapshotSessionLive } from '../presence/snapshot-presence.ts';
+import { isClientSnapshotPresent } from '../client-state/is-client-snapshot-present.ts';
 import type { FriendsAccountDirectory } from './friends-account-directory.ts';
+import { areMutualFriends, type FriendsProfile } from './friends-profile.ts';
 import type { FriendsRepository } from './friends-repository.ts';
 import { toFriendsView, type FriendsPeerRead } from './to-friends-view.ts';
 
@@ -17,7 +18,7 @@ export namespace FriendsReader {
     }
 
     export interface PeerInput {
-        readonly principalId: string;
+        readonly own: FriendsProfile;
         readonly scope: StateScope;
         readonly contact: FriendContact;
     }
@@ -33,26 +34,25 @@ export class FriendsReader {
     async read(principalId: string, scope: StateScope): Promise<FriendsView> {
         const { profile } = await this.dependencies.profiles.readProfile(principalId);
         const peers = await Promise.all(
-            profile.contacts.map((contact) => this.readPeer({ principalId, scope, contact }))
+            profile.contacts.map((contact) => this.readPeer({ own: profile, scope, contact }))
         );
         return toFriendsView({ profile, peers, nowEpochMs: this.dependencies.nowEpochMs() });
     }
 
-    private async readPeer({ principalId, scope, contact }: FriendsReader.PeerInput): Promise<FriendsPeerRead> {
+    private async readPeer({ own, scope, contact }: FriendsReader.PeerInput): Promise<FriendsPeerRead> {
         const { profiles, accounts, clients, nowEpochMs } = this.dependencies;
         const account = await accounts.readByPrincipalId(contact.principalId);
         const profile = contact.status === 'friend' ? (await profiles.readProfile(contact.principalId)).profile : null;
-        const shared = account !== null && profile?.shareOnline === true &&
-            profile.contacts.some((other) => other.principalId === principalId && other.status === 'friend');
+        const shared = account !== null && profile?.shareOnline === true && areMutualFriends(own, profile);
         const snapshot = shared
-            ? await clients.readSnapshot({ ...scope, principalId: contact.principalId })
-            : undefined;
+            ? await clients.readSnapshot({ ...scope, principalId: contact.principalId }) ?? null
+            : null;
         const now = nowEpochMs();
         return {
             account: account ??
                 { principalId: contact.principalId, username: contact.principalId, displayName: contact.principalId },
             profile,
-            online: snapshot?.activeSessions.some((session) => isClientSnapshotSessionLive(session, now)) === true
+            online: isClientSnapshotPresent(snapshot, now)
         };
     }
 }

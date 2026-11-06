@@ -4,6 +4,7 @@ import {
     registerTournamentRoutes,
     type TournamentRouteDependencies
 } from '../tournaments/register-tournament-routes.ts';
+import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../view-watch/register-view-watch-routes.ts';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
@@ -54,6 +55,7 @@ export interface ApiV1RouteAuthRequest {
 }
 
 export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRuntime {
+    readonly viewWatches: { readonly mutate: ViewWatchRouteDependencies['mutation']; };
     readonly wsQBoxServerService: Pick<ApiV1Runtime['wsQBoxServerService'], 'socket'>;
     readonly appAuthInboxService: configRoutes.ConfigRouteDependencies['appAuthInbox'];
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
@@ -170,6 +172,10 @@ export function constructApiV1RouteInstallers<
     const construction = createApiV1RouteConstruction(input, operations);
     function installApiV1RestRoutes(app: Hono): void {
         registerApiV1StateRoutes(app, construction);
+        registerViewWatchRoutes(app, {
+            mutation: input.runtime.viewWatches.mutate,
+            requireSession: construction.requireSession
+        });
         registerFriendsRoutes(app, { ...input.friends, requireSession: construction.requireSession });
         registerMatchmakingRoutes(app, { ...input.matchmaking, requireSession: construction.requireSession });
         registerTournamentRoutes(app, { ...input.tournaments, requireSession: construction.requireSession });

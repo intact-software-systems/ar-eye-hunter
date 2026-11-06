@@ -58,7 +58,7 @@ describe('row-bound WS producer provenance', () => {
             value: JSON.stringify(fixture.proof),
             expireAtTimestamp: fixture.proof.expiresAtMs
         });
-        await fixture.repository.upsert(record.namespace, record.key, record.value, record.expireAtTimestamp);
+        await fixture.repository.upsert({ namespace: record.namespace, key: record.key, value: record.value, expireAtTimestamp: record.expireAtTimestamp });
         await expect(fixture.reader.readProducerProvenance(fixture.message, fixture.entry)).resolves.toEqual({
             admittedAudience: ['peer'],
             recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
@@ -108,7 +108,8 @@ describe('row-bound WS producer provenance', () => {
                     return repository.readRuntimeStateBatch(selectors);
                 }
             },
-            nowMs: Date.now
+            nowMs: Date.now,
+            readPrincipalSessionIds: async () => []
         });
 
         const settled = await Promise.allSettled(
@@ -157,12 +158,14 @@ describe('row-bound WS producer provenance', () => {
         const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
         const repository = new FakeRuntimeStateRepository();
         await repository.upsert(
-            WS_OUTBOX_PROVENANCE_NAMESPACE,
-            toWsOutboxProvenanceKey(entry.key),
-            JSON.stringify(proof),
-            proof.expiresAtMs
+            {
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            }
         );
-        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
 
         expect(await reader.readProducerProvenance(message, entry)).toEqual({
             admittedAudience: undefined,
@@ -203,12 +206,14 @@ describe('row-bound WS producer provenance', () => {
         const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
         const repository = new FakeRuntimeStateRepository();
         await repository.upsert(
-            WS_OUTBOX_PROVENANCE_NAMESPACE,
-            toWsOutboxProvenanceKey(entry.key),
-            JSON.stringify(proof),
-            proof.expiresAtMs
+            {
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            }
         );
-        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
 
         expect(await reader.readProducerProvenance(message, entry)).toEqual({
             admittedAudience: ['alice-session'],
@@ -249,7 +254,7 @@ describe('row-bound WS producer provenance', () => {
                     ...(corruption === 'digest' ? { digest: '0'.repeat(64) } : {}),
                     ...(corruption === 'expired' ? { expiresAtMs: 1 } : {})
                 });
-                await fixture.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, fixture.key, value, proof.expiresAtMs);
+                await fixture.repository.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key: fixture.key, value, expireAtTimestamp: proof.expiresAtMs });
             }
             await expect(fixture.reader.readProducerProvenance(fixture.message, fixture.entry)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         }
@@ -276,7 +281,12 @@ describe('row-bound WS producer provenance', () => {
         const fixture = await createFixture(['peer']);
         const candidate = { ...fixture.proof, target: { ...fixture.proof.target, peerId: 'wrong-peer', admittedAudience: ['wrong-peer'] } };
         const proof = { ...candidate, digest: computeWsOutboxProvenanceDigest(fixture.entry, candidate) };
-        await fixture.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, fixture.key, JSON.stringify(proof), proof.expiresAtMs);
+        await fixture.repository.upsert({
+            namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+            key: fixture.key,
+            value: JSON.stringify(proof),
+            expireAtTimestamp: proof.expiresAtMs
+        });
         await expect(fixture.reader.readProducerProvenance(fixture.message, fixture.entry)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
@@ -285,7 +295,12 @@ describe('row-bound WS producer provenance', () => {
         const createdTs = Temporal.Instant.fromEpochMilliseconds(Date.now()).toZonedDateTimeISO('UTC').toPlainDateTime();
         const entry = { ...fixture.entry, audit: { ...fixture.entry.audit, createdTs, date: createdTs.toPlainTime() } };
         const proof = { ...fixture.proof, digest: computeWsOutboxProvenanceDigest(entry, fixture.proof) };
-        await fixture.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, fixture.key, JSON.stringify(proof), proof.expiresAtMs);
+        await fixture.repository.upsert({
+            namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+            key: fixture.key,
+            value: JSON.stringify(proof),
+            expireAtTimestamp: proof.expiresAtMs
+        });
         const decoded = toDomain({
             ri_row_id: 1n,
             ri_resource_id: entry.key.resourceId,
@@ -336,7 +351,12 @@ async function writeWorldFanoutProof(
         target: { kind: 'scoped-world-broadcast' as const, scope: { applicationId: 'app', workspaceId: 'workspace' } }
     };
     const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(row.entry, facts) };
-    await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(row.entry.key), JSON.stringify(proof), proof.expiresAtMs);
+    await repository.upsert({
+        namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+        key: toWsOutboxProvenanceKey(row.entry.key),
+        value: JSON.stringify(proof),
+        expireAtTimestamp: proof.expiresAtMs
+    });
     return row;
 }
 
@@ -358,8 +378,8 @@ async function createFixture(admittedAudience: readonly string[]): Promise<WsOut
     const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
-    await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: () => Date.now() });
+    await repository.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key, value: JSON.stringify(proof), expireAtTimestamp: proof.expiresAtMs });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: () => Date.now(), readPrincipalSessionIds: async () => [] });
     return { message, entry, proof, repository, reader, key };
 }
 
@@ -388,7 +408,7 @@ async function createPrincipalRoomFixture(mismatch: 'applicationId' | 'workspace
     const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
-    await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+    await repository.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key, value: JSON.stringify(proof), expireAtTimestamp: proof.expiresAtMs });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     return { message, entry, proof, repository, reader, key };
 }

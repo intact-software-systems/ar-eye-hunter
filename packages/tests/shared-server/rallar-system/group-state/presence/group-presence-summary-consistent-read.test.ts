@@ -12,7 +12,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, summaryReservationRead } from './group-presence-test-runtime.ts';
 
@@ -124,7 +124,7 @@ describe('the presence summary read (D295)', () => {
         if (!stored) {
             throw new Error('Seeded group is required');
         }
-        await runtime.upsert(GROUPS_NAMESPACE, key, stored.value, Date.now() - 1);
+        await runtime.upsert({ namespace: GROUPS_NAMESPACE, key, value: stored.value, expireAtTimestamp: Date.now() - 1 });
         const expired = await runtime.findEntry(GROUPS_NAMESPACE, key);
 
         const read = await createWork(runtime).read(
@@ -154,7 +154,7 @@ async function seedGroupWithMember(
     runtime: GroupBarrierRepository,
     principalId: string
 ): Promise<GroupPresenceSummaryWorkData> {
-    const service = createService(runtime, BASE_EPOCH_MS);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.createGroup(SCOPE, {
         groupId: GROUP_ID,
         displayName: GROUP_ID,

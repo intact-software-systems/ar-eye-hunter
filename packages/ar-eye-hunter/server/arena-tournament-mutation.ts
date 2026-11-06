@@ -1,4 +1,3 @@
-import type { AppDataEntry } from '@shared-server/app-data/app-data-repository.ts';
 import {
     computeRoomOwnedAppDataSave,
     writeRoomOwnedAppData,
@@ -29,9 +28,6 @@ import type { GroupStateRepository } from '@shared-server/rallar-system/group-st
 import { SESSIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
-import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
-import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
 import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     computeTournamentAttemptFence,
@@ -40,6 +36,10 @@ import {
     type TournamentResultRepository
 } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
 import { createTournamentResult } from '@shared-server/rallar-system/tournaments/tournament-result.ts';
+import {
+    computeTournamentSignal,
+    TOURNAMENT_SIGNAL_RETENTION_MS
+} from '@shared-server/rallar-system/tournaments/tournament-signal.ts';
 import {
     writeRuntimeStateConditionalBatch,
     type RuntimeStateConditionalBatch
@@ -56,27 +56,17 @@ import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts'
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import { decodeStateScope } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { ArenaTournamentSnapshot } from '../arena-tournament-snapshot.ts';
-import { decodeTournamentArenaCheckpoint } from '../decode-tournament-arena-checkpoint.ts';
 import { AR_EYE_TOURNAMENT_RULES_ID } from '../tournament-arena.ts';
 import {
     advanceTournamentArena,
     applyTournamentArenaInput,
     createTournamentArena,
     decodeTournamentArenaInput,
-    type CreateTournamentArenaInput,
     type TournamentArena,
     type TournamentArenaInput
 } from '../tournament-arena.ts';
-import { computeArenaTournamentDeadline } from './arena-tournament-deadline.ts';
-
-export const AR_EYE_TOURNAMENT_DATA_BINDING: RoomOwnedAppData.Binding = {
-    applicationId: 'ar-eye-hunter',
-    workspaceId: 'default',
-    namespace: 'app:ar-eye',
-    storeName: 'tournament-arenas'
-};
+import { ARENA_TOURNAMENT_FINISH_TOPIC, computeArenaTournamentDeadline } from './arena-tournament-deadline.ts';
+import { readArenaTournamentRoom, toTournamentArenaIdentity } from './arena-tournament-room.ts';
 
 export namespace ArenaTournamentMutation {
     export interface Actor {
@@ -156,7 +146,7 @@ export class ArenaTournamentMutation {
         const command = decodeArenaTournamentCommand(value);
         const ref = command.roomRef;
         const [room, session, presence] = await Promise.all([
-            this.readRoom(ref),
+            readArenaTournamentRoom(this.dependencies, ref),
             command.actor === null
                 ? null
                 : this.dependencies.sessions.readSessionBySessionIdEntry(command.actor.sessionId),
@@ -172,54 +162,6 @@ export class ArenaTournamentMutation {
             serverId: this.config.serverId,
             session,
             presence
-        };
-    }
-
-    async readSnapshot(ref: GroupRef, principalId: string): Promise<ArenaTournamentSnapshot | null> {
-        const room = await this.readRoom(ref);
-        if (room.group === null) {
-            return null;
-        }
-        const permission = canReadGroupSnapshot({
-            snapshot: room.group.snapshot,
-            actor: { principalId },
-            nowEpochMs: this.config.nowEpochMs()
-        });
-        if (!permission.allowed) {
-            throw new GroupPolicyDeniedError(permission);
-        }
-        if (room.tournament === null) {
-            return null;
-        }
-        if (room.tournament.attempt === null) {
-            throw new TypeError('Arena tournament attempt disappeared during its read');
-        }
-        return {
-            binding: room.tournament.binding,
-            status: room.tournament.attempt.status,
-            observedAtEpochMs: this.config.nowEpochMs(),
-            state: room.state
-        };
-    }
-
-    private async readRoom(ref: GroupRef): Promise<ArenaTournamentMutation.Room> {
-        const [group, tournament, saves] = await Promise.all([
-            this.dependencies.groups.readSnapshotWithAuthorityGuard(ref),
-            this.dependencies.results.readRoom(ref),
-            this.dependencies.data.read(ref)
-        ]);
-        const save = saves.find(({ key }) =>
-            key.namespace === AR_EYE_TOURNAMENT_DATA_BINDING.namespace &&
-            key.storeName === AR_EYE_TOURNAMENT_DATA_BINDING.storeName && key.key === ref.groupId
-        );
-        if (save === undefined) {
-            throw new TypeError('Arena tournament room-owned data binding is missing');
-        }
-        return {
-            group: group ?? null,
-            tournament,
-            save,
-            state: save.entry === null ? null : restoreTournamentArena(save.entry, ref, tournament)
         };
     }
 
@@ -298,7 +240,7 @@ function computeArenaTournamentMutation(read: ArenaTournamentMutation.Read): Are
     if (tournament.attempt?.status === 'finished') {
         return withoutWrite(read, 'applied', null);
     }
-    const previous = read.state ?? createTournamentArena(tournamentArenaIdentity(tournament));
+    const previous = read.state ?? createTournamentArena(toTournamentArenaIdentity(tournament));
     const transition = read.command.kind === 'input'
         ? applyTournamentArenaInput({
             state: previous,
@@ -409,43 +351,6 @@ function withoutWrite(
     };
 }
 
-function tournamentArenaIdentity(tournament: TournamentResultRepository.Read): CreateTournamentArenaInput {
-    const startedAtEpochMs = tournament.attempt?.startedAtEpochMs;
-    if (
-        startedAtEpochMs === null || startedAtEpochMs === undefined ||
-        tournament.binding.rulesId !== AR_EYE_TOURNAMENT_RULES_ID
-    ) {
-        throw new TypeError('Arena tournament has no authorized native start');
-    }
-    return {
-        gameId: tournament.binding.gameId,
-        principalIds: tournament.binding.principalIds,
-        startedAtEpochMs,
-        durationMs: 60000,
-        seed: Number.parseInt(computeSha256CanonicalJson(tournament.binding).slice(0, 8), 16)
-    };
-}
-
-function restoreTournamentArena(
-    entry: AppDataEntry,
-    ref: GroupRef,
-    tournament: TournamentResultRepository.Read | null
-): TournamentArena {
-    if (
-        entry.key !== ref.groupId || entry.schemaVersion !== 1 ||
-        entry.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP ||
-        tournament === null
-    ) {
-        throw new TypeError('Arena tournament state storage identity or lifetime differs');
-    }
-    const stored = requireRecord(entry.value, 'Arena tournament stored state');
-    requireExactKeys(stored, ['binding', 'state'], 'Arena tournament stored state');
-    if (!jsonEquals(stored.binding, tournament.binding)) {
-        throw new TypeError('Arena tournament state binding differs');
-    }
-    return decodeTournamentArenaCheckpoint(stored.state, tournamentArenaIdentity(tournament));
-}
-
 function computeArenaAuthority(read: ArenaTournamentMutation.Read): ObservedGroupAuthority {
     const actor = read.command.actor;
     return computeObservedGroupAuthority({
@@ -487,5 +392,14 @@ function computeArenaResultWrite(
     if (publication.kind !== 'publish') {
         throw new TypeError('Active arena completion has no new authorized result');
     }
-    return publication.write;
+    // Only the terminal transition persists a presentation wake; ordinary ticks persist just their existing successor.
+    const wake = computeTournamentSignal({
+        topic: ARENA_TOURNAMENT_FINISH_TOPIC,
+        signal: { kind: 'result', binding: tournament.binding, dueAtEpochMs: read.nowEpochMs },
+        createdAtEpochMs: read.nowEpochMs,
+        serviceId: read.serverId,
+        traceId: read.traceId,
+        retentionMs: TOURNAMENT_SIGNAL_RETENTION_MS
+    });
+    return { ...publication.write, outbox: [...publication.write.outbox, wake] };
 }

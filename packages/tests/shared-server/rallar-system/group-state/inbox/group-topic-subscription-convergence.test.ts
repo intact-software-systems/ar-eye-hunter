@@ -11,11 +11,11 @@ import { toGroupCommandExclusionKey } from '@shared-server/rallar-system/group-s
 import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { readGroupSessionTopicSubscriptions } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateConditionalWriteResult } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { RuntimeStateConditionalWriteResult, RuntimeStateWriteInput } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import {
@@ -64,23 +64,20 @@ class SubscriptionGuardConflictRepository extends GroupBarrierRepository {
     }
 
     override async insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         if (namespace === SUBSCRIPTIONS_NAMESPACE && this.subscriptionConflictsRemaining > 0) {
             this.subscriptionConflictsRemaining -= 1;
             return { status: 'conflict' };
         }
-        return await super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return await super.insertIfAbsent({ namespace, key, value, expireAtTimestamp });
     }
 }
 
 async function subscribableRoom<T extends GroupBarrierRepository>(runtime: T): Promise<T> {
     await seedGrantRoom(runtime);
     await writeGrantRow(runtime, 'bob', { 'room.feed': { publish: true, subscribe: true } });
-    await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-1');
+    await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-1', overrides: {} });
     return runtime;
 }
 
@@ -127,14 +124,24 @@ describe('group topic subscription convergence', () => {
         const runtime = await subscribableRoom(new GroupBarrierRepository());
         await raceSubscribeAgainst(
             runtime,
-            () => createService(runtime, 3_000).upsertMember(SCOPE, GRANT_ROOM, 'bob', BOB_LEAVES)
+            () =>
+                createService({ runtimeRepository: runtime, nowEpochMs: 3_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).upsertMember(
+                    SCOPE,
+                    GRANT_ROOM,
+                    'bob',
+                    BOB_LEAVES
+                )
         );
 
         expect(await readSubscriptionRow(runtime, 'bob-session', 'room.feed')).toBeDefined();
         await expect(applySubscriptionMutation(runtime, RENEW_BOB_SUBSCRIBE)).rejects.toMatchObject({
             denial: { code: 'member-not-active' }
         });
-        await createService(runtime, 3_000).joinGroup(SCOPE, GRANT_ROOM, { actorPrincipalId: 'bob', requestId: 'rejoin-bob-after-race' });
+        await createService({ runtimeRepository: runtime, nowEpochMs: 3_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+            SCOPE,
+            GRANT_ROOM,
+            { actorPrincipalId: 'bob', requestId: 'rejoin-bob-after-race' }
+        );
 
         expect(await readSessionSubscriptions(runtime)).toEqual([]);
     });

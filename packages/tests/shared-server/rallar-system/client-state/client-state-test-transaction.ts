@@ -136,7 +136,7 @@ async function insertAbsentRuntimeState(input: ClientStateTestSqlInput): Promise
     const key = requireStringParameter(input.values[1], 'runtime-state key');
     const value = requireStringParameter(input.values[2], 'runtime-state value');
     const expireAt = requireTimestampParameter(input.values[3], 'runtime-state expiry');
-    const result = await input.runtime.insertIfAbsent(namespace, key, value, expireAt.getTime());
+    const result = await input.runtime.insertIfAbsent({ namespace, key, value, expireAtTimestamp: expireAt.getTime() });
     return result.status === 'applied' ? [{ revision: result.revision }] : [];
 }
 
@@ -148,8 +148,8 @@ async function insertRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlR
     const expireAt = requireTimestampParameter(input.values[3], 'runtime-state expiry');
     const current = await input.runtime.findEntry(namespace, key);
     const result = current === undefined || current.expireAtTimestamp > Date.now()
-        ? await input.runtime.insertIfAbsent(namespace, key, value, expireAt.getTime())
-        : await input.runtime.upsertIfRevision(namespace, key, value, expireAt.getTime(), current.revision);
+        ? await input.runtime.insertIfAbsent({ namespace, key, value, expireAtTimestamp: expireAt.getTime() })
+        : await input.runtime.upsertIfRevision({ namespace, key, value, expireAtTimestamp: expireAt.getTime(), expectedRevision: current.revision });
     return result.status === 'applied' ? [{ revision: result.revision }] : [];
 }
 
@@ -163,11 +163,7 @@ async function updateRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlR
         'runtime-state expected revision'
     );
     const result = await input.runtime.upsertIfRevision(
-        namespace,
-        key,
-        value,
-        expireAt.getTime(),
-        expectedRevision
+        { namespace, key, value, expireAtTimestamp: expireAt.getTime(), expectedRevision }
     );
     return result.status === 'applied' ? [{ revision: result.revision }] : [];
 }

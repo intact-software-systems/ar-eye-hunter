@@ -504,10 +504,12 @@ describe('GroupStateService mutation exact reads', () => {
             updated: { atEpochMs: 1_000, actor: { kind: 'principal', principalId: 'owner' }, reason: null, traceId: null, requestId: null }
         };
         await runtime.upsert(
-            PUBLICATION_GRANTS_NAMESPACE,
-            groupStatePublicationGrantStorageKey(ref, 'bob'),
-            JSON.stringify(grant),
-            Number.MAX_SAFE_INTEGER
+            {
+                namespace: PUBLICATION_GRANTS_NAMESPACE,
+                key: groupStatePublicationGrantStorageKey(ref, 'bob'),
+                value: JSON.stringify(grant),
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }
         );
         const repository = createTestGroupStateRepository(runtime);
 
@@ -532,7 +534,7 @@ describe('GroupStateService mutation exact reads', () => {
         if (!group) {
             throw new Error('Expected seeded group entry');
         }
-        await runtime.upsert('group-state:groups', groupKey, group.value, Date.now() - 1);
+        await runtime.upsert({ namespace: 'group-state:groups', key: groupKey, value: group.value, expireAtTimestamp: Date.now() - 1 });
         runtime.readBatchCalls.length = 0;
         runtime.beforeConditionalWrite = async (operation, namespace, key) => {
             if (
@@ -543,7 +545,7 @@ describe('GroupStateService mutation exact reads', () => {
             ) {
                 return;
             }
-            await runtime.upsert(namespace, key, group.value, group.expireAtTimestamp);
+            await runtime.upsert({ namespace, key, value: group.value, expireAtTimestamp: group.expireAtTimestamp });
             runtime.replacementVisible = true;
         };
         const requestId = 'expiry-replacement-request';

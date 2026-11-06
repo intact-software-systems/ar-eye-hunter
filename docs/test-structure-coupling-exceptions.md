@@ -5161,17 +5161,17 @@ moved or changed test.
     },
     {
       "id": "friends-background-read-suppression",
-      "domain": "Private friends browser lifecycle",
+      "domain": "Friends browser activity",
       "owner": "Rallar browser maintainers",
-      "summary": "Inactive browsers stop private presence polling and resume with one coalesced current read on activation.",
-      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read",
-      "coverageRelation": "The test exercises the public friends owner with authenticated account state and observes the named outbound effect together with its resulting public state.",
+      "summary": "Foreground restoration refreshes the private friends view without idle polling.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#stays idle without polling, reacts to push only when active, and clears private views after a failed read",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "RallarFriends.Api.read",
-        "observableEffect": "Inactive browsers stop private presence polling and resume with one coalesced current read on activation.",
-        "requiredConstraint": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read.",
-        "failureRationale": "Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract."
+        "ownedPort": "RallarFriends API read",
+        "observableEffect": "Foreground restoration refreshes the private friends view without idle polling.",
+        "requiredConstraint": "Initial read is followed by exactly one coalesced foreground/explicit refresh; idle and background push intervals add no reads.",
+        "failureRationale": "Correct view data alone can hide recurring authenticated requests."
       }
     },
     {
@@ -5232,21 +5232,6 @@ moved or changed test.
         "observableEffect": "Admission can move the account into a stale room using previously recovered state.",
         "requiredConstraint": "No room admission is initiated after the freshness read fails.",
         "failureRationale": "Displaying Offline does not exclude a concurrent admission; the unused admission port proves fail-closed behavior."
-      }
-    },
-    {
-      "id": "matchmaking-polling-lifecycle",
-      "domain": "Browser matchmaking consent and recovery",
-      "owner": "Rallar browser matchmaking maintainers",
-      "summary": "Inactive and stopped browser owners produce no polling traffic; foreground recovery coalesces concurrent refreshes and shutdown preserves the durable search.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search",
-      "coverageRelation": "Inactive and stopped browser owners produce no polling traffic; foreground recovery coalesces concurrent refreshes and shutdown preserves the durable search. The test drives the public matchmaking operation and observes the owned outbound port alongside returned or recovered state.",
-      "interactionRequirement": {
-        "interactionKind": "count",
-        "ownedPort": "RallarMatchmaking Api.read and Api.change",
-        "observableEffect": "Read calls consume server capacity; mutation calls can cancel a durable account search.",
-        "requiredConstraint": "One initial read, one coalesced foreground recovery read, no inactive or stopped reads, and no shutdown mutation.",
-        "failureRationale": "The same final searching view can hide unnecessary network work or a remotely cancelled search; owned API observations prove lifecycle suppression."
       }
     },
     {
@@ -5445,48 +5430,581 @@ moved or changed test.
       }
     },
     {
-      "id": "tournament-catalog-coalesced-refresh",
-      "domain": "Tournament catalogue browser request lifetime",
+      "id": "authenticated-refresh-stop-cancels-queued-reads",
+      "domain": "Authenticated browser refresh lifetime",
       "owner": "Rallar browser maintainers",
-      "summary": "Concurrent refreshes share one read per loaded page.",
-      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#replaces the loaded range atomically and coalesces overlapping refreshes",
-      "coverageRelation": "The catalogue runs against its owned API port and manual timers; assertions observe outbound reads alongside public catalogue state.",
+      "summary": "Stopping the owner suppresses a queued old-generation API read while a restarted owner reads fresh state.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#discards an in-flight read after stop and restarts with fresh account state",
+      "coverageRelation": "The test drives refresh, authentication or stop through the public owner and observes the owned API read port together with the resulting private view.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "RallarTournamentCatalog.Api.read",
-        "observableEffect": "Each API read issues authenticated catalogue storage work.",
-        "requiredConstraint": "Two loaded pages and two simultaneous refresh requests produce four total reads: two initial reads and one fresh two-page range.",
-        "failureRationale": "Duplicate refresh requests waste authenticated network and database work even when they ultimately display identical cards."
+        "ownedPort": "AuthenticatedResource.Api.read",
+        "observableEffect": "Every invocation starts an authenticated resource read against the API.",
+        "requiredConstraint": "The held initial read and fresh restart are the only two API reads; draining stopped work must not issue a third request.",
+        "failureRationale": "Final state can be correct even after a stopped owner sends an unnecessary authenticated request."
       }
     },
     {
-      "id": "tournament-catalog-stop-cancels-polling",
-      "domain": "Tournament catalogue browser request lifetime",
+      "id": "authenticated-refresh-burst-coalescing",
+      "domain": "Authenticated browser refresh lifetime",
       "owner": "Rallar browser maintainers",
-      "summary": "Stopping the catalogue aborts the pending read and prevents subsequent automatic reads.",
+      "summary": "Concurrent refresh requests during a held read converge to the latest view with one trailing network read.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#covers changes arriving during a read with one trailing read for the burst",
+      "coverageRelation": "The test drives refresh, authentication or stop through the public owner and observes the owned API read port together with the resulting private view.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource.Api.read",
+        "observableEffect": "Every invocation starts an authenticated resource read against the API.",
+        "requiredConstraint": "After initial load, one held read and three concurrent refresh marks require exactly one additional read covering all three marks.",
+        "failureRationale": "The latest view alone cannot distinguish bounded coalescing from one HTTP request per notification."
+      }
+    },
+    {
+      "id": "authenticated-refresh-replaced-account-suppression",
+      "domain": "Authenticated browser refresh lifetime",
+      "owner": "Rallar browser maintainers",
+      "summary": "Account replacement prevents queued refreshes from sending requests with the previous account credentials.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#starts replacement-account reads without waiting for old account refreshes",
+      "coverageRelation": "The test drives refresh, authentication or stop through the public owner and observes the owned API read port together with the resulting private view.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource.Api.read",
+        "observableEffect": "Every invocation starts an authenticated resource read against the API.",
+        "requiredConstraint": "Only the initial and already-started requests may use Alice credentials; the queued mark must not send a third Alice request after replacement.",
+        "failureRationale": "A correct Bob view can hide an obsolete authenticated request sent after account replacement."
+      }
+    },
+    {
+      "id": "authenticated-subscribe-before-read-trailing-stop",
+      "domain": "Authenticated view refresh",
+      "owner": "Rallar browser maintainers",
+      "summary": "Canonical private-view requests issued in response to server changes.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#subscribes before reading, covers a push during that read, and detaches on stop",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AuthenticatedResource API read",
+        "observableEffect": "Canonical private-view requests issued in response to server changes.",
+        "requiredConstraint": "A burst during initial read receives one trailing read; stopping detaches invalidations so no further canonical reads occur.",
+        "failureRationale": "Latest final state can hide redundant requests or post-stop credential use."
+      }
+    },
+    {
+      "id": "canonical-view-read-bounded-retry",
+      "domain": "Canonical view GET",
+      "owner": "Rallar browser maintainers",
+      "summary": "Transient HTTP failures consume a bounded request budget.",
+      "semanticCoverage": "packages/tests/shared-web/api/read-api-view.test.ts#bounds a failed recovery and preserves the final HTTP error",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "readApiView authenticated HTTP fetch transport",
+        "observableEffect": "Transient HTTP failures consume a bounded request budget.",
+        "requiredConstraint": "Three failed attempts exhaust recovery and preserve the final HTTP error.",
+        "failureRationale": "The final error alone would still pass after excess requests or an accidental tight retry loop."
+      }
+    },
+    {
+      "id": "canonical-view-read-cancelled-credentials",
+      "domain": "Canonical view GET",
+      "owner": "Rallar browser maintainers",
+      "summary": "Cancelled account/session credentials must not be reused in a delayed retry.",
+      "semanticCoverage": "packages/tests/shared-web/api/read-api-view.test.ts#never retries with obsolete credentials after cancellation during backoff",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "readApiView authenticated HTTP fetch transport",
+        "observableEffect": "Cancelled account/session credentials must not be reused in a delayed retry.",
+        "requiredConstraint": "Cancellation during the first backoff allows no second request.",
+        "failureRationale": "An abort error or cleared UI does not establish that obsolete authenticated I/O stopped."
+      }
+    },
+    {
+      "id": "canonical-view-read-transient-recovery",
+      "domain": "Canonical view GET",
+      "owner": "Rallar browser maintainers",
+      "summary": "HTTP canonical reads recover a missed push-triggered snapshot without recurring polling.",
+      "semanticCoverage": "packages/tests/shared-web/api/read-api-view.test.ts#recovers a transient failure of the only push-triggered read",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "readApiView authenticated HTTP fetch transport",
+        "observableEffect": "HTTP canonical reads recover a missed push-triggered snapshot without recurring polling.",
+        "requiredConstraint": "A transient failure followed by success issues exactly two requests.",
+        "failureRationale": "The returned decoded view alone would not reveal an unbounded or redundant recovery request sequence."
+      }
+    },
+    {
+      "id": "catalog-public-scope-authenticated-invalidation",
+      "domain": "Tournament catalog invalidation authority",
+      "owner": "Rallar browser maintainers",
+      "summary": "Public catalog hints are accepted only for the current authenticated game/workspace.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes public catalog readers only while authenticated in the exact game and workspace",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewInvalidations changed callback",
+        "observableEffect": "Public catalog hints are accepted only for the current authenticated game/workspace.",
+        "requiredConstraint": "Admit one valid catalog notice; reject other scopes, RTC and signed-out delivery.",
+        "failureRationale": "Public catalog visibility does not permit arbitrary transport/scope hints to trigger authenticated reads."
+      }
+    },
+    {
+      "id": "friends-global-vs-scoped-invalidation",
+      "domain": "Friends invalidation authority",
+      "owner": "Rallar browser maintainers",
+      "summary": "Friends-list changes are account-global while presence changes are scoped to the active game/workspace.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#receives global friends list changes and only same-scope friends presence hints",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewInvalidations changed callback",
+        "observableEffect": "Friends-list changes are account-global while presence changes are scoped to the active game/workspace.",
+        "requiredConstraint": "Admit global own-account and exact-scope presence notices; reject foreign-scope presence and obsolete-account global notices.",
+        "failureRationale": "Treating all friends notices alike either misses cross-game list changes or leaks cross-scope activity into refreshes."
+      }
+    },
+    {
+      "id": "friends-invitation-deadline-one-read",
+      "domain": "Friends invitation expiration",
+      "owner": "Rallar browser maintainers",
+      "summary": "Invitation expiry is rechecked against server authority, using server-relative time despite browser clock skew.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation once at its server deadline despite browser clock skew",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarFriends API read",
+        "observableEffect": "Invitation expiry is rechecked against server authority, using server-relative time despite browser clock skew.",
+        "requiredConstraint": "One initial read plus one deadline read; sixty seconds afterward add no requests.",
+        "failureRationale": "Locally hiding an invitation or continuing to poll could both produce the same visible final list."
+      }
+    },
+    {
+      "id": "matchmaking-invalidation-lifecycle",
+      "domain": "Matchmaking browser lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "Canonical reads follow active lifecycle while stop does not cancel durable matchmaking consent.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#ignores background invalidations, refreshes on return and stops without cancelling the durable search",
+      "coverageRelation": "The owner receives an inactive invalidation, restores foreground activity, then stops while durable search state remains owned by the server. The test observes both canonical reads and the cancellation mutation port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarMatchmaking API read and change",
+        "observableEffect": "Canonical reads follow active lifecycle while stop does not cancel durable matchmaking consent.",
+        "requiredConstraint": "Hidden invalidation issues no read; foreground adds one; stop allows neither later read nor a cancellation mutation.",
+        "failureRationale": "The displayed state cannot prove absence of network reads or durable search cancellation."
+      }
+    },
+    {
+      "id": "matchmaking-push-no-idle-read",
+      "domain": "Matchmaking browser refresh",
+      "owner": "Rallar browser maintainers",
+      "summary": "A server invalidation refreshes matchmaking state while idle time does not poll.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#does not read while idle and refreshes after a server invalidation",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarMatchmaking API read",
+        "observableEffect": "A server invalidation refreshes matchmaking state while idle time does not poll.",
+        "requiredConstraint": "One initial read remains one after thirty seconds; a valid invalidation adds one canonical read.",
+        "failureRationale": "An up-to-date view alone cannot exclude polling as the delivery mechanism."
+      }
+    },
+    {
+      "id": "party-invitation-deadline-one-read",
+      "domain": "Party invitation expiration",
+      "owner": "Rallar browser maintainers",
+      "summary": "Invitation expiry is rechecked against canonical server state.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#reads once at the server invitation deadline and never repeats idle reads",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarParty API read",
+        "observableEffect": "Invitation expiry is rechecked against canonical server state.",
+        "requiredConstraint": "One initial and one expiry read, with no additional requests during thirty subsequent idle seconds.",
+        "failureRationale": "Local list removal alone cannot establish a canonical reread or exclude recurring polling."
+      }
+    },
+    {
+      "id": "portable-view-push-authored-manifest-execution",
+      "domain": "Portable distributed view-push acceptance",
+      "owner": "Rallar browser maintainers",
+      "summary": "Two fresh browser agents execute the portable recipe and produce independently decoded successful distributed results.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/full-stack-view-push.spec.ts#two fresh browser agents observe private view push and recover offline changes",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove."
+    },
+    {
+      "id": "presence-maintenance-stop-drains-no-new-work",
+      "domain": "Presence expiry maintenance",
+      "owner": "Rallar server maintainers",
+      "summary": "Database expiry work accepted before shutdown must settle before database closure.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.test.ts#stops periodic expiry and drains enqueues before the database can close",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "client and group expiry enqueue ports",
+        "observableEffect": "Database expiry work accepted before shutdown must settle before database closure.",
+        "requiredConstraint": "After one tick, stop waits for the held enqueue; repeated stop and subsequent clock advance enqueue no additional work. Both expiry kinds receive the same captured time.",
+        "failureRationale": "A resolved stop promise alone can hide later work racing database shutdown."
+      }
+    },
+    {
+      "id": "resource-inbox-maintenance-stop-drains",
+      "domain": "Resource inbox maintenance",
+      "owner": "Rallar server maintainers",
+      "summary": "Expiry eviction must finish before the database closes and cease after stop.",
+      "semanticCoverage": "packages/tests/shared/resource-inbox-maintenance.test.ts#drains the current database operation before shutdown resolves",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "results.deleteExpired",
+        "observableEffect": "Expiry eviction must finish before the database closes and cease after stop.",
+        "requiredConstraint": "Stop waits for the held database operation; repeated stop and later timer advancement do not issue another deletion.",
+        "failureRationale": "A resolved shutdown promise alone does not exclude a surviving eviction timer."
+      }
+    },
+    {
+      "id": "scheduled-lobby-boundary-single-read",
+      "domain": "Scheduled-session semantic deadline",
+      "owner": "Rallar browser maintainers",
+      "summary": "The server-observed lobby boundary prompts a canonical schedule refresh.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#reads server authority once when the observed lobby boundary is reached",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarScheduledSessions API list",
+        "observableEffect": "The server-observed lobby boundary prompts a canonical schedule refresh.",
+        "requiredConstraint": "Exactly one additional list request occurs at the observed lobby boundary.",
+        "failureRationale": "A timer storm or periodic polling could render the same boundary state with unnecessary network work."
+      }
+    },
+    {
+      "id": "scheduled-preview-register-before-read",
+      "domain": "Scheduled preview watch protocol",
+      "owner": "Rallar browser maintainers",
+      "summary": "A preview read must be protected by a committed selected-watch registration.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#registers the selected preview before reading its canonical state",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarScheduledSessions API read",
+        "observableEffect": "A preview read must be protected by a committed selected-watch registration.",
+        "requiredConstraint": "No canonical preview GET before the held registration acknowledges.",
+        "failureRationale": "Reading first permits a mutation between snapshot and registration to be missed indefinitely."
+      }
+    },
+    {
+      "id": "scheduled-sessions-push-foreground-no-polling",
+      "domain": "Scheduled-session browser activity",
+      "owner": "Rallar browser maintainers",
+      "summary": "Personal schedules refresh from notifications and foreground restoration without idle/background requests.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#does not poll and refreshes from a scoped notification or foreground restoration",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarScheduledSessions API list",
+        "observableEffect": "Personal schedules refresh from notifications and foreground restoration without idle/background requests.",
+        "requiredConstraint": "Sixty idle seconds do not read; a notification while hidden does not read.",
+        "failureRationale": "Final personal-list state cannot distinguish push-driven reads from hidden recurring requests."
+      }
+    },
+    {
+      "id": "tournament-bracket-register-before-read",
+      "domain": "Tournament bracket watch protocol",
+      "owner": "Rallar browser maintainers",
+      "summary": "A nonentrant share-link reader must register its authorized bracket watch before obtaining a snapshot.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#registers a nonentrant bracket watch before reading and releases it on stop",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "RallarTournament API read",
+        "observableEffect": "A nonentrant share-link reader must register its authorized bracket watch before obtaining a snapshot.",
+        "requiredConstraint": "No GET while selected-watch registration is held.",
+        "failureRationale": "A read-before-register gap can lose the only bracket-change notification."
+      }
+    },
+    {
+      "id": "tournament-catalog-activity-no-idle-polling",
+      "domain": "Tournament catalog activity",
+      "owner": "Rallar browser maintainers",
+      "summary": "Catalog refresh resumes on foreground restoration while hidden/offline and idle periods remain silent.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes on return without idle polling",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarTournamentCatalog read",
+        "observableEffect": "Catalog refresh resumes on foreground restoration while hidden/offline and idle periods remain silent.",
+        "requiredConstraint": "One initial request while inactive; restoration adds one read; later idle time adds none.",
+        "failureRationale": "A correct restored list can hide recurring background or foreground polling."
+      }
+    },
+    {
+      "id": "tournament-catalog-stop-no-reads",
+      "domain": "Tournament catalog lifecycle",
+      "owner": "Rallar browser maintainers",
+      "summary": "Stopped catalog owners must cancel and cease canonical HTTP reads.",
       "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#aborts reads on stop and ignores a late completion",
-      "coverageRelation": "The catalogue runs against its owned API port and manual timers; assertions observe outbound reads alongside public catalogue state.",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
       "interactionRequirement": {
-        "interactionKind": "count",
-        "ownedPort": "RallarTournamentCatalog.Api.read",
-        "observableEffect": "Each API read issues authenticated catalogue storage work.",
-        "requiredConstraint": "Only the initial pending request reaches the API; advancing two refresh intervals after stop creates no additional reads.",
-        "failureRationale": "A stopped component can discard responses while still generating unwanted network traffic, so empty displayed state alone does not prove cleanup."
+        "interactionKind": "absence",
+        "ownedPort": "RallarTournamentCatalog read",
+        "observableEffect": "Stopped catalog owners must cancel and cease canonical HTTP reads.",
+        "requiredConstraint": "Stopping a held first read and advancing sixty seconds emits no further read.",
+        "failureRationale": "Ignoring late completion in the UI does not prove network work stopped."
       }
     },
     {
-      "id": "tournament-catalog-activity-cadence",
-      "domain": "Tournament catalogue browser request lifetime",
+      "id": "tournament-catalog-trailing-invalidation-no-idle-read",
+      "domain": "Tournament catalog invalidation coalescing",
       "owner": "Rallar browser maintainers",
-      "summary": "An inactive catalogue makes no polling requests; resuming refreshes once and waits the configured completion-based interval.",
-      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes immediately on return with cadence after completion",
-      "coverageRelation": "The catalogue runs against its owned API port and manual timers; assertions observe outbound reads alongside public catalogue state.",
+      "summary": "A burst received during a canonical read receives one trailing canonical read.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#covers an invalidation during a read with one trailing canonical read",
+      "coverageRelation": "The fixture holds a refresh read, publishes two invalidations, releases the old response and verifies the latest range plus one trailing read. Advancing the idle clock then proves that no recurring read was introduced.",
       "interactionRequirement": {
         "interactionKind": "count",
-        "ownedPort": "RallarTournamentCatalog.Api.read",
-        "observableEffect": "Each API read issues authenticated catalogue storage work.",
-        "requiredConstraint": "The API has one initial read through sixty seconds inactive, and two reads after resumption through the first 29999 milliseconds of the 30000 millisecond refresh interval.",
-        "failureRationale": "Identical cards can conceal background polling or an early timer; outbound request counts prove the required suppression and cadence."
+        "ownedPort": "RallarTournamentCatalog read",
+        "observableEffect": "A burst received during a canonical read receives one trailing canonical read.",
+        "requiredConstraint": "Initial, held refresh and one trailing read total three; sixty subsequent idle seconds add none.",
+        "failureRationale": "The latest visible page alone can hide duplicated refreshes or periodic polling."
+      }
+    },
+    {
+      "id": "tournament-obsolete-registration-no-read",
+      "domain": "Tournament selected-watch account fence",
+      "owner": "Rallar browser maintainers",
+      "summary": "A delayed registration belonging to the old account must not issue a canonical GET.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#releases the old account watch and fences its delayed registration before canonical reads",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarTournament API read",
+        "observableEffect": "A delayed registration belonging to the old account must not issue a canonical GET.",
+        "requiredConstraint": "After account replacement and old registration completion, only Bob has issued a GET.",
+        "failureRationale": "The view may correctly remain Bob even if obsolete Alice credentials were used for a hidden request."
+      }
+    },
+    {
+      "id": "tournament-start-deadline-and-push-no-polling",
+      "domain": "Tournament bracket refresh",
+      "owner": "Rallar browser maintainers",
+      "summary": "Scheduled start and explicit server invalidation trigger canonical bracket reads.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#reads at scheduled start once and on push, without recurring bracket polling",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarTournament API read",
+        "observableEffect": "Scheduled start and explicit server invalidation trigger canonical bracket reads.",
+        "requiredConstraint": "No read before the scheduled boundary; one at that boundary; none during sixty idle seconds; one on the subsequent push.",
+        "failureRationale": "A correct bracket snapshot alone cannot exclude recurring polling or repeated deadline requests."
+      }
+    },
+    {
+      "id": "view-deadline-cleared-private-view-idle",
+      "domain": "View semantic deadlines",
+      "owner": "Rallar browser maintainers",
+      "summary": "Cleared private views and nonexpiring views must not trigger deadline requests.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#cancels a private deadline when the view clears and leaves nonexpiring views idle",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "subscribeViewDeadline refresh callback",
+        "observableEffect": "Cleared private views and nonexpiring views must not trigger deadline requests.",
+        "requiredConstraint": "Neither the cleared prior deadline nor a nonexpiring view emits any callback.",
+        "failureRationale": "Clearing local state alone does not cancel a retained timer."
+      }
+    },
+    {
+      "id": "view-deadline-native-timer-overflow",
+      "domain": "View semantic deadlines",
+      "owner": "Rallar browser maintainers",
+      "summary": "Long future deadlines remain dormant until their semantic time.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#keeps long invitations dormant without overflowing native timer limits",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewDeadline refresh callback",
+        "observableEffect": "Long future deadlines remain dormant until their semantic time.",
+        "requiredConstraint": "A thirty-day deadline emits nothing after one second and exactly one callback when due.",
+        "failureRationale": "Native timeout overflow could turn a long invitation into immediate or repeated network requests."
+      }
+    },
+    {
+      "id": "view-deadline-single-fire-replacement-disposal",
+      "domain": "View semantic deadlines",
+      "owner": "Rallar browser maintainers",
+      "summary": "A semantic expiration triggers a canonical refresh, with no polling or obsolete timer effects.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#rechecks once at the server deadline, replaces deadlines, and releases subscriptions",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewDeadline refresh callback",
+        "observableEffect": "A semantic expiration triggers a canonical refresh, with no polling or obsolete timer effects.",
+        "requiredConstraint": "One callback at the observed deadline; replacement cancels the earlier deadline; stop cancels remaining work and detaches future publications.",
+        "failureRationale": "Visible deadline bookkeeping cannot prove actual refreshes occur once or cease after disposal."
+      }
+    },
+    {
+      "id": "view-invalidations-current-authority",
+      "domain": "Authenticated invalidation admission",
+      "owner": "Rallar browser maintainers",
+      "summary": "Only current-account, correctly scoped, well-formed WS notifications may request private view reads.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#ignores wrong accounts, scopes, resources, malformed envelopes and non-WS delivery",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewInvalidations changed callback",
+        "observableEffect": "Only current-account, correctly scoped, well-formed WS notifications may request private view reads.",
+        "requiredConstraint": "Wrong account/scope/resource/transport/shape and signed-out notices emit no callback; the new current account is admitted.",
+        "failureRationale": "A final empty view does not prove a rejected envelope avoided authenticated I/O."
+      }
+    },
+    {
+      "id": "view-invalidations-initial-attachment",
+      "domain": "Authenticated invalidation recovery",
+      "owner": "Rallar browser maintainers",
+      "summary": "Initial socket attachment must cover an open event occurring before lifecycle listeners were attached.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes after initial connection attachment even when the socket opened before lifecycle listeners attached",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewInvalidations changed callback",
+        "observableEffect": "Initial socket attachment must cover an open event occurring before lifecycle listeners were attached.",
+        "requiredConstraint": "Successful initial connection attachment emits one recovery callback.",
+        "failureRationale": "Waiting only for the missed open event leaves the first canonical state stale indefinitely."
+      }
+    },
+    {
+      "id": "view-invalidations-own-account-disposal",
+      "domain": "Authenticated invalidation subscription",
+      "owner": "Rallar browser maintainers",
+      "summary": "Accepted own-account server notifications request a canonical view refresh.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes current own-account views across server nodes and stops all subscriptions",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewInvalidations changed callback",
+        "observableEffect": "Accepted own-account server notifications request a canonical view refresh.",
+        "requiredConstraint": "An authenticated own-account notice from another server is delivered once; stop removes both message and lifecycle effects.",
+        "failureRationale": "Registration of listeners alone does not prove delivery or teardown at the refresh boundary."
+      }
+    },
+    {
+      "id": "view-invalidations-reconnect-resync",
+      "domain": "Authenticated invalidation recovery",
+      "owner": "Rallar browser maintainers",
+      "summary": "Reconnect and server subscriber-resync request canonical recovery.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers on socket reopen and server subscriber resync without accepting malformed resync",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "subscribeViewInvalidations changed callback",
+        "observableEffect": "Reconnect and server subscriber-resync request canonical recovery.",
+        "requiredConstraint": "One callback for reopen and one for valid resync; malformed, non-WS or signed-out recovery signals do nothing.",
+        "failureRationale": "A subscription can appear healthy while missing the sole recovery signal or accepting untrusted ones."
+      }
+    },
+    {
+      "id": "view-watch-account-replacement-cache",
+      "domain": "Selected-view registration ownership",
+      "owner": "Rallar browser maintainers",
+      "summary": "Account replacement establishes a new watch independently of an obsolete held registration.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#new authentication does not wait for an obsolete pending registration",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "SelectedViewWatch change",
+        "observableEffect": "Account replacement establishes a new watch independently of an obsolete held registration.",
+        "requiredConstraint": "Exactly Alice and Bob registration attempts occur; completion of Alice and reselecting Bob create no additional attempt.",
+        "failureRationale": "Bob state alone does not reveal an obsolete retry or repeated identical registration."
+      }
+    },
+    {
+      "id": "view-watch-cleanup-does-not-chase-conflict",
+      "domain": "Selected-view registration ownership",
+      "owner": "Rallar browser maintainers",
+      "summary": "Conditional cleanup mutates the durable selected-watch slot.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#does not follow a cleanup conflict and erase a replacement selection",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "SelectedViewWatch change",
+        "observableEffect": "Conditional cleanup mutates the durable selected-watch slot.",
+        "requiredConstraint": "Cleanup of an owned token attempts once and never chases a conflicting replacement token.",
+        "failureRationale": "A fulfilled cleanup promise cannot prove another owner was not erased by a subsequent request."
+      }
+    },
+    {
+      "id": "view-watch-foreign-observation-is-not-ownership",
+      "domain": "Selected-view registration ownership",
+      "owner": "Rallar browser maintainers",
+      "summary": "Only registrations actually applied by this owner may be cleared.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#never clears a foreign token learned during conflict backoff",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "SelectedViewWatch change",
+        "observableEffect": "Only registrations actually applied by this owner may be cleared.",
+        "requiredConstraint": "Release during conflict backoff emits neither a retry nor cleanup against the foreign token.",
+        "failureRationale": "A null local selection can coexist with an unauthorized cleanup command already sent."
+      }
+    },
+    {
+      "id": "view-watch-lost-acknowledgement-retry",
+      "domain": "Selected-view watch transport",
+      "owner": "Rallar browser maintainers",
+      "summary": "AppInbox watch-registration requests carry stable request identity and CAS predecessor.",
+      "semanticCoverage": "packages/tests/shared-web/api/write-selected-view-watch.test.ts#preserves %s registration identity and predecessor after a lost acknowledgement",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "sendApiHttpRequest",
+        "observableEffect": "AppInbox watch-registration requests carry stable request identity and CAS predecessor.",
+        "requiredConstraint": "One failed acknowledgement followed by one successful transport retry emits two attempts with identical logical registration.",
+        "failureRationale": "A successful result alone cannot distinguish replay from duplicate logical registration or extra HTTP attempts."
+      }
+    },
+    {
+      "id": "view-watch-registration-reuse-generation",
+      "domain": "Selected-view registration ownership",
+      "owner": "Rallar browser maintainers",
+      "summary": "A selected watch is registered once per current authenticated selection and connection generation.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#awaits committed registration and reuses it until the selection or connection changes",
+      "coverageRelation": "Each listed test drives the stated lifecycle or failure condition and observes the named outward port; individual occurrences below state which part of the constraint they prove.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "SelectedViewWatch change",
+        "observableEffect": "A selected watch is registered once per current authenticated selection and connection generation.",
+        "requiredConstraint": "Reselecting identical input suppresses a registration; changing generation issues one new registration.",
+        "failureRationale": "A resolved selection promise does not prove a watch was renewed after reconnect or redundant writes were suppressed."
+      }
+    },
+    {
+      "id": "move-history-no-idle-background-or-stopped-reads",
+      "domain": "Move together browser ownership",
+      "owner": "Rallar browser maintainers",
+      "summary": "An active Move owner recovers a hidden change at foreground restoration and ceases network observation when stopped.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#keeps idle and hidden views quiet and recovers the latest move on foreground return",
+      "coverageRelation": "The test advances an idle minute, sends an invalidation while hidden, restores the foreground and observes the cancelled move, then stops and repeats the lifecycle signals.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarRoomMove.Api.list authenticated canonical history GET",
+        "observableEffect": "Only an eligible trigger issues a private Move history request.",
+        "requiredConstraint": "There is one initial list call, no extra calls in idle or hidden minutes, one added on foreground restoration and none after stop.",
+        "failureRationale": "Displayed history alone could hide recurring private reads or a request surviving owner disposal."
+      }
+    },
+    {
+      "id": "move-history-hidden-account-read-fence",
+      "domain": "Move together browser ownership",
+      "owner": "Rallar browser maintainers",
+      "summary": "Starting or replacing authentication while hidden must not send the private Move history request until the page becomes active.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#defers hidden reads and fences the previous account across foreground recovery",
+      "coverageRelation": "The fixture begins hidden, then holds Alice’s visible read and replaces her with Bob while hidden. After Bob returns to the foreground the test observes his canonical request and the absence of stale Alice state or activation.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRoomMove.Api.list authenticated canonical history GET",
+        "observableEffect": "The browser sends credentials for the current account when refreshing its private Move history.",
+        "requiredConstraint": "Initial hidden startup sends zero requests. Replacing Alice with Bob while hidden issues no request using Bob credentials before foreground restoration.",
+        "failureRationale": "An empty displayed view alone cannot prove private network requests were suppressed for the hidden account."
       }
     }
   ],
@@ -11080,6 +11598,864 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/rooms/move/activate-group-move.test.ts#refuses an uncommitted or other-account move before any HTTP effect"
     },
     {
+      "id": "test-structure-coupling-fb3e7a0c520b76fc",
+      "path": "packages/tests/shared-react/scheduled-sessions-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-reservation-click-does-not-enter-lobby",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The actual reserve button click must not cause the separate lobby-entry effect.",
+      "semanticCoverage": "packages/tests/shared-react/scheduled-sessions-panel.test.ts#renders explicit reservation and lobby controls from the current account preview"
+    },
+    {
+      "id": "test-structure-coupling-bd3e89161872b5f7",
+      "path": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-http-retry-identity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Both captured transport attempts must use the same scoped request URL so an ambiguous response cannot create two logical commands.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts#sends scoped authenticated commands with the same request identity on transport retry and decodes private recovery"
+    },
+    {
+      "id": "test-structure-coupling-96096a8f4d754973",
+      "path": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "full-stack-receiver-barrier-timeout-warns-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The exactly-once matcher on the warning spy is the only observation that the barrier's timeout reaction ran once with its exact payload; the returned started run is the same for a silent or repeated warning.",
+      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts#warns and releases the sender when the receiver neither connects nor ends within the barrier timeout"
+    },
+    {
+      "id": "test-structure-coupling-aa28faae46ed7566",
+      "path": "packages/tests/shared-web/tournaments/tournament-http-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-http-lost-response-replay",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Both captured request URLs must retain the original request identity across the lost-response retry.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/tournament-http-api.test.ts#replays the exact authenticated scoped intent after a lost response and rejects a substituted result"
+    },
+    {
+      "id": "test-structure-coupling-d2a0b2266f17ab12",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Preview must not initiate any bracket mutation.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-5f7d169472d8c3c7",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Preview must not initiate room admission or replace current presence.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-a9a6abfa2208bb45",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The visible registration click must send the register intent to the mutation port.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-34854184cfe02abd",
+      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "tournament-panel-explicit-consent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Registering must not also enter a match room.",
+      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+    },
+    {
+      "id": "test-structure-coupling-985c57c86c43d43d",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-tournament-server-snapshot-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "Advancing the runtime publication timer must not publish a server-owned tournament snapshot over RTC.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#restores the same tournament hunter after signing in with a new session"
+    },
+    {
+      "id": "test-structure-coupling-544d8592389f0c35",
+      "path": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-failed-scene-startup-releases-owned-engine",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "The one-disposal assertion observes cleanup of the one engine already allocated before construction fails; it protects the graphics resource lifetime rather than the order of internal helper calls.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts#disposes the allocated engine if early scaling fails before Scene construction"
+    },
+    {
+      "id": "test-structure-coupling-700fe380c82b5688",
+      "path": "packages/tests/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "presence-maintenance-stop-drains-no-new-work",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The client enqueue remains exactly the original operation after shutdown and ten seconds of later clock advancement; its argument checks the tick timestamp.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.test.ts#stops periodic expiry and drains enqueues before the database can close"
+    },
+    {
+      "id": "test-structure-coupling-42b93b6d5ea8689f",
+      "path": "packages/tests/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "presence-maintenance-stop-drains-no-new-work",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The group enqueue also remains exactly the original operation after shutdown, so stopping only the client path would fail.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.test.ts#stops periodic expiry and drains enqueues before the database can close"
+    },
+    {
+      "id": "test-structure-coupling-2970147a21a60564",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The attempted replacement must not add a second outbound mutation while the original response is uncertain.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-f1fa04c53fa25bc3",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The two transport attempts must carry the identical logical request and request ID so server replay cannot create a second mutation.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-d4f1cb938c4a83d1",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-command-immutable-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retried payload must retain the original name despite caller mutation; matching two mutated attempts would not prove immutable capture.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+    },
+    {
+      "id": "test-structure-coupling-75109cb9edba3489",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-retry-account-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retry must equal the current account pending request, not the older account request that completed late.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#does not let a late write clear a replacement account command or expose its result"
+    },
+    {
+      "id": "test-structure-coupling-b03e00e732b2bb09",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-refresh-stop-cancels-queued-reads",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The held initial read and fresh restart are the only two API reads; draining stopped work must not issue a third request.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#discards an in-flight read after stop and restarts with fresh account state"
+    },
+    {
+      "id": "test-structure-coupling-eecc1894a817c3c7",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-refresh-burst-coalescing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "After initial load, one held read and three concurrent refresh marks require exactly one additional read covering all three marks.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#covers changes arriving during a read with one trailing read for the burst"
+    },
+    {
+      "id": "test-structure-coupling-ffb00489341d2298",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-refresh-replaced-account-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Only the initial and already-started requests may use Alice credentials; the queued mark must not send a third Alice request after replacement.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#starts replacement-account reads without waiting for old account refreshes"
+    },
+    {
+      "id": "test-structure-coupling-9ddb58961dc0e698",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-subscribe-before-read-trailing-stop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Two requests mean the initial snapshot plus one trailing read covering both invalidations while the first is held.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#subscribes before reading, covers a push during that read, and detaches on stop"
+    },
+    {
+      "id": "test-structure-coupling-36e47a8950185e14",
+      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authenticated-subscribe-before-read-trailing-stop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The unchanged total after stop and a new invalidation proves subscription disposal suppresses further private reads.",
+      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#subscribes before reading, covers a push during that read, and detaches on stop"
+    },
+    {
+      "id": "test-structure-coupling-001decba6417a4c7",
+      "path": "packages/tests/shared-web/api/write-selected-view-watch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-watch-lost-acknowledgement-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The two attempts are the injected lost acknowledgement and recovery; accompanying per-call payload assertions bind both to the same command.",
+      "semanticCoverage": "packages/tests/shared-web/api/write-selected-view-watch.test.ts#preserves %s registration identity and predecessor after a lost acknowledgement"
+    },
+    {
+      "id": "test-structure-coupling-67794a7aa9618006",
+      "path": "packages/tests/shared-web/api/read-api-view.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "canonical-view-read-transient-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Checks the sole push-triggered read recovers once after one 503 instead of waiting for another notification.",
+      "semanticCoverage": "packages/tests/shared-web/api/read-api-view.test.ts#recovers a transient failure of the only push-triggered read"
+    },
+    {
+      "id": "test-structure-coupling-fbf9c5c4d60e6fb1",
+      "path": "packages/tests/shared-web/api/read-api-view.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "canonical-view-read-bounded-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Pins the public recovery budget to three attempts, independently of the retry helper implementation.",
+      "semanticCoverage": "packages/tests/shared-web/api/read-api-view.test.ts#bounds a failed recovery and preserves the final HTTP error"
+    },
+    {
+      "id": "test-structure-coupling-e6b1cf55662fe162",
+      "path": "packages/tests/shared-web/api/read-api-view.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "canonical-view-read-cancelled-credentials",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "After cancellation, exactly the original failed request exists; no obsolete retry may be issued.",
+      "semanticCoverage": "packages/tests/shared-web/api/read-api-view.test.ts#never retries with obsolete credentials after cancellation during backoff"
+    },
+    {
+      "id": "test-structure-coupling-50418b13500a4728",
+      "path": "packages/tests/shared-web/api/selected-view-watch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-watch-registration-reuse-generation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "An identical selection reuses the applied registration instead of repeating the durable mutation.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#awaits committed registration and reuses it until the selection or connection changes"
+    },
+    {
+      "id": "test-structure-coupling-689c095982d913a7",
+      "path": "packages/tests/shared-web/api/selected-view-watch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-watch-registration-reuse-generation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A new connection generation invalidates that reuse and requires exactly one replacement registration.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#awaits committed registration and reuses it until the selection or connection changes"
+    },
+    {
+      "id": "test-structure-coupling-99e64606b9de321c",
+      "path": "packages/tests/shared-web/api/selected-view-watch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-watch-cleanup-does-not-chase-conflict",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The total of initial registration plus one cleanup rules out a third request chasing the foreign conflict.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#does not follow a cleanup conflict and erase a replacement selection"
+    },
+    {
+      "id": "test-structure-coupling-29cdb089e148de50",
+      "path": "packages/tests/shared-web/api/selected-view-watch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-watch-foreign-observation-is-not-ownership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The original conflicting request is the only operation; learning a foreign token must not authorize clearing it.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#never clears a foreign token learned during conflict backoff"
+    },
+    {
+      "id": "test-structure-coupling-73c899371a49f4c1",
+      "path": "packages/tests/shared-web/api/selected-view-watch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-watch-account-replacement-cache",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The final total proves late Alice completion does not trigger another registration or invalidate the reusable Bob watch.",
+      "semanticCoverage": "packages/tests/shared-web/api/selected-view-watch.test.ts#new authentication does not wait for an obsolete pending registration"
+    },
+    {
+      "id": "test-structure-coupling-90139cedd12c6401",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-single-fire-replacement-disposal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial deadline fires once despite a same-view busy publication.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#rechecks once at the server deadline, replaces deadlines, and releases subscriptions"
+    },
+    {
+      "id": "test-structure-coupling-70f537eb7890feda",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-single-fire-replacement-disposal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "No repeating callback follows the already-fired deadline.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#rechecks once at the server deadline, replaces deadlines, and releases subscriptions"
+    },
+    {
+      "id": "test-structure-coupling-f4d21a8487809fff",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-single-fire-replacement-disposal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The replaced earlier deadline is silent before the replacement is due.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#rechecks once at the server deadline, replaces deadlines, and releases subscriptions"
+    },
+    {
+      "id": "test-structure-coupling-25fa66f0aa194113",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-single-fire-replacement-disposal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The replacement deadline adds exactly one callback.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#rechecks once at the server deadline, replaces deadlines, and releases subscriptions"
+    },
+    {
+      "id": "test-structure-coupling-8fb6a0cbaa9b28d9",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-single-fire-replacement-disposal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Disposal prevents both the armed deadline and subsequent view publications from causing callbacks.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#rechecks once at the server deadline, replaces deadlines, and releases subscriptions"
+    },
+    {
+      "id": "test-structure-coupling-9812aa95e6143577",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-cleared-private-view-idle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "No callback after both clock advances proves cancellation and nonexpiring inactivity.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#cancels a private deadline when the view clears and leaves nonexpiring views idle"
+    },
+    {
+      "id": "test-structure-coupling-93b27d7dd25fa6f7",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-native-timer-overflow",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "No early refresh catches native timer overflow.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#keeps long invitations dormant without overflowing native timer limits"
+    },
+    {
+      "id": "test-structure-coupling-baae66c7c851c02c",
+      "path": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-deadline-native-timer-overflow",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The long deadline eventually produces exactly one semantic refresh.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-deadline.test.ts#keeps long invitations dormant without overflowing native timer limits"
+    },
+    {
+      "id": "test-structure-coupling-4323fef6159535a6",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-own-account-disposal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The remote-node own-account notice reaches the refresh callback.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes current own-account views across server nodes and stops all subscriptions"
+    },
+    {
+      "id": "test-structure-coupling-307717b36ed914eb",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-own-account-disposal",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Neither a notice nor reconnect can produce another callback after disposal.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes current own-account views across server nodes and stops all subscriptions"
+    },
+    {
+      "id": "test-structure-coupling-28e1e24bb4ae88e3",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-current-authority",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "All explicitly invalid envelope cases are silent.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#ignores wrong accounts, scopes, resources, malformed envelopes and non-WS delivery"
+    },
+    {
+      "id": "test-structure-coupling-9d8c8d1acccc88f1",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-current-authority",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Only Bob is admitted after account replacement; stale Alice is rejected.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#ignores wrong accounts, scopes, resources, malformed envelopes and non-WS delivery"
+    },
+    {
+      "id": "test-structure-coupling-c1748a4e3435c5f1",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-current-authority",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Logout prevents later delivery from adding a callback.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#ignores wrong accounts, scopes, resources, malformed envelopes and non-WS delivery"
+    },
+    {
+      "id": "test-structure-coupling-d70cdcfa24655a51",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-reconnect-resync",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Both supported recovery events produce one refresh each.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers on socket reopen and server subscriber resync without accepting malformed resync"
+    },
+    {
+      "id": "test-structure-coupling-f66e2f3df9cdd316",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-reconnect-resync",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Invalid resync and signed-out reopen do not add refreshes.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#recovers on socket reopen and server subscriber resync without accepting malformed resync"
+    },
+    {
+      "id": "test-structure-coupling-fe689548146f886d",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "view-invalidations-initial-attachment",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The attachment callback covers the lifecycle-listener race even without a later reopen.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes after initial connection attachment even when the socket opened before lifecycle listeners attached"
+    },
+    {
+      "id": "test-structure-coupling-3294cf724a1b7aae",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-global-vs-scoped-invalidation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "An own-account scope-null friends notice is admitted.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#receives global friends list changes and only same-scope friends presence hints"
+    },
+    {
+      "id": "test-structure-coupling-3b9a1b3fb62b1b51",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-global-vs-scoped-invalidation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A same-scope presence hint is independently admitted.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#receives global friends list changes and only same-scope friends presence hints"
+    },
+    {
+      "id": "test-structure-coupling-7b1d98a44b0a1c50",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-global-vs-scoped-invalidation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Other-scope presence and stale-account global notices add no callbacks.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#receives global friends list changes and only same-scope friends presence hints"
+    },
+    {
+      "id": "test-structure-coupling-a3599bce3451a904",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "catalog-public-scope-authenticated-invalidation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The valid public catalog hint reaches the canonical refresh owner.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes public catalog readers only while authenticated in the exact game and workspace"
+    },
+    {
+      "id": "test-structure-coupling-c05a928576ff9801",
+      "path": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "catalog-public-scope-authenticated-invalidation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The later invalid scope, transport and auth cases emit no additional callback.",
+      "semanticCoverage": "packages/tests/shared-web/api/subscribe-view-invalidations.test.ts#refreshes public catalog readers only while authenticated in the exact game and workspace"
+    },
+    {
+      "id": "test-structure-coupling-5c2d0e5ac23944ed",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-ambiguous-request-identity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial delivery and explicit retry carry identical actor, request identity and command data. A locally cleared error does not prove the server received the same idempotency identity; a new identity could execute the mutation twice.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#loads the private view and preserves exact command identity after an ambiguous failure"
+    },
+    {
+      "id": "test-structure-coupling-d6c2c71cc350a46b",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-terminal-request-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The next action reaches the mutation port with its own payload and a different request identity. Reusing a terminal identity only replays exhaustion; local enabled controls alone cannot prove a new command is admitted.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#releases a terminal exhausted request so a new action can proceed"
+    },
+    {
+      "id": "test-structure-coupling-d7c78613092fde22",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-stale-invitation-no-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+    },
+    {
+      "id": "test-structure-coupling-3cdfc58ebbfc0866",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-stale-invitation-no-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+    },
+    {
+      "id": "test-structure-coupling-7fa28eddd4ee743a",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-background-read-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial friends read remains the only request after sixty seconds of idle time; this independently excludes a recurring poll.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#stays idle without polling, reacts to push only when active, and clears private views after a failed read"
+    },
+    {
+      "id": "test-structure-coupling-9adfe00fdd70b6d5",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-background-read-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "An invalidation while inactive and sixty more seconds do not add a request, excluding background private reads.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#stays idle without polling, reacts to push only when active, and clears private views after a failed read"
+    },
+    {
+      "id": "test-structure-coupling-558acce92cc5858b",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-background-read-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The foreground restoration and overlapping explicit refresh add only one canonical read.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#stays idle without polling, reacts to push only when active, and clears private views after a failed read"
+    },
+    {
+      "id": "test-structure-coupling-81918928ffd2be68",
+      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "friends-invitation-deadline-one-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The terminal total of two reads proves one canonical expiry refresh and no idle recurrence.",
+      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation once at its server deadline despite browser clock skew"
+    },
+    {
+      "id": "test-structure-coupling-c88ec6352a5a9b62",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-confirmation-blocks-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Calling Enter while confirmation is pending must not reach the room admission port.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#recovers confirmation, binds commands to the recovered search, and enters only a committed destination"
+    },
+    {
+      "id": "test-structure-coupling-4d6bf15258f70094",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-ambiguous-command-blocks-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Find and Cancel must leave the original single outbound command unresolved rather than send replacements.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#keeps the exact command after an ambiguous response and blocks a replacement search until retry resolves"
+    },
+    {
+      "id": "test-structure-coupling-e21badfde30dee8f",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-timeout-never-auto-requeues",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Repeated recovery polling after timeout must not add a search mutation to the explicit cancellation.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#never requeues a timed-out cohort and uses a new identity only after an explicit new search"
+    },
+    {
+      "id": "test-structure-coupling-b20305207bf1ea7f",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-failed-refresh-blocks-stale-entry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "The old matched snapshot must not authorize entry when the required fresh read fails.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#rejects another scope or account and prevents stale entry after a failed fresh read"
+    },
+    {
+      "id": "test-structure-coupling-364f3127b1e77dfc",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-invalidation-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "The hidden invalidation issues no second canonical request after the initial read.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#ignores background invalidations, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-84a8ed91f83e0ebd",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-invalidation-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Foreground restoration adds one canonical request to recover changes suppressed while inactive.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#ignores background invalidations, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-9ca97d0e017f5bb3",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-invalidation-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "After stop and further invalidation, the read total stays unchanged; obsolete owner work has ceased.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#ignores background invalidations, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-e94d8e51dd3edd8b",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-invalidation-lifecycle",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser matchmaking maintainers",
+      "rationale": "Stopping browser observation emits no cancellation mutation, preserving the durable search consent.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#ignores background invalidations, refreshes on return and stops without cancelling the durable search"
+    },
+    {
+      "id": "test-structure-coupling-a97d53ae793020f4",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-push-no-idle-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Thirty idle seconds create no second request.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#does not read while idle and refreshes after a server invalidation"
+    },
+    {
+      "id": "test-structure-coupling-a80e028f0dab6670",
+      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "matchmaking-push-no-idle-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The invalidation supplies the one new canonical read that exposes the updated state.",
+      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#does not read while idle and refreshes after a server invalidation"
+    },
+    {
+      "id": "test-structure-coupling-c9442fba7470603a",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-uncertain-consent-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Attempting Disband while the invitation is unresolved must not add a third mutation to Create and Invite.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
+    },
+    {
+      "id": "test-structure-coupling-13dd643abfb0c6f4",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-uncertain-consent-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The retried invitation must retain the original scoped party, recipient, roster revision and idempotency identity despite refresh.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
+    },
+    {
+      "id": "test-structure-coupling-d5a09476296cfe2f",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-consent-requires-displayed-invitation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The unknown invitation produces no outbound consent before the known invitation is accepted.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#accepts only a displayed invitation and preserves explicit null roster consent"
+    },
+    {
+      "id": "test-structure-coupling-dcd0d429e44bba70",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-definitive-refusal-no-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The definitive party-changed response completes the one attempted takeover without a replacement write.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#refreshes on a definitive roster refusal without retrying or silently changing consent"
+    },
+    {
+      "id": "test-structure-coupling-e0d4038cd5600a14",
+      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "party-invitation-deadline-one-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The final total ensures exactly one canonical deadline refresh and no recurring idle work.",
+      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#reads once at the server invitation deadline and never repeats idle reads"
+    },
+    {
+      "id": "test-structure-coupling-1de91f76b11fd427",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-sessions-push-foreground-no-polling",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The initial list request is still the only request after an idle interval.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#does not poll and refreshes from a scoped notification or foreground restoration"
+    },
+    {
+      "id": "test-structure-coupling-f7512e790f9dc119",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-sessions-push-foreground-no-polling",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A scoped notification while inactive does not request the private list.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#does not poll and refreshes from a scoped notification or foreground restoration"
+    },
+    {
+      "id": "test-structure-coupling-c67dce3a4160f716",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-preview-register-before-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Absence of a GET while watch registration is held directly proves the required protocol order.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#registers the selected preview before reading its canonical state"
+    },
+    {
+      "id": "test-structure-coupling-50e754816e9cadf4",
+      "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "scheduled-lobby-boundary-single-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The total of initial plus boundary read guards the one-time authority recheck.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#reads server authority once when the observed lobby boundary is reached"
+    },
+    {
       "id": "test-structure-coupling-0ea82a76def8a2de",
       "path": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -11168,279 +12544,125 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/rooms/sessions/rallar-scheduled-sessions.test.ts#deduplicates creation clicks and does not select the created room after logout"
     },
     {
-      "id": "test-structure-coupling-fb3e7a0c520b76fc",
-      "path": "packages/tests/shared-react/scheduled-sessions-panel.test.ts",
+      "id": "test-structure-coupling-81109f825b91efe4",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "scheduled-reservation-click-does-not-enter-lobby",
+      "contract": "tournament-catalog-trailing-invalidation-no-idle-read",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The actual reserve button click must not cause the separate lobby-entry effect.",
-      "semanticCoverage": "packages/tests/shared-react/scheduled-sessions-panel.test.ts#renders explicit reservation and lobby controls from the current account preview"
+      "rationale": "The initial read, held refresh and one trailing read total three despite two invalidations; the latest visible range verifies that the trailing response was applied.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#covers an invalidation during a read with one trailing canonical read"
     },
     {
-      "id": "test-structure-coupling-5c2d0e5ac23944ed",
-      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "id": "test-structure-coupling-0a5699c3def02aeb",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "friends-ambiguous-request-identity",
+      "contract": "tournament-catalog-trailing-invalidation-no-idle-read",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The initial delivery and explicit retry carry identical actor, request identity and command data. A locally cleared error does not prove the server received the same idempotency identity; a new identity could execute the mutation twice.",
-      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#loads the private view and preserves exact command identity after an ambiguous failure"
+      "rationale": "Sixty idle seconds after the trailing response do not add another canonical request, excluding recurring catalog polling.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#covers an invalidation during a read with one trailing canonical read"
     },
     {
-      "id": "test-structure-coupling-d6c2c71cc350a46b",
-      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "id": "test-structure-coupling-b490a3bb35d28527",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "friends-terminal-request-recovery",
+      "contract": "tournament-catalog-stop-no-reads",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The next action reaches the mutation port with its own payload and a different request identity. Reusing a terminal identity only replays exhaustion; local enabled controls alone cannot prove a new command is admitted.",
-      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#releases a terminal exhausted request so a new action can proceed"
+      "rationale": "The first read remains the only read after stop, late completion and timer advancement.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#aborts reads on stop and ignores a late completion"
     },
     {
-      "id": "test-structure-coupling-d7c78613092fde22",
-      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "id": "test-structure-coupling-96b03aed87b0f988",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "friends-stale-invitation-no-entry",
+      "contract": "tournament-catalog-activity-no-idle-polling",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
-      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+      "rationale": "The inactive minute emits no additional request.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes on return without idle polling"
     },
     {
-      "id": "test-structure-coupling-3cdfc58ebbfc0866",
-      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "id": "test-structure-coupling-9f34df3d21ce80ec",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "friends-stale-invitation-no-entry",
+      "contract": "tournament-catalog-activity-no-idle-polling",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "A removed invitation or an invitation scoped to a different game emits no room entry intent. An error message can coexist with an unintended room switch, so the forbidden entry effect must be excluded explicitly.",
-      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#rechecks an invitation before entering and refuses stale or foreign destinations"
+      "rationale": "Foreground restoration adds one request and the following minute adds none.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes on return without idle polling"
     },
     {
-      "id": "test-structure-coupling-7fa28eddd4ee743a",
-      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "id": "test-structure-coupling-c85e7ca7657d117e",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "friends-background-read-suppression",
+      "contract": "tournament-bracket-register-before-read",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read. Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract.",
-      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read"
+      "rationale": "The held registration prevents canonical reading, directly proving the required watch-before-read order.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#registers a nonentrant bracket watch before reading and releases it on stop"
     },
     {
-      "id": "test-structure-coupling-9adfe00fdd70b6d5",
-      "path": "packages/tests/shared-web/friends/rallar-friends.test.ts",
+      "id": "test-structure-coupling-155fb60dc7f8f1de",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "friends-background-read-suppression",
+      "contract": "tournament-obsolete-registration-no-read",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "After the initial read, two background refresh intervals issue no reads; activation and its overlapping explicit refresh issue one additional read. Visible state could remain unchanged while background requests continue or duplicate, so the bounded read count is the polling and single-flight contract.",
-      "semanticCoverage": "packages/tests/shared-web/friends/rallar-friends.test.ts#polls only while foreground and online and clears private views after a failed read"
+      "rationale": "Together with the Bob payload assertion, the single request excludes a hidden old-account read.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#releases the old account watch and fences its delayed registration before canonical reads"
     },
     {
-      "id": "test-structure-coupling-c88ec6352a5a9b62",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
+      "id": "test-structure-coupling-9df9c3b961a6cb02",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-confirmation-blocks-admission",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Calling Enter while confirmation is pending must not reach the room admission port.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#recovers confirmation, binds commands to the recovered search, and enters only a committed destination"
-    },
-    {
-      "id": "test-structure-coupling-4d6bf15258f70094",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-ambiguous-command-blocks-replacement",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Find and Cancel must leave the original single outbound command unresolved rather than send replacements.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#keeps the exact command after an ambiguous response and blocks a replacement search until retry resolves"
-    },
-    {
-      "id": "test-structure-coupling-e21badfde30dee8f",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-timeout-never-auto-requeues",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Repeated recovery polling after timeout must not add a search mutation to the explicit cancellation.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#never requeues a timed-out cohort and uses a new identity only after an explicit new search"
-    },
-    {
-      "id": "test-structure-coupling-b20305207bf1ea7f",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-failed-refresh-blocks-stale-entry",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "The old matched snapshot must not authorize entry when the required fresh read fails.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#rejects another scope or account and prevents stale entry after a failed fresh read"
-    },
-    {
-      "id": "test-structure-coupling-364f3127b1e77dfc",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-polling-lifecycle",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Three background timer intervals must not add to the initial read.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
-    },
-    {
-      "id": "test-structure-coupling-84a8ed91f83e0ebd",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-polling-lifecycle",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Foreground notification and concurrent explicit refresh must coalesce into one additional recovery read.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
-    },
-    {
-      "id": "test-structure-coupling-9ca97d0e017f5bb3",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-polling-lifecycle",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Advancing timers after stop must not add further reads.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
-    },
-    {
-      "id": "test-structure-coupling-e94d8e51dd3edd8b",
-      "path": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-polling-lifecycle",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Stopping the local owner must leave the durable search intact by sending no mutation.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/rallar-matchmaking.test.ts#pauses background polling, refreshes on return and stops without cancelling the durable search"
-    },
-    {
-      "id": "test-structure-coupling-bd3e89161872b5f7",
-      "path": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "matchmaking-http-retry-identity",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser matchmaking maintainers",
-      "rationale": "Both captured transport attempts must use the same scoped request URL so an ambiguous response cannot create two logical commands.",
-      "semanticCoverage": "packages/tests/shared-web/matchmaking/matchmaking-http-api.test.ts#sends scoped authenticated commands with the same request identity on transport retry and decodes private recovery"
-    },
-    {
-      "id": "test-structure-coupling-2970147a21a60564",
-      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "authenticated-command-immutable-retry",
+      "contract": "tournament-start-deadline-and-push-no-polling",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The attempted replacement must not add a second outbound mutation while the original response is uncertain.",
-      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+      "rationale": "The initial request remains alone immediately before scheduled start.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#reads at scheduled start once and on push, without recurring bracket polling"
     },
     {
-      "id": "test-structure-coupling-f1fa04c53fa25bc3",
-      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "id": "test-structure-coupling-0e8ef58a1c4b8a78",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "authenticated-command-immutable-retry",
+      "contract": "tournament-start-deadline-and-push-no-polling",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The two transport attempts must carry the identical logical request and request ID so server replay cannot create a second mutation.",
-      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+      "rationale": "Scheduled start adds exactly one canonical request.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#reads at scheduled start once and on push, without recurring bracket polling"
     },
     {
-      "id": "test-structure-coupling-d4f1cb938c4a83d1",
-      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "id": "test-structure-coupling-3bb2ad0a439615b4",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "authenticated-command-immutable-retry",
+      "contract": "tournament-start-deadline-and-push-no-polling",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The retried payload must retain the original name despite caller mutation; matching two mutated attempts would not prove immutable capture.",
-      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#retains immutable command identity after an uncertain write and fences an older read"
+      "rationale": "The completed deadline does not become recurring bracket polling.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#reads at scheduled start once and on push, without recurring bracket polling"
     },
     {
-      "id": "test-structure-coupling-75109cb9edba3489",
-      "path": "packages/tests/shared-web/api/authenticated-resource.test.ts",
+      "id": "test-structure-coupling-d00c407223698e38",
+      "path": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "authenticated-retry-account-isolation",
+      "contract": "tournament-start-deadline-and-push-no-polling",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The retry must equal the current account pending request, not the older account request that completed late.",
-      "semanticCoverage": "packages/tests/shared-web/api/authenticated-resource.test.ts#does not let a late write clear a replacement account command or expose its result"
-    },
-    {
-      "id": "test-structure-coupling-c9442fba7470603a",
-      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "party-uncertain-consent-retry",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "Attempting Disband while the invitation is unresolved must not add a third mutation to Create and Invite.",
-      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
-    },
-    {
-      "id": "test-structure-coupling-13dd643abfb0c6f4",
-      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "party-uncertain-consent-retry",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "The retried invitation must retain the original scoped party, recipient, roster revision and idempotency identity despite refresh.",
-      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#creates a new identity once and retries an uncertain invitation with its original roster consent"
-    },
-    {
-      "id": "test-structure-coupling-d5a09476296cfe2f",
-      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "party-consent-requires-displayed-invitation",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "The unknown invitation produces no outbound consent before the known invitation is accepted.",
-      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#accepts only a displayed invitation and preserves explicit null roster consent"
-    },
-    {
-      "id": "test-structure-coupling-dcd0d429e44bba70",
-      "path": "packages/tests/shared-web/parties/rallar-party.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "party-definitive-refusal-no-retry",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "The definitive party-changed response completes the one attempted takeover without a replacement write.",
-      "semanticCoverage": "packages/tests/shared-web/parties/rallar-party.test.ts#refreshes on a definitive roster refusal without retrying or silently changing consent"
-    },
-    {
-      "id": "test-structure-coupling-96096a8f4d754973",
-      "path": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "full-stack-receiver-barrier-timeout-warns-once",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "The exactly-once matcher on the warning spy is the only observation that the barrier's timeout reaction ran once with its exact payload; the returned started run is the same for a silent or repeated warning.",
-      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-helper-boundaries.test.ts#warns and releases the sender when the receiver neither connects nor ends within the barrier timeout"
+      "rationale": "A subsequent invalidation adds one request even though the same snapshot remains canonical; this is the actual push effect, not a synchronization-only wait.",
+      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#reads at scheduled start once and on push, without recurring bracket polling"
     },
     {
       "id": "test-structure-coupling-0e22dcd0074f6038",
@@ -11465,125 +12687,92 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament.test.ts#enters only a freshly verified playing match with the authenticated participation role"
     },
     {
-      "id": "test-structure-coupling-aa28faae46ed7566",
-      "path": "packages/tests/shared-web/tournaments/tournament-http-api.test.ts",
+      "id": "test-structure-coupling-e4ee89af83023444",
+      "path": "packages/tests/shared/resource-inbox-maintenance.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-http-lost-response-replay",
+      "contract": "resource-inbox-maintenance-stop-drains",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The sole deletion remains the only operation after drain, repeated stop and ten further seconds.",
+      "semanticCoverage": "packages/tests/shared/resource-inbox-maintenance.test.ts#drains the current database operation before shutdown resolves"
+    },
+    {
+      "id": "test-structure-coupling-9415f23eccfff0fd",
+      "path": "tests/playwright/rallar-black-box/full-stack-view-push.spec.ts",
+      "kind": "production-source-read",
+      "contract": "portable-view-push-authored-manifest-execution",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar browser maintainers",
+      "rationale": "This reads executable workload data, not implementation text for source-shape assertions. The decoded artifact is the actual runner input and both agent outcomes are checked. Retain as a durable public artifact boundary.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/full-stack-view-push.spec.ts#two fresh browser agents observe private view push and recover offline changes"
+    },
+    {
+      "id": "test-structure-coupling-0b2400a70365ad8e",
+      "path": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "move-history-no-idle-background-or-stopped-reads",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "Both captured request URLs must retain the original request identity across the lost-response retry.",
-      "semanticCoverage": "packages/tests/shared-web/tournaments/tournament-http-api.test.ts#replays the exact authenticated scoped intent after a lost response and rejects a substituted result"
+      "rationale": "A full idle minute leaves only the initial read, excluding the removed polling cadence.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#keeps idle and hidden views quiet and recovers the latest move on foreground return"
     },
     {
-      "id": "test-structure-coupling-d2a0b2266f17ab12",
-      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "id": "test-structure-coupling-08ab16116a3674f9",
+      "path": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-panel-explicit-consent",
+      "contract": "move-history-no-idle-background-or-stopped-reads",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "Preview must not initiate any bracket mutation.",
-      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+      "rationale": "A notification while hidden and another idle minute add no private request.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#keeps idle and hidden views quiet and recovers the latest move on foreground return"
     },
     {
-      "id": "test-structure-coupling-5f7d169472d8c3c7",
-      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "id": "test-structure-coupling-ff48819b3a03fc33",
+      "path": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-panel-explicit-consent",
+      "contract": "move-history-no-idle-background-or-stopped-reads",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "Preview must not initiate room admission or replace current presence.",
-      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+      "rationale": "Returning to the foreground adds exactly one canonical request and exposes the changed move.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#keeps idle and hidden views quiet and recovers the latest move on foreground return"
     },
     {
-      "id": "test-structure-coupling-a9a6abfa2208bb45",
-      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "id": "test-structure-coupling-401a4d39b35a7fef",
+      "path": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-panel-explicit-consent",
+      "contract": "move-history-no-idle-background-or-stopped-reads",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The visible registration click must send the register intent to the mutation port.",
-      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+      "rationale": "After stop, subsequent notification, activity changes and clock advance cannot add a request.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#keeps idle and hidden views quiet and recovers the latest move on foreground return"
     },
     {
-      "id": "test-structure-coupling-34854184cfe02abd",
-      "path": "packages/tests/shared-react/tournament-panel.test.ts",
+      "id": "test-structure-coupling-ffff2d5e61418601",
+      "path": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-panel-explicit-consent",
+      "contract": "move-history-hidden-account-read-fence",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "Registering must not also enter a match room.",
-      "semanticCoverage": "packages/tests/shared-react/tournament-panel.test.ts#opens a linked bracket without registering or leaving a room, then registers only on a click"
+      "rationale": "No GET at hidden startup proves suppression before credentials are sent.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#defers hidden reads and fences the previous account across foreground recovery"
     },
     {
-      "id": "test-structure-coupling-985c57c86c43d43d",
-      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "id": "test-structure-coupling-d8b2dbd51233d9f3",
+      "path": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "relic-tournament-server-snapshot-isolation",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Relic Hunters maintainers",
-      "rationale": "Advancing the runtime publication timer must not publish a server-owned tournament snapshot over RTC.",
-      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#restores the same tournament hunter after signing in with a new session"
-    },
-    {
-      "id": "test-structure-coupling-544d8592389f0c35",
-      "path": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "relic-failed-scene-startup-releases-owned-engine",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Relic Hunters maintainers",
-      "rationale": "The one-disposal assertion observes cleanup of the one engine already allocated before construction fails; it protects the graphics resource lifetime rather than the order of internal helper calls.",
-      "semanticCoverage": "apps/relic-hunters-v1/tests/scene/relic-scene-startup.test.ts#disposes the allocated engine if early scaling fails before Scene construction"
-    },
-    {
-      "id": "test-structure-coupling-81109f825b91efe4",
-      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-catalog-coalesced-refresh",
+      "contract": "move-history-hidden-account-read-fence",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The read count proves overlapping refresh requests do not fetch the same loaded range twice.",
-      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#replaces the loaded range atomically and coalesces overlapping refreshes"
-    },
-    {
-      "id": "test-structure-coupling-0a5699c3def02aeb",
-      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-catalog-stop-cancels-polling",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "The read count after advancing timers proves disposal cancels automatic network work.",
-      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#aborts reads on stop and ignores a late completion"
-    },
-    {
-      "id": "test-structure-coupling-b490a3bb35d28527",
-      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-catalog-activity-cadence",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "The unchanged API read count proves hidden or offline time produces no polling requests.",
-      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes immediately on return with cadence after completion"
-    },
-    {
-      "id": "test-structure-coupling-96b03aed87b0f988",
-      "path": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "tournament-catalog-activity-cadence",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar browser maintainers",
-      "rationale": "The count before the next interval proves resumption does not leave an extra immediate or early poll.",
-      "semanticCoverage": "packages/tests/shared-web/tournaments/rallar-tournament-catalog.test.ts#pauses while hidden or offline and refreshes immediately on return with cadence after completion"
+      "rationale": "The absence of a request specifically carrying Bob’s credentials proves hidden account replacement defers its canonical read.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/move/rallar-room-move.test.ts#defers hidden reads and fences the previous account across foreground recovery"
     }
   ]
 }

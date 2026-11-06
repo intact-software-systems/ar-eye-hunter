@@ -9,7 +9,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, seedOpenGroup, summaryReservationRead, toSummaryExpansion } from './group-presence-test-runtime.ts';
 
@@ -61,7 +61,7 @@ describe('group presence summary coalesced write', () => {
 });
 
 async function connect(runtime: GroupBarrierRepository, principalId: string, nowEpochMs: number): Promise<void> {
-    const service = createService(runtime, nowEpochMs);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.joinGroup(SCOPE, GROUP_ID, { actorPrincipalId: principalId, requestId: `join-${principalId}` });
     await service.connectPresenceSession(SCOPE, GROUP_ID, `${principalId}-session`, {
         principalId,

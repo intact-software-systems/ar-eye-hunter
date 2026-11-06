@@ -59,7 +59,12 @@ describe('permanently retired scoped identities', () => {
         await commitRetention(fixture, (await prepareRetention(fixture, 'delete')).computed);
         const key = groupStateGroupStorageKey(RETENTION_REF);
         const retired = await fixture.runtime.findEntry(GROUPS_NAMESPACE, key);
-        await fixture.runtime.upsert(GROUPS_NAMESPACE, key, JSON.stringify({ ...JSON.parse(retired!.value), [field]: 'foreign' }), NEVER_EXPIRE_AT_TIMESTAMP);
+        await fixture.runtime.upsert({
+            namespace: GROUPS_NAMESPACE,
+            key,
+            value: JSON.stringify({ ...JSON.parse(retired!.value), [field]: 'foreign' }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
         for (
             const read of [
                 () => fixture!.repository.findGroup(RETENTION_REF),
@@ -79,7 +84,7 @@ describe('permanently retired scoped identities', () => {
         await commitRetention(fixture, (await prepareRetention(fixture, 'delete')).computed);
         const key = groupStateGroupStorageKey(RETENTION_REF);
         const retired = await fixture.runtime.findEntry(GROUPS_NAMESPACE, key);
-        await fixture.runtime.upsert(GROUPS_NAMESPACE, key, retired!.value, Date.now() - 1);
+        await fixture.runtime.upsert({ namespace: GROUPS_NAMESPACE, key, value: retired!.value, expireAtTimestamp: Date.now() - 1 });
         await expect(fixture.repository.findGroup(RETENTION_REF)).rejects.toMatchObject({ code: 'group-state-repository-invariant-corruption' });
         await expect(prepareMutation(fixture, createDescriptor('must-not-recreate'))).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption'
@@ -90,7 +95,12 @@ describe('permanently retired scoped identities', () => {
         fixture = await createRetentionDatabaseFixture();
         await seedRetentionRoom(fixture);
         const group = await fixture.repository.findGroup(RETENTION_REF);
-        await fixture.runtime.upsert(GROUPS_NAMESPACE, groupStateGroupStorageKey(RETENTION_REF), JSON.stringify(group), Date.now() - 1);
+        await fixture.runtime.upsert({
+            namespace: GROUPS_NAMESPACE,
+            key: groupStateGroupStorageKey(RETENTION_REF),
+            value: JSON.stringify(group),
+            expireAtTimestamp: Date.now() - 1
+        });
         const expired = await fixture.runtime.findEntry(GROUPS_NAMESPACE, groupStateGroupStorageKey(RETENTION_REF));
         const read = await fixture.repository.readMutationExactEntries({
             aggregateRef: RETENTION_REF,
@@ -124,9 +134,9 @@ describe('permanently retired scoped identities', () => {
         await seedRetentionRoom(fixture);
         const group = await fixture.repository.findGroup(RETENTION_REF);
         const key = groupStateGroupStorageKey(RETENTION_REF);
-        await fixture.runtime.upsert(GROUPS_NAMESPACE, key, JSON.stringify(group), Date.now() - 1);
+        await fixture.runtime.upsert({ namespace: GROUPS_NAMESPACE, key, value: JSON.stringify(group), expireAtTimestamp: Date.now() - 1 });
         const recreated = await prepareMutation(fixture, createDescriptor('stale-recreation'));
-        await fixture.runtime.upsert(GROUPS_NAMESPACE, key, JSON.stringify(group), NEVER_EXPIRE_AT_TIMESTAMP);
+        await fixture.runtime.upsert({ namespace: GROUPS_NAMESPACE, key, value: JSON.stringify(group), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         const refreshed = await fixture.runtime.findEntry(GROUPS_NAMESPACE, key);
 
         await expect(commitMutation(fixture, requireMutationWrite(recreated.computed)))

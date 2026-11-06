@@ -1,6 +1,8 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import type { GroupStateMutationCommand, GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type {
     GroupMutationComputed,
     GroupMutationComputedWrite
@@ -15,7 +17,7 @@ import type {
 import type { GrantGroupPublicationRequest } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import type { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import type { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createTestAuthSession } from '../group-state-test-runtime.ts';
 import { createService } from '../presence/group-presence-test-runtime.ts';
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
@@ -46,7 +48,7 @@ export async function seedGrantRoom(
     runtime: GroupBarrierRepository,
     expiresAtEpochMs?: number
 ): Promise<void> {
-    const service = createService(runtime, 1_000);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.createGroup(SCOPE, {
         groupId: GRANT_ROOM,
         displayName: GRANT_ROOM,
@@ -107,17 +109,28 @@ export async function computePublicationMutation(
     input: PublicationDescriptorInput,
     nowEpochMs = 3_000
 ) {
-    return await computeDescriptorMutation(runtime, input.actorPrincipalId, publicationDescriptor(input), nowEpochMs);
+    return await computeDescriptorMutation({ runtime, actorPrincipalId: input.actorPrincipalId, descriptor: publicationDescriptor(input), nowEpochMs });
 }
 
 /** The read and compute phases of one attempt of any command, without its write. */
+export interface ComputedMutationAttempt {
+    readonly service: GroupStateService;
+    readonly command: GroupStateMutationCommand;
+    readonly read: GroupMutationRead;
+    readonly computed: GroupMutationComputed;
+}
+
+export interface ComputeDescriptorMutationInput {
+    readonly runtime: GroupBarrierRepository;
+    readonly actorPrincipalId: string;
+    readonly descriptor: GroupMutationDescriptor;
+    readonly nowEpochMs: number;
+}
+
 export async function computeDescriptorMutation(
-    runtime: GroupBarrierRepository,
-    actorPrincipalId: string,
-    descriptor: GroupMutationDescriptor,
-    nowEpochMs = 3_000
-) {
-    const service = createService(runtime, nowEpochMs);
+    { runtime, actorPrincipalId, descriptor, nowEpochMs }: ComputeDescriptorMutationInput
+): Promise<ComputedMutationAttempt> {
+    const service = createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     const session = createTestAuthSession(actorPrincipalId);
     await new AuthSessionRepository(runtime).putSession(session);
     const ingress = await service.captureMutationIngress(descriptor, session);
@@ -139,7 +152,7 @@ export async function applyPublicationMutation(
     input: PublicationDescriptorInput,
     attemptCount = 1
 ) {
-    const service = createService(runtime, 3_000, attemptCount);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: 3_000, attemptCount, injectedRandomId: undefined, timing: undefined });
     const request = toPublicationRequest(input);
     return input.operation === 'grantGroupPublication'
         ? await service.grantGroupPublication(SCOPE, input.groupId ?? GRANT_ROOM, input.targetPrincipalId, request)
@@ -175,10 +188,12 @@ export async function writeGrantRow(
         }
     };
     await runtime.upsert(
-        PUBLICATION_GRANTS_NAMESPACE,
-        groupStatePublicationGrantStorageKey(grant, principalId),
-        JSON.stringify(grant),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            key: groupStatePublicationGrantStorageKey(grant, principalId),
+            value: JSON.stringify(grant),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
 }
 

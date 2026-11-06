@@ -4,7 +4,7 @@ import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-fa
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 interface View {
     readonly name: string;
@@ -12,15 +12,33 @@ interface View {
 interface Request {
     name: string;
 }
-const alice: AuthSession = { clientId: 'alice', username: 'alice', sessionId: 'alice-session', accessToken: 'test', expiresAtEpochMs: 9999999999999 };
+interface ResourceBrowser {
+    readonly owner: AuthenticatedResource<View, Request>;
+    readonly api: {
+        readonly read: Mock<AuthenticatedResource.Api<View, Request>['read']>;
+        readonly change: Mock<AuthenticatedResource.Api<View, Request>['change']>;
+    };
+    login(next: AuthSession | undefined): void;
+    invalidate(): void;
+}
+const alice: AuthSession = {
+    clientId: 'alice',
+    username: 'alice',
+    sessionId: 'alice-session',
+    accessToken: 'test',
+    expiresAtEpochMs: 9999999999999
+};
 const cleanups: (() => void)[] = [];
 afterEach(() => {
     cleanups.splice(0).forEach((cleanup) => cleanup());
 });
 
-function browser() {
+function browser(): ResourceBrowser {
     let session: AuthSession | undefined = alice;
     const auth = new SynchronousNotifications<RallarAuthState>((error) => {
+        throw error;
+    });
+    const changes = new SynchronousNotifications<void>((error) => {
         throw error;
     });
     const api = {
@@ -34,13 +52,18 @@ function browser() {
             timers: createDefaultTimers(),
             createId: () => crypto.randomUUID()
         },
-        { scope: { applicationId: 'game', workspaceId: 'default' }, refreshIntervalMs: 30000 },
+        {
+            scope: { applicationId: 'game', workspaceId: 'default' },
+            changeResult: 'read',
+            subscribeRefresh: (listener) => changes.subscribe(listener).unsubscribe
+        },
         api
     );
     cleanups.push(() => owner.stop());
     return {
         owner,
         api,
+        invalidate: () => changes.publishLatest(undefined),
         login(next: AuthSession | undefined) {
             session = next;
             auth.publishLatest({ authenticated: next !== undefined, reason: next ? 'login' : 'logout', session: next });
@@ -53,8 +76,13 @@ describe('authenticated resource command lifetime', () => {
         const test = browser();
         await test.owner.start();
         const late = Promise.withResolvers<View>();
-        test.api.read.mockReturnValueOnce(late.promise);
+        const started = Promise.withResolvers<void>();
+        test.api.read.mockImplementationOnce(() => {
+            started.resolve();
+            return late.promise;
+        });
         const read = test.owner.refresh();
+        await started.promise;
         test.api.change.mockRejectedValueOnce(new Error('Lost response'));
         const request = { name: 'original' };
         await test.owner.act(request);
@@ -92,13 +120,21 @@ describe('authenticated resource command lifetime', () => {
     it('discards an in-flight read after stop and restarts with fresh account state', async () => {
         const test = browser();
         const late = Promise.withResolvers<View>();
-        test.api.read.mockReturnValueOnce(late.promise);
+        const started = Promise.withResolvers<void>();
+        test.api.read.mockImplementationOnce(() => {
+            started.resolve();
+            return late.promise;
+        });
         const start = test.owner.start();
+        await started.promise;
+        const queued = test.owner.refresh();
         test.owner.stop();
         await test.owner.start();
         late.resolve({ name: 'stopped' });
-        await start;
+        await Promise.all([start, queued]);
         expect(test.owner.getState().view).toEqual({ name: 'alice' });
+        // Stopping cancels the pending old-generation read rather than sending it.
+        expect(test.api.read).toHaveBeenCalledTimes(2);
     });
 });
 
@@ -121,4 +157,109 @@ it('discards an uncertain command when a subsequent read discovers revoked autho
     await test.owner.refresh();
     expect(test.owner.getState()).toMatchObject({ view: null, busy: false, retryPending: false });
     expect(test.owner.getState().error).toContain('403');
+});
+
+describe('authenticated resource refresh coverage', () => {
+    it('covers changes arriving during a read with one trailing read for the burst', async () => {
+        const test = browser();
+        await test.owner.start();
+        const started = Promise.withResolvers<void>();
+        const older = Promise.withResolvers<View>();
+        test.api.read.mockImplementationOnce(() => {
+            started.resolve();
+            return older.promise;
+        });
+        const first = test.owner.refresh();
+        await started.promise;
+        test.api.read.mockResolvedValue({ name: 'updated-party' });
+        const burst = [test.owner.refresh(), test.owner.refresh(), test.owner.refresh()];
+        older.resolve({ name: 'older-party' });
+        await Promise.all([first, ...burst]);
+        expect(test.owner.getState().view).toEqual({ name: 'updated-party' });
+        // Network coalescing is the contract: initial, held read, one trailing read.
+        expect(test.api.read).toHaveBeenCalledTimes(3);
+    });
+
+    it('recovers a failed older read when a later change requests fresh state', async () => {
+        const test = browser();
+        await test.owner.start();
+        const started = Promise.withResolvers<void>();
+        const older = Promise.withResolvers<View>();
+        test.api.read.mockImplementationOnce(() => {
+            started.resolve();
+            return older.promise;
+        });
+        const first = test.owner.refresh();
+        await started.promise;
+        test.api.read.mockResolvedValue({ name: 'recovered-party' });
+        const changed = test.owner.refresh();
+        older.reject(new Error('Read disconnected'));
+        await Promise.all([first, changed]);
+        expect(test.owner.getState()).toMatchObject({ view: { name: 'recovered-party' }, error: null });
+    });
+});
+
+it('starts replacement-account reads without waiting for old account refreshes', async () => {
+    const test = browser();
+    await test.owner.start();
+    const started = Promise.withResolvers<void>();
+    const older = Promise.withResolvers<View>();
+    test.api.read.mockImplementationOnce(() => {
+        started.resolve();
+        return older.promise;
+    });
+    const first = test.owner.refresh();
+    await started.promise;
+    const queued = test.owner.refresh();
+    test.login({ ...alice, clientId: 'bob', sessionId: 'bob-session' });
+    await test.owner.refresh();
+    expect(test.owner.getState().view).toEqual({ name: 'bob' });
+    older.resolve({ name: 'private-alice' });
+    await Promise.all([first, queued]);
+    expect(test.owner.getState().view).toEqual({ name: 'bob' });
+    // Queued work must never issue another request using the replaced credentials.
+    expect(test.api.read.mock.calls.filter(([request]) => request.session.clientId === 'alice')).toHaveLength(2);
+});
+
+it('subscribes before reading, covers a push during that read, and detaches on stop', async () => {
+    const test = browser();
+    const started = Promise.withResolvers<void>();
+    const older = Promise.withResolvers<View>();
+    test.api.read.mockImplementationOnce(() => {
+        started.resolve();
+        return older.promise;
+    });
+    const start = test.owner.start();
+    await started.promise;
+    test.api.read.mockResolvedValue({ name: 'pushed' });
+    test.invalidate();
+    test.invalidate();
+    older.resolve({ name: 'before-push' });
+    await start;
+    await vi.waitFor(() => expect(test.owner.getState().view).toEqual({ name: 'pushed' }));
+    expect(test.api.read).toHaveBeenCalledTimes(2);
+    test.owner.stop();
+    test.invalidate();
+    await Promise.resolve();
+    expect(test.api.read).toHaveBeenCalledTimes(2);
+});
+
+describe('authenticated resource error lifetime', () => {
+    it('keeps a command refusal through background reads until the user refreshes, and clears a failed read on success', async () => {
+        const test = browser();
+        await test.owner.start();
+        test.api.change.mockResolvedValueOnce('This invitation is no longer available.');
+        await test.owner.act({ name: 'join' });
+        test.api.read.mockResolvedValueOnce({ name: 'after-push' });
+        test.invalidate();
+        await vi.waitFor(() => expect(test.owner.getState().view).toEqual({ name: 'after-push' }));
+        expect(test.owner.getState().error).toBe('This invitation is no longer available.');
+        await test.owner.refresh();
+        expect(test.owner.getState().error).toBeNull();
+        test.api.read.mockRejectedValueOnce(new Error('Read failed'));
+        test.invalidate();
+        await vi.waitFor(() => expect(test.owner.getState().error).toBe('Read failed'));
+        test.invalidate();
+        await vi.waitFor(() => expect(test.owner.getState()).toMatchObject({ view: { name: 'alice' }, error: null }));
+    });
 });

@@ -1,4 +1,5 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
 import { scheduleThroughControls } from './scheduled-session-journey.ts';
 
@@ -8,8 +9,12 @@ export async function friendsPlayJourney(host: Page, guest: Page, game: 'arena' 
     await signInRoomPlayer(guest, 'bob', game);
     await openFriends(host);
     await openFriends(guest);
+    await expect(friendsPanel(host)).toContainText('No friends or pending requests');
+    await expect(friendsPanel(guest)).toContainText('No friends or pending requests');
+    await assertIdleViewReads(host, 'social');
     await recoverTerminalFriendsFailure(host);
     await exerciseFriendConsent(host, guest);
+    await recoverFriendPresence(host, guest, game);
     await removeAndRestoreFriendship(host, guest);
     await inviteScheduledSession(host, guest);
     await inviteToRoomAndPlay(host, guest, game);
@@ -57,23 +62,33 @@ async function exerciseFriendConsent(host: Page, guest: Page): Promise<void> {
     await hostPanel.getByLabel('Friend username', { exact: true }).fill('bob');
     await hostPanel.getByRole('button', { name: 'Send friend request', exact: true }).click();
     await expect(hostPanel).toContainText('Friend request sent');
-    await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await guestPanel.getByRole('button', { name: 'Decline request', exact: true }).click();
     await expect(guestPanel).toContainText('No friends or pending requests');
-    await hostPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
+    await expect(hostPanel).toContainText('No friends or pending requests');
     await hostPanel.getByRole('button', { name: 'Send friend request', exact: true }).click();
     await hostPanel.getByRole('button', { name: 'Cancel request', exact: true }).click();
     await expect(hostPanel).toContainText('No friends or pending requests');
     await hostPanel.getByRole('button', { name: 'Send friend request', exact: true }).click();
-    await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await guestPanel.getByRole('button', { name: 'Accept request', exact: true }).click();
     await expect(guestPanel.getByRole('button', { name: 'Remove friend', exact: true })).toBeEnabled();
-    await hostPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(hostPanel).toContainText('Online status private');
     await guestPanel.getByRole('checkbox', { name: 'Share when I am online with friends', exact: true }).click();
     await expect(guestPanel.getByRole('checkbox')).toBeChecked();
-    await hostPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(hostPanel).toContainText('Online in this game');
+}
+
+async function recoverFriendPresence(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
+    const returnUrl = guest.url();
+    await guest.goto('about:blank');
+    await expect(friendsPanel(host)).toContainText('Away from this game', { timeout: 70000 });
+    await guest.goto(returnUrl);
+    if (game === 'arena') {
+        await openArenaOperations(guest);
+    }
+    await openFriends(guest);
+    await expect(friendsPanel(host)).toContainText('Online in this game');
+    await expect(friendsPanel(guest).getByRole('article', { name: 'Friend alice', exact: true })).toBeVisible();
+    await assertIdleViewReads(host, 'social');
 }
 
 async function removeAndRestoreFriendship(host: Page, guest: Page): Promise<void> {
@@ -81,18 +96,14 @@ async function removeAndRestoreFriendship(host: Page, guest: Page): Promise<void
     const guestPanel = friendsPanel(guest);
     await guestPanel.getByRole('checkbox', { name: 'Share when I am online with friends', exact: true }).click();
     await expect(guestPanel.getByRole('checkbox')).not.toBeChecked();
-    await hostPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(hostPanel).toContainText('Online status private');
     await hostPanel.getByRole('button', { name: 'Remove friend', exact: true }).click();
     await expect(hostPanel).toContainText('No friends or pending requests');
-    await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(guestPanel).toContainText('No friends or pending requests');
     await hostPanel.getByRole('button', { name: 'Send friend request', exact: true }).click();
     await expect(hostPanel).toContainText('Friend request sent');
-    await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await guestPanel.getByRole('button', { name: 'Accept request', exact: true }).click();
     await expect(guestPanel.getByRole('button', { name: 'Remove friend', exact: true })).toBeEnabled();
-    await hostPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(hostPanel.getByRole('button', { name: 'Remove friend', exact: true })).toBeEnabled();
 }
 
@@ -105,7 +116,6 @@ async function inviteScheduledSession(host: Page, guest: Page): Promise<void> {
     );
     await hostFriends.getByRole('button', { name: 'Invite to destination', exact: true }).click();
     await expect(hostFriends.getByRole('button', { name: 'Refresh friends', exact: true })).toBeEnabled();
-    await guestFriends.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await guestFriends.getByRole('button', { name: 'View invited session', exact: true }).click();
     const guestSession = guest.getByRole('region', { name: 'Scheduled sessions', exact: true });
     await expect(guestSession.getByRole('article', { name: 'Session details', exact: true })).toBeVisible();
@@ -132,7 +142,6 @@ async function inviteToRoomAndPlay(host: Page, guest: Page, game: 'arena' | 'rel
     );
     await friendsPanel(host).getByRole('button', { name: 'Invite to destination', exact: true }).click();
     await expect(friendsPanel(host).getByRole('button', { name: 'Refresh friends', exact: true })).toBeEnabled();
-    await friendsPanel(guest).getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await friendsPanel(guest).getByRole('button', { name: 'Join invited room', exact: true }).click();
     await expect(guest.getByText(`Entered ${roomId}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await guest.reload();
@@ -154,7 +163,6 @@ async function revokePendingInvitation(host: Page, guest: Page, game: 'arena' | 
     const guestPanel = friendsPanel(guest);
     await hostPanel.getByRole('button', { name: 'Invite to destination', exact: true }).click();
     await expect(hostPanel.getByRole('button', { name: 'Refresh friends', exact: true })).toBeEnabled();
-    await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(guestPanel.getByRole('button', { name: 'Join invited room', exact: true })).toBeEnabled();
     const endpoint = '**/api/friends/apps/*/workspaces/*';
     const refreshPending = Promise.withResolvers<void>();
@@ -165,7 +173,7 @@ async function revokePendingInvitation(host: Page, guest: Page, game: 'arena' | 
         await route.continue();
     });
     try {
-        // Hold a real refresh so automatic polling cannot remove the stale control before the click.
+        // Hold a real refresh so automatic refresh cannot remove the stale control before the click.
         await guestPanel.getByRole('button', { name: 'Refresh friends', exact: true }).click();
         await refreshPending.promise;
         await hostPanel.getByRole('button', { name: 'Block', exact: true }).click();
@@ -181,7 +189,7 @@ async function revokePendingInvitation(host: Page, guest: Page, game: 'arena' | 
     await expect(hostPanel).toContainText('No friends or pending requests');
 }
 
-function friendsPanel(page: Page) {
+function friendsPanel(page: Page): Locator {
     return page.getByRole('region', { name: 'Friends and invitations', exact: true });
 }
 

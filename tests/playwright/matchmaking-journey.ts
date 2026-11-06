@@ -1,4 +1,5 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
 
 /** The API owns reservations; both browsers reach it only through visible game controls. */
@@ -9,6 +10,7 @@ export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'are
     const guestPanel = panel(guest);
     await expect(hostPanel).toBeVisible();
     await expect(guestPanel).toBeVisible();
+    await assertIdleViewReads(host, 'social');
     await hostPanel.getByRole('button', { name: /Find a game|Find an expedition/ }).click();
     await expect(hostPanel).toContainText('Searching for players');
     await host.reload();
@@ -20,7 +22,18 @@ export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'are
     await expect(hostPanel).toContainText('Search cancelled');
     await hostPanel.getByRole('button', { name: /Find a game|Find an expedition/ }).click();
     await expect(hostPanel).toContainText('Searching for players');
+    // The host's only wakeup is the other player's server notification. Lose its first canonical GET.
+    const failedRead = host.waitForResponse((response) =>
+        response.request().method() === 'GET' && response.status() === 503 &&
+        new URL(response.url()).pathname.includes('/api/matchmaking/apps/')
+    );
+    await host.route(
+        '**/api/matchmaking/apps/*/workspaces/*',
+        (route) => route.fulfill({ status: 503, body: 'Temporary read failure' }),
+        { times: 1 }
+    );
     await guestPanel.getByRole('button', { name: /Find a game|Find an expedition/ }).click();
+    await failedRead;
     await expect(hostPanel).toContainText('Players found');
     await expect(guestPanel).toContainText('Players found');
     await guestPanel.getByRole('button', { name: 'Decline match', exact: true }).click();
@@ -55,7 +68,7 @@ async function confirmMatch(host: Page, guest: Page, game: 'arena' | 'relic'): P
     await expect(panel(guest)).toContainText('Your group is ready');
 }
 
-function panel(page: Page) {
+function panel(page: Page): Locator {
     return page.getByRole('region', { name: 'Find players', exact: true });
 }
 

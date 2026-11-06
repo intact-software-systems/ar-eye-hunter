@@ -1,4 +1,7 @@
+import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
 
 export interface QueueBoxPubSubMessageKey extends JsonWireObject {
@@ -20,7 +23,8 @@ export interface QueueBoxPubSubBridge {
     publish(channel: string, message: QueueBoxPubSubMessage): Promise<void>;
     subscribe(
         channel: string,
-        onMessage: (message: JsonWireValue) => Promise<void> | void
+        onMessage: (message: JsonWireValue) => Promise<void> | void,
+        onSubscribed?: () => void
     ): Promise<void>;
 }
 
@@ -89,4 +93,38 @@ function hasExactKeys(
 
 function isNonEmptyString(value: JsonWireValue, maxLength = 8_000): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
+}
+
+export interface ToPubSubMessageInput {
+    readonly channel: string;
+    readonly publisherId: string;
+    readonly entry: ResourceEntry;
+}
+
+export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMessage {
+    const { channel, publisherId, entry } = input;
+    if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
+        throw new TypeError('QueueBox cluster notifications require admitted WS outbox work');
+    }
+
+    const message = decodePersistedALMessageRow(entry);
+    const expiresAtMs = resolveALMessageExpireAtMs(message);
+    if (
+        expiresAtMs === undefined || !Number.isSafeInteger(expiresAtMs) ||
+        expiresAtMs > entry.audit.expiryTs.epochMilliseconds
+    ) {
+        throw new TypeError('Cluster notification requires a canonical logical deadline');
+    }
+    const notice: QueueBoxPubSubMessage = {
+        key: entry.key,
+        channel,
+        publisherId,
+        typeId: entry.typeId,
+        delivery: 'key',
+        expiresAtMs
+    };
+    if (!decodeQueueBoxPubSubMessage(notice, channel)) {
+        throw new TypeError('QueueBox notification exceeds physical key or wire bounds');
+    }
+    return notice;
 }

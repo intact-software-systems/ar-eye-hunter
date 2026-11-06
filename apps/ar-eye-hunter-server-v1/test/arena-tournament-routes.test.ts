@@ -56,7 +56,7 @@ function dependencies(commands: ArenaTournamentMutation.Command[]): ArenaTournam
             issuedAtEpochMs: 1,
             expiresAtEpochMs: 10000
         }),
-        mutations: { readSnapshot: async () => null },
+        snapshots: { readSnapshot: async () => null },
         operation: {
             submit: async ({ command }) => {
                 commands.push(command);

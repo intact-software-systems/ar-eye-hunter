@@ -59,7 +59,11 @@ for (
                 scope: { applicationId: 'snapshot-bridge', workspaceId: 'workspace' }
             };
             const entry = await commitClientSnapshot(sql, recipient);
-            const reader = new WsOutboxProvenanceReader({ repository: new PSqlRuntimeStateRepository(sql), nowMs: Date.now });
+            const reader = new WsOutboxProvenanceReader({
+                repository: new PSqlRuntimeStateRepository(sql),
+                nowMs: Date.now,
+                readPrincipalSessionIds: () => Promise.resolve([])
+            });
             assert.deepEqual(await reader.readProducerProvenance(decodePersistedALMessage(entry.resource), entry), {
                 admittedAudience: [recipient.sessionId],
                 recipientScope: recipient.scope

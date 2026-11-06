@@ -41,7 +41,11 @@ export function createApiV1FriendsServices(
         authSessions: runtime.authSessionRepository,
         groups: runtime.topologyServices.groupStateRepository,
         nowEpochMs
-    }, configuration.friends);
+    }, {
+        ...configuration.friends,
+        serviceId: runtime.wsQBoxServerService.name,
+        finishedRetentionMs: configuration.appInbox.finishedRetentionMs
+    });
     return {
         mutation: service.mutate,
         reader: new FriendsReader({ profiles, accounts, clients: runtime.clientStateService, nowEpochMs }),

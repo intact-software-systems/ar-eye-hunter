@@ -409,6 +409,10 @@ const PLANNED: RallarOverlayTopologySnapshot = {
 
 const IDENTITY = { groupRef: groupRef('pure-room'), formationEpoch: 3, triggerGeneration: 'trigger-plan' };
 
+interface AutomationTestPort extends GroupFormationAutomationPort {
+    readonly commands: GroupMutationCommand[];
+}
+
 async function createAutomationPort(
     input: Readonly<{
         group: Group | null;
@@ -417,18 +421,20 @@ async function createAutomationPort(
         nowEpochMs: number;
         supersedesLayoutIdentity?: GroupLayoutIdentity | null;
     }>
-): Promise<GroupFormationAutomationPort & { readonly commands: GroupMutationCommand[]; }> {
+): Promise<AutomationTestPort> {
     const runtime = new FakeRuntimeStateRepository();
     await runtime.upsert(
-        GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-        toGroupConnectTriggerStorageKey(IDENTITY),
-        JSON.stringify({
-            ...IDENTITY,
-            notBeforeEpochMs: input.notBeforeEpochMs,
-            supersedesLayoutIdentity: input.supersedesLayoutIdentity ?? null,
-            state: 'awaiting-publication'
-        }),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+            key: toGroupConnectTriggerStorageKey(IDENTITY),
+            value: JSON.stringify({
+                ...IDENTITY,
+                notBeforeEpochMs: input.notBeforeEpochMs,
+                supersedesLayoutIdentity: input.supersedesLayoutIdentity ?? null,
+                state: 'awaiting-publication'
+            }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
     const commands: GroupMutationCommand[] = [];
     return {

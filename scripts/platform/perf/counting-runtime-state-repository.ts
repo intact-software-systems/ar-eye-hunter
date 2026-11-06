@@ -6,12 +6,21 @@ import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-b
 import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateOptimisticTransactionalRepositoryLike
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import {
     assertRuntimeStateExpectedRevision,
     assertRuntimeStateUpsertExpectedRevision
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+
+interface CountingRuntimeStateEntryInput {
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtTimestamp: number;
+    readonly revision: number;
+}
 
 export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
@@ -123,10 +132,7 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
     }
 
     upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<void> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -141,25 +147,18 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
     }
 
     insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
             return Promise.resolve({ status: 'conflict' });
         }
-        this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, 0));
+        this.data.set(compositeKey, this.entry({ key, value, expireAtTimestamp, revision: 0 }));
         return Promise.resolve({ status: 'applied', revision: 0 });
     }
 
     upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         const compositeKey = this.toKey(namespace, key);
@@ -168,7 +167,7 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
             return Promise.resolve({ status: 'conflict' });
         }
         const revision = expectedRevision + 1;
-        this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, revision));
+        this.data.set(compositeKey, this.entry({ key, value, expireAtTimestamp, revision }));
         return Promise.resolve({ status: 'applied', revision });
     }
 
@@ -224,10 +223,7 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
     }
 
     private entry(
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        revision: number
+        { key, value, expireAtTimestamp, revision }: CountingRuntimeStateEntryInput
     ): RuntimeStateEntry {
         return {
             key,

@@ -8,13 +8,18 @@ import { AR_EYE_TOURNAMENT_RULES_ID, type TournamentArena } from './tournament-a
 export interface ArenaTournamentSnapshot {
     readonly binding: TournamentMatchBinding;
     readonly status: 'scheduled' | 'playing' | 'finished' | 'cancelled';
+    readonly attemptRevision: number;
     readonly observedAtEpochMs: number;
     readonly state: TournamentArena | null;
 }
 
 export function decodeArenaTournamentSnapshot(value: unknown): ArenaTournamentSnapshot {
     const snapshot = requireRecord(value, 'Arena tournament snapshot');
-    requireExactKeys(snapshot, ['binding', 'status', 'observedAtEpochMs', 'state'], 'Arena tournament snapshot');
+    requireExactKeys(
+        snapshot,
+        ['binding', 'status', 'attemptRevision', 'observedAtEpochMs', 'state'],
+        'Arena tournament snapshot'
+    );
     const binding = decodeTournamentMatchBinding(snapshot.binding);
     const status = requireOneOf(
         snapshot.status,
@@ -24,9 +29,16 @@ export function decodeArenaTournamentSnapshot(value: unknown): ArenaTournamentSn
     if (binding.rulesId !== AR_EYE_TOURNAMENT_RULES_ID) {
         throw new TypeError('Unsupported arena tournament rules');
     }
+    requireEpoch(snapshot.attemptRevision, 'Arena tournament attempt revision');
     requireEpoch(snapshot.observedAtEpochMs, 'Arena tournament observation');
     if (snapshot.state === null) {
-        return { binding, status, observedAtEpochMs: snapshot.observedAtEpochMs, state: null };
+        return {
+            binding,
+            status,
+            attemptRevision: snapshot.attemptRevision,
+            observedAtEpochMs: snapshot.observedAtEpochMs,
+            state: null
+        };
     }
     const state = requireRecord(snapshot.state, 'Arena tournament state');
     const arena = requireRecord(state.arena, 'Arena tournament simulation');
@@ -37,6 +49,7 @@ export function decodeArenaTournamentSnapshot(value: unknown): ArenaTournamentSn
     return {
         binding,
         status,
+        attemptRevision: snapshot.attemptRevision,
         observedAtEpochMs: snapshot.observedAtEpochMs,
         state: decodeTournamentArenaCheckpoint(state, {
             gameId: binding.gameId,

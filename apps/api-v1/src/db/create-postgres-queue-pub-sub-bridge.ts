@@ -16,7 +16,7 @@ export function createPostgresQueuePubSubBridge(
             }
             await notification.notify(channel, notice);
         },
-        subscribe: async (channel, onMessage) => {
+        subscribe: async (channel, onMessage, onSubscribed) => {
             await notification.listen(
                 channel,
                 async (payload) => {
@@ -25,7 +25,8 @@ export function createPostgresQueuePubSubBridge(
                         return;
                     }
                     await onMessage(message);
-                }
+                },
+                onSubscribed
             );
         }
     };

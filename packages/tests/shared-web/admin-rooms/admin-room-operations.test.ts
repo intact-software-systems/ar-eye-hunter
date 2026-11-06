@@ -59,10 +59,15 @@ it('clears all private evidence when either read refuses the operator, then reco
 
 it('aborts and discards late account evidence after logout and late selection evidence after stop', async () => {
     const late = Promise.withResolvers<Response>();
-    const fetch = vi.fn<typeof globalThis.fetch>(() => late.promise);
+    const started = Promise.withResolvers<void>();
+    const fetch = vi.fn<typeof globalThis.fetch>(() => {
+        started.resolve();
+        return late.promise;
+    });
     vi.stubGlobal('fetch', fetch);
     const test = inspection(null);
     const start = test.owner.start();
+    await started.promise;
     test.login(undefined);
     expect(fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
     late.resolve(Response.json(directory));
@@ -74,8 +79,13 @@ it('aborts and discards late account evidence after logout and late selection ev
     await test.owner.refresh();
     expect(test.owner.getState().view?.directory).toEqual(directory);
     const obsolete = Promise.withResolvers<Response>();
-    fetch.mockImplementation(() => obsolete.promise);
+    const refreshStarted = Promise.withResolvers<void>();
+    fetch.mockImplementation(() => {
+        refreshStarted.resolve();
+        return obsolete.promise;
+    });
     const refresh = test.owner.refresh();
+    await refreshStarted.promise;
     test.owner.stop();
     expect(fetch.mock.calls.at(-1)?.[1]?.signal?.aborted).toBe(true);
     obsolete.resolve(Response.json(directory));
@@ -83,7 +93,12 @@ it('aborts and discards late account evidence after logout and late selection ev
     expect(test.owner.getState().view).toBeNull();
 });
 
-function inspection(selectedGroupId: string | null = roomRef.groupId) {
+interface InspectionFixture {
+    readonly owner: AdminRoomOperations;
+    login(next: AuthSession | undefined): void;
+}
+
+function inspection(selectedGroupId: string | null = roomRef.groupId): InspectionFixture {
     let session: AuthSession | undefined = admin;
     const changes = new SynchronousNotifications<RallarAuthState>((error) => {
         throw error;
@@ -177,8 +192,13 @@ it('retries a lost recovery response with the same command identity and no repla
     expect(test.owner.getState()).toMatchObject({ retryPending: false, view: { topology: { work: { status: 'unknown' } } } });
 });
 
+interface MaintenanceEffect {
+    readonly categories: string[];
+    readonly dryRun: boolean;
+}
+
 it('requires the current successful global preview before execution and preserves its category scope', async () => {
-    const effects: { categories: string[]; dryRun: boolean; }[] = [];
+    const effects: MaintenanceEffect[] = [];
     vi.stubGlobal(
         'fetch',
         vi.fn<typeof globalThis.fetch>(async (url, options) => {

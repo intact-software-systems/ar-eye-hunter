@@ -103,17 +103,21 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         const storedSnapshot = canonicalSnapshot(snapshot);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
-                this.namespace,
-                this.snapshotKey(storedSnapshot.groupRef),
-                storedSnapshot,
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: this.namespace,
+                    key: this.snapshotKey(storedSnapshot.groupRef),
+                    value: storedSnapshot,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             )
             : await this.putValueIfRevision(
-                this.namespace,
-                this.snapshotKey(storedSnapshot.groupRef),
-                storedSnapshot,
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                expectedRevision
+                {
+                    namespace: this.namespace,
+                    key: this.snapshotKey(storedSnapshot.groupRef),
+                    value: storedSnapshot,
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                    expectedRevision
+                }
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }

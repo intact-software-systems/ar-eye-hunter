@@ -37,9 +37,19 @@ describe('bounded tournament discovery and personal history', () => {
         const key = `app=${encodeURIComponent(tournament.ref.applicationId)}:ws=${encodeURIComponent(tournament.ref.workspaceId)}:tournament=${
             encodeURIComponent(tournament.ref.tournamentId)
         }`;
-        await runtime.upsert(TOURNAMENTS_NAMESPACE, key, JSON.stringify({ tournament, checkIns: [] }), NEVER_EXPIRE_AT_TIMESTAMP);
+        await runtime.upsert({
+            namespace: TOURNAMENTS_NAMESPACE,
+            key,
+            value: JSON.stringify({ tournament, checkIns: [] }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
         if (listing !== null) {
-            await runtime.upsert(TOURNAMENT_PUBLICATIONS_NAMESPACE, key, JSON.stringify({ ref: tournament.ref, listing }), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_PUBLICATIONS_NAMESPACE,
+                key,
+                value: JSON.stringify({ ref: tournament.ref, listing }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
         }
     }
 
@@ -129,19 +139,23 @@ describe('bounded tournament discovery and personal history', () => {
 
     it('fails closed on corrupt bracket and publication slots rather than hiding them as unlisted', async () => {
         await runtime.upsert(
-            TOURNAMENTS_NAMESPACE,
-            'app=game:ws=default:tournament=wrong',
-            JSON.stringify({ tournament: bracket('actual'), checkIns: [] }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: TOURNAMENTS_NAMESPACE,
+                key: 'app=game:ws=default:tournament=wrong',
+                value: JSON.stringify({ tournament: bracket('actual'), checkIns: [] }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(reader.read(request)).rejects.toThrow();
         await runtime.deleteByKey(TOURNAMENTS_NAMESPACE, 'app=game:ws=default:tournament=wrong');
         await seed(bracket('actual'));
         await runtime.upsert(
-            TOURNAMENT_PUBLICATIONS_NAMESPACE,
-            'app=game:ws=default:tournament=actual',
-            JSON.stringify({ ref: { ...scope, tournamentId: 'wrong' }, listing: 'listed' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: TOURNAMENT_PUBLICATIONS_NAMESPACE,
+                key: 'app=game:ws=default:tournament=actual',
+                value: JSON.stringify({ ref: { ...scope, tournamentId: 'wrong' }, listing: 'listed' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await expect(reader.read(request)).rejects.toThrow();
     });

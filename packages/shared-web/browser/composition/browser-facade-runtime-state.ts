@@ -28,8 +28,7 @@ export interface RallarBrowserFacadeRuntimeContext {
     readDefaultScope(): StateScope | undefined;
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
     resolveOperationOptions<T extends RallarOperationOptions>(options: T): T & RallarOperationOptions;
-    readAuthExpiryTimer(): ReturnType<typeof setTimeout> | undefined;
-    setAuthExpiryTimer(timer: ReturnType<typeof setTimeout> | undefined): void;
+    setAuthExpiryTimer(cancel: (() => void) | undefined): void;
     clearAuthExpiryTimer(): void;
     readAuthEndPromise(): Promise<void> | undefined;
     setAuthEndPromise(promise: Promise<void> | undefined): void;
@@ -63,7 +62,6 @@ export type RallarStateRuntimePort = Pick<
 
 export type RallarAuthRuntimePort = Pick<
     RallarBrowserFacadeRuntimeContext,
-    | 'readAuthExpiryTimer'
     | 'setAuthExpiryTimer'
     | 'clearAuthExpiryTimer'
     | 'readAuthEndPromise'
@@ -83,7 +81,7 @@ export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeCont
     private currentRoom: BrowserCurrentRoomState | undefined;
     private runtimeDefaults: RallarDefaults | undefined;
     private defaultScope: StateScope | undefined;
-    private authExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+    private cancelAuthExpiry: (() => void) | undefined;
     private authEndPromise: Promise<void> | undefined;
     private readonly endedSessionKeys = new Set<string>();
     private readonly transportRuntime: BrowserTransportRuntimePort;
@@ -217,21 +215,14 @@ export class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeCont
         };
     };
 
-    public readonly readAuthExpiryTimer = (): ReturnType<typeof setTimeout> | undefined => {
-        return this.authExpiryTimer;
-    };
-
-    public readonly setAuthExpiryTimer = (
-        timer: ReturnType<typeof setTimeout> | undefined
-    ): void => {
-        this.authExpiryTimer = timer;
+    public readonly setAuthExpiryTimer = (cancel: (() => void) | undefined): void => {
+        this.cancelAuthExpiry = cancel;
     };
 
     public readonly clearAuthExpiryTimer = (): void => {
-        if (this.authExpiryTimer !== undefined) {
-            clearTimeout(this.authExpiryTimer);
-            this.authExpiryTimer = undefined;
-        }
+        const cancel = this.cancelAuthExpiry;
+        this.cancelAuthExpiry = undefined;
+        cancel?.();
     };
 
     public readonly readAuthEndPromise = (): Promise<void> | undefined => {

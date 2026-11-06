@@ -1,7 +1,7 @@
 import type { FriendPerson, FriendsView } from '@shared/api/friends/friends-view.ts';
 
 import type { FriendsAccount } from './friends-account-directory.ts';
-import type { FriendsProfile } from './friends-profile.ts';
+import { areMutualFriends, type FriendsProfile } from './friends-profile.ts';
 
 export interface FriendsPeerRead {
     readonly account: FriendsAccount;
@@ -23,9 +23,7 @@ export function toFriendsView(read: FriendsViewRead): FriendsView {
         if (peer === undefined) {
             continue;
         }
-        const mutual = peer.profile?.contacts.some((other) =>
-            other.principalId === read.profile.principalId && other.status === 'friend'
-        ) === true;
+        const mutual = areMutualFriends(read.profile, peer.profile);
         if (contact.status === 'friend' && !mutual) {
             continue;
         }
@@ -44,6 +42,7 @@ export function toFriendsView(read: FriendsViewRead): FriendsView {
     );
     return {
         principalId: read.profile.principalId,
+        observedAtEpochMs: read.nowEpochMs,
         shareOnline: read.profile.shareOnline,
         contacts,
         invitations: read.profile.invitations.filter((invitation) =>

@@ -6,18 +6,27 @@ import { computeRuntimeStateGuardedBatchWrite } from '../../runtime-state/guarde
 import type { RuntimeStateGuardedBatchEffect } from '../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../app-outbox/app-outbox-insert.ts';
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '../auth/persistence/auth-storage-keys.ts';
 import { CLIENT_STATE_PRINCIPALS_NAMESPACE } from '../client-state/persistence/client-state-runtime-namespaces.ts';
 import { validateComputedProjection, type ComputedDataValidationIssue } from '../computed-data-validation.ts';
 import { FRIENDS_PROFILE_NAMESPACE } from '../friends/friends-profile.ts';
+import { computeMatchmakingPublication } from '../matchmaking/compute-matchmaking-publication.ts';
 import { computeMatchmakingStorage } from '../matchmaking/compute-matchmaking-storage.ts';
 import { computeMatchmakingInvalidation } from '../matchmaking/compute-matchmaking.ts';
+import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
+import {
+    computeViewInvalidationPublication,
+    type ViewInvalidationPublication
+} from '../websocket/outbox/compute-view-invalidation-publication.ts';
 import { computePartyRoster, type PartyRosterComputed } from './compute-party-roster.ts';
 import type { PartyService } from './party-service.ts';
 import { computePartyStorage } from './persistence/compute-party-storage.ts';
+import type { PartyRecord } from './persistence/party-record.ts';
 
 export interface PartyMutation {
     readonly storage: RuntimeStateConditionalBatch | null;
+    readonly outbox: readonly AppOutboxInsert[];
     readonly matchmaking: RuntimeStateConditionalBatch | null;
     readonly result: PartyMutationResult;
     readonly rosterChanged: boolean;
@@ -34,18 +43,41 @@ export function computePartyMutation(read: PartyService.Read): PartyMutation {
     const storage = computePartyStorage({ read: read.party, party: computed.party });
     const authority = computePartyAuthority(read);
     const matchmaking = computed.rosterChanged ? computeRosterSearchInvalidation(read) : null;
+    const publication = computePartyPublication(read, computed.party);
     return {
-        matchmaking,
+        matchmaking: matchmaking?.storage ?? null,
+        outbox: [...publication.outbox, ...matchmaking?.outbox ?? []],
         storage: {
             ...storage,
             batch: computeRuntimeStateGuardedBatchWrite({
                 ...storage.batch,
-                effects: [...storage.batch.effects, ...authority]
+                effects: [...storage.batch.effects, ...authority, ...publication.provenance]
             })
         },
         rosterChanged: computed.rosterChanged,
         result: { ref, principalId: command.principalId, requestId: command.requestId, status: 'applied', code: null }
     };
+}
+
+function computePartyPublication(read: PartyService.Read, party: PartyRecord): ViewInvalidationPublication {
+    const { ref } = party;
+    return computeViewInvalidationPublication({
+        resource: 'party',
+        scope: { applicationId: ref.applicationId, workspaceId: ref.workspaceId },
+        principalIds: [
+            ...new Set([
+                ...read.party.record?.members.map((member) => member.principalId) ?? [],
+                ...read.party.record?.invitations.map((invitation) => invitation.principalId) ?? [],
+                ...party.members.map((member) => member.principalId),
+                ...party.invitations.map((invitation) => invitation.principalId)
+            ])
+        ],
+        changeId: computeSha256CanonicalJson({ previousRevision: read.party.entry?.revision ?? 0, party: party }),
+        serviceId: read.serviceId,
+        traceId: read.traceId,
+        createdAtEpochMs: read.nowEpochMs,
+        retentionMs: read.finishedRetentionMs
+    });
 }
 
 function computePartyRosterDecision(read: PartyService.Read): Either<PartyRefusal, PartyRosterComputed> {
@@ -146,6 +178,7 @@ function guard(namespace: string, entry: RuntimeStateEntry): RuntimeStateGuarded
 function refused(read: PartyService.Read, code: PartyRefusal): PartyMutation {
     return {
         storage: null,
+        outbox: [],
         matchmaking: null,
         rosterChanged: false,
         result: {
@@ -158,7 +191,12 @@ function refused(read: PartyService.Read, code: PartyRefusal): PartyMutation {
     };
 }
 
-function computeRosterSearchInvalidation(read: PartyService.Read): RuntimeStateConditionalBatch {
+interface PartySearchInvalidation {
+    readonly storage: RuntimeStateConditionalBatch;
+    readonly outbox: readonly AppOutboxInsert[];
+}
+
+function computeRosterSearchInvalidation(read: PartyService.Read): PartySearchInvalidation {
     if (read.matchmaking === null) {
         throw new TypeError('Party roster changes require the current matchmaking pool');
     }
@@ -173,9 +211,30 @@ function computeRosterSearchInvalidation(read: PartyService.Read): RuntimeStateC
             ])
         ]
     });
-    return computeMatchmakingStorage({
+    const storage = computeMatchmakingStorage({
         read: read.matchmaking,
         transition,
         finishedRetentionMs: read.finishedRetentionMs
     });
+    const publication = computeMatchmakingPublication({
+        before: read.matchmaking.pool,
+        previousRevision: read.matchmaking.entry?.revision ?? 0,
+        transition,
+        publication: {
+            serviceId: read.serviceId,
+            traceId: read.traceId,
+            createdAtEpochMs: read.nowEpochMs,
+            retentionMs: read.finishedRetentionMs
+        }
+    });
+    return {
+        storage: {
+            ...storage,
+            batch: computeRuntimeStateGuardedBatchWrite({
+                ...storage.batch,
+                effects: [...storage.batch.effects, ...publication.provenance]
+            })
+        },
+        outbox: publication.outbox
+    };
 }

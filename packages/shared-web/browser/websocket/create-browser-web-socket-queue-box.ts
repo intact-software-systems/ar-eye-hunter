@@ -91,6 +91,12 @@ function createBrowserWebSocketQueueBoxService(
     const { clientData, socket } = input;
     const outboundStores = resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId);
     return createDefaultWsQueueBoxClientService({
+        readAuthenticatedPrincipalId: () => {
+            const session = readSession();
+            return session?.sessionId === clientData.sessionId && session.clientId === clientData.clientId
+                ? session.clientId
+                : undefined;
+        },
         readSubmissionIneligibility: (message) => {
             if (!requiresBrowserWsRoomPresence(message)) {
                 return undefined;

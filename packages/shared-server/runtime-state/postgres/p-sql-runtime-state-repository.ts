@@ -8,13 +8,15 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateGuardedBatchTransactionalRepositoryLike,
-    RuntimeStateOptimisticTransactionRepositoryLike
+    RuntimeStateOptimisticTransactionRepositoryLike,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import {
-    assertRuntimeStateExpectedRevision,
-    assertRuntimeStateUpsertExpectedRevision
+    assertRuntimeStateExpectedRevision
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import { computeRuntimeStateConditionalWrite } from '../compute-runtime-state-conditional-write.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector,
@@ -29,11 +31,11 @@ import {
     readRuntimeStateBatchWithVersion
 } from './read-runtime-state-batch.ts';
 import {
-    decodeRuntimeStateRevision,
     decodeRuntimeStateRow,
     type RuntimeStateDatabaseRow
 } from './runtime-state-row-codec.ts';
 import { toExclusivePrefixEnd, toPgDate } from './runtime-state-sql-values.ts';
+import { writeRuntimeStateConditional } from './write-runtime-state-conditional.ts';
 import { writeRuntimeStateGuardedBatch } from './write-runtime-state-guarded-batch.ts';
 
 interface RuntimeStateSavepointSql extends PSqlSql {
@@ -253,10 +255,7 @@ export class PSqlRuntimeStateRepository
     }
 
     async upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<void> {
         await this.sql`
             insert into runtime_state_store (store_namespace,
@@ -280,67 +279,34 @@ export class PSqlRuntimeStateRepository
     }
 
     async insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
-        const rows = await this.sql<Array<{ revision: number | string; }>>`
-            insert into runtime_state_store (store_namespace,
-                                             store_key,
-                                             store_value,
-                                             expire_at_ts,
-                                             updated_ts,
-                                             revision)
-            values (${namespace},
-                    ${key},
-                    ${value},
-                    ${toPgDate(expireAtTimestamp)},
-                    now(),
-                    0)
-            on conflict (store_namespace, store_key) do update
-                set store_value = excluded.store_value,
-                    expire_at_ts = excluded.expire_at_ts,
-                    updated_ts = now(),
-                    revision = runtime_state_store.revision + 1
-                where runtime_state_store.expire_at_ts <= now()
-            returning revision
-        `;
-
-        return rows[0]
-            ? {
-                status: 'applied',
-                revision: decodeRuntimeStateRevision(rows[0].revision)
-            }
-            : { status: 'conflict' };
+        return await writeRuntimeStateConditional(
+            this.sql,
+            computeRuntimeStateConditionalWrite({
+                operation: 'insert',
+                namespace,
+                key,
+                value,
+                expireAtTimestamp
+            })
+        );
     }
 
     async upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
-        assertRuntimeStateUpsertExpectedRevision(expectedRevision);
-        const rows = await this.sql<Array<{ revision: number | string; }>>`
-            update runtime_state_store
-            set store_value = ${value},
-                expire_at_ts = ${toPgDate(expireAtTimestamp)},
-                updated_ts = now(),
-                revision = revision + 1
-            where store_namespace = ${namespace}
-              and store_key = ${key}
-              and revision = ${expectedRevision}
-            returning revision
-        `;
-
-        return rows[0]
-            ? {
-                status: 'applied',
-                revision: decodeRuntimeStateRevision(rows[0].revision)
-            }
-            : { status: 'conflict' };
+        return await writeRuntimeStateConditional(
+            this.sql,
+            computeRuntimeStateConditionalWrite({
+                operation: 'update',
+                namespace,
+                key,
+                value,
+                expireAtTimestamp,
+                expectedRevision
+            })
+        );
     }
 
     async deleteIfRevision(

@@ -1421,6 +1421,63 @@ paths:
           $ref: '#/components/responses/RateLimitedApiMutationFailure'
         '503':
           $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/view-watches/{family}/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Select the watched resource of one view family
+      description: |
+        Registers, replaces or clears the authenticated session's one selected
+        resource in a view family: a scheduled-session preview or a tournament
+        bracket. While its WebSocket connection generation stays live, the
+        session receives content-free `view.invalidated` notices for that
+        resource and reads it again over HTTP. A watch grants interest only,
+        never membership, a reservation or My sessions intent; a resource the
+        principal may not read is refused `403`. The write is fenced by
+        `expectedRegistrationId`: a stale predecessor answers `conflict` with
+        the current slot so a still-current caller can issue a new command.
+        Disconnecting the generation releases the slot.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: family
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [session-preview, tournament]
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ViewWatchRequest'
+      responses:
+        '200':
+          description: What the command did; a replay of the same request answers it again.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: ['private, no-store']
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ViewWatchResult'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/quick-join/requests/{requestId}:
     post:
       tags: [Group State]
@@ -8201,6 +8258,40 @@ components:
           type: integer
           minimum: 1
           description: The write instant plus the 120 second lease.
+
+    ViewWatchRequest:
+      type: object
+      additionalProperties: false
+      required: [resourceId, connectionGenerationId, expectedRegistrationId]
+      properties:
+        resourceId:
+          type: [string, 'null']
+          minLength: 1
+          description: The selected resource, or null to clear the family's slot.
+        connectionGenerationId:
+          type: string
+          minLength: 1
+          description: The session's current WebSocket connection generation.
+        expectedRegistrationId:
+          type: [string, 'null']
+          minLength: 1
+          description: The registration this command replaces, or null when the caller owns none.
+
+    ViewWatchResult:
+      type: object
+      additionalProperties: false
+      required: [status, requestId, registrationId, resourceId]
+      properties:
+        status:
+          type: string
+          enum: [applied, conflict]
+        requestId:
+          type: string
+        registrationId:
+          type: [string, 'null']
+          description: Present together with resourceId; null when the slot is empty.
+        resourceId:
+          type: [string, 'null']
 
     GroupTopicSubscriptionResult:
       type: object

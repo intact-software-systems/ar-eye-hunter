@@ -8,8 +8,19 @@ import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeLiveWsNoticeShape } from './decode-live-ws-notice-shape.ts';
 
 export const MAX_LIVE_WS_NOTICE_BYTES = 8_000;
+// The AL envelope is already bounded at 128 KiB. The private notice also carries the frozen room generations.
+export const MAX_FRAGMENTED_LIVE_WS_NOTICE_BYTES = 256 * 1024;
+
+/** A server topic's room audience: each recipient session with the connection generation admission captured. */
+export interface GenerationRoomLiveWsAudience {
+    readonly mode: 'generation-room';
+    readonly groupRef: GroupRef;
+    readonly recipientSessionIds: readonly string[];
+    readonly generations: Readonly<Record<string, string>>;
+}
 
 export type LiveWsAudience =
+    | GenerationRoomLiveWsAudience
     | { readonly mode: 'room'; readonly groupRef: GroupRef; readonly recipientSessionIds: readonly string[]; }
     | { readonly mode: 'peer'; readonly recipientSessionIds: readonly string[]; }
     | {
@@ -36,7 +47,7 @@ interface LiveWsNoticeBase {
 /** The one audience a notice carries without a scope: the server's `all`, which crosses every scope. */
 type UnscopedLiveWsAudience = Extract<LiveWsAudience, { readonly targetMode: 'all'; }>;
 type ScopedLiveWsAudience = Exclude<LiveWsAudience, UnscopedLiveWsAudience>;
-type ListedLiveWsAudienceMode = Exclude<LiveWsAudience['mode'], 'broad'>;
+type ListedLiveWsAudienceMode = Exclude<LiveWsAudience['mode'], 'broad' | 'generation-room'>;
 
 export type LiveWsNotice =
     | (LiveWsNoticeBase & {
@@ -72,7 +83,7 @@ export type LiveWsNotice =
         readonly inbound: LiveWsInboundReference;
     });
 
-interface LiveWsPublicationBase {
+export interface LiveWsPublicationBase {
     readonly channel: string;
     readonly publisherId: string;
     readonly expiresAtMs: number;
@@ -91,12 +102,21 @@ export type LiveWsPublicationInput =
     });
 
 export type EncodeLiveWsNoticeResult =
-    | { readonly kind: 'inline' | 'inbound-key'; readonly serialized: string; readonly notice: LiveWsNotice; }
+    | {
+        readonly kind: 'inline' | 'inbound-key' | 'fragmented';
+        readonly serialized: string;
+        readonly notice: LiveWsNotice;
+    }
     | { readonly kind: 'oversize'; readonly inlineBytes: number; readonly keyBytes: number | undefined; };
 
 export interface LiveWsNoticeTransport {
     publish(notice: LiveWsNotice): Promise<void>;
-    subscribe(channel: string, onNotice: (notice: LiveWsNotice) => Promise<void> | void): Promise<void>;
+    /** Request canonical recovery after LISTEN, resubscription or a detected incomplete private transfer. */
+    subscribe(
+        channel: string,
+        onNotice: (notice: LiveWsNotice) => Promise<void> | void,
+        onSubscribed?: () => void
+    ): Promise<void>;
 }
 
 interface EncodedLiveWsNotice {
@@ -114,6 +134,11 @@ export function encodeLiveWsNotice(input: LiveWsPublicationInput): EncodeLiveWsN
         return { kind: 'inline', ...inlineEncoded };
     }
 
+    if (input.audience.mode === 'generation-room') {
+        return inlineBytes <= MAX_FRAGMENTED_LIVE_WS_NOTICE_BYTES
+            ? { kind: 'fragmented', ...inlineEncoded }
+            : { kind: 'oversize', inlineBytes, keyBytes: undefined };
+    }
     if (
         input.inbound === undefined || input.audience.mode === 'principal' ||
         (input.audience.mode === 'peer' && !isRtcSignalingPeerNotice(input))
@@ -196,10 +221,15 @@ export function decodeLiveWsNotice(value: unknown, expectedChannel: string, nowM
     catch {
         return undefined;
     }
-    if (new TextEncoder().encode(serialized).length >= MAX_LIVE_WS_NOTICE_BYTES) {
+    const size = new TextEncoder().encode(serialized).length;
+    if (size > MAX_FRAGMENTED_LIVE_WS_NOTICE_BYTES) {
         return undefined;
     }
-    return decodeLiveWsNoticeShape(value, expectedChannel, nowMs);
+    const notice = decodeLiveWsNoticeShape(value, expectedChannel, nowMs);
+    return size < MAX_LIVE_WS_NOTICE_BYTES ||
+            notice?.delivery === 'inline' && notice.audience.mode === 'generation-room'
+        ? notice
+        : undefined;
 }
 
 function toEncodedLiveWsNotice(

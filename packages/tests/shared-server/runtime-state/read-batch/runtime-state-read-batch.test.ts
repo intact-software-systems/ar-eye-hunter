@@ -130,10 +130,7 @@ describe('runtime-state read batches', () => {
         const repository = new FakeRuntimeStateRepository();
         for (const [index, entry] of fixture.entries.entries()) {
             await repository.upsert(
-                entry.namespace,
-                entry.key,
-                `value-${index}`,
-                ENTRY.expireAtTimestamp
+                { namespace: entry.namespace, key: entry.key, value: `value-${index}`, expireAtTimestamp: ENTRY.expireAtTimestamp }
             );
         }
 
@@ -270,26 +267,47 @@ describe('runtime-state read batches', () => {
         const repository = new FakeRuntimeStateRepository();
         const sessionKey = (sessionId: string) => `${LIVE_SESSIONS.keyPrefix}session=${sessionId}`;
         await repository.upsert(
-            LIVE_SESSIONS.namespace,
-            sessionKey('active'),
-            JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
-            ENTRY.expireAtTimestamp
+            {
+                namespace: LIVE_SESSIONS.namespace,
+                key: sessionKey('active'),
+                value: JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
+                expireAtTimestamp: ENTRY.expireAtTimestamp
+            }
         );
         await repository.upsert(
-            LIVE_SESSIONS.namespace,
-            sessionKey('disconnected'),
-            JSON.stringify({ status: 'disconnected', disconnectedAtEpochMs: 2 }),
-            ENTRY.expireAtTimestamp
+            {
+                namespace: LIVE_SESSIONS.namespace,
+                key: sessionKey('disconnected'),
+                value: JSON.stringify({ status: 'disconnected', disconnectedAtEpochMs: 2 }),
+                expireAtTimestamp: ENTRY.expireAtTimestamp
+            }
         );
-        await repository.upsert(LIVE_SESSIONS.namespace, sessionKey('unset'), JSON.stringify({ status: 'active' }), ENTRY.expireAtTimestamp);
+        await repository.upsert({
+            namespace: LIVE_SESSIONS.namespace,
+            key: sessionKey('unset'),
+            value: JSON.stringify({ status: 'active' }),
+            expireAtTimestamp: ENTRY.expireAtTimestamp
+        });
         await repository.upsert(
-            LIVE_SESSIONS.namespace,
-            'app=app:ws=workspace:principal=bob:session=active',
-            JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
-            ENTRY.expireAtTimestamp
+            {
+                namespace: LIVE_SESSIONS.namespace,
+                key: 'app=app:ws=workspace:principal=bob:session=active',
+                value: JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
+                expireAtTimestamp: ENTRY.expireAtTimestamp
+            }
         );
-        await repository.upsert(UNPURGED_PRESENCE.namespace, `${UNPURGED_PRESENCE.keyPrefix}session=at-floor`, '{}', 5_000);
-        await repository.upsert(UNPURGED_PRESENCE.namespace, `${UNPURGED_PRESENCE.keyPrefix}session=after-floor`, '{}', 5_001);
+        await repository.upsert({
+            namespace: UNPURGED_PRESENCE.namespace,
+            key: `${UNPURGED_PRESENCE.keyPrefix}session=at-floor`,
+            value: '{}',
+            expireAtTimestamp: 5_000
+        });
+        await repository.upsert({
+            namespace: UNPURGED_PRESENCE.namespace,
+            key: `${UNPURGED_PRESENCE.keyPrefix}session=after-floor`,
+            value: '{}',
+            expireAtTimestamp: 5_001
+        });
 
         const selections = await repository.readRuntimeStateBatch([LIVE_SESSIONS, UNPURGED_PRESENCE]);
 

@@ -152,6 +152,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_CREATE,
                     operation: 'createGroup',
+                    outboxEntries: 5,
                     authority: harness.sessions.owner,
                     data: {
                         scope: SCOPE,
@@ -177,6 +178,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 {
                     type: AppInboxType.GROUP_SESSION_CHANGE,
                     operation: 'changeGroupSession',
+                    outboxEntries: 3,
                     authority: harness.sessions.bob,
                     data: {
                         scope: SCOPE,
@@ -492,7 +494,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                     } satisfies GroupTopicSubscribeAppInboxPayload,
                     outboxEntries: 0,
                     assertDomain: async () => {
-                        expect(await readMatrixTopicSubscription(harness, groupId, 'bob-session', 'room.feed'))
+                        expect(await readMatrixTopicSubscription({ harness, groupId, sessionId: 'bob-session', topicId: 'room.feed' }))
                             .toMatchObject({ principalId: 'bob', connectionGenerationId: 'matrix-ws-generation' });
                     }
                 },
@@ -513,7 +515,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                     } satisfies GroupTopicUnsubscribeAppInboxPayload,
                     outboxEntries: 0,
                     assertDomain: async () => {
-                        expect(await readMatrixTopicSubscription(harness, groupId, 'bob-session', 'room.feed'))
+                        expect(await readMatrixTopicSubscription({ harness, groupId, sessionId: 'bob-session', topicId: 'room.feed' }))
                             .toBeUndefined();
                     }
                 },

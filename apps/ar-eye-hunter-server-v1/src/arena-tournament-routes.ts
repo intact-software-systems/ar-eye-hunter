@@ -4,10 +4,11 @@ import {
     toApiMutationRouteFailure
 } from '@api-v1/src/routes/api-mutation-route-failure.ts';
 import { readApiRequestTraceId } from '@api-v1/src/services/read-api-request-trace-id.ts';
+import type { ArenaTournamentMutation } from '@ar-eye-hunter/server/arena-tournament-mutation.ts';
 import {
     AR_EYE_TOURNAMENT_DATA_BINDING,
-    type ArenaTournamentMutation
-} from '@ar-eye-hunter/server/arena-tournament-mutation.ts';
+    type ArenaTournamentSnapshotReader
+} from '@ar-eye-hunter/server/arena-tournament-room.ts';
 import { decodeTournamentArenaInput } from '@ar-eye-hunter/tournament-arena.ts';
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-server-app-inbox.ts';
@@ -19,7 +20,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
 
 export interface ArenaTournamentRouteDependencies {
-    readonly mutations: Pick<ArenaTournamentMutation, 'readSnapshot'>;
+    readonly snapshots: Pick<ArenaTournamentSnapshotReader, 'readSnapshot'>;
     readonly operation: Pick<
         RallarServerAppInbox.Operation<ArenaTournamentMutation.Command, ArenaTournamentMutation.Result>,
         'submit'
@@ -39,7 +40,7 @@ export function registerArenaTournamentRoutes(app: Hono, dependencies: ArenaTour
 async function readSnapshot(context: Context, dependencies: ArenaTournamentRouteDependencies): Promise<Response> {
     try {
         const session = await dependencies.requireSession(context.req);
-        const snapshot = await dependencies.mutations.readSnapshot(roomRef(context), session.clientId);
+        const snapshot = await dependencies.snapshots.readSnapshot(roomRef(context), session.clientId);
         context.header('Cache-Control', 'private, no-store');
         return context.json(snapshot);
     }

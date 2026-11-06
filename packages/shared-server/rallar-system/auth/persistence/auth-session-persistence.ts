@@ -27,16 +27,20 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async putSession(session: IssuedAuthSession): Promise<void> {
         const persisted = await toPersistedAuthSession(session);
         await this.putValue(
-            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-            authTokenDigestKey(persisted.accessTokenDigest),
-            persisted,
-            session.expiresAtEpochMs
+            {
+                namespace: AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
+                key: authTokenDigestKey(persisted.accessTokenDigest),
+                value: persisted,
+                expireAtTimestamp: session.expiresAtEpochMs
+            }
         );
         await this.putValue(
-            AUTH_SESSIONS_BY_SESSION_NAMESPACE,
-            authSessionKey(session.sessionId),
-            persisted,
-            session.expiresAtEpochMs
+            {
+                namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                key: authSessionKey(session.sessionId),
+                value: persisted,
+                expireAtTimestamp: session.expiresAtEpochMs
+            }
         );
     }
 
@@ -53,17 +57,21 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
         const persisted = decodePersistedAuthSession(session);
         return expectedRevision === null
             ? await this.putValueIfAbsent(
-                AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-                authTokenDigestKey(persisted.accessTokenDigest),
-                persisted,
-                persisted.expiresAtEpochMs
+                {
+                    namespace: AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
+                    key: authTokenDigestKey(persisted.accessTokenDigest),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs
+                }
             )
             : await this.putValueIfRevision(
-                AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-                authTokenDigestKey(persisted.accessTokenDigest),
-                persisted,
-                persisted.expiresAtEpochMs,
-                expectedRevision
+                {
+                    namespace: AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
+                    key: authTokenDigestKey(persisted.accessTokenDigest),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs,
+                    expectedRevision
+                }
             );
     }
 
@@ -74,17 +82,21 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
         const persisted = decodePersistedAuthSession(session);
         return expectedRevision === null
             ? await this.putValueIfAbsent(
-                AUTH_SESSIONS_BY_SESSION_NAMESPACE,
-                authSessionKey(persisted.sessionId),
-                persisted,
-                persisted.expiresAtEpochMs
+                {
+                    namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                    key: authSessionKey(persisted.sessionId),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs
+                }
             )
             : await this.putValueIfRevision(
-                AUTH_SESSIONS_BY_SESSION_NAMESPACE,
-                authSessionKey(persisted.sessionId),
-                persisted,
-                persisted.expiresAtEpochMs,
-                expectedRevision
+                {
+                    namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+                    key: authSessionKey(persisted.sessionId),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs,
+                    expectedRevision
+                }
             );
     }
 

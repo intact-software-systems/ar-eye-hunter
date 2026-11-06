@@ -113,17 +113,8 @@ async function createConnectWriteFixture(sql: PGliteSql): Promise<ConnectWriteFi
         interfereAfterNextRead: (write) => {
             interference = write;
         },
-        startConnect: async (generationId, connectedAtEpochMs = Date.now()) => {
-            const ticketDigest = await putAuthorisedWsTestTicket(sessions, SESSION, `${generationId}-ticket`);
-            const result = client.writeAuthorisedWsClientConnect({
-                authSession: SESSION,
-                generationId,
-                ticketDigest,
-                traceId: 'trace-pglite-authorised-ws-connect-write',
-                input: { applicationId: 'app-1', workspaceId: 'default', connectedAtEpochMs }
-            }).then((written) => written.right);
-            return { key: await waitForQueuedConnect(sql, generationId), result };
-        }
+        startConnect: async (generationId, connectedAtEpochMs = Date.now()) =>
+            await startFixtureConnect({ sql, sessions, client, generationId, connectedAtEpochMs })
     };
 }
 
@@ -319,7 +310,7 @@ async function writeProofBatch(sql: PGliteSql, effects: readonly RuntimeStateGua
 Deno.test('a snapshot proof that collides inside the batch is the corruption its standalone insert reports, and a conflict takes precedence', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
-        await runtime.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, PROOF.key, 'an earlier proof', FUTURE_MS);
+        await runtime.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key: PROOF.key, value: 'an earlier proof', expireAtTimestamp: FUTURE_MS });
 
         await assert.rejects(
             writeProofBatch(sql, []),
@@ -340,3 +331,23 @@ Deno.test('a snapshot proof that collides inside the batch is the corruption its
         assert.equal(await runtime.findEntry(CLIENT_STATE_PRINCIPALS_NAMESPACE, 'proof-principal'), undefined);
     });
 });
+
+interface StartFixtureConnectInput {
+    readonly sql: PGliteSql;
+    readonly sessions: AuthSessionRepository;
+    readonly client: AppClientInboxService;
+    readonly generationId: string;
+    readonly connectedAtEpochMs: number;
+}
+
+async function startFixtureConnect({ sql, sessions, client, generationId, connectedAtEpochMs }: StartFixtureConnectInput): Promise<StartedConnect> {
+    const ticketDigest = await putAuthorisedWsTestTicket(sessions, SESSION, `${generationId}-ticket`);
+    const result = client.writeAuthorisedWsClientConnect({
+        authSession: SESSION,
+        generationId,
+        ticketDigest,
+        traceId: 'trace-pglite-authorised-ws-connect-write',
+        input: { applicationId: 'app-1', workspaceId: 'default', connectedAtEpochMs }
+    }).then((written) => written.right);
+    return { key: await waitForQueuedConnect(sql, generationId), result };
+}

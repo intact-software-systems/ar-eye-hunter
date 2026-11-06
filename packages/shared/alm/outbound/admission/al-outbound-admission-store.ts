@@ -108,6 +108,7 @@ export type ALOutboundPreparedMessageDecoder<TPrepared> = (
 /** Transient authority from one verified observation; the physical key is never persisted again. */
 export interface ALOutboundPlanningAuthority {
     readonly sessionInvalidation: ALOutboundDequeueAuthority['sessionInvalidation'] | undefined;
+    readonly accountView?: ALOutboundDequeueAuthority['accountView'];
     readonly admittedAudience: readonly string[] | undefined;
     /** The captured generations of a granted topic's row; undefined for every other row. */
     readonly admittedConnectionGenerationIds: Readonly<Record<string, string>> | undefined;

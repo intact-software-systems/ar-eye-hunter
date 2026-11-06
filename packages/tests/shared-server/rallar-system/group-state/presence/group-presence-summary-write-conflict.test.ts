@@ -17,7 +17,12 @@ describe('the presence summary write conflict (D304)', () => {
         // Another server's summary of the same group commits between this attempt's read and its write.
         const competing = vi.spyOn(producer.worker, 'read').mockImplementationOnce(async (items, nowEpochMs) => {
             const result = await read(items, nowEpochMs);
-            await producer.repository.upsert(PRESENCE_SUMMARIES_NAMESPACE, summaryKey, '{"competing":true}', producer.now + 60_000);
+            await producer.repository.upsert({
+                namespace: PRESENCE_SUMMARIES_NAMESPACE,
+                key: summaryKey,
+                value: '{"competing":true}',
+                expireAtTimestamp: producer.now + 60_000
+            });
             return result;
         });
 

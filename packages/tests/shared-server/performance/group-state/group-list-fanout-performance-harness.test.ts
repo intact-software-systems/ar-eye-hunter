@@ -6,13 +6,13 @@ describe('group list fanout performance harness repository', () => {
         expect(CountingRuntimeStateRepository).toBeTypeOf('function');
         const repository = new CountingRuntimeStateRepository();
 
-        await expect(repository.insertIfAbsent('state', 'key', 'one', 10))
+        await expect(repository.insertIfAbsent({ namespace: 'state', key: 'key', value: 'one', expireAtTimestamp: 10 }))
             .resolves.toEqual({ status: 'applied', revision: 0 });
-        await expect(repository.insertIfAbsent('state', 'key', 'duplicate', 20))
+        await expect(repository.insertIfAbsent({ namespace: 'state', key: 'key', value: 'duplicate', expireAtTimestamp: 20 }))
             .resolves.toEqual({ status: 'conflict' });
-        await expect(repository.upsertIfRevision('state', 'key', 'stale', 30, 1))
+        await expect(repository.upsertIfRevision({ namespace: 'state', key: 'key', value: 'stale', expireAtTimestamp: 30, expectedRevision: 1 }))
             .resolves.toEqual({ status: 'conflict' });
-        await expect(repository.upsertIfRevision('state', 'key', 'two', 40, 0))
+        await expect(repository.upsertIfRevision({ namespace: 'state', key: 'key', value: 'two', expireAtTimestamp: 40, expectedRevision: 0 }))
             .resolves.toEqual({ status: 'applied', revision: 1 });
         expect(await repository.findEntry('state', 'key')).toMatchObject({
             value: 'two',

@@ -31,7 +31,8 @@ export interface ApiV1DatabaseNotificationPort {
     notify(channel: string, message: object): Promise<void>;
     listen(
         channel: string,
-        onMessage: (payload: string) => void | Promise<void>
+        onMessage: (payload: string) => void | Promise<void>,
+        onSubscribed?: () => void
     ): Promise<void>;
 }
 
@@ -44,7 +45,8 @@ export interface ApiV1PostgresClient extends PSqlSql {
     notify(channel: string, payload: string): Promise<void | object>;
     listen(
         channel: string,
-        onMessage: (payload: string) => void | Promise<void>
+        onMessage: (payload: string) => void | Promise<void>,
+        onSubscribed?: () => void
     ): Promise<void | object>;
     end(): Promise<void>;
 }
@@ -253,9 +255,9 @@ function createPostgresNotificationPort(
             }
             await application.notify(channel, payload);
         },
-        listen: async (channel, onMessage) => {
+        listen: async (channel, onMessage, onSubscribed) => {
             await tryWith({
-                handler: async () => await listener.listen(channel, onMessage),
+                handler: async () => await listener.listen(channel, onMessage, onSubscribed),
                 retryIntervalMsecs: 500,
                 maxAttempts: Number.MAX_VALUE,
                 maxRetryIntervalMsecs: 20_000

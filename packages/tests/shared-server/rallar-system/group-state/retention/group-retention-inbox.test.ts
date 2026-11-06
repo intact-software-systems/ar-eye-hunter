@@ -100,6 +100,7 @@ describe('retention through the registered AppInbox capability', () => {
         const current = fixture;
         let reads = 0;
         const retention = new GroupRetentionService({
+            runtime: current.runtime,
             groupOwnedAppData: { read: async () => [] },
             repository: {
                 readRetirementEntries: (ref) => current.repository.readRetirementEntries(ref),
@@ -117,7 +118,7 @@ describe('retention through the registered AppInbox capability', () => {
                     return read;
                 }
             }
-        }, { serviceId: 'retention-test', now: () => current.nowEpochMs });
+        }, { finishedRetentionMs: 60000, serviceId: 'retention-test', now: () => current.nowEpochMs });
         const timings: RallarTimingEvent[] = [];
         const { inbox, reader, results, queue } = createInbox(current, retention, (event) => timings.push(event));
         const entry = await inbox.enqueueGroupRetention({ groupRef: RETENTION_REF, requestId: 'conflicted-scan', observedAtEpochMs: current.nowEpochMs });
@@ -188,7 +189,14 @@ describe('retention through the registered AppInbox capability', () => {
     }, 30_000);
 });
 
-function createInbox(fixture: RetentionDatabaseFixture, retention = fixture.retention, timing?: RallarTimingSink) {
+interface RetentionInboxFixture {
+    readonly inbox: GroupStateInboxService;
+    readonly reader: InboxQueueReader;
+    readonly results: ResourceInboxResultsRepository;
+    readonly queue: PSqlQueueBox;
+}
+
+function createInbox(fixture: RetentionDatabaseFixture, retention = fixture.retention, timing?: RallarTimingSink): RetentionInboxFixture {
     const resources = createPSqlResourceInboxRepository(fixture.storage.sql, () => new Date(fixture.nowEpochMs));
     const queue = new PSqlQueueBox(resources, () => Temporal.Instant.fromEpochMilliseconds(fixture.nowEpochMs));
     const reader = new InboxQueueReader(queue, {

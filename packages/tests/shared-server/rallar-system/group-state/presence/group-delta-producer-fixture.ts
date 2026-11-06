@@ -26,7 +26,7 @@ import {
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createPSqlAdmissionTestStorage } from '../../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import {
     groupRef,
     SCOPE
@@ -54,7 +54,7 @@ export async function createGroupDeltaProducer(sql?: PSqlSql, timing?: RallarTim
     const runtime = await seedConnectedGroup(groupId, now);
     for (const namespace of Object.values(GroupNamespaces)) {
         for (const entry of await runtime.findAllEntries(namespace)) {
-            await repository.upsert(namespace, entry.key, entry.value, entry.expireAtTimestamp);
+            await repository.upsert({ namespace, key: entry.key, value: entry.value, expireAtTimestamp: entry.expireAtTimestamp });
         }
     }
     const worker = new GroupPresenceSummaryWork({
@@ -102,7 +102,7 @@ export async function readCommittedGroupDelta(producer: GroupDeltaProducerFixtur
 
 async function seedConnectedGroup(groupId: string, now: number): Promise<GroupBarrierRepository> {
     const runtime = new GroupBarrierRepository();
-    const service = createService(runtime, now);
+    const service = createService({ runtimeRepository: runtime, nowEpochMs: now, attemptCount: 1, injectedRandomId: undefined, timing: undefined });
     await service.createGroup(SCOPE, {
         groupId,
         displayName: groupId,

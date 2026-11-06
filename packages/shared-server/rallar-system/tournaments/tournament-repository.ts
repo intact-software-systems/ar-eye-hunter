@@ -14,7 +14,13 @@ import {
     groupStateGroupStorageKey
 } from '../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeJsonWireText } from '../protocol/json-wire-identity.ts';
+import { readViewWatchRecipients } from '../view-watch/read-view-watch-recipients.ts';
 import { TOURNAMENT_ATTEMPTS_NAMESPACE, TournamentResultRepository } from './tournament-result-repository.ts';
+import {
+    decodeTournamentWatchFence,
+    TOURNAMENT_WATCH_FENCES_NAMESPACE,
+    type TournamentWatchFence
+} from './tournament-watch-fence.ts';
 
 import {
     decodeTournamentPublicationEntry,
@@ -57,6 +63,19 @@ export class TournamentRepository {
     constructor(runtime: Pick<RuntimeStateRepositoryLike, 'findEntry' | 'readRuntimeStateBatch'>) {
         this.runtime = runtime;
         this.results = new TournamentResultRepository(runtime);
+    }
+    async readWatchFence(ref: TournamentRef): Promise<TournamentWatchFence> {
+        return decodeTournamentWatchFence(
+            ref,
+            await this.runtime.findEntry(TOURNAMENT_WATCH_FENCES_NAMESPACE, toTournamentStorageKey(ref))
+        );
+    }
+    async readWatchers(ref: TournamentRef, nowEpochMs: number): Promise<readonly string[]> {
+        return await readViewWatchRecipients(this.runtime, {
+            ...ref,
+            family: 'tournament',
+            resourceId: ref.tournamentId
+        }, nowEpochMs);
     }
     async readPublication(value: TournamentRef): Promise<TournamentPublicationRead> {
         const ref = decodeTournamentRef(value);

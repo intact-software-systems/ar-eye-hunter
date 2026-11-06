@@ -9,9 +9,11 @@ import { SynchronousNotifications } from '@shared/cache/synchronous-notification
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../api/http-error.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
@@ -45,11 +47,11 @@ export namespace RallarTournamentCatalog {
         readonly activity: Pick<BrowserActivity, 'isActive' | 'onChange'>;
         readonly timers: Timers;
         readonly api: Api;
+        onChanged(listener: () => Promise<void>): () => void;
     }
     export interface Config {
         readonly scope: StateScope;
         readonly limit: number;
-        readonly refreshIntervalMs: number;
         readonly timeoutMs: number;
     }
 }
@@ -61,7 +63,7 @@ export class RallarTournamentCatalog {
     private readonly notifications = new SynchronousNotifications<RallarTournamentCatalog.State>((error) =>
         console.error('Tournament catalogue listener failed', error)
     );
-    private readonly flights = new SingleFlight<number, void>();
+    private readonly appendReads = new SingleFlight<number, void>();
     private state: RallarTournamentCatalog.State = {
         view: 'public',
         status: 'signed-out',
@@ -73,14 +75,15 @@ export class RallarTournamentCatalog {
     };
     private subscriptions: SubscriptionScope | null = null;
     private controller = new AbortController();
-    private stopRepeating: (() => void) | null = null;
+    private refreshes: ThrottledFlush | null = null;
+    private refreshing: Promise<void> | null = null;
     private generation = 0;
     private pages = 0;
     private sessionKey: string | null = null;
     private operation: 'append' | 'refresh' | null = null;
 
     static createBrowser(
-        browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
+        browser: SubscribeViewRecovery.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
         config: RallarTournamentCatalog.Config
     ): RallarTournamentCatalog {
         return new RallarTournamentCatalog({
@@ -88,6 +91,8 @@ export class RallarTournamentCatalog {
                 session: () => browser.session(),
                 onChange: (listener, options) => browser.auth.onChange(listener, options)
             },
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'tournament-catalog', changed }),
             activity: new BrowserActivity(),
             timers: createDefaultTimers(),
             api: tournamentCatalogHttpApi
@@ -97,9 +102,8 @@ export class RallarTournamentCatalog {
     constructor(dependencies: RallarTournamentCatalog.Dependencies, config: RallarTournamentCatalog.Config) {
         decodeStateScope(config.scope);
         if (
-            [config.limit, config.refreshIntervalMs, config.timeoutMs].some((value) =>
-                !Number.isSafeInteger(value) || value <= 0
-            ) || config.limit > 50
+            [config.limit, config.timeoutMs].some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+            config.limit > 50
         ) {
             throw new TypeError('Tournament catalogue bounds are invalid');
         }
@@ -120,6 +124,7 @@ export class RallarTournamentCatalog {
                 this.dependencies.auth.onChange(() => this.authenticationChanged(), { emitCurrent: false })
             );
             this.subscriptions.add(this.dependencies.activity.onChange(() => this.activityChanged()));
+            this.subscriptions.add(this.dependencies.onChanged(() => this.refresh()));
         }
         return this.refresh();
     }
@@ -133,29 +138,39 @@ export class RallarTournamentCatalog {
             this.reset(true);
         }
     }
-    async refresh(): Promise<void> {
+    refresh(): Promise<void> {
         if (this.operation === 'append') {
             this.reset(false);
         }
-        this.stopRepeating?.();
-        this.stopRepeating = null;
-        const generation = this.generation;
-        await this.readRange(false);
-        if (generation === this.generation) {
-            this.scheduleAutomatic();
+        const session = this.dependencies.auth.session();
+        if (this.subscriptions === null || session === undefined || !this.dependencies.activity.isActive()) {
+            return Promise.resolve();
         }
+        if (this.refreshes === null) {
+            const generation = this.generation;
+            this.refreshes = new ThrottledFlush({
+                timers: this.dependencies.timers,
+                write: async () => {
+                    if (this.current(session, generation)) {
+                        await this.readPages(session, false, generation);
+                    }
+                }
+            }, { minIntervalMs: 0, firstMarkDelayMs: 0 });
+        }
+        void this.refreshes.mark();
+        const draining = this.refreshes.drain();
+        this.refreshing = draining;
+        return draining.finally(() => {
+            if (this.refreshing === draining) {
+                this.refreshing = null;
+            }
+        });
     }
-    async loadMore(): Promise<void> {
+    loadMore(): Promise<void> {
         if (this.state.nextCursor === null) {
-            return;
+            return Promise.resolve();
         }
-        this.stopRepeating?.();
-        this.stopRepeating = null;
-        const generation = this.generation;
-        await this.readRange(true);
-        if (generation === this.generation) {
-            this.scheduleAutomatic();
-        }
+        return this.refreshing !== null ? this.refresh() : this.readRange(true);
     }
     changeView(view: TournamentCatalogView): Promise<void> {
         if (view === this.state.view) {
@@ -187,8 +202,10 @@ export class RallarTournamentCatalog {
         this.generation++;
         this.controller.abort();
         this.controller = new AbortController();
-        this.stopRepeating?.();
-        this.stopRepeating = null;
+        const refreshes = this.refreshes;
+        this.refreshes = null;
+        this.refreshing = null;
+        void refreshes?.stop();
         if (clear) {
             this.pages = 0;
         }
@@ -202,27 +219,13 @@ export class RallarTournamentCatalog {
             error: null
         });
     }
-    private scheduleAutomatic(): void {
-        if (
-            this.subscriptions === null || this.authKey() === null || !this.dependencies.activity.isActive() ||
-            this.stopRepeating !== null
-        ) {
-            return;
-        }
-        this.stopRepeating = startRepeating({
-            timers: this.dependencies.timers,
-            intervalMs: this.config.refreshIntervalMs,
-            firstRun: 'after-interval',
-            run: () => this.readRange(false)
-        });
-    }
     private readRange(append: boolean): Promise<void> {
         const session = this.dependencies.auth.session();
         if (this.subscriptions === null || session === undefined || !this.dependencies.activity.isActive()) {
             return Promise.resolve();
         }
         const generation = this.generation;
-        return this.flights.run(generation, () => this.readPages(session, append, generation));
+        return this.appendReads.run(generation, () => this.readPages(session, append, generation));
     }
     private async readPages(session: AuthSession, append: boolean, generation: number): Promise<void> {
         const view = this.state.view;

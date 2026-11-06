@@ -27,6 +27,10 @@ import {
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import {
+    combineGuardedViewPublications,
+    type GuardedViewPublication
+} from '../../websocket/outbox/guarded-view-publication.ts';
+import {
     computeWsSessionConnectGuard,
     computeWsSessionGenerationClosed,
     isWsSessionGenerationClosed,
@@ -49,6 +53,7 @@ import type {
     ClientMutationComputedWrite,
     ClientMutationRead
 } from '../mutation/client-mutation-contracts.ts';
+import { computeClientExpirySequence } from '../mutation/compute/compute-client-expiry-sequence.ts';
 import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationInvariants } from '../mutation/result-validation/assert-client-mutation.ts';
 import {
@@ -140,6 +145,7 @@ export type ExpiredSessionsOperationComputed =
         sidecarWrites: readonly ClientSnapshotProvenanceInsert[];
         committedSnapshots: readonly ClientSnapshot[];
         successorWrite: AppOutboxInsert | null;
+        viewPublication: GuardedViewPublication | null;
     }>;
 
 export interface ClientExpiredSessionMutationRead {
@@ -397,7 +403,7 @@ export function assertMissingSessionDisconnect(
 export function computeExpiredSessionsOperation(
     input: ComputeExpiredSessionsOperationInput
 ): ExpiredSessionsOperationComputed {
-    const mutations = input.reads.map(({ command, read }) => computeClientMutation({ command, read }));
+    const mutations = computeClientExpirySequence(input.reads).map((attempt) => attempt.mutation);
     if (mutations.some((mutation) => mutation.outcome === 'idempotency-conflict')) {
         return { outcome: 'idempotency-conflict', mutations };
     }
@@ -412,7 +418,18 @@ export function computeExpiredSessionsOperation(
         mutations: completedMutations,
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
-        writes: completedMutations.filter(requiresClientWrite),
+        writes: completedMutations.filter(requiresClientWrite).map((mutation) =>
+            mutation.outcome === 'write'
+                ? {
+                    ...mutation,
+                    viewPublication: null,
+                    persistence: { ...mutation.persistence, outboxWrites: mutation.outbox.map(({ write }) => write) }
+                }
+                : mutation
+        ),
+        viewPublication: combineGuardedViewPublications(
+            applied.map((mutation) => mutation.viewPublication)
+        ),
         sidecarWrites: completedMutations.flatMap(computeClientSnapshotProvenance),
         committedSnapshots: applied.map((mutation) => mutation.snapshot),
         successorWrite: computeExpiredSessionSuccessorWrite(input)
@@ -428,7 +445,7 @@ export function assertExpiredSessionsOperation(
         input.computed,
         'Expired client sessions operation computed'
     );
-    for (const [index, { command, read }] of input.reads.entries()) {
+    for (const [index, { command, read }] of computeClientExpirySequence(input.reads).entries()) {
         assertClientMutationInvariants({
             command,
             read,

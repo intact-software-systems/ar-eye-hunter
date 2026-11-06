@@ -24,7 +24,7 @@ import type {
     ALOutboundCommitBundle,
     ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundMessageRuntime
@@ -238,7 +238,7 @@ function createWsDequeueLane(
         retention: undefined,
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     });
-    const proofs = new WsOutboxProvenanceReader({ repository: storage.repository, nowMs: Date.now });
+    const proofs = new WsOutboxProvenanceReader({ repository: storage.repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
@@ -287,10 +287,12 @@ async function writeProvedWsRows(storage: PSqlAdmissionTestStorage, count: numbe
         };
         const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
         await storage.repository.upsert(
-            WS_OUTBOX_PROVENANCE_NAMESPACE,
-            toWsOutboxProvenanceKey(entry.key),
-            JSON.stringify(proof),
-            proof.expiresAtMs
+            {
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            }
         );
         rows.push(entry);
     }
@@ -348,10 +350,17 @@ function recordAdmissionWrites(
     return { dequeueCommits: () => dequeueCommits };
 }
 
+interface DequeueLane {
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+    readonly sent: ALMessage[];
+    readonly outbox: ALOutboundRuntimeStores<OutboundTestPayload>['workQueue'];
+    readonly admissionStore: ALOutboundAdmissionStore<OutboundTestPayload>;
+}
+
 function createDequeueLane(
     storage: PSqlAdmissionTestStorage,
     planner: ALOutboundPlanner<OutboundTestPayload> = OUTBOUND_TEST_SEND_PLANNER
-) {
+): DequeueLane {
     const stores = createPSqlALOutboundRuntimeStores({
         repository: storage.repository,
         namespace: 'dequeue-statements',

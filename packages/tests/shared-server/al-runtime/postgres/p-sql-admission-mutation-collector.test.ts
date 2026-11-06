@@ -28,7 +28,12 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
             namespace: 'admission',
             nowEpochMs: Date.now
         });
-        await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":1}', NEVER_EXPIRE_AT_TIMESTAMP);
+        await repository.upsert({
+            namespace: 'admission',
+            key: 'version:peer-1',
+            value: '{"senderId":"peer-1","version":1}',
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
 
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toEqual({ senderId: 'peer-1', version: 1 });
         expect(await collector.read('version:missing', decodeSenderVersion)).toBeUndefined();
@@ -55,7 +60,7 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
             namespace: 'admission',
             nowEpochMs: Date.now
         });
-        await repository.upsert('admission', 'version:peer-1', serialized, NEVER_EXPIRE_AT_TIMESTAMP);
+        await repository.upsert({ namespace: 'admission', key: 'version:peer-1', value: serialized, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
 
         await expect(collector.read('version:peer-1', decodeSenderVersion)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await expect(collector.list('version:', decodeSenderVersion)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
@@ -115,7 +120,7 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
             namespace: 'admission',
             nowEpochMs: Date.now
         });
-        await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":1}', 1);
+        await repository.upsert({ namespace: 'admission', key: 'version:peer-1', value: '{"senderId":"peer-1","version":1}', expireAtTimestamp: 1 });
 
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toBeUndefined();
         expect(await collector.list('version:', decodeSenderVersion)).toEqual([]);
@@ -124,7 +129,7 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
         await repository.begin((transaction) => writePSqlAdmissionState(transaction, computed));
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toEqual({ senderId: 'peer-1', version: 2 });
 
-        await repository.upsert('admission', 'version:peer-2', '{"senderId":"wrong","version":1}', 1);
+        await repository.upsert({ namespace: 'admission', key: 'version:peer-2', value: '{"senderId":"wrong","version":1}', expireAtTimestamp: 1 });
         await expect(collector.read('version:peer-2', decodeSenderVersion)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await expect(collector.list('version:', decodeSenderVersion)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
@@ -137,10 +142,15 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
             namespace: 'admission',
             nowEpochMs: Date.now
         });
-        await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":1}', 1);
+        await repository.upsert({ namespace: 'admission', key: 'version:peer-1', value: '{"senderId":"peer-1","version":1}', expireAtTimestamp: 1 });
 
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toBeUndefined();
-        await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":2}', NEVER_EXPIRE_AT_TIMESTAMP);
+        await repository.upsert({
+            namespace: 'admission',
+            key: 'version:peer-1',
+            value: '{"senderId":"peer-1","version":2}',
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
         const computed = collector.computeStateWrite(undefined)!;
         await expect(repository.begin((transaction) => writePSqlAdmissionState(transaction, computed))).rejects.toBeInstanceOf(
             RuntimeStateWriteConflictError

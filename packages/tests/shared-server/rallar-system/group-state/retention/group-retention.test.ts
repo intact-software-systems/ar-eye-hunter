@@ -223,10 +223,12 @@ describe('temporary room retention decisions', () => {
     it('rejects scope corruption before any retention decision', async () => {
         const fixture = await createFixture();
         await fixture.harness.runtimeRepository.upsert(
-            GROUPS_NAMESPACE,
-            groupStateGroupStorageKey(REF),
-            JSON.stringify({ ...(await group(fixture)), workspaceId: 'other-workspace' }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUPS_NAMESPACE,
+                key: groupStateGroupStorageKey(REF),
+                value: JSON.stringify({ ...(await group(fixture)), workspaceId: 'other-workspace' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         const ingress = fixture.service.capture({ groupRef: REF, requestId: 'corrupt', observedAtEpochMs: fixture.nowEpochMs });
 
@@ -262,8 +264,13 @@ describe('temporary room retention decisions', () => {
 async function createFixture(temporary = true): Promise<RetentionFixture> {
     const harness = await createAuthorityHarness(['owner']);
     const clock = { nowEpochMs: harness.nowEpochMs };
-    const service = new GroupRetentionService({ repository: harness.repository, groupOwnedAppData: { read: async () => [] } }, {
+    const service = new GroupRetentionService({
+        runtime: harness.runtimeRepository,
+        repository: harness.repository,
+        groupOwnedAppData: { read: async () => [] }
+    }, {
         now: () => clock.nowEpochMs,
+        finishedRetentionMs: 60000,
         serviceId: 'retention-service'
     });
     const result = await processAuthenticated({

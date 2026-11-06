@@ -1,8 +1,12 @@
+import type { GroupCohortAdmissionParticipant } from '@shared-server/rallar-system/group-state/mutation/membership/compute-group-cohort-admission.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { SUBSCRIPTIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GROUP_SESSION_RESERVATIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/schedule/group-session-reservation-storage.ts';
+import { readGroupSessionViewAudience } from '@shared-server/rallar-system/group-state/schedule/read-group-session-view-audience.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
+import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 
 import { computeGroupMoveAdmission } from '@shared-server/rallar-system/group-state/move/compute-group-move-admission.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
@@ -14,7 +18,13 @@ import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { createGroupAuthorityFacts, groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { subscriptionRowFor, writeSubscriptionRow } from '../mutation/group-topic-subscription-test-runtime.ts';
 
-async function createDestination(maxMembers: number, maxSessionsPerMember: number | null = null, scheduled = false) {
+interface MoveDestination {
+    readonly service: GroupStateTestService;
+    readonly repository: GroupStateRepository;
+    readonly runtime: FakeRuntimeStateRepository;
+}
+
+async function createDestination(maxMembers: number, maxSessionsPerMember: number | null = null, scheduled = false): Promise<MoveDestination> {
     const runtime = new FakeRuntimeStateRepository();
     const service = createTestGroupStateService({ runtimeRepository: runtime, now: () => 1_000, serviceId: 'move-test', randomId: () => 'move-test-id' });
     await service.createGroup(SCOPE, {
@@ -36,7 +46,7 @@ async function readJoin(
     repository: ReturnType<typeof createTestGroupStateRepository>,
     principalId: string,
     sessionId = `${principalId}-session`
-) {
+): Promise<GroupCohortAdmissionParticipant> {
     const command: Extract<GroupMutationCommand, { operation: 'joinGroup' | 'acceptGroupInvite'; }> = {
         operation: 'joinGroup',
         aggregateRef: groupRef('pure-room'),
@@ -159,14 +169,22 @@ describe('group move admission', () => {
         const { repository, runtime } = await createDestination(3, null, true);
         const ref = groupRef('pure-room');
         await runtime.upsert(
-            GROUP_SESSION_RESERVATIONS_NAMESPACE,
-            groupStateGroupStorageKey(ref),
-            JSON.stringify({ ...ref, scheduleRevision: 1, principalIds: ['bob', 'carol'] }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: GROUP_SESSION_RESERVATIONS_NAMESPACE,
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify({ ...ref, scheduleRevision: 1, principalIds: ['bob', 'carol'] }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         const reserved = await repository.findSessionReservationsEntry(ref);
         const participants = await Promise.all([readJoin(repository, 'bob'), readJoin(repository, 'carol')]);
-        const result = computeGroupMoveAdmission({ participants });
+        const audience = await readGroupSessionViewAudience(runtime, ref, 1_000);
+        const result = computeGroupMoveAdmission({
+            participants: participants.map((participant) => ({
+                ...participant,
+                read: { ...participant.read, sessionViewAudience: audience }
+            }))
+        });
         expect(result.status).toBe('admitted');
         if (result.status !== 'admitted' || reserved === undefined) {
             throw new Error('Expected reserved cohort admission');

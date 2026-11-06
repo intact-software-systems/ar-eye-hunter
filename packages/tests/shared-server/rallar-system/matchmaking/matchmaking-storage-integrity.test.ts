@@ -46,14 +46,14 @@ describe('matchmaking persisted identity and pointer guards', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new MatchmakingRepository(runtime);
             const corrupt = JSON.stringify({ scope, principalId: 'mallory', searchId: 'alice-search' });
-            await runtime.upsert('matchmaking:accounts', accountKey, corrupt, NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({ namespace: 'matchmaking:accounts', key: accountKey, value: corrupt, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
             await expect(repository.read(scope, ['alice'])).rejects.toThrow(/identity/);
             await runtime.deleteByKey('matchmaking:accounts', accountKey);
             const read = await repository.read(scope, ['alice']);
             const transition = computeMatchmaking({ partySearches: [], pool: read.pool, policy, nowEpochMs: 1000, command });
             const prepared = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
             await storage.sql.begin((sql) => writeRuntimeStateConditionalBatch(sql, prepared));
-            await runtime.upsert('matchmaking:accounts', accountKey, corrupt, NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({ namespace: 'matchmaking:accounts', key: accountKey, value: corrupt, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
             await expect(repository.read(scope, ['alice'])).rejects.toThrow(/identity/);
             await expect(repository.read(scope, [])).rejects.toThrow(/identity/);
             expect((await runtime.findEntry('matchmaking:accounts', accountKey))?.value).toBe(corrupt);
@@ -72,7 +72,7 @@ describe('matchmaking persisted identity and pointer guards', () => {
             const transition = computeMatchmaking({ partySearches: [], pool: read.pool, policy, nowEpochMs: 1000, command });
             const computed = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
             const intervening = 'not-json';
-            await runtime.upsert('matchmaking:accounts', accountKey, intervening, expiry);
+            await runtime.upsert({ namespace: 'matchmaking:accounts', key: accountKey, value: intervening, expireAtTimestamp: expiry });
             await expect(storage.sql.begin((sql) => writeRuntimeStateConditionalBatch(sql, computed))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect(await runtime.findEntry('matchmaking:pools', 'app=game:ws=default')).toBeUndefined();
             expect((await runtime.findEntry('matchmaking:accounts', accountKey))?.value).toBe(intervening);
@@ -87,12 +87,12 @@ describe('matchmaking persisted identity and pointer guards', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new MatchmakingRepository(runtime);
             const previous = JSON.stringify({ scope, principalId: 'alice', searchId: 'previous-search' });
-            await runtime.upsert('matchmaking:accounts', accountKey, previous, 10);
+            await runtime.upsert({ namespace: 'matchmaking:accounts', key: accountKey, value: previous, expireAtTimestamp: 10 });
             expect((await repository.readCurrent({ scope, principalId: 'alice', nowEpochMs: 1000 })).searchId).toBeNull();
             const read = await repository.read(scope, ['alice']);
             const transition = computeMatchmaking({ partySearches: [], pool: read.pool, policy, nowEpochMs: 1000, command });
             const computed = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
-            await runtime.upsert('matchmaking:accounts', accountKey, previous, 20);
+            await runtime.upsert({ namespace: 'matchmaking:accounts', key: accountKey, value: previous, expireAtTimestamp: 20 });
             await expect(storage.sql.begin((sql) => writeRuntimeStateConditionalBatch(sql, computed))).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect(await runtime.findEntry('matchmaking:pools', 'app=game:ws=default')).toBeUndefined();
             const refreshed = await repository.read(scope, ['alice']);
@@ -126,7 +126,7 @@ describe('matchmaking persisted identity and pointer guards', () => {
                 }
             });
             const computed = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
-            await runtime.upsert('matchmaking:pools', 'app=game:ws=default', 'intervening expired row', 1);
+            await runtime.upsert({ namespace: 'matchmaking:pools', key: 'app=game:ws=default', value: 'intervening expired row', expireAtTimestamp: 1 });
             await expect(storage.sql.begin((transaction) => writeRuntimeStateConditionalBatch(transaction, computed)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await runtime.findEntry('matchmaking:pools', 'app=game:ws=default'))?.value).toBe('intervening expired row');
@@ -146,7 +146,7 @@ describe('matchmaking persisted identity and pointer guards', () => {
             const computed = computeMatchmakingStorage({ read, transition, finishedRetentionMs: 60000 });
             await storage.sql.begin((sql) => writeRuntimeStateConditionalBatch(sql, computed));
             const corrupt = JSON.stringify({ scope, principalId: 'alice', partyId: 'lost-binding', invitations: [] });
-            await runtime.upsert('parties:accounts', accountKey, corrupt, NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({ namespace: 'parties:accounts', key: accountKey, value: corrupt, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
             await expect(repository.readCurrent({ scope, principalId: 'alice', nowEpochMs: 1001 })).rejects.toThrow(/binding/);
             await expect(repository.read(scope)).rejects.toThrow(/binding/);
             expect((await runtime.findEntry('parties:accounts', accountKey))?.value).toBe(corrupt);

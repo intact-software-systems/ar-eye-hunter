@@ -1,30 +1,32 @@
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { describe, expect, it } from 'vitest';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createService, requireSnapshot, seedOpenGroup } from '../presence/group-presence-test-runtime.ts';
 import { SCOPE } from './group-mutation-test-runtime.ts';
 
 describe('convergent group and presence state', () => {
     it('rebases simultaneous create and last-slot joins through the group guard', async () => {
         const runtime = new GroupBarrierRepository();
-        const firstCreate = createService(runtime, 1_000).createGroup(SCOPE, {
-            groupId: 'capacity-room',
-            displayName: 'Capacity Room',
-            kind: 'room',
-            joinMode: 'open',
-            maxMembers: 2,
-            createdByPrincipalId: 'alice',
-            requestId: 'create-capacity-a'
-        });
-        const secondCreate = createService(runtime, 1_001).createGroup(SCOPE, {
-            groupId: 'capacity-room',
-            displayName: 'Capacity Room',
-            kind: 'room',
-            joinMode: 'open',
-            maxMembers: 2,
-            createdByPrincipalId: 'alice',
-            requestId: 'create-capacity-b'
-        });
+        const firstCreate = createService({ runtimeRepository: runtime, nowEpochMs: 1_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .createGroup(SCOPE, {
+                groupId: 'capacity-room',
+                displayName: 'Capacity Room',
+                kind: 'room',
+                joinMode: 'open',
+                maxMembers: 2,
+                createdByPrincipalId: 'alice',
+                requestId: 'create-capacity-a'
+            });
+        const secondCreate = createService({ runtimeRepository: runtime, nowEpochMs: 1_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .createGroup(SCOPE, {
+                groupId: 'capacity-room',
+                displayName: 'Capacity Room',
+                kind: 'room',
+                joinMode: 'open',
+                maxMembers: 2,
+                createdByPrincipalId: 'alice',
+                requestId: 'create-capacity-b'
+            });
         const creates = await Promise.allSettled([firstCreate, secondCreate]);
         expect(
             creates.filter(
@@ -34,14 +36,22 @@ describe('convergent group and presence state', () => {
 
         runtime.armGroupReadBarrier(2);
         const joins = await Promise.allSettled([
-            createService(runtime, 2_000).joinGroup(SCOPE, 'capacity-room', {
-                actorPrincipalId: 'bob',
-                requestId: 'join-bob'
-            }),
-            createService(runtime, 2_001).joinGroup(SCOPE, 'capacity-room', {
-                actorPrincipalId: 'carol',
-                requestId: 'join-carol'
-            })
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'capacity-room',
+                {
+                    actorPrincipalId: 'bob',
+                    requestId: 'join-bob'
+                }
+            ),
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'capacity-room',
+                {
+                    actorPrincipalId: 'carol',
+                    requestId: 'join-carol'
+                }
+            )
         ]);
         expect(joins.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
         const snapshot = await requireSnapshot(runtime, 'capacity-room');
@@ -52,26 +62,41 @@ describe('convergent group and presence state', () => {
     it('converges join versus ban under either valid serialization order', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'join-ban-room');
-        await createService(runtime, 1_100).upsertMember(SCOPE, 'join-ban-room', 'bob', {
-            status: 'invited',
-            actorPrincipalId: 'alice',
-            requestId: 'invite-bob'
-        });
+        await createService({ runtimeRepository: runtime, nowEpochMs: 1_100, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).upsertMember(
+            SCOPE,
+            'join-ban-room',
+            'bob',
+            {
+                status: 'invited',
+                actorPrincipalId: 'alice',
+                requestId: 'invite-bob'
+            }
+        );
         const ban = { actorPrincipalId: 'alice', requestId: 'ban-bob-race' };
         runtime.armGroupReadBarrier(2);
         const [joined, banned] = await Promise.allSettled([
-            createService(runtime, 2_000).joinGroup(SCOPE, 'join-ban-room', {
-                actorPrincipalId: 'bob',
-                requestId: 'join-bob-race'
-            }),
-            createService(runtime, 2_001).banGroupMember(SCOPE, 'join-ban-room', 'bob', ban)
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).joinGroup(
+                SCOPE,
+                'join-ban-room',
+                {
+                    actorPrincipalId: 'bob',
+                    requestId: 'join-bob-race'
+                }
+            ),
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).banGroupMember(
+                SCOPE,
+                'join-ban-room',
+                'bob',
+                ban
+            )
         ]);
         expect([joined, banned].filter((result) => result.status === 'rejected')).toEqual([
             expect.objectContaining({ reason: expect.any(RuntimeStateWriteConflictError) })
         ]);
         if (banned.status === 'rejected') {
             // The ban's next queue delivery is a fresh attempt that reads the join it lost to.
-            await createService(runtime, 2_001, 2).banGroupMember(SCOPE, 'join-ban-room', 'bob', ban);
+            await createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 2, injectedRandomId: undefined, timing: undefined })
+                .banGroupMember(SCOPE, 'join-ban-room', 'bob', ban);
         }
 
         const snapshot = await requireSnapshot(runtime, 'join-ban-room');
@@ -84,22 +109,33 @@ describe('convergent group and presence state', () => {
     it('rebases ownership transfer versus target removal without losing a winner', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'owner-race-room');
-        await createService(runtime, 1_100).upsertMember(SCOPE, 'owner-race-room', 'bob', {
-            status: 'active',
-            actorPrincipalId: 'alice',
-            requestId: 'activate-bob'
-        });
+        await createService({ runtimeRepository: runtime, nowEpochMs: 1_100, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).upsertMember(
+            SCOPE,
+            'owner-race-room',
+            'bob',
+            {
+                status: 'active',
+                actorPrincipalId: 'alice',
+                requestId: 'activate-bob'
+            }
+        );
         runtime.armGroupReadBarrier(2);
         const results = await Promise.allSettled([
-            createService(runtime, 2_000).transferGroupOwnership(SCOPE, 'owner-race-room', {
-                newOwnerPrincipalId: 'bob',
-                actorPrincipalId: 'alice',
-                requestId: 'transfer-to-bob'
-            }),
-            createService(runtime, 2_001).removeGroupMember(SCOPE, 'owner-race-room', 'bob', {
-                actorPrincipalId: 'alice',
-                requestId: 'remove-bob-race'
-            })
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+                .transferGroupOwnership(SCOPE, 'owner-race-room', {
+                    newOwnerPrincipalId: 'bob',
+                    actorPrincipalId: 'alice',
+                    requestId: 'transfer-to-bob'
+                }),
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).removeGroupMember(
+                SCOPE,
+                'owner-race-room',
+                'bob',
+                {
+                    actorPrincipalId: 'alice',
+                    requestId: 'remove-bob-race'
+                }
+            )
         ]);
 
         expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);

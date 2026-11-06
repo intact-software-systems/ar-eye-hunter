@@ -1,10 +1,9 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
-import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
+import { hasServerPushedViewTopic } from '../../api/views/view-invalidation.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
@@ -13,6 +12,7 @@ import {
     toWsQueueBoxServerRecipientCopies,
     type WsQueueBoxServerRecipientCopies
 } from './scope/to-ws-queue-box-server-recipient-copies.ts';
+import { validateLiveSendAuthority } from './scope/validate-live-send-authority.ts';
 import type {
     WsServerInboundConnectionScopeReader,
     WsServerLiveSendFailure,
@@ -107,7 +107,11 @@ export class WsQueueBoxServerLiveDelivery {
             return noRecipientResult(message);
         }
 
-        return this.writeLiveRecipients(input, recipients, expiresAtMs);
+        const result = this.writeLiveRecipients(input, recipients, expiresAtMs);
+        if (input.roomSessionGenerations !== undefined) {
+            this.#recipientSelection.closeFailedRoomSnapshotConnections(result.failures, input.roomSessionGenerations);
+        }
+        return result;
     }
 
     private writeLiveRecipients(
@@ -136,8 +140,9 @@ export class WsQueueBoxServerLiveDelivery {
             recipients: sent,
             expiresAtMs,
             scope: input.recipientScope ?? provenScope ?? undefined,
-            principalId: input.recipientPrincipalId,
-            requireAuthenticatedRecipient: input.requireAuthenticatedRecipient === true ||
+            principalId: input.accountView?.principalId ?? input.recipientPrincipalId,
+            requireAuthenticatedRecipient: input.accountView !== undefined ||
+                input.requireAuthenticatedRecipient === true ||
                 input.recipientScope !== undefined || provenScope !== undefined,
             generations
         });
@@ -180,6 +185,9 @@ export class WsQueueBoxServerLiveDelivery {
 
     sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
         const { peerId, message, encoded, inboundScope } = input;
+        if (hasServerPushedViewTopic(message)) {
+            return 0;
+        }
         if (
             requiresWsQueueBoxServerRecipientScope(message) && validateALOutboundRecipientScope(inboundScope).length > 0
         ) {
@@ -286,26 +294,6 @@ export class WsQueueBoxServerLiveDelivery {
             connection?.isOpen === true &&
             connection.generationId === input.generations.get(recipient.connectionId);
     }
-}
-
-function validateLiveSendAuthority(input: WsServerLiveSendInputDto): readonly string[] {
-    const issues: string[] = [];
-    if (input.sessionInvalidation !== undefined) {
-        issues.push(...validateALSessionInvalidationMessage(input.message, input.sessionInvalidation));
-        if (input.recipientScope !== undefined || input.inboundScope !== undefined) {
-            issues.push('Session-global authority cannot carry a scoped authority');
-        }
-    }
-    else if (requiresWsQueueBoxServerRecipientScope(input.message)) {
-        issues.push(...validateALOutboundRecipientScope(input.inboundScope));
-    }
-    else if (isALWorldBroadcast(input.message)) {
-        issues.push(...validateALOutboundRecipientScope(input.recipientScope ?? input.inboundScope));
-    }
-    if (input.recipientPrincipalId !== undefined && input.recipientScope === undefined) {
-        issues.push('Principal audience requires its scope');
-    }
-    return issues;
 }
 
 function noRecipientResult(message: ALMessage): WsServerLiveSendResult {

@@ -1,8 +1,13 @@
 import type { FriendsMutationResult, FriendsRefusal, FriendsRequest } from '@shared/api/friends/friends-request.ts';
-import type { FriendsView } from '@shared/api/friends/friends-view.ts';
+import { decodeFriendsView, type FriendsView } from '@shared/api/friends/friends-view.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { AuthenticatedResource } from '../api/authenticated-resource.ts';
+import { subscribeViewDeadline } from '../api/subscribe-view-deadline.ts';
+import { subscribeViewInvalidations } from '../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../api/subscribe-view-recovery.ts';
 import { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { friendsHttpApi } from './friends-http-api.ts';
@@ -18,12 +23,16 @@ const FRIENDS_REFUSAL_MESSAGES: Readonly<Record<FriendsRefusal, string>> = {
 };
 
 export namespace RallarFriends {
+    export interface Config {
+        readonly scope: StateScope;
+    }
     export interface Api {
         read(input: AuthenticatedResource.ReadInput): Promise<FriendsView>;
         change(input: AuthenticatedResource.ChangeInput<FriendsRequest>): Promise<FriendsMutationResult>;
     }
     export interface Dependencies extends AuthenticatedResource.Dependencies {
         readonly api: Api;
+        onChanged(listener: () => Promise<void>): () => void;
         readonly entry: Pick<RallarRoomEntry, 'enter'>;
     }
 }
@@ -31,17 +40,20 @@ export namespace RallarFriends {
 /** Account-bound social consent. Entry and game owners retain admission and gameplay authority. */
 export class RallarFriends extends AuthenticatedResource<FriendsView, FriendsRequest> {
     private readonly entry: Pick<RallarRoomEntry, 'enter'>;
+    private readonly friendsDependencies: RallarFriends.Dependencies;
 
     static createBrowser(
-        browser: Pick<RallarRoomEntry.Browser, 'auth' | 'session'>,
+        browser: SubscribeViewRecovery.Browser & Pick<RallarRoomEntry.Browser, 'auth'>,
         entry: RallarRoomEntry,
-        config: AuthenticatedResource.Config
+        config: RallarFriends.Config
     ): RallarFriends {
         return new RallarFriends({
             auth: {
                 session: () => browser.session(),
                 onChange: (listener, options) => browser.auth.onChange(listener, options)
             },
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'friends', changed }),
             api: friendsHttpApi,
             entry,
             activity: new BrowserActivity(),
@@ -50,10 +62,14 @@ export class RallarFriends extends AuthenticatedResource<FriendsView, FriendsReq
         }, config);
     }
 
-    constructor(dependencies: RallarFriends.Dependencies, config: AuthenticatedResource.Config) {
-        super(dependencies, config, {
+    constructor(dependencies: RallarFriends.Dependencies, config: RallarFriends.Config) {
+        super(dependencies, {
+            scope: config.scope,
+            changeResult: 'read',
+            subscribeRefresh: (refresh) => this.subscribeRefresh(refresh)
+        }, {
             async read(attempt) {
-                const view = await dependencies.api.read(attempt);
+                const view = decodeFriendsView(await dependencies.api.read(attempt));
                 if (view.principalId !== attempt.session.clientId) {
                     throw new TypeError('Friends response belongs to another account');
                 }
@@ -68,6 +84,23 @@ export class RallarFriends extends AuthenticatedResource<FriendsView, FriendsReq
             }
         });
         this.entry = dependencies.entry;
+        this.friendsDependencies = dependencies;
+    }
+
+    private subscribeRefresh(refresh: () => Promise<void>): () => void {
+        const subscriptions = new SubscriptionScope();
+        subscriptions.add(this.friendsDependencies.onChanged(refresh));
+        subscriptions.add(subscribeViewDeadline<FriendsView>({
+            onChange: (listener) => this.onChange(listener),
+            timers: this.friendsDependencies.timers,
+            remainingMs: (view) =>
+                view.invitations.length === 0
+                    ? null
+                    : Math.min(...view.invitations.map((invitation) => invitation.expiresAtEpochMs)) -
+                        view.observedAtEpochMs,
+            refresh
+        }));
+        return () => subscriptions.unsubscribe();
     }
 
     async openInvitation(invitationId: string): Promise<void> {

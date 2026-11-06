@@ -1,4 +1,10 @@
-import { requireExactKeys, requireOneOf, requireRecord, requireString } from '../exact-object-decoding.ts';
+import {
+    requireEpoch,
+    requireExactKeys,
+    requireOneOf,
+    requireRecord,
+    requireString
+} from '../exact-object-decoding.ts';
 import { decodeFriendInvitation, type FriendContact, type FriendInvitation } from './friendship.ts';
 
 export interface FriendPerson extends FriendContact {
@@ -8,6 +14,7 @@ export interface FriendPerson extends FriendContact {
 }
 
 export interface FriendsView {
+    readonly observedAtEpochMs: number;
     readonly principalId: string;
     readonly shareOnline: boolean;
     readonly contacts: readonly FriendPerson[];
@@ -16,13 +23,19 @@ export interface FriendsView {
 
 export function decodeFriendsView(value: unknown): FriendsView {
     const view = requireRecord(value, 'Friends view');
-    requireExactKeys(view, ['principalId', 'shareOnline', 'contacts', 'invitations'], 'Friends view');
+    requireExactKeys(
+        view,
+        ['principalId', 'shareOnline', 'contacts', 'invitations', 'observedAtEpochMs'],
+        'Friends view'
+    );
     requireString(view.principalId, 'Friends view principal');
+    requireEpoch(view.observedAtEpochMs, 'Friends view observation');
     if (typeof view.shareOnline !== 'boolean' || !Array.isArray(view.contacts) || !Array.isArray(view.invitations)) {
         throw new TypeError('Friends view visibility or collections are invalid');
     }
     return {
         principalId: view.principalId,
+        observedAtEpochMs: view.observedAtEpochMs,
         shareOnline: view.shareOnline,
         contacts: view.contacts.map(decodeFriendPerson),
         invitations: view.invitations.map(decodeFriendInvitation)

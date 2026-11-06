@@ -208,10 +208,12 @@ function grantFor(principalId: string): GroupPublicationGrant {
 
 async function writeGrantRow(fixture: GrantSqlFixture, grant: GroupPublicationGrant): Promise<void> {
     await fixture.runtime.upsert(
-        PUBLICATION_GRANTS_NAMESPACE,
-        groupStatePublicationGrantStorageKey(grant, grant.principalId),
-        JSON.stringify(grant),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            key: groupStatePublicationGrantStorageKey(grant, grant.principalId),
+            value: JSON.stringify(grant),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
 }
 

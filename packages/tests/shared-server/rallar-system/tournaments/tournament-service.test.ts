@@ -1,4 +1,6 @@
+import type { RallarServerAppInbox } from '@shared-server/rallar-server/rallar-server-app-inbox.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { registerTournamentInbox } from '@shared-server/rallar-system/tournaments/register-tournament-inbox.ts';
 import { TournamentRepository } from '@shared-server/rallar-system/tournaments/tournament-repository.ts';
 import { computeTournamentResultPublication, writeTournamentGame } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
@@ -6,14 +8,19 @@ import { createTournamentResult } from '@shared-server/rallar-system/tournaments
 import { TournamentService } from '@shared-server/rallar-system/tournaments/tournament-service.ts';
 import { installTournamentGameLifecycle, installTournamentReconciliation } from '@shared-server/rallar-system/tournaments/tournament-signals.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { TournamentMutationResult } from '@shared/api/tournaments/tournament-mutation-result.ts';
 import type { TournamentRequest } from '@shared/api/tournaments/tournament-request.ts';
+import type { TournamentAttempt } from '@shared/api/tournaments/tournament-types.ts';
+import type { ViewInvalidation } from '@shared/api/views/view-invalidation.ts';
+import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
-import { createSqlServerAppInbox } from '../../rallar-server/create-test-server-app-inbox.ts';
+import { createSqlServerAppInbox, type SqlServerAppInboxTestRuntime } from '../../rallar-server/create-test-server-app-inbox.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createTestAuthSession } from '../group-state/group-state-test-runtime.ts';
-import { createRetentionDatabaseFixture } from '../group-state/retention/group-retention-database-fixture.ts';
+import { createRetentionDatabaseFixture, type RetentionDatabaseFixture } from '../group-state/retention/group-retention-database-fixture.ts';
 
 const REF = { applicationId: 'game', workspaceId: 'default', tournamentId: 'cup' };
 
@@ -71,6 +78,8 @@ describe('tournament AppInbox mutations', () => {
             const read = await game.service.read(command, { attemptCount: 1, traceId: 'unlist-race' });
             const computed = game.service.compute(read);
             expect(game.service.validate(read, { ...computed, storage: null })).not.toEqual([]);
+            expect(computed.outbox.length).toBeGreaterThan(0);
+            expect(game.service.validate(read, { ...computed, outbox: [] })).not.toEqual([]);
             await execute(game, input(game.owner, { type: 'publish' }));
             const winner = await game.tournaments.readPublication(REF);
             await expect(game.storage.sql.begin((transaction) => game.service.write(transaction, computed))).rejects.toBeInstanceOf(
@@ -231,9 +240,9 @@ describe('tournament AppInbox mutations', () => {
         const game = await fixture();
         try {
             const starts: string[] = [];
-            installTournamentReconciliation({ outbox: game.runtime.outbox, operation: game.operation, nowEpochMs: () => game.nowEpochMs });
+            installTournamentReconciliation({ outbox: game.queue.outbox, operation: game.operation, nowEpochMs: () => game.nowEpochMs });
             installTournamentGameLifecycle({
-                outbox: game.runtime.outbox,
+                outbox: game.queue.outbox,
                 topic: 'app:test:game-start',
                 nowEpochMs: () => game.nowEpochMs,
                 enqueue: async (binding) => {
@@ -242,14 +251,14 @@ describe('tournament AppInbox mutations', () => {
             });
             const attempt = await checkedInBracket(game);
             await execute(game, input(game.owner, { type: 'start', slot: 'semifinal-1', attemptId: attempt.binding.attemptId }));
-            await game.runtime.outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            await game.queue.outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect(starts).toEqual([attempt.binding.attemptId]);
             await execute(game, input(game.owner, { type: 'schedule', slot: 'semifinal-2', scheduledAtEpochMs: game.nowEpochMs }));
             game.nowEpochMs += 600000;
             await game.storage.sql`update resource_inbox set next_ts = now() at time zone 'UTC'
                 where ri_topic_id = 'app:rallar-tournaments:reconcile' and next_ts <= ${new Date(game.nowEpochMs).toISOString()}::timestamp`;
-            await game.runtime.outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
-            await game.runtime.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            await game.queue.outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+            await game.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await game.tournaments.read(REF)).record!.tournament.matches[1].status).toBe('unresolved');
             expect(starts).toEqual([attempt.binding.attemptId]);
         }
@@ -319,10 +328,24 @@ describe('tournament AppInbox mutations', () => {
     });
 });
 
-async function fixture() {
+interface TournamentServiceFixture extends RetentionDatabaseFixture {
+    readonly sessions: AuthSessionPersistence;
+    readonly players: readonly IssuedAuthSession[];
+    readonly tournaments: TournamentRepository;
+    readonly service: TournamentService;
+    readonly queue: SqlServerAppInboxTestRuntime;
+    readonly operation: RallarServerAppInbox.Operation<TournamentService.Command, TournamentMutationResult>;
+}
+
+async function fixture(): Promise<TournamentServiceFixture> {
     const game = await createRetentionDatabaseFixture();
     const sessions = new AuthSessionPersistence(game.runtime);
-    const players = ['alice', 'bob', 'charlie', 'dana'].map((principalId) => createTestAuthSession(principalId));
+    const owner = { ...game.owner, expiresAtEpochMs: game.nowEpochMs + 86400000 };
+    await sessions.putSession(owner);
+    const players = ['alice', 'bob', 'charlie', 'dana'].map((principalId) => ({
+        ...createTestAuthSession(principalId),
+        expiresAtEpochMs: owner.expiresAtEpochMs
+    }));
     for (const player of players) {
         await sessions.putSession(player);
     }
@@ -340,14 +363,14 @@ async function fixture() {
             gameLifecycleTopic: 'app:test:game-start'
         }]
     });
-    const runtime = createSqlServerAppInbox({ database: game.storage.sql, nowEpochMs: () => game.nowEpochMs });
-    const operation = registerTournamentInbox({ appInbox: runtime.inbox, service });
-    runtime.inbox.start();
-    return Object.assign(game, { sessions, players, tournaments, service, runtime, operation });
+    const queue = createSqlServerAppInbox({ database: game.storage.sql, nowEpochMs: () => game.nowEpochMs });
+    const operation = registerTournamentInbox({ appInbox: queue.inbox, service });
+    queue.inbox.start();
+    return Object.assign(game, { owner, sessions, players, tournaments, service, queue, operation });
 }
 
 function input(
-    session: ReturnType<typeof createTestAuthSession>,
+    session: IssuedAuthSession,
     request: TournamentRequest,
     requestId: string = crypto.randomUUID()
 ): TournamentService.Command {
@@ -360,16 +383,16 @@ function input(
     };
 }
 
-async function execute(game: Awaited<ReturnType<typeof fixture>>, command: TournamentService.Command) {
+async function execute(game: TournamentServiceFixture, command: TournamentService.Command): Promise<TournamentMutationResult> {
     const admitted = await game.operation.enqueue({ command, traceId: 'tournament-service' });
     expect(admitted.left).toBeUndefined();
-    await game.runtime.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
+    await game.queue.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
     const result = await admitted.right!.wait();
     expect(result.left).toBeUndefined();
     return result.right!;
 }
 
-async function checkedInBracket(game: Awaited<ReturnType<typeof fixture>>, checkedInCount = 2) {
+async function checkedInBracket(game: TournamentServiceFixture, checkedInCount = 2): Promise<TournamentAttempt> {
     expect((await execute(game, input(game.owner, { type: 'create', title: 'Friday cup' }))).status).toBe('applied');
     for (const player of game.players) {
         expect((await execute(game, input(player, { type: 'register' }))).status).toBe('applied');
@@ -381,4 +404,41 @@ async function checkedInBracket(game: Awaited<ReturnType<typeof fixture>>, check
         expect((await execute(game, input(player, { type: 'check-in', slot: 'semifinal-1', attemptId: attempt.binding.attemptId }))).status).toBe('applied');
     }
     return attempt;
+}
+
+it('publishes private catalog and bracket changes while limiting public notices to discoverable projection changes', async () => {
+    const game = await fixture();
+    try {
+        const create = input(game.owner, { type: 'create', title: 'Private cup' }, 'create-secret-cup');
+        await execute(game, create);
+        const privateNotices = await viewNotices(game);
+        expect(privateNotices).toHaveLength(2);
+        expect(privateNotices.every((notice) => notice.principalId === game.owner.clientId)).toBe(true);
+        expect(privateNotices.map((notice) => notice.resource).sort()).toEqual(['tournament', 'tournament-catalog']);
+        await execute(game, create);
+        expect(await viewNotices(game)).toEqual(privateNotices);
+        await execute(game, input(game.owner, { type: 'publish' }, 'publish-secret-cup'));
+        expect((await viewNotices(game)).filter((notice) => notice.principalId === null)).toHaveLength(1);
+        await execute(game, input(game.players[0], { type: 'register' }));
+        expect((await viewNotices(game)).filter((notice) => notice.principalId === null)).toHaveLength(2);
+        await execute(game, input(game.players[0], { type: 'withdraw' }));
+        expect((await viewNotices(game)).filter((notice) => notice.principalId === null)).toHaveLength(3);
+        await execute(game, input(game.owner, { type: 'unlist' }));
+        const afterUnlist = await viewNotices(game);
+        expect(afterUnlist.filter((notice) => notice.principalId === null)).toHaveLength(4);
+        await execute(game, input(game.owner, { type: 'cancel' }));
+        const final = await viewNotices(game);
+        expect(final.filter((notice) => notice.principalId === null)).toHaveLength(4);
+        expect(final.filter((notice) => notice.principalId === game.players[0].clientId).length).toBeGreaterThan(0);
+        expect(final.every((notice) => /^[a-f0-9]{64}$/.test(notice.changeId))).toBe(true);
+    }
+    finally {
+        await game.storage.close();
+    }
+});
+
+async function viewNotices(game: TournamentServiceFixture): Promise<readonly ViewInvalidation[]> {
+    const rows = await game.storage.sql<{ ri_resource: string; }[]>`
+        select ri_resource from resource_inbox where ri_topic_id = 'view.invalidated' order by ri_resource_id`;
+    return rows.map((row) => decodeViewInvalidationMessage(decodePersistedALMessageValue(JSON.parse(row.ri_resource))));
 }

@@ -31,7 +31,7 @@ describe('optimistic friends persistence', () => {
         try {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new FriendsRepository(runtime);
-            await runtime.upsert(FRIENDS_PROFILE_NAMESPACE, 'principal=bob', value, NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({ namespace: FRIENDS_PROFILE_NAMESPACE, key: 'principal=bob', value, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
             await expect(repository.readProfile('bob')).rejects.toThrow('identity');
         }
         finally {

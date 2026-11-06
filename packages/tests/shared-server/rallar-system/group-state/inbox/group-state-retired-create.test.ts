@@ -33,7 +33,7 @@ describe('retired room creation through AppInbox', () => {
             commandId: 'delete-retired-room',
             commandHash: 'retirement-command-hash'
         });
-        await harness.runtimeRepository.upsert(GROUPS_NAMESPACE, key, retiredValue, NEVER_EXPIRE_AT_TIMESTAMP);
+        await harness.runtimeRepository.upsert({ namespace: GROUPS_NAMESPACE, key, value: retiredValue, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         const command = {
             type: AppInboxType.GROUP_CREATE,
             resourceId: 'recreate-retired-room',

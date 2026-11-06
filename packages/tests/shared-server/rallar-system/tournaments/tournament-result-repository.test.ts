@@ -40,14 +40,21 @@ describe('tournament immutable result persistence', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new TournamentResultRepository(runtime);
             expect(await repository.readRoom(binding.roomRef)).toBeNull();
-            await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, 'app=game:ws=default:group=arena', JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: 'app=game:ws=default:group=arena',
+                value: JSON.stringify(active),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             expect((await repository.readRoom(binding.roomRef))?.binding).toEqual(binding);
             expect(await repository.readRoom({ ...binding.roomRef, workspaceId: 'other' })).toBeNull();
             await runtime.upsert(
-                TOURNAMENT_ATTEMPTS_NAMESPACE,
-                'app=game:ws=default:group=arena',
-                JSON.stringify({ ...active, binding: { ...binding, roomRef: { ...binding.roomRef, groupId: 'other' } } }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                    key: 'app=game:ws=default:group=arena',
+                    value: JSON.stringify({ ...active, binding: { ...binding, roomRef: { ...binding.roomRef, groupId: 'other' } } }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             await expect(repository.readRoom(binding.roomRef)).rejects.toThrow(/room/);
         }
@@ -62,7 +69,12 @@ describe('tournament immutable result persistence', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new TournamentResultRepository(runtime);
             const key = tournamentResultKey(binding);
-            await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: attemptKey,
+                value: JSON.stringify(active),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             const read = await repository.read(binding);
             const computed = computeTournamentResultPublication(read, result, Date.now());
             expect(computed.kind).toBe('publish');
@@ -99,12 +111,22 @@ describe('tournament immutable result persistence', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new TournamentResultRepository(runtime);
             const key = tournamentResultKey(binding);
-            await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: attemptKey,
+                value: JSON.stringify(active),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             const computed = computeTournamentResultPublication(await repository.read(binding), result, Date.now());
             if (computed.kind !== 'publish') {
                 throw new Error('Expected publication');
             }
-            await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify({ ...active, status: 'cancelled' }), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: attemptKey,
+                value: JSON.stringify({ ...active, status: 'cancelled' }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             await expect(storage.sql.begin(async (transaction) => {
                 await transaction`insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
                     values ('test:game', 'game-1', 'finished', now() + interval '1 day', now(), 0)`;
@@ -132,7 +154,12 @@ describe('tournament immutable result persistence', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new TournamentResultRepository(runtime);
             const key = tournamentResultKey(binding);
-            await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: attemptKey,
+                value: JSON.stringify(active),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             const read = await repository.read(binding);
             const first = computeTournamentResultPublication(read, result, Date.now());
             const second = computeTournamentResultPublication(read, result, Date.now());
@@ -158,7 +185,12 @@ describe('tournament immutable result persistence', () => {
         const storage = await createResourceInboxTestStorage('tournament_result_integrity');
         try {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
-            await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(attempt), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: attemptKey,
+                value: JSON.stringify(attempt),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             await expect(new TournamentResultRepository(runtime).read(binding)).rejects.toThrow();
         }
         finally {
@@ -172,13 +204,18 @@ describe('tournament immutable result persistence', () => {
             const runtime = new PSqlRuntimeStateRepository(storage.sql);
             const repository = new TournamentResultRepository(runtime);
             const key = tournamentResultKey(binding);
-            await runtime.upsert(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey, JSON.stringify(active), NEVER_EXPIRE_AT_TIMESTAMP);
+            await runtime.upsert({
+                namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                key: attemptKey,
+                value: JSON.stringify(active),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            });
             const read = await repository.read(binding);
             const computed = computeTournamentResultPublication(read, result, Date.now());
             if (computed.kind !== 'publish') {
                 throw new Error('Expected publication');
             }
-            await runtime.upsert(TOURNAMENT_RESULTS_NAMESPACE, key, 'intervening result', expiry);
+            await runtime.upsert({ namespace: TOURNAMENT_RESULTS_NAMESPACE, key, value: 'intervening result', expireAtTimestamp: expiry });
             await expect(storage.sql.begin((transaction) => writeTournamentGame(transaction, computed.write)))
                 .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
             expect((await runtime.findEntry(TOURNAMENT_ATTEMPTS_NAMESPACE, attemptKey))?.revision).toBe(read.attemptEntry?.revision);
@@ -200,20 +237,24 @@ describe('tournament immutable result persistence', () => {
                 reason: 'inactive-attempt'
             });
             await runtime.upsert(
-                TOURNAMENT_ATTEMPTS_NAMESPACE,
-                attemptKey,
-                JSON.stringify({ ...active, status: 'scheduled', startedAtEpochMs: null }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                    key: attemptKey,
+                    value: JSON.stringify({ ...active, status: 'scheduled', startedAtEpochMs: null }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             expect(computeTournamentResultPublication(await repository.read(binding), result, Date.now())).toEqual({
                 kind: 'refused',
                 reason: 'inactive-attempt'
             });
             await runtime.upsert(
-                TOURNAMENT_ATTEMPTS_NAMESPACE,
-                attemptKey,
-                JSON.stringify({ ...active, startedAtEpochMs: 2000 }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                {
+                    namespace: TOURNAMENT_ATTEMPTS_NAMESPACE,
+                    key: attemptKey,
+                    value: JSON.stringify({ ...active, startedAtEpochMs: 2000 }),
+                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                }
             );
             const changedStart = await repository.read(binding);
             expect(() => computeTournamentResultPublication(changedStart, result, Date.now())).toThrow(/start/);

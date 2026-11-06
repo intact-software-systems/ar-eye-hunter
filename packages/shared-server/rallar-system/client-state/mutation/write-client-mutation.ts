@@ -1,13 +1,15 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { RuntimeStateGuardedBatchWrite } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { readRuntimeStateObservationsCurrent } from '../../../runtime-state/postgres/read-runtime-state-observations-current.ts';
 import { writeRuntimeStateGuardedBatch } from '../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 import { writeAppOutboxInserts } from '../../app-outbox/app-outbox-insert.ts';
 import { ClientStateEventCollisionError } from '../../state-events/client-state-event-store.ts';
 import type { ClientStateEventCollisionRow } from '../../state-events/postgres/client-state-event-row-codec.ts';
-import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '../../websocket/outbox/ws-outbox-provenance.ts';
+import { writeGuardedViewPublicationStorage } from '../../websocket/outbox/guarded-view-publication.ts';
 import {
     requireClientSnapshotProvenanceApplied,
+    toClientSnapshotProvenanceEffectId,
     type ClientSnapshotProvenanceInsert
 } from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationReceipt } from '../persistence/client-state-persistence-contracts.ts';
@@ -24,7 +26,29 @@ export async function writeClientMutation(
     for (const operation of computed.persistence.runtimeWrites) {
         await writeRuntimeState(transaction, operation);
     }
+    await requireClientMutationObservationsCurrent(transaction, computed);
+    if (computed.outcome === 'write') {
+        if (computed.viewPublication !== null) {
+            await writeGuardedViewPublicationStorage(transaction, computed.viewPublication.storage);
+        }
+        if (computed.viewWatchCleanup !== null) {
+            await writeClientRuntimeBatch(transaction, computed.viewWatchCleanup, []);
+        }
+    }
     return await writeClientMutationRecords(transaction, computed);
+}
+
+/** Rows the mutation's view audience was computed from commit only while they still hold; none is rewritten. */
+export async function requireClientMutationObservationsCurrent(
+    transaction: PSqlSql,
+    computed: ClientMutationComputedWrite
+): Promise<void> {
+    if (
+        computed.outcome === 'write' &&
+        !(await readRuntimeStateObservationsCurrent(transaction, computed.viewObservations))
+    ) {
+        throw new RuntimeStateWriteConflictError();
+    }
 }
 
 /** The event and outbox rows alone, for a transaction whose guarded batch writes the mutation's runtime rows. */
@@ -35,9 +59,7 @@ export async function writeClientMutationRecords(
     if (computed.persistence.eventWrite) {
         await writeClientEvent(transaction, computed.persistence.eventWrite);
     }
-    if (computed.outcome === 'write') {
-        await writeAppOutboxInserts(transaction, computed.outbox.map(({ write }) => write));
-    }
+    await writeAppOutboxInserts(transaction, computed.persistence.outboxWrites);
     return computed.receipt;
 }
 
@@ -53,7 +75,8 @@ export async function writeClientRuntimeBatch(
     const result = await writeRuntimeStateGuardedBatch(transaction, batch);
     const isConflict = result.guard.status === 'conflict' ||
         result.effects.some((effect) =>
-            effect.status !== 'applied' && effect.namespace !== WS_OUTBOX_PROVENANCE_NAMESPACE
+            effect.status !== 'applied' &&
+            !provenance.some((insert) => effect.effectId === toClientSnapshotProvenanceEffectId(insert))
         );
     if (isConflict) {
         throw new RuntimeStateWriteConflictError();

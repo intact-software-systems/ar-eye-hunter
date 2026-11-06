@@ -39,10 +39,12 @@ export class RuntimeStateJsonPersistenceProvider<V> implements PersistenceProvid
 
     async setItem(key: string, value: V, options: PersistenceSetItemOptions): Promise<void> {
         await this.repository.upsert(
-            this.namespace,
-            key,
-            JSON.stringify(this.codec.encode(value)),
-            this.toExpireAtTimestamp(options.expireAtTimestamp)
+            {
+                namespace: this.namespace,
+                key,
+                value: JSON.stringify(this.codec.encode(value)),
+                expireAtTimestamp: this.toExpireAtTimestamp(options.expireAtTimestamp)
+            }
         );
     }
 

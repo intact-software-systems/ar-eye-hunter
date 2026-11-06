@@ -242,6 +242,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
                     recipientScope: stored.policy.recipientScope,
                     principalTargetId: stored.policy.principalTargetId,
                     sessionInvalidation: stored.policy.sessionInvalidation,
+                    accountView: stored.policy.accountView,
                     referenceKey: stored.reference.key
                 }),
                 stored.policy

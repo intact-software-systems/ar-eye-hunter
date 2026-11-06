@@ -1,16 +1,16 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
-import { SingleFlight } from '@shared/resilience/single-flight.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
+import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { toAuthSessionKey } from '../auth/to-auth-session-key.ts';
 import type { BrowserActivity } from '../browser-activity.ts';
 import type { RallarRoomEntry } from '../rooms/entry/rallar-room-entry.ts';
 import { ApiHttpError } from './http-error.ts';
 import { isDefinitiveApiMutationFailure } from './is-definitive-api-mutation-failure.ts';
+import { isRetryableApiViewFailure } from './read-api-view.ts';
 
 export namespace AuthenticatedResource {
     export interface State<View> {
@@ -45,7 +45,9 @@ export namespace AuthenticatedResource {
     }
     export interface Config {
         readonly scope: StateScope;
-        readonly refreshIntervalMs: number;
+        /** `read` re-reads the view after a committed change; `stream` receives it on the subscribed refresh. */
+        readonly changeResult: 'read' | 'stream';
+        subscribeRefresh(listener: () => Promise<void>): () => void;
     }
 }
 
@@ -57,22 +59,22 @@ export class AuthenticatedResource<View, Request> {
     private readonly notifications = new SynchronousNotifications<AuthenticatedResource.State<View>>((error) =>
         console.error('Authenticated resource listener failed', error)
     );
-    private readonly reads = new SingleFlight<number, void>();
+    private reads: ThrottledFlush | null = null;
+    private readRevision = -1;
     private subscriptions: SubscriptionScope | null = null;
     private controller = new AbortController();
     private revision = 0;
     private sessionKey: string | null = null;
     private pending: AuthenticatedResource.Pending<Request> | null = null;
     private state: AuthenticatedResource.State<View> = { view: null, busy: false, retryPending: false, error: null };
+    /** A later read clears only a failed read's error; an operation's error stays until the next operation. */
+    private errorFromRead = false;
 
     constructor(
         dependencies: AuthenticatedResource.Dependencies,
         config: AuthenticatedResource.Config,
         api: AuthenticatedResource.Api<View, Request>
     ) {
-        if (!Number.isSafeInteger(config.refreshIntervalMs) || config.refreshIntervalMs <= 0) {
-            throw new TypeError('Resource refresh interval must be a positive integer');
-        }
         this.dependencies = dependencies;
         this.config = config;
         this.api = api;
@@ -95,17 +97,16 @@ export class AuthenticatedResource<View, Request> {
             );
             this.subscriptions.add(this.dependencies.activity.onChange(() => {
                 if (this.dependencies.activity.isActive()) {
-                    void this.refresh();
+                    void this.readLatest();
                 }
             }));
-            this.subscriptions.add(startRepeating({
-                timers: this.dependencies.timers,
-                intervalMs: this.config.refreshIntervalMs,
-                firstRun: 'after-interval',
-                run: () => this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve()
-            }));
+            this.subscriptions.add(
+                this.config.subscribeRefresh(() =>
+                    this.dependencies.activity.isActive() ? this.readLatest() : Promise.resolve()
+                )
+            );
         }
-        return this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve();
+        return this.dependencies.activity.isActive() ? this.readLatest() : Promise.resolve();
     }
 
     stop(): void {
@@ -119,12 +120,43 @@ export class AuthenticatedResource<View, Request> {
         }
     }
 
+    /** A requested refresh also dismisses an idle operation's error; background reads keep it. */
     refresh(): Promise<void> {
+        if (!this.state.busy && !this.errorFromRead && this.state.error !== null) {
+            this.publish({ ...this.state, error: null });
+        }
+        return this.readLatest();
+    }
+
+    private readLatest(): Promise<void> {
         const attempt = this.attempt();
         const revision = this.revision;
-        return attempt === null
-            ? Promise.resolve()
-            : this.reads.run(revision, () => this.readCurrent(attempt, revision));
+        if (attempt === null) {
+            return Promise.resolve();
+        }
+        if (this.reads === null || this.readRevision !== revision) {
+            const previous = this.reads;
+            this.readRevision = revision;
+            this.reads = new ThrottledFlush({
+                timers: this.dependencies.timers,
+                write: async () => {
+                    const current = this.attempt();
+                    if (current !== null && this.dependencies.activity.isActive()) {
+                        await this.readCurrent(current, revision);
+                    }
+                }
+            }, { minIntervalMs: 0, firstMarkDelayMs: 0 });
+            void previous?.stop();
+        }
+        const covered = this.reads.mark();
+        void this.reads.drain();
+        return covered;
+    }
+
+    /** The owner's read input changed: reads of the previous input are superseded by one current read. */
+    refreshForNewInput(): Promise<void> {
+        this.revision++;
+        return this.readLatest();
     }
 
     act(request: Request): Promise<void> {
@@ -154,6 +186,7 @@ export class AuthenticatedResource<View, Request> {
     }
 
     protected setError(error: string | null): void {
+        this.errorFromRead = false;
         this.publish({ ...this.state, error });
     }
 
@@ -162,18 +195,39 @@ export class AuthenticatedResource<View, Request> {
             this.authKey() === toAuthSessionKey(attempt.session);
     }
 
+    protected resolveReadView(view: View, _attempt: AuthenticatedResource.ReadInput): View {
+        return view;
+    }
+
+    protected publishStreamView(attempt: AuthenticatedResource.ReadInput, view: View): void {
+        if (this.current(attempt) && this.dependencies.activity.isActive()) {
+            this.publish({ ...this.state, view });
+        }
+    }
+
     private async readCurrent(attempt: AuthenticatedResource.ReadInput, revision: number): Promise<void> {
+        if (!this.current(attempt) || revision !== this.revision) {
+            return;
+        }
+        // Only a streamed view can replace the state while this read is in flight.
+        const previousView = this.state.view;
         try {
             const view = await this.api.read(attempt);
             if (this.current(attempt) && revision === this.revision) {
-                this.publish({ ...this.state, view, error: this.pending === null ? null : this.state.error });
+                this.publish({
+                    ...this.state,
+                    view: this.resolveReadView(view, attempt),
+                    error: this.pending === null && this.errorFromRead ? null : this.state.error
+                });
             }
         }
         catch (error) {
             if (this.current(attempt) && revision === this.revision) {
                 const failure = toError(error);
                 this.invalidateLostAuthority(failure);
-                this.publish({ ...this.state, view: null, error: failure.message });
+                const superseded = previousView !== this.state.view && isRetryableApiViewFailure(failure);
+                this.errorFromRead = true;
+                this.publish({ ...this.state, view: superseded ? this.state.view : null, error: failure.message });
             }
         }
     }
@@ -184,7 +238,10 @@ export class AuthenticatedResource<View, Request> {
             return;
         }
         this.pending = pending;
-        this.revision++;
+        const readsResult = this.config.changeResult === 'read';
+        if (readsResult) {
+            this.revision++;
+        }
         this.publish({ ...this.state, busy: true, retryPending: false, error: null });
         if (!this.current(attempt)) {
             return;
@@ -195,8 +252,10 @@ export class AuthenticatedResource<View, Request> {
                 return;
             }
             this.pending = null;
-            this.revision++;
-            await this.refresh();
+            if (readsResult) {
+                this.revision++;
+                await this.readLatest();
+            }
             if (this.current(attempt) && refusal !== null) {
                 this.setError(refusal);
             }
@@ -234,7 +293,7 @@ export class AuthenticatedResource<View, Request> {
         this.sessionKey = key;
         this.invalidate();
         if (this.dependencies.activity.isActive()) {
-            void this.refresh();
+            void this.readLatest();
         }
     }
 
@@ -242,7 +301,10 @@ export class AuthenticatedResource<View, Request> {
         this.revision++;
         this.controller.abort();
         this.controller = new AbortController();
-        this.reads.clear();
+        const reads = this.reads;
+        this.reads = null;
+        this.readRevision = -1;
+        void reads?.stop();
         this.pending = null;
         this.publish({ view: null, busy: false, retryPending: false, error: null });
     }
@@ -252,7 +314,7 @@ export class AuthenticatedResource<View, Request> {
         return session === undefined ? null : toAuthSessionKey(session);
     }
 
-    private attempt(): AuthenticatedResource.ReadInput | null {
+    protected attempt(): AuthenticatedResource.ReadInput | null {
         const session = this.dependencies.auth.session();
         return this.subscriptions === null || session === undefined
             ? null

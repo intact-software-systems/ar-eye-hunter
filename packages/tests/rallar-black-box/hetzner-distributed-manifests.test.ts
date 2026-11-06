@@ -10,12 +10,12 @@ import { decodeStringLeaves } from '@shared-test/rallar-bb-test/browser/browser-
 import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
+import { distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
-    createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
-} from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
-import { distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
+} from '../../../apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts';
 import { toHetznerManifestCommands, toHetznerRecipeCommands } from './hetzner-manifest-test-commands.ts';
 
 interface ExpectedStream {
@@ -79,7 +79,8 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json',
-            'apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-78m-2hz-tree.json'
+            'apps/rallar-black-box/manifests/hetzner/23-rtc-messages-principal-15-agent-78m-2hz-tree.json',
+            'apps/rallar-black-box/manifests/hetzner/24-view-push-2-agent.json'
         ]);
         expect(diagnosticPaths.filter((filePath) => !filePath.includes('/matrix/'))).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/alm-conformance-6-agent-30s.json',

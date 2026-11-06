@@ -47,10 +47,12 @@ describe('scheduled room creation through AppInbox', () => {
             })
         );
         await harness.runtimeRepository.upsert(
-            'group-state:session-reservations',
-            groupStateGroupStorageKey(ref),
-            JSON.stringify({ ...ref, scheduleRevision: 1, principalIds: ['alice'] }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'group-state:session-reservations',
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify({ ...ref, scheduleRevision: 1, principalIds: ['alice'] }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         const denied = await join(harness, 'bob');
@@ -64,10 +66,12 @@ describe('scheduled room creation through AppInbox', () => {
         const harness = await createAuthorityHarness(['owner']);
         requireGroupStateResult(await create(harness, createRequest(harness.nowEpochMs + 3_600_000)));
         await harness.runtimeRepository.upsert(
-            'group-state:session-reservations',
-            groupStateGroupStorageKey(ref),
-            JSON.stringify({ ...ref, scheduleRevision: 1, principalIds: ['alice'] }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            {
+                namespace: 'group-state:session-reservations',
+                key: groupStateGroupStorageKey(ref),
+                value: JSON.stringify({ ...ref, scheduleRevision: 1, principalIds: ['alice'] }),
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         const denied = await processAuthenticated({

@@ -5,7 +5,10 @@ import type {
     ClientSession,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
+import { computeRuntimeStateObservations } from '../../../../runtime-state/observation/runtime-state-observation.ts';
 import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { computeFriendsPresencePublication } from '../../../friends/compute-friends-presence-publication.ts';
+import { computePartyMemberViewPublication } from '../../../parties/party-member-view-publication.ts';
 import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync
@@ -14,6 +17,8 @@ import {
     computePrincipalStateSyncAudience,
     toPrincipalAudienceSessions
 } from '../../../state-sync/state-sync-principal-audience.ts';
+import { computeViewWatchSessionCleanup } from '../../../view-watch/view-watch-session-cleanup.ts';
+import { combineGuardedViewPublications } from '../../../websocket/outbox/guarded-view-publication.ts';
 import { compareClientStateInstanceStorageKeys } from '../../persistence/client-state-instance-storage-key.ts';
 import type { ClientMutationReceipt } from '../../persistence/client-state-persistence-contracts.ts';
 import { compareClientStateSessionStorageKeys } from '../../persistence/client-state-session-storage-key.ts';
@@ -64,13 +69,21 @@ export function computeClientMutationResult(
     });
     const stateSyncEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
     const outbox = stateSyncEntries.map(({ entry, message }) => ({ write: computeAppOutboxInsert(entry), message }));
+    const friendsPresence = computeFriendsPresencePublication(command, read, snapshot);
+    const viewPublication = combineGuardedViewPublications([
+        computePartyMemberViewPublication(command, read, snapshot),
+        friendsPresence?.publication ?? null
+    ]);
     const receipt = toAppliedClientMutationReceipt({
         command,
         read,
         principal,
         event,
         stateRevision,
-        outboxIds: outbox.map(({ write }) => write.entry.key.resourceId)
+        outboxIds: [
+            ...outbox.map(({ write }) => write.entry.key.resourceId),
+            ...viewPublication?.outbox.map((write) => write.entry.key.resourceId) ?? []
+        ]
     });
     const computed: ClientMutationDomainAppliedWrite = {
         outcome: 'write',
@@ -85,6 +98,9 @@ export function computeClientMutationResult(
         idempotency: command.requestId === null
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
+        viewPublication,
+        viewObservations: computeRuntimeStateObservations(friendsPresence?.observations ?? []),
+        viewWatchCleanup: computeViewWatchSessionCleanup(read.viewWatchCleanup),
         stateSync,
         outbox,
         principalAudienceSessionIds

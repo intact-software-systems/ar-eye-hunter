@@ -36,13 +36,13 @@ import { computeSha256CanonicalJson } from '../../protocol/compute-sha256-canoni
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { AuthorizedGroupMutation, GroupStateService } from '../group-state-service-contracts.ts';
+import type { GroupMoveDeadline } from '../move/group-move-deadline.ts';
 import {
     registerGroupMoveInbox,
     submitGroupMove,
     toGroupMoveExpiryEnqueue,
     type GroupMoveInboxRequest
 } from '../move/group-move-inbox.ts';
-import type { GroupMoveDeadline } from '../move/group-move-outbox.ts';
 import {
     toGroupSessionCleanupEnqueue,
     writeGroupSessionCleanup

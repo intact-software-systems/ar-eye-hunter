@@ -1,6 +1,7 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { sendApiHttpRequest } from '@shared-web/browser/api/send-api-http-request.ts';
 import { scheduledSessionHttpApi } from '@shared-web/browser/rooms/sessions/scheduled-session-http-api.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
 
 vi.mock('@shared-web/browser/api-client-config.ts', () => ({ readApiBaseUrl: () => 'http://api.test' }));
@@ -9,7 +10,17 @@ const scope = { applicationId: 'game', workspaceId: 'default' };
 const ref = { ...scope, groupId: 'scheduled' };
 const session = { clientId: 'alice', sessionId: 'alice-session', username: 'alice', accessToken: 'test', expiresAtEpochMs: 9_999_999_999_999 };
 
+beforeEach(() => vi.resetAllMocks());
+
 describe('scheduled-session HTTP acknowledgement', () => {
+    it('keeps a missing preview absent and propagates an authority denial', async () => {
+        vi.mocked(sendApiHttpRequest).mockRejectedValueOnce(new ApiHttpError('GET', '/session', 404, 'Missing'));
+        await expect(scheduledSessionHttpApi.read(ref, session, new AbortController().signal)).resolves.toBeNull();
+        const denied = new ApiHttpError('GET', '/session', 403, 'Forbidden');
+        vi.mocked(sendApiHttpRequest).mockRejectedValueOnce(denied);
+        await expect(scheduledSessionHttpApi.read(ref, session, new AbortController().signal)).rejects.toBe(denied);
+    });
+
     it('accepts successful creation without converting its void command result into an ambiguous failure', async () => {
         const create = vi.mocked(sendApiHttpRequest).mockResolvedValue(createGroupSnapshotFixture({ ...ref, sessionIds: [session.sessionId] }));
         await expect(

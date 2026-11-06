@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
 
 export async function partyPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
@@ -14,7 +15,7 @@ export async function partyPlayJourney(host: Page, guest: Page, game: 'arena' | 
     await becomeFriends(host, guest);
     await formParty(host, guest, game);
     const source = await matchParty(host, guest);
-    await moveParty(host, guest, source, destination);
+    await moveParty({ host, guest, source, destination });
     await playTogetherInRoom(host, guest, game);
     await repeatPartyPlay(host, guest, game);
     if (game === 'arena') {
@@ -48,6 +49,7 @@ async function formParty(host: Page, guest: Page, game: 'arena' | 'relic'): Prom
     await acceptWithLostResponse(guest);
     await expect(hostParty).toContainText('2 of 2 seats');
     await expect(guestParty).toContainText('2 of 2 seats');
+    await assertIdleViewReads(guest, 'social');
     await guest.reload();
     if (game === 'arena') {
         await openArenaOperations(guest);
@@ -110,7 +112,14 @@ async function acceptWithLostResponse(guest: Page): Promise<void> {
     await expect(retry).toHaveCount(0);
 }
 
-async function moveParty(host: Page, guest: Page, source: string, destination: string): Promise<void> {
+interface PartyMove {
+    readonly host: Page;
+    readonly guest: Page;
+    readonly source: string;
+    readonly destination: string;
+}
+
+async function moveParty({ host, guest, source, destination }: PartyMove): Promise<void> {
     const hostMove = host.getByRole('region', { name: 'Move together', exact: true });
     const guestMove = guest.getByRole('region', { name: 'Move together', exact: true });
     await expect(hostMove).toContainText('Your whole party moves together');
@@ -209,10 +218,8 @@ async function becomeFriends(host: Page, guest: Page): Promise<void> {
     await hostFriends.getByLabel('Friend username', { exact: true }).fill('bob');
     await hostFriends.getByRole('button', { name: 'Send friend request', exact: true }).click();
     await expect(hostFriends).toContainText('Friend request sent');
-    await guestFriends.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await guestFriends.getByRole('button', { name: 'Accept request', exact: true }).click();
     await expect(guestFriends.getByRole('button', { name: 'Remove friend', exact: true })).toBeEnabled();
-    await hostFriends.getByRole('button', { name: 'Refresh friends', exact: true }).click();
     await expect(hostFriends.getByRole('button', { name: 'Remove friend', exact: true })).toBeEnabled();
 }
 

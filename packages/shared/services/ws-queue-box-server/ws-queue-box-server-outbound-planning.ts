@@ -1,4 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
+import type { ALAccountViewAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
@@ -43,6 +44,7 @@ import { isWsQueueBoxServerReceiptRow } from './ws-queue-box-server-receipt-row.
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export type WsQueueBoxServerPreparedMessage =
+    | Readonly<{ kind: 'account-view'; accountView: ALAccountViewAuthority; message: ALOutboundTransportMessage; }>
     | Readonly<{
         kind: 'invalidated-session';
         peerId: string;
@@ -112,6 +114,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly recipientScope?: StateScope;
         readonly principalTargetId?: string;
         readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+        readonly accountView?: ALAccountViewAuthority;
         readonly referenceKey?: Key;
     }
 
@@ -184,7 +187,9 @@ export class WsQueueBoxServerOutboundPlanning {
         const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
         const awaitsRoute = shouldAwaitALRoute(normalized.effective);
         const resolveRecipients = phase === 'dequeue' || !awaitsRoute;
-        const resolved = this.readRecipients(message, this.toRecipientResolution(request, resolveRecipients, audience));
+        const resolved = request.accountView !== undefined
+            ? Either.ofRight([])
+            : this.readRecipients(message, this.toRecipientResolution(request, resolveRecipients, audience));
         if (resolved.right === undefined) {
             return toNoRouteDispatchPlan(
                 message,
@@ -224,10 +229,21 @@ export class WsQueueBoxServerOutboundPlanning {
             representNoCurrentRecipient: phase === 'dequeue',
             allowClusterRecipients: phase === 'dequeue' && request.clusterPublisherRegistered,
             audience,
-            capturedSessions: isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey) ||
-                request.principalTargetId !== undefined || request.sessionInvalidation !== undefined ||
-                this.#targetResolution.requiresFrozenAudience(message)
+            capturedSessions: this.readsCapturedSessions(message, request)
         };
+    }
+
+    /** A row whose audience was captured at admission resends only to those sessions, never re-resolving its targets. */
+    private readsCapturedSessions(
+        message: ALMessage,
+        request: Pick<
+            WsQueueBoxServerOutboundPlanning.Request,
+            'principalTargetId' | 'sessionInvalidation' | 'referenceKey'
+        >
+    ): boolean {
+        return isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey) ||
+            request.principalTargetId !== undefined || request.sessionInvalidation !== undefined ||
+            this.#targetResolution.requiresFrozenAudience(message);
     }
 
     private toPreparedRecipients(
@@ -235,7 +251,7 @@ export class WsQueueBoxServerOutboundPlanning {
         recipients: readonly WsServerResolvedRecipient[],
         request: Pick<
             WsQueueBoxServerOutboundPlanning.Request,
-            'recipientScope' | 'principalTargetId' | 'sessionInvalidation' | 'referenceKey'
+            'recipientScope' | 'principalTargetId' | 'sessionInvalidation' | 'accountView' | 'referenceKey'
         >
     ): readonly WsQueueBoxServerPreparedMessage[] {
         return toWsQueueBoxServerRecipientPreparedMessages({
@@ -260,19 +276,8 @@ export class WsQueueBoxServerOutboundPlanning {
         if (validateWsQueueBoxServerRecipientAuthority(message, request, request.referenceKey).length > 0) {
             return undefined;
         }
-        const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey);
-        const requested = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
-        const eligibleRequested = request.admittedAudience === undefined
-            ? requested
-            : requested.filter((peerId) => request.admittedAudience?.includes(peerId));
-        const recipients = directBroadcast || request.principalTargetId !== undefined ||
-                request.sessionInvalidation !== undefined || this.#targetResolution.requiresFrozenAudience(message)
-            ? this.#targetResolution.resolveCapturedSessionRecipients(
-                message,
-                eligibleRequested
-            )
-            : this.#targetResolution.resolveRepairRecipients(message, eligibleRequested);
-        if (recipients.length === 0) {
+        const recipients = this.readRepairRecipients(message, request);
+        if (recipients.length === 0 && request.accountView === undefined) {
             return undefined;
         }
 
@@ -287,6 +292,7 @@ export class WsQueueBoxServerOutboundPlanning {
             recipientScope: request.recipientScope,
             principalTargetId: request.principalTargetId,
             sessionInvalidation: request.sessionInvalidation,
+            accountView: request.accountView,
             ackTracking: toAckTrackingPlan(
                 effective,
                 recipients.map((recipient) => recipient.peerId),
@@ -294,6 +300,23 @@ export class WsQueueBoxServerOutboundPlanning {
             ),
             repairTracking: request.repair
         };
+    }
+
+    /** An account view selects its principal's current sockets at the send, so its repair names no recipient here. */
+    private readRepairRecipients(
+        message: ALMessage,
+        request: ALOutboundRepairRequest
+    ): readonly WsServerResolvedRecipient[] {
+        if (request.accountView !== undefined) {
+            return [];
+        }
+        const requested = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
+        const eligible = request.admittedAudience === undefined
+            ? requested
+            : requested.filter((peerId) => request.admittedAudience?.includes(peerId));
+        return this.readsCapturedSessions(message, request)
+            ? this.#targetResolution.resolveCapturedSessionRecipients(message, eligible)
+            : this.#targetResolution.resolveRepairRecipients(message, eligible);
     }
 
     isBroadcastWithoutRecipients(message: ALMessage, error: string): boolean {
@@ -388,6 +411,7 @@ function toCapturedAuthority(
     return {
         ...(request.admittedAudience === undefined ? {} : { admittedAudience: request.admittedAudience }),
         admittedConnectionGenerationIds: request.admittedConnectionGenerationIds,
+        ...(request.accountView === undefined ? {} : { accountView: request.accountView }),
         ...(request.sessionInvalidation === undefined ? {} : { sessionInvalidation: request.sessionInvalidation }),
         ...(request.recipientScope === undefined ? {} : { recipientScope: request.recipientScope }),
         ...(request.principalTargetId === undefined ? {} : { principalTargetId: request.principalTargetId })

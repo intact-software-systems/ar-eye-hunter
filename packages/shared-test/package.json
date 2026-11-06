@@ -38,10 +38,11 @@
     "bb:remote:provider-parity:dry": "RALLAR_BB_RTC_PROVIDER=rallar-remote-browser deno run -A black-box-runner/scenario-black-box.ts -c black-box-runner/examples/rtc-rallar-browser-provider-mode-parity.json --dry-run --artifact-dir=../../.artifacts/shared-test/provider-mode-parity-remote-dry",
     "build": "npm run check:ts",
     "check": "npm run check:ts && npm run check:deno",
-    "check:deno": "deno check black-box-runner/scenario-black-box.ts black-box-runner/recipe-matrix.mts black-box-runner/preflight/live-preflight.ts black-box-runner/rallar-browser-live-validation.mts black-box-runner/artifacts/artifact-reader.ts black-box-runner/traffic-plan-reducer.ts black-box-runner/api-v1-black-box-run.mts black-box-runner/cluster-proofs/api-v1-group-delta-cluster-proof.mts black-box-runner/cluster-proofs/api-v1-auth-logout-cluster-proof.mts",
+    "check:deno": "deno check black-box-runner/scenario-black-box.ts black-box-runner/recipe-matrix.mts black-box-runner/preflight/live-preflight.ts black-box-runner/rallar-browser-live-validation.mts black-box-runner/artifacts/artifact-reader.ts black-box-runner/traffic-plan-reducer.ts black-box-runner/api-v1-black-box-run.mts black-box-runner/cluster-proofs/api-v1-group-delta-cluster-proof.mts black-box-runner/cluster-proofs/api-v1-auth-logout-cluster-proof.mts black-box-runner/cluster-proofs/api-v1-view-push-cluster-proof.mts",
     "check:ts": "tsc -p tsconfig.json --noEmit",
     "lint": "npm run check:ts",
     "rtc:browser:validate": "deno run -A black-box-runner/rallar-browser-live-validation.mts",
-    "typecheck": "npm run check:ts"
+    "typecheck": "npm run check:ts",
+    "bb:api-v1:postgres:view-push": "deno run -A black-box-runner/cluster-proofs/api-v1-view-push-cluster-proof.mts --backend=postgres --port=18680 --secondary-port=18681 --tertiary-port=18682 --artifact-dir=../../tmp/api-v1-black-box/postgres-view-push"
   }
 }

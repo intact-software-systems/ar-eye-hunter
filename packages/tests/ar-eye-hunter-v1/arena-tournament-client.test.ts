@@ -8,12 +8,15 @@ import {
 import { finishArenaMatchIfDue } from '@ar-eye-hunter/arena-match.ts';
 import { EMPTY_INPUT } from '@ar-eye-hunter/arena-player-state.ts';
 import type { ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
+import { ARENA_TOURNAMENT_SNAPSHOT_SENDER, ARENA_TOURNAMENT_SNAPSHOT_TOPIC, encodeArenaTournamentFrame } from '@ar-eye-hunter/arena-tournament-stream.ts';
 import { createTournamentArena, type TournamentArenaInput } from '@ar-eye-hunter/tournament-arena.ts';
 import type { RallarAuthState } from '@shared-web/browser/session/rallar-auth-facade.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 
 import { ArenaTournamentClient } from '../../../apps/ar-eye-hunter-v1/src/game/tournament/arena-tournament-client.ts';
+import { ViewPushBrowser } from '../shared-web/api/view-push-browser.ts';
 import { createManualTimers } from '../shared/resilience/manual-timers.ts';
 
 vi.mock('@shared-web/browser/api-client-config.ts', () => ({ readApiBaseUrl: () => 'http://api.test' }));
@@ -43,13 +46,11 @@ it('resumes native input sequence and sends only controls with the captured shot
     expect(test.writes).toHaveLength(1);
 });
 
-it('dispatches one captured shot after a held mutation and refresh without another controls call', async () => {
+it('dispatches one captured shot after a held input without reading another snapshot', async () => {
     const test = new TournamentBrowser();
     await test.owner.start();
     const post = Promise.withResolvers<Response>();
     test.heldPost = post;
-    const read = Promise.withResolvers<Response>();
-    test.heldRead = read;
     test.owner.sendControls({ controls: { ...EMPTY_INPUT, moveX: 1 }, yaw: 0, pitch: 0 });
     const shot = { controls: { ...EMPTY_INPUT, fire: true }, yaw: 1.2, pitch: -0.3 };
     test.owner.sendControls(shot);
@@ -59,10 +60,6 @@ it('dispatches one captured shot after a held mutation and refresh without anoth
     await test.timers.advance(50);
     expect(test.writes).toHaveLength(1);
     post.resolve(test.applied());
-    await vi.waitFor(() => expect(test.reads).toBe(2));
-    expect(test.owner.getState().busy).toBe(true);
-    expect(test.writes).toHaveLength(1);
-    read.resolve(Response.json(test.snapshot));
     await vi.waitFor(() => expect(test.owner.getState().busy).toBe(false));
     await test.timers.advance(0);
     await vi.waitFor(() => expect(test.writes).toHaveLength(2));
@@ -70,6 +67,78 @@ it('dispatches one captured shot after a held mutation and refresh without anoth
     await vi.waitFor(() => expect(test.owner.getState().busy).toBe(false));
     await test.timers.advance(1000);
     expect(test.writes).toHaveLength(2);
+    expect(test.reads).toBe(1);
+});
+
+it('keeps the newer authorized frame when an older reconnect GET finishes and ignores a different attempt', async () => {
+    const test = new TournamentBrowser();
+    await test.owner.start();
+    const next = { ...test.snapshot, attemptRevision: 3 };
+    const held = Promise.withResolvers<Response>();
+    test.heldRead = held;
+    test.browser.reopen();
+    await vi.waitFor(() => expect(test.reads).toBe(2));
+    await test.push(next);
+    await vi.waitFor(() => expect(test.owner.getState().view?.tournament?.attemptRevision).toBe(3));
+    held.resolve(Response.json(test.snapshot));
+    await test.push({ ...next, attemptRevision: 4, binding: { ...next.binding, attemptId: 'other' } });
+    await test.push({ ...next, status: 'cancelled', attemptRevision: 5 }, 'mallory');
+    const terminal = { ...next, status: 'finished' as const, attemptRevision: 6 };
+    await test.push(terminal);
+    await vi.waitFor(() => expect(test.owner.getState().view?.tournament?.status).toBe('finished'));
+    await test.push({ ...next, attemptRevision: 7 });
+    await test.timers.advance(1000);
+    expect(test.owner.getState().view?.tournament).toEqual(terminal);
+    expect(test.reads).toBe(2);
+});
+
+it('retains the final revision received before the initial authorized GET without accepting a delayed older frame', async () => {
+    const test = new TournamentBrowser();
+    const held = Promise.withResolvers<Response>();
+    test.heldRead = held;
+    const started = test.owner.start();
+    const terminal = { ...test.snapshot, attemptRevision: 4, status: 'cancelled' as const };
+    await test.push(terminal);
+    await test.push({ ...test.snapshot, attemptRevision: 2 });
+    expect(test.owner.getState().view).toBeNull();
+    held.resolve(Response.json(test.snapshot));
+    await started;
+    await vi.waitFor(() => expect(test.owner.getState().view?.tournament).toEqual(terminal));
+    expect(test.reads).toBe(1);
+});
+
+it.each([503, 403])('a newer frame survives an unavailable read, but never an authority refusal (%s)', async (status) => {
+    const test = new TournamentBrowser();
+    await test.owner.start();
+    const held = Promise.withResolvers<Response>();
+    test.heldRead = held;
+    const reading = test.owner.refresh();
+    await vi.waitFor(() => expect(test.reads).toBe(2));
+    const terminal = { ...test.snapshot, attemptRevision: 4, status: 'cancelled' as const };
+    await test.push(terminal);
+    await vi.waitFor(() => expect(test.owner.getState().view?.tournament).toEqual(terminal));
+    test.readFailure = status;
+    held.resolve(Response.json({ message: 'Read failed' }, { status }));
+    await reading;
+    expect(test.owner.getState().view?.tournament ?? null).toEqual(status === 503 ? terminal : null);
+});
+
+it('defers a reconnect read queued behind hydration while hidden and recovers on foreground return', async () => {
+    const test = new TournamentBrowser();
+    const held = Promise.withResolvers<Response>();
+    test.heldRead = held;
+    const start = test.owner.start();
+    await vi.waitFor(() => expect(test.reads).toBe(1));
+    test.browser.reopen();
+    test.active = false;
+    test.activity.publishLatest();
+    held.resolve(Response.json(test.snapshot));
+    await start;
+    await test.timers.advance(1000);
+    expect(test.reads).toBe(1);
+    test.active = true;
+    test.activity.publishLatest();
+    await vi.waitFor(() => expect(test.reads).toBe(2));
 });
 
 it('dispatches spacing-blocked fire at 50ms without a frame and never repeats stale movement', async () => {
@@ -357,6 +426,7 @@ class TournamentBrowser {
         throw error;
     });
     readonly owner: ArenaTournamentClient;
+    readonly browser = new ViewPushBrowser(() => this.session);
     snapshot = createSnapshot();
     session: AuthSession = { clientId: 'alice', sessionId: 'session', username: 'alice', accessToken: 'test-only', expiresAtEpochMs: 9999999999999 };
     active = true;
@@ -371,12 +441,25 @@ class TournamentBrowser {
         this.snapshot = createSnapshot(roomId);
         vi.stubGlobal('fetch', vi.fn<typeof fetch>((url, options) => this.request(String(url), options)));
         this.owner = new ArenaTournamentClient({
+            browser: this.browser,
             auth: { session: () => this.session, onChange: (listener) => this.auth.subscribe(listener).unsubscribe },
             activity: { isActive: () => this.active, onChange: (listener) => this.activity.subscribe(listener).unsubscribe },
             timers: this.timers,
             createId: () => crypto.randomUUID()
         }, roomId);
         owners.push(this.owner);
+    }
+
+    async push(snapshot: ArenaTournamentSnapshot, sender = ARENA_TOURNAMENT_SNAPSHOT_SENDER): Promise<void> {
+        const encoded = await encodeArenaTournamentFrame(snapshot);
+        this.browser.deliver(newALBroadcastMessage(
+            sender,
+            newALRoute(ARENA_TOURNAMENT_SNAPSHOT_TOPIC, snapshot.binding.roomRef.groupId, snapshot.binding.gameId),
+            'room',
+            ARENA_TOURNAMENT_SNAPSHOT_TOPIC,
+            encoded,
+            { groupRef: snapshot.binding.roomRef, ttlMs: 2500 }
+        ));
     }
 
     async queueSpacingShot(): Promise<void> {
@@ -425,6 +508,7 @@ function createSnapshot(roomId = 'room'): ArenaTournamentSnapshot {
             principalIds: ['alice', 'bob']
         },
         status: 'playing',
+        attemptRevision: 1,
         observedAtEpochMs: 1000,
         state: { ...state, players: state.players.map((player) => ({ ...player, input: { ...player.input, sequence: 7 } })) }
     };

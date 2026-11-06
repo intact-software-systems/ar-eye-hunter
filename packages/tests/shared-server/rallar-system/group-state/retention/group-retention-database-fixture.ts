@@ -1,4 +1,5 @@
-import { expect } from 'vitest';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import assert from 'node:assert/strict';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -38,31 +39,30 @@ export async function createRetentionDatabaseFixture(): Promise<RetentionDatabas
     const events = new PSqlGroupStateEventRepository(storage.sql);
     const repository = new GroupStateRepository(runtime, events);
     const clock = { nowEpochMs: Date.now() };
-    const config = { serviceId: 'retention-test', now: () => clock.nowEpochMs };
+    const config = { finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS, serviceId: 'retention-test', now: () => clock.nowEpochMs };
     const mutations = createGroupStateService({
         runtimeRepository: runtime,
         groupStateEventStore: events,
-        finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         readPlannedLayoutRow: async () => null,
         readAcceptedLayoutRow: async () => null,
         ...config
     });
     const owner = createTestAuthSession('owner');
     await new AuthSessionRepository(runtime).putSession(owner);
-    const retention = new GroupRetentionService({ repository, groupOwnedAppData: { read: async () => [] } }, config);
+    const retention = new GroupRetentionService({ runtime, repository, groupOwnedAppData: { read: async () => [] } }, config);
     return Object.assign(clock, { storage, runtime, repository, mutations, retention, owner });
 }
 
-export async function seedRetentionRoom(fixture: RetentionDatabaseFixture): Promise<void> {
+export async function seedRetentionRoom(fixture: RetentionDatabaseFixture, ref: GroupRef = RETENTION_REF): Promise<void> {
     const { computed } = await prepareMutation(
         fixture,
         mutationDescriptor({
             operation: 'createGroup',
-            scope: RETENTION_REF,
-            groupId: RETENTION_REF.groupId,
+            scope: ref,
+            groupId: ref.groupId,
             request: {
                 requestId: 'create-retention',
-                groupId: RETENTION_REF.groupId,
+                groupId: ref.groupId,
                 displayName: 'Retained room',
                 kind: 'room',
                 joinMode: 'open',
@@ -92,7 +92,7 @@ export async function retryMutation(fixture: RetentionDatabaseFixture, ingress: 
     };
     const read = await fixture.mutations.read(command);
     const computed = fixture.mutations.compute(command, read);
-    expect(fixture.mutations.validate(command, read, computed)).toEqual([]);
+    assert.deepEqual(fixture.mutations.validate(command, read, computed), []);
     return computed;
 }
 
@@ -111,7 +111,7 @@ export async function prepareRetention(fixture: RetentionDatabaseFixture, reques
     const ingress = fixture.retention.capture({ groupRef: RETENTION_REF, requestId, observedAtEpochMs: fixture.nowEpochMs });
     const read = await fixture.retention.read(ingress, { attemptCount: 1, traceId: 'trace-group-retention-database-fixture' });
     const computed = fixture.retention.compute(read);
-    expect(fixture.retention.validate(read, computed)).toEqual([]);
+    assert.deepEqual(fixture.retention.validate(read, computed), []);
     return { ingress, computed };
 }
 

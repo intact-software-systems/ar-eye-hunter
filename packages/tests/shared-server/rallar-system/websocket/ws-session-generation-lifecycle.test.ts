@@ -93,7 +93,7 @@ describe('WebSocket session generation lifecycle persisted state', () => {
             generationStartedAtEpochMs: 1_000,
             expireAtEpochMs: 10_000
         });
-        await repository.upsert('ws-session-close-high-water', key, value, 9_999);
+        await repository.upsert({ namespace: 'ws-session-close-high-water', key, value, expireAtTimestamp: 9_999 });
 
         await expect(lifecycle.read(identity)).rejects.toThrow(
             'WebSocket session close high-water row expiry is invalid'
@@ -128,10 +128,7 @@ describe('WebSocket session generation lifecycle persisted state', () => {
             expireAtEpochMs: 10_000
         });
         await repository.upsert(
-            'ws-session-close-high-water',
-            key,
-            predecessorValue,
-            10_000
+            { namespace: 'ws-session-close-high-water', key, value: predecessorValue, expireAtTimestamp: 10_000 }
         );
 
         await expect(lifecycle.read(identity)).rejects.toThrow(

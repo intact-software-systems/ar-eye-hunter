@@ -67,6 +67,9 @@ export function assertRallarServerWsPublishInput(input: RallarServerWsPublishInp
 export async function publishRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
+    if (input.topic.participation === 'server' && input.fanout === 'outbox') {
+        return toFailedPublishResult(input, 'A server topic publishes only on its live carrier.');
+    }
     if (input.audience !== undefined) {
         return await publishAuthorizedRallarServerWsMessage(input);
     }
@@ -177,6 +180,10 @@ async function publishRallarServerWsFanout(
                     nowEpochMs: input.nowEpochMs
                 }),
                 admittedPeerIds: input.admittedPeerIds,
+                roomSessionGenerations: input.topic.participation === 'server'
+                    ? input.audience?.recipientConnectionGenerationIds
+                    : undefined,
+                requireAuthenticatedRecipient: input.topic.participation === 'server' || undefined,
                 inboundScope: input.inboundScope,
                 recipientScope: input.audience && groupRef
                     ? { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId }

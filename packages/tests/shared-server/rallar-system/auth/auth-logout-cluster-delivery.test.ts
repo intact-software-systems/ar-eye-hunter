@@ -1,8 +1,9 @@
+import { toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import { installQueueBoxPubSubBridge, toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import {
     toWsOutboxProvenanceKey,
@@ -146,7 +147,12 @@ describe('auth logout exact-session cluster delivery', () => {
             return digest(algorithm, data);
         });
         const key = `v1:${JSON.stringify(['auth.session.logout', 'logout', fixture.session.sessionId])}`;
-        await fixture.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, 'occupied-proof', fixture.session.expiresAtEpochMs);
+        await fixture.repository.upsert({
+            namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+            key,
+            value: 'occupied-proof',
+            expireAtTimestamp: fixture.session.expiresAtEpochMs
+        });
         const result = await runAuthInboxCommand({
             ...fixture.auth,
             minimumEntries: 2,
@@ -253,7 +259,7 @@ async function issueSession(auth: AuthInboxTestRuntime, repository: FakeRuntimeS
 
 async function createCluster(repository: FakeRuntimeStateRepository, sessionId: string, cluster: boolean): Promise<LogoutDeliveryFixture> {
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
-    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+    const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     const engine = new InboxOutboxEngine();
     const remoteEngine = new InboxOutboxEngine();
     const remoteSocket = new JsonWebSocketServer();

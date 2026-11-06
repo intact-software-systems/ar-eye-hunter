@@ -16,7 +16,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { RFC_7517_PUBLICATION_KEY } from '../../../../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../../../group-state/group-barrier-repository.ts';
 import {
     applyPublicationMutation,
     GRANT_ROOM,
@@ -38,10 +38,12 @@ describe('RTC topology input fingerprint persistence', () => {
         const repository = new RtcTopologyInputFingerprintRepository(runtime);
         const write = computeRtcTopologyInputFingerprintWrite(GROUP_REF, FINGERPRINT);
         await runtime.upsert(
-            RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
-            write.key,
-            write.value,
-            Date.parse(write.expireAtIsoTimestamp)
+            {
+                namespace: RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
+                key: write.key,
+                value: write.value,
+                expireAtTimestamp: Date.parse(write.expireAtIsoTimestamp)
+            }
         );
 
         await expect(repository.findFingerprint(GROUP_REF)).resolves.toBe(FINGERPRINT);
@@ -68,10 +70,7 @@ describe('RTC topology input fingerprint persistence', () => {
         const repository = new RtcTopologyInputFingerprintRepository(runtime);
         const key = groupStateGroupStorageKey(GROUP_REF);
         await runtime.upsert(
-            RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
-            key,
-            JSON.stringify(value),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            { namespace: RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE, key, value: JSON.stringify(value), expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
 
         await expect(repository.findFingerprint(GROUP_REF)).rejects.toBeInstanceOf(
@@ -87,10 +86,7 @@ describe('RTC topology input fingerprint persistence', () => {
         const repository = new RtcTopologyInputFingerprintRepository(runtime);
         const key = groupStateGroupStorageKey(GROUP_REF);
         await runtime.upsert(
-            RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
-            key,
-            '{',
-            NEVER_EXPIRE_AT_TIMESTAMP
+            { namespace: RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE, key, value: '{', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
 
         await expect(repository.findFingerprint(GROUP_REF)).rejects.toBeInstanceOf(

@@ -155,7 +155,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
         if (!groupBefore || !summaryBefore) {
             throw new Error('Expected group predecessors');
         }
-        await runtime.upsert('group-state:groups', groupBefore.key, groupBefore.value, 0);
+        await runtime.upsert({ namespace: 'group-state:groups', key: groupBefore.key, value: groupBefore.value, expireAtTimestamp: 0 });
         const expiredGroup = await runtime.findEntry('group-state:groups', groupBefore.key);
         if (!expiredGroup) {
             throw new Error('Expected expired group predecessor');
@@ -189,6 +189,6 @@ describe('GroupStateService guarded runtime-state batch', () => {
     });
 });
 
-export function groupRef(groupId: string): GroupRef {
+function groupRef(groupId: string): GroupRef {
     return { ...SCOPE, groupId };
 }

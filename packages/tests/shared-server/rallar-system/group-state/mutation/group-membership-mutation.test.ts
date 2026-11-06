@@ -13,6 +13,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestAuthSession, createTestGroupStateService } from '../group-state-test-runtime.ts';
+import type { ComputedMutationAttempt } from './group-publication-grant-test-runtime.ts';
 
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
 import { subscriptionRowFor, writeSubscriptionRow } from './group-topic-subscription-test-runtime.ts';
@@ -442,10 +443,12 @@ async function writeGrantRow(
         }
     };
     await runtime.upsert(
-        PUBLICATION_GRANTS_NAMESPACE,
-        groupStatePublicationGrantStorageKey(grant, principalId),
-        JSON.stringify(grant),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: PUBLICATION_GRANTS_NAMESPACE,
+            key: groupStatePublicationGrantStorageKey(grant, principalId),
+            value: JSON.stringify(grant),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
     return grant;
 }
@@ -465,7 +468,7 @@ async function computeMutation(
     runtime: GroupBarrierRepository,
     principalId: string,
     descriptor: GroupMutationDescriptor
-) {
+): Promise<ComputedMutationAttempt> {
     const service = createService(runtime, 3_000);
     const session = createTestAuthSession(principalId);
     await new AuthSessionRepository(runtime).putSession(session);

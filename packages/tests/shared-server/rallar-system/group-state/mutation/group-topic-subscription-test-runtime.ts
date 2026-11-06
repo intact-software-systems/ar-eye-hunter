@@ -14,7 +14,7 @@ import type { SubscribeGroupTopicRequest } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import type { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import type { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import type { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createService } from '../presence/group-presence-test-runtime.ts';
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
 import { computeDescriptorMutation, GRANT_ROOM } from './group-publication-grant-test-runtime.ts';
@@ -65,7 +65,7 @@ export async function computeSubscriptionMutation(
     input: TopicSubscriptionDescriptorInput,
     nowEpochMs = SUBSCRIPTION_NOW_EPOCH_MS
 ) {
-    return await computeDescriptorMutation(runtime, input.actorPrincipalId, subscriptionDescriptor(input), nowEpochMs);
+    return await computeDescriptorMutation({ runtime, actorPrincipalId: input.actorPrincipalId, descriptor: subscriptionDescriptor(input), nowEpochMs });
 }
 
 export async function applySubscriptionMutation(
@@ -73,7 +73,13 @@ export async function applySubscriptionMutation(
     input: TopicSubscriptionDescriptorInput,
     options: Readonly<{ nowEpochMs?: number; attemptCount?: number; }> = {}
 ) {
-    const service = createService(runtime, options.nowEpochMs ?? SUBSCRIPTION_NOW_EPOCH_MS, options.attemptCount);
+    const service = createService({
+        runtimeRepository: runtime,
+        nowEpochMs: options.nowEpochMs ?? SUBSCRIPTION_NOW_EPOCH_MS,
+        attemptCount: options.attemptCount ?? 1,
+        injectedRandomId: undefined,
+        timing: undefined
+    });
     const sessionId = input.sessionId ?? sessionIdOf(input.actorPrincipalId);
     const request = subscriptionRequest(input);
     return input.operation === 'subscribeGroupTopic'
@@ -82,11 +88,15 @@ export async function applySubscriptionMutation(
 }
 
 /** An active client-state session row whose generation is the live WS connection generation. */
+export interface WriteClientSessionRowInput {
+    readonly runtime: GroupBarrierRepository;
+    readonly principalId: string;
+    readonly generationId: string;
+    readonly overrides: Partial<Pick<ClientSession, 'expiresAtEpochMs' | 'sessionId' | 'clientInstanceId'>>;
+}
+
 export async function writeClientSessionRow(
-    runtime: GroupBarrierRepository,
-    principalId: string,
-    generationId: string,
-    overrides: Partial<Pick<ClientSession, 'expiresAtEpochMs' | 'sessionId' | 'clientInstanceId'>> = {}
+    { runtime, principalId, generationId, overrides }: WriteClientSessionRowInput
 ): Promise<ClientSession> {
     const session: ClientSession = {
         ...SCOPE,
@@ -107,10 +117,12 @@ export async function writeClientSessionRow(
         disconnectReason: null
     };
     await runtime.upsert(
-        CLIENT_STATE_SESSIONS_NAMESPACE,
-        clientStateSessionStorageKey(session),
-        JSON.stringify(session),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+            key: clientStateSessionStorageKey(session),
+            value: JSON.stringify(session),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
     return session;
 }
@@ -146,6 +158,11 @@ export async function writeSubscriptionRow(
     subscription: GroupTopicSubscription
 ): Promise<string> {
     const key = groupStateTopicSubscriptionStorageKey(ref, subscription.sessionId, subscription.topicId);
-    await runtime.upsert(SUBSCRIPTIONS_NAMESPACE, key, JSON.stringify(subscription), subscription.leaseExpiresAtEpochMs);
+    await runtime.upsert({
+        namespace: SUBSCRIPTIONS_NAMESPACE,
+        key,
+        value: JSON.stringify(subscription),
+        expireAtTimestamp: subscription.leaseExpiresAtEpochMs
+    });
     return key;
 }

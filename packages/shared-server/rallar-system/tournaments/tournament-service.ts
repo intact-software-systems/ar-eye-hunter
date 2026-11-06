@@ -2,6 +2,7 @@ import type { TournamentMutationResult } from '@shared/api/tournaments/tournamen
 import type { TournamentRequest } from '@shared/api/tournaments/tournament-request.ts';
 import type { TournamentRef } from '@shared/api/tournaments/tournament-types.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import {
     writeRuntimeStateConditionalBatch,
     type RuntimeStateConditionalBatch
@@ -23,6 +24,7 @@ import { decodeTournamentGameProfiles, type TournamentGameProfile } from './tour
 import type { TournamentPublicationRead } from './tournament-publication.ts';
 import type { TournamentRepository } from './tournament-repository.ts';
 import { TOURNAMENT_SIGNAL_RETENTION_MS } from './tournament-signal.ts';
+import type { TournamentWatchFence } from './tournament-watch-fence.ts';
 
 export namespace TournamentService {
     export interface ScheduleIdentity {
@@ -58,7 +60,9 @@ export namespace TournamentService {
         readonly command: Command;
         readonly nowEpochMs: number;
         readonly bracket: TournamentRepository.Read;
-        readonly publication: TournamentPublicationRead | null;
+        readonly publication: TournamentPublicationRead;
+        readonly watchFence: TournamentWatchFence | null;
+        readonly watchers: readonly string[];
         readonly sessions: readonly RuntimeStateEntryValue<PersistedAuthSession>[];
         readonly admission: NewGroupCohortAdmissionInput | null;
         readonly serviceId: string;
@@ -110,6 +114,10 @@ export class TournamentService {
             throw new TypeError('Tournament attempt lacks winning ingress facts');
         }
         const bracket = await this.dependencies.repository.read(command.ref);
+        // Capture the creation fence before the watcher audience: a later registration must invalidate creation.
+        const watchFence = bracket.record === null
+            ? await this.readCreationWatchFence(command.ref)
+            : null;
         const request = command.request;
         const checkIns = request.type === 'start'
             ? (bracket.record?.checkIns ?? []).filter((consent) =>
@@ -136,9 +144,9 @@ export class TournamentService {
         return {
             command,
             bracket,
-            publication: request.type === 'publish' || request.type === 'unlist'
-                ? await this.dependencies.repository.readPublication(command.ref)
-                : null,
+            publication: await this.dependencies.repository.readPublication(command.ref),
+            watchFence,
+            watchers: await this.dependencies.repository.readWatchers(command.ref, nowEpochMs),
             sessions,
             admission,
             nowEpochMs,
@@ -165,6 +173,17 @@ export class TournamentService {
             await writeGroupMutation(transaction, admission);
         }
         await writeAppOutboxInserts(transaction, computed.outbox);
+    }
+    private async readCreationWatchFence(ref: TournamentRef): Promise<TournamentWatchFence> {
+        const fence = await this.dependencies.repository.readWatchFence(ref);
+        if (fence.phase === 'created') {
+            // A creator can commit between the bracket and fence reads. Only stable absence is corrupt.
+            if ((await this.dependencies.repository.readRecord(ref)).entry !== null) {
+                throw new RuntimeStateWriteConflictError();
+            }
+            throw new TypeError('An absent bracket has a created-resource watch fence');
+        }
+        return fence;
     }
     private async readAdmission(
         input: TournamentService.AdmissionReadInput

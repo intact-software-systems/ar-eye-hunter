@@ -4,7 +4,9 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
-    RuntimeStateOptimisticTransactionRepositoryLike
+    RuntimeStateOptimisticTransactionRepositoryLike,
+    RuntimeStateRevisionWriteInput,
+    RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -202,37 +204,28 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
         if (!this.serializeGroupTestTransactions) {
             return await super.begin(fn);
         }
-        let release!: () => void;
+        const pending = Promise.withResolvers<void>();
         const previous = this.barrierTransactionTail;
-        this.barrierTransactionTail = new Promise<void>((resolve) => {
-            release = resolve;
-        });
+        this.barrierTransactionTail = pending.promise;
         await previous;
         try {
             return await super.begin(fn);
         }
         finally {
-            release();
+            pending.resolve();
         }
     }
 
     override insertIfAbsent(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number
+        { namespace, key, value, expireAtTimestamp }: RuntimeStateWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.conditionalOperations.push(`insert:${namespace}`);
         this.recordGuard(namespace);
-        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return super.insertIfAbsent({ namespace, key, value, expireAtTimestamp });
     }
 
     override async upsertIfRevision(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-        expectedRevision: number
+        { namespace, key, value, expireAtTimestamp, expectedRevision }: RuntimeStateRevisionWriteInput
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.conditionalOperations.push(`update:${namespace}`);
         this.recordGuard(namespace);
@@ -258,7 +251,7 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
             this.presenceSummaryConflictsRemaining -= 1;
             return { status: 'conflict' };
         }
-        return await super.upsertIfRevision(namespace, key, value, expireAtTimestamp, expectedRevision);
+        return await super.upsertIfRevision({ namespace, key, value, expireAtTimestamp, expectedRevision });
     }
 
     override deleteIfRevision(
@@ -350,27 +343,21 @@ type ManualRepositoryGate = Readonly<{
 
 function createManualRepositoryGate(key: string): ManualRepositoryGate {
     let arrivals = 0;
-    let resolveFirstArrival!: () => void;
-    let release!: () => void;
-    const firstArrival = new Promise<void>((resolve) => {
-        resolveFirstArrival = resolve;
-    });
-    const released = new Promise<void>((resolve) => {
-        release = resolve;
-    });
+    const firstArrival = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
     return {
         key,
         arrive: async () => {
             arrivals += 1;
-            resolveFirstArrival();
-            await released;
+            firstArrival.resolve();
+            await released.promise;
         },
         control: (onRelease) => ({
-            firstArrival,
+            firstArrival: firstArrival.promise,
             arrivalCount: () => arrivals,
             release: () => {
                 onRelease();
-                release();
+                released.resolve();
             }
         })
     };

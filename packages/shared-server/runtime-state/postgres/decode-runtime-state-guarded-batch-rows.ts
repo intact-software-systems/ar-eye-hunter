@@ -23,7 +23,7 @@ export interface RuntimeStateGuardedBatchDatabaseRow {
 interface DecodedRuntimeStateGuardedBatchRow {
     readonly resultKind: 'guard' | 'effect';
     readonly effectId: string | null;
-    readonly operation: 'insert' | 'update' | 'delete' | 'put';
+    readonly operation: 'insert' | 'update' | 'update-exact' | 'delete' | 'put';
     readonly namespace: string;
     readonly key: string;
     readonly revision: number;
@@ -53,23 +53,7 @@ function decodeGuardedBatchRows(
     batch: RuntimeStateGuardedBatch,
     rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
 ): RuntimeStateGuardedBatchResult {
-    requireDenseRows(rows);
-    let guardRow: DecodedRuntimeStateGuardedBatchRow | undefined;
-    const effectRows = new Map<string, DecodedRuntimeStateGuardedBatchRow>();
-    for (const inputRow of rows) {
-        const row = decodeRow(inputRow);
-        if (row.resultKind === 'guard') {
-            if (row.effectId !== null || guardRow !== undefined) {
-                throw invalidDatabaseResult('expected exactly one unique guard row');
-            }
-            guardRow = row;
-            continue;
-        }
-        if (row.effectId === null || effectRows.has(row.effectId)) {
-            throw invalidDatabaseResult('effect rows require unique effect IDs');
-        }
-        effectRows.set(row.effectId, row);
-    }
+    const { guardRow, effectRows } = collectGuardedBatchRows(rows);
 
     if (guardRow === undefined) {
         if (effectRows.size > 0) {
@@ -125,6 +109,33 @@ function decodeGuardedBatchRows(
     };
 }
 
+interface CollectedGuardedBatchRows {
+    readonly guardRow: DecodedRuntimeStateGuardedBatchRow | undefined;
+    readonly effectRows: Map<string, DecodedRuntimeStateGuardedBatchRow>;
+}
+
+function collectGuardedBatchRows(rows: readonly RuntimeStateGuardedBatchDatabaseRow[]): CollectedGuardedBatchRows {
+    requireDenseRows(rows);
+    let guardRow: DecodedRuntimeStateGuardedBatchRow | undefined;
+    const effectRows = new Map<string, DecodedRuntimeStateGuardedBatchRow>();
+    for (const inputRow of rows) {
+        const row = decodeRow(inputRow);
+        if (row.resultKind === 'guard') {
+            if (row.effectId !== null || guardRow !== undefined) {
+                throw invalidDatabaseResult('expected exactly one unique guard row');
+            }
+            guardRow = row;
+            continue;
+        }
+        if (row.effectId === null || effectRows.has(row.effectId)) {
+            throw invalidDatabaseResult('effect rows require unique effect IDs');
+        }
+        effectRows.set(row.effectId, row);
+    }
+
+    return { guardRow, effectRows };
+}
+
 function decodeRow(
     row: RuntimeStateGuardedBatchDatabaseRow
 ): DecodedRuntimeStateGuardedBatchRow {
@@ -140,6 +151,7 @@ function decodeRow(
     if (
         operation !== 'insert' &&
         operation !== 'update' &&
+        operation !== 'update-exact' &&
         operation !== 'delete' &&
         operation !== 'put'
     ) {

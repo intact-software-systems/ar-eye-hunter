@@ -10,16 +10,19 @@ import { createTracedApiTestApp } from '../services/create-traced-api-test-app.t
 
 function dependencies(): FriendsRouteDependencies {
     return {
-        requireSession: async () => ({
-            clientId: 'alice',
-            username: 'alice',
-            accessToken: 'test-token',
-            sessionId: 'alice-session',
-            issuedAtEpochMs: 1,
-            expiresAtEpochMs: 10000
-        }),
-        reader: { read: async (principalId) => ({ principalId, shareOnline: false, contacts: [], invitations: [] }) },
-        mutation: { submit: async ({ command }) => Either.ofRight({ principalId: command.principalId, requestId: command.requestId, status: 'applied' }) },
+        requireSession: () =>
+            Promise.resolve({
+                clientId: 'alice',
+                username: 'alice',
+                accessToken: 'test-token',
+                sessionId: 'alice-session',
+                issuedAtEpochMs: 1,
+                expiresAtEpochMs: 10000
+            }),
+        reader: { read: (principalId) => Promise.resolve({ principalId, observedAtEpochMs: 1000, shareOnline: false, contacts: [], invitations: [] }) },
+        mutation: {
+            submit: ({ command }) => Promise.resolve(Either.ofRight({ principalId: command.principalId, requestId: command.requestId, status: 'applied' }))
+        },
         mutationQuota: new RateLimiterPolicy(1000, 100)
     };
 }
@@ -30,15 +33,15 @@ Deno.test('friends reads and mutations bind authority to the authenticated calle
     registerFriendsRoutes(app, {
         ...dependencies(),
         mutation: {
-            submit: async ({ command }) => {
+            submit: ({ command }) => {
                 commands.push(command);
-                return Either.ofRight({ principalId: command.principalId, requestId: command.requestId, status: 'applied' });
+                return Promise.resolve(Either.ofRight({ principalId: command.principalId, requestId: command.requestId, status: 'applied' }));
             }
         }
     });
     const view = await app.request('/api/friends/apps/game/workspaces/default?principalId=bob');
     assert.equal(view.status, 200);
-    assert.deepEqual(await view.json(), { principalId: 'alice', shareOnline: false, contacts: [], invitations: [] });
+    assert.deepEqual(await view.json(), { principalId: 'alice', observedAtEpochMs: 1000, shareOnline: false, contacts: [], invitations: [] });
     const response = await app.request('/api/friends/requests/friends-request-number-1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

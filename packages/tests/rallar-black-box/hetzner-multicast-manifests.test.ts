@@ -6,10 +6,10 @@ import {
 
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 
+import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import {
-    createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
-} from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
+} from '../../../apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts';
 
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
 const MATRIX_DURATION_SECONDS = [30, 300] as const;

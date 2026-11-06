@@ -30,10 +30,10 @@ describe('Postgres runtime-state read batches', () => {
         const seed = new PSqlRuntimeStateRepository(sql);
 
         try {
-            await seed.upsert(namespace, 'prefix:b', 'prefix-b', FUTURE_MS);
-            await seed.upsert(namespace, 'exact', 'exact-value', FUTURE_MS);
-            await seed.upsert(namespace, 'prefix:a', 'prefix-a', FUTURE_MS);
-            await seed.upsert(`${namespace}:sibling`, 'prefix:a', 'sibling', FUTURE_MS);
+            await seed.upsert({ namespace, key: 'prefix:b', value: 'prefix-b', expireAtTimestamp: FUTURE_MS });
+            await seed.upsert({ namespace, key: 'exact', value: 'exact-value', expireAtTimestamp: FUTURE_MS });
+            await seed.upsert({ namespace, key: 'prefix:a', value: 'prefix-a', expireAtTimestamp: FUTURE_MS });
+            await seed.upsert({ namespace: `${namespace}:sibling`, key: 'prefix:a', value: 'sibling', expireAtTimestamp: FUTURE_MS });
             const driverRowCounts: number[] = [];
             const repository = new PSqlRuntimeStateRepository(
                 observeDriverRowCounts(sql, driverRowCounts)
@@ -86,7 +86,7 @@ describe('Postgres runtime-state read batches', () => {
 
         try {
             for (const [index, entry] of fixture.entries.entries()) {
-                await repository.upsert(entry.namespace, entry.key, `value-${index}`, FUTURE_MS);
+                await repository.upsert({ namespace: entry.namespace, key: entry.key, value: `value-${index}`, expireAtTimestamp: FUTURE_MS });
             }
 
             const selections = await repository.readRuntimeStateBatch(fixture.selectors);
@@ -113,17 +113,29 @@ describe('Postgres runtime-state read batches', () => {
         try {
             for (let index = 0; index < 40; index += 1) {
                 await seed.upsert(
-                    namespace,
-                    `principal=alice:session=closed-${String(index).padStart(2, '0')}`,
-                    JSON.stringify({ status: 'disconnected', disconnectedAtEpochMs: 2 }),
-                    FUTURE_MS
+                    {
+                        namespace,
+                        key: `principal=alice:session=closed-${String(index).padStart(2, '0')}`,
+                        value: JSON.stringify({ status: 'disconnected', disconnectedAtEpochMs: 2 }),
+                        expireAtTimestamp: FUTURE_MS
+                    }
                 );
             }
-            await seed.upsert(namespace, 'principal=alice:session=open', JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }), FUTURE_MS);
-            await seed.upsert(namespace, 'principal=alice:session=unset', JSON.stringify({ status: 'active' }), FUTURE_MS);
-            await seed.upsert(namespace, 'principal=bob:session=open', JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }), FUTURE_MS);
-            await seed.upsert(namespace, 'presence:at-floor', '{}', FLOOR_MS);
-            await seed.upsert(namespace, 'presence:after-floor', '{}', FLOOR_MS + 1);
+            await seed.upsert({
+                namespace,
+                key: 'principal=alice:session=open',
+                value: JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
+                expireAtTimestamp: FUTURE_MS
+            });
+            await seed.upsert({ namespace, key: 'principal=alice:session=unset', value: JSON.stringify({ status: 'active' }), expireAtTimestamp: FUTURE_MS });
+            await seed.upsert({
+                namespace,
+                key: 'principal=bob:session=open',
+                value: JSON.stringify({ status: 'active', disconnectedAtEpochMs: null }),
+                expireAtTimestamp: FUTURE_MS
+            });
+            await seed.upsert({ namespace, key: 'presence:at-floor', value: '{}', expireAtTimestamp: FLOOR_MS });
+            await seed.upsert({ namespace, key: 'presence:after-floor', value: '{}', expireAtTimestamp: FLOOR_MS + 1 });
             const driverRowCounts: number[] = [];
             const repository = new PSqlRuntimeStateRepository(observeDriverRowCounts(sql, driverRowCounts));
 

@@ -171,10 +171,7 @@ async function createRetryFixture(): Promise<RetryFixture> {
         }
         conflict.injected = true;
         await runtimeRepository.upsert(
-            namespace,
-            key,
-            JSON.stringify({ collision: true }),
-            Date.now() + 60_000
+            { namespace, key, value: JSON.stringify({ collision: true }), expireAtTimestamp: Date.now() + 60_000 }
         );
     };
     const auth = createAuthInboxTestRuntime({

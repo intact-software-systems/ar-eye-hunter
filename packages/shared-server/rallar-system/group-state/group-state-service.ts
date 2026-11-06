@@ -1,3 +1,4 @@
+import { readGroupSessionSchedule } from '@shared/api/group-sessions/group-session-schedule.ts';
 import { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import { PartyRepository } from '../parties/persistence/party-repository.ts';
 import { computeSha256CanonicalJson } from '../protocol/compute-sha256-canonical-json.ts';
@@ -49,7 +50,9 @@ import {
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 import { GroupQuickJoinService } from './quick-join/group-quick-join-service.ts';
 import { GroupRetentionService } from './retention/group-retention-service.ts';
+import { isGroupSessionViewAudienceCommand } from './schedule/compute-group-session-view-publication.ts';
 import { GroupSessionDirectory } from './schedule/group-session-directory.ts';
+import { readGroupSessionViewAudience } from './schedule/read-group-session-view-audience.ts';
 
 export class GroupMutationIdempotencyConflictError extends Error {
     readonly status = 409;
@@ -86,6 +89,11 @@ export function createGroupStateRuntime(
     };
     const ingressOperations = createIngressCaptureOperations(owners);
     const mutationOperations = createMutationOperations(owners);
+    const mutationConfig = {
+        serviceId: dependencies.serviceId,
+        finishedRetentionMs: dependencies.finishedRetentionMs,
+        now
+    };
     const service: GroupStateService = {
         sessionDirectory: new GroupSessionDirectory({ repository: repositoryFor(runtime), now }),
         move: new GroupMoveService({
@@ -97,24 +105,20 @@ export function createGroupStateRuntime(
                 captureMutationIngress: ingressOperations.captureMutationIngress,
                 read: mutationOperations.read
             }
-        }, { serviceId: dependencies.serviceId, finishedRetentionMs: dependencies.finishedRetentionMs, now }),
+        }, mutationConfig),
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
         quickJoin: new GroupQuickJoinService(
             { repository: repositoryFor(runtime), authSessions },
             {
-                capacity: dependencies.capacity ?? { defaultMaxMembers: null },
-                serviceId: dependencies.serviceId,
-                finishedRetentionMs: dependencies.finishedRetentionMs,
-                now
+                ...mutationConfig,
+                capacity: dependencies.capacity ?? { defaultMaxMembers: null }
             }
         ),
         retention: new GroupRetentionService({
+            runtime,
             repository: repositoryFor(runtime),
             groupOwnedAppData: dependencies.groupOwnedAppData ?? { read: async () => [] }
-        }, {
-            serviceId: dependencies.serviceId,
-            now
-        }),
+        }, mutationConfig),
         ...ingressOperations,
         ...createQueryOperations(owners),
         ...mutationOperations
@@ -400,7 +404,12 @@ async function readGroupMutationFences(
             triggerGeneration: command.input.connectTriggerGeneration
         })
         : null;
-    const read = { ...initialRead, connectTriggerLatch };
+    const sessionViewAudience = initialRead.idempotency === null && initialRead.group !== null &&
+            readGroupSessionSchedule(initialRead.group.value.metadata) !== null &&
+            isGroupSessionViewAudienceCommand(command)
+        ? await readGroupSessionViewAudience(runtime, command.aggregateRef, ingress.facts.attemptAtEpochMs)
+        : null;
+    const read = { ...initialRead, connectTriggerLatch, sessionViewAudience };
     if (!readsGroupLayoutRows(ingress.command)) {
         return read;
     }

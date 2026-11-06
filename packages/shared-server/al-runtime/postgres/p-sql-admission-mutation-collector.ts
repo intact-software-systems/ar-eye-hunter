@@ -195,17 +195,24 @@ export async function writePSqlAdmissionState(
     switch (row.operation) {
         case 'insert':
             requireConditionalWrite(
-                await transaction.insertIfAbsent(row.namespace, row.key, row.value, row.expireAtTimestamp)
+                await transaction.insertIfAbsent({
+                    namespace: row.namespace,
+                    key: row.key,
+                    value: row.value,
+                    expireAtTimestamp: row.expireAtTimestamp
+                })
             );
             return;
         case 'update':
             requireConditionalWrite(
                 await transaction.upsertIfRevision(
-                    row.namespace,
-                    row.key,
-                    row.value,
-                    row.expireAtTimestamp,
-                    row.expectedRevision
+                    {
+                        namespace: row.namespace,
+                        key: row.key,
+                        value: row.value,
+                        expireAtTimestamp: row.expireAtTimestamp,
+                        expectedRevision: row.expectedRevision
+                    }
                 )
             );
             return;

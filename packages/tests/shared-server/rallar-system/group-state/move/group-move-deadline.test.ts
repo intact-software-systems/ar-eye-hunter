@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { GroupMoveDeadline } from '@shared-server/rallar-system/group-state/move/group-move-deadline.ts';
 import { installGroupMoveDeadline } from '@shared-server/rallar-system/group-state/move/group-move-inbox.ts';
-import { computeGroupMovePublication, type GroupMoveDeadline } from '@shared-server/rallar-system/group-state/move/group-move-outbox.ts';
+import { computeGroupMovePublication } from '@shared-server/rallar-system/group-state/move/group-move-outbox.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -38,7 +39,7 @@ it('retries durable deadline delivery after a reader restart without treating re
         retentionMs: 86400000,
         serviceId: 'server',
         traceId: 'deadline-test',
-        scheduleDeadline: true
+        previousStatus: null
     });
     const entry = publication.outbox.find((write) => JSON.parse(write.entry.resource).payload.typeId === 'GROUP_MOVE_DEADLINE')?.entry;
     if (!entry) {

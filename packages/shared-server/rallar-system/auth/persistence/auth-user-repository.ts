@@ -1,3 +1,4 @@
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
@@ -22,14 +23,20 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     async putUser(user: PersistedAuthUser): Promise<void> {
         const persisted = decodePersistedAuthUser(user);
         await this.putValue(
-            AUTH_USERS_BY_USERNAME_NAMESPACE,
-            authNormalizedUsernameKey(persisted.normalizedUsername),
-            persisted
+            {
+                namespace: AUTH_USERS_BY_USERNAME_NAMESPACE,
+                key: authNormalizedUsernameKey(persisted.normalizedUsername),
+                value: persisted,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
         await this.putValue(
-            AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
-            authClientIdKey(persisted.clientId),
-            persisted
+            {
+                namespace: AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
+                key: authClientIdKey(persisted.clientId),
+                value: persisted,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
@@ -38,18 +45,24 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateConditionalWriteResult> {
         const persisted = decodePersistedAuthUser(user);
         return await this.putValueIfAbsent(
-            AUTH_USERS_BY_USERNAME_NAMESPACE,
-            authNormalizedUsernameKey(persisted.normalizedUsername),
-            persisted
+            {
+                namespace: AUTH_USERS_BY_USERNAME_NAMESPACE,
+                key: authNormalizedUsernameKey(persisted.normalizedUsername),
+                value: persisted,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
     async insertByClientId(user: PersistedAuthUser): Promise<RuntimeStateConditionalWriteResult> {
         const persisted = decodePersistedAuthUser(user);
         return await this.putValueIfAbsent(
-            AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
-            authClientIdKey(persisted.clientId),
-            persisted
+            {
+                namespace: AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
+                key: authClientIdKey(persisted.clientId),
+                value: persisted,
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 

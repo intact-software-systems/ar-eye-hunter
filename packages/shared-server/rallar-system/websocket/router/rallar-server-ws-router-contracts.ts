@@ -100,10 +100,12 @@ export type RallarServerWsAuthorizer<T extends RallarServerWsPayload> = (
 /**
  * Who a topic's room publications reach: every live session of the room's active members, or only the sessions of
  * the principals a publication grant names, published only by grant holders and the listed server producers (D486).
+ * A `server` topic is reserved: only its listed server producers publish it, live, to every live member session on the
+ * connection generation its room presence records, so a reconnected socket re-reads authority instead.
  */
 export type RallarServerWsTopicAccess =
     | Readonly<{ participation: 'members'; }>
-    | Readonly<{ participation: 'granted'; serverProducerIds: readonly string[]; }>;
+    | Readonly<{ participation: 'granted' | 'server'; serverProducerIds: readonly string[]; }>;
 
 export type RallarServerWsTopicMetadata =
     & Readonly<{

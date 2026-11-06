@@ -5,6 +5,7 @@ import type { RallarServerAppInbox } from '../../rallar-server/rallar-server-app
 import { writeRuntimeStateConditionalBatch } from '../../runtime-state/postgres/write-runtime-state-conditional-batch.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 import type { AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts';
+import { writeAppOutboxInserts } from '../app-outbox/app-outbox-insert.ts';
 import type { AuthSessionPersistence } from '../auth/persistence/auth-session-persistence.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import type { ClientPrincipalSnapshotRead } from '../client-state/persistence/client-state-persistence-contracts.ts';
@@ -22,6 +23,7 @@ import type { PartyRepository } from './persistence/party-repository.ts';
 
 export namespace PartyService {
     export interface Config {
+        readonly serviceId: string;
         readonly defaultPolicy: PartyPolicy;
         readonly finishedRetentionMs: number;
         readonly policiesByApplication: Readonly<Record<string, PartyPolicy>>;
@@ -38,6 +40,8 @@ export namespace PartyService {
     }
     export interface Read {
         readonly command: PartyCommand;
+        readonly serviceId: string;
+        readonly traceId: string;
         readonly party: PartyRepository.Read;
         readonly matchmaking: MatchmakingRepository.Read | null;
         readonly finishedRetentionMs: number;
@@ -53,10 +57,12 @@ export class PartyService {
     readonly mutate: RallarServerAppInbox.Operation<PartyCommand, PartyMutationResult>;
     private readonly dependencies: PartyService.Dependencies;
     private readonly finishedRetentionMs: number;
+    private readonly serviceId: string;
 
     constructor(dependencies: PartyService.Dependencies, config: PartyService.Config) {
         this.dependencies = dependencies;
         this.finishedRetentionMs = config.finishedRetentionMs;
+        this.serviceId = config.serviceId;
         this.mutate = dependencies.appInbox.register({
             type: 'app:rallar-parties:mutate',
             decodeEnvelope: ({ data }) => decodePartyCommand(data),
@@ -98,7 +104,11 @@ export class PartyService {
             traceId: context.message.id.traceId,
             details: { attempt: context.entry.dequeueAudit.attempts }
         };
-        const read = await timeRallarAsync(timing, { ...event, operation: 'read' }, () => this.read(command));
+        const read = await timeRallarAsync(
+            timing,
+            { ...event, operation: 'read' },
+            () => this.read(command, context.message.id.traceId)
+        );
         const computed = await timeRallarAsync(
             timing,
             { ...event, operation: 'compute' },
@@ -127,12 +137,13 @@ export class PartyService {
                             if (computed.storage !== null) {
                                 await writeRuntimeStateConditionalBatch(transaction, computed.storage);
                             }
+                            await writeAppOutboxInserts(transaction, computed.outbox);
                         })
                 )
         );
     }
 
-    private async read(command: PartyCommand): Promise<PartyService.Read> {
+    private async read(command: PartyCommand, traceId: string): Promise<PartyService.Read> {
         const { parties, authSessions } = this.dependencies;
         const { ref, intent } = command.request;
         const principalIds = intent.action === 'invite'
@@ -145,6 +156,8 @@ export class PartyService {
         const authority = await this.readRosterAuthority(command, party);
         return {
             command,
+            serviceId: this.serviceId,
+            traceId,
             party,
             finishedRetentionMs: this.finishedRetentionMs,
             session: session ?? null,

@@ -1,11 +1,13 @@
 import {
-    decodeLiveWsNotice,
-    type LiveWsNoticeTransport
+    decodeLiveWsNotice
 } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 
 import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
-import { createPostgresLiveWsNoticeTransport } from './create-postgres-live-ws-notice-transport.ts';
+import {
+    createPostgresLiveWsNoticeTransport,
+    type ManagedLiveWsNoticeTransport
+} from './create-postgres-live-ws-notice-transport.ts';
 import type { LocalQueuePubSubBus } from './local-queue-pubsub-bridge.ts';
 
 /** Its own channel, so the QueueBox key listener never parses a live signalling or room notice. */
@@ -21,7 +23,7 @@ export interface CreateApiV1LiveWsNoticeTransportInput {
 
 export function createApiV1LiveWsNoticeTransport(
     input: CreateApiV1LiveWsNoticeTransportInput
-): LiveWsNoticeTransport {
+): ManagedLiveWsNoticeTransport {
     switch (input.mode) {
         case 'postgres':
             if (input.notification === null) {
@@ -31,14 +33,20 @@ export function createApiV1LiveWsNoticeTransport(
         case 'local':
             return createLocalLiveWsNoticeTransport(input);
         case 'disabled':
-            return { publish: async () => {}, subscribe: async () => {} };
+            return { publish: async () => {}, subscribe: async () => {}, stop: async () => {} };
     }
 }
 
 function createLocalLiveWsNoticeTransport(
     input: CreateApiV1LiveWsNoticeTransportInput
-): LiveWsNoticeTransport {
+): ManagedLiveWsNoticeTransport {
+    const releases: Array<() => void> = [];
     return {
+        stop: async () => {
+            for (const release of releases.splice(0)) {
+                release();
+            }
+        },
         publish: async (notice) => {
             const decoded = decodeLiveWsNotice(notice, notice.channel, input.nowMs());
             if (!decoded) {
@@ -56,7 +64,9 @@ function createLocalLiveWsNoticeTransport(
                 subscribers = new Set();
                 input.localBus.liveNoticeSubscribersByChannel.set(channel, subscribers);
             }
-            subscribers.add({ ignoredPublisherId: input.publisherId, onNotice });
+            const listener = { ignoredPublisherId: input.publisherId, onNotice };
+            subscribers.add(listener);
+            releases.push(() => subscribers.delete(listener));
             return Promise.resolve();
         }
     };

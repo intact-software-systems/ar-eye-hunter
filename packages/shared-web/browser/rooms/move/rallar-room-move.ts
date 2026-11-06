@@ -1,12 +1,16 @@
-import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupRef, type GroupRef } from '@shared/api/group-types.ts';
-import type { GroupMove, GroupMoveAction, GroupMoveParty, GroupMoveRequest } from '@shared/api/mutation/group-move.ts';
+import type {
+    GroupMove,
+    GroupMoveAction,
+    GroupMoveParty,
+    GroupMoveRequest
+} from '@shared/api/mutation/group-move.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SubscriptionScope } from '@shared/resilience/subscription-scope.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
-import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { listMoves, mutateMove } from './room-move-api.ts';
@@ -18,8 +22,10 @@ import {
     selectRoomMoveEntry
 } from './room-move-recovery.ts';
 
+import { subscribeViewInvalidations } from '../../api/subscribe-view-invalidations.ts';
+import type { SubscribeViewRecovery } from '../../api/subscribe-view-recovery.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
-import type { RallarWsMessageLane } from '../../messages/rallar-message-operations.ts';
+import { BrowserActivity } from '../../browser-activity.ts';
 import type { RallarUnsubscribe } from '../../rallar-shared-contracts.ts';
 import type { RallarAuthFacade } from '../../session/rallar-auth-facade.ts';
 import type { BrowserRallarRooms } from '../browser-rallar-rooms.ts';
@@ -41,6 +47,7 @@ export namespace RallarRoomMove {
     export interface Dependencies {
         readonly auth: Auth;
         readonly api: Api;
+        readonly activity: Pick<BrowserActivity, 'isActive' | 'onChange'>;
         readonly timers: Timers;
         currentRoom(): GroupRef | undefined;
         activate(move: GroupMove, signal: AbortSignal): Promise<void>;
@@ -49,15 +56,13 @@ export namespace RallarRoomMove {
         /** The game owns its participation lock and fresh eligibility check around the operation. */
         withEligibility<T>(destination: GroupRef, run: () => Promise<T>): Promise<T>;
     }
-    export interface Browser {
+    export interface Browser extends SubscribeViewRecovery.Browser {
         readonly auth: Pick<RallarAuthFacade, 'onChange'>;
         readonly rooms: Pick<BrowserRallarRooms, 'state' | 'activateMove' | 'session'>;
-        readonly messages: Readonly<{ ws: Pick<RallarWsMessageLane, 'onMessage'>; }>;
         session(): AuthSession | undefined;
     }
     export interface Config {
         readonly scope: StateScope;
-        readonly refreshIntervalMs: number;
     }
     export interface Attempt {
         readonly generation: number;
@@ -80,6 +85,8 @@ export class RallarRoomMove {
     private generation = 0;
     private revision = 0;
     private sessionKey: string | null = null;
+    /** A successful history read clears transport failures, but cannot resolve an entry or consent failure. */
+    private actionError: string | null = null;
     private state: RallarRoomMove.State = { moves: [], busy: false, enteringMoveId: null, error: null };
 
     public static createBrowser(
@@ -94,6 +101,7 @@ export class RallarRoomMove {
             },
             api: { list: listMoves, mutate: mutateMove },
             timers: createDefaultTimers(),
+            activity: new BrowserActivity(),
             currentRoom: () => browser.rooms.state().currentRoomRef,
             activate: async (move, signal) => {
                 await browser.rooms.activateMove(move, { signal, timeoutMs: 15000, maxAttempts: 2 });
@@ -102,19 +110,13 @@ export class RallarRoomMove {
                 await browser.rooms.session(move.source).refresh({ signal, timeoutMs: 10000 });
                 await browser.rooms.session(move.destination).refresh({ signal, timeoutMs: 10000 });
             },
-            onChanged: (listener) =>
-                browser.messages.ws.onMessage({
-                    topicId: AppTopics.groupMoveChanged,
-                    typeId: AppTopics.groupMoveChanged
-                }, listener),
+            onChanged: (changed) =>
+                subscribeViewInvalidations({ browser, scope: config.scope, resource: 'room-move', changed }),
             withEligibility
         }, config);
     }
 
     public constructor(dependencies: RallarRoomMove.Dependencies, config: RallarRoomMove.Config) {
-        if (!Number.isSafeInteger(config.refreshIntervalMs) || config.refreshIntervalMs <= 0) {
-            throw new TypeError('Move refresh interval must be a positive integer');
-        }
         this.dependencies = dependencies;
         this.config = config;
     }
@@ -134,19 +136,15 @@ export class RallarRoomMove {
             this.subscriptions.add(
                 this.dependencies.auth.onChange(() => this.authenticationChanged(), { emitCurrent: false })
             );
-            this.subscriptions.add(this.dependencies.onChanged(() => {
-                void this.refresh();
-            }));
-            this.subscriptions.add(
-                startRepeating({
-                    timers: this.dependencies.timers,
-                    intervalMs: this.config.refreshIntervalMs,
-                    firstRun: 'after-interval',
-                    run: () => this.refresh()
-                })
-            );
+            const refreshActive = () => {
+                if (this.dependencies.activity.isActive()) {
+                    void this.refresh();
+                }
+            };
+            this.subscriptions.add(this.dependencies.onChanged(refreshActive));
+            this.subscriptions.add(this.dependencies.activity.onChange(refreshActive));
         }
-        return this.refresh();
+        return this.dependencies.activity.isActive() ? this.refresh() : Promise.resolve();
     }
 
     public stop(): void {
@@ -170,7 +168,10 @@ export class RallarRoomMove {
             this.reads = new ThrottledFlush({
                 timers: this.dependencies.timers,
                 write: async () => {
-                    if (this.generation === generation && this.subscriptions !== null) {
+                    if (
+                        this.generation === generation && this.subscriptions !== null &&
+                        this.dependencies.activity.isActive()
+                    ) {
                         await this.readMoves();
                     }
                 }
@@ -183,7 +184,7 @@ export class RallarRoomMove {
     public async propose(destination: GroupRef, party?: GroupMoveParty): Promise<void> {
         const source = this.dependencies.currentRoom();
         if (!source) {
-            this.publish({ ...this.state, error: 'Enter a source room first.' });
+            this.reportActionError('Enter a source room first.');
             return;
         }
         await this.send({
@@ -201,8 +202,7 @@ export class RallarRoomMove {
     public async act(
         action: Exclude<GroupMoveAction, 'propose' | 'arrive'>,
         move: GroupMove,
-        joinCode: string | null = null,
-        inviteToken: string | null = null
+        credentials: Pick<GroupMoveRequest, 'joinCode' | 'inviteToken'> = { joinCode: null, inviteToken: null }
     ): Promise<void> {
         await this.send({
             requestId: crypto.randomUUID(),
@@ -211,8 +211,8 @@ export class RallarRoomMove {
             source: move.source,
             destination: move.destination,
             action,
-            joinCode,
-            inviteToken
+            joinCode: credentials.joinCode,
+            inviteToken: credentials.inviteToken
         });
     }
 
@@ -224,6 +224,7 @@ export class RallarRoomMove {
         if (!attempt) {
             return;
         }
+        this.actionError = null;
         this.attemptedEntries.add(groupMoveKey(move));
         this.publish({ ...this.state, busy: true, enteringMoveId: move.moveId, error: null });
         try {
@@ -262,7 +263,7 @@ export class RallarRoomMove {
         }
         catch (error) {
             if (this.current(attempt)) {
-                this.publish({ ...this.state, error: toError(error).message });
+                this.reportActionError(toError(error).message);
             }
         }
         finally {
@@ -288,7 +289,7 @@ export class RallarRoomMove {
             }
             const previousMoves = this.state.moves;
             // The durable decision must remain usable even if a historical room is now unreadable.
-            this.publish({ ...this.state, moves });
+            this.publish({ ...this.state, moves, error: this.actionError });
             await this.enterCurrentSourceMove();
             const currentRoom = this.dependencies.currentRoom();
             for (const move of changedRoomMoveArrivals(moves, previousMoves, currentRoom)) {
@@ -298,7 +299,7 @@ export class RallarRoomMove {
         }
         catch (error) {
             if (this.current(attempt)) {
-                this.publish({ ...this.state, error: toError(error).message });
+                this.publish({ ...this.state, error: this.actionError ?? toError(error).message });
             }
         }
     }
@@ -312,6 +313,7 @@ export class RallarRoomMove {
             return;
         }
         this.revision++;
+        this.actionError = null;
         this.publish({ ...this.state, busy: true, error: null });
         try {
             const send = async () => {
@@ -330,7 +332,7 @@ export class RallarRoomMove {
         }
         catch (error) {
             if (this.current(attempt)) {
-                this.publish({ ...this.state, error: toError(error).message });
+                this.reportActionError(toError(error).message);
             }
         }
         finally {
@@ -403,10 +405,13 @@ export class RallarRoomMove {
         this.sessionKey = key;
         this.invalidate();
         this.publish({ moves: [], busy: false, enteringMoveId: null, error: null });
-        void this.refresh();
+        if (this.dependencies.activity.isActive()) {
+            void this.refresh();
+        }
     }
 
     private invalidate(): void {
+        this.actionError = null;
         this.generation++;
         this.controller.abort();
         this.controller = new AbortController();
@@ -414,6 +419,11 @@ export class RallarRoomMove {
         this.reads = null;
         void reads?.stop();
         this.attemptedEntries.clear();
+    }
+
+    private reportActionError(error: string): void {
+        this.actionError = error;
+        this.publish({ ...this.state, error });
     }
 
     private publish(state: RallarRoomMove.State): void {

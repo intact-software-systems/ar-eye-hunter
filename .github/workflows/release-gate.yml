@@ -81,10 +81,13 @@ jobs:
           (cd apps/rallar-black-box-control-server && deno task check)
 
   unit:
-    name: Unit tests
+    name: Unit tests (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # Allow the observed 13-minute Chromium setup plus the 11-minute suite.
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -104,7 +107,7 @@ jobs:
 
       - name: Run unit tests
         timeout-minutes: 20
-        run: npm run test:unit:main
+        run: npm run test:unit:main -- --shard=${{ matrix.shard }}
 
   unit-tooling:
     name: Unit tests (tooling)
@@ -339,6 +342,13 @@ jobs:
       - name: Run Postgres shared-server integration tests
         run: npm run test:postgres:integration
 
+      - name: Verify native tournament fanout through two PostgreSQL listeners
+        working-directory: apps/ar-eye-hunter-server-v1
+        env:
+          RALLAR_POSTGRES_INTEGRATION: '1'
+          DENO_NO_PACKAGE_JSON: '1'
+        run: deno test --allow-env --allow-read --allow-write --allow-net test/arena-tournament-cluster.test.ts
+
       - name: Run native API PostgreSQL query planning test
         working-directory: apps/api-v1
         env:
@@ -371,10 +381,29 @@ jobs:
           path: .artifacts/api-v1-black-box/topology-replay
           if-no-files-found: error
 
+      - name: Run private view push and subscriber recovery proof
+        id: view_push
+        env:
+          DENO_NO_PACKAGE_JSON: '1'
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/view-push
+          git rev-parse HEAD > .artifacts/api-v1-black-box/view-push/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/view-push/validated-tree.txt
+          npm run test:api-v1:black-box:postgres:view-push -- --artifact-dir=../../.artifacts/api-v1-black-box/view-push --run-id=${{ github.run_id }}-${{ github.run_attempt }}-view-push
+
+      - name: Upload view push recovery artifacts
+        if: ${{ !cancelled() && steps.view_push.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-view-push-${{ github.sha }}
+          path: .artifacts/api-v1-black-box/view-push
+          if-no-files-found: error
+
       - name: Run Postgres full-stack smoke tests
         run: |
           npm run test:rallar:full-stack:postgres:rest
           npm run test:rallar:full-stack:postgres:control
+          npm run test:rallar:full-stack:postgres:view-push
 
       # Run twice to prove retained outbox rows cannot contaminate a later invocation.
       # Keep this last because other outbox workers would see those fixed-ID rows.

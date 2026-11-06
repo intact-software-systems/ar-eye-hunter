@@ -148,6 +148,27 @@ describe('JsonWebSocketClient', () => {
         expect(client.url).toBe('ws://test?ticket=2');
     });
 
+    it('reports only the current close when an old close arrives after its replacement opened', async () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const client = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
+        const losses: string[] = [];
+        client.onWebsocketCallbacksDo('room-recovery', { onClose: (event) => losses.push(event.reason) });
+        const connecting = client.connect();
+        await Promise.resolve();
+        const old = TestWebSocket.instances[0];
+        old.open();
+        await connecting;
+        client.close();
+        const reconnecting = client.connect();
+        await Promise.resolve();
+        const current = TestWebSocket.instances[1];
+        current.open();
+        await reconnecting;
+        old.disconnect(1000, 'obsolete socket');
+        current.disconnect(1006, 'network loss');
+        expect(losses).toEqual(['network loss']);
+    });
+
     it('keeps a reconnect started by a close callback as the active pending connection', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 

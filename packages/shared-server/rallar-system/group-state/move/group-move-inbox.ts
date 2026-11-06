@@ -37,7 +37,13 @@ import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts'
 import { GroupMutationRejectedError } from '../mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeGroupMoveCommand, decodeGroupMoveIngress, type GroupMoveCommand } from './group-move-command.ts';
-import { decodeGroupMoveDeadline, type GroupMoveDeadline } from './group-move-outbox.ts';
+import {
+    decodeGroupMoveDeadline,
+    GROUP_MOVE_DEADLINE_TOPIC,
+    groupMoveDeadlineDueAt,
+    toGroupMoveDeadlineRoute,
+    type GroupMoveDeadline
+} from './group-move-deadline.ts';
 import type { GroupMoveService } from './group-move-service.ts';
 
 export interface GroupMoveInboxRequest {
@@ -245,13 +251,21 @@ export function installGroupMoveDeadline(input: InstallGroupMoveDeadlineInput): 
     input.outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_MOVE_DEADLINE, {
         onMessage: async (message) => {
             const command = decodeGroupMoveDeadline(JSON.parse(message.payload.resource));
-            if (message.route.topicId !== 'group-move.deadline' || command.expiresAtEpochMs <= message.id.ts) {
+            const key = toGroupMoveDeadlineRoute(command);
+            if (
+                !jsonEquals(message.route, key) || message.id.msgId !== key.resourceId ||
+                message.targets !== undefined ||
+                message.payload.typeId !== AppOutboxType.GROUP_MOVE_DEADLINE ||
+                groupMoveDeadlineDueAt(command) <= message.id.ts ||
+                message.constraints?.expiresAtMs === undefined ||
+                message.constraints.expiresAtMs <= groupMoveDeadlineDueAt(command)
+            ) {
                 throw new TypeError('Group move deadline work identity differs');
             }
-            if (input.now() < command.expiresAtEpochMs) {
+            if (input.now() < groupMoveDeadlineDueAt(command)) {
                 throw new Error('Group move deadline is not due; retry after the deadline');
             }
             await input.enqueue(command, message.id.traceId);
         }
-    }, ['group-move.deadline']);
+    }, [GROUP_MOVE_DEADLINE_TOPIC]);
 }

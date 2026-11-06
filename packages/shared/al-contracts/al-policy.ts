@@ -225,6 +225,8 @@ export interface ALMessagePlanningObservations {
 
 export interface ALMessagePlanningContext extends ALMessagePlanningObservations {
     readonly selfPeerId: string;
+    /** A carrier-verified additional unicast recipient; never a transport, forwarding or receipt identity. */
+    readonly authenticatedRecipientId?: string;
     readonly fromPeerId?: string;
     readonly connectedPeerIds?: readonly string[];
     readonly groupMemberPeerIds?: readonly string[];
@@ -576,7 +578,7 @@ function computeMessageDelivery(
 ): ALMessageDeliveryDecision {
     const dropped = policy.drop !== undefined;
     const decision = policy.decision;
-    const isRecipient = isLogicalRecipient(msg.targets, context.selfPeerId, new Set(context.groupMemberPeerIds ?? []));
+    const isRecipient = isLogicalRecipient(msg.targets, context);
     const deferred = !dropped && isRecipient && decision.orderingRuntime.status === 'gap';
     const nextHopPeerIds = dropped ? [] : resolveNextHopPeerIds(msg, decision.result.effective, context);
     return {
@@ -767,18 +769,18 @@ function applyFanoutSelection(
 
 function isLogicalRecipient(
     targets: ALTargets | undefined,
-    selfPeerId: string,
-    groupMemberPeerIds: ReadonlySet<string>
+    context: ALMessagePlanningContext
 ): boolean {
     if (!targets) {
         return true;
     }
 
+    const { selfPeerId, authenticatedRecipientId, groupMemberPeerIds } = context;
     switch (targets.mode) {
         case 'unicast':
-            return targets.toPeerId === selfPeerId;
+            return targets.toPeerId === selfPeerId || targets.toPeerId === authenticatedRecipientId;
         case 'multicast':
-            return groupMemberPeerIds.size === 0 || groupMemberPeerIds.has(selfPeerId);
+            return !groupMemberPeerIds?.length || groupMemberPeerIds.includes(selfPeerId);
         case 'broadcast':
             return !targets.exceptPeerIds?.includes(selfPeerId) &&
                 (targets.recipientPeerIds === undefined || targets.recipientPeerIds.includes(selfPeerId));

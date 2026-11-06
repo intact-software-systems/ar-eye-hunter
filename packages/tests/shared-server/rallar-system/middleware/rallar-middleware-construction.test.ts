@@ -75,9 +75,13 @@ describe('createRallarMiddleware', () => {
     it('waits for runtime and queue pubsub subscription readiness', async () => {
         const runtimeStartup = Promise.withResolvers<void>();
         const queueSubscription = Promise.withResolvers<void>();
+        const subscriptionStarted = Promise.withResolvers<string>();
         const bridge: QueueBoxPubSubBridge = {
             publish: async () => undefined,
-            subscribe: vi.fn(async () => await queueSubscription.promise)
+            subscribe: async (channel) => {
+                subscriptionStarted.resolve(channel);
+                await queueSubscription.promise;
+            }
         };
         const runtime = createRallarMiddleware(
             createReadinessMiddlewareOptions(runtimeStartup.promise, bridge)
@@ -90,10 +94,7 @@ describe('createRallarMiddleware', () => {
         runtimeStartup.resolve();
         await Promise.resolve();
 
-        expect(bridge.subscribe).toHaveBeenCalledWith(
-            'queuebox-events',
-            expect.any(Function)
-        );
+        await expect(subscriptionStarted.promise).resolves.toBe('queuebox-events');
         expect(ready).toBe(false);
 
         queueSubscription.resolve();

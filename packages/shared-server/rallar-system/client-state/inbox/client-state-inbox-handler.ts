@@ -9,6 +9,7 @@ import {
     type AuthWsTicketConsumptionClaim
 } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import type { ClientSessionExpiryCandidate } from '../../presence/session-expiry.ts';
+import { writeGuardedViewPublication } from '../../websocket/outbox/guarded-view-publication.ts';
 import {
     type WsSessionGenerationCloseFacts,
     type WsSessionGenerationFacts
@@ -37,7 +38,11 @@ import { toDisconnectClientSessionMutationInput } from '../mutation/command-inpu
 import { toExpireClientSessionMutationInput } from '../mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { ClientMutationIdempotencyConflictError } from '../mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import { writeClientMutationRecords, writeClientRuntimeBatch } from '../mutation/write-client-mutation.ts';
+import {
+    requireClientMutationObservationsCurrent,
+    writeClientMutationRecords,
+    writeClientRuntimeBatch
+} from '../mutation/write-client-mutation.ts';
 import { writeClientSnapshotProvenance } from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
@@ -368,6 +373,7 @@ export class ClientStateInboxHandler {
                     async (transaction) => {
                         await writeClientRuntimeBatch(transaction, computed.runtimeBatch, computed.sidecarWrites);
                         for (const mutation of computed.writes) {
+                            await requireClientMutationObservationsCurrent(transaction, mutation);
                             await writeClientMutationRecords(transaction, mutation);
                         }
                     }
@@ -414,6 +420,7 @@ export class ClientStateInboxHandler {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
                         await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
+                        await writeGuardedViewPublication(transaction, computed.viewPublication);
                         if (computed.successorWrite !== null) {
                             await this.dependencies.expiryContinuationWriter.write(
                                 transaction,

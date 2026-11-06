@@ -8,6 +8,7 @@ import {
     requireRecord,
     requireString
 } from '@shared/api/exact-object-decoding.ts';
+import type { TournamentMatchBinding } from '@shared/api/tournaments/tournament-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { decodeArenaTournamentCommand, type ArenaTournamentMutation } from './arena-tournament-mutation.ts';
 
@@ -15,11 +16,12 @@ export interface RegisterArenaTournamentInboxInput {
     readonly appInbox: RallarServerAppInbox;
     readonly mutations: ArenaTournamentMutation;
     readonly nowEpochMs: () => number;
+    readonly onCheckpointCommitted: (binding: TournamentMatchBinding) => void;
 }
 
 /** Register before starting the app server. Only authenticated routes and the durable server clock admit commands. */
 export function registerArenaTournamentInbox(
-    { appInbox, mutations, nowEpochMs }: RegisterArenaTournamentInboxInput
+    { appInbox, mutations, nowEpochMs, onCheckpointCommitted }: RegisterArenaTournamentInboxInput
 ): RallarServerAppInbox.Operation<ArenaTournamentMutation.Command, ArenaTournamentMutation.Result> {
     return appInbox.register({
         type: 'app:ar-eye:tournament',
@@ -45,11 +47,15 @@ export function registerArenaTournamentInbox(
             if (issue !== undefined) {
                 throw issue.cause;
             }
-            return await appInbox.commit(
+            const result = await appInbox.commit(
                 context,
                 computed.result,
                 (transaction) => mutations.write(transaction, computed)
             );
+            if (computed.save !== null && computed.resultWrite === null && read.tournament !== null) {
+                onCheckpointCommitted(read.tournament.binding);
+            }
+            return result;
         }
     });
 }

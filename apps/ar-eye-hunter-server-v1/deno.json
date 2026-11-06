@@ -6,6 +6,7 @@
   "imports": {
     "@api-v1/": "../api-v1/",
     "@ar-eye-hunter/": "../../packages/ar-eye-hunter/",
+    "@shared-test/": "../../packages/shared-test/",
     "@shared-server/": "../../packages/shared-server/",
     "@shared-graph/": "../../packages/shared-graph/",
     "@shared/": "../../packages/shared/",

@@ -53,10 +53,12 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
             expiresAtEpochMs: ticket.expiresAtEpochMs
         });
         await this.putValue(
-            WS_AUTH_TICKETS_NAMESPACE,
-            authTicketDigestKey(ticketDigest),
-            persisted,
-            ticket.expiresAtEpochMs
+            {
+                namespace: WS_AUTH_TICKETS_NAMESPACE,
+                key: authTicketDigestKey(ticketDigest),
+                value: persisted,
+                expireAtTimestamp: ticket.expiresAtEpochMs
+            }
         );
     }
 
@@ -76,10 +78,12 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
             expiresAtEpochMs: ticket.expiresAtEpochMs
         });
         await this.putValue(
-            AGENT_SESSION_TICKETS_NAMESPACE,
-            authTicketDigestKey(ticketDigest),
-            persisted,
-            ticket.expiresAtEpochMs
+            {
+                namespace: AGENT_SESSION_TICKETS_NAMESPACE,
+                key: authTicketDigestKey(ticketDigest),
+                value: persisted,
+                expireAtTimestamp: ticket.expiresAtEpochMs
+            }
         );
     }
 
@@ -106,17 +110,21 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
         const persisted = decodePersistedWebSocketTicket(ticket);
         return expectedRevision === null
             ? await this.putValueIfAbsent(
-                WS_AUTH_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs
+                {
+                    namespace: WS_AUTH_TICKETS_NAMESPACE,
+                    key: authTicketDigestKey(persisted.ticketDigest),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs
+                }
             )
             : await this.putValueIfRevision(
-                WS_AUTH_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs,
-                expectedRevision
+                {
+                    namespace: WS_AUTH_TICKETS_NAMESPACE,
+                    key: authTicketDigestKey(persisted.ticketDigest),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs,
+                    expectedRevision
+                }
             );
     }
 
@@ -167,17 +175,21 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
         const persisted = decodePersistedAgentSessionTicket(ticket);
         return expectedRevision === null
             ? await this.putValueIfAbsent(
-                AGENT_SESSION_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs
+                {
+                    namespace: AGENT_SESSION_TICKETS_NAMESPACE,
+                    key: authTicketDigestKey(persisted.ticketDigest),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs
+                }
             )
             : await this.putValueIfRevision(
-                AGENT_SESSION_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs,
-                expectedRevision
+                {
+                    namespace: AGENT_SESSION_TICKETS_NAMESPACE,
+                    key: authTicketDigestKey(persisted.ticketDigest),
+                    value: persisted,
+                    expireAtTimestamp: persisted.expiresAtEpochMs,
+                    expectedRevision
+                }
             );
     }
 

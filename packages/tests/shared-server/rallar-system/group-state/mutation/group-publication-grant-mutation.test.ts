@@ -5,7 +5,7 @@ import {
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';
 
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createService } from '../presence/group-presence-test-runtime.ts';
 import { groupRef, SCOPE } from './group-mutation-test-runtime.ts';
 import {
@@ -37,11 +37,15 @@ async function seededRoom(): Promise<GroupBarrierRepository> {
     return runtime;
 }
 
+interface ExpectPolicyDenialInput {
+    readonly runtime: GroupBarrierRepository;
+    readonly input: PublicationDescriptorInput;
+    readonly code: string;
+    readonly nowEpochMs: number | undefined;
+}
+
 async function expectPolicyDenial(
-    runtime: GroupBarrierRepository,
-    input: PublicationDescriptorInput,
-    code: string,
-    nowEpochMs?: number
+    { runtime, input, code, nowEpochMs }: ExpectPolicyDenialInput
 ): Promise<void> {
     const { computed } = await computePublicationMutation(runtime, input, nowEpochMs);
     expect(computed, `${input.actorPrincipalId} → ${input.targetPrincipalId}`).toMatchObject({
@@ -225,10 +229,30 @@ describe('group publication grant mutation', () => {
 
     it('an admin targeting an admin, an admin targeting itself and a member self-granting are forbidden-role', async () => {
         const runtime = await seededRoom();
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, actorPrincipalId: 'carol', targetPrincipalId: 'dave' }, 'forbidden-role');
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, actorPrincipalId: 'carol', targetPrincipalId: 'carol' }, 'forbidden-role');
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, actorPrincipalId: 'bob', targetPrincipalId: 'bob' }, 'forbidden-role');
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, actorPrincipalId: 'erin', targetPrincipalId: 'bob' }, 'forbidden-role');
+        await expectPolicyDenial({
+            runtime,
+            input: { ...BOB_PUBLISH, actorPrincipalId: 'carol', targetPrincipalId: 'dave' },
+            code: 'forbidden-role',
+            nowEpochMs: undefined
+        });
+        await expectPolicyDenial({
+            runtime,
+            input: { ...BOB_PUBLISH, actorPrincipalId: 'carol', targetPrincipalId: 'carol' },
+            code: 'forbidden-role',
+            nowEpochMs: undefined
+        });
+        await expectPolicyDenial({
+            runtime,
+            input: { ...BOB_PUBLISH, actorPrincipalId: 'bob', targetPrincipalId: 'bob' },
+            code: 'forbidden-role',
+            nowEpochMs: undefined
+        });
+        await expectPolicyDenial({
+            runtime,
+            input: { ...BOB_PUBLISH, actorPrincipalId: 'erin', targetPrincipalId: 'bob' },
+            code: 'forbidden-role',
+            nowEpochMs: undefined
+        });
     });
 
     it('an owner self-grant is applied', async () => {
@@ -240,14 +264,19 @@ describe('group publication grant mutation', () => {
 
     it('a left or invited target is member-not-active', async () => {
         const runtime = await seededRoom();
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, targetPrincipalId: 'lee' }, 'member-not-active');
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, targetPrincipalId: 'ivy' }, 'member-not-active');
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, targetPrincipalId: 'nobody' }, 'member-not-active');
+        await expectPolicyDenial({ runtime, input: { ...BOB_PUBLISH, targetPrincipalId: 'lee' }, code: 'member-not-active', nowEpochMs: undefined });
+        await expectPolicyDenial({ runtime, input: { ...BOB_PUBLISH, targetPrincipalId: 'ivy' }, code: 'member-not-active', nowEpochMs: undefined });
+        await expectPolicyDenial({ runtime, input: { ...BOB_PUBLISH, targetPrincipalId: 'nobody' }, code: 'member-not-active', nowEpochMs: undefined });
     });
 
     it('spectator publish is forbidden-role and spectator subscribe is applied', async () => {
         const runtime = await seededRoom();
-        await expectPolicyDenial(runtime, { ...BOB_PUBLISH, targetPrincipalId: 'sam', publish: true, subscribe: true }, 'forbidden-role');
+        await expectPolicyDenial({
+            runtime,
+            input: { ...BOB_PUBLISH, targetPrincipalId: 'sam', publish: true, subscribe: true },
+            code: 'forbidden-role',
+            nowEpochMs: undefined
+        });
         await applyPublicationMutation(runtime, {
             ...BOB_PUBLISH,
             targetPrincipalId: 'sam',
@@ -262,29 +291,34 @@ describe('group publication grant mutation', () => {
     it('an archived, deleted or expired group denies group-archived, group-deleted, group-not-active', async () => {
         for (const status of ['archived', 'deleted'] as const) {
             const runtime = await seededRoom();
-            await createService(runtime, 2_000).updateGroup(SCOPE, GRANT_ROOM, {
-                status,
-                actorPrincipalId: 'alice',
-                requestId: `set-${status}`
-            });
-            await expectPolicyDenial(runtime, BOB_PUBLISH, `group-${status}`);
+            await createService({ runtimeRepository: runtime, nowEpochMs: 2_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).updateGroup(
+                SCOPE,
+                GRANT_ROOM,
+                {
+                    status,
+                    actorPrincipalId: 'alice',
+                    requestId: `set-${status}`
+                }
+            );
+            await expectPolicyDenial({ runtime, input: BOB_PUBLISH, code: `group-${status}`, nowEpochMs: undefined });
         }
         const expiring = new GroupBarrierRepository();
         await seedGrantRoom(expiring, 2_500);
-        await expectPolicyDenial(expiring, BOB_PUBLISH, 'group-not-active', 3_000);
+        await expectPolicyDenial({ runtime: expiring, input: BOB_PUBLISH, code: 'group-not-active', nowEpochMs: 3_000 });
     });
 
     // A route maps a TypeError to 400; any other error at capture would answer 500.
     it('a reserved or prefix-less topic id is refused with a TypeError at capture', async () => {
         const runtime = await seededRoom();
         for (const topicId of ['rallar.feed', 'feed']) {
-            const grant = createService(runtime, 3_000).grantGroupPublication(SCOPE, GRANT_ROOM, 'bob', {
-                topicId,
-                publish: true,
-                subscribe: false,
-                actorPrincipalId: 'alice',
-                requestId: `grant-bob-${topicId}`
-            });
+            const grant = createService({ runtimeRepository: runtime, nowEpochMs: 3_000, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+                .grantGroupPublication(SCOPE, GRANT_ROOM, 'bob', {
+                    topicId,
+                    publish: true,
+                    subscribe: false,
+                    actorPrincipalId: 'alice',
+                    requestId: `grant-bob-${topicId}`
+                });
             await expect(grant, topicId).rejects.toBeInstanceOf(TypeError);
             await expect(grant, topicId).rejects.toThrow(/topicId is invalid/);
         }

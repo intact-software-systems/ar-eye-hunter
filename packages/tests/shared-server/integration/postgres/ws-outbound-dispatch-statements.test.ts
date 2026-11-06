@@ -28,7 +28,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
@@ -146,7 +146,7 @@ function createWsDispatchLane(sql: PSqlSql, runId: string, log: PostgresStatemen
         retention: undefined,
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     });
-    const proofs = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+    const proofs = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
@@ -165,18 +165,7 @@ function createWsDispatchLane(sql: PSqlSql, runId: string, log: PostgresStatemen
         readAuthenticatedConnectionScope: () => ({ scope: WS_SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance: (message, entry) => proofs.readProducerProvenance(message, entry)
     });
-    const effects: string[] = [];
-    const policies: HandedPolicy[] = [];
-    const readCapturedPolicy = service.readCapturedPolicy.bind(service);
-    vi.spyOn(service, 'readCapturedPolicy').mockImplementation(async (message, entry, committedPolicy) => {
-        policies.push({ message, entry, committedPolicy });
-        return await readCapturedPolicy(message, entry, committedPolicy);
-    });
-    const sendToTargetsWithResult = service.sendToTargetsWithResult.bind(service);
-    vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((input) => {
-        effects.push(`send:${input.message.route.resourceId}`);
-        return sendToTargetsWithResult(input);
-    });
+    const { effects, policies } = recordDispatchEffects(service);
     void installQueueBoxPubSubBridge({
         wsQBoxServerService: service,
         channel: 'ws-dispatch-statements',
@@ -201,6 +190,28 @@ function createWsDispatchLane(sql: PSqlSql, runId: string, log: PostgresStatemen
             await Promise.all([service.dispose(), engine.stop()]);
         }
     };
+}
+
+interface DispatchEffects {
+    readonly effects: string[];
+    readonly policies: HandedPolicy[];
+}
+
+/** Observe policy handoff and native sends while preserving the real outbound implementation. */
+function recordDispatchEffects(service: WsQueueBoxServerService): DispatchEffects {
+    const effects: string[] = [];
+    const policies: HandedPolicy[] = [];
+    const readCapturedPolicy = service.readCapturedPolicy.bind(service);
+    vi.spyOn(service, 'readCapturedPolicy').mockImplementation(async (message, entry, committedPolicy) => {
+        policies.push({ message, entry, committedPolicy });
+        return await readCapturedPolicy(message, entry, committedPolicy);
+    });
+    const sendToTargetsWithResult = service.sendToTargetsWithResult.bind(service);
+    vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((input) => {
+        effects.push(`send:${input.message.route.resourceId}`);
+        return sendToTargetsWithResult(input);
+    });
+    return { effects, policies };
 }
 
 /** One page of raw WS rows to one connected peer, each with the producer proof its dequeue verifies. */
@@ -229,10 +240,12 @@ async function writeProvedWsRows(sql: PSqlSql, runId: string): Promise<ResourceE
         };
         const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
         await repository.upsert(
-            WS_OUTBOX_PROVENANCE_NAMESPACE,
-            toWsOutboxProvenanceKey(entry.key),
-            JSON.stringify(proof),
-            proof.expiresAtMs
+            {
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(entry.key),
+                value: JSON.stringify(proof),
+                expireAtTimestamp: proof.expiresAtMs
+            }
         );
         rows.push(entry);
     }

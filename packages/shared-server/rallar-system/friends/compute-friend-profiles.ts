@@ -6,7 +6,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import { computeFriendship } from './compute-friendship.ts';
 import type { FriendsMutationRead } from './friends-mutation-contracts.ts';
-import type { FriendsProfile } from './friends-profile.ts';
+import { areMutualFriends, type FriendsProfile } from './friends-profile.ts';
 
 export function computeFriendProfiles(read: FriendsMutationRead): Either<FriendsRefusal, readonly FriendsProfile[]> {
     const { request } = read.input;
@@ -73,10 +73,7 @@ function computeFriendInvitation(
         throw new TypeError('Friend invitation requires a captured invitation command');
     }
     const actor = read.actor.profile;
-    if (
-        !actor.contacts.some((contact) => contact.principalId === target.principalId && contact.status === 'friend') ||
-        !target.contacts.some((contact) => contact.principalId === actor.principalId && contact.status === 'friend')
-    ) {
+    if (!areMutualFriends(actor, target)) {
         return Either.ofLeft('friend-required');
     }
     if (!canShareFriendsDestination(read)) {

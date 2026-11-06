@@ -1,6 +1,4 @@
-import {
-    type ClientMutationCommand
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type { ClientMutationCommand, ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
@@ -139,6 +137,9 @@ function expectCorruptReadAndComputedRejection(): void {
                 receiptEvent: null,
                 audienceObservedAtEpochMs: 1_000,
                 audienceGroupSnapshots: [],
+                partyMemberView: null,
+                friendsPresence: null,
+                viewWatchCleanup: null,
                 audienceCoMemberSessions: []
             }
         })
@@ -148,7 +149,7 @@ function expectCorruptReadAndComputedRejection(): void {
 
 function expectCorruptComputedRejection(
     command: ClientMutationCommand,
-    computed: ReturnType<typeof computeClientMutation>
+    computed: ClientMutationComputed
 ): void {
     const invalidComputed = structuredClone(computed);
     if (invalidComputed.outcome !== 'write' || invalidComputed.session.operation === 'none') {

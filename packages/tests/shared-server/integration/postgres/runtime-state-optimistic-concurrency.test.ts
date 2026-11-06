@@ -33,7 +33,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                     ]
                 ) {
                     await expect(
-                        repository.insertIfAbsent(namespace, key, '{}', expiredAtEpochMs)
+                        repository.insertIfAbsent({ namespace, key, value: '{}', expireAtTimestamp: expiredAtEpochMs })
                     ).resolves.toMatchObject({ status: 'applied' });
                 }
 
@@ -71,14 +71,14 @@ describe('Postgres runtime-state optimistic concurrency', () => {
             const expiredKey = `expired-${crypto.randomUUID()}`;
             const liveKey = `live-${crypto.randomUUID()}`;
             try {
-                await repository.insertIfAbsent(namespace, expiredKey, 'old', Date.now() - 1_000);
-                await repository.insertIfAbsent(namespace, liveKey, 'old', NEVER_EXPIRE_AT_TIMESTAMP);
+                await repository.insertIfAbsent({ namespace, key: expiredKey, value: 'old', expireAtTimestamp: Date.now() - 1_000 });
+                await repository.insertIfAbsent({ namespace, key: liveKey, value: 'old', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
 
                 await expect(
-                    repository.insertIfAbsent(namespace, expiredKey, 'new', NEVER_EXPIRE_AT_TIMESTAMP)
+                    repository.insertIfAbsent({ namespace, key: expiredKey, value: 'new', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP })
                 ).resolves.toEqual({ status: 'applied', revision: 1 });
                 await expect(
-                    repository.insertIfAbsent(namespace, liveKey, 'new', NEVER_EXPIRE_AT_TIMESTAMP)
+                    repository.insertIfAbsent({ namespace, key: liveKey, value: 'new', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP })
                 ).resolves.toEqual({ status: 'conflict' });
 
                 await expect(repository.findEntry(namespace, expiredKey)).resolves.toMatchObject({
@@ -116,7 +116,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
 
                     expect(firstSql).not.toBe(secondSql);
                     await expect(
-                        firstRepository.insertIfAbsent(namespace, key, 'seed', NEVER_EXPIRE_AT_TIMESTAMP)
+                        firstRepository.insertIfAbsent({ namespace, key, value: 'seed', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP })
                     ).resolves.toEqual({ status: 'applied', revision: 0 });
 
                     const [firstObservation, secondObservation] = await Promise.all([
@@ -128,18 +128,22 @@ describe('Postgres runtime-state optimistic concurrency', () => {
 
                     const updateResults = await Promise.all([
                         firstRepository.upsertIfRevision(
-                            namespace,
-                            key,
-                            updateValues[0],
-                            NEVER_EXPIRE_AT_TIMESTAMP,
-                            firstObservation?.revision ?? -1
+                            {
+                                namespace,
+                                key,
+                                value: updateValues[0],
+                                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                                expectedRevision: firstObservation?.revision ?? -1
+                            }
                         ),
                         secondRepository.upsertIfRevision(
-                            namespace,
-                            key,
-                            updateValues[1],
-                            NEVER_EXPIRE_AT_TIMESTAMP,
-                            secondObservation?.revision ?? -1
+                            {
+                                namespace,
+                                key,
+                                value: updateValues[1],
+                                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                                expectedRevision: secondObservation?.revision ?? -1
+                            }
                         )
                     ]);
                     const winningUpdateIndex = updateResults.findIndex(
@@ -187,20 +191,14 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                     await repository.begin(async (transactionRepository) => {
                         await expect(
                             transactionRepository.insertIfAbsent(
-                                namespace,
-                                'outer',
-                                'outer-value',
-                                NEVER_EXPIRE_AT_TIMESTAMP
+                                { namespace, key: 'outer', value: 'outer-value', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
                             )
                         ).resolves.toEqual({ status: 'applied', revision: 0 });
 
                         await expect(
                             transactionRepository.begin(async (nestedRepository) => {
                                 await nestedRepository.insertIfAbsent(
-                                    namespace,
-                                    'rolled-back',
-                                    'nested-value',
-                                    NEVER_EXPIRE_AT_TIMESTAMP
+                                    { namespace, key: 'rolled-back', value: 'nested-value', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
                                 );
                                 throw new Error('rollback nested savepoint');
                             })
@@ -210,10 +208,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                             transactionRepository.begin(
                                 async (nestedRepository) =>
                                     await nestedRepository.insertIfAbsent(
-                                        namespace,
-                                        'committed',
-                                        'nested-value',
-                                        NEVER_EXPIRE_AT_TIMESTAMP
+                                        { namespace, key: 'committed', value: 'nested-value', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
                                     )
                             )
                         ).resolves.toEqual({ status: 'applied', revision: 0 });
@@ -269,11 +264,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
 
                     await expect(
                         repository.upsertIfRevision(
-                            namespace,
-                            key,
-                            'changed',
-                            NEVER_EXPIRE_AT_TIMESTAMP,
-                            Number.MAX_SAFE_INTEGER
+                            { namespace, key, value: 'changed', expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP, expectedRevision: Number.MAX_SAFE_INTEGER }
                         )
                     ).rejects.toThrow();
 

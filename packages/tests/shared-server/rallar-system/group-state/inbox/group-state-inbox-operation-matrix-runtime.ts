@@ -159,18 +159,24 @@ export async function writeMatrixClientSession(
         disconnectReason: null
     };
     await harness.runtimeRepository.upsert(
-        CLIENT_STATE_SESSIONS_NAMESPACE,
-        clientStateSessionStorageKey(session),
-        JSON.stringify(session),
-        NEVER_EXPIRE_AT_TIMESTAMP
+        {
+            namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+            key: clientStateSessionStorageKey(session),
+            value: JSON.stringify(session),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        }
     );
 }
 
+export interface ReadMatrixTopicSubscriptionInput {
+    readonly harness: AuthorityHarness;
+    readonly groupId: string;
+    readonly sessionId: string;
+    readonly topicId: string;
+}
+
 export async function readMatrixTopicSubscription(
-    harness: AuthorityHarness,
-    groupId: string,
-    sessionId: string,
-    topicId: string
+    { harness, groupId, sessionId, topicId }: ReadMatrixTopicSubscriptionInput
 ): Promise<GroupTopicSubscription | undefined> {
     const entry = await harness.runtimeRepository.findEntry(
         SUBSCRIPTIONS_NAMESPACE,

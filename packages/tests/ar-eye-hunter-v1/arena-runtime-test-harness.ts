@@ -4,11 +4,17 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { expect, vi } from 'vitest';
 
-import type { RallarAuthState, RallarDirectorStatus, RallarFacade } from '@shared-web/browser/rallar.ts';
+import type {
+    RallarAuthState,
+    RallarDirectorStatus,
+    RallarFacade
+} from '@shared-web/browser/rallar.ts';
 import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 
+import type { ArenaSnapshot } from '@ar-eye-hunter/arena-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { AsyncNotifications } from '@shared/cache/async-notifications.ts';
 
 import { createInitialArenaState, toArenaSnapshot } from '@ar-eye-hunter/simulation.ts';
 import { arenaRecentRooms, arenaRoomEntry } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-room-entry.ts';
@@ -29,7 +35,7 @@ export const session: AuthSession = {
 
 export const arenaRoomRef: GroupRef = { applicationId: 'ar-eye-hunter', workspaceId: 'players', groupId: 'arena-1' };
 
-const authListeners = new Set<(state: RallarAuthState) => void | Promise<void>>();
+let authListeners = new AsyncNotifications<RallarAuthState>();
 const unsubscribe = vi.fn();
 const mockMatch = vi.hoisted(() => ({
     stop: vi.fn(),
@@ -115,6 +121,7 @@ const mockRallar = vi.hoisted(() => ({
         diagnostics: vi.fn()
     },
     ws: {
+        onLifecycle: () => () => undefined,
         status: vi.fn()
     },
     subscriptions: vi.fn()
@@ -236,9 +243,7 @@ export class ArenaRuntimeTestHarness {
 export async function emitAuthState(state: RallarAuthState): Promise<void> {
     mockRallar.session.mockReturnValue(state.session);
     await act(async () => {
-        for (const listener of authListeners) {
-            await listener(state);
-        }
+        await authListeners.publishSequential(state);
     });
 }
 
@@ -252,14 +257,14 @@ export async function waitForState(predicate: () => boolean): Promise<void> {
 }
 
 function resetArenaSessionFixture(): void {
-    authListeners.clear();
+    authListeners = new AsyncNotifications<RallarAuthState>();
     unsubscribe.mockClear();
     mockRallar.auth.restore.mockReturnValue(session);
     mockRallar.session.mockReturnValue(session);
     mockRallar.auth.onChange.mockImplementation((listener) => {
-        authListeners.add(listener);
+        const subscription = authListeners.subscribe(listener);
         return () => {
-            authListeners.delete(listener);
+            subscription.unsubscribe();
             unsubscribe();
         };
     });
@@ -400,7 +405,7 @@ export function freshDirectorStatus(): RallarDirectorStatus {
     };
 }
 
-export function arenaSnapshot(revision: number) {
+export function arenaSnapshot(revision: number): ArenaSnapshot {
     return {
         ...toArenaSnapshot(
             {
@@ -443,7 +448,7 @@ function emptyArenaMatchStatus(): RallarGameMatchStatus {
     };
 }
 
-export function arenaMembershipSnapshot() {
+export function arenaMembershipSnapshot(): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...arenaRoomRef, sessionIds: ['session-1', 'peer-1', 'peer-b', 'target', 'director-session'] });
     return {
         ...snapshot,

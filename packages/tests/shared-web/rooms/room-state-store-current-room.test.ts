@@ -72,6 +72,26 @@ describe('room state store current-room projection', () => {
         stateMocks.repositoriesConfigured = false;
     });
 
+    it('recovers only explicit selection owned by this session, including after same-room reselection', () => {
+        const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
+        const current = createMemberRoomSnapshot();
+        stateMocks.groups.push(current);
+        stateMocks.repositoriesConfigured = true;
+        let session = stateMocks.session;
+        const store = new RoomStateStore({ runtime, readSession: () => session, stateCache: createRallarStateCacheReadPort() });
+        expect(store.resolveCurrentRoomRef()).toEqual(current.group);
+        expect(store.selectedForRecovery()).toBeUndefined();
+        store.setCurrentRoom(current);
+        const previous = store.selectedForRecovery();
+        store.clearCurrentRoomIfMatches(current.group, true);
+        expect(store.selectedForRecovery()).toBeUndefined();
+        store.setCurrentRoom(current);
+        expect(store.selectedForRecovery()).toEqual(previous);
+        expect(store.selectedForRecovery()).not.toBe(previous);
+        session = { ...session, sessionId: 'replacement' };
+        expect(store.selectedForRecovery()).toBeUndefined();
+    });
+
     it('projects active members and orders display names before username fallbacks', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
