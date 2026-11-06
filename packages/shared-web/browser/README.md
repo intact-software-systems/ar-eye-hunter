@@ -342,7 +342,11 @@ Message ownership is concentrated under [`messages/`](./messages/):
   over WS only: a reply that arrives over RTC is dropped with `reply-late` (cause `unobserved`) when the page subscribes to its type over RTC. Room and people
   event listeners take `RallarStateEventMessage<T>`, the message without `reply`, because those events replay
   locally. `messages.readUsage()` returns `RallarMessagesUsage`, the volatile ledger report with `repliesHeld`
-  (retained entries holding a matched reply) and `replyWaitsOpen` (reply waits in flight).
+  (retained entries holding a matched reply), `replyWaitsOpen` (reply waits in flight), `publication` (the live
+  channels' stage) and `ordering` (`ALInboundOrderingCounters`: the connect's `entered`, `omitted`, `witnessed` and
+  `beforeEntry` position events, counted by
+  [`BrowserInboundOrderingCountersSink`](./connection/browser-inbound-ordering-counters-sink.ts), a tee around the
+  connect's inbound diagnostics sink that both carriers share).
 - Trace identity rides the envelope's `id.traceId`. A send takes an optional `traceId`, checked by
   [`browser-message-input-validator.ts`](./messages/browser-message-input-validator.ts) against the trace grammar
   (1 to 128 characters of `[A-Za-z0-9_-]`, refused as `$.traceId` before anything is queued); absent, the envelope
