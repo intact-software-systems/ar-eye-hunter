@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
 import {
@@ -20,15 +20,15 @@ const UNDECODED: ALInboundRuntimeDiagnosticsEvent = {
 
 describe('BrowserInboundOrderingCountersSink', () => {
     it('hands every event to the wrapped sink, in order, and counts the ordering positions among them', () => {
-        const wrapped = vi.fn<ALInboundRuntimeDiagnosticsSink>();
-        const tee = new BrowserInboundOrderingCountersSink(wrapped);
+        const forwarded: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const tee = new BrowserInboundOrderingCountersSink((event) => forwarded.push(event));
 
         tee.sink(ENTERED);
         tee.sink(UNDECODED);
         tee.sink(WITNESSED);
         tee.sink(WITNESSED);
 
-        expect(wrapped.mock.calls.map(([event]) => event)).toEqual([ENTERED, UNDECODED, WITNESSED, WITNESSED]);
+        expect(forwarded).toEqual([ENTERED, UNDECODED, WITNESSED, WITNESSED]);
         expect(tee.readReport()).toEqual({ entered: 1, omitted: 0, witnessed: 2, beforeEntry: 0 });
     });
 

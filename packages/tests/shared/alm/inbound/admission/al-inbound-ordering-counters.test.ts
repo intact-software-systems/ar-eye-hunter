@@ -4,7 +4,7 @@ import {
     computeALInboundOrderingCounters,
     createALInboundOrderingCounters,
     type ALInboundOrderingCounters
-} from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
+} from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 
 type OrderingStatus = Extract<ALInboundRuntimeDiagnosticsEvent, { kind: 'ordering-position'; }>['status'];

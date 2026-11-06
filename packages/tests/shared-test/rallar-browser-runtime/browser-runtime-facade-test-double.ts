@@ -50,7 +50,7 @@ import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/ra
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { createALInboundOrderingCounters } from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
+import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';

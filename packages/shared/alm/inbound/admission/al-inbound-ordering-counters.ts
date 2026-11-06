@@ -1,5 +1,5 @@
-import type { ALInboundOrderingPosition } from './admission/to-al-inbound-ordering-position.ts';
-import type { ALInboundRuntimeDiagnosticsEvent } from './al-inbound-runtime-diagnostics.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '../al-inbound-runtime-diagnostics.ts';
+import type { ALInboundOrderingPosition } from './to-al-inbound-ordering-position.ts';
 
 /**
  * The `ordering-position` events a recipient's admissions stated, by status. They count events, not distinct copies:

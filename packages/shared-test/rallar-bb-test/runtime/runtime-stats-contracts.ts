@@ -1,4 +1,4 @@
-import type { ALInboundOrderingCounters } from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
+import type { ALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';

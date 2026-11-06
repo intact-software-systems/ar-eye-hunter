@@ -13,7 +13,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
-import { createALInboundOrderingCounters } from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
+import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,

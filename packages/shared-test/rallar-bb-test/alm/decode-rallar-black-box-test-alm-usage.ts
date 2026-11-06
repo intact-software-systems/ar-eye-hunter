@@ -1,4 +1,4 @@
-import type { ALInboundOrderingCounters } from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
+import type { ALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '@shared/resilience/Either.ts';
 

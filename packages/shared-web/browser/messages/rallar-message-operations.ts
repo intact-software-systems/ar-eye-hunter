@@ -9,7 +9,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type { ALInboundOrderingCounters } from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
+import type { ALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
