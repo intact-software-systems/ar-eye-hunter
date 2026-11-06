@@ -39,10 +39,6 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
-import type {
-    ALOutboundReceiptAdmissionReadInput,
-    ALOutboundReceiptTrackPositions
-} from '../control/compute-al-outbound-receipt-admission.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
@@ -61,6 +57,8 @@ import type {
     ALOutboundMessageReadDto,
     ALOutboundOutgoingReadInput,
     ALOutboundPlanner,
+    ALOutboundReceiptAdmissionReadInput,
+    ALOutboundReceiptTrackPositions,
     ALOutboundRepairAttemptIdentity,
     ALOutboundRepairReadDto,
     ALOutboundSupersedenceReadState
@@ -84,11 +82,13 @@ import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.t
 import { computeALOrderingPriorSeqRecord } from './compute-al-ordering-prior-seq-record.ts';
 import { computeALOutboundDispatchPlan, requireALOutboundPlannedMessage } from './compute-al-outbound-dispatch-plan.ts';
 import {
-    decodeALOutboundRoomSentPositionRow,
     decodeALOutboundTrackPositionRow,
-    type ALOutboundRoomSentPositionRow,
     type ALOutboundTrackPositionRow
 } from './decode-al-outbound-track-position-row.ts';
+import {
+    decodeALOutboundRoomSentPositionRow,
+    type ALOutboundRoomSentPositionRow
+} from './sequencing/al-outbound-room-sent-position.ts';
 import { computeALOutboundSequenceMint } from './sequencing/compute-al-outbound-sequence-mint.ts';
 import { toALOutboundSentPositionPriors } from './to-al-outbound-sent-position-priors.ts';
 
@@ -490,12 +490,21 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (!plan.mintsSequence || !unadmitted || trackKey === undefined) {
             return { plan, orderingHead: undefined };
         }
-        const head = await this.readValue(
-            session,
-            toALOutboundOrderingHeadKey(this.orderingHeadNamespace, trackKey),
-            decodeALOutboundTrackPositionRow
-        );
-        return computeALOutboundSequenceMint({ plan, trackKey, head, sharesHead: this.sharesOrderingHead });
+        const [head, roomPosition] = await Promise.all([
+            this.readValue(
+                session,
+                toALOutboundOrderingHeadKey(this.orderingHeadNamespace, trackKey),
+                decodeALOutboundTrackPositionRow
+            ),
+            this.sharesOrderingHead ? this.readRoomSentPosition(session, trackKey) : undefined
+        ]);
+        return computeALOutboundSequenceMint({
+            plan,
+            trackKey,
+            head,
+            roomPosition,
+            sharesHead: this.sharesOrderingHead
+        });
     }
 
     /**
@@ -534,7 +543,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     /**
      * Each recipient's last sequence sent on the track, `0` for one never sent it: one indexed read per recipient. On a
      * shared head, a recipient is also read at the last sequence another carrier's receipt named it in, and no lower
-     * than the track's room-wide sent position while no receipt has named who that sequence reached.
+     * than any sequence of the track's room-wide sent position no receipt has named the audience of.
      */
     private async readSentPositions(
         session: ALAdmissionReadSession,

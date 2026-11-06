@@ -1,7 +1,8 @@
-import type {
-    ALOutboundRoomSentPositionRow,
-    ALOutboundTrackPositionRow
-} from './decode-al-outbound-track-position-row.ts';
+import type { ALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
+import {
+    toALOutboundUnknownAudienceSeq,
+    type ALOutboundRoomSentPositionRow
+} from './sequencing/al-outbound-room-sent-position.ts';
 
 export interface ToALOutboundSentPositionPriorsInput {
     readonly recipientPeerIds: readonly string[];
@@ -18,18 +19,17 @@ export interface ToALOutboundSentPositionPriorsInput {
 
 /**
  * Each recipient's prior on the track: the later of its own last sent sequence and the last one another carrier's
- * receipt named it in, `0` for none. While no receipt has named who the room-wide sent position reached, any recipient
- * may hold it, so each reads no lower than it.
+ * receipt named it in, `0` for none. Any recipient may hold a room-wide sent sequence no receipt has named the
+ * audience of, so each reads no lower than the highest one.
  */
 export function toALOutboundSentPositionPriors(
     input: ToALOutboundSentPositionPriorsInput
 ): Readonly<Record<string, number>> {
-    const room = input.roomPosition;
-    const unresolvedRoomSeq = room !== undefined && room.seq > room.resolvedSeq ? room.seq : 0;
+    const unknownAudienceSeq = toALOutboundUnknownAudienceSeq(input.roomPosition);
     return Object.fromEntries(
         input.recipientPeerIds.map((recipientPeerId, index) => [
             recipientPeerId,
-            Math.max(input.positions[index]?.seq ?? 0, input.sharedPositions[index]?.seq ?? 0, unresolvedRoomSeq)
+            Math.max(input.positions[index]?.seq ?? 0, input.sharedPositions[index]?.seq ?? 0, unknownAudienceSeq)
         ])
     );
 }

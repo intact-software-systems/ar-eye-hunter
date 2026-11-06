@@ -43,11 +43,13 @@ import {
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
 import {
-    decodeALOutboundRoomSentPositionRow,
     decodeALOutboundTrackPositionRow,
-    type ALOutboundRoomSentPositionRow,
     type ALOutboundTrackPositionRow
 } from './decode-al-outbound-track-position-row.ts';
+import {
+    decodeALOutboundRoomSentPositionRow,
+    type ALOutboundRoomSentPositionRow
+} from './sequencing/al-outbound-room-sent-position.ts';
 
 export type ALOutboundAdmissionMutation =
     | Readonly<
@@ -69,13 +71,12 @@ export type ALOutboundAdmissionMutation =
         seq: number;
         expireAtTimestamp: number;
     }>
-    | Readonly<{ kind: 'set-room-sent-position'; trackKey: string; seq: number; expireAtTimestamp: number; }>
     | Readonly<{
-        kind: 'resolve-room-sent-position';
+        kind: 'set-room-sent-position';
         trackKey: string;
-        /** The floor the receipt read; the commit writes only while the row still holds it. */
-        observed: ALOutboundRoomSentPositionRow;
-        resolvedSeq: number;
+        /** The floor the admission read; the commit writes only while the row still holds it. */
+        observed: ALOutboundRoomSentPositionRow | undefined;
+        value: ALOutboundRoomSentPositionRow;
         expireAtTimestamp: number;
     }>
     | Readonly<{
@@ -159,7 +160,7 @@ export interface ALOutboundStateWrite {
 export type ALOutboundStateWriteGuard =
     | Readonly<{ kind: 'supersedence-latest'; expected: ALLatestSupersedenceValue | undefined; }>
     | Readonly<{ kind: 'ordering-head'; expected: ALOutboundTrackPositionRow | undefined; }>
-    | Readonly<{ kind: 'room-sent-position'; expected: ALOutboundRoomSentPositionRow; }>;
+    | Readonly<{ kind: 'room-sent-position'; expected: ALOutboundRoomSentPositionRow | undefined; }>;
 
 export interface CreateALOutboundAdmissionMutationsInput {
     readonly namespace: string;
@@ -206,9 +207,9 @@ function toALOutboundOrderingHeadMutations(
     const { trackKey, seq } = head;
     return [
         { kind: 'set-ordering-head', trackKey, seq, observedSeq: head.observedSeq, expireAtTimestamp },
-        ...(head.movesRoomSentPosition
-            ? [{ kind: 'set-room-sent-position', trackKey, seq, expireAtTimestamp } as const]
-            : [])
+        ...(head.roomSentPosition === undefined
+            ? []
+            : [{ kind: 'set-room-sent-position', trackKey, expireAtTimestamp, ...head.roomSentPosition } as const])
     ];
 }
 
@@ -347,7 +348,6 @@ export class ALOutboundAdmissionMutations {
             case 'set-ordering-head':
             case 'set-sent-position':
             case 'set-room-sent-position':
-            case 'resolve-room-sent-position':
                 return this.computeTrackPositionWrite(mutation, nowMs);
             case 'set-msg-owner':
                 return this.computeMessageOwnerWrite(mutation, nowMs);
@@ -375,19 +375,14 @@ export class ALOutboundAdmissionMutations {
      * The track's head and each recipient's sent position share the receivers' track retention, the repository TTL,
      * so a durable pair continues a track across a reload or a quiet hour for as long as a receiver keeps its position.
      * The sender-version fence serializes this pair's writers, so a position is a plain set, in the shared namespace
-     * too: only the WS leg's receipts write there. The head may be shared with another carrier pair of the session, so
-     * it is written only over the head the admission read. The room-wide sent position moves only with that guarded
-     * head, in the same commit, to a sequence no receipt has answered yet; a receipt resolves it only over the floor it
-     * read, since the other pair may move it meanwhile.
+     * too: only the WS leg's receipts write there. The head and the room-wide sent position are shared with the other
+     * carrier pair of the session, so each is written only over the row the admission read.
      */
     private computeTrackPositionWrite(
-        mutation: Extract<ALOutboundAdmissionMutation, {
-            kind:
-                | 'set-ordering-head'
-                | 'set-sent-position'
-                | 'set-room-sent-position'
-                | 'resolve-room-sent-position';
-        }>,
+        mutation: Extract<
+            ALOutboundAdmissionMutation,
+            { kind: 'set-ordering-head' | 'set-sent-position' | 'set-room-sent-position'; }
+        >,
         nowMs: number
     ): ALOutboundStateWrite {
         const expireAtTimestamp = this.computeMessageRowExpiryMs(
@@ -395,43 +390,29 @@ export class ALOutboundAdmissionMutations {
             nowMs,
             this.retention.repositoryTtlMs
         );
-        const roomKey = toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, mutation.trackKey);
         switch (mutation.kind) {
-            case 'set-sent-position':
-                return {
-                    key: toALOutboundSentPositionKey(
-                        mutation.namespace === 'pair' ? this.namespace : this.orderingHeadNamespace,
-                        mutation.trackKey,
-                        mutation.recipientPeerId
-                    ),
-                    value: { seq: mutation.seq },
-                    expireAtTimestamp,
-                    guard: undefined
-                };
+            case 'set-sent-position': {
+                const namespace = mutation.namespace === 'pair' ? this.namespace : this.orderingHeadNamespace;
+                const key = toALOutboundSentPositionKey(namespace, mutation.trackKey, mutation.recipientPeerId);
+                return { key, value: { seq: mutation.seq }, expireAtTimestamp, guard: undefined };
+            }
             case 'set-room-sent-position':
                 return {
-                    key: roomKey,
-                    value: { seq: mutation.seq, resolvedSeq: 0 },
-                    expireAtTimestamp,
-                    guard: undefined
-                };
-            case 'resolve-room-sent-position':
-                return {
-                    key: roomKey,
-                    value: { seq: mutation.observed.seq, resolvedSeq: mutation.resolvedSeq },
+                    key: toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, mutation.trackKey),
+                    value: mutation.value,
                     expireAtTimestamp,
                     guard: { kind: 'room-sent-position', expected: mutation.observed }
                 };
-            case 'set-ordering-head':
+            case 'set-ordering-head': {
+                const expected = mutation.observedSeq === undefined ? undefined : { seq: mutation.observedSeq };
+                const key = toALOutboundOrderingHeadKey(this.orderingHeadNamespace, mutation.trackKey);
                 return {
-                    key: toALOutboundOrderingHeadKey(this.orderingHeadNamespace, mutation.trackKey),
+                    key,
                     value: { seq: mutation.seq },
                     expireAtTimestamp,
-                    guard: {
-                        kind: 'ordering-head',
-                        expected: mutation.observedSeq === undefined ? undefined : { seq: mutation.observedSeq }
-                    }
+                    guard: { kind: 'ordering-head', expected }
                 };
+            }
         }
     }
 

@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALNackPayload,
+    ALReceiptPayload,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessageRow } from '../../../al-contracts/al-message-persistence-validation.ts';
@@ -51,10 +52,7 @@ import {
     ALOutboundControlAdmission,
     type CreateALOutboundControlAdmissionInput
 } from '../control/al-outbound-control-admission.ts';
-import type {
-    ALOutboundReceiptAdmissionReadInput,
-    ALOutboundReceiptAdmissionSurface
-} from '../control/compute-al-outbound-receipt-admission.ts';
+import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -77,6 +75,10 @@ import {
 import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
+import type {
+    ALOutboundRoomSentPositionChange,
+    ALOutboundRoomSentPositionRow
+} from './sequencing/al-outbound-room-sent-position.ts';
 
 export type { ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
@@ -194,10 +196,11 @@ export interface ALOutboundOrderingHead {
     readonly seq: number;
     readonly observedSeq: number | undefined;
     /**
-     * The session's carriers share the head and this admission records none of its recipients: the commit also moves
-     * the track's room-wide sent position to `seq`, so a carrier that records never states a recipient behind it.
+     * The session's carriers share the head and this admission records none of its recipients: the commit also adds
+     * `seq` to the track's room-wide sent position, so a carrier that records never states a recipient behind it
+     * until a receipt names who it reached. Undefined for an admission that moves no floor.
      */
-    readonly movesRoomSentPosition: boolean;
+    readonly roomSentPosition: ALOutboundRoomSentPositionChange | undefined;
 }
 
 /** The positions one admission read on its track: each planned recipient's prior sequence, `0` for none. */
@@ -205,6 +208,21 @@ export interface ALOutboundSentPositions {
     readonly trackKey: string;
     readonly seq: number;
     readonly priorSeqByRecipient: Readonly<Record<string, number>>;
+}
+
+/** What the origin reads for a receipt: the message and origin it names, and the audience the server routed. */
+export type ALOutboundReceiptAdmissionReadInput = Pick<
+    ALReceiptPayload,
+    'msgId' | 'originPeerId' | 'phase' | 'expectedRecipientPeerIds'
+>;
+
+/**
+ * The shared-head rows an `admitted` receipt answers: each recipient it names in the namespace the session's pairs
+ * share, as last sent on the receipted message's track, and that track's room-wide sent position.
+ */
+export interface ALOutboundReceiptTrackPositions {
+    readonly positions: ALOutboundSentPositions;
+    readonly roomPosition: ALOutboundRoomSentPositionRow | undefined;
 }
 
 export interface ALOutboundMessageReadDto<TPrepared> {

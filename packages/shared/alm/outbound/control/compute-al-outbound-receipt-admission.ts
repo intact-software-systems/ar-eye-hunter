@@ -8,31 +8,16 @@ import {
     type ALOutboundAdmissionMutation
 } from '../admission/al-outbound-admission-mutations.ts';
 import type {
-    ALOutboundSentPositions,
+    ALOutboundReceiptTrackPositions,
     ALOutboundVersionedClientRecord
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
-import type { ALOutboundRoomSentPositionRow } from '../admission/decode-al-outbound-track-position-row.ts';
+import { computeALOutboundRoomSentPositionReceipt } from '../admission/sequencing/al-outbound-room-sent-position.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundAcknowledgementFact
 } from '../transition-al-outbound-pending-ack.ts';
-
-/** What the origin reads for a receipt: the message and origin it names, and the audience the server routed. */
-export type ALOutboundReceiptAdmissionReadInput = Pick<
-    ALReceiptPayload,
-    'msgId' | 'originPeerId' | 'phase' | 'expectedRecipientPeerIds'
->;
-
-/**
- * The shared-head rows an `admitted` receipt answers: each recipient it names in the namespace the session's pairs
- * share, as last sent on the receipted message's track, and that track's room-wide sent position.
- */
-export interface ALOutboundReceiptTrackPositions {
-    readonly positions: ALOutboundSentPositions;
-    readonly roomPosition: ALOutboundRoomSentPositionRow | undefined;
-}
 
 /** What one origin holds about the message a receipt names, read in one session. */
 export interface ALOutboundReceiptAdmissionSurface {
@@ -134,8 +119,9 @@ export function toALOutboundReceiptMutation(
 
 /**
  * The shared-head rows the receipt's commit writes beside its receipt row: each recipient the server sent the
- * sequence, moved to it as a recording admission moves its own and never back, and the room-wide sent position
- * resolved at it, so the other carrier pair reads those recipients at their rows instead of the floor.
+ * sequence, moved to it as a recording admission moves its own and never back, and a room-wide sent position that
+ * waited on this receipt no longer waiting, so the other carrier pair reads those recipients at their rows. A receipt
+ * speaks only for its own sequence, so a floor that does not wait on it is left as it is.
  */
 export function toALOutboundReceiptTrackMutations(
     track: ALOutboundReceiptTrackPositions | undefined,
@@ -145,21 +131,14 @@ export function toALOutboundReceiptTrackMutations(
         return [];
     }
     const { trackKey, seq } = track.positions;
-    const floor = track.roomPosition;
+    const observed = track.roomPosition;
+    const value = observed === undefined ? undefined : computeALOutboundRoomSentPositionReceipt(observed, seq);
     const expireAtTimestamp = write.value.deadlineAtMs;
     return [
         ...toALOutboundSentPositionMutations(track.positions, expireAtTimestamp, 'ordering-head'),
-        ...(floor === undefined || floor.resolvedSeq >= seq
+        ...(value === undefined
             ? []
-            : [
-                {
-                    kind: 'resolve-room-sent-position',
-                    trackKey,
-                    observed: floor,
-                    resolvedSeq: seq,
-                    expireAtTimestamp
-                } as const
-            ])
+            : [{ kind: 'set-room-sent-position', trackKey, observed, value, expireAtTimestamp } as const])
     ];
 }
 
