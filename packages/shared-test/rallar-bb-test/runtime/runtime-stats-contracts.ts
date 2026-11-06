@@ -1,3 +1,4 @@
+import type { ALInboundOrderingCounters } from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -16,7 +17,8 @@ import type { RallarBlackBoxEventHistory } from './event-history.ts';
  * The page's session ledger report (D180) beside `orderingTracks` and `deliveredMarkers`, the ordering snapshots
  * and the delivered markers its inbound stores state they hold, each store's latest statement since the page's last
  * `close`, summed; `repliesHeld` and `replyWaitsOpen`, the replies its retained deliveries hold and the reply
- * waits in flight; and `publication`, its connect's publication stage report (D480).
+ * waits in flight; `publication`, its connect's publication stage report (D480); and `ordering`, the ordering
+ * positions its connect's arrivals stated, by status (S4ii-R6).
  */
 export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
     readonly orderingTracks: number;
@@ -24,6 +26,7 @@ export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
     readonly repliesHeld: number;
     readonly replyWaitsOpen: number;
     readonly publication: ALOutboundPublicationStageReport;
+    readonly ordering: ALInboundOrderingCounters;
 }
 
 export interface RallarBlackBoxIndexedDbStoreCensus {

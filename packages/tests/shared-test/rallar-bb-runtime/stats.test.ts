@@ -28,6 +28,7 @@ const PUBLICATION_REPORT: RallarBlackBoxTestAlmUsage['publication'] = {
     limits: AL_PUBLICATION_STAGE_LIMITS,
     counters: { staged: 5, superseded: 1, expired: 0, refused: 1, cancelled: 0, admitted: 1, deferred: 2 }
 };
+const ORDERING_COUNTERS: RallarBlackBoxTestAlmUsage['ordering'] = { entered: 4, omitted: 1, witnessed: 2, beforeEntry: 3 };
 const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
     own: { admissions: 2, bytes: 600 },
@@ -38,7 +39,8 @@ const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     deliveredMarkers: 3,
     repliesHeld: 2,
     replyWaitsOpen: 1,
-    publication: PUBLICATION_REPORT
+    publication: PUBLICATION_REPORT,
+    ordering: ORDERING_COUNTERS
 };
 const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
@@ -50,7 +52,8 @@ const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     deliveredMarkers: 256,
     repliesHeld: 512,
     replyWaitsOpen: 0,
-    publication: { ...PUBLICATION_REPORT, lanes: 0, streams: 0, staged: 0, stagedBytes: 0 }
+    publication: { ...PUBLICATION_REPORT, lanes: 0, streams: 0, staged: 0, stagedBytes: 0 },
+    ordering: { ...ORDERING_COUNTERS, entered: 900 }
 };
 
 function createDefaultPageRuntime(
@@ -360,7 +363,8 @@ describe('the stats result rallar.alm block', () => {
                 stagedBytes: -1,
                 limits: { maxStreams: 64, maxStagedValues: 1_000 },
                 counters: { ...PUBLICATION_REPORT.counters, cancelled: 0.5 }
-            }
+            },
+            ordering: { ...ORDERING_COUNTERS, witnessed: -1, beforeEntry: 1.5 }
         }));
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
@@ -372,7 +376,21 @@ describe('the stats result rallar.alm block', () => {
                 'inbound.bytes is not a count; overloaded is not a boolean; orderingTracks is not a count; ' +
                 'deliveredMarkers is not a count; repliesHeld is not a count; replyWaitsOpen is not a count; ' +
                 'publication.stagedBytes is not a count; publication.limits.maxStagedBytes is not a count; ' +
-                'publication.counters.cancelled is not a count'
+                'publication.counters.cancelled is not a count; ordering.witnessed is not a count; ' +
+                'ordering.beforeEntry is not a count'
+        );
+    });
+
+    it('fails the stats command when the page answers a ledger report without its ordering counters', async () => {
+        const { ordering: _ordering, ...withoutOrdering } = FIRST_REPORT;
+        const runtime = createDefaultPageRuntime(async () => withoutOrdering);
+
+        const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe(
+            'The page\'s session ledger report is not valid: ordering.entered is not a count; ' +
+                'ordering.omitted is not a count; ordering.witnessed is not a count; ordering.beforeEntry is not a count'
         );
     });
 
