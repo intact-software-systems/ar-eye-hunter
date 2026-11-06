@@ -39,6 +39,10 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import type {
+    ALOutboundReceiptAdmissionReadInput,
+    ALOutboundReceiptTrackPositions
+} from '../control/compute-al-outbound-receipt-admission.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
@@ -545,6 +549,32 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 : []
         ]);
         return toALOutboundSentPositionPriors({ recipientPeerIds, positions, sharedPositions, roomPosition });
+    }
+
+    /**
+     * The shared-head rows an `admitted` receipt moves: each recipient it names, as last named on the receipted
+     * message's track, and that track's room-wide sent position. Another phase names no routed audience, and a pair
+     * that shares no head has no other carrier to tell.
+     */
+    async readReceiptTrackPositions(
+        session: ALAdmissionReadSession,
+        receipt: ALOutboundReceiptAdmissionReadInput,
+        stored: ALStoredOutboundMessage | undefined
+    ): Promise<ALOutboundReceiptTrackPositions | undefined> {
+        const trackKey = stored?.orderingTrackKey ?? null;
+        const seq = stored?.orderingSeq ?? null;
+        if (!this.sharesOrderingHead || receipt.phase !== 'admitted' || trackKey === null || seq === null) {
+            return undefined;
+        }
+        const recipientPeerIds = receipt.expectedRecipientPeerIds;
+        const [roomPosition, positions] = await Promise.all([
+            this.readRoomSentPosition(session, trackKey),
+            this.readTrackPositions(session, this.orderingHeadNamespace, trackKey, recipientPeerIds)
+        ]);
+        const priorSeqByRecipient = Object.fromEntries(
+            recipientPeerIds.map((recipientPeerId, index) => [recipientPeerId, positions[index]?.seq ?? 0])
+        );
+        return { positions: { trackKey, seq, priorSeqByRecipient }, roomPosition };
     }
 
     private async readRoomSentPosition(

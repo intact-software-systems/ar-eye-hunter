@@ -51,7 +51,10 @@ import {
     ALOutboundControlAdmission,
     type CreateALOutboundControlAdmissionInput
 } from '../control/al-outbound-control-admission.ts';
-import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
+import type {
+    ALOutboundReceiptAdmissionReadInput,
+    ALOutboundReceiptAdmissionSurface
+} from '../control/compute-al-outbound-receipt-admission.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -428,7 +431,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     readonly readPendingAck: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     /** The sent message, its receipt and its origin's version fence, read in one session. */
-    readonly readReceiptAdmission: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundReceiptAdmissionSurface>;
+    readonly readReceiptAdmission: (
+        receipt: ALOutboundReceiptAdmissionReadInput
+    ) => Promise<ALOutboundReceiptAdmissionSurface>;
 
     /**
      * Decodes one claimed work row of this scope, including the canonical message its payload
@@ -651,12 +656,18 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.readReceiptState(session, receipt));
     }
 
-    async readReceiptAdmission(receipt: ALOutboundPendingAckRef): Promise<ALOutboundReceiptAdmissionSurface> {
-        return await this.backend.readWithin(async (session) => ({
-            stored: await this.reads.readStoredMessage(session, receipt.msgId),
-            pending: await this.reads.readReceiptState(session, receipt),
-            clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId)
-        }));
+    async readReceiptAdmission(
+        receipt: ALOutboundReceiptAdmissionReadInput
+    ): Promise<ALOutboundReceiptAdmissionSurface> {
+        return await this.backend.readWithin(async (session) => {
+            const stored = await this.reads.readStoredMessage(session, receipt.msgId);
+            return {
+                stored,
+                pending: await this.reads.readReceiptState(session, receipt),
+                clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId),
+                trackPositions: await this.reads.readReceiptTrackPositions(session, receipt, stored)
+            };
+        });
     }
 
     async readWorkSnapshot(
