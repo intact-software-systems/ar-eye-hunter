@@ -1,8 +1,8 @@
 import type { ALOutboundTrackPositionRow } from './decode-al-outbound-track-position-row.ts';
 import {
     toALOutboundUnknownAudienceSeq,
-    type ALOutboundRoomSentPositionRow
-} from './sequencing/al-outbound-room-sent-position.ts';
+    type ALOutboundRoomSentFloorRow
+} from './sequencing/al-outbound-room-sent-floor.ts';
 
 export interface ToALOutboundSentPositionPriorsInput {
     readonly recipientPeerIds: readonly string[];
@@ -14,7 +14,7 @@ export interface ToALOutboundSentPositionPriorsInput {
      */
     readonly sharedPositions: readonly (ALOutboundTrackPositionRow | undefined)[];
     /** The track's room-wide sent position; undefined where no carrier of the session sent the room unrecorded. */
-    readonly roomPosition: ALOutboundRoomSentPositionRow | undefined;
+    readonly roomFloor: ALOutboundRoomSentFloorRow | undefined;
 }
 
 /**
@@ -25,7 +25,7 @@ export interface ToALOutboundSentPositionPriorsInput {
 export function toALOutboundSentPositionPriors(
     input: ToALOutboundSentPositionPriorsInput
 ): Readonly<Record<string, number>> {
-    const unknownAudienceSeq = toALOutboundUnknownAudienceSeq(input.roomPosition);
+    const unknownAudienceSeq = toALOutboundUnknownAudienceSeq(input.roomFloor);
     return Object.fromEntries(
         input.recipientPeerIds.map((recipientPeerId, index) => [
             recipientPeerId,

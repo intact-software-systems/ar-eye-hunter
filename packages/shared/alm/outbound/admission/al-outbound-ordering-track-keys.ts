@@ -14,11 +14,11 @@ export function toALOutboundSentPositionKey(namespace: string, trackKey: string,
 }
 
 /**
- * The last sequence a carrier of the session sent one track to an audience it did not record (a WS leg hands its
- * audience to the server); written beside the shared head under its guard.
+ * The sequences carriers of the session sent one track to an audience they did not record (a WS leg hands its
+ * audience to the server) and no receipt has named yet; written beside the shared head under its own guard.
  */
-export function toALOutboundRoomSentPositionKey(namespace: string, trackKey: string): string {
-    return `${namespace}:room-sent-position:${trackKey}`;
+export function toALOutboundRoomSentFloorKey(namespace: string, trackKey: string): string {
+    return `${namespace}:room-sent-floor:${trackKey}`;
 }
 
 /** The message the outbound admitted at one sequence of one track. */

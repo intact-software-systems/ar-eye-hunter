@@ -3,9 +3,9 @@ import type { ALOutboundDispatchPlan } from '../../al-outbound-message-runtime.t
 import type { ALOutboundMessageReadDto, ALOutboundOrderingHead } from '../al-outbound-admission-store.ts';
 import type { ALOutboundTrackPositionRow } from '../decode-al-outbound-track-position-row.ts';
 import {
-    computeALOutboundRoomSentPositionMint,
-    type ALOutboundRoomSentPositionRow
-} from './al-outbound-room-sent-position.ts';
+    computeALOutboundRoomSentFloorMint,
+    type ALOutboundRoomSentFloorRow
+} from './al-outbound-room-sent-floor.ts';
 
 /** A first admission of a plan whose outbound owns its track, and the head that track has reached; absent for none. */
 export interface ALOutboundSequenceMintInput<TPrepared> {
@@ -13,7 +13,7 @@ export interface ALOutboundSequenceMintInput<TPrepared> {
     readonly trackKey: string;
     readonly head: ALOutboundTrackPositionRow | undefined;
     /** The track's room-wide sent position on a shared head; undefined for none, or a head the pair does not share. */
-    readonly roomPosition: ALOutboundRoomSentPositionRow | undefined;
+    readonly roomFloor: ALOutboundRoomSentFloorRow | undefined;
     /** Another carrier pair of the session mints on the same head. */
     readonly sharesHead: boolean;
 }
@@ -59,14 +59,14 @@ function toALOutboundMintedHead<TPrepared>(
     input: ALOutboundSequenceMintInput<TPrepared>,
     seq: number
 ): ALOutboundOrderingHead {
-    const { plan, roomPosition } = input;
+    const { plan, roomFloor } = input;
     const receipted = plan.ackTracking !== undefined && isALLogicalReceiptMode(plan.ackTracking.mode);
     return {
         trackKey: input.trackKey,
         seq,
         observedSeq: input.head?.seq,
-        roomSentPosition: input.sharesHead && plan.recordsSentPositions === undefined
-            ? { observed: roomPosition, value: computeALOutboundRoomSentPositionMint(roomPosition, seq, receipted) }
+        roomSentFloor: input.sharesHead && plan.recordsSentPositions === undefined
+            ? { observed: roomFloor, value: computeALOutboundRoomSentFloorMint(roomFloor, seq, receipted) }
             : undefined
     };
 }

@@ -13,7 +13,7 @@ describe('the priors one recording admission reads', () => {
             recipientPeerIds: ['b', 'c'],
             positions: [{ seq: 4 }, undefined],
             sharedPositions: noRows(2),
-            roomPosition: undefined
+            roomFloor: undefined
         })).toEqual({ b: 4, c: 0 });
     });
 
@@ -22,7 +22,7 @@ describe('the priors one recording admission reads', () => {
             recipientPeerIds: ['b', 'c', 'd'],
             positions: [{ seq: 1 }, undefined, { seq: 5 }],
             sharedPositions: noRows(3),
-            roomPosition: { unreceiptedSeq: 3, pendingReceiptSeqs: [] }
+            roomFloor: { unreceiptedSeq: 3, pendingReceiptSeqs: [] }
         })).toEqual({ b: 3, c: 3, d: 5 });
     });
 
@@ -31,7 +31,7 @@ describe('the priors one recording admission reads', () => {
             recipientPeerIds: ['a', 'b', 'c'],
             positions: noRows(3),
             sharedPositions: [{ seq: 3 }, { seq: 3 }, undefined],
-            roomPosition: { unreceiptedSeq: 0, pendingReceiptSeqs: [2] }
+            roomFloor: { unreceiptedSeq: 0, pendingReceiptSeqs: [2] }
         })).toEqual({ a: 3, b: 3, c: 2 });
     });
 
@@ -40,7 +40,7 @@ describe('the priors one recording admission reads', () => {
             recipientPeerIds: ['a', 'b', 'c'],
             positions: noRows(3),
             sharedPositions: [{ seq: 3 }, { seq: 3 }, undefined],
-            roomPosition: { unreceiptedSeq: 0, pendingReceiptSeqs: [] }
+            roomFloor: { unreceiptedSeq: 0, pendingReceiptSeqs: [] }
         })).toEqual({ a: 3, b: 3, c: 0 });
     });
 
@@ -49,7 +49,7 @@ describe('the priors one recording admission reads', () => {
             recipientPeerIds: ['a', 'b'],
             positions: [{ seq: 5 }, { seq: 1 }],
             sharedPositions: [{ seq: 3 }, { seq: 3 }],
-            roomPosition: { unreceiptedSeq: 0, pendingReceiptSeqs: [] }
+            roomFloor: { unreceiptedSeq: 0, pendingReceiptSeqs: [] }
         })).toEqual({ a: 5, b: 3 });
     });
 });

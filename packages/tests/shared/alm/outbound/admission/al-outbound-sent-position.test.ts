@@ -14,7 +14,7 @@ import type { ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-
 import {
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
-    toALOutboundRoomSentPositionKey,
+    toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import {
@@ -49,6 +49,11 @@ describe('the sent-position row key', () => {
     it('names one recipient on one track, apart from the track head', () => {
         expect(toALOutboundSentPositionKey(NAMESPACE, TRACK_KEY, 'b')).toBe(`outbound:sent-position:["${TRACK_KEY}","b"]`);
         expect(toALOutboundSentPositionKey(NAMESPACE, TRACK_KEY, 'b')).not.toBe(toALOutboundOrderingHeadKey(NAMESPACE, TRACK_KEY));
+    });
+
+    it('names the track\'s room-wide floor apart from its head and its recipients\' positions', () => {
+        expect(toALOutboundRoomSentFloorKey(NAMESPACE, TRACK_KEY)).toBe(`outbound:room-sent-floor:${TRACK_KEY}`);
+        expect(toALOutboundRoomSentFloorKey(NAMESPACE, TRACK_KEY)).not.toBe(toALOutboundOrderingHeadKey(NAMESPACE, TRACK_KEY));
     });
 
     it('keeps a track and a recipient apart whatever characters they hold', () => {
@@ -141,7 +146,7 @@ describe('the sent-position mutations of one admission', () => {
         const trackKey = toALOrderingTrackKey(msg)!;
         const observed = { unreceiptedSeq: 0, pendingReceiptSeqs: [4] };
         const value = { unreceiptedSeq: 0, pendingReceiptSeqs: [4, 5] };
-        const head = { trackKey, seq: 5, observedSeq: 4, roomSentPosition: { observed, value } };
+        const head = { trackKey, seq: 5, observedSeq: 4, roomSentFloor: { observed, value } };
 
         const writes = mutations.computeStateWrites(
             toALOutboundOrderingTrackMutations({ msg, orderingHead: head, sentPositions: undefined }, NOW_MS + 1_000),
@@ -156,9 +161,9 @@ describe('the sent-position mutations of one admission', () => {
                 guard: { kind: 'ordering-head', expected: { seq: 4 } }
             },
             {
-                key: toALOutboundRoomSentPositionKey(SESSION_HEADS, trackKey),
+                key: toALOutboundRoomSentFloorKey(SESSION_HEADS, trackKey),
                 value,
-                guard: { kind: 'room-sent-position', expected: observed }
+                guard: { kind: 'room-sent-floor', expected: observed }
             }
         ]);
         expect(writes[2]?.expireAtTimestamp).toBe(writes[1]?.expireAtTimestamp);
@@ -178,15 +183,15 @@ describe('the sent-position mutations of one admission', () => {
 
         const writes = mutations.computeStateWrites([
             ...toALOutboundSentPositionMutations(POSITIONS, NOW_MS + 1_000, 'ordering-head').slice(0, 1),
-            { kind: 'set-room-sent-position', trackKey: TRACK_KEY, observed, value, expireAtTimestamp: NOW_MS + 1_000 }
+            { kind: 'set-room-sent-floor', trackKey: TRACK_KEY, observed, value, expireAtTimestamp: NOW_MS + 1_000 }
         ], NOW_MS);
 
         expect(writes.map(({ key, value, guard }) => ({ key, value, guard }))).toEqual([
             { key: toALOutboundSentPositionKey(SESSION_HEADS, TRACK_KEY, 'b'), value: { seq: 5 }, guard: undefined },
             {
-                key: toALOutboundRoomSentPositionKey(SESSION_HEADS, TRACK_KEY),
+                key: toALOutboundRoomSentFloorKey(SESSION_HEADS, TRACK_KEY),
                 value,
-                guard: { kind: 'room-sent-position', expected: observed }
+                guard: { kind: 'room-sent-floor', expected: observed }
             }
         ]);
     });

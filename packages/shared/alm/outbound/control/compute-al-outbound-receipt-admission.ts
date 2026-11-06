@@ -12,7 +12,7 @@ import type {
     ALOutboundVersionedClientRecord
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
-import { computeALOutboundRoomSentPositionReceipt } from '../admission/sequencing/al-outbound-room-sent-position.ts';
+import { computeALOutboundRoomSentFloorReceipt } from '../admission/sequencing/al-outbound-room-sent-floor.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
 import {
     isALOutboundReceiptComplete,
@@ -131,14 +131,14 @@ export function toALOutboundReceiptTrackMutations(
         return [];
     }
     const { trackKey, seq } = track.positions;
-    const observed = track.roomPosition;
-    const value = observed === undefined ? undefined : computeALOutboundRoomSentPositionReceipt(observed, seq);
+    const observed = track.roomFloor;
+    const value = observed === undefined ? undefined : computeALOutboundRoomSentFloorReceipt(observed, seq);
     const expireAtTimestamp = write.value.deadlineAtMs;
     return [
         ...toALOutboundSentPositionMutations(track.positions, expireAtTimestamp, 'ordering-head'),
         ...(value === undefined
             ? []
-            : [{ kind: 'set-room-sent-position', trackKey, observed, value, expireAtTimestamp } as const])
+            : [{ kind: 'set-room-sent-floor', trackKey, observed, value, expireAtTimestamp } as const])
     ];
 }
 

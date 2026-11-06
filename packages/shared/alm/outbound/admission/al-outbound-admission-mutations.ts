@@ -39,7 +39,7 @@ import {
 import {
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
-    toALOutboundRoomSentPositionKey,
+    toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
 import {
@@ -47,9 +47,9 @@ import {
     type ALOutboundTrackPositionRow
 } from './decode-al-outbound-track-position-row.ts';
 import {
-    decodeALOutboundRoomSentPositionRow,
-    type ALOutboundRoomSentPositionRow
-} from './sequencing/al-outbound-room-sent-position.ts';
+    decodeALOutboundRoomSentFloorRow,
+    type ALOutboundRoomSentFloorRow
+} from './sequencing/al-outbound-room-sent-floor.ts';
 
 export type ALOutboundAdmissionMutation =
     | Readonly<
@@ -72,11 +72,11 @@ export type ALOutboundAdmissionMutation =
         expireAtTimestamp: number;
     }>
     | Readonly<{
-        kind: 'set-room-sent-position';
+        kind: 'set-room-sent-floor';
         trackKey: string;
         /** The floor the admission read; the commit writes only while the row still holds it. */
-        observed: ALOutboundRoomSentPositionRow | undefined;
-        value: ALOutboundRoomSentPositionRow;
+        observed: ALOutboundRoomSentFloorRow | undefined;
+        value: ALOutboundRoomSentFloorRow;
         expireAtTimestamp: number;
     }>
     | Readonly<{
@@ -147,7 +147,7 @@ export interface ALOutboundStateWrite {
         | ALOutboundPendingAckSnapshot
         | ALOutboundRepairAttemptSnapshot
         | ALOutboundTrackPositionRow
-        | ALOutboundRoomSentPositionRow
+        | ALOutboundRoomSentFloorRow
         | ALLatestSupersedenceValue
         | ALReplacementSupersedenceValue
         | undefined;
@@ -160,7 +160,7 @@ export interface ALOutboundStateWrite {
 export type ALOutboundStateWriteGuard =
     | Readonly<{ kind: 'supersedence-latest'; expected: ALLatestSupersedenceValue | undefined; }>
     | Readonly<{ kind: 'ordering-head'; expected: ALOutboundTrackPositionRow | undefined; }>
-    | Readonly<{ kind: 'room-sent-position'; expected: ALOutboundRoomSentPositionRow | undefined; }>;
+    | Readonly<{ kind: 'room-sent-floor'; expected: ALOutboundRoomSentFloorRow | undefined; }>;
 
 export interface CreateALOutboundAdmissionMutationsInput {
     readonly namespace: string;
@@ -207,9 +207,9 @@ function toALOutboundOrderingHeadMutations(
     const { trackKey, seq } = head;
     return [
         { kind: 'set-ordering-head', trackKey, seq, observedSeq: head.observedSeq, expireAtTimestamp },
-        ...(head.roomSentPosition === undefined
+        ...(head.roomSentFloor === undefined
             ? []
-            : [{ kind: 'set-room-sent-position', trackKey, expireAtTimestamp, ...head.roomSentPosition } as const])
+            : [{ kind: 'set-room-sent-floor', trackKey, expireAtTimestamp, ...head.roomSentFloor } as const])
     ];
 }
 
@@ -238,7 +238,7 @@ export function toALOutboundSentPositionMutations(
 export class ALOutboundAdmissionMutations {
     private static readonly GUARD_CONFLICT_MESSAGES: Readonly<Record<ALOutboundStateWriteGuard['kind'], string>> = {
         'ordering-head': 'Outbound ordering head moved',
-        'room-sent-position': 'Outbound room sent position moved',
+        'room-sent-floor': 'Outbound room sent floor moved',
         'supersedence-latest': 'Outbound shared supersedence observation changed'
     };
     private readonly namespace: string;
@@ -347,7 +347,7 @@ export class ALOutboundAdmissionMutations {
                 };
             case 'set-ordering-head':
             case 'set-sent-position':
-            case 'set-room-sent-position':
+            case 'set-room-sent-floor':
                 return this.computeTrackPositionWrite(mutation, nowMs);
             case 'set-msg-owner':
                 return this.computeMessageOwnerWrite(mutation, nowMs);
@@ -381,7 +381,7 @@ export class ALOutboundAdmissionMutations {
     private computeTrackPositionWrite(
         mutation: Extract<
             ALOutboundAdmissionMutation,
-            { kind: 'set-ordering-head' | 'set-sent-position' | 'set-room-sent-position'; }
+            { kind: 'set-ordering-head' | 'set-sent-position' | 'set-room-sent-floor'; }
         >,
         nowMs: number
     ): ALOutboundStateWrite {
@@ -396,12 +396,12 @@ export class ALOutboundAdmissionMutations {
                 const key = toALOutboundSentPositionKey(namespace, mutation.trackKey, mutation.recipientPeerId);
                 return { key, value: { seq: mutation.seq }, expireAtTimestamp, guard: undefined };
             }
-            case 'set-room-sent-position':
+            case 'set-room-sent-floor':
                 return {
-                    key: toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, mutation.trackKey),
+                    key: toALOutboundRoomSentFloorKey(this.orderingHeadNamespace, mutation.trackKey),
                     value: mutation.value,
                     expireAtTimestamp,
-                    guard: { kind: 'room-sent-position', expected: mutation.observed }
+                    guard: { kind: 'room-sent-floor', expected: mutation.observed }
                 };
             case 'set-ordering-head': {
                 const expected = mutation.observedSeq === undefined ? undefined : { seq: mutation.observedSeq };
@@ -551,12 +551,12 @@ async function readALOutboundGuardedValue(
     transaction: ALAdmissionWorkWriteContext,
     key: string,
     guard: ALOutboundStateWriteGuard
-): Promise<ALOutboundTrackPositionRow | ALOutboundRoomSentPositionRow | ALLatestSupersedenceValue | undefined> {
+): Promise<ALOutboundTrackPositionRow | ALOutboundRoomSentFloorRow | ALLatestSupersedenceValue | undefined> {
     switch (guard.kind) {
         case 'ordering-head':
             return await transaction.read(key, decodeALOutboundTrackPositionRow);
-        case 'room-sent-position':
-            return await transaction.read(key, decodeALOutboundRoomSentPositionRow);
+        case 'room-sent-floor':
+            return await transaction.read(key, decodeALOutboundRoomSentFloorRow);
         case 'supersedence-latest':
             return await transaction.read(key, (value) => decodeALAdmissionSupersedenceValue(value, 'latest'));
     }

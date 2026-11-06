@@ -371,11 +371,11 @@ describe('the room-wide sent position a mint moves', () => {
             plan: { ...plan, ackTracking, ...(records ? { recordsSentPositions: ['b'] } : {}) },
             trackKey: 'chat',
             head: { seq: 4 },
-            roomPosition: observed,
+            roomFloor: observed,
             sharesHead
         });
 
-        expect(minted.orderingHead).toEqual({ trackKey: 'chat', seq: 5, observedSeq: 4, roomSentPosition: moved });
+        expect(minted.orderingHead).toEqual({ trackKey: 'chat', seq: 5, observedSeq: 4, roomSentFloor: moved });
     });
 });
 

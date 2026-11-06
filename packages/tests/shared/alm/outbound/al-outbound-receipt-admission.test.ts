@@ -12,14 +12,14 @@ import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import type { ALOutboundAdmissionMutation } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import {
-    toALOutboundRoomSentPositionKey,
+    toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import { decodeALOutboundTrackPositionRow } from '@shared/alm/outbound/admission/decode-al-outbound-track-position-row.ts';
 import {
-    decodeALOutboundRoomSentPositionRow,
-    type ALOutboundRoomSentPositionRow
-} from '@shared/alm/outbound/admission/sequencing/al-outbound-room-sent-position.ts';
+    decodeALOutboundRoomSentFloorRow,
+    type ALOutboundRoomSentFloorRow
+} from '@shared/alm/outbound/admission/sequencing/al-outbound-room-sent-floor.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -208,11 +208,11 @@ async function readSharedPositions(
 async function readRoomFloor(
     fixture: ReceiptAdmissionFixture,
     trackKey: string
-): Promise<ALOutboundRoomSentPositionRow | undefined> {
+): Promise<ALOutboundRoomSentFloorRow | undefined> {
     return await fixture.backend.readWithin((session) =>
         session.read(
-            toALOutboundRoomSentPositionKey(fixture.stores.headNamespace, trackKey),
-            decodeALOutboundRoomSentPositionRow
+            toALOutboundRoomSentFloorKey(fixture.stores.headNamespace, trackKey),
+            decodeALOutboundRoomSentFloorRow
         )
     );
 }

@@ -479,7 +479,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         // The WS leg records no recipients, so its mints move the room-wide position beside the shared head; its
         // admitted receipt then names who the server sent, and their positions join the head's namespace.
         expect(headsBeforePurge.map((key) => key.slice(headPrefix.length).split(':')[0]).toSorted())
-            .toEqual(['ordering-head', 'room-sent-position', 'sent-position']);
+            .toEqual(['ordering-head', 'room-sent-floor', 'sent-position']);
         expect(await readBrowserALRuntimeEntryKeys(headPrefix)).toEqual([]);
     });
 

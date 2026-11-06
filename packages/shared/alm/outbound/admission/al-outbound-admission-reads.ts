@@ -75,7 +75,7 @@ import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-cap
 import {
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
-    toALOutboundRoomSentPositionKey,
+    toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
 import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
@@ -86,9 +86,9 @@ import {
     type ALOutboundTrackPositionRow
 } from './decode-al-outbound-track-position-row.ts';
 import {
-    decodeALOutboundRoomSentPositionRow,
-    type ALOutboundRoomSentPositionRow
-} from './sequencing/al-outbound-room-sent-position.ts';
+    decodeALOutboundRoomSentFloorRow,
+    type ALOutboundRoomSentFloorRow
+} from './sequencing/al-outbound-room-sent-floor.ts';
 import { computeALOutboundSequenceMint } from './sequencing/compute-al-outbound-sequence-mint.ts';
 import { toALOutboundSentPositionPriors } from './to-al-outbound-sent-position-priors.ts';
 
@@ -490,19 +490,19 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (!plan.mintsSequence || !unadmitted || trackKey === undefined) {
             return { plan, orderingHead: undefined };
         }
-        const [head, roomPosition] = await Promise.all([
+        const [head, roomFloor] = await Promise.all([
             this.readValue(
                 session,
                 toALOutboundOrderingHeadKey(this.orderingHeadNamespace, trackKey),
                 decodeALOutboundTrackPositionRow
             ),
-            this.sharesOrderingHead ? this.readRoomSentPosition(session, trackKey) : undefined
+            this.sharesOrderingHead ? this.readRoomSentFloor(session, trackKey) : undefined
         ]);
         return computeALOutboundSequenceMint({
             plan,
             trackKey,
             head,
-            roomPosition,
+            roomFloor,
             sharesHead: this.sharesOrderingHead
         });
     }
@@ -550,14 +550,14 @@ export class ALOutboundAdmissionReads<TPrepared> {
         trackKey: string,
         recipientPeerIds: readonly string[]
     ): Promise<Readonly<Record<string, number>>> {
-        const [roomPosition, positions, sharedPositions] = await Promise.all([
-            this.sharesOrderingHead ? this.readRoomSentPosition(session, trackKey) : undefined,
+        const [roomFloor, positions, sharedPositions] = await Promise.all([
+            this.sharesOrderingHead ? this.readRoomSentFloor(session, trackKey) : undefined,
             this.readTrackPositions(session, this.namespace, trackKey, recipientPeerIds),
             this.sharesOrderingHead
                 ? this.readTrackPositions(session, this.orderingHeadNamespace, trackKey, recipientPeerIds)
                 : []
         ]);
-        return toALOutboundSentPositionPriors({ recipientPeerIds, positions, sharedPositions, roomPosition });
+        return toALOutboundSentPositionPriors({ recipientPeerIds, positions, sharedPositions, roomFloor });
     }
 
     /**
@@ -576,24 +576,24 @@ export class ALOutboundAdmissionReads<TPrepared> {
             return undefined;
         }
         const recipientPeerIds = receipt.expectedRecipientPeerIds;
-        const [roomPosition, positions] = await Promise.all([
-            this.readRoomSentPosition(session, trackKey),
+        const [roomFloor, positions] = await Promise.all([
+            this.readRoomSentFloor(session, trackKey),
             this.readTrackPositions(session, this.orderingHeadNamespace, trackKey, recipientPeerIds)
         ]);
         const priorSeqByRecipient = Object.fromEntries(
             recipientPeerIds.map((recipientPeerId, index) => [recipientPeerId, positions[index]?.seq ?? 0])
         );
-        return { positions: { trackKey, seq, priorSeqByRecipient }, roomPosition };
+        return { positions: { trackKey, seq, priorSeqByRecipient }, roomFloor };
     }
 
-    private async readRoomSentPosition(
+    private async readRoomSentFloor(
         session: ALAdmissionReadSession,
         trackKey: string
-    ): Promise<ALOutboundRoomSentPositionRow | undefined> {
+    ): Promise<ALOutboundRoomSentFloorRow | undefined> {
         return await this.readValue(
             session,
-            toALOutboundRoomSentPositionKey(this.orderingHeadNamespace, trackKey),
-            decodeALOutboundRoomSentPositionRow
+            toALOutboundRoomSentFloorKey(this.orderingHeadNamespace, trackKey),
+            decodeALOutboundRoomSentFloorRow
         );
     }
 

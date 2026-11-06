@@ -76,9 +76,9 @@ import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-poli
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 import type {
-    ALOutboundRoomSentPositionChange,
-    ALOutboundRoomSentPositionRow
-} from './sequencing/al-outbound-room-sent-position.ts';
+    ALOutboundRoomSentFloorChange,
+    ALOutboundRoomSentFloorRow
+} from './sequencing/al-outbound-room-sent-floor.ts';
 
 export type { ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
@@ -200,7 +200,7 @@ export interface ALOutboundOrderingHead {
      * `seq` to the track's room-wide sent position, so a carrier that records never states a recipient behind it
      * until a receipt names who it reached. Undefined for an admission that moves no floor.
      */
-    readonly roomSentPosition: ALOutboundRoomSentPositionChange | undefined;
+    readonly roomSentFloor: ALOutboundRoomSentFloorChange | undefined;
 }
 
 /** The positions one admission read on its track: each planned recipient's prior sequence, `0` for none. */
@@ -222,7 +222,7 @@ export type ALOutboundReceiptAdmissionReadInput = Pick<
  */
 export interface ALOutboundReceiptTrackPositions {
     readonly positions: ALOutboundSentPositions;
-    readonly roomPosition: ALOutboundRoomSentPositionRow | undefined;
+    readonly roomFloor: ALOutboundRoomSentFloorRow | undefined;
 }
 
 export interface ALOutboundMessageReadDto<TPrepared> {
