@@ -36,7 +36,8 @@ import '../../../setup-browser-indexeddb.ts';
 import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
-    ORIGIN_ROOM
+    ORIGIN_ROOM,
+    type RtcOriginOverlayFixture
 } from '../../multicast/rtc-origin-overlay-fixture.ts';
 import {
     createOutboundTestRuntimeFor,
@@ -193,7 +194,61 @@ describe('one ordering head per session track, whichever carrier mints on it', (
         expect(observeAtRecipient(third, 'd', 1).status).toBe('omitted');
         expect(observeAtRecipient(third, 'b', 1).status).toBe('gap');
     });
+
+    it('keeps a WS send that asked for no receipt as a floor a later send\'s receipt does not answer', async () => {
+        const { ws, origin } = createFallbackSession();
+        await sendOnRtc(origin, 'rtc-1', 1);
+        expect(await enqueueMintedSeq(ws, createRoomBroadcast('unreceipted-2', 'none'))).toBe(2);
+        const receipted = createRoomBroadcast('receipted-3', 'all-logical-recipients');
+        expect(await enqueueMintedSeq(ws, receipted)).toBe(3);
+        await ws.acceptReceipt(createServerReceipt(receipted, 'admitted', ['b', 'c']));
+
+        const fourth = await sendOnRtc(origin, 'rtc-4', 2);
+
+        // 2 may still be in flight to d: d asks for it rather than reading 4 as an omission past it.
+        expect([fourth.ordering?.seq, fourth.ordering?.priorSeqByRecipient]).toEqual([4, { d: 2 }]);
+        expect(observeAtRecipient(fourth, 'd', 1).status).toBe('gap');
+    });
+
+    it.each([
+        { label: 'only the later receipt has landed', receipted: [3], record: { d: 2 } },
+        { label: 'both receipts have landed, the later first', receipted: [3, 2], record: { d: 1 } }
+    ])('reads a recipient no receipt named no lower than a receipted WS send still waiting on its receipt: $label', async ({ receipted, record }) => {
+        const { ws, origin } = createFallbackSession();
+        await sendOnRtc(origin, 'rtc-1', 1);
+        const sends = new Map<number, ALMessage>();
+        for (const seq of [2, 3]) {
+            const send = createRoomBroadcast(`receipted-${seq}`, 'all-logical-recipients');
+            expect(await enqueueMintedSeq(ws, send)).toBe(seq);
+            sends.set(seq, send);
+        }
+        for (const seq of receipted) {
+            await ws.acceptReceipt(createServerReceipt(sends.get(seq)!, 'admitted', ['b', 'c']));
+        }
+
+        const fourth = await sendOnRtc(origin, 'rtc-4', 2);
+
+        expect(fourth.ordering?.priorSeqByRecipient).toEqual(record);
+    });
 });
+
+/** The WS carrier runtime and the RTC origin of one session, minting on one head per track, sending to b, c and d. */
+function createFallbackSession() {
+    const stores = createSessionCarrierStores();
+    const origin = createRtcOriginOverlayFixture({
+        snapshot: createOriginSnapshot(['a', 'b', 'c', 'd'], 1),
+        nextHopPeerIds: ['b'],
+        stores: stores.rtc
+    });
+    return { ws: createCarrierRuntime(stores.ws), origin };
+}
+
+/** The RTC origin's room multicast, as the `count`th copy its next hop b captured. */
+async function sendOnRtc(origin: RtcOriginOverlayFixture, name: string, count: number): Promise<ALMessage> {
+    await origin.manager.enqueueLegIfAbsent(createRoomMulticast(name), 'hand-over');
+    await vi.waitFor(() => expect(origin.channels.b!.sent).toHaveLength(count));
+    return origin.channels.b!.sent[count - 1]!;
+}
 
 /** Both carriers' durable pairs of the session over one backend, minting on one head per track. */
 function createSessionCarrierStores(backend: ALAdmissionWorkBackend = createMemoryBackend()): SharedHeadCarrierStores {

@@ -38,16 +38,17 @@ import {
     createPassThroughALOutboundRuntimeDiagnosticsSink,
     toRallarDiagnosticsPorts
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
-import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { toALOutboundSentPositionMutations } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
-import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createPassThroughALStorageEventSink, type ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
@@ -55,6 +56,7 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
+    newALBroadcastMessage,
     newALMulticastMessage,
     newALUnicastMessage,
     type ALMessage,
@@ -66,7 +68,12 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
-import { readOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import {
+    createOutboundTestRuntimeFor,
+    createServerReceipt,
+    createWsClientMintingPlanner,
+    readOutboundTestAdmission
+} from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 import '../../setup-browser-indexeddb.ts';
 import {
@@ -462,9 +469,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const sends = [
             await commitMintedRoomSend(wsStore, sessionId, 'ws-1'),
             await commitMintedRoomSend(overlayStore, sessionId, 'overlay-2'),
-            await commitMintedRoomSend(wsStore, sessionId, 'ws-3')
+            await sendReceiptedRoomBroadcast(sessionId, 'ws-3', ['b'])
         ];
-        await commitReceiptedSentPosition(wsStore, sends[2]!, 'b');
         const headPrefix = `${toBrowserSessionALOrderingHeadNamespace(sessionId)}:`;
         const headsBeforePurge = await readBrowserALRuntimeEntryKeys(headPrefix);
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: SCOPE, storage: diagnosticsPorts.storage });
@@ -938,31 +944,39 @@ async function commitMintedRoomSend(
     return (await admissionStore.readSentMessage(message.id.msgId))!.msg;
 }
 
-/** The shared-head position the WS leg's admitted receipt writes for one recipient it names, at the receipted sequence. */
-async function commitReceiptedSentPosition(
-    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
-    receipted: ALMessage,
-    recipientPeerId: string
-): Promise<void> {
-    const { clientRecord } = await admissionStore.readReceiptAdmission({
-        originPeerId: receipted.id.senderId,
-        msgId: receipted.id.msgId,
-        phase: 'admitted',
-        expectedRecipientPeerIds: [recipientPeerId]
+/**
+ * A receipted WS room broadcast the session's WS runtime mints on the shared head, and the server's `admitted` receipt
+ * naming the recipients it routed it to, admitted as the WS client admits it.
+ */
+async function sendReceiptedRoomBroadcast(
+    sessionId: string,
+    resourceId: string,
+    recipientPeerIds: readonly string[]
+): Promise<ALMessage> {
+    const ws = createOutboundTestRuntimeFor({
+        stores: resolveBrowserWsClientALOutboundRuntimeStores(sessionId),
+        decodePreparedMessage: decodeALOutboundTransportMessage,
+        planOutgoingMessage: createWsClientMintingPlanner(sessionId),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
-    const positions = {
-        trackKey: toALOrderingTrackKey(receipted)!,
-        seq: receipted.ordering!.seq!,
-        priorSeqByRecipient: { [recipientPeerId]: 0 }
-    };
-    expect(
-        await admissionStore.commitBundle({
-            senderId: receipted.id.senderId,
-            expectedVersion: clientRecord?.version,
-            mutations: toALOutboundSentPositionMutations(positions, receipted.constraints!.expiresAtMs!, 'ordering-head'),
-            durableEffects: []
-        })
-    ).toBe('committed');
+    const message = newALBroadcastMessage(
+        sessionId,
+        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+        'room',
+        'chat.message.v1',
+        { resourceId },
+        {
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+            ttlMs: 60_000,
+            ack: 'all-logical-recipients',
+            ordering: { orderingKey: 'chat' }
+        }
+    );
+    const sent = await ws.enqueueIfAbsent(message);
+    expect(sent.verdict.kind, sent.reason).toBe('admitted');
+    expect(await ws.acceptReceipt(createServerReceipt(sent.message, 'admitted', recipientPeerIds)))
+        .toEqual({ kind: 'committed' });
+    return sent.message;
 }
 
 function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {
