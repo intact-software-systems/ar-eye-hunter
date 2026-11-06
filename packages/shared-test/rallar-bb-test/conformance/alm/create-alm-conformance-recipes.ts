@@ -62,6 +62,7 @@ import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-deliver
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
 import { grantedRtcMissingProof } from './scenarios/granted-rtc/granted-rtc-missing-proof.ts';
 import { grantedRtcNotSubscribed } from './scenarios/granted-rtc/granted-rtc-not-subscribed.ts';
+import { grantedRtcOrderedRelay } from './scenarios/granted-rtc/granted-rtc-ordered-relay.ts';
 import { grantedRtcPublishRefused } from './scenarios/granted-rtc/granted-rtc-publish-refused.ts';
 import { grantedRtcReceiptedDelivered } from './scenarios/granted-rtc/granted-rtc-receipted-delivered.ts';
 import { grantedRtcRelayOnly } from './scenarios/granted-rtc/granted-rtc-relay-only.ts';
@@ -258,8 +259,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     subscriptionSuccessor,
     grantedRtcForgedSender,
     grantedRtcNotSubscribed,
-    // The room's three-agent cells share it, and this one reshapes its topology until its own last step.
-    grantedRtcRelayOnly
+    // The room's three-agent cells share it, and these two reshape its topology until each one's own last step.
+    grantedRtcRelayOnly,
+    grantedRtcOrderedRelay
 ];
 
 export function createAlmConformanceRecipes(

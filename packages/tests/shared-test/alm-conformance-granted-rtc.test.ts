@@ -135,7 +135,7 @@ function toVerdictFacts(
 }
 
 describe('the granted rtc cells', () => {
-    it('plans the granted family over rtc, the revoked publisher over the fallback carrier too, every cell full-only and the relay-only cell last', () => {
+    it('plans the granted family over rtc, the revoked publisher over the fallback carrier too, every cell full-only and the two relay cells last', () => {
         const families = {
             ws: [],
             rtc: [
@@ -146,7 +146,8 @@ describe('the granted rtc cells', () => {
                 ['granted-rtc-revoked-publisher', 'two-agent'],
                 ['granted-rtc-forged-sender', 'three-agent'],
                 ['granted-rtc-not-subscribed', 'three-agent'],
-                ['granted-rtc-relay-only', 'three-agent']
+                ['granted-rtc-relay-only', 'three-agent'],
+                ['granted-rtc-ordered-relay', 'three-agent']
             ],
             'rtc-with-ws-fallback': [['granted-rtc-revoked-publisher', 'two-agent']]
         } as const;
@@ -226,7 +227,8 @@ describe('the granted rtc cells', () => {
             ['granted-rtc-revoked-publisher', [`messages.send ${receipted}`]],
             ['granted-rtc-forged-sender', [`messages.send ${unreceipted}`]],
             ['granted-rtc-not-subscribed', [`messages.send ${receipted}`]],
-            ['granted-rtc-relay-only', [`messages.send ${unreceipted}`]]
+            ['granted-rtc-relay-only', [`messages.send ${unreceipted}`]],
+            ['granted-rtc-ordered-relay', [`messages.send ${receipted}`]]
         ]);
     });
 
@@ -375,6 +377,102 @@ describe('the granted rtc cells', () => {
             `"typeId":"alm.conformance.rtc.granted-rtc-relay-only","carrier":"rtc","outcome":"committed","reason":"admitted"`
         ]);
         expect(toPublicationAbsences(recipientB)).toEqual(['publication']);
+        expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
+        for (const recipe of [sender, receiver, recipientB]) {
+            expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)
+                .toEqual([expect.objectContaining({ commandId: `${recipe!.recipeId}-overlay-next-hops` })]);
+        }
+    });
+
+    it('publishes a minted receipted track over the path and holds p2 until its repair was dispatched, then releases it', () => {
+        const { sender } = toGrantedRtcScenario('granted-rtc-ordered-relay');
+        const prefix = 'alm-rtc-granted-rtc-ordered-relay-sender';
+        const sends = toFlatCommands(sender).flatMap((command) =>
+            command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.commandId?.startsWith(`${prefix}-send-`) === true
+                ? [command]
+                : []
+        );
+
+        expect(sends.map(({ commandId, topicId, payload, orderingKey, ack, reliability }) => ({ commandId, topicId, payload, orderingKey, ack, reliability })))
+            .toEqual([1, 2, 3].map((index) => ({
+                commandId: `${prefix}-send-${index}`,
+                topicId: GRANTED_TOPIC_ID,
+                payload: { marker: 'granted-rtc-ordered-relay', carrier: 'rtc', publication: `p${index}` },
+                orderingKey: 'granted-rtc-ordered-relay',
+                ack: 'all-logical-recipients',
+                reliability: 'at-least-once'
+            })));
+        expect(sends.some((send) => 'seq' in send)).toBe(false);
+        // The readiness probe rides no track and expects the receiver alone: recipient-b and the sender hold no subscribe.
+        expect(toReceiptCounts(sender)).toEqual({ expected: 1, confirmed: 1, outsideAudience: 0 });
+        const order = [
+            '-cue-tree-received',
+            '-probe-ready',
+            '-send-1',
+            '-assert-sent-1',
+            '-hold-rtc',
+            '-send-2',
+            '-hold-message-2-rtc',
+            '-release-rtc',
+            '-send-3',
+            '-repair-dispatch-2',
+            '-release-message-2-rtc',
+            '-cue-received-received',
+            '-overlay-next-hops'
+        ].map((suffix) => toStepIndex(sender, suffix));
+        expect(order).toEqual(order.toSorted((left, right) => left - right));
+        expect(toFlatCommands(sender).find(({ commandId }) => commandId === `${prefix}-repair-dispatch-2`)).toMatchObject({
+            match: {
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                contains: `"msgId":"{resultCache.${prefix}-send-2.value.msgId}","typeId":"alm.conformance.rtc.granted-rtc-ordered-relay",` +
+                    '"origin":"repair"'
+            }
+        });
+        expect(toFlatCommands(sender).find(({ commandId }) => commandId === `${prefix}-release-message-2-rtc`)).toMatchObject({
+            match: { msgId: `{resultCache.${prefix}-send-2.value.msgId}` },
+            remaining: 0
+        });
+    });
+
+    it('reads the receiver entered at p1 and never omitted on the track, over the path the relay-only cell draws', () => {
+        const { sender, receiver, recipientB } = toGrantedRtcScenario('granted-rtc-ordered-relay');
+        const prefix = 'alm-rtc-granted-rtc-ordered-relay-receiver';
+        const track = `"trackKey":"granted-rtc-ordered-relay:{resultCache.${prefix}-received-p1.value.event.payload.senderId}:`;
+        const step = (name: string) => toFlatCommands(receiver).find(({ commandId }) => commandId === `${prefix}-${name}`);
+
+        for (const publication of ['p1', 'p2', 'p3']) {
+            expect(step(`received-${publication}`), publication).toMatchObject({
+                kind: 'wait',
+                match: { equals: { marker: 'granted-rtc-ordered-relay', carrier: 'rtc', publication } }
+            });
+            expect(step(`received-${publication}`), publication).not.toHaveProperty('absent');
+        }
+        expect(step('entered-p1')).toMatchObject({
+            match: {
+                contains: track,
+                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 0 }
+            }
+        });
+        expect(step('entered-p1')).not.toHaveProperty('absent');
+        // Any prior: an omission of the held p2 would name whatever prior the sender recorded.
+        expect(step('no-omitted')).toMatchObject({
+            absent: true,
+            match: { contains: track, payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'omitted' } }
+        });
+        expect(step('no-omitted')).not.toHaveProperty(['match', 'payloadFields', 'data.priorSeq']);
+        expect(toStepIndex(receiver, '-received-p3')).toBeLessThan(toStepIndex(receiver, '-cue-received'));
+        expect(
+            toRequests(receiver).filter(({ request }) => request.path?.includes('/topology/config/requests/'))
+                .map(({ request }) => [request.method, request.body])
+        ).toEqual([
+            ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } }],
+            ['DELETE', undefined]
+        ]);
+        expect(
+            toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'))
+                .map(({ request }) => request.body)
+        ).toEqual([{ topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }]);
+        expect(toPublicationAbsences(recipientB)).toEqual(['p1', 'p2', 'p3']);
         expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
         for (const recipe of [sender, receiver, recipientB]) {
             expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)

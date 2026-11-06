@@ -145,7 +145,8 @@ const CARRIER_SCENARIO_IDS = {
         ...TOPIC_SUBSCRIPTION_IDS.filter((scenarioId) => scenarioId !== 'subscription-successor'),
         'granted-rtc-forged-sender',
         'granted-rtc-not-subscribed',
-        'granted-rtc-relay-only'
+        'granted-rtc-relay-only',
+        'granted-rtc-ordered-relay'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
