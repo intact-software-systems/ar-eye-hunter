@@ -9,6 +9,7 @@ import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformanc
 import type { AlmConformanceTag } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
+    toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
@@ -36,9 +37,9 @@ const TOPIC_SUBSCRIPTION_IDS = [
     'subscription-delivery',
     'subscription-token-count',
     'subscription-revoke-disconnected',
-    'subscription-reconnect',
     'subscription-ordered-entry',
     'subscription-ordered-omission',
+    'subscription-ordered-reconnect',
     'subscription-successor'
 ] as const;
 
@@ -201,6 +202,18 @@ function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly Ralla
 
 const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
 
+/** Each role's recipe as its page runs it: the role's continuation, if any, follows on the same page. */
+function toPageRecipes(scenario: AlmConformanceScenario): readonly RallarBlackBoxTestRecipe[] {
+    const continuation = scenario.continuation;
+    return scenario.roles.flatMap((role) => {
+        const recipe = toAlmConformanceRoleRecipe(scenario, role);
+        if (recipe === undefined || continuation?.role !== role) {
+            return recipe === undefined ? [] : [recipe];
+        }
+        return [{ ...recipe, commands: [...recipe.commands, ...continuation.recipe.commands] }];
+    });
+}
+
 /**
  * Recipe ids whose hold stays until the page ends. Recipient-b of the frozen audience withholds its ACK,
  * leaves and rejoins past the expiry; the hold matches only that scenario's type id, so no later block sees it.
@@ -219,7 +232,8 @@ const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = [
  * A counted fault runs out after a number of frames, not after a time: a quick retry loop spends it before
  * the window the scenario means it to cover. So every fault holds until a later command of its own recipe
  * releases it with `0` or reloads the page, which replaces the page's fault port. A closed product socket counts
- * nothing: a later reopen of its own recipe releases it.
+ * nothing: a later reopen of its own recipe releases it. A continuation's commands follow its role's first recipe on
+ * the same page, so they count as that recipe's later commands.
  */
 function toUnreleasedFaults(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     return recipe.commands.flatMap((command, index) => {
@@ -312,7 +326,7 @@ describe('ALM conformance recipe validation', () => {
             ALM_CONFORMANCE_SCOPES.flatMap((scope) =>
                 createAlmConformanceRecipes(toConformanceInput(carrier))
                     .filter((scenario) => scenario.tags.includes(scope))
-                    .flatMap((scenario) => toRecipes([scenario]))
+                    .flatMap(toPageRecipes)
                     .flatMap(toUnreleasedFaults)
                     .map((finding) => `${scope}: ${finding}`)
             )

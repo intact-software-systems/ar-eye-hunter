@@ -100,7 +100,7 @@ import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { subscriptionDelivery } from './scenarios/topic-subscription/subscription-delivery.ts';
 import { subscriptionOrderedEntry } from './scenarios/topic-subscription/subscription-ordered-entry.ts';
 import { subscriptionOrderedOmission } from './scenarios/topic-subscription/subscription-ordered-omission.ts';
-import { subscriptionReconnect } from './scenarios/topic-subscription/subscription-reconnect.ts';
+import { subscriptionOrderedReconnect } from './scenarios/topic-subscription/subscription-ordered-reconnect.ts';
 import { subscriptionRevokeDisconnected } from './scenarios/topic-subscription/subscription-revoke-disconnected.ts';
 import { subscriptionSuccessor } from './scenarios/topic-subscription/subscription-successor.ts';
 import { subscriptionTokenCount } from './scenarios/topic-subscription/subscription-token-count.ts';
@@ -131,7 +131,7 @@ export interface AlmConformanceScenario {
     readonly tags: readonly AlmConformanceTag[];
     /** The owner's command after which the lane starts the successor; undefined starts it once the owner page ended. */
     readonly successorGate: AlmConformanceScenarioGate | undefined;
-    /** The sender's later recipe; undefined when the sender runs one. */
+    /** One role's later recipe; undefined when every role runs one. */
     readonly continuation: AlmConformanceContinuation | undefined;
 }
 
@@ -141,8 +141,12 @@ export interface AlmConformanceScenarioGate {
     readonly commandId: string;
 }
 
-/** A recipe the lane starts on the sender's agent, on its open connection, once the gate's command passed. */
+/**
+ * A recipe the lane starts on `role`'s agent, on its open connection, once that role's first recipe ended and the
+ * gate's command passed.
+ */
 export interface AlmConformanceContinuation {
+    readonly role: AlmConformanceRole;
     readonly gate: AlmConformanceScenarioGate;
     readonly recipe: RallarBlackBoxTestRecipe;
 }
@@ -248,9 +252,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     subscriptionDelivery,
     subscriptionTokenCount,
     subscriptionRevokeDisconnected,
-    subscriptionReconnect,
     subscriptionOrderedEntry,
     subscriptionOrderedOmission,
+    subscriptionOrderedReconnect,
     subscriptionSuccessor,
     grantedRtcForgedSender,
     grantedRtcNotSubscribed,
@@ -347,6 +351,7 @@ function toHeldBackRecipes(
     return {
         successorGate: definition.successorGate && toGate(definition.successorGate),
         continuation: definition.continuation && {
+            role: definition.continuation.role,
             gate: toGate(definition.continuation.gate),
             recipe: toContinuationRecipe(input, definition, definition.continuation)
         }
@@ -391,7 +396,7 @@ function toScenarioGate(gateInput: ToScenarioGateInput): AlmConformanceScenarioG
 }
 
 /**
- * The sender's later steps run on the connection its first recipe opened, so the recipe carries no prologue; its own
+ * The role's later steps run on the connection its first recipe opened, so the recipe carries no prologue; its own
  * stats read ends the recipe.
  */
 function toContinuationRecipe(
@@ -399,11 +404,11 @@ function toContinuationRecipe(
     definition: AlmConformanceScenarioDefinition,
     continuation: AlmConformanceContinuationDefinition
 ): RallarBlackBoxTestRecipe {
-    const step = toStepInput(input, definition, 'sender');
+    const step = toStepInput(input, definition, continuation.role);
     const recipe: RallarBlackBoxTestRecipe = {
         schemaVersion: 1,
-        recipeId: `alm-${input.carrier}-${definition.scenarioKey}-sender-continuation`,
-        name: `ALM conformance ${definition.scenarioKey} sender continuation over ${input.carrier}`,
+        recipeId: `alm-${input.carrier}-${definition.scenarioKey}-${continuation.role}-continuation`,
+        name: `ALM conformance ${definition.scenarioKey} ${continuation.role} continuation over ${input.carrier}`,
         continueOnFailure: false,
         metadata: {
             profile: 'alm-conformance',

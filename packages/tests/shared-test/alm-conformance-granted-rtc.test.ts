@@ -181,8 +181,7 @@ describe('the granted rtc cells', () => {
             'granted-rtc-revoked-publisher',
             // The topic subscription cells that grant only the sender's principal and the receiver's.
             'subscription-token-count',
-            'subscription-revoke-disconnected',
-            'subscription-reconnect'
+            'subscription-revoke-disconnected'
         ]);
     });
 

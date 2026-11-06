@@ -1,9 +1,13 @@
-import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestHttpRequestCommand
+} from '../../../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
-import { toSubscriptionRowsCommand, toTokenReadCommand } from './topic-subscription-commands.ts';
+import { toGroupPath, toSubscriptionRowsCommand, toTokenReadCommand } from './topic-subscription-commands.ts';
 import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
     toGenerationText,
     toPollChildId,
     toPollCommand,
@@ -25,6 +29,13 @@ export interface RowsGenerationPollInput {
     /** The token read whose generation the session's one row must name, or must no longer name. */
     readonly tokens: string;
     readonly names: boolean;
+}
+
+export interface PresenceGenerationPollInput {
+    readonly step: AlmConformanceStepInput;
+    readonly name: string;
+    /** The token read whose generation the session's room presence must name. */
+    readonly tokens: string;
 }
 
 /**
@@ -86,4 +97,36 @@ export function toRowsGenerationPollCommand(
             absent: !names
         })
     ]);
+}
+
+/**
+ * Re-reads the room's snapshot until a presence names `tokens`' generation: the reopened socket re-asserted the
+ * session's room presence. A connection generation is the socket's own, so it names the page's session alone.
+ */
+export function toPresenceGenerationPollCommand(
+    { step, name, tokens }: PresenceGenerationPollInput
+): RallarBlackBoxTestCommand {
+    const readName = `${name}-read`;
+    const attemptRead = toPollChildId({ step, name, index: 1, childId: toCommandId(step, readName) });
+    return toPollCommand(step, name, [
+        toRoomSnapshotCommand(step, readName),
+        toResultTextWait({
+            step,
+            name: `${name}-generation`,
+            commandId: attemptRead,
+            topic: 'rallar.bb.http.response',
+            text: toGenerationText(`{resultCache.${toCommandId(step, tokens)}.value.connectionGenerationId}`),
+            absent: false
+        })
+    ]);
+}
+
+function toRoomSnapshotCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestHttpRequestCommand {
+    return {
+        kind: 'http.request',
+        commandId: toCommandId(step, name),
+        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        request: { method: 'GET', path: toGroupPath(step) },
+        response: { body: 'json', acceptedStatusCodes: [200] }
+    };
 }

@@ -470,7 +470,7 @@ async function runAgentScenarios(
         if (outcomes.continuation !== undefined) {
             expect.soft(
                 outcomes.continuation.ok,
-                `${scenario.scenarioKey} sender continuation: ${outcomes.continuation.summary}`
+                `${scenario.scenarioKey} ${scenario.continuation?.role} continuation: ${outcomes.continuation.summary}`
             )
                 .toBe(true);
         }

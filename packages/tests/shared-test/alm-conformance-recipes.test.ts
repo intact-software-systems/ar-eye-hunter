@@ -87,9 +87,9 @@ const FOUR_ROLE_KEYS = [
     'subscription-delivery',
     'subscription-token-count',
     'subscription-revoke-disconnected',
-    'subscription-reconnect',
     'subscription-ordered-entry',
-    'subscription-ordered-omission'
+    'subscription-ordered-omission',
+    'subscription-ordered-reconnect'
 ] as const;
 
 /**
