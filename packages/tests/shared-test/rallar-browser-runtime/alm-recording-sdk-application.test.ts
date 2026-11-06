@@ -199,8 +199,11 @@ function observeConsumedDiagnosticsPorts(): RallarDiagnosticsPorts[] {
         expect(storage.mock.calls[0]?.[1].diagnosticsPorts.storage).toBe(ports.storage);
         expect(volatileStorage.mock.calls[0]?.[2]).toBe(ports.storage);
         expect(wsClient.mock.calls[0]?.[0].outboundDiagnostics).toBe(ports.outboundDiagnostics);
-        expect(wsClient.mock.calls[0]?.[0].inboundDiagnostics).toBe(ports.inboundDiagnostics);
-        expect(rtcReceiver.mock.calls[0]?.[0].inboundDiagnostics).toBe(ports.inboundDiagnostics);
+        // Both carriers report through the connect's one ordering-counting tee over the port, which keeps its capture.
+        const carrierInbound = wsClient.mock.calls[0]?.[0].inboundDiagnostics;
+        expect(carrierInbound).toEqual(expect.any(Function));
+        expect(rtcReceiver.mock.calls[0]?.[0].inboundDiagnostics).toBe(carrierInbound);
+        expect(carrierInbound?.acknowledgementCapture).toBe(ports.inboundDiagnostics.acknowledgementCapture);
         consumed.push(ports);
         return connected;
     });

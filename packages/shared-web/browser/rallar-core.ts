@@ -156,6 +156,7 @@ export type {
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALInboundOrderingCounters } from '@shared/alm/inbound/al-inbound-ordering-counters.ts';
 export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 export type { ALOutboundPublicationCounters } from '@shared/alm/outbound/publication/al-outbound-publication-ledger.ts';

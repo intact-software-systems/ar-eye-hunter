@@ -1,7 +1,11 @@
 import { vi } from 'vitest';
 
 import { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
-import { createPassThroughALOutboundRuntimeDiagnosticsSink } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
+import {
+    createPassThroughALInboundRuntimeDiagnosticsSink,
+    createPassThroughALOutboundRuntimeDiagnosticsSink
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -17,13 +21,16 @@ import {
 
 import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
 
-/** The volatile ledger and the diagnostics sink are replaced whole: neither has a meaningful partial. */
+/** The volatile ledger, the ordering counters and the diagnostics sink are replaced whole: none has a meaningful partial. */
 export type MiddlewareTestOverrides =
     & {
-        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'outboundDiagnostics'>]?: Partial<RallarBrowserMiddleware[K]>;
+        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'orderingCounters' | 'outboundDiagnostics'>]?: Partial<
+            RallarBrowserMiddleware[K]
+        >;
     }
     & {
         readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
+        readonly orderingCounters?: RallarBrowserMiddleware['orderingCounters'];
         readonly outboundDiagnostics?: RallarBrowserMiddleware['outboundDiagnostics'];
     };
 
@@ -70,6 +77,8 @@ export function createDefaultApiMiddlewareTestDouble(
             }),
             storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
             volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget(),
+            orderingCounters: middlewareOverrides.orderingCounters ??
+                new BrowserInboundOrderingCountersSink(createPassThroughALInboundRuntimeDiagnosticsSink()),
             publicationStageLimits: { ...AL_PUBLICATION_STAGE_LIMITS, ...middlewareOverrides.publicationStageLimits },
             outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
         }

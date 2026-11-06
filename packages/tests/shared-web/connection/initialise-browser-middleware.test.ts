@@ -35,7 +35,10 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type {
+    ALInboundRuntimeDiagnosticsEvent,
+    ALInboundRuntimeDiagnosticsSink
+} from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
@@ -164,7 +167,7 @@ describe('native observation handoff cleanup', () => {
 });
 
 describe('the inbound stores a connect hands its two carriers', () => {
-    it('gives the WS client and the RTC receiver the one session store pair, so a second carrier\'s copy is a duplicate', async () => {
+    it('gives the WS client and the RTC receiver the one session store pair, so a second carrier\'s copy is a duplicate, and the one counting diagnostics sink', async () => {
         onTestFinished(() => {
             vi.restoreAllMocks();
         });
@@ -190,6 +193,7 @@ describe('the inbound stores a connect hands its two carriers', () => {
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
         });
         const carriers: Partial<Record<'ws' | 'rtc', readonly [ALInboundRuntimeStores, ALVolatileInboundRuntimeStores]>> = {};
+        const sinks: Partial<Record<'ws' | 'rtc', ALInboundRuntimeDiagnosticsSink | undefined>> = {};
         const stop = new Error('the stores were handed over');
         vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
             serverPeerId: 'server',
@@ -200,12 +204,14 @@ describe('the inbound stores a connect hands its two carriers', () => {
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
             carriers.ws = [input.inboundStores, input.inboundVolatileStores];
+            sinks.ws = input.inboundDiagnostics;
             return middleware.middleware.webSocketQueueBox;
         });
         vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
         vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager').mockReturnValue(middleware.middleware.webRtcOverlayMulticastManager);
         vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockImplementation((input) => {
             carriers.rtc = [input.inboundStores, input.inboundVolatileStores];
+            sinks.rtc = input.inboundDiagnostics;
             throw stop;
         });
 
@@ -214,6 +220,10 @@ describe('the inbound stores a connect hands its two carriers', () => {
         expect(carriers.ws).toHaveLength(2);
         expect(carriers.rtc?.[0]).toBe(carriers.ws?.[0]);
         expect(carriers.rtc?.[1]).toBe(carriers.ws?.[1]);
+        // The tee counts the connect's ordering positions in front of the session's port.
+        expect(sinks.ws).toBeDefined();
+        expect(sinks.ws).not.toBe(OPTIONS.diagnosticsPorts.inboundDiagnostics);
+        expect(sinks.rtc).toBe(sinks.ws);
     });
 });
 
@@ -349,6 +359,42 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         );
 
         expect(admissions).toEqual([false, false, false, true]);
+    });
+});
+
+describe('the ordering counters a connect keeps beside its inbound diagnostics port', () => {
+    it('hands the WS client the counting tee over the session\'s port and the middleware its report', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const forwarded: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const input = createBrowserTransportInput(
+            SESSION,
+            { ...OPTIONS, diagnosticsPorts: toRallarDiagnosticsPorts({ inboundDiagnostics: (event) => forwarded.push(event) }) },
+            KEYLESS_PUBLICATION
+        );
+        const ws = toBrowserWebSocketQueueBoxInput(input, {
+            qboxEngine,
+            socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
+            serverPeerId: 'server'
+        });
+        const middleware = toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware);
+        const event: ALInboundRuntimeDiagnosticsEvent = {
+            kind: 'ordering-position',
+            workerId: 'worker-1',
+            trackKey: 'track-a',
+            seq: 1,
+            priorSeq: 0,
+            status: 'entered',
+            carrier: 'ws',
+            traceId: 'trace-1',
+            corrId: 'corr-1'
+        };
+
+        ws.inboundDiagnostics?.(event);
+
+        expect(forwarded).toEqual([event]);
+        expect(middleware.orderingCounters.readReport()).toEqual({ entered: 1, omitted: 0, witnessed: 0, beforeEntry: 0 });
     });
 });
 
