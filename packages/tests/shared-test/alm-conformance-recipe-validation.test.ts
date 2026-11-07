@@ -25,7 +25,8 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
  * `cross-carrier-duplicate` needs both transports, once per order.
  * The fallback family (D56) needs the fallback cell.
  * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
- * The server's group-state deltas reach a page over ws only, so server-originated runs there.
+ * The server's group-state deltas and client-state events reach a page over ws only, so server-originated and
+ * server-ordered-entry run there.
  * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
  * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  * Replies travel over WS only: the correlated reply runs on the fallback cell too, every other reply cell over ws.
@@ -61,6 +62,7 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
+        'server-ordered-entry',
         'capacity',
         'capacity-age',
         'capacity-tracks',

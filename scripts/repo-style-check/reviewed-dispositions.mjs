@@ -1203,6 +1203,14 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'black-box-runner',
         maximumMagnitude: 22
     }),
+    // One ALM conformance cell per file, each named for its scenario id and listed in the catalogue; the families with
+    // several cells already own subfolders, and the server-origin cells stay beside each other at the root.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/scenarios',
+        rule: 'layout.directory-density',
+        symbol: 'scenarios',
+        maximumMagnitude: 21
+    }),
     // The receipt validator accepts raw artifact input before narrowing its
     // fields. Its malformed-artifact test deliberately crosses that same
     // JSON boundary and checks exact validation/comparison diagnostics.

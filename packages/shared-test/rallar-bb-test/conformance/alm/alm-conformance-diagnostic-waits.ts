@@ -23,8 +23,11 @@ interface AlmConformanceDiagnosticWaitInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly topic: AlmConformanceDiagnosticsTopic;
-    /** A substring of the event's serialised `data`, so it must follow the emitted key order. */
-    readonly contains: string;
+    /**
+     * A substring of the event's serialised `data`, so it must follow the emitted key order; absent, `payloadFields`
+     * alone scopes the match, for a page whose lanes hear one tracked topic only.
+     */
+    readonly contains?: string;
     /** Exact values at paths of the event, whatever their key order; `data.kind` names the event. */
     readonly payloadFields?: Readonly<Record<string, ApiJsonValue>>;
     /** The page states no such event before the wait or within `SUBSCRIPTION_ABSENCE_MS` of its start. */
@@ -71,7 +74,7 @@ export function toDiagnosticWait(
             kind: 'diagnostic',
             topic,
             payloadPath: 'data',
-            contains,
+            ...(contains === undefined ? {} : { contains }),
             ...(payloadFields === undefined ? {} : { payloadFields })
         },
         ...(absent === true ? { absent: true } : {}),
