@@ -12888,6 +12888,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The absent index-end commit proves a recorded row keeps its track index row, which later rows of the track read to find their predecessor recorded; deleting it would let a successor treat the sequence as never written.",
       "semanticCoverage": "packages/tests/shared/alm/outbound/lane/write-al-outbound-track-index-end.test.ts#keeps the sequence of a row its own commit recorded, without a read"
+    },
+    {
+      "id": "test-structure-coupling-223262436c468ffd",
+      "path": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-ordering-stored-predecessors-bounded-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The stored-row keys the backend reads are the contract: a track's predecessors are read from the highest sequence down and the read stops at the first settled row, so a long live track pays reads only down to its last recorded row rather than one per listed sequence.",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts#reads the listed sequences' stored rows from the highest down to the first settled one, and none below it"
+    },
+    {
+      "id": "test-structure-coupling-504f1b47667d96b1",
+      "path": "packages/tests/shared/services/ws-queue-box-server-track-order.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-outbound-ordering-stored-predecessors-bounded-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The stored-row keys the backend reads prove the dequeue wait reads its own row and the settled predecessor only: the absent sequences below a settled row are neither read nor pending, which bounds the wait's cost on a long client-state track.",
+      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-track-order.test.ts#stops at a settled predecessor: the absent sequences below it are neither read nor pending"
     }
   ]
 }
