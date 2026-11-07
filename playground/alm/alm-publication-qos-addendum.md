@@ -35,6 +35,11 @@ and business authority. ALM owns publication admission and delivery semantics.
 Group-state owns membership and publication permissions. A browser, native
 actor, server producer, tool, sensor, or agent uses the same scoped contracts.
 
+ALM authenticates a participant's session. For an actor, that is the actor's
+own session; the host process beside it is the actor's local concern, and the
+attachment between host and actor is a trust boundary the actor product owns,
+not a path ALM sees or vouches for.
+
 This makes several flows possible without creating a workflow engine:
 
 | Flow                             | Publication participation                        | Appropriate delivery                           |
@@ -240,6 +245,11 @@ defer a value when the remaining budget is too small without starving it in
 later opportunities. Drain bytes count serialized publications once at
 selection. Fanout copies, protocol overhead, relay traffic, and retries have
 separate transport accounting; this budget is not a wire-bandwidth cap.
+
+These bounds are per session, sized for one browser tab. An actor that holds
+one participant seat across many groups is still one session, but a different
+fan-out, so a multi-group actor's stage, ordering and transport budgets are a
+re-examined limit, not a one-tab inheritance.
 
 The deadline starts at publication, never first dispatch. Pacing, readiness
 waits, fallback, and reconnect do not restart it. Expired values settle without
@@ -808,8 +818,12 @@ later outcomes. Slice 4 is complete.
 
 - **Restricted RTC beyond room multicast:** an encrypted publication with key
   distribution, rotation and revocation, ACKs that authenticate their logical
-  recipient across relays, granted unicast and broadcast over RTC, and native
-  hosts' publication keys.
+  recipient across relays, granted unicast, fixed-list and broadcast over RTC,
+  and native hosts' publication keys. Granted fixed-list over RTC — a named
+  member subset that is neither one recipient nor the whole room — is the
+  directed delivery an actor's application-paced play needs and is not yet
+  carried. Native publication-key custody outside a browser (a Deno sidecar,
+  a native kit) is the actor's gating dependency for RTC parity.
 - **Ordered subscription history:** a latest-state snapshot with a fenced
   live cursor (the snapshot/live hand-off), and an authorized replay of
   retained history, with no replay to an unauthorized or newly joined
@@ -821,7 +835,11 @@ later outcomes. Slice 4 is complete.
   Each keeps its independent delivery and durability guarantee.
 - **RallarActor integration:** immediate and paced publication on the same
   contract in the host attachment, Unity/Unreal kits, and other native hosts.
-  Engine simulation and interest remain application-owned.
+  Engine simulation and interest remain application-owned. The actor's ALM
+  dependencies are native publication-key custody and granted fixed-list over
+  RTC (above), a re-examined per-session budget for a multi-group publishing
+  seat (§4.3), and the local attachment trust boundary kept out of ALM's
+  authority (§1).
 - **Measured operating envelope:** representative multi-group publishers,
   subscription churn, slow consumers, relay depth, mixed WS/RTC, and sustained
   overload with bounded memory and accurate outcome evidence.
