@@ -13,10 +13,10 @@ import type { ApiMiddleware } from '../../rallar-connection-facade.ts';
 import type { RallarWsLifecycleKind } from '../../rallar-realtime-facade.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
-import { readSummarisedRoomPresence } from '../read-summarised-room-presence.ts';
 import { requireOwnWsConnectionGenerationId } from '../require-own-ws-connection-generation-id.ts';
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 import { createStateGroupPresenceCommand, type StateGroupWorkflowValue } from '../room-group-state-workflows.ts';
+import { readSummarisedRoomPresence } from '../room-presence.ts';
 import { captureRoomSession, type RoomSessionFence } from '../room-session-fence.ts';
 
 export namespace SelectedRoomRecovery {

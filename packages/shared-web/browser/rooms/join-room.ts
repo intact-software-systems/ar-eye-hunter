@@ -25,7 +25,6 @@ import type {
     RallarRoomSession,
     RallarRoomSwitchOperation
 } from './rallar-room-contracts.ts';
-import { readSummarisedRoomPresence, type SummarisedRoomPresenceInput } from './read-summarised-room-presence.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
 import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
 import {
@@ -40,6 +39,7 @@ import {
     quickJoinStateGroup,
     type StateGroupWorkflowValue
 } from './room-group-state-workflows.ts';
+import { readSummarisedRoomPresence, type SummarisedRoomPresenceInput } from './room-presence.ts';
 import { captureRoomSession, type RoomSessionFence } from './room-session-fence.ts';
 import { assertValidRoomTarget, toJoinRoomTarget } from './room-target.ts';
 

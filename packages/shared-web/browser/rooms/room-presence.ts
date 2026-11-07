@@ -1,5 +1,6 @@
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
 import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
@@ -8,10 +9,16 @@ import {
     type RallarNormalizedReadinessExpectation,
     type RallarReadinessStatus
 } from '@shared-web/browser/readiness.ts';
+import { toStateScope } from '@shared/api/api-type-utils.ts';
 import { isGroupActive } from '@shared/api/group-client-views.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { Command } from '@shared/cache/Command.ts';
+import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 
+import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import type { RallarRoomPresenceWaitOptions, RallarRoomPresenceWaitResult } from './rallar-room-contracts.ts';
+import type { GroupSnapshot } from './room-group-state-translation.ts';
+import type { RoomSessionFence } from './room-session-fence.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
 export interface WaitForRoomPresenceInput {
@@ -26,6 +33,15 @@ export interface WaitForRoomPresenceInput {
         scope?: RallarRoomPresenceWaitOptions['scope']
     ) => GroupRef | undefined;
     readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
+}
+
+export interface SummarisedRoomPresenceInput {
+    /** The presence write's reply; every later read is floored at its revision. */
+    readonly snapshot: GroupSnapshot;
+    readonly fence: RoomSessionFence;
+    readonly context: ApiMiddleware;
+    readonly options: RallarOperationOptions;
+    isSummarised(snapshot: GroupSnapshot): boolean;
 }
 
 interface CreateRoomPresenceResultReaderInput {
@@ -64,6 +80,40 @@ export async function waitForRoomPresence(
         toTimedOut: () => readResult('timeout'),
         toAborted: () => ({ ...readResult(), status: 'aborted' })
     });
+}
+
+/** Presence writes commit before their summary. A successful response alone does not prove arrival. */
+export async function readSummarisedRoomPresence(input: SummarisedRoomPresenceInput): Promise<GroupSnapshot> {
+    if (input.isSummarised(input.snapshot)) {
+        return input.snapshot;
+    }
+    const timeoutMs = input.options.timeoutMs ?? 15000;
+    return await new Command(async (signal) => {
+        return await TryWithPolicy.defaults().label('room presence')
+            .maxElapsedMsecs(timeoutMs)
+            .retryIntervalMsecs(100).maxRetryIntervalMsecs(500)
+            .retryIf((error) => error instanceof RoomPresencePendingError && !signal?.aborted)
+            .run(() => readSummarisedSnapshot(input, signal));
+    }, { signal: input.options.signal, timeoutMs }).run();
+}
+
+async function readSummarisedSnapshot(
+    input: SummarisedRoomPresenceInput,
+    signal: AbortSignal | undefined
+): Promise<GroupSnapshot> {
+    signal?.throwIfAborted();
+    input.fence.assertCurrent(input.context);
+    const { group, causalRevision } = input.snapshot;
+    const { snapshot } = await readStateGroupSnapshot(group.groupId, toStateScope(group), {
+        authSession: input.fence.session,
+        signal,
+        minCausalRevision: causalRevision
+    });
+    input.fence.assertCurrent(input.context);
+    if (!input.isSummarised(snapshot)) {
+        throw new RoomPresencePendingError('Room presence has not confirmed the switch yet. Retry entering.');
+    }
+    return snapshot;
 }
 
 function createRoomPresenceResultReader(
@@ -107,3 +157,5 @@ function uniquePeerIds(peerIds: readonly string[]): readonly string[] {
 function isTerminalReadinessWaitResult(result: RallarRoomPresenceWaitResult): boolean {
     return result.status === 'ready' || result.status === 'not-found';
 }
+
+class RoomPresencePendingError extends Error {}
