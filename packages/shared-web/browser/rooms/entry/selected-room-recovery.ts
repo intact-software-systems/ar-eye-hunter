@@ -13,6 +13,7 @@ import type { ApiMiddleware } from '../../rallar-connection-facade.ts';
 import type { RallarWsLifecycleKind } from '../../rallar-realtime-facade.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
+import { readSummarisedRoomPresence } from '../read-summarised-room-presence.ts';
 import { requireOwnWsConnectionGenerationId } from '../require-own-ws-connection-generation-id.ts';
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 import { createStateGroupPresenceCommand, type StateGroupWorkflowValue } from '../room-group-state-workflows.ts';
@@ -224,10 +225,17 @@ export class SelectedRoomRecovery {
     private async sendPresence(reconnect: PresenceReconnect): Promise<void> {
         const result = await reconnect.command.run();
         this.assertCurrent(reconnect);
-        if (!isConfirmedPresence(reconnect, result)) {
+        if (!result || !isSameGroupRef(reconnect.room, result.group)) {
             throw new Error('Selected room did not confirm presence on the replacement socket.');
         }
-        await this.accept(reconnect, result);
+        const confirmed = await readSummarisedRoomPresence({
+            snapshot: result,
+            fence: { session: reconnect.fence.session, assertCurrent: () => this.assertCurrent(reconnect) },
+            context: reconnect.context,
+            options: { timeoutMs: 15000 },
+            isSummarised: (snapshot) => isConfirmedPresence(reconnect, snapshot)
+        });
+        await this.accept(reconnect, confirmed);
     }
 
     /** Resolve the original PUT before departure uses the recovered generation. */
@@ -283,12 +291,9 @@ function isActiveMember(snapshot: GroupSnapshot, session: AuthSession): boolean 
         snapshot.members.some((member) => member.principalId === session.clientId && member.status === 'active');
 }
 
-function isConfirmedPresence(
-    reconnect: PresenceReconnect,
-    snapshot: GroupSnapshot | undefined
-): snapshot is GroupSnapshot {
+function isConfirmedPresence(reconnect: PresenceReconnect, snapshot: GroupSnapshot): boolean {
     const { session } = reconnect.fence;
-    return snapshot !== undefined && isSameGroupRef(reconnect.room, snapshot.group) &&
+    return isSameGroupRef(reconnect.room, snapshot.group) &&
         snapshot.activeSessions.some((row) =>
             row.principalId === session.clientId && row.sessionId === session.sessionId &&
             row.generationId === reconnect.generationId &&

@@ -12,9 +12,7 @@ import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 
-import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
 import { createRoomSwitchPartialFailureError } from './create-and-join-room.ts';
@@ -27,6 +25,7 @@ import type {
     RallarRoomSession,
     RallarRoomSwitchOperation
 } from './rallar-room-contracts.ts';
+import { readSummarisedRoomPresence, type SummarisedRoomPresenceInput } from './read-summarised-room-presence.ts';
 import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
 import { roomGroupStateHttpApi } from './room-group-state-http-api.ts';
 import {
@@ -354,60 +353,31 @@ async function disconnectRoomSession(
     return undefined;
 }
 
-interface RoomSessionPresenceInput {
-    readonly snapshot: GroupSnapshot;
+interface RoomSessionPresenceInput extends Omit<SummarisedRoomPresenceInput, 'isSummarised'> {
     readonly sessionId: string;
     readonly generationId: string;
     readonly present: boolean;
-    readonly fence: RoomSessionFence;
-    readonly context: ApiMiddleware;
-    readonly options: RallarOperationOptions;
     readonly minPresenceRevision: number;
 }
 
-/** Presence writes commit before their summary. A successful response alone does not prove arrival. */
 async function readRoomSessionPresence(input: RoomSessionPresenceInput): Promise<GroupSnapshot> {
-    const matches = (snapshot: GroupSnapshot) => {
-        if (snapshot.causalRevision.presenceRevision < input.minPresenceRevision) {
-            return false;
+    const { snapshot, fence, context, options } = input;
+    return await readSummarisedRoomPresence({
+        snapshot,
+        fence,
+        context,
+        options,
+        isSummarised: (candidate) => {
+            if (candidate.causalRevision.presenceRevision < input.minPresenceRevision) {
+                return false;
+            }
+            const session = candidate.activeSessions.find((row) => row.sessionId === input.sessionId);
+            return input.present
+                ? session?.generationId === input.generationId && session.expiresAtEpochMs > Date.now()
+                : session === undefined;
         }
-        const session = snapshot.activeSessions.find((candidate) => candidate.sessionId === input.sessionId);
-        return input.present
-            ? session?.generationId === input.generationId && session.expiresAtEpochMs > Date.now()
-            : session === undefined;
-    };
-    if (matches(input.snapshot)) {
-        return input.snapshot;
-    }
-    return await new Command(async (signal) => {
-        return await TryWithPolicy.defaults().label('room presence')
-            .maxElapsedMsecs(input.options.timeoutMs ?? 15000)
-            .retryIntervalMsecs(100).maxRetryIntervalMsecs(500)
-            .retryIf((error) => error instanceof RoomPresencePendingError && !signal?.aborted)
-            .run(async () => {
-                signal?.throwIfAborted();
-                input.fence.assertCurrent(input.context);
-                const { snapshot } = await readStateGroupSnapshot(
-                    input.snapshot.group.groupId,
-                    toStateScope(input.snapshot.group),
-                    {
-                        authSession: input.fence.session,
-                        signal,
-                        minCausalRevision: input.snapshot.causalRevision
-                    }
-                );
-                input.fence.assertCurrent(input.context);
-                if (!matches(snapshot)) {
-                    throw new RoomPresencePendingError(
-                        'Room presence has not confirmed the switch yet. Retry entering.'
-                    );
-                }
-                return snapshot;
-            });
-    }, { signal: input.options.signal, timeoutMs: input.options.timeoutMs ?? 15000 }).run();
+    });
 }
-
-class RoomPresencePendingError extends Error {}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;
