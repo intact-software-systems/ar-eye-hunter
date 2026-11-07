@@ -7,7 +7,7 @@ import type { ConnectGroupPresenceSessionRequest } from '@shared/api/state-types
 import { describe, expect, it } from 'vitest';
 
 import { ReadBatchFakeRuntimeStateRepository } from '../../../runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createTestAuthSession } from '../group-state-test-runtime.ts';
 import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
 import { GRANT_ROOM, seedGrantRoom } from '../mutation/group-publication-grant-test-runtime.ts';
@@ -72,7 +72,7 @@ describe('generation change, same session', () => {
     it('a connect under the reopened socket\'s generation and a fresh presence generation reopens the closed row', async () => {
         const runtime = new GroupBarrierRepository();
         await seedGrantRoom(runtime);
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-1');
+        await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-1', overrides: {} });
         await connectBob(runtime, SUBSCRIPTION_NOW_EPOCH_MS, {
             generationId: 'bob-presence-generation-1',
             connectionGenerationId: 'bob-ws-generation-1'
@@ -80,7 +80,7 @@ describe('generation change, same session', () => {
         const closedAt = SUBSCRIPTION_NOW_EPOCH_MS + 1_000;
         expect(await readBobCleanupCandidates(runtime, 'bob-ws-generation-1', closedAt)).toHaveLength(1);
         await createMaintenance(runtime, closedAt).disconnectPresenceSessionsBySessionIdWritten('bob-session', closedAt);
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2');
+        await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-2', overrides: {} });
 
         // The joined presence generation is spent: reusing it on the closed row is a no-op.
         await connectBob(runtime, closedAt + 500, {
@@ -164,13 +164,18 @@ async function connectBob(
     nowEpochMs: number,
     generations: Pick<ConnectGroupPresenceSessionRequest, 'generationId' | 'connectionGenerationId'>
 ): Promise<void> {
-    await createService(runtime, nowEpochMs).connectPresenceSession(SCOPE, GRANT_ROOM, 'bob-session', {
-        principalId: 'bob',
-        ...generations,
-        publicationKey: null,
-        actorPrincipalId: 'bob',
-        requestId: `connect-bob-${generations.generationId}-${generations.connectionGenerationId}`
-    });
+    await createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined }).connectPresenceSession(
+        SCOPE,
+        GRANT_ROOM,
+        'bob-session',
+        {
+            principalId: 'bob',
+            ...generations,
+            publicationKey: null,
+            actorPrincipalId: 'bob',
+            requestId: `connect-bob-${generations.generationId}-${generations.connectionGenerationId}`
+        }
+    );
 }
 
 async function readBobPresence(runtime: GroupBarrierRepository): Promise<GroupPresenceSession | undefined> {

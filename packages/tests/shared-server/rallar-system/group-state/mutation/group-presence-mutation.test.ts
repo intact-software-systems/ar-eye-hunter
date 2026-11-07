@@ -3,8 +3,8 @@ import type { GroupMutationFacts, GroupMutationRead } from '@shared-server/ralla
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { describe, expect, it } from 'vitest';
+import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { createMutationCommand, createMutationFacts, createMutationRead } from '../group-state-concurrency-test-fixtures.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
 import { groupRef, groupSessionStorageKey, groupStorageKey, presenceFor, SCOPE, storagePart, storedEntry } from './group-mutation-test-runtime.ts';
 import { computeDescriptorMutation, GRANT_ROOM, requireWrite, seedGrantRoom } from './group-publication-grant-test-runtime.ts';
@@ -90,7 +90,7 @@ describe('presence connect connection generation', () => {
 
     it('refuses a connect naming a dead connection generation as stale-generation and writes nothing', async () => {
         const runtime = await roomWithBobSocket('bob-ws-generation-1');
-        await writeClientSessionRow(runtime, 'bob', 'bob-ws-generation-2');
+        await writeClientSessionRow({ runtime, principalId: 'bob', generationId: 'bob-ws-generation-2', overrides: {} });
 
         const { command, read, computed } = await computeBobConnect(runtime, 'bob-ws-generation-1');
 
@@ -240,15 +240,15 @@ function createHeartbeatRead(): GroupMutationRead {
 async function roomWithBobSocket(connectionGenerationId: string): Promise<GroupBarrierRepository> {
     const runtime = new GroupBarrierRepository();
     await seedGrantRoom(runtime);
-    await writeClientSessionRow(runtime, 'bob', connectionGenerationId);
+    await writeClientSessionRow({ runtime, principalId: 'bob', generationId: connectionGenerationId, overrides: {} });
     return runtime;
 }
 
 async function computeBobConnect(runtime: GroupBarrierRepository, connectionGenerationId: string) {
-    return await computeDescriptorMutation(
+    return await computeDescriptorMutation({
         runtime,
-        'bob',
-        mutationDescriptor({
+        actorPrincipalId: 'bob',
+        descriptor: mutationDescriptor({
             operation: 'connectPresence',
             scope: SCOPE,
             groupId: GRANT_ROOM,
@@ -262,6 +262,6 @@ async function computeBobConnect(runtime: GroupBarrierRepository, connectionGene
                 requestId: `connect-bob-${connectionGenerationId}`
             }
         }),
-        SUBSCRIPTION_NOW_EPOCH_MS
-    );
+        nowEpochMs: SUBSCRIPTION_NOW_EPOCH_MS
+    });
 }
