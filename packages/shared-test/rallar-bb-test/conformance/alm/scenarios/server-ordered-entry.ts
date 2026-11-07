@@ -25,16 +25,24 @@ import { toPauseCommand } from '../to-pause-command.ts';
 const PRINCIPAL_WRITE_COUNT = 3;
 const PRINCIPAL_WRITE_TIMEOUT_MS = 5_000;
 const ORDERING_POSITION = 'ordering-position';
+/** The sibling's connect event is revision 1 of the sender principal's track, the sender's own is revision 2. */
+const SENDER_ENTRY_SEQ = 2;
+
+/** The entry a page states: on the sender principal's track or on any track, at `seq` or whatever it carries. */
+interface AlmOrderingEntry {
+    readonly onSenderTrack: boolean;
+    readonly seq: number | undefined;
+}
 
 /**
  * The server orders a principal's client-state events on its own producer track, and a principal's event reaches its
  * own sessions and every co-member's. The sender writes its principal three times.
- * The lane starts the sender after every other connect, so its first copy, its own connect event, is revision 2: it is
- * the nonzero-entry witness, which before Slice 5 read a gap from 1.
- * The sibling, the principal's second session, enters at its first copy, its own connect event at revision 1, and
- * states no `before-entry`.
- * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it and
- * states no `before-entry`.
+ * The lane connects every role before the sender starts, so the sender principal's track carries the sibling's connect
+ * event at revision 1 and the sender's own at revision 2: the sender enters at seq 2, prior 0, the nonzero-entry
+ * witness that before Slice 5 read a gap from 1.
+ * The sibling, the principal's second session, enters at its first copy, its own connect event at revision 1.
+ * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
+ * No page states `before-entry` in the window after the last write's copy arrived.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-ordered-entry',
@@ -45,9 +53,12 @@ export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     laneFamily: 'same-principal',
     messageSelector: { topicId: AppTopics.clientStateEvent },
     principalRoles: ['sender'],
-    toSenderCommands: (sender) => toPrincipalUpsertCommands(sender, PRINCIPAL_WRITE_COUNT),
+    toSenderCommands: (sender) => [
+        ...toPrincipalUpsertCommands(sender, PRINCIPAL_WRITE_COUNT),
+        ...toOrderingEntryWaits(sender, { onSenderTrack: true, seq: SENDER_ENTRY_SEQ })
+    ],
     toRecipientCommands: (recipient) =>
-        recipient.role === 'sibling' ? toOrderingEntryWait(recipient, undefined) : toCoMemberEntryWaits(recipient)
+        toOrderingEntryWaits(recipient, { onSenderTrack: recipient.role !== 'sibling', seq: undefined })
 };
 
 /** Each write settles before the next, so each event leaves the server as its own copy. */
@@ -87,20 +98,29 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
 }
 
 /**
- * The page's lanes hear `client-state.event` alone on this cell. Absent a track, the entry may be on any principal's
- * track; `before-entry` is absent on every track either way.
+ * The page's lanes hear `client-state.event` alone on this cell. A page also enters every co-member principal's
+ * track, so an entry on the sender principal's track names it: the ordering key and the server's peer id of the
+ * last write's copy, which the page waits for first, so the absence window after it covers every write.
  */
-function toOrderingEntryWait(
+function toOrderingEntryWaits(
     step: AlmConformanceStepInput,
-    track: string | undefined
+    entry: AlmOrderingEntry
 ): readonly RallarBlackBoxTestWaitCommand[] {
+    const arrival = toLastWriteArrivalWait(step);
+    const event = `resultCache.${arrival.commandId}.value.event.payload`;
     return [
+        arrival,
         toDiagnosticWait({
             step,
             name: 'entered',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-            ...(track === undefined ? {} : { contains: `"trackKey":"${track}:` }),
-            payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'entered', 'data.priorSeq': 0 }
+            ...(entry.onSenderTrack ? { contains: `"trackKey":"{${event}.contextId}:{${event}.senderId}:` } : {}),
+            payloadFields: {
+                'data.kind': ORDERING_POSITION,
+                'data.status': 'entered',
+                'data.priorSeq': 0,
+                ...(entry.seq === undefined ? {} : { 'data.seq': entry.seq })
+            }
         }),
         toDiagnosticWait({
             step,
@@ -112,29 +132,21 @@ function toOrderingEntryWait(
     ];
 }
 
-/**
- * A co-member's page also enters its own principal's track, so its entry wait names the sender principal's track:
- * the ordering key and the server's peer id of an arrival of that principal's event.
- */
-function toCoMemberEntryWaits(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestWaitCommand[] {
-    const arrival = toSenderPrincipalEventWait(receiver);
-    const event = `resultCache.${arrival.commandId}.value.event.payload`;
-    return [arrival, ...toOrderingEntryWait(receiver, `{${event}.contextId}:{${event}.senderId}`)];
-}
-
-function toSenderPrincipalEventWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
+/** The copy of the sender's last principal write, whose event names the write's request id. */
+function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
-        commandId: toCommandId(receiver, 'sender-principal-event'),
+        commandId: toCommandId(step, 'last-write-arrived'),
         match: {
             kind: 'message',
             topic: 'rallar.browser.ws.message',
-            connection: toConnectionName(receiver),
+            connection: toConnectionName(step),
             payloadFields: {
                 'data.topicId': AppTopics.clientStateEvent,
-                'data.payload.principalId': toPrincipalPlaceholder('sender')
+                'data.payload.principalId': toPrincipalPlaceholder('sender'),
+                'data.payload.requestId': toCommandId({ ...step, role: 'sender' }, `profile-${PRINCIPAL_WRITE_COUNT}`)
             }
         },
-        timeoutMs: toVerdictTimeoutMs(receiver.input.deadlineMs)
+        timeoutMs: toVerdictTimeoutMs(step.input.deadlineMs)
     };
 }

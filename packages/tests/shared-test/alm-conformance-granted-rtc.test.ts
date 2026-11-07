@@ -167,7 +167,6 @@ describe('the granted rtc cells', () => {
     });
 
     it('creates a cell that names a principal only for a caller that names each of them, so a hosted manifest has none', () => {
-        // The server-ordered entry cell names the sender's principal, whose events its receiver waits for.
         const namesPrincipal = ({ scenarioId }: AlmConformanceScenario) =>
             scenarioId.startsWith('granted-rtc-') || scenarioId.startsWith('subscription-') || scenarioId === 'server-ordered-entry';
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {

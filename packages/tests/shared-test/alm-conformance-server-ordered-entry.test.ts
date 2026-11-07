@@ -76,63 +76,62 @@ describe('ALM server-ordered-entry cell', () => {
         }
     });
 
-    it('waits for entry at prior 0 and the absence of before-entry on the sibling, and on the receiver for entry on the sender principal track and the absence of before-entry', () => {
+    it('waits on every page for the last write, its entry at prior 0 and no before-entry; the sender at seq 2 and the receiver on the sender principal track', () => {
         const scenario = readServerOrderedEntry();
-        expect(findCommand(scenario.sibling!, `${PREFIX}-sibling-entered`)).toEqual({
-            kind: 'wait',
-            commandId: `${PREFIX}-sibling-entered`,
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                payloadPath: 'data',
-                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 0 }
-            },
-            timeoutMs: 27_000
-        });
-        expect(findCommand(scenario.sibling!, `${PREFIX}-sibling-no-before-entry`)).toEqual({
-            kind: 'wait',
-            commandId: `${PREFIX}-sibling-no-before-entry`,
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                payloadPath: 'data',
-                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' }
-            },
-            absent: true,
-            timeoutMs: 5_000
-        });
-        const arrival = `resultCache.${PREFIX}-receiver-sender-principal-event.value.event.payload`;
-        expect(scenario.receiver.commands.slice(3, 6).map(({ commandId }) => commandId)).toEqual([
-            `${PREFIX}-receiver-sender-principal-event`,
-            `${PREFIX}-receiver-entered`,
-            `${PREFIX}-receiver-no-before-entry`
-        ]);
-        expect(findCommand(scenario.receiver, `${PREFIX}-receiver-sender-principal-event`)).toEqual({
-            kind: 'wait',
-            commandId: `${PREFIX}-receiver-sender-principal-event`,
-            match: {
-                kind: 'message',
-                topic: 'rallar.browser.ws.message',
-                connection: 'receiver',
-                payloadFields: { 'data.topicId': 'client-state.event', 'data.payload.principalId': 'principal-alice' }
-            },
-            timeoutMs: 27_000
-        });
-        expect(findCommand(scenario.receiver, `${PREFIX}-receiver-entered`)).toEqual({
-            kind: 'wait',
-            commandId: `${PREFIX}-receiver-entered`,
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                payloadPath: 'data',
-                contains: `"trackKey":"{${arrival}.contextId}:{${arrival}.senderId}:`,
-                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 0 }
-            },
-            timeoutMs: 27_000
-        });
-        expect(findCommand(scenario.receiver, `${PREFIX}-receiver-no-before-entry`)).toEqual(
-            { ...findCommand(scenario.sibling!, `${PREFIX}-sibling-no-before-entry`), commandId: `${PREFIX}-receiver-no-before-entry` }
-        );
+        const expectations = [
+            ['sender', scenario.sender, { track: true, seq: 2 }],
+            ['sibling', scenario.sibling!, { track: false, seq: undefined }],
+            ['receiver', scenario.receiver, { track: true, seq: undefined }]
+        ] as const;
+        for (const [role, recipe, entry] of expectations) {
+            const names = ['last-write-arrived', 'entered', 'no-before-entry'].map((name) => `${PREFIX}-${role}-${name}`);
+            expect(recipe.commands.slice(-4, -1).map(({ commandId }) => commandId), role).toEqual(names);
+            const arrival = `resultCache.${names[0]}.value.event.payload`;
+            expect(findCommand(recipe, names[0]!), role).toEqual({
+                kind: 'wait',
+                commandId: names[0],
+                match: {
+                    kind: 'message',
+                    topic: 'rallar.browser.ws.message',
+                    connection: role === 'sender' ? 'sender' : 'receiver',
+                    payloadFields: {
+                        'data.topicId': 'client-state.event',
+                        'data.payload.principalId': 'principal-alice',
+                        'data.payload.requestId': `${PREFIX}-sender-profile-3`
+                    }
+                },
+                timeoutMs: 27_000
+            });
+            expect(findCommand(recipe, names[1]!), role).toEqual({
+                kind: 'wait',
+                commandId: names[1],
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.inbound_diagnostics',
+                    payloadPath: 'data',
+                    ...(entry.track ? { contains: `"trackKey":"{${arrival}.contextId}:{${arrival}.senderId}:` } : {}),
+                    payloadFields: {
+                        'data.kind': 'ordering-position',
+                        'data.status': 'entered',
+                        'data.priorSeq': 0,
+                        ...(entry.seq === undefined ? {} : { 'data.seq': entry.seq })
+                    }
+                },
+                timeoutMs: 27_000
+            });
+            expect(findCommand(recipe, names[2]!), role).toEqual({
+                kind: 'wait',
+                commandId: names[2],
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.inbound_diagnostics',
+                    payloadPath: 'data',
+                    payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' }
+                },
+                absent: true,
+                timeoutMs: 5_000
+            });
+        }
     });
 
     it('validates every command against the recipe schema and the control protocol', () => {
