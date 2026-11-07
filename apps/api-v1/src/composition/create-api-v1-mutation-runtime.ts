@@ -98,6 +98,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly roomOwnedAppDataBindings: readonly RoomOwnedAppData.Binding[];
     readonly database: PSqlSql;
     readonly serviceId: string;
+    readonly wsOutboundAdmissionNamespace: string;
     readonly authCredentialSecret: string;
     readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
@@ -194,6 +195,7 @@ interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDep
 
 interface CreateAppClientInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
     readonly disconnectedSessionRetentionMs: number;
+    readonly wsOutboundAdmissionNamespace: string;
 }
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
@@ -247,7 +249,8 @@ export function createApiV1MutationRuntime(
         }),
         createAppClientInboxService: createAppClientInboxServiceFactory({
             ...stateDependencies,
-            disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs
+            disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
+            wsOutboundAdmissionNamespace: input.wsOutboundAdmissionNamespace
         }),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
             ...stateDependencies,
@@ -476,6 +479,7 @@ function createAppClientInboxServiceFactory(
             },
             {
                 serviceId: input.serviceId,
+                wsOutboundAdmissionNamespace: input.wsOutboundAdmissionNamespace,
                 disconnectedSessionRetentionMs: input.disconnectedSessionRetentionMs,
                 finishedRetentionMs: input.appInboxFinishedRetentionMs,
                 timing: input.timing,

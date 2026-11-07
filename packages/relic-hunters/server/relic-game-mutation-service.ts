@@ -192,15 +192,23 @@ export namespace RelicGameMutationService {
         readonly tournaments: Pick<TournamentResultRepository, 'readRoom'>;
     }
 
+    export interface Decision {
+        readonly read: Attempt;
+        readonly previous: RelicGameState | null;
+        readonly guard: ObservedGroupAuthority;
+        readonly admissionNamespace: string;
+    }
+
     export interface Config {
         readonly now: () => number;
+        readonly wsOutboundAdmissionNamespace: string;
     }
 }
 
 /** One authoritative expedition mutation attempt. AppInbox owns completion, transaction and retry. */
 export class RelicGameMutationService {
     private readonly dependencies: RelicGameMutationService.Dependencies;
-    private readonly config: RelicGameMutationService.Config;
+    readonly config: RelicGameMutationService.Config;
 
     constructor(dependencies: RelicGameMutationService.Dependencies, config: RelicGameMutationService.Config) {
         this.dependencies = dependencies;
@@ -348,14 +356,18 @@ export class RelicGameMutationService {
     }
 
     compute(attempt: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
-        return computeRelicGameMutation(attempt);
+        return computeRelicGameMutation(attempt, this.config.wsOutboundAdmissionNamespace);
     }
 
     validate(
         attempt: RelicGameMutationService.Attempt,
         computed: RelicGameMutationService.Computed
     ): readonly ComputedDataValidationIssue[] {
-        return validateComputedProjection(computeRelicGameMutation(attempt), computed, 'relic');
+        return validateComputedProjection(
+            computeRelicGameMutation(attempt, this.config.wsOutboundAdmissionNamespace),
+            computed,
+            'relic'
+        );
     }
 
     async write(transaction: PSqlSql, computed: RelicGameMutationService.Computed): Promise<void> {
@@ -445,7 +457,10 @@ function authorizeRelicGameMutation(
     return authorizeRelicRoomPolicy({ command, session, group, readOnly, now: read.attemptAtEpochMs });
 }
 
-function computeRelicGameMutation(read: RelicGameMutationService.Attempt): RelicGameMutationService.Computed {
+function computeRelicGameMutation(
+    read: RelicGameMutationService.Attempt,
+    admissionNamespace: string
+): RelicGameMutationService.Computed {
     const { command } = read.ingress;
     const denial = authorizeRelicGameMutation(read) ?? relicTournamentMutationRefusal(read);
     if (denial !== null) {
@@ -467,7 +482,7 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
     }
     const guard = computeRelicGameGroupGuard(group, read.sessionObservations);
     if (command.operation === 'tournament-clock' && command.clock.phase === 'cancelled') {
-        return computeRelicTournamentCancellation(read, previous, guard);
+        return computeRelicTournamentCancellation({ read, previous, guard, admissionNamespace });
     }
     if (command.operation === 'reset' && previous?.phase === 'finished') {
         return refused(command, {
@@ -493,6 +508,7 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
             guard,
             ...computeRelicGamePublications({
                 read,
+                admissionNamespace,
                 participation: toRelicTournamentParticipation(read.tournament),
                 previous,
                 next: null,
@@ -503,14 +519,13 @@ function computeRelicGameMutation(read: RelicGameMutationService.Attempt): Relic
     const missingProposal = evaluateRelicGameProposal(command, previous, read.ingress.initial);
     return missingProposal !== null
         ? refused(command, missingProposal)
-        : computeRelicGameTransitionResult(read, previous, guard);
+        : computeRelicGameTransitionResult({ read, previous, guard, admissionNamespace });
 }
 
 function computeRelicGameTransitionResult(
-    read: RelicGameMutationService.Attempt,
-    previous: RelicGameState | null,
-    guard: ObservedGroupAuthority
+    decision: RelicGameMutationService.Decision
 ): RelicGameMutationService.Computed {
+    const { read, previous, guard, admissionNamespace } = decision;
     const { command } = read.ingress;
     const transition = computeRelicGameTransition(read, previous);
     if (transition.left !== undefined) {
@@ -519,6 +534,7 @@ function computeRelicGameTransitionResult(
             guard,
             ...computeRelicGamePublications({
                 read,
+                admissionNamespace,
                 participation: toRelicTournamentParticipation(read.tournament),
                 previous,
                 next: null,
@@ -543,6 +559,7 @@ function computeRelicGameTransitionResult(
     const tournament = computeRelicTournamentChange(read, next);
     const publications = computeRelicGamePublications({
         read,
+        admissionNamespace,
         participation: tournament.participation,
         previous: previous ?? read.ingress.initial,
         next,

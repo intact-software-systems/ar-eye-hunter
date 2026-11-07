@@ -17,6 +17,7 @@ import { writeViewWatch } from '@shared-server/rallar-system/view-watch/view-wat
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../client-state/client-state-test-runtime.ts';
 import {
     computeValidatedViewWatch,
     createViewWatchTestRuntime,
@@ -224,6 +225,7 @@ async function prepareClientChange(
             nowEpochMs: test.party.clock.now,
             expireAtEpochMs: test.party.clock.now + 60000,
             serviceId: 'watch-test',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             traceId: 'watch-client-test',
             eventId: input.commandId,
             attemptCount: 1,

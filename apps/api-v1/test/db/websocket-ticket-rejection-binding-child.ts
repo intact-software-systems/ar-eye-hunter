@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -79,6 +80,7 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     }, {
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'ticket-binding',
+        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         timing: undefined,
         options: {

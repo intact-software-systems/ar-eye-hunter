@@ -33,6 +33,7 @@ import type {
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../../../rallar-system/client-state/client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../rallar-system/client-state/test-disconnected-session-retention.ts';
 import type {
     PostgresAppInboxWorkerTrace,
@@ -110,7 +111,11 @@ export function createPostgresAppInboxWorkerServices(
     };
     const client = new AppClientInboxService(
         { ...inboxDependencies, clientStateService: clientState },
-        { ...handlerOptions, disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS }
+        {
+            ...handlerOptions,
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
+            disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
+        }
     );
     const group = new GroupStateInboxService({
         ...inboxDependencies,

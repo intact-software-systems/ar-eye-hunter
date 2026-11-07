@@ -15,10 +15,14 @@ import { createGameFixture } from './relic-game-database-fixture.ts';
 interface RelicInboxFixtureOptions {
     readonly gameId?: string;
     readonly timing?: RallarTimingSink;
+    readonly wsOutboundAdmissionNamespace?: string;
 }
 
 export async function createInboxFixture(options: RelicInboxFixtureOptions = {}) {
-    return createRelicGameInboxFixture(await createGameFixture(options.gameId), options);
+    return createRelicGameInboxFixture(
+        await createGameFixture(options.gameId, { wsOutboundAdmissionNamespace: options.wsOutboundAdmissionNamespace }),
+        options
+    );
 }
 
 export function createRelicGameInboxFixture(

@@ -5,6 +5,7 @@ import {
 } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { installRelicTournamentClock } from '@relic-hunters/server/relic-tournament-deadline.ts';
 import { RELIC_TOURNAMENT_GAME_PROFILE } from '@relic-hunters/server/relic-tournament.ts';
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import { requireRoomOwnedAppDataBinding, RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { RallarServerAppInbox } from '@shared-server/mod.ts';
@@ -43,7 +44,10 @@ export function createRelicGameServices(input: CreateRelicGameServicesInput): Re
         groups: input.groups,
         sessions: input.sessions,
         data: new RoomOwnedAppData(new PSqlAppDataRepository(input.database), input.roomOwnedAppDataBindings)
-    }, { now: input.nowEpochMs });
+    }, {
+        now: input.nowEpochMs,
+        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace(input.wsRuntimeName)
+    });
     const relicGameInboxService = new RelicGameInboxService({
         service: relicGameMutations,
         appInbox: input.appInbox,

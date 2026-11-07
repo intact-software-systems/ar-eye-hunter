@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
 import { RELIC_ROOM_DATA_BINDING } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import {
     createRallarServerApplication,
@@ -86,6 +87,7 @@ export function createRelicTestMutationRuntime(database: PSqlSql, now: number): 
     return createApiV1MutationRuntime({
         database,
         serviceId: 'cold-worker',
+        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
         authCredentialSecret: 'test-secret-for-cold-composition-12345',
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => now,

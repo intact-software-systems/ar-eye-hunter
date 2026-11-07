@@ -22,6 +22,7 @@ import type { ConnectClientSessionRequest } from '@shared/api/state-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import { clientMutationPrincipalRef as principalRef, invalidSessionCommand, validFacts } from './client-mutation-validation-test-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const scope: StateScope = {
@@ -103,6 +104,7 @@ describe('client mutation command and request projection', () => {
             traceId: 'trace-client-mutation-command-and-request',
             nowEpochMs: 2_000,
             serviceId: 'client-state',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: 'event-1',
             attemptCount: 1,
             expireAtEpochMs: 10_000,

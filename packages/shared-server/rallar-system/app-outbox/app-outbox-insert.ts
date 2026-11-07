@@ -47,6 +47,9 @@ interface AppOutboxTrackIndexedRow {
 }
 
 export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
+    if (isOrderedWsOutboxEntry(entry)) {
+        throw new TypeError('An ordered WS outbox row is computed by computeOrderedWsOutboxInsert');
+    }
     return { ...computeAppOutboxRow(entry), trackIndex: null };
 }
 
@@ -86,7 +89,7 @@ export function isExactAppOutboxInsert(
     entry: ResourceEntry,
     computed: AppOutboxInsert
 ): boolean {
-    if (computed.trackIndex !== null && !isOrderedWsOutboxEntry(entry)) {
+    if ((computed.trackIndex !== null) !== isOrderedWsOutboxEntry(entry)) {
         return false;
     }
     const expected = computed.trackIndex === null

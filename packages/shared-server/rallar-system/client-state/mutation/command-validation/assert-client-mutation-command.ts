@@ -45,6 +45,7 @@ export function assertClientMutationFacts(facts: unknown): asserts facts is Clie
         [
             'nowEpochMs',
             'serviceId',
+            'wsOutboundAdmissionNamespace',
             'eventId',
             'commandHash',
             'attemptCount',
@@ -56,6 +57,7 @@ export function assertClientMutationFacts(facts: unknown): asserts facts is Clie
     );
     requireTimestamp(value.nowEpochMs, 'Client mutation facts.nowEpochMs');
     requireNonEmptyString(value.serviceId, 'Client mutation facts.serviceId');
+    requireNonEmptyString(value.wsOutboundAdmissionNamespace, 'Client mutation facts.wsOutboundAdmissionNamespace');
     requireNonEmptyString(value.eventId, 'Client mutation facts.eventId');
     requireSha256(value.commandHash, 'Client mutation facts.commandHash');
     requirePositiveSafeInteger(value.attemptCount, 'Client mutation facts.attemptCount');

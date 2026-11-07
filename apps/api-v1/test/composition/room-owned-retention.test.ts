@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import { computeRoomOwnedAppDataSave, RoomOwnedAppData, writeRoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -129,6 +130,7 @@ function createRetentionRuntime(database: PSqlSql, now: () => number): ApiV1Muta
     return createApiV1MutationRuntime({
         database,
         serviceId: 'api-only-retention',
+        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
         authCredentialSecret: 'retention-test-secret-at-least-32-characters',
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: now,

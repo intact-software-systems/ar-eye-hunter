@@ -32,6 +32,7 @@ import {
     PrincipalChangeAfterFirstReadRepository
 } from './client-mutation-concurrency-test-runtime.ts';
 import { clientMutationPrincipalRef } from './client-mutation-validation-test-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('client mutation pure retry compute', () => {
@@ -80,6 +81,7 @@ describe('client mutation stable-read concurrency', () => {
                 traceId: 'trace-client-mutation-concurrency',
                 nowEpochMs: session.expiresAtEpochMs,
                 serviceId: 'client-service',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 eventId: 'stable-client-read-event',
                 attemptCount: 1,
                 expireAtEpochMs: session.expiresAtEpochMs + 60_000,

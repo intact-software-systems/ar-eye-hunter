@@ -9,7 +9,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { createTestAuthSession } from '../shared-server/rallar-system/group-state/group-state-test-runtime.ts';
-import { connectGameSession, prepareGameWrite } from './relic-game-database-fixture.ts';
+import { connectGameSession, prepareGameWrite, RELIC_FIXTURE_WS_OUTBOUND_ADMISSION_NAMESPACE } from './relic-game-database-fixture.ts';
 import { createTournamentGameFixture, readTournamentGameSnapshots, type TournamentGameFixture } from './relic-tournament-database-fixture.ts';
 
 describe('Relic tournament authority', () => {
@@ -120,7 +120,7 @@ describe('Relic tournament authority', () => {
                 sessions: persistence,
                 data: game.data,
                 tournaments: game.tournaments
-            }, { now: () => game.nowEpochMs });
+            }, { now: () => game.nowEpochMs, wsOutboundAdmissionNamespace: RELIC_FIXTURE_WS_OUTBOUND_ADMISSION_NAMESPACE });
             const before = await game.data.read(game.ref);
             const attempt = await prepareGameWrite({ ...game, service }, {
                 ...game.command,

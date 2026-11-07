@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { createRelicGame, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -38,6 +39,10 @@ Deno.test('a passive Relic producer admits new work and pending/completed replay
             nowEpochMs: () => now,
             timing: () => {}
         });
+        assert.equal(
+            first.relicGameMutations.config.wsOutboundAdmissionNamespace,
+            toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server')
+        );
         const command = {
             operation: 'ensure' as const,
             gameId: 'cold-expedition',

@@ -25,6 +25,7 @@ import type { AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-t
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createAutoAuthorizingClientStateService, processAppInbox } from './app-client-inbox-mutation-test-harness.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
@@ -34,6 +35,7 @@ interface RollbackHarness {
     readonly queue: TestResourceInbox;
     readonly reader: InboxQueueReader;
     readonly results: TestResourceInboxResults;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
     readonly service: AppClientInboxService;
     rollbackAssertions(): number;
 }
@@ -92,10 +94,11 @@ export async function createRollbackHarness(): Promise<RollbackHarness> {
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'server-12345678',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
-    return { key, queue, reader, results, service, rollbackAssertions: () => observation.assertions };
+    return { key, queue, reader, results, runtimeRepository, service, rollbackAssertions: () => observation.assertions };
 }
 
 function createRollbackDatabase(input: RollbackDatabaseInput): AppInboxTestDatabase {

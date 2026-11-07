@@ -6,7 +6,7 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import { computeRuntimeStateObservations } from '../../../../runtime-state/observation/runtime-state-observation.ts';
-import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { computeAppOutboxInsert, computeOrderedWsOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import { computeFriendsPresencePublication } from '../../../friends/compute-friends-presence-publication.ts';
 import { computePartyMemberViewPublication } from '../../../parties/party-member-view-publication.ts';
 import {
@@ -68,7 +68,12 @@ export function computeClientMutationResult(
         nowEpochMs: read.audienceObservedAtEpochMs
     });
     const stateSyncEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
-    const outbox = stateSyncEntries.map(({ entry, message }) => ({ write: computeAppOutboxInsert(entry), message }));
+    const outbox = stateSyncEntries.map(({ entry, message }) => ({
+        write: message.ordering?.seq === undefined
+            ? computeAppOutboxInsert(entry)
+            : computeOrderedWsOutboxInsert({ entry, admissionNamespace: facts.wsOutboundAdmissionNamespace }),
+        message
+    }));
     const friendsPresence = computeFriendsPresencePublication(command, read, snapshot);
     const viewPublication = combineGuardedViewPublications([
         computePartyMemberViewPublication(command, read, snapshot),

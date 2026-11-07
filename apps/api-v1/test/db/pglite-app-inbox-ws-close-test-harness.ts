@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
@@ -220,6 +221,7 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'pglite-close-test',
+            wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
             timing: undefined,
             options: input.options

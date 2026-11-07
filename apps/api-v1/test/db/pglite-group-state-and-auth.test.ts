@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -744,6 +745,7 @@ Deno.test(
                         traceId: 'trace-pglite-group-state-and-auth',
                         nowEpochMs: 2_000,
                         serviceId: 'pglite-client-service',
+                        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
                         eventId: `${commandId}-event`,
                         attemptCount: 1,
                         expireAtEpochMs: FUTURE_MS,

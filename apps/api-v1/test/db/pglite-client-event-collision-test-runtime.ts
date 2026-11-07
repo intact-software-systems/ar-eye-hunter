@@ -1,3 +1,4 @@
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
@@ -117,6 +118,7 @@ async function preparePGliteClientEvent(
             traceId: 'trace-pglite-client-event-collision-test-runtime',
             nowEpochMs,
             serviceId: 'pglite-client-service',
+            wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
             eventId,
             attemptCount: 1,
             expireAtEpochMs: FUTURE_MS,

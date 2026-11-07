@@ -7,7 +7,12 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { toAppOutboxInsertParameterRows } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
+import {
+    isAppOutboxTrackIndexedInsert,
+    toAppOutboxInsertParameterRows,
+    toAppOutboxTrackIndexParameterRows,
+    writeAppOutboxTrackIndexRows
+} from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 
 const OUTBOX_BY_RUNTIME = new WeakMap<object, Map<string, ResourceEntry>>();
 const OUTBOX_FAILURES_BY_RUNTIME = new WeakMap<object, number>();
@@ -99,6 +104,10 @@ export function restoreClientStateTestOutbox(
 }
 
 async function executeClientStateTestSql(input: ClientStateTestSqlInput): Promise<PSqlRows> {
+    if (isAppOutboxTrackIndexedInsert(input.query)) {
+        const indexed = await writeAppOutboxTrackIndexRows(input.runtime, toAppOutboxTrackIndexParameterRows(input.values));
+        return [...insertClientStateTestOutbox(input).map((row) => ({ ...row, store_key: null })), ...indexed];
+    }
     if (
         input.query.includes('insert into runtime_state_store') &&
         input.query.includes('do nothing') &&

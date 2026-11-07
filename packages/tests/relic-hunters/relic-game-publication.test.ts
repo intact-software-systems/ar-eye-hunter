@@ -16,6 +16,8 @@ import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgre
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { toALOutboundAdmissionNamespace } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
@@ -30,7 +32,8 @@ import { createInboxFixture } from './relic-game-inbox-fixture.ts';
 
 describe('Relic committed notifications', () => {
     it('delivers round ordering metadata and private hunter events with durable repair evidence', async () => {
-        const fixture = await createInboxFixture();
+        const admissionNamespace = toALOutboundAdmissionNamespace('relic-publication-test');
+        const fixture = await createInboxFixture({ wsOutboundAdmissionNamespace: admissionNamespace });
         const engine = new InboxOutboxEngine();
         const sockets = new JsonWebSocketServer();
         const owner = fixture.owner;
@@ -46,6 +49,7 @@ describe('Relic committed notifications', () => {
             namespace: 'relic-publication-test',
             decodePrepared: decodeWsQueueBoxServerPreparedMessage
         });
+        expect(stores.admissionStore.namespace).toBe(admissionNamespace);
         const provenance = new WsOutboxProvenanceReader({ repository: fixture.runtime, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
         const transport = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
@@ -98,6 +102,22 @@ describe('Relic committed notifications', () => {
                 .sort((left, right) => left.id.ts - right.id.ts);
             expect(transitions.map((message) => [JSON.parse(message.payload.resource).transition, message.ordering?.epoch, message.ordering?.seq]))
                 .toEqual([['round-started', 1, 1], ['round-resolved', 1, 2], ['review-continued', 2, 1], ['round-resolved', 2, 2], ['finished', 3, 1]]);
+            // Each transition's index row is written by its producer's transaction, before any dequeue sends it.
+            for (const transition of transitions) {
+                const track = toALOrderingTrackKey(transition);
+                const sequence = transition.ordering?.seq;
+                const outbox = entries.find((entry) => entry.key.resourceId === transition.id.msgId);
+                if (track === undefined || sequence === undefined || outbox === undefined) {
+                    throw new Error('Round transitions require an ordering track and an outbox row');
+                }
+                const indexed = await fixture.runtime.findEntry(
+                    admissionNamespace,
+                    toALOutboundOrderingMessageKey(admissionNamespace, track, sequence)
+                );
+                expect(indexed?.value).toBe(JSON.stringify(transition.id.msgId));
+                expect(indexed?.expireAtTimestamp).toBe(outbox.audit.expiryTs.epochMilliseconds);
+                expect(await stores.admissionStore.readSentMessageByOrdering(track, sequence)).toBeUndefined();
+            }
             // A same-principal socket arriving after commit is not part of the private event's fixed audience.
             const lateSocket = new TestWebSocket('ws://late-owner-session');
             lateSocket.open();

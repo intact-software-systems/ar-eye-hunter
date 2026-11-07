@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { Sql } from 'postgres';
 
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -126,6 +127,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         },
         {
             serviceId,
+            wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
             disconnectedSessionRetentionMs: defaults.clientSessions.disconnectedRetentionMs,
             finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
             timing,

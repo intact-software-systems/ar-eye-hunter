@@ -24,6 +24,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export interface PostgresClientSessionInput {
@@ -106,6 +107,7 @@ function createPostgresClientMutationExecutor(
                     traceId: 'trace-postgres-client-mutation-test-driver',
                     nowEpochMs: options.atEpochMs,
                     serviceId: options.serviceId,
+                    wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                     eventId: `postgres-client-event:${commandInput.commandId}`,
                     attemptCount: attempt,
                     expireAtEpochMs: options.atEpochMs + 24 * 60 * 60 * 1_000,

@@ -54,19 +54,15 @@ export function computeAppOutboxTrackIndexRow(input: ComputeAppOutboxTrackIndexR
 
 /**
  * Insert-only: a live row already under the key is left as it is and returns nothing, which its caller reports;
- * an expired one is written over, one revision past it. The value is the JSON string the admission store writes.
+ * an expired one is written over, one revision past it. The value is the JSON string the admission store writes,
+ * encoded by the statement so the write serializes nothing.
  */
 export function toAppOutboxTrackIndexInsert(rows: readonly AppOutboxTrackIndexRow[]): PSqlFragment {
-    const values = rows.map(({ namespace, key, msgId, expiresAt }) => ({
-        namespace,
-        key,
-        value: JSON.stringify(msgId),
-        expiresAt
-    }));
+    const values = rows.map(({ namespace, key, msgId, expiresAt }) => ({ namespace, key, msgId, expiresAt }));
     return PSqlFragment.of`
         insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
-        select indexed.namespace, indexed.key, indexed.value, indexed."expiresAt"::timestamptz, now(), 0
-        from jsonb_to_recordset(${values}::jsonb) as indexed(namespace text, key text, value text, "expiresAt" text)
+        select indexed.namespace, indexed.key, to_jsonb(indexed."msgId")::text, indexed."expiresAt"::timestamptz, now(), 0
+        from jsonb_to_recordset(${values}::jsonb) as indexed(namespace text, key text, "msgId" text, "expiresAt" text)
         on conflict (store_namespace, store_key) do update
             set store_value = excluded.store_value,
                 expire_at_ts = excluded.expire_at_ts,

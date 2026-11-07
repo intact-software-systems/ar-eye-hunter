@@ -11,6 +11,7 @@ import type {
     ClientPrincipal,
     ClientPrincipalRef
 } from '@shared/api/client-types.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export const CLIENT_MUTATION_TEST_SCOPE = {
@@ -109,6 +110,7 @@ export function validFacts(): ClientMutationFacts {
         traceId: 'trace-client-mutation-validation-test-fixtures',
         nowEpochMs: 1_000,
         serviceId: 'client-service',
+        wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
         attemptCount: 1,

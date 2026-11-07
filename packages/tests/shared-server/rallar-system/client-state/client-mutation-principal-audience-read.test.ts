@@ -48,6 +48,7 @@ import {
 import { createTestGroup } from '../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { principalCommand, TEST_SCOPE } from './client-mutation-compute-test-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const AUDIENCE_EPOCH_MS = 2_000_000_000_000;
@@ -755,6 +756,7 @@ function disconnectCommandFor(generationId: string): ClientMutationCommand {
             traceId: 'trace-client-mutation-principal-audience-read',
             nowEpochMs: HEARTBEAT_EPOCH_MS,
             serviceId: 'client-service',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: `event:${requestId}`,
             attemptCount: 1,
             expireAtEpochMs: 20_000,
@@ -797,6 +799,7 @@ function heartbeatCommandFor(generationId: string): ClientMutationCommand {
             traceId: 'trace-client-mutation-principal-audience-read',
             nowEpochMs: HEARTBEAT_EPOCH_MS,
             serviceId: 'client-service',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: `event:${requestId}`,
             attemptCount: 1,
             expireAtEpochMs: 20_000,

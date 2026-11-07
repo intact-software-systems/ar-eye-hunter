@@ -43,7 +43,11 @@ describe('the track index row of an ordered WS outbox row', () => {
         expect(computeAppOutboxInsert(createEntry(EnqueuedType.APP_OUTBOX, 2)).trackIndex).toBeNull();
     });
 
-    // The plain compute stays permissive for an ordered WS row until the ordered producers use the ordered compute.
+    it('refuses the plain compute for an ordered WS row', () => {
+        expect(() => computeAppOutboxInsert(createEntry(EnqueuedType.WS_OUTBOX, 2)))
+            .toThrow(new TypeError('An ordered WS outbox row is computed by computeOrderedWsOutboxInsert'));
+    });
+
     it('refuses the ordered compute for any entry that is not an ordered WS row', () => {
         const admissionNamespace = TRACK_INDEX_NAMESPACE;
 
@@ -53,7 +57,7 @@ describe('the track index row of an ordered WS outbox row', () => {
             .toThrow(TypeError);
     });
 
-    it('re-derives the index in the guard and refuses a re-keyed, re-namespaced or re-expired index row', () => {
+    it('re-derives the index in the guard and refuses a re-keyed, re-namespaced, re-expired or missing index row', () => {
         const entry = createEntry(EnqueuedType.WS_OUTBOX, 2);
         const computed = computeOrderedWsOutboxInsert({ entry, admissionNamespace: TRACK_INDEX_NAMESPACE });
         const trackIndex = computed.trackIndex!;
@@ -66,5 +70,6 @@ describe('the track index row of an ordered WS outbox row', () => {
             .toBe(false);
         expect(isExactAppOutboxInsert(entry, { ...computed, trackIndex: { ...trackIndex, expiresAt: '2030-01-01T00:00:00Z' } }))
             .toBe(false);
+        expect(isExactAppOutboxInsert(entry, { ...computed, trackIndex: null })).toBe(false);
     });
 });

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 
 import {
     createDefaultPSqlALInboundRuntimeStores,
-    createDefaultPSqlALOutboundRuntimeStores
+    createDefaultPSqlALOutboundRuntimeStores,
+    toServerWsQBoxALOutboundAdmissionNamespace
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
@@ -50,6 +51,7 @@ function createProbedMutationRuntime(database: PSqlSql): ApiV1MutationRuntime {
     return createApiV1MutationRuntime({
         database,
         serviceId: 'api-test',
+        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
         authCredentialSecret: 'a'.repeat(32),
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => 1_000,

@@ -37,6 +37,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 export const TEST_SCOPE: StateScope = {
@@ -205,6 +206,7 @@ function authorisedConnectCommand(
             traceId: 'trace-client-mutation-compute-test-fixtures',
             nowEpochMs: 1_000,
             serviceId: 'client-service',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: `event:${requestId}`,
             attemptCount: 1,
             expireAtEpochMs: 20_000,
@@ -380,6 +382,7 @@ function command(
             traceId: 'trace-client-mutation-compute-test-fixtures',
             nowEpochMs,
             serviceId: 'client-service',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: `event:${input.commandId}`,
             attemptCount: 1,
             expireAtEpochMs: 20_000,

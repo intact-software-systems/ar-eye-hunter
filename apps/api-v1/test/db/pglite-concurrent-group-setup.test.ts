@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
     createDefaultPSqlALInboundRuntimeStores,
-    createDefaultPSqlALOutboundRuntimeStores
+    createDefaultPSqlALOutboundRuntimeStores,
+    toServerWsQBoxALOutboundAdmissionNamespace
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { requireApiAuthSession } from '@shared-server/http/request-auth-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -148,6 +149,7 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
     return createApiV1MutationRuntime({
         database: sql,
         serviceId: 'pglite-ordinary-setup',
+        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
         authCredentialSecret: 'group-setup-test-secret'.repeat(2),
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: Date.now,
