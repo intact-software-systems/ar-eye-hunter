@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -50,13 +50,16 @@ describe('RTC baseline Bun PID writer lock', () => {
         }
     });
 
-    it('grants a stale lock to exactly one of two concurrent acquirers', async () => {
+    it('grants a stale lock to exactly one of two concurrent reclaimers', async () => {
         const scenario = createLockScenario(deadOwnerPid);
         const first = await openWrappedFile(scenario.dataPath);
         const second = await openWrappedFile(scenario.dataPath);
         try {
             const [firstHeld, secondHeld] = await Promise.all([first.tryLock(), second.tryLock()]);
             expect([firstHeld, secondHeld].filter(Boolean)).toHaveLength(1);
+            expect(readFileSync(scenario.lockPath, 'utf8')).toBe(String(process.pid));
+            // The atomic rename leaves no stray reclaim artifact behind.
+            expect(readdirSync(scenario.directory)).toEqual(['evidence.json', 'evidence.json.lock']);
         }
         finally {
             await first.unlock();

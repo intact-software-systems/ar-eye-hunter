@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { writeSync, type Stats } from 'node:fs';
-import { lstat, mkdir, open, readdir, readFile, rm, writeFile, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, rename, rm, writeFile, type FileHandle } from 'node:fs/promises';
 import { availableParallelism, hostname, totalmem } from 'node:os';
 
 import { createRtcB05ObservationBunRuntime } from '../observation/rtc-b05-observation-bun-runtime.ts';
@@ -309,13 +309,22 @@ function isProcessAlive(pid: number): boolean {
     }
 }
 
-async function removeStaleLockIfStillOwned(lockPath: string, ownerPid: number): Promise<boolean> {
-    const currentPid = await readLockOwnerPid(lockPath);
-    if (currentPid !== ownerPid) {
-        return false;
+async function reclaimStaleLock(lockPath: string, ownerPid: number): Promise<void> {
+    const stalePath = `${lockPath}.stale.${crypto.randomUUID()}`;
+    try {
+        await rename(lockPath, stalePath);
     }
-    await rm(lockPath, { force: true });
-    return true;
+    catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            // Another reclaimer already won the rename; loop to retry open(lockPath, 'wx').
+            return;
+        }
+        translateNodeError(error);
+    }
+    // Won the rename. Unlink only after confirming the file still names the dead owner.
+    if ((await readLockOwnerPid(stalePath)) === ownerPid) {
+        await rm(stalePath, { force: true });
+    }
 }
 
 export function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {
@@ -342,9 +351,8 @@ export function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBun
                 if (ownerPid === null || isProcessAlive(ownerPid)) {
                     return false;
                 }
-                if (!(await removeStaleLockIfStillOwned(lockPath, ownerPid))) {
-                    return false;
-                }
+                await reclaimStaleLock(lockPath, ownerPid);
+                // Fall through: loop to retry open(lockPath, 'wx'), the strict arbiter.
             }
         }
         return false;
