@@ -17,10 +17,6 @@ interface DeployWorkflow {
 }
 
 const repoRoot = path.resolve(__dirname, '../../..');
-const denoPreflightCondition =
-    'if: ${{ always() && !cancelled() && github.ref == \'refs/heads/main\' && vars.DENO_DEPLOY_ACTIONS_ENABLED == \'true\' && (needs.release-gate.result == \'success\' || (github.event_name == \'workflow_dispatch\' && inputs.skip_release_gate == true)) }}';
-const deployDenoAfterPreflightCondition =
-    'if: ${{ always() && !cancelled() && github.ref == \'refs/heads/main\' && vars.DENO_DEPLOY_ACTIONS_ENABLED == \'true\' && needs.deno-deploy-preflight.result == \'success\' && (needs.release-gate.result == \'success\' || (github.event_name == \'workflow_dispatch\' && inputs.skip_release_gate == true)) }}';
 const releaseGateEnabledCondition = 'if: ${{ github.event_name != \'workflow_dispatch\' || inputs.skip_release_gate != true }}';
 
 function getJobBlock(workflow: string, jobName: string): string {
@@ -36,7 +32,7 @@ function getJobBlock(workflow: string, jobName: string): string {
 }
 
 describe('Deploy workflow release gate', () => {
-    it('runs validation before every main deployment job proceeds', async () => {
+    it('runs the shared release gate on every main push before production publishes', async () => {
         const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
 
         // What the reusable gate runs is owned by packages/tests/repo/release-gate-lanes.test.ts.
@@ -46,19 +42,18 @@ describe('Deploy workflow release gate', () => {
             'uses: ./.github/workflows/release-gate.yml'
         );
         expect(getJobBlock(workflow, 'release-gate')).toContain(releaseGateEnabledCondition);
+    });
 
-        const denoDeployJobs = ['deploy-api', 'deploy-control-server', 'deploy-relic-api'];
+    it('contains only the branch-control, release-gate, and observation jobs', async () => {
+        const workflow = load(
+            await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8')
+        ) as DeployWorkflow;
 
-        for (const jobName of denoDeployJobs) {
-            const jobBlock = getJobBlock(workflow, jobName);
-
-            expect(jobBlock).toContain('- release-gate');
-            expect(jobBlock).toContain('- deno-deploy-preflight');
-            expect(jobBlock).toContain(deployDenoAfterPreflightCondition);
-            expect(workflow.indexOf('  release-gate:\n')).toBeLessThan(
-                workflow.indexOf(`  ${jobName}:\n`)
-            );
-        }
+        expect(Object.keys(workflow.jobs).sort()).toEqual([
+            'alm-conformance-observation',
+            'cloudflare-branch-controls',
+            'release-gate'
+        ]);
     });
 
     it('leaves the web app builds to the Release Gate instead of rebuilding them after it', async () => {
@@ -86,146 +81,16 @@ describe('Deploy workflow release gate', () => {
         expect(workflow).not.toContain('pull_request:');
     });
 
-    it('uploads the root Deno workspace to three explicit main-only applications', async () => {
-        const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
-        const rootConfig = JSON.parse(
-            await readFile(path.join(repoRoot, 'deno.json'), 'utf8')
-        ) as Record<string, unknown>;
-
-        const expectedDeployments = [
-            {
-                jobName: 'deploy-api',
-                configPath: 'apps/api-v1/deno.json',
-                organizationName: 'intact-software-systems',
-                appName: 'rallar-server'
-            },
-            {
-                jobName: 'deploy-control-server',
-                configPath: 'apps/rallar-black-box-control-server/deno.json',
-                organizationName: 'intact-software-systems',
-                appName: 'rallar-bb-server'
-            },
-            {
-                jobName: 'deploy-relic-api',
-                configPath: 'apps/relic-hunter-server-v1/deno.json',
-                organizationName: 'intact-software-systems',
-                appName: 'relic-hunters'
-            }
-        ];
-
-        for (const deployment of expectedDeployments) {
-            const jobBlock = getJobBlock(workflow, deployment.jobName);
-
-            expect(jobBlock).toContain(deployDenoAfterPreflightCondition);
-            expect(jobBlock).toContain('DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}');
-            expect(jobBlock).toContain(
-                `deno deploy . --config deno.json --org intact-software-systems --app ${deployment.appName} --prod --json --non-interactive`
-            );
-            expect(jobBlock).not.toMatch(/deno deploy \. --config apps\//u);
-
-            const config = JSON.parse(
-                await readFile(path.join(repoRoot, deployment.configPath), 'utf8')
-            ) as {
-                deploy?: {
-                    org?: string;
-                    app?: string;
-                    runtime?: {
-                        type?: string;
-                        entrypoint?: string;
-                        cwd?: string;
-                    };
-                };
-            };
-
-            expect(config.deploy?.org).toBe(deployment.organizationName);
-            expect(config.deploy?.app).toBe(deployment.appName);
-            expect(config.deploy?.runtime).toEqual({
-                type: 'dynamic',
-                entrypoint: './src/main.ts',
-                cwd: '.'
-            });
-        }
-
-        expect(rootConfig).not.toHaveProperty('deploy');
-        expect(workflow).not.toContain('deploy-in-memory-api:');
-        expect(workflow).not.toContain('Deno Deploy auto-deploys from GitHub main branch');
-    });
-
-    it('serializes deployment and authenticates every Deno application before mutation', async () => {
-        const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
-        const preflight = getJobBlock(workflow, 'deno-deploy-preflight');
-
-        expect(workflow).toContain('concurrency:\n  group: production-deploy-${{ github.repository }}');
-        expect(workflow).toContain('cancel-in-progress: false');
-        expect(preflight).toContain('needs: release-gate');
-        expect(preflight).toContain(denoPreflightCondition);
-        expect(preflight).toContain('DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}');
-        expect(preflight).toContain('deno deploy whoami --json --non-interactive');
-
-        for (const appName of ['rallar-server', 'rallar-bb-server', 'relic-hunters']) {
-            expect(preflight).toContain(
-                `deno deploy apps get --org intact-software-systems --app ${appName} --json --non-interactive`
-            );
-        }
-
-        expect(preflight).toContain('deno deploy env list');
-        expect(preflight).toContain('verify-deno-deploy-api-configuration.mjs');
-        expect(preflight).toContain('--target api-v1');
-        expect(preflight).toContain('--target relic');
-        expect(preflight).not.toContain('cat "$RUNNER_TEMP/rallar-server-environment.json"');
-        expect(preflight).not.toContain('cat "$RUNNER_TEMP/relic-hunters-environment.json"');
-
-        for (const jobName of ['deploy-api', 'deploy-control-server', 'deploy-relic-api']) {
-            const jobBlock = getJobBlock(workflow, jobName);
-            const staleGuardIndex = jobBlock.indexOf('Verify no newer deployable commit exists on main');
-            const firstMutationIndex = Math.min(
-                ...['Prisma migrate deploy', 'run: deno deploy .']
-                    .map((marker) => jobBlock.indexOf(marker))
-                    .filter((index) => index >= 0)
-            );
-
-            expect(staleGuardIndex).toBeGreaterThanOrEqual(0);
-            expect(jobBlock).toContain('git fetch --no-tags origin main');
-            expect(jobBlock).toContain('Refusing stale production deploy');
-            expect(staleGuardIndex).toBeLessThan(firstMutationIndex);
-        }
-    });
-
-    it('pins every Deno Deploy command away from the 2.9.6 argument duplication regression', async () => {
-        const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
-
-        for (
-            const jobName of [
-                'deno-deploy-preflight',
-                'deploy-api',
-                'deploy-control-server',
-                'deploy-relic-api'
-            ]
-        ) {
-            const jobBlock = getJobBlock(workflow, jobName);
-
-            expect(jobBlock).toContain('deno-version: 2.9.5');
-            expect(jobBlock).not.toContain('deno-version: v2.x');
-        }
-    });
-
-    it('documents provider settings that prevent feature-branch deployment contexts', async () => {
+    it('documents Cloudflare branch controls and Hetzner server hosting', async () => {
         const runbook = await readFile(path.join(repoRoot, 'docs/production-deployment.md'), 'utf8');
 
         for (
             const requirement of [
                 'Production branch: `main`',
                 'Builds for non-production branches: disabled',
-                'Disconnect the Deno GitHub integration',
-                'Every push to a linked GitHub repository starts a Deno build',
-                'source discovery at the repository-root `deno.json`',
-                'App-level `deno.json` files remain authoritative for local checks',
-                '`DENO_DEPLOY_ACTIONS_ENABLED=false`',
-                'Deploy Default Branch',
-                '`DENO_DEPLOY_TOKEN`',
-                '`DENO_DEPLOY_ACTIONS_ENABLED=true`',
                 'Branch Release Gate',
-                'configuration drift'
+                'configuration drift',
+                'Hetzner'
             ]
         ) {
             expect(runbook.replace(/\s+/g, ' ')).toContain(requirement);
@@ -240,18 +105,5 @@ describe('Deploy workflow release gate', () => {
         expect(job).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}');
         expect(job).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
         expect(job).toContain('node scripts/deploy/configure-cloudflare-main-only.mjs --apply');
-    });
-
-    it('keeps the Postgres presence expiry test from rewriting node_modules', async () => {
-        const packageJson = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8')) as {
-            scripts: Record<string, string>;
-            devDependencies: Record<string, string>;
-        };
-        const script = packageJson.scripts['test:postgres:presence-expiry'];
-
-        expect(script).toContain('--node-modules-dir=none');
-        expect(script).toContain('--config packages/tests/shared-server/vitest.deno.config.mjs');
-        expect(script).not.toContain('--node-modules-dir=auto');
-        expect(packageJson.devDependencies.postgres).toBe('^3.4.9');
     });
 });

@@ -122,8 +122,7 @@ and errors report names and safe resolved modes, never secret values.
 `ENVIRONMENT`, the unprefixed server `API_BASE_URL`, formation damping
 variables, dissemination mode variables, and old web-config resources are not
 read; API-v1 ignores them silently. There are no aliases or transitional
-readers. The Deno Deploy preflight rejects `ENVIRONMENT` and
-`RALLAR_PRODUCTION_HARDENING` in the production context.
+readers.
 
 ### Server
 

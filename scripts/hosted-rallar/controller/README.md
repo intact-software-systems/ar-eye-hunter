@@ -592,7 +592,7 @@ RALLAR_ICE_MODE=local
 ```
 
 The `prod` profile owns PostgreSQL, PostgreSQL pub/sub, and disabled schema
-bootstrap, as production on Deno Deploy does. `02-deploy-controller.sh` writes
+bootstrap. `02-deploy-controller.sh` writes
 that selector plus only controller-specific URLs, CORS, workload limits,
 topology experiment overrides, and API secrets. `DATABASE_URL` is generated once
 on the VM as a plain loopback URL

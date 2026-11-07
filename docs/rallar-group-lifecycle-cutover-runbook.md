@@ -76,9 +76,8 @@ new server reads an old row or an old server writes one.
    applied is **not** sufficient: migrations change the schema and leave the pre-cutover rows in
    place, which is exactly the state that throws.
 4. **Deploy both servers before any browser.** `rallar-server` and `relic-hunters` first, so no old
-   server can write a row a new one will read. When `DENO_DEPLOY_ACTIONS_ENABLED` is `true`,
-   `deploy.yml` orders each API deployment behind its own migration step; otherwise the Deno Git
-   integration deploys and the migration must be run by hand first. Nothing orders the browsers:
+   server can write a row a new one will read. The Hetzner rollout deploys each server behind its own
+   database migration step. Nothing orders the browsers:
    Cloudflare's Git integration publishes `main` independently of `deploy.yml`, so pause those
    Cloudflare builds (or deploy the servers from a commit that does not yet change the browsers)
    until the servers are live.
