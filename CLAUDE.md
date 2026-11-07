@@ -28,6 +28,7 @@ Detailed workflows live in `.agents/skills/**` (a repo-local skill tree, also pa
 | `adaptive-plan-execution`                                        | Executing a written or multi-slice repository plan, and adapting it when evidence changes ownership, scope, or the current horizon.   |
 | `organizing-repository-structure`                                | Adding, moving, splitting, consolidating, or reviewing repository files and folders.                                                  |
 | `publishing-plan-progress`                                       | Publishing a branch, draft pull request, milestone, or final remote evidence. Plan execution belongs to `adaptive-plan-execution`.    |
+| `validation`                                                     | Writing the session command catalog when a command failed, was skipped, or changed a decision, or when asked.                        |
 
 ## Runtime split
 
@@ -272,7 +273,7 @@ Highest-frequency rules:
   final validation, remove a completed written plan and its current-work index entries in the pull
   request, and run `npm run pr:delivery -- ready` once at handoff. When GitHub reports the pull
   request merged, stop; completion creates no post-merge governance work.
-- Always report which commands passed, failed, or were skipped.
+- Write the command catalog only as the AI Handoff Contract in `AGENTS.md` describes.
 
 ## Git
 

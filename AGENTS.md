@@ -200,31 +200,34 @@ limit.
   bundle-boundary checks when exports or entry points change.
 - For game/realtime changes, include the relevant app tests/builds and shared
   package tests.
-- Report commands that passed, failed, or were skipped.
+- Write the command catalog only as the AI Handoff Contract describes.
 
 ## AI Handoff Contract (applies to all agents)
 
 - End each AI task with a concise completion handoff:
   - What changed (files + behavior).
   - Why those changes were chosen (risk/compatibility rationale).
-  - Validation evidence (exact command outputs and results).
   - Any follow-up needed, including created or reused GitHub Issue URLs, or an
     explicit statement that there were none.
 - Keep the handoff structured, not just an action list. If tradeoffs were made,
   call them out explicitly.
-- Every final handoff ends with a Markdown
-  `### Commands executed and what they taught us` section. When commands or tool actions ran, include a concise
-  grouped bullet for each repeated or consequential action. If no commands or
-  tool actions ran, write `No commands or tool actions were run.` in that
-  section.
-- Group repeated or equivalent commands. For each command or consequential
-  tool action, explain why the command or action was chosen, the important
-  result or exit status, what its result means, and one useful lesson or
-  reusable troubleshooting insight. Keep routine output summarized instead of
+- Write a Markdown `### Validation` section when a command or consequential
+  tool action failed, was skipped, or changed a decision, and when a person or
+  the agent invokes the `validation` skill (`/validation`). Leave that section
+  out of every other handoff.
+- Group repeated or equivalent commands. For five or fewer grouped actions,
+  include one concise bullet each: why it was chosen, the result (`passed`,
+  `failed`, or `skipped`), and what that result means. When more than five
+  grouped actions ran, write one tally line (`N passed, N failed, N skipped.`)
+  and a bullet only for each failure, skip, or result that changed a decision.
+  Add a lesson only on those bullets. Keep routine output summarized instead of
   pasting raw logs.
+- If that section is required and no commands or tool actions ran, write
+  `No commands or tool actions were run.`
+- A build that exits zero with known large-chunk warnings is `passed`.
 - Never expose secrets, tokens, credentials, authorization headers,
-  environment-file contents, or other sensitive values in the learning
-  summary. Describe only the safe shape and outcome of sensitive operations.
+  environment-file contents, or other sensitive values. Describe only the safe
+  shape and outcome of sensitive operations.
 
 ## Performance analysis repo guidance
 

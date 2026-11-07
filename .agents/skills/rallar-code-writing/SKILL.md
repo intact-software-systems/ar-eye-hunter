@@ -265,8 +265,8 @@ proofs for the touched surface. Run
 `npm run check:repo-style` and review warnings in changed production files. For
 output that reaches the display cap, rerun with `--root` set to the smallest
 directory containing changed production files. For public API or cross-runtime
-changes, check both browser and server consumers. Report passed, failed, and
-skipped commands in the completion handoff. For written or multi-slice work,
+changes, check both browser and server consumers. Write the command catalog
+only as the AI Handoff Contract in `AGENTS.md` describes. For written or multi-slice work,
 `adaptive-plan-execution` owns working-plan and proportional-validation judgment.
 
 When authoritative mutation control flow changes, also run
