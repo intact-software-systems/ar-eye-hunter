@@ -7,7 +7,6 @@ import type { ALAdmissionMemoryState, ALAdmissionStoredValue } from '@shared/alm
 import { toALInboundControlPendingKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { PUBLICATION_TOPIC_ID, PUBLISH_AND_SUBSCRIBE, PUBLISH_ONLY, SUBSCRIBE_ONLY } from './rtc-publication-proof-fixtures.ts';
 import {
@@ -18,7 +17,7 @@ import {
     publishOrderedFromOrigin,
     readOrderingPositions,
     toControlTuples,
-    toPublishRevokedSnapshot,
+    toGrantsSnapshot,
     type OriginRelayChain
 } from './rtc-relay-chain-test-support.ts';
 import { createObservedVolatileInboundPair, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -151,7 +150,7 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         const upward = await readRelayUpwardControls(gap);
         const sentBefore = gap.chain.origin.channels.r!.sent.length;
 
-        gap.chain.origin.groups.accept('room', toPublishRevokedSnapshot(gap.chain.snapshot));
+        gap.chain.origin.groups.accept('room', toGrantsSnapshot(gap.chain.snapshot, 4, { a: SUBSCRIBE_ONLY }));
         const admissions = await acceptAtOrigin(gap, upward);
 
         expect(admissions.get('gap')).toBe('not-handled');
@@ -211,7 +210,7 @@ async function createGapChain(input: GapChainInput): Promise<GapChain> {
     for (const seq of [1, 2, 3]) {
         const grants = input.grantsBySeq?.[seq];
         if (grants !== undefined) {
-            snapshot = toGrantedSnapshot(chain.snapshot, chain.snapshot.group.snapshotVersion + seq, grants);
+            snapshot = toGrantsSnapshot(chain.snapshot, chain.snapshot.group.snapshotVersion + seq, grants);
             chain.origin.groups.accept('room', snapshot);
         }
         frames.push(await publishOrderedFromOrigin({ origin: chain.origin, seq, ack: input.ack }));
@@ -358,16 +357,4 @@ function readLeafTrackKey(gap: GapChain): string {
         throw new Error('The leaf entered no track');
     }
     return entered.trackKey;
-}
-
-/** The chain's room with each principal's grant on the topic replaced, at `snapshotVersion`. */
-function toGrantedSnapshot(snapshot: GroupSnapshot, snapshotVersion: number, grants: ChainGrants): GroupSnapshot {
-    return {
-        ...snapshot,
-        group: { ...snapshot.group, snapshotVersion },
-        publicationGrants: snapshot.publicationGrants.map((grant) => ({
-            ...grant,
-            topics: { [PUBLICATION_TOPIC_ID]: grants[grant.principalId] ?? PUBLISH_ONLY }
-        }))
-    };
 }

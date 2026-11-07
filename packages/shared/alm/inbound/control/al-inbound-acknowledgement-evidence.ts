@@ -362,11 +362,11 @@ function toControlIdentity(
             producerObservedAtEpochMs: ack.observedAtEpochMs
         });
     }
-    if (control?.type === 'nack' && isALRelayedNackReason(control.payload.reason)) {
-        const nack = control.payload;
+    const nack = control?.type === 'nack' ? control.payload : undefined;
+    if (nack !== undefined && isALRelayedNackReason(nack.reason)) {
         return Object.freeze({
             control: 'nack',
-            reason: control.payload.reason,
+            reason: nack.reason,
             ...envelope,
             subjectMsgId: nack.msgId,
             logicalRecipientPeerId: nack.logicalRecipientPeerId,

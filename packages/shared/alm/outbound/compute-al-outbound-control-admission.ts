@@ -4,6 +4,7 @@ import type {
     ALNackPayload,
     ALParsedControlMessage,
     ALPeerControlMessage,
+    ALPeerRepairControlMessage,
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
@@ -285,7 +286,7 @@ function toRepairHintEffect(
  * apart (S4ii-R3): each recipient a relay reports one gap for raises its own hint.
  */
 export function toALOutboundControlRepairHint(
-    control: Exclude<ALPeerControlMessage, Readonly<{ type: 'ack'; }>>
+    control: ALPeerRepairControlMessage
 ): ALOutboundRepairHint {
     const { payload } = control;
     const missingRanges = payload.missingRanges ?? [];

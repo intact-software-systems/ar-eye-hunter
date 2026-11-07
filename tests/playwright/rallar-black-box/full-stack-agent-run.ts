@@ -89,8 +89,8 @@ export interface AgentRunOutcomes {
 }
 
 /**
- * A gate's command may sit at the end of its role's recipe: the gate waits as long as that recipe may run. In the S4-i
- * lanes the longest four-role recipe ran 14.2 s, so the budget keeps over ten times that.
+ * A gate's command may sit at the end of its role's recipe: the gate waits as long as that recipe may run. In the S4-ii
+ * lanes the longest four-role recipe ran 15.7 s, so the budget keeps over ten times that.
  */
 const CONTINUATION_GATE_TIMEOUT_MS = 180_000;
 

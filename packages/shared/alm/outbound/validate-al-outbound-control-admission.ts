@@ -2,7 +2,7 @@ import {
     isALHopCompletionAck,
     type ALAckPayload,
     type ALNackPayload,
-    type ALPeerControlMessage,
+    type ALPeerRepairControlMessage,
     type ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -75,7 +75,7 @@ function validateAcknowledgement(
 function validateRepairRequest(
     read: ALControlAdmissionRead,
     sent: ALStoredOutboundMessage,
-    control: Exclude<ALPeerControlMessage, Readonly<{ type: 'ack'; }>>
+    control: ALPeerRepairControlMessage
 ): readonly ALMessageRejection[] {
     const issues: ALMessageRejection[] = [];
     if (isALOutboundRelayedGapNack(control)) {

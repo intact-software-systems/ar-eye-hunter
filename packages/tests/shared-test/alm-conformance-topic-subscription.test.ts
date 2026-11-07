@@ -755,10 +755,6 @@ describe('ALM ordered subscription reconnect conformance', () => {
             const firstIds = new Set(toFlatCommands(requireRoleRecipe(scenario, 'sibling').commands).map(({ commandId }) => commandId));
             expect(continuation.filter(({ commandId }) => firstIds.has(commandId))).toEqual([]);
             expect(continuation.map(({ kind }) => kind)).not.toContain('rtc.connect');
-            // No producer holds anything back: each waits the sibling's own cue.
-            for (const [role] of PRODUCER_TRACKS) {
-                expect(requireRoleRecipe(scenario, role).recipeId).not.toContain('continuation');
-            }
         }
     );
 

@@ -29,11 +29,14 @@ import {
     createOriginRelayChain,
     GRANTED_TYPE_ID,
     publishOrderedFromOrigin,
-    toPublishRevokedSnapshot,
+    toGrantsSnapshot,
     type OriginRelayChain
 } from './rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 import { createRtcTopicSubscriptionsFixture, NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
+
+/** The origin's publish grant is revoked: it may still subscribe. */
+const PUBLISH_REVOKED = { a: SUBSCRIBE_ONLY };
 
 interface RelayHopInput {
     readonly selfPeerId: 'r' | 'c';
@@ -175,7 +178,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1');
 
-        relay.acceptSnapshot(toPublishRevokedSnapshot(chain.snapshot));
+        relay.acceptSnapshot(toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         await relay.receive(signed, 'a');
 
         expect(await relay.readSent('c')).toEqual([]);
@@ -282,7 +285,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
             const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
             const admitted = await admitAtOrigin(chain, 'feed-1', 'none');
 
-            chain.origin.groups.accept('room', toPublishRevokedSnapshot(chain.snapshot));
+            chain.origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
             // The stage planner is the manager's own; element access reaches it without widening its type.
             const plan = chain.origin.manager['planOutgoingMessage'](admitted.message, stage);
 
@@ -324,7 +327,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         origin.overlays.delete('room');
         const held = await admitAt(origin, 'feed-1', 'receiver', 'durable');
 
-        origin.groups.accept('room', toPublishRevokedSnapshot(chain.snapshot));
+        origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         origin.overlays.accept('room', createOriginOverlay(['r', 'c'], LEAF_LAYOUT));
         await vi.advanceTimersByTimeAsync(500);
 
@@ -337,7 +340,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
 
     it.each<[string, (chain: OriginRelayChain) => GroupSnapshot, 'committed' | 'not-handled', number]>([
         ['while both still hold their grants', (chain) => chain.snapshot, 'committed', 1],
-        ['after the origin\'s publish was revoked', (chain) => toPublishRevokedSnapshot(chain.snapshot), 'not-handled', 0],
+        ['after the origin\'s publish was revoked', (chain) => toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED), 'not-handled', 0],
         ['after the requester\'s subscribe was revoked', (chain) => toSubscribeRevokedSnapshot(chain, 'r'), 'not-handled', 0]
     ])('answers a frozen recipient\'s repair control for a signed frame %s with the outcome and copies named', async (_name, toSnapshot, kind, copies) => {
         const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
@@ -371,7 +374,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         const origin = createLeafOrigin(chain);
         const admitted = await admitAt(origin, 'feed-1', 'receiver');
 
-        origin.groups.accept('room', toPublishRevokedSnapshot(chain.snapshot));
+        origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
 
         expect([origin.channels.r!.sent.length, origin.channels.c!.sent.length]).toEqual([1, 1]);

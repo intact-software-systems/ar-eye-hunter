@@ -129,6 +129,9 @@ export type ALParsedControlMessage =
 /** A control one peer sends another about a message; the receipt control is the server's and travels apart. */
 export type ALPeerControlMessage = Exclude<ALParsedControlMessage, Readonly<{ type: 'receipt'; }>>;
 
+/** A peer control that asks for a repair: a NACK, or a repair request. */
+export type ALPeerRepairControlMessage = Exclude<ALPeerControlMessage, Readonly<{ type: 'ack'; }>>;
+
 /**
  * The completion of a hop itself: the delivered ACK of a leaf, or the terminal ACK of a relay whose
  * subtree completed, a not-subscribed recipient's included.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALNackPayload, ALPeerRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundRepairHint } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
@@ -36,7 +36,9 @@ function toPersistedHint(request: ALOutboundRepairHint) {
 
 describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
     it('names the recipient a relay asks the repair for beside the relay that asks', () => {
-        expect(toALOutboundControlRepairHint({ type: 'nack', payload: GAP })).toEqual({
+        const control: ALPeerRepairControlMessage = { type: 'nack', payload: GAP };
+
+        expect(toALOutboundControlRepairHint(control)).toEqual({
             trigger: 'nack',
             requestedByPeerId: 'relay',
             logicalRecipientPeerId: 'leaf',

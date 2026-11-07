@@ -15,8 +15,7 @@ import {
     createFrozenGrantedMulticast,
     createPublicationRoomSnapshot,
     PUBLICATION_TOPIC_ID,
-    signPublication,
-    SUBSCRIBE_ONLY
+    signPublication
 } from './rtc-publication-proof-fixtures.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
@@ -188,14 +187,19 @@ export async function publishOrderedFromOrigin(input: OrderedOriginPublicationIn
     return origin.channels.r!.sent[sentBefore]!;
 }
 
-/** The origin's publish grant is revoked in the next snapshot: it may still subscribe. */
-export function toPublishRevokedSnapshot(snapshot: GroupSnapshot): GroupSnapshot {
+/** The chain's room at `snapshotVersion`, each principal `grantsByPrincipal` names holding that grant on the topic. */
+export function toGrantsSnapshot(
+    snapshot: GroupSnapshot,
+    snapshotVersion: number,
+    grantsByPrincipal: Readonly<Record<string, GroupPublicationTopicPermissions>>
+): GroupSnapshot {
     return {
         ...snapshot,
-        group: { ...snapshot.group, snapshotVersion: 4 },
-        publicationGrants: snapshot.publicationGrants.map((grant) =>
-            grant.principalId === 'a' ? { ...grant, topics: { [PUBLICATION_TOPIC_ID]: SUBSCRIBE_ONLY } } : grant
-        )
+        group: { ...snapshot.group, snapshotVersion },
+        publicationGrants: snapshot.publicationGrants.map((grant) => {
+            const topicGrant = grantsByPrincipal[grant.principalId];
+            return topicGrant === undefined ? grant : { ...grant, topics: { [PUBLICATION_TOPIC_ID]: topicGrant } };
+        })
     };
 }
 
