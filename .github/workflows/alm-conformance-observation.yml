@@ -18,17 +18,24 @@ permissions:
   actions: read
 
 jobs:
-  # Non-blocking and beside the gates, not inside them: no caller waits for this job, so its 10 to 20
-  # minutes never lengthen a verdict or a deployment. The hosted runner has not yet completed a typed ws
-  # send and a cold RTC handshake inside the recipe budgets; the uploaded run snapshots are the diagnostic.
+  # Non-blocking and beside the gates, not inside them: no caller waits for this job, so its minutes
+  # never lengthen a verdict or a deployment. One matrix leg runs each carrier on a runner of its own:
+  # the full three-carrier lane exhausted the hosted runner's memory, so the carriers are split. The
+  # hosted runner has not yet completed a typed ws send and a cold RTC handshake inside the recipe
+  # budgets; the uploaded run snapshots are the diagnostic.
   alm-conformance-observation:
-    name: ALM conformance observation
+    name: ALM conformance observation (${{ matrix.carrier }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        carrier: [ws, rtc, rtc-with-ws-fallback]
     env:
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
       RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.alm_scope }}
+      RALLAR_BLACK_BOX_ALM_CARRIERS: ${{ matrix.carrier }}
 
     steps:
       - name: Checkout repo
@@ -43,13 +50,13 @@ jobs:
           deno: 'true'
           playwright: 'true'
 
-      - name: Observe the ALM conformance lane
+      - name: Observe the ALM conformance lane over ${{ matrix.carrier }}
         run: npm run test:rallar:full-stack:memory:alm
 
       - name: Upload ALM conformance lane results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: alm-conformance-lane-${{ github.sha }}
+          name: alm-conformance-lane-${{ matrix.carrier }}-${{ github.sha }}
           path: apps/rallar-black-box/test-results
           if-no-files-found: ignore

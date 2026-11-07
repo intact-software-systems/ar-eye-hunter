@@ -21,7 +21,7 @@ completion record here.
   plan `alm-qos-product-plan.md` and the publication QoS and pub/sub addendum
   `alm-publication-qos-addendum.md`, the design that continues. The snapshot
   readers in `playground/alm/tools/` read a control run snapshot from the hosted
-  ALM lane artifact `alm-conformance-lane-<sha>`
+  ALM lane artifact `alm-conformance-lane-<carrier>-<sha>`
   (`alm-observation/<carrier>-<scope>-snapshot.json`, such as
   `ws-smoke-snapshot.json`); each takes the snapshot path, as in
   `node playground/alm/tools/lifecycle-trace.mjs <snapshot.json>`.
