@@ -108,6 +108,12 @@ function toPublicationAbsences(recipe: RallarBlackBoxTestRecipe | undefined): re
     );
 }
 
+function toAbsenceTimeouts(recipe: RallarBlackBoxTestRecipe | undefined): readonly number[] {
+    return toFlatCommands(recipe).flatMap((command) =>
+        command.kind === 'wait' && command.absent === true && command.match.kind === 'message' ? [command.timeoutMs ?? 0] : []
+    );
+}
+
 function toRewriteFaults(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestCommand[] {
     return toFlatCommands(recipe).filter((command) =>
         command.kind === 'fault.inject' && command.carrier === 'rtc' && typeof command.action === 'object' &&
@@ -373,9 +379,8 @@ describe('the granted rtc cells', () => {
             .toMatchObject({ readiness: { minReadyPeers: 1 } });
         expect(toStepIndex(sender, '-cue-tree-received')).toBeLessThan(toStepIndex(sender, '-publish'));
         expect(toFlatCommands(receiver).some((command) => command.kind === 'wait' && command.match.payloadFields?.['data.transport'] === 'rtc')).toBe(true);
-        expect(toOutcomeWaits(recipientB)).toEqual([
-            `"typeId":"alm.conformance.rtc.granted-rtc-relay-only","carrier":"rtc","outcome":"committed","reason":"admitted"`
-        ]);
+        // A publish-only leaf receives nothing on the frozen-audience multicast, so recipient-b waits for no admission.
+        expect(toOutcomeWaits(recipientB)).toEqual([]);
         expect(toPublicationAbsences(recipientB)).toEqual(['publication']);
         expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
         for (const recipe of [sender, receiver, recipientB]) {
@@ -473,6 +478,10 @@ describe('the granted rtc cells', () => {
                 .map(({ request }) => request.body)
         ).toEqual([{ topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }]);
         expect(toPublicationAbsences(recipientB)).toEqual(['p1', 'p2', 'p3']);
+        // The first absence's window for a late copy covers the others, which read the history alone.
+        const [absenceWindow, ...historyReads] = toAbsenceTimeouts(recipientB);
+        expect(absenceWindow).toBeGreaterThan(0);
+        expect(historyReads).toEqual([0, 0]);
         expect(toFlatCommands(recipientB).map((command) => command.kind)).not.toContain('messages.subscribe');
         for (const recipe of [sender, receiver, recipientB]) {
             expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)

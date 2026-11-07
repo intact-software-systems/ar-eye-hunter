@@ -81,20 +81,37 @@ export function toOrderedArrivalWaits(
     step: AlmConformanceStepInput,
     publications: readonly number[]
 ): readonly RallarBlackBoxTestWaitCommand[] {
-    return toOrderedPublicationWaits(step, publications, false);
+    return toOrderedPublicationNames(publications).map((publication) => toPublicationWait(step, publication, false));
 }
 
-/**
- * None of each producer's `publications` arrived on the page. Every absence reads the page's whole history, so the
- * first one's window for a late copy covers the others, which read the history alone.
- */
+/** None of each producer's `publications` arrived on the page. */
 export function toOrderedAbsenceWaits(
     step: AlmConformanceStepInput,
     publications: readonly number[]
 ): readonly RallarBlackBoxTestWaitCommand[] {
-    return toOrderedPublicationWaits(step, publications, true).map((wait, index) =>
-        index === 0 ? wait : { ...wait, timeoutMs: 0 }
-    );
+    return toPublicationAbsenceWaits(step, toOrderedPublicationNames(publications));
+}
+
+/**
+ * None of the named publications arrived on the page. Every absence reads the page's whole history, so the first
+ * one's window for a late copy covers the others, which read the history alone.
+ */
+export function toPublicationAbsenceWaits(
+    step: AlmConformanceStepInput,
+    publications: readonly string[]
+): readonly RallarBlackBoxTestWaitCommand[] {
+    return publications.map((publication, index) => {
+        const wait = toPublicationWait(step, publication, true);
+        return index === 0 ? wait : { ...wait, timeoutMs: 0 };
+    });
+}
+
+/**
+ * A producer's track on the page: the cell's ordering key and the producer's peer id, which the page read from its
+ * `arrival` of one of the producer's publications, so a wait on the track follows that arrival's wait.
+ */
+export function toArrivedTrackKey(step: AlmConformanceStepInput, arrival: RallarBlackBoxTestWaitCommand): string {
+    return `${step.scenarioKey}:{resultCache.${arrival.commandId}.value.event.payload.senderId}`;
 }
 
 /** Both producers' loops for `publication` ended: every recipient each waited for confirmed one copy. */
@@ -114,25 +131,21 @@ export function toOrderedPositionWaits(
 ): readonly RallarBlackBoxTestWaitCommand[] {
     return ORDERED_TRACKS.flatMap((track) => {
         const received = toPublicationWait(step, toOrderedPublicationName(track, arrival), false);
-        const senderId = `{resultCache.${received.commandId}.value.event.payload.senderId}`;
         return positions.map(({ publication, status, priorSeq }) =>
             toOrderingPositionWait(step, {
                 name: `${status}-${toOrderedPublicationName(track, publication)}`,
                 status,
                 priorSeq,
-                track: `${step.scenarioKey}:${senderId}`
+                track: toArrivedTrackKey(step, received)
             })
         );
     });
 }
 
-function toOrderedPublicationWaits(
-    step: AlmConformanceStepInput,
-    publications: readonly number[],
-    absent: boolean
-): readonly RallarBlackBoxTestWaitCommand[] {
+/** Each producer's `publications`, the sender's track first. */
+function toOrderedPublicationNames(publications: readonly number[]): readonly string[] {
     return ORDERED_TRACKS.flatMap((track) =>
-        publications.map((publication) => toPublicationWait(step, toOrderedPublicationName(track, publication), absent))
+        publications.map((publication) => toOrderedPublicationName(track, publication))
     );
 }
 

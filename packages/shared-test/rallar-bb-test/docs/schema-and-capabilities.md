@@ -554,7 +554,7 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   continuation names (`AlmConformanceContinuationDefinition.role`, here the sibling) once its gate holds, here the
   receiver's cue that `p4` was confirmed. The continuation reopens the socket, waits for the token to read `active`
   under the new connection generation, for its subscription row and for its own room presence under that
-  generation (the page re-asserted it), waits a 2 s delta margin and cues `reentered`; the producers probe
+  generation (the page restored it), waits a 2 s delta margin and cues `reentered`; the producers probe
   readiness and publish `p5`, which the sibling receives with `ordering-position` `omitted` prior `2` per track and
   without `p3` or `p4`. The sibling holds its election until both producers' `p5` loops end, and no producer
   dispatches a repair or admits a gap NACK about the cell's tracks.
@@ -600,11 +600,12 @@ reliability. No hosted manifest carries them (D505).
   meshParamK: 2 }` to the room's topology config through `http.request`, so the three pages form a path, and the
   sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
   `subscribe` and an election and recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen
-  to the receiver; the sender publishes until the receiver hears it. Recipient-b admits the frame over RTC and
-  delivers nothing whether the path puts it in the middle, where it forwards the frame, or at a leaf. Each page
-  records its overlay next hops in a `health` read, which names the layout the run drew; the cell asserts neither
-  which agent relays nor the hop count, and the relay fixture
-  (`packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`) proves a publisher-only relay on every run. The
+  to the receiver; the sender publishes until the receiver hears it. Recipient-b delivers nothing whether the path
+  puts it in the middle, where it forwards the frame, or at a leaf, where the frozen audience routes it no copy, so
+  it asserts the publication's absence and no admission. Each page records its overlay next hops in a `health`
+  read, which names the layout the run drew; the cell asserts neither which agent relays nor the hop count, and the
+  relay fixture (`packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`) proves a publisher-only relay's
+  admission on every run. The
   receiver deletes the topology config once every page recorded its hops, since the room's three-agent cells
   share it.
 - `granted-rtc-ordered-relay` (three-agent, `rtc`, after `granted-rtc-relay-only` on the same path config): the

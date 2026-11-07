@@ -12,7 +12,11 @@ import {
 import { toCommandId, toSendHandleId } from '../../alm-conformance-step-identities.ts';
 import { toGrantedSend } from '../topic-subscription/to-granted-send.ts';
 import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
-import { toReadinessProbeCommands } from '../topic-subscription/topic-subscription-ordered-publications.ts';
+import {
+    toArrivedTrackKey,
+    toPublicationAbsenceWaits,
+    toReadinessProbeCommands
+} from '../topic-subscription/topic-subscription-ordered-publications.ts';
 import {
     toCueWait,
     toPublicationPayload,
@@ -47,7 +51,10 @@ export const grantedRtcOrderedRelay: AlmConformanceScenarioDefinition = {
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'
             ? toPathOwnerCommands(recipient, toReceivedTrackCommands(recipient))
-            : toPathMemberCommands(recipient, [toCueWait(recipient, 'received'), ...toTrackAbsences(recipient)])
+            : toPathMemberCommands(recipient, [
+                toCueWait(recipient, 'received'),
+                ...toPublicationAbsenceWaits(recipient, PUBLICATIONS.map(toPublicationName))
+            ])
 };
 
 /**
@@ -74,20 +81,12 @@ function toHeldTrackCommands(sender: AlmConformanceStepInput): readonly RallarBl
  */
 function toReceivedTrackCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const arrivals = PUBLICATIONS.map((index) => toPublicationWait(receiver, toPublicationName(index), false));
-    const track = `${receiver.scenarioKey}:{resultCache.${arrivals[0].commandId}.value.event.payload.senderId}`;
+    const track = toArrivedTrackKey(receiver, arrivals[0]);
     return [
         ...arrivals,
         toOrderingPositionWait(receiver, { name: 'entered-p1', status: 'entered', priorSeq: 0, track }),
         toOrderingPositionWait(receiver, { name: 'no-omitted', status: 'omitted', track, absent: true })
     ];
-}
-
-/** Recipient-b holds no `subscribe`, so it delivers none of the track; the first absence's window covers the rest. */
-function toTrackAbsences(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return PUBLICATIONS.map((index, position) => {
-        const wait = toPublicationWait(recipient, toPublicationName(index), true);
-        return position === 0 ? wait : { ...wait, timeoutMs: 0 };
-    });
 }
 
 /** One minted, receipted publication on the cell's track, named as the fault holds and the repair wait name it. */
