@@ -234,8 +234,10 @@ it('retries a transiently failed restore on the same socket instead of staying a
 });
 
 it('adopts the written generation once the presence summary catches up with a reply that omits it', async () => {
-    const warnings: unknown[][] = [];
-    vi.spyOn(console, 'warn').mockImplementation((...args) => warnings.push(args));
+    const warnings: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((message: string, error: Error) => {
+        warnings.push(`${message}: ${error.message}`);
+    });
     const test = fixture();
     const reads: string[] = [];
     let summarised = snapshot;
@@ -263,8 +265,10 @@ it('adopts the written generation once the presence summary catches up with a re
 });
 
 it('ends the attempt without polling when the reply names another room', async () => {
-    const warnings: unknown[][] = [];
-    vi.spyOn(console, 'warn').mockImplementation((...args) => warnings.push(args));
+    const warnings: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((message: string, error: Error) => {
+        warnings.push(`${message}: ${error.message}`);
+    });
     const test = fixture();
     const methods: string[] = [];
     vi.stubGlobal('fetch', async (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -277,10 +281,9 @@ it('ends the attempt without polling when the reply names another room', async (
     test.owner.onSocket('close');
     test.owner.onSocket('open');
     await test.owner.changeRoom(async () => {});
-    expect(warnings).toEqual([[
-        'Selected room presence recovery failed',
-        expect.objectContaining({ message: 'Selected room did not confirm presence on the replacement socket.' })
-    ]]);
+    expect(warnings).toEqual([
+        'Selected room presence recovery failed: Selected room did not confirm presence on the replacement socket.'
+    ]);
     expect(methods).toEqual(['GET', 'PUT']);
     expect(test.adopted).toEqual([]);
 });
