@@ -18,10 +18,14 @@ export async function playTogetherInRoom(host: Page, guest: Page, game: 'arena' 
 export async function prepareRoomPlayers(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
     if (game === 'arena') {
         const appoint = host.getByRole('button', { name: 'Appoint this SPA', exact: true });
-        if (await appoint.isEnabled()) {
-            await appoint.click();
-        }
-        await expect(host.getByRole('button', { name: '1m', exact: true })).toBeEnabled();
+        const start = host.getByRole('button', { name: '1m', exact: true });
+        // The host's own automatic appointment can land between the enabled check and the click.
+        await expect(async () => {
+            if (await appoint.isEnabled()) {
+                await appoint.click({ timeout: 1000 });
+            }
+            await expect(start).toBeEnabled({ timeout: 1000 });
+        }).toPass({ timeout: 30000 });
     }
     else {
         await expect(host.locator('.lobby-party-row')).toHaveCount(0);
