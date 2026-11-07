@@ -3,8 +3,9 @@
 The ALM conformance lane
 (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`) runs as the non-blocking
 `alm-conformance-observation` job of `.github/workflows/alm-conformance-observation.yml`, which the
-pull-request gate and the main deploy start beside the Release Gate and never wait for. The job uploads the whole Playwright output root,
-`apps/rallar-black-box/test-results`, as `alm-conformance-lane-<sha>`.
+pull-request gate and the main deploy start beside the Release Gate and never wait for. The job runs one
+matrix leg per carrier, each uploading the whole Playwright output root,
+`apps/rallar-black-box/test-results`, as `alm-conformance-lane-<carrier>-<sha>`.
 
 Every cell — one carrier per cell, pass or fail — writes these files into that root:
 
