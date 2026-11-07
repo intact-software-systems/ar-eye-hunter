@@ -43,7 +43,6 @@ import {
     removeGroupStateSnapshotIfUnchanged,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import type { BrowserRoomPresenceReassertion } from './presence-reassertion/browser-room-presence-reassertion.ts';
 import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
@@ -120,7 +119,6 @@ export interface CreateBrowserRallarRoomsInput {
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
     readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
-    readonly enteredRooms: BrowserRoomPresenceReassertion.EnteredRooms;
 }
 
 export interface BrowserRallarRooms {
@@ -522,7 +520,6 @@ async function refreshAuthenticatedRoom(
     catch (error) {
         if (readRoomMembershipRevocation(error) !== undefined && findGroupStateSnapshotByRef(roomRef) === observed) {
             assertCurrent();
-            input.enteredRooms.forgetEnteredRoom(roomRef);
             input.stateStore.clearCurrentRoomIfMatches(roomRef, true);
             if (observed) {
                 await removeMissingRoomSnapshot(roomRef, observed);

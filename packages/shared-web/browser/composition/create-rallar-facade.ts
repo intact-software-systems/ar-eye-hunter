@@ -152,7 +152,6 @@ function registerBrowserFacadeLifecycle(
         messageSubscriptions: compositions.messaging.messagesController.subscriptions,
         wsInbox: compositions.stateEvents.wsInbox,
         topicSubscriptions: compositions.messaging.topicSubscriptions,
-        roomPresenceReassertion: compositions.rooms.presenceReassertion,
         wsController: compositions.realtime.wsController,
         realtimeReceive: compositions.realtime.realtimeReceive,
         rtcLifecycle: compositions.realtime.rtcController.lifecycle

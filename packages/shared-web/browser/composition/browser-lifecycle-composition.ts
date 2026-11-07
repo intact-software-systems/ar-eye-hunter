@@ -4,7 +4,6 @@ import type { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/
 import type { BrowserRallarMessageSubscriptions } from '@shared-web/browser/messages/browser-rallar-message-subscriptions.ts';
 import type { BrowserTopicSubscriptions } from '@shared-web/browser/messages/topic-subscription/browser-topic-subscriptions.ts';
 import type { BrowserRealtimeReceiveRuntime } from '@shared-web/browser/realtime/browser-realtime-receive-runtime.ts';
-import type { BrowserRoomPresenceReassertion } from '@shared-web/browser/rooms/presence-reassertion/browser-room-presence-reassertion.ts';
 import type { BrowserRtcLifecycleRuntime } from '@shared-web/browser/rtc/browser-rtc-lifecycle-runtime.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { RallarStatePort } from '@shared-web/browser/state-cache/rallar-state-store.ts';
@@ -22,7 +21,6 @@ export interface RegisterBrowserTransportLifecycleInput {
     readonly messageSubscriptions: BrowserRallarMessageSubscriptions;
     readonly wsInbox: BrowserWebSocketInbox;
     readonly topicSubscriptions: BrowserTopicSubscriptions;
-    readonly roomPresenceReassertion: BrowserRoomPresenceReassertion;
     readonly wsController: RallarWsController;
     readonly realtimeReceive: BrowserRealtimeReceiveRuntime;
     readonly rtcLifecycle: BrowserRtcLifecycleRuntime;
@@ -66,7 +64,6 @@ export function registerBrowserTransportLifecycle(
         detach: (context) => input.wsInbox.detach(context)
     });
     input.lifecycle.register(input.topicSubscriptions);
-    input.lifecycle.register(input.roomPresenceReassertion);
     input.lifecycle.register({
         id: 'ws-status',
         order: 50,

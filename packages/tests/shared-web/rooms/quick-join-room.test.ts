@@ -331,10 +331,6 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
             acceptSnapshots: async ({ groups }) => {
                 adopted.push(...groups.map((snapshot) => snapshot.group.groupId));
                 seedRoomSnapshots(groups);
-            },
-            enteredRooms: {
-                rememberEnteredRoom: () => undefined,
-                forgetEnteredRoom: () => undefined
             }
         });
         await expect(rejected).rejects.toBeInstanceOf(Error);

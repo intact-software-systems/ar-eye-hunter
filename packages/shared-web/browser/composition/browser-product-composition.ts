@@ -9,8 +9,6 @@ import { BrowserRallarPeopleRuntime } from '@shared-web/browser/people/browser-r
 import type { RallarPeopleOperations } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
 import { createBrowserRallarRooms, type BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
-import { BrowserRoomPresenceReassertion } from '@shared-web/browser/rooms/presence-reassertion/browser-room-presence-reassertion.ts';
-import { createRoomPresenceReassertionPort } from '@shared-web/browser/rooms/presence-reassertion/create-room-presence-reassertion-port.ts';
 import type { RallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserRallarStatsRuntime } from '@shared-web/browser/stats/browser-rallar-stats-runtime.ts';
 import type { RallarStatsOperations } from '@shared-web/browser/stats/rallar-stats-operations.ts';
@@ -28,8 +26,6 @@ import type { BrowserStateComposition, BrowserStateEventComposition } from './br
 
 export interface BrowserRoomsComposition {
     readonly rooms: BrowserRallarRooms;
-    /** The rooms' socket-reopen participant, registered on the session lifecycle beside the topic subscriptions. */
-    readonly presenceReassertion: BrowserRoomPresenceReassertion;
 }
 
 export interface BrowserPeopleStatsComposition {
@@ -87,7 +83,6 @@ export function createBrowserRoomsComposition(
         acceptSnapshots: (snapshots) => input.state.stateStore.acceptSnapshots(snapshots)
     });
     input.realtime.wsController.facade.onLifecycle((event) => recovery.onSocket(event.kind), { emitCurrent: false });
-    const presenceReassertion = createDefaultBrowserRoomPresenceReassertion(input.session, input.state);
     const rooms = createBrowserRallarRooms({
         changeRoom: (operation) => recovery.changeRoom(operation),
         stateStore: input.state.roomStateStore,
@@ -104,23 +99,9 @@ export function createBrowserRoomsComposition(
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         resolveDefaultRoomRef: input.state.resolveDefaultRoomRef,
         runAuthAwareOperation: input.session.runAuthAwareOperation,
-        acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput),
-        enteredRooms: presenceReassertion
+        acceptSnapshots: async (snapshotInput) => await input.state.stateStore.acceptSnapshots(snapshotInput)
     });
-    return { rooms, presenceReassertion };
-}
-
-export function createDefaultBrowserRoomPresenceReassertion(
-    session: Pick<RallarSessionController, 'readPublicationKey'>,
-    state: Pick<BrowserStateComposition, 'stateStore'>
-): BrowserRoomPresenceReassertion {
-    return new BrowserRoomPresenceReassertion({
-        presence: createRoomPresenceReassertionPort(async (snapshots) =>
-            await state.stateStore.acceptSnapshots(snapshots)
-        ),
-        readPublicationKey: session.readPublicationKey,
-        newGenerationId: () => crypto.randomUUID()
-    });
+    return { rooms };
 }
 
 export function createBrowserPeopleStatsComposition(

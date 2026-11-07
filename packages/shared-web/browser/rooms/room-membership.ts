@@ -1,5 +1,4 @@
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
-import type { BrowserRoomPresenceReassertion } from './presence-reassertion/browser-room-presence-reassertion.ts';
 import type {
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
@@ -104,10 +103,9 @@ export async function acceptRoomInvite(
     input: RoomMembershipInput & {
         readonly options?: RallarRoomGovernanceOptions;
         readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
-        readonly enteredRooms: BrowserRoomPresenceReassertion.EnteredRooms;
     }
 ): Promise<GroupSnapshot> {
-    const snapshot = await runRoomTargetMutation<GroupSnapshot>({
+    return await runRoomTargetMutation({
         ...input,
         options: input.options ?? {},
         execute: async ({ roomId, session, scope, policies, generationId, context, signal, assertCurrent }) =>
@@ -123,8 +121,6 @@ export async function acceptRoomInvite(
                 assertCurrent
             })
     });
-    input.enteredRooms.rememberEnteredRoom(snapshot.group);
-    return snapshot;
 }
 
 export async function removeRoomMember(

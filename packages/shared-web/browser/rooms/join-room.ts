@@ -10,9 +10,9 @@ import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { decodeGroupMove } from '@shared/api/mutation/decode-group-move.ts';
 import type { GroupMove } from '@shared/api/mutation/group-move.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
-import { Command, CommandTimedOutError } from '@shared/cache/Command.ts';
+import { Command } from '@shared/cache/Command.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { TryWithExhaustedError, TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
+import { TryWithPolicy } from '@shared/resilience/try-with-policy.ts';
 
 import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import { toApiMutationWorkflowRequestId, tolerateStateWorkflowNotFound } from '../state-read/state-workflow-support.ts';
@@ -110,7 +110,6 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     }).catch((cause) => {
         throw createRoomJoinPartialFailureError(snapshot, toError(cause));
     });
-    input.enteredRooms.rememberEnteredRoom(arrived.group);
     return await completeRoomJoin({
         input,
         context,
@@ -296,12 +295,11 @@ async function connectMovedSession(
         context,
         options
     });
-    input.enteredRooms.rememberEnteredRoom(move.destination);
     return snapshot;
 }
 
 interface RoomPresenceDeparture {
-    readonly input: Pick<LeaveRoomInput, 'stateStore' | 'enteredRooms'>;
+    readonly input: Pick<LeaveRoomInput, 'stateStore'>;
     readonly roomRef: GroupRef;
     readonly generationId: string;
     readonly context: ApiMiddleware;
@@ -312,7 +310,6 @@ interface RoomPresenceDeparture {
 async function disconnectRoomSession(
     { input, roomRef, generationId, context, fence, options }: RoomPresenceDeparture
 ): Promise<GroupSnapshot | undefined> {
-    input.enteredRooms.forgetEnteredRoom(roomRef);
     const sourceBeforeDisconnect = input.stateStore.findGroupSnapshot(roomRef);
     const sourceSession = sourceBeforeDisconnect?.activeSessions.find((session) =>
         session.sessionId === fence.session.sessionId
@@ -369,7 +366,7 @@ interface RoomSessionPresenceInput {
 }
 
 /** Presence writes commit before their summary. A successful response alone does not prove arrival. */
-export async function readRoomSessionPresence(input: RoomSessionPresenceInput): Promise<GroupSnapshot> {
+async function readRoomSessionPresence(input: RoomSessionPresenceInput): Promise<GroupSnapshot> {
     const matches = (snapshot: GroupSnapshot) => {
         if (snapshot.causalRevision.presenceRevision < input.minPresenceRevision) {
             return false;
@@ -411,12 +408,6 @@ export async function readRoomSessionPresence(input: RoomSessionPresenceInput): 
 }
 
 class RoomPresencePendingError extends Error {}
-
-/** True when the arrival wait ran out with every read answering that the session had not arrived yet. */
-export function isRoomPresenceWaitExhausted(error: Error): boolean {
-    return error instanceof RoomPresencePendingError || error instanceof CommandTimedOutError ||
-        (error instanceof TryWithExhaustedError && error.context.error instanceof RoomPresencePendingError);
-}
 
 export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
     readonly options: RallarQuickJoinRoomInput;
@@ -522,7 +513,6 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         options: input.options,
         minPresenceRevision: 0
     });
-    input.dependencies.enteredRooms.rememberEnteredRoom(arrived.group);
     return await adoptJoinedRoom({
         dependencies: input.dependencies,
         context: input.context,
