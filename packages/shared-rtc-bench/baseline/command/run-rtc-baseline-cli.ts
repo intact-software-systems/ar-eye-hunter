@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process';
 import { writeSync, type Stats } from 'node:fs';
 import { lstat, mkdir, open, readdir, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import { availableParallelism, hostname, totalmem } from 'node:os';
-import { join } from 'node:path';
 
+import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../evidence/rtc-baseline-writer-lock.ts';
 import { createRtcB05ObservationBunRuntime } from '../observation/rtc-b05-observation-bun-runtime.ts';
 import { createRtcB05ObservationRunner } from '../observation/rtc-b05-observation-runner.ts';
 import { createRtcB06ObservationBunRuntime } from '../observation/rtc-b06-observation-bun-runtime.ts';
@@ -274,10 +274,12 @@ async function openNodeFile(
     }
 }
 
-const RTC_BASELINE_WRITER_LOCK_STALE_MS = 10 * 60_000;
-
 function isAlreadyExists(error: unknown): boolean {
     return (error as NodeJS.ErrnoException).code === 'EEXIST';
+}
+
+function isNotFound(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
 async function readLockAgeMs(lockDir: string): Promise<number> {
@@ -289,7 +291,6 @@ async function tryAcquireLock(lockDir: string): Promise<boolean> {
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
             await mkdir(lockDir); // atomic: exactly one process succeeds
-            await writeFile(join(lockDir, 'owner'), `${process.pid}\n`, 'utf8');
             return true;
         }
         catch (error) {
@@ -297,9 +298,20 @@ async function tryAcquireLock(lockDir: string): Promise<boolean> {
                 throw error;
             }
         }
-        const ageMs = await readLockAgeMs(lockDir);
-        if (ageMs < RTC_BASELINE_WRITER_LOCK_STALE_MS) {
-            return false; // live lock — never touch a fresh lock
+        // The holder may release between the failed mkdir and this stale check, so the
+        // lock dir can vanish before it is stat'd. Treat ENOENT as losing the race and
+        // retry the acquire loop.
+        try {
+            const ageMs = await readLockAgeMs(lockDir);
+            if (ageMs < RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS) {
+                return false; // live lock — never touch a fresh lock
+            }
+        }
+        catch (error) {
+            if (!isNotFound(error)) {
+                throw error;
+            }
+            continue;
         }
         try {
             await rm(lockDir, { recursive: true, force: false }); // one reclaimer wins

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -6,15 +6,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { wrapFileHandle } from '../../../baseline/command/run-rtc-baseline-cli.ts';
+import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../../../baseline/evidence/rtc-baseline-writer-lock.ts';
 
-const staleAfterMs = 10 * 60_000;
-
-// A sentinel owner PID that is never this test process.
-const foreignOwnerPid = 99_999;
+const staleAfterMs = RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS;
 
 function createLockDirectory(lockPath: string, ageMs: number) {
     mkdirSync(lockPath);
-    writeFileSync(path.join(lockPath, 'owner'), `${foreignOwnerPid}\n`);
     const staleTime = new Date(Date.now() - ageMs);
     utimesSync(lockPath, staleTime, staleTime);
 }
@@ -37,7 +34,7 @@ describe('RTC baseline Bun writer lock', () => {
         const file = await openWrappedFile(scenario.dataPath);
         try {
             expect(await file.tryLock()).toBe(true);
-            expect(readFileSync(path.join(scenario.lockPath, 'owner'), 'utf8')).toBe(`${process.pid}\n`);
+            expect(readdirSync(scenario.lockPath)).toEqual([]);
         }
         finally {
             await file.unlock();
@@ -52,7 +49,7 @@ describe('RTC baseline Bun writer lock', () => {
         const file = await openWrappedFile(scenario.dataPath);
         try {
             expect(await file.tryLock()).toBe(false);
-            expect(readFileSync(path.join(scenario.lockPath, 'owner'), 'utf8')).toBe(`${foreignOwnerPid}\n`);
+            expect(readdirSync(scenario.lockPath)).toEqual([]);
         }
         finally {
             await file.close();
@@ -68,14 +65,29 @@ describe('RTC baseline Bun writer lock', () => {
         try {
             const [firstHeld, secondHeld] = await Promise.all([first.tryLock(), second.tryLock()]);
             expect([firstHeld, secondHeld].filter(Boolean)).toHaveLength(1);
-            // The winner leaves exactly one owner marker and no reclaim artifact.
-            expect(readdirSync(scenario.lockPath)).toEqual(['owner']);
+            // The winner leaves no reclaim artifact.
+            expect(readdirSync(scenario.lockPath)).toEqual([]);
         }
         finally {
             await first.unlock();
             await second.unlock();
             await first.close();
             await second.close();
+            rmSync(scenario.directory, { recursive: true, force: true });
+        }
+    });
+
+    it('retries instead of throwing when a held lock vanishes during the stale check', async () => {
+        const scenario = createLockScenario();
+        // A dangling symlink reproduces a lock directory that still exists for mkdir
+        // (EEXIST) but is already gone when the stale check stats it (ENOENT).
+        symlinkSync('/nonexistent-rtc-baseline-lock-owner', scenario.lockPath);
+        const file = await openWrappedFile(scenario.dataPath);
+        try {
+            expect(await file.tryLock()).toBe(false);
+        }
+        finally {
+            await file.close();
             rmSync(scenario.directory, { recursive: true, force: true });
         }
     });
