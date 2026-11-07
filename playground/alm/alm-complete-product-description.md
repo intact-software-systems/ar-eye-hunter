@@ -876,11 +876,15 @@ records a skipped or re-check-dropped session outside the receipt's audience
 states each entry, omission, witness and `before-entry`. The cells
 `subscription-ordered-entry` and `subscription-ordered-omission` prove entry
 and omission over `ws`, `rtc` and `rtc-with-ws-fallback` on the local lane.
-**Limit:** rows a server producer writes straight to the outbox (Relic's round
-transitions, state-sync) record no positions; the server's own publications
-record no outside class, so a skipped recipient of one stays unconfirmed; in a
-cluster positions and the
-outside class cover sessions on the dequeuing instance only; a receiver whose
+Rows a server producer writes straight to the outbox (Relic's round
+transitions, client-state events) are indexed on their track in the producer's
+own transaction and record positions at their first dequeue; a tracked row
+waits at dequeue for every lower sequence of its track still to record, and a
+row that ends without recording deletes its index row, releasing the rows after
+it; and the server records a recipient it skipped or dropped on one of its own
+rows outside its own receipt (S5-i, D538–D550).
+**Limit:** in a cluster positions and the outside class cover sessions on the
+dequeuing instance only; the fallback windows are unchanged; a receiver whose
 entry frame is lost and whose next frame arrives first enters past it.
 
 **CURRENT — S4-ii, reconnect, relays and restart:** a reconnect reads as an

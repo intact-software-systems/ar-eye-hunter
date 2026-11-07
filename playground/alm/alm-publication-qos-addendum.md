@@ -844,16 +844,19 @@ admitted does, under the row's own sender version, for its admitted audience
 less the sender; account-view and world rows carry no admitted audience and
 record nothing. A tracked row past `seq 1` that has not recorded lists its
 track's index once and reads the listed lower sequences' stored rows in one
-read; a lower sequence is pending while its stored row is absent (a producer row
+session, from the highest sequence down to the first settled one; a lower
+sequence is pending while its stored row is absent (a producer row
 before its dequeue) or still has to record. The row follows its batch when every
 pending predecessor is in it, is `held` on the nearest one outside it, whose
-index row its 50 ms re-check reads, and passes when none is pending, so a
+index row and stored row its 50 ms re-check reads, and passes when none is pending, so a
 sequence nobody wrote (a non-contiguous client-state track) and an expired
 predecessor hold nothing. A tracked row whose dequeue reaches a terminal
 outcome (completed, superseded, refused, or failed for good) without recording
 deletes its index row, guarded on its own `msgId`, and its successors release
-at their next re-check; a row that recorded keeps its index for repair, and a
-deferred, pending or `no-route` outcome keeps it while the row retries. On the
+at their next re-check; a row that recorded keeps its index for repair, and so
+does a delivered row that positioned nobody (no durable audience), since no
+successor waits on it; a deferred, pending or `no-route` outcome keeps it while
+the row retries. On the
 server's own rows, its publications and every producer row it sends under its
 peer id, a recipient skipped below its position or a session the dequeue
 re-check dropped is recorded in `outsideAudiencePeerIds` of the server's own

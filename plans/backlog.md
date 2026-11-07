@@ -230,10 +230,11 @@ and it has no status list.
   is its own owner.
 - The measured cost of server-side ordered sends (S5-i, D539, D544): every
   tracked WS dequeue that has not recorded lists its track's index and reads
-  the listed predecessors' stored rows as one session of point reads
-  (`readStoredMessages`), and a client-state principal track can list every
-  live event of its process within the command's expiry; neither the read
-  count nor the prefix-list size is measured.
+  the listed predecessors' stored rows as one session of point reads, from the
+  highest sequence down to the first settled one
+  (`readStoredPredecessorsToSettled`), and a client-state principal track can
+  list every live event of its process within the command's expiry; neither the
+  read count nor the prefix-list size is measured.
 - An observable index end (S5-i, D544): when the write that clears the index
   row of a tracked row that ended unrecorded fails, it is logged to the console
   only, and the row's successors wait for its deadline; an outbound

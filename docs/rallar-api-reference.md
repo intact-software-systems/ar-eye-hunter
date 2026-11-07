@@ -1185,8 +1185,9 @@ generation changed since admission, and an empty audience is admitted with no
 recipients. A session a dispatch step drops, when it is connected to the
 server instance that sends, is recorded in the receipt's
 `outsideAudienceRecipientPeerIds` of a session's publication rather than left
-unconfirmed; a session connected to another instance stays expected, and a
-server publication records no outside class. A send asking `ack: 'group-leader'` whose leader has not
+unconfirmed; a session connected to another instance stays expected, and the
+server records a session it drops from its own publication the same way, in its
+own receipt. A send asking `ack: 'group-leader'` whose leader has not
 subscribed is NACKed `no-leader`, and a room unicast to an unsubscribed session
 `unauthorized`.
 
@@ -1961,12 +1962,18 @@ recorded tracks.
 WS copies carry no frozen audience, so over plain `ws` the server answers for
 the recipient instead: it sends nothing to a recipient whose recorded position
 is past the copy's sequence (a later row of the track already reached it),
-records it outside on a relayed browser-origin row with a logical receipt (the
-server's own publications record no outside class), and resends a copy to one
-at that sequence. A tracked row it admitted waits at dequeue until the row
-before it on the track recorded, re-reading that row alone, unless that row is
-in the same dequeue batch, whose rows of one track commit and are sent in
-sequence order. The
+records it outside on a relayed browser-origin row with a logical receipt, and
+on its own rows (its publications and the rows a producer writes straight to
+the outbox) in its own receipt, and resends a copy to one at that sequence. A
+row a server producer writes straight to the outbox (Relic's round
+transitions, client-state events) is indexed on its track in the producer's
+own transaction and records positions at its first dequeue, as a row the server
+admitted does. A tracked row that has not recorded waits at dequeue for every
+lower sequence of its track still to record: it follows those its dequeue batch
+claimed, whose rows of one track commit and are sent in sequence order, and is
+held on the nearest one outside the batch, re-reading that one's index row and
+stored row alone. A row whose dequeue ends without recording deletes its index
+row, which releases the rows waiting on it. The
 inbound diagnostics state every `entered`, `omitted`, `witnessed` and
 `before-entry` as an `ordering-position` event.
 
@@ -1979,10 +1986,7 @@ re-originates the NACK toward the origin for that recipient; the origin applies
 the entry rule to the recipient and sends the repair copy through the relay,
 which forwards it down the tree.
 
-**Limits:** a row a server producer writes straight to the outbox (Relic's round
-transitions, state-sync) records no positions, so its copies carry no record and
-its receivers keep the rule from their own position; a live-only send records
-none; in a cluster positions are recorded only for sessions connected to the
+**Limits:** a live-only send records no positions; in a cluster positions are recorded only for sessions connected to the
 dequeuing instance; a receiver whose entry frame is lost and whose next frame
 arrives first enters past it, and the lost frame, arriving later, answers
 `before-entry` on a recorded frozen copy, while a live-only hand-over copy
@@ -2001,11 +2005,11 @@ recipient until the track's row expires), or the `admitted` receipt arrived
 after the `complete` one; a relay re-originates a gap NACK only for a receipted
 send, so an `ack: 'none'` ordered track behind a relay stalls until resync or
 expiry, and two recipients reporting one gap through one relay are two repair
-requests at the origin; the WS dequeue wait checks the immediate predecessor
-only, and a predecessor that ends without recording holds its track's later
-rows until its own deadline. Positions for producer rows, a cross-instance
-record and a server record that counts the RTC origin's sends are later
-outcomes.
+requests at the origin; a predecessor whose dequeue keeps answering deferred
+or pending keeps its index row, so if it never returns the rows after it on its
+track wait for its deadline, as they do when the write that clears an ended
+predecessor's index row fails. A cross-instance record and outside class and a
+server record that counts the RTC origin's sends are later outcomes.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the
@@ -2144,8 +2148,10 @@ const ordering = {
 };
 ```
 
-A row written straight to the outbox records no positions, so a Relic receiver
-orders these copies from its own position. The browser reads the stream through
+The round service writes these rows straight to the outbox with their track
+index row, so each records its recipients' positions at its first dequeue: a
+receiver that joins mid-round enters at its first transition, `round-resolved`
+at `seq 2`, with prior 0. The browser reads the stream through
 `messages.room<T>(...)` on that topic and type with purpose `notification` and
 a `recovery` owner that re-reads the game over REST
 (`GET /api/relic/games/:gameId`). A browser that joins during a round reads that

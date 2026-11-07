@@ -346,7 +346,8 @@ the group's members commit alone. When one of them reaches no commit ahead of it
 `not-ready`, uncharged. The WS server's track-order owner
 ([`ws-queue-box-server-track-order.ts`](../../services/ws-queue-box-server/ws-queue-box-server-track-order.ts)) answers
 for a tracked row past `seq 1` that has not recorded: it lists the track's ordering index once and reads the listed
-lower sequences' stored rows together, and a lower sequence is pending while its stored row is absent (a producer row
+lower sequences' stored rows in one session, from the highest sequence down to the first settled one
+(`readStoredPredecessorsToSettled`), and a lower sequence is pending while its stored row is absent (a producer row
 before its first dequeue) or still has to record (`toALOrderingPendingPredecessors`). The row follows every pending
 one its batch claimed, is `held` on the nearest one its batch did not, and passes with none, so a sequence nobody
 indexed, and one recorded, expired or admitted to no audience, holds nothing. A held row's authority names the one read
@@ -355,7 +356,8 @@ than the whole authority: it releases once the predecessor records, names anothe
 A tracked row whose dequeue reaches a terminal outcome (completed, superseded, refused, or failed non-retryably)
 without recording deletes its own index row (`delete-ordering-message`, guarded on its `msgId`,
 [`write-al-outbound-track-index-end.ts`](./lane/write-al-outbound-track-index-end.ts)), which releases its successors;
-a deferred, pending or `no-route` outcome keeps it while the row retries, and a row that recorded keeps it for repair.
+a deferred, pending or `no-route` outcome keeps it while the row retries, and a row that recorded keeps it for repair,
+as does a delivered row that positioned nobody (no durable audience), since no successor waits on it.
 The end write's own failure is logged and leaves the successors to the row's deadline. Either way a track's positions
 are written in sequence order.
 Each row's after-admission effect then runs in the same follower
