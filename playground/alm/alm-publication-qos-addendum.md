@@ -1,10 +1,11 @@
 # ALM publication QoS and pub/sub addendum
 
 Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
-(authorized WS pub/sub, as S2-i and S2-ii) and Slice 3 (restricted RTC parity,
-as S3-i and S3-ii) are implemented and recorded as applied in §7; the later
-outcomes remain a proposed extension, not implemented behavior or an adopted
-change to `docs/product.md`.
+(authorized WS pub/sub, as S2-i and S2-ii), Slice 3 (restricted RTC parity,
+as S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii) and
+Slice 5 (producer-row positions, as S5-i) are implemented and recorded as
+applied in §7; the later outcomes remain a proposed extension, not implemented
+behavior or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -745,11 +746,11 @@ its ordering key without `seq` is sequenced by its outbound on the durable lane,
 from one head per track that both carriers of a session share, so a reload
 continues the track; a stated `seq` at or below the head is refused
 `unsupported`. The inbound `ordering-position` diagnostic states each entry,
-omission, witness and `before-entry`. Rows a producer writes straight to the
-outbox (Relic's round transitions, state-sync) record no positions and keep the
-earlier behaviour; the server's own publications record no outside class, so a
-skipped recipient of one stays unconfirmed; in a cluster, positions and the
-outside class cover sessions on the dequeuing instance only; a receiver whose entry frame is lost and whose
+omission, witness and `before-entry`. In S4-i rows a producer writes straight to
+the outbox (Relic's round transitions, state-sync) recorded no positions and the
+server's own publications recorded no outside class; Slice 5 covers both, below.
+In a cluster, positions and the outside class cover sessions on the dequeuing
+instance only; a receiver whose entry frame is lost and whose
 next frame arrives first enters past it. The cells `subscription-ordered-entry`
 and `subscription-ordered-omission` pass over the three carriers on the local
 lane. Decisions D524–D537 are in the roadmap.
@@ -799,10 +800,77 @@ of a send that asked no logical receipt, whose sequence stays a floor until the
 row expires, or when the `admitted` receipt arrives after the `complete` one.
 `granted-rtc-ordered-relay` passes over `rtc` on the local lane; the relay
 fixture is the blocking proof of re-origination, since the lane draws the path
-and its runs never put the publish-only session in the middle. Positions for rows a producer writes
-straight to the outbox, the cross-instance record and outside class, and the
-server's record under `rtc-with-ws-fallback` with the lost entry frame stay
-later outcomes. Slice 4 is complete.
+and its runs never put the publish-only session in the middle. The
+cross-instance record and outside class, and the server's record under
+`rtc-with-ws-fallback` with the lost entry frame, stay later outcomes; positions
+for rows a producer writes straight to the outbox are Slice 5's. Slice 4 is
+complete.
+
+### Slice 5: producer-row positions
+
+Bring the rows a producer writes straight to the WS outbox, Relic's round
+transitions and client-state principal events, into Slice 4's position record:
+the row's `(track, seq)` is indexed in the producer's own transaction, its first
+dequeue records positions and stamps each copy with its recipient's entry, the
+dequeue wait reads every pending predecessor of the track rather than `seq − 1`
+alone, and the server records a recipient it skipped or dropped on one of its
+own rows outside its own receipt. Cross-instance positions and the fallback
+windows stay out. It lands as S5-i.
+
+As applied (S5-i): every `WS_OUTBOX` row whose message names `ordering.seq`
+(Relic's round transitions, and client-state principal events, whose sequence
+is the principal's `snapshotVersion` on a per-process track) is written with its
+track index row: the `ordering-message` key the WS server's outbound admission
+already reads, in that admission's namespace, valued with the row's `msgId` and
+expiring with the row. Both producers compute it through `computeWsOutboxInsert`
+with the namespace their composition resolves once from the WS runtime name
+(`toServerWsQBoxALOutboundAdmissionNamespace`); the plain compute refuses an
+ordered WS row, and the AppInbox guard re-derives the index row. The shared
+writer puts the outbox rows and their index rows in one statement, insert-only:
+a live index row under the same key is corruption and rolls the transaction
+back, and an expired one is written over. Ordered `APP_OUTBOX` work rows are not
+indexed. A producer row records at its first dequeue as a row the WS outbound
+admitted does, under the row's own sender version, for its admitted audience
+less the sender; account-view and world rows carry no admitted audience and
+record nothing. A tracked row past `seq 1` that has not recorded lists its
+track's index once and reads the listed lower sequences' stored rows in one
+read; a lower sequence is pending while its stored row is absent (a producer row
+before its dequeue) or still has to record. The row follows its batch when every
+pending predecessor is in it, is `held` on the nearest one outside it, whose
+index row its 50 ms re-check reads, and passes when none is pending, so a
+sequence nobody wrote (a non-contiguous client-state track) and an expired
+predecessor hold nothing. A tracked row whose dequeue reaches a terminal
+outcome (completed, superseded, refused, or failed for good) without recording
+deletes its index row, guarded on its own `msgId`, and its successors release
+at their next re-check; a row that recorded keeps its index for repair, and a
+deferred, pending or `no-route` outcome keeps it while the row retries. On the
+server's own rows, its publications and every producer row it sends under its
+peer id, a recipient skipped below its position or a session the dequeue
+re-check dropped is recorded in `outsideAudiencePeerIds` of the server's own
+pending receipt through one fenced commit under the server's sender version,
+tried up to three times on a lost fence; a retry then targets only the
+unconfirmed recipients, and the receipt completes once every expected recipient
+is confirmed or outside and one is confirmed. A mid-round Relic joiner's first
+transition is `round-resolved` at `seq 2` with prior 0, read as `entered` with no
+missing range, which the Postgres-backed Relic publication unit pins; the WS
+server fixture pins the producer-row record, the holds, the release through a
+cleared index and the non-contiguous track; and `server-ordered-entry` passes
+over `ws` on the local lane, where each session of one principal and a
+co-member session enter the principal's client-state event track at their first
+copy with prior 0, one of them at `seq 2`, which read as a gap from 1 before.
+Limits: in a cluster, positions and the outside class still cover sessions on
+the dequeuing instance only; the fallback windows and the lost entry frame are
+unchanged; a row whose dequeue keeps answering deferred or pending keeps its
+index, so if it never returns its successors wait for its deadline; a failed
+index-end write is logged only and leaves successors to that deadline; each
+own-row outside commit moves the server's single sender version, and after
+three lost fences the recipient stays unconfirmed until the next retry records
+it; the producer provenance sidecar's inserts are not folded into the shared
+writer; and no browser lane asserts Relic entry, since the gated Relic lanes run
+the built preview without the development runtime hook. During a rolling deploy
+an older instance dequeues an indexed producer row without recording it, and a
+newer instance holds on such a predecessor until its deadline. Decisions
+D538–D550 are in the roadmap, and Slice 5 is complete.
 
 ### Later outcomes
 
@@ -857,6 +925,19 @@ publication test framework.
 | Ordered entry and exclusions do not leak or invent history          | New subscription at a nonzero sequence, intentional omission, snapshot/live race, restart, multi-publisher tracks                    |
 | Browser controls expose the actual chosen role and QoS              | Playwright through visible subscribe, role-management, and publication controls, with resulting state/outcomes                       |
 | Native attachment preserves protocol and has a measured envelope    | Browser/native interoperation; same immediate/paced semantics across sidecar and any later optimized attachment                      |
+
+Slice 5 adds evidence to two rows. **Revocation and receipts preserve truthful
+outcomes:** a recipient the server skipped or dropped on its own row is outside
+its own receipt, not unconfirmed: an api-v1 test revokes a subscriber of a
+server-producer row before the receipt's retry and reads it outside while the
+receipt completes on the other recipient's ACK, and the WS server fixture
+retries only the recipient still unconfirmed. **Ordered entry and exclusions do
+not leak or invent history:** producer rows (the Relic unit's mid-round joiner
+enters at `seq 2`; the fixture's producer row records and a later-admitted
+session enters at its first copy), non-contiguous tracks (`3` then `5` with no
+hold on `4`; the `server-ordered-entry` cell) and the stuck predecessor (`3`
+holds on `1` with `2` unwritten; a predecessor that ends unrecorded or fails for
+good releases its successor through the cleared index, not its deadline).
 
 Focused shared ALM, browser facade, and server tests run before package
 typechecks/builds. Public exports require API snapshots and bundle-boundary
