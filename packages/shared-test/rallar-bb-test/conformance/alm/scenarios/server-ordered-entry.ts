@@ -25,7 +25,7 @@ import { toPauseCommand } from '../to-pause-command.ts';
 const PRINCIPAL_WRITE_COUNT = 3;
 const PRINCIPAL_WRITE_TIMEOUT_MS = 5_000;
 const ORDERING_POSITION = 'ordering-position';
-/** The sibling's connect event is revision 1 of the sender principal's track, the sender's own is revision 2. */
+/** The sibling connects before the sender starts (see the cell), so the sender's own connect event is revision 2. */
 const SENDER_ENTRY_SEQ = 2;
 
 /** The entry a page states: on the sender principal's track or on any track, at `seq` or whatever it carries. */
@@ -37,9 +37,11 @@ interface AlmOrderingEntry {
 /**
  * The server orders a principal's client-state events on its own producer track, and a principal's event reaches its
  * own sessions and every co-member's. The sender writes its principal three times.
- * The lane connects every role before the sender starts, so the sender principal's track carries the sibling's connect
- * event at revision 1 and the sender's own at revision 2: the sender enters at seq 2, prior 0, the nonzero-entry
- * witness that before Slice 5 read a gap from 1.
+ * The lane starts the sender last and each recipient only once its connect barrier released
+ * (`tests/playwright/rallar-black-box/full-stack-agent-run.ts:103` `runRecipesOnAgents` with `toStartOrder` at :202,
+ * `tests/playwright/rallar-black-box/full-stack-helpers.ts:686` `startRecipientRecipeRun`), so the sender principal's
+ * track carries the sibling's connect event at revision 1 and the sender's own at revision 2: the sender enters at
+ * seq 2, prior 0, the nonzero-entry witness that before Slice 5 read a gap from 1.
  * The sibling, the principal's second session, enters at its first copy, its own connect event at revision 1.
  * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
  * No page states `before-entry` in the window after the last write's copy arrived.
