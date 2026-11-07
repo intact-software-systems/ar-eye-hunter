@@ -2,7 +2,6 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -26,6 +25,7 @@ import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { releaseAuthorisedWsCloseFacts } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { createPGliteAppInboxWsCloseHarness } from './pglite-app-inbox-ws-close-test-harness.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -82,7 +82,7 @@ async function createWsConnectFixture(
     }, {
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'ws-ticket-connect',
-        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
+        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         timing: undefined,
         options: OPTIONS

@@ -14,6 +14,8 @@ export interface AppOutboxTrackIndexRow {
     readonly namespace: string;
     readonly key: string;
     readonly msgId: string;
+    /** The stored value: the JSON string the admission store writes for the message id. */
+    readonly value: string;
     readonly expiresAt: string;
 }
 
@@ -48,21 +50,21 @@ export function computeAppOutboxTrackIndexRow(input: ComputeAppOutboxTrackIndexR
         namespace: admissionNamespace,
         key: toALOutboundOrderingMessageKey(admissionNamespace, trackKey, seq),
         msgId: message.id.msgId,
+        value: JSON.stringify(message.id.msgId),
         expiresAt
     };
 }
 
 /**
  * Insert-only: a live row already under the key is left as it is and returns nothing, which its caller reports;
- * an expired one is written over, one revision past it. The value is the JSON string the admission store writes,
- * encoded by the statement so the write serializes nothing.
+ * an expired one is written over, one revision past it.
  */
 export function toAppOutboxTrackIndexInsert(rows: readonly AppOutboxTrackIndexRow[]): PSqlFragment {
-    const values = rows.map(({ namespace, key, msgId, expiresAt }) => ({ namespace, key, msgId, expiresAt }));
+    const values = rows.map(({ namespace, key, value, expiresAt }) => ({ namespace, key, value, expiresAt }));
     return PSqlFragment.of`
         insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
-        select indexed.namespace, indexed.key, to_jsonb(indexed."msgId")::text, indexed."expiresAt"::timestamptz, now(), 0
-        from jsonb_to_recordset(${values}::jsonb) as indexed(namespace text, key text, "msgId" text, "expiresAt" text)
+        select indexed.namespace, indexed.key, indexed.value, indexed."expiresAt"::timestamptz, now(), 0
+        from jsonb_to_recordset(${values}::jsonb) as indexed(namespace text, key text, value text, "expiresAt" text)
         on conflict (store_namespace, store_key) do update
             set store_value = excluded.store_value,
                 expire_at_ts = excluded.expire_at_ts,

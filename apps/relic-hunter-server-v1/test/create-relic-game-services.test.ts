@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 
-import { createRelicGame, toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
-import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import {
+    applyRelicCommand,
+    createRelicGame,
+    RELIC_PROTOCOL_VERSION,
+    toRelicRoomGroupRef,
+    type RelicGameState
+} from '@relic-hunters/mod.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import { AuthSessionPersistence } from '@shared-server/rallar-system/auth/persistence/auth-session-persistence.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -9,8 +14,10 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { createApiV1AppInbox } from '@api-v1/src/composition/create-api-v1-app-inbox.ts';
 import { startApiProcess } from '@api-v1/src/runtime/api-process-startup.ts';
 import { createApiV1TestQueueResilience } from '@api-v1/test/api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '@api-v1/test/api-v1-test-ws-outbound-admission-namespace.ts';
 import { withPGliteSql } from '@api-v1/test/db/pglite-auth-test-harness.ts';
 import { RELIC_ROOM_DATA_BINDING } from '@relic-hunters/server/relic-game-mutation-service.ts';
+import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 import { createRelicGameServices } from '../src/create-relic-game-services.ts';
 import {
     createRelicTestApplication,
@@ -39,10 +46,6 @@ Deno.test('a passive Relic producer admits new work and pending/completed replay
             nowEpochMs: () => now,
             timing: () => {}
         });
-        assert.equal(
-            first.relicGameMutations.config.wsOutboundAdmissionNamespace,
-            toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server')
-        );
         const command = {
             operation: 'ensure' as const,
             gameId: 'cold-expedition',
@@ -126,6 +129,24 @@ Deno.test('a passive Relic producer admits new work and pending/completed replay
             `;
             assert.equal(publication.sender, 'default-qbox-server');
 
+            // A round start the composed services commit indexes its transition under the composed WS runtime's namespace.
+            const started = await first.relicGameInboxService.enqueue(
+                { ...command, operation: 'reset', requestId: 'cold-round-start' },
+                async () => toStartedRelicTestGame(command.gameId, now)
+            );
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
+            assert.deepEqual(await cold.relicGameInboxService.wait(started), { status: 'applied', gameId: 'cold-expedition' });
+            const [transition] = await database<{ msg_id: string; }[]>`
+                select ri_resource::jsonb #>> '{id,msgId}' as msg_id from resource_inbox
+                where ri_type_id = 'WS_OUTBOX' and ri_resource::jsonb #>> '{payload,typeId}' = 'relic.event.v1'
+            `;
+            const indexed = await database<{ store_value: string; }[]>`
+                select store_value from runtime_state_store
+                where store_namespace = ${API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE}
+                    and store_key like '%:ordering-message:%'
+            `;
+            assert.deepEqual(indexed.map((row) => row.store_value), [JSON.stringify(transition.msg_id)]);
+
             const ref = toRelicRoomGroupRef(command.gameId);
             const stored = await worker.groupsRepository.findGroupEntry(ref);
             assert.ok(stored);
@@ -148,3 +169,13 @@ Deno.test('a passive Relic producer admits new work and pending/completed replay
         }
     });
 });
+
+/** A one-hunter expedition in its first round, as a reset proposal that moves the stored lobby into round one. */
+function toStartedRelicTestGame(gameId: string, now: number): RelicGameState {
+    const evaluation = { presentPlayerIds: ['owner-session'], senderId: 'owner-session', now };
+    const move = { protocolVersion: RELIC_PROTOCOL_VERSION, gameId, username: 'owner' };
+    const joined = requireRelicCommandApplied(
+        applyRelicCommand(createRelicGame(gameId, gameId, now), { ...move, kind: 'join-expedition' }, evaluation)
+    ).state;
+    return requireRelicCommandApplied(applyRelicCommand(joined, { ...move, kind: 'start-expedition' }, evaluation)).state;
+}

@@ -5,8 +5,7 @@ import { relicMutationPlayerId } from './relic-tournament.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
-    computeAppOutboxInsert,
-    computeOrderedWsOutboxInsert,
+    computeWsOutboxInsert,
     type AppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
@@ -174,9 +173,7 @@ function toRelicGamePublication(
         },
         dequeueAudit: { attempts: 0 }
     };
-    const outbox = notification.ordering === null
-        ? computeAppOutboxInsert(entry)
-        : computeOrderedWsOutboxInsert({ entry, admissionNamespace });
+    const outbox = computeWsOutboxInsert({ entry, admissionNamespace });
     const proof: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
         producerKind: 'room-application',

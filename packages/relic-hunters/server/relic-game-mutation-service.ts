@@ -192,7 +192,7 @@ export namespace RelicGameMutationService {
         readonly tournaments: Pick<TournamentResultRepository, 'readRoom'>;
     }
 
-    export interface Decision {
+    export interface ComputeInput {
         readonly read: Attempt;
         readonly previous: RelicGameState | null;
         readonly guard: ObservedGroupAuthority;
@@ -208,7 +208,7 @@ export namespace RelicGameMutationService {
 /** One authoritative expedition mutation attempt. AppInbox owns completion, transaction and retry. */
 export class RelicGameMutationService {
     private readonly dependencies: RelicGameMutationService.Dependencies;
-    readonly config: RelicGameMutationService.Config;
+    private readonly config: RelicGameMutationService.Config;
 
     constructor(dependencies: RelicGameMutationService.Dependencies, config: RelicGameMutationService.Config) {
         this.dependencies = dependencies;
@@ -523,9 +523,9 @@ function computeRelicGameMutation(
 }
 
 function computeRelicGameTransitionResult(
-    decision: RelicGameMutationService.Decision
+    input: RelicGameMutationService.ComputeInput
 ): RelicGameMutationService.Computed {
-    const { read, previous, guard, admissionNamespace } = decision;
+    const { read, previous, guard, admissionNamespace } = input;
     const { command } = read.ingress;
     const transition = computeRelicGameTransition(read, previous);
     if (transition.left !== undefined) {

@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
     createDefaultPSqlALInboundRuntimeStores,
-    createDefaultPSqlALOutboundRuntimeStores,
-    toServerWsQBoxALOutboundAdmissionNamespace
+    createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
@@ -21,6 +20,7 @@ import {
     type ApiV1MutationRuntime
 } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
     const databaseProbe = createDatabaseProbe();
@@ -51,7 +51,7 @@ function createProbedMutationRuntime(database: PSqlSql): ApiV1MutationRuntime {
     return createApiV1MutationRuntime({
         database,
         serviceId: 'api-test',
-        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
+        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         authCredentialSecret: 'a'.repeat(32),
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => 1_000,

@@ -33,6 +33,13 @@ export interface ComputeOrderedWsOutboxInsertInput {
     readonly admissionNamespace: string;
 }
 
+/** A WS outbox row as its producer computes it: an ordered row with its track index row, any other row without. */
+export function computeWsOutboxInsert(input: ComputeOrderedWsOutboxInsertInput): AppOutboxInsert {
+    return isOrderedWsOutboxEntry(input.entry)
+        ? computeOrderedWsOutboxInsert(input)
+        : computeAppOutboxInsert(input.entry);
+}
+
 interface AppOutboxInsertedRow {
     readonly ri_resource_id: string;
     readonly ri_topic_id: string;
@@ -123,7 +130,8 @@ function isSameTrackIndexRow(
         return computed === expected;
     }
     return computed.namespace === expected.namespace && computed.key === expected.key &&
-        computed.msgId === expected.msgId && computed.expiresAt === expected.expiresAt;
+        computed.msgId === expected.msgId && computed.value === expected.value &&
+        computed.expiresAt === expected.expiresAt;
 }
 
 export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void> {

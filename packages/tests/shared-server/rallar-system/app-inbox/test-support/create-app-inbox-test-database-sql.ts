@@ -30,7 +30,7 @@ interface CreateAppInboxTestTransactionSqlInput {
 interface AppOutboxTrackIndexParameterRow {
     readonly namespace: string;
     readonly key: string;
-    readonly msgId: string;
+    readonly value: string;
     readonly expiresAt: string;
 }
 
@@ -354,14 +354,16 @@ export function toAppOutboxTrackIndexParameterRows(
     return values[1] as readonly AppOutboxTrackIndexParameterRow[];
 }
 
-/** Insert-only, as the statement is: a live row is left as it is and comes back unnamed; an expired one is replaced. */
+/**
+ * Insert-only, as the statement is: a live row is left as it is and comes back unnamed; `insertIfAbsent` writes an
+ * expired one over, one revision past it.
+ */
 export async function writeAppOutboxTrackIndexRows(
     runtime: Pick<RuntimeStateOptimisticTransactionRepositoryLike, 'insertIfAbsent'>,
     rows: readonly AppOutboxTrackIndexParameterRow[]
 ): Promise<PSqlRows> {
     const written: object[] = [];
-    for (const { namespace, key, msgId, expiresAt } of rows) {
-        const value = JSON.stringify(msgId);
+    for (const { namespace, key, value, expiresAt } of rows) {
         const result = await runtime.insertIfAbsent({ namespace, key, value, expireAtTimestamp: Date.parse(expiresAt) });
         if (result.status === 'applied') {
             written.push({ ri_resource_id: null, ri_topic_id: null, fk_ext_bank_id: null, store_key: key });

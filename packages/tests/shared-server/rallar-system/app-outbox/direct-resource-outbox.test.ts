@@ -22,10 +22,9 @@ import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource
 import {
     computeAppOutboxInsert,
     computeOrderedWsOutboxInsert,
-    writeAppOutboxInsert,
-    type AppOutboxInsert
+    computeWsOutboxInsert,
+    writeAppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { isOrderedWsOutboxEntry } from '@shared-server/rallar-system/app-outbox/app-outbox-track-index.ts';
 import {
     writeCoalescedAppOutboxWork,
     type ComputedCoalescedAppOutboxWork
@@ -62,6 +61,7 @@ import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/w
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { drainEngine } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+import { isAppOutboxTrackIndexedInsert } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { createGroupDeltaProducer, readCommittedGroupDelta } from '../group-state/presence/group-delta-producer-fixture.ts';
 import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
@@ -211,7 +211,7 @@ describe('direct resource outbox writes', () => {
             ...computeClientStateSyncEntries(client, 'server-1').map(({ entry }) => entry),
             ...computeGroupStateSyncEntries(group, 'server-1')
         ];
-        const writes = entries.map(computeStateSyncOutboxInsert);
+        const writes = entries.map((entry) => computeWsOutboxInsert({ entry, admissionNamespace: TRACK_INDEX_NAMESPACE }));
         await runInPSqlTransaction(database.sql, async (transaction) => {
             for (const write of writes) {
                 await writeAppOutboxInsert(transaction, write);
@@ -892,13 +892,6 @@ interface ResourceInboxTestDatabase {
     reserve(entry: ResourceEntry): void;
 }
 
-/** A state-sync row as its producer computes it: a principal event with its track index, any other row without. */
-function computeStateSyncOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
-    return isOrderedWsOutboxEntry(entry)
-        ? computeOrderedWsOutboxInsert({ entry, admissionNamespace: TRACK_INDEX_NAMESPACE })
-        : computeAppOutboxInsert(entry);
-}
-
 function createResourceInboxDatabase(): ResourceInboxTestDatabase {
     let rows = new Map<string, ResourceInboxRow>();
     let beginCalls = 0;
@@ -989,7 +982,7 @@ function executeResourceInboxQuery(
     query: string,
     values: readonly PSqlParameter[]
 ): PSqlRows {
-    if (query.startsWith('with outbox as') && query.includes('track_index as')) {
+    if (isAppOutboxTrackIndexedInsert(query)) {
         const outbox = insertResourceInboxTestRows(rows, readInsertRowsParameter(values[0]))
             .map((row) => ({ ...row, store_key: null }));
         const indexed = (values[1] as readonly { readonly key: string; }[])

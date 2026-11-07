@@ -5,9 +5,9 @@ import { toRelicTournamentParticipation } from './relic-tournament.ts';
 
 /** Cancellation publishes terminal participation; the accepted native save and scores remain unchanged. */
 export function computeRelicTournamentCancellation(
-    decision: RelicGameMutationService.Decision
+    input: RelicGameMutationService.ComputeInput
 ): RelicGameMutationService.Computed {
-    const { read, previous, guard, admissionNamespace } = decision;
+    const { read, previous, guard, admissionNamespace } = input;
     if (read.tournament === null) {
         throw new TypeError('Cancellation requires a private tournament attempt');
     }

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 
 import { toRelicRoomGroupRef } from '@relic-hunters/mod.ts';
 import { RELIC_ROOM_DATA_BINDING } from '@relic-hunters/server/relic-game-mutation-service.ts';
-import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import {
     createRallarServerApplication,
@@ -33,6 +32,7 @@ import {
 } from '@api-v1/src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1TestQueueResilience } from '@api-v1/test/api-v1-test-queue-resilience.ts';
 
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '@api-v1/test/api-v1-test-ws-outbound-admission-namespace.ts';
 import { createRelicGameServices, type RelicGameServices } from '../src/create-relic-game-services.ts';
 
 export const RELIC_TEST_GAME_ID = 'cold-expedition';
@@ -87,7 +87,7 @@ export function createRelicTestMutationRuntime(database: PSqlSql, now: number): 
     return createApiV1MutationRuntime({
         database,
         serviceId: 'cold-worker',
-        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
+        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         authCredentialSecret: 'test-secret-for-cold-composition-12345',
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => now,

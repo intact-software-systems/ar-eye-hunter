@@ -10,6 +10,7 @@ import { computeClientMutation } from '@shared-server/rallar-system/client-state
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
+import { isAppOutboxTrackIndexedInsert } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 
 describe('client mutation write purity', () => {
@@ -79,7 +80,7 @@ function appliedSql(): PSqlSql {
             fk_ext_bank_id: row.contextId,
             store_key: null
         }));
-        if (!stringsOrValues.join('').includes('track_index as')) {
+        if (!isAppOutboxTrackIndexedInsert(stringsOrValues.join('').toLowerCase())) {
             return Promise.resolve(outbox);
         }
         const indexed = (values[1] as readonly { readonly key: string; }[]).map(({ key }) => ({
