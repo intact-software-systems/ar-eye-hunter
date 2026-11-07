@@ -36,7 +36,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      DENO_NO_PACKAGE_JSON: '1'
       MEASUREMENT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'comparison' }}
       CANDIDATE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.pull_request.head.sha }}
       DATABASE_URL: postgres://app:app@localhost:5433/appdb
@@ -51,8 +50,8 @@ jobs:
         apps/api-v1/scripts/perf/validate-state-write-durable-evidence.mjs
       FROZEN_ENVIRONMENT_FILES: >-
         package-lock.json
-        apps/api-v1/deno.json
-        apps/api-v1/deno.lock
+        apps/api-v1/package.json
+        apps/api-v1/tsconfig.json
         docker-compose.perf-bench.yml
     steps:
       - uses: actions/checkout@v7
@@ -65,9 +64,9 @@ jobs:
         with:
           node-version: 24
 
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: v2.x
+          bun-version: 1.4.4
 
       - name: Resolve the merge base and validate the runner
         if: env.MEASUREMENT_MODE == 'comparison' || env.MEASUREMENT_MODE == 'cpu-profile'
@@ -104,7 +103,7 @@ jobs:
           printf 'BASE_COMMIT=%s\nCANDIDATE_COMMIT=%s\n' "$base_commit" "$candidate_commit" >> "$GITHUB_ENV"
           node --version > "$output/toolchain.txt"
           npm --version >> "$output/toolchain.txt"
-          deno --version >> "$output/toolchain.txt"
+          bun --version >> "$output/toolchain.txt"
           docker version --format '{{.Server.Version}}' >> "$output/toolchain.txt"
           docker compose version >> "$output/toolchain.txt"
           lscpu > "$output/host-cpu.txt"
@@ -133,7 +132,7 @@ jobs:
           for role in base candidate; do
             if [ "$role" = base ]; then commit="$base_measurement_commit"; else commit="$CANDIDATE_COMMIT"; fi
             git checkout --detach "$commit"
-            deno check --frozen --config apps/api-v1/deno.json \
+            bun build --no-bundle \
               apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
               > "$output/$role-native-check.log" 2>&1
           done
@@ -146,7 +145,7 @@ jobs:
           output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
           mkdir -p "$output"
           npm ci > "$output/install.log" 2>&1
-          deno check --frozen --config apps/api-v1/deno.json \
+          bun build --no-bundle \
             apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
             apps/api-v1/scripts/perf/state-write/run-state-write-diagnostic.ts \
             > "$output/candidate-native-check.log" 2>&1

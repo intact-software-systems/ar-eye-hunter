@@ -11,7 +11,6 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    // pglite 0.4.1 ships broken Emscripten .d.ts; reconcile with root's 0.5.4 in a later task
     "skipLibCheck": true,
     "types": [
       "bun"

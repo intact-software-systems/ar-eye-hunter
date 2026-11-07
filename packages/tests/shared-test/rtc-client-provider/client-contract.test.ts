@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import {
     createRallarRtcClientEventDispatcher,
     createRallarRtcClientFromOperations,
@@ -10,7 +10,7 @@ import {
     type RallarRtcClientEventDispatcher
 } from '../../../shared-test/black-box-runner/rallar-rtc-provider.ts';
 
-Deno.test('createRallarRtcClientEventDispatcher emits messages to registered handlers', () => {
+test('createRallarRtcClientEventDispatcher emits messages to registered handlers', () => {
     const dispatcher = createRallarRtcClientEventDispatcher();
     const receivedMessages: unknown[] = [];
 
@@ -25,7 +25,7 @@ Deno.test('createRallarRtcClientEventDispatcher emits messages to registered han
         }
     });
 
-    assertEquals(receivedMessages, [
+    expect(receivedMessages).toEqual([
         {
             topic: 'chat.message',
             payload: {
@@ -35,7 +35,7 @@ Deno.test('createRallarRtcClientEventDispatcher emits messages to registered han
     ]);
 });
 
-Deno.test('createRallarRtcClientEventDispatcher emits close events to registered handlers', () => {
+test('createRallarRtcClientEventDispatcher emits close events to registered handlers', () => {
     const dispatcher = createRallarRtcClientEventDispatcher();
     const receivedCloseEvents: unknown[] = [];
 
@@ -48,7 +48,7 @@ Deno.test('createRallarRtcClientEventDispatcher emits close events to registered
         reason: 'normal close'
     });
 
-    assertEquals(receivedCloseEvents, [
+    expect(receivedCloseEvents).toEqual([
         {
             code: 1000,
             reason: 'normal close'
@@ -56,7 +56,7 @@ Deno.test('createRallarRtcClientEventDispatcher emits close events to registered
     ]);
 });
 
-Deno.test('createRallarRtcClientEventDispatcher supports multiple handlers', () => {
+test('createRallarRtcClientEventDispatcher supports multiple handlers', () => {
     const dispatcher = createRallarRtcClientEventDispatcher();
     const firstHandlerMessages: unknown[] = [];
     const secondHandlerMessages: unknown[] = [];
@@ -73,20 +73,20 @@ Deno.test('createRallarRtcClientEventDispatcher supports multiple handlers', () 
         topic: 'presence.update'
     });
 
-    assertEquals(firstHandlerMessages, [
+    expect(firstHandlerMessages).toEqual([
         {
             topic: 'presence.update'
         }
     ]);
 
-    assertEquals(secondHandlerMessages, [
+    expect(secondHandlerMessages).toEqual([
         {
             topic: 'presence.update'
         }
     ]);
 });
 
-Deno.test('createRallarRtcClientFromOperations delegates connect send and close operations', async () => {
+test('createRallarRtcClientFromOperations delegates connect send and close operations', async () => {
     const calls: Array<{ operation: string; args: RallarRtcClientArgs; message?: unknown; }> = [];
     const args = toRallarRtcClientArgs({
         connection: 'aliceRtc',
@@ -123,15 +123,15 @@ Deno.test('createRallarRtcClientFromOperations delegates connect send and close 
     });
     await client.close();
 
-    assertEquals(calls.map((call) => call.operation), ['connect', 'send', 'close']);
-    assertEquals(calls[0].args.connection, 'aliceRtc');
-    assertEquals(calls[1].message, {
+    expect(calls.map((call) => call.operation)).toEqual(['connect', 'send', 'close']);
+    expect(calls[0].args.connection).toEqual('aliceRtc');
+    expect(calls[1].message).toEqual({
         topic: 'chat.message'
     });
-    assertEquals(calls[2].args.roomId, 'room-1');
+    expect(calls[2].args.roomId).toEqual('room-1');
 });
 
-Deno.test('createRallarRtcClientFromOperations exposes dispatcher to operations', async () => {
+test('createRallarRtcClientFromOperations exposes dispatcher to operations', async () => {
     const args = toRallarRtcClientArgs({
         connection: 'aliceRtc',
         provider: 'rallar'
@@ -175,9 +175,9 @@ Deno.test('createRallarRtcClientFromOperations exposes dispatcher to operations'
     });
     await client.close();
 
-    assertEquals(connectDispatcher !== undefined, true);
-    assertEquals(closeDispatcher !== undefined, true);
-    assertEquals(receivedMessages, [
+    expect(connectDispatcher !== undefined).toEqual(true);
+    expect(closeDispatcher !== undefined).toEqual(true);
+    expect(receivedMessages).toEqual([
         {
             topic: 'connected'
         },
@@ -185,14 +185,14 @@ Deno.test('createRallarRtcClientFromOperations exposes dispatcher to operations'
             topic: 'echo'
         }
     ]);
-    assertEquals(receivedCloseEvents, [
+    expect(receivedCloseEvents).toEqual([
         {
             reason: 'closed by operation'
         }
     ]);
 });
 
-Deno.test('createRallarRtcClientFromOperations propagates operation failures', async () => {
+test('createRallarRtcClientFromOperations propagates operation failures', async () => {
     const args = toRallarRtcClientArgs({
         connection: 'aliceRtc',
         provider: 'rallar'
@@ -215,7 +215,7 @@ Deno.test('createRallarRtcClientFromOperations propagates operation failures', a
             throw new Error('Expected connect to fail');
         })
         .catch((error) => {
-            assertEquals(error.message, 'connect failed');
+            expect(error.message).toEqual('connect failed');
         });
 
     await client.send({})
@@ -223,7 +223,7 @@ Deno.test('createRallarRtcClientFromOperations propagates operation failures', a
             throw new Error('Expected send to fail');
         })
         .catch((error) => {
-            assertEquals(error.message, 'send failed');
+            expect(error.message).toEqual('send failed');
         });
 
     await client.close()
@@ -231,11 +231,11 @@ Deno.test('createRallarRtcClientFromOperations propagates operation failures', a
             throw new Error('Expected close to fail');
         })
         .catch((error) => {
-            assertEquals(error.message, 'close failed');
+            expect(error.message).toEqual('close failed');
         });
 });
 
-Deno.test('createRallarRtcClientFromRuntime connects and delegates to runtime session', async () => {
+test('createRallarRtcClientFromRuntime connects and delegates to runtime session', async () => {
     const args = toRallarRtcClientArgs({
         connection: 'aliceRtc',
         provider: 'rallar',
@@ -285,27 +285,27 @@ Deno.test('createRallarRtcClientFromRuntime connects and delegates to runtime se
     });
     await client.close();
 
-    assertEquals(runtimeConnectCalled, true);
-    assertEquals(sentMessages, [
+    expect(runtimeConnectCalled).toEqual(true);
+    expect(sentMessages).toEqual([
         {
             topic: 'chat.message'
         }
     ]);
-    assertEquals(sessionClosed, true);
-    assertEquals(receivedMessages, [
+    expect(sessionClosed).toEqual(true);
+    expect(receivedMessages).toEqual([
         {
             topic: 'runtime.connected',
             connection: 'aliceRtc'
         }
     ]);
-    assertEquals(receivedCloseEvents, [
+    expect(receivedCloseEvents).toEqual([
         {
             reason: 'runtime session closed'
         }
     ]);
 });
 
-Deno.test('createRallarRtcClientFromRuntime rejects send before connect', async () => {
+test('createRallarRtcClientFromRuntime rejects send before connect', async () => {
     const args = toRallarRtcClientArgs({
         connection: 'aliceRtc',
         provider: 'rallar'
@@ -331,14 +331,11 @@ Deno.test('createRallarRtcClientFromRuntime rejects send before connect', async 
             throw new Error('Expected send before connect to fail');
         })
         .catch((error) => {
-            assertEquals(
-                error.message,
-                'Rallar RTC client is not connected for connection: aliceRtc'
-            );
+            expect(error.message).toEqual('Rallar RTC client is not connected for connection: aliceRtc');
         });
 });
 
-Deno.test('createRallarRtcClientFromRuntime close before connect is a no-op', async () => {
+test('createRallarRtcClientFromRuntime close before connect is a no-op', async () => {
     const args = toRallarRtcClientArgs({
         connection: 'aliceRtc',
         provider: 'rallar'
@@ -361,60 +358,54 @@ Deno.test('createRallarRtcClientFromRuntime close before connect is a no-op', as
 
     await client.close();
 
-    assertEquals(runtimeConnectCalled, false);
+    expect(runtimeConnectCalled).toEqual(false);
 });
 
-Deno.test('encodeRallarRtcMessage serializes object messages', () => {
-    assertEquals(
-        encodeRallarRtcMessage({
-            topic: 'chat.message',
-            payload: {
-                text: 'hello'
-            }
-        }),
-        '{"topic":"chat.message","payload":{"text":"hello"}}'
-    );
+test('encodeRallarRtcMessage serializes object messages', () => {
+    expect(encodeRallarRtcMessage({
+        topic: 'chat.message',
+        payload: {
+            text: 'hello'
+        }
+    })).toEqual('{"topic":"chat.message","payload":{"text":"hello"}}');
 });
 
-Deno.test('encodeRallarRtcMessage keeps string messages unchanged', () => {
-    assertEquals(encodeRallarRtcMessage('plain text'), 'plain text');
+test('encodeRallarRtcMessage keeps string messages unchanged', () => {
+    expect(encodeRallarRtcMessage('plain text')).toEqual('plain text');
 });
 
-Deno.test('encodeRallarRtcMessage fails clearly for undefined message', () => {
+test('encodeRallarRtcMessage fails clearly for undefined message', () => {
     try {
         encodeRallarRtcMessage(undefined);
         throw new Error('Expected undefined message encoding to fail');
     }
     catch (error) {
-        assertEquals((error as Error).message, 'Rallar RTC message cannot be encoded as JSON');
+        expect((error as Error).message).toEqual('Rallar RTC message cannot be encoded as JSON');
     }
 });
 
-Deno.test('decodeRallarRtcMessage parses JSON strings', () => {
-    assertEquals(
-        decodeRallarRtcMessage('{"topic":"chat.message","payload":{"text":"hello"}}'),
-        {
-            topic: 'chat.message',
-            payload: {
-                text: 'hello'
-            }
+test('decodeRallarRtcMessage parses JSON strings', () => {
+    expect(decodeRallarRtcMessage('{"topic":"chat.message","payload":{"text":"hello"}}')).toEqual({
+        topic: 'chat.message',
+        payload: {
+            text: 'hello'
         }
-    );
+    });
 });
 
-Deno.test('decodeRallarRtcMessage keeps non-json strings unchanged', () => {
-    assertEquals(decodeRallarRtcMessage('plain text'), 'plain text');
+test('decodeRallarRtcMessage keeps non-json strings unchanged', () => {
+    expect(decodeRallarRtcMessage('plain text')).toEqual('plain text');
 });
 
-Deno.test('decodeRallarRtcMessage keeps non-string values unchanged', () => {
+test('decodeRallarRtcMessage keeps non-string values unchanged', () => {
     const message = {
         topic: 'already.object'
     };
 
-    assertEquals(decodeRallarRtcMessage(message), message);
+    expect(decodeRallarRtcMessage(message)).toEqual(message);
 });
 
-Deno.test('toRallarRtcClientArgs maps common RTC request fields', () => {
+test('toRallarRtcClientArgs maps common RTC request fields', () => {
     const request = {
         connection: 'aliceRtc',
         provider: 'rallar-stub',
@@ -450,37 +441,37 @@ Deno.test('toRallarRtcClientArgs maps common RTC request fields', () => {
 
     const args = toRallarRtcClientArgs(request);
 
-    assertEquals(args.connection, 'aliceRtc');
-    assertEquals(args.provider, 'rallar-stub');
-    assertEquals(args.actor, 'alice');
-    assertEquals(args.peerId, 'alice-peer');
-    assertEquals(args.remotePeerId, 'bob-peer');
-    assertEquals(args.roomId, 'room-1');
-    assertEquals(args.groupId, 'room-1');
-    assertEquals(args.overlayId, 'room-1');
-    assertEquals(args.signalingUrl, 'ws://localhost:8080/ws');
-    assertEquals(args.signalingType, 'ws');
-    assertEquals(args.signalingHeaders, {
+    expect(args.connection).toEqual('aliceRtc');
+    expect(args.provider).toEqual('rallar-stub');
+    expect(args.actor).toEqual('alice');
+    expect(args.peerId).toEqual('alice-peer');
+    expect(args.remotePeerId).toEqual('bob-peer');
+    expect(args.roomId).toEqual('room-1');
+    expect(args.groupId).toEqual('room-1');
+    expect(args.overlayId).toEqual('room-1');
+    expect(args.signalingUrl).toEqual('ws://localhost:8080/ws');
+    expect(args.signalingType).toEqual('ws');
+    expect(args.signalingHeaders).toEqual({
         Authorization: 'Bearer token'
     });
-    assertEquals(args.signalingProtocols, 'rallar-signaling');
-    assertEquals(args.dataChannelLabel, 'game-data');
-    assertEquals(args.iceServers, [
+    expect(args.signalingProtocols).toEqual('rallar-signaling');
+    expect(args.dataChannelLabel).toEqual('game-data');
+    expect(args.iceServers).toEqual([
         {
             urls: 'stun:stun.example.test'
         }
     ]);
-    assertEquals(args.timeoutMs, 3000);
-    assertEquals(args.connectTimeoutMs, 3000);
-    assertEquals(args.waitForOpen, true);
-    assertEquals(args.openTimeoutMs, 2000);
-    assertEquals(args.metadata, {
+    expect(args.timeoutMs).toEqual(3000);
+    expect(args.connectTimeoutMs).toEqual(3000);
+    expect(args.waitForOpen).toEqual(true);
+    expect(args.openTimeoutMs).toEqual(2000);
+    expect(args.metadata).toEqual({
         testRunId: 'test-run-1'
     });
-    assertEquals(args.request, request);
+    expect(args.request).toEqual(request);
 });
 
-Deno.test('toRallarRtcClientArgs supports aliases and safe defaults', () => {
+test('toRallarRtcClientArgs supports aliases and safe defaults', () => {
     const request = {
         connectionId: 'aliceRtc',
         clientId: 'alice-client',
@@ -495,14 +486,14 @@ Deno.test('toRallarRtcClientArgs supports aliases and safe defaults', () => {
 
     const args = toRallarRtcClientArgs(request);
 
-    assertEquals(args.connection, 'aliceRtc');
-    assertEquals(args.provider, 'rallar');
-    assertEquals(args.peerId, 'alice-client');
-    assertEquals(args.remotePeerId, 'bob');
-    assertEquals(args.groupId, 'overlay-1');
-    assertEquals(args.overlayId, 'overlay-1');
-    assertEquals(args.signalingUrl, 'ws://localhost:8080/signaling');
-    assertEquals(args.signalingProtocols, ['rallar-v1']);
-    assertEquals(args.dataChannelLabel, 'rallar');
-    assertEquals(args.connectTimeoutMs, 5000);
+    expect(args.connection).toEqual('aliceRtc');
+    expect(args.provider).toEqual('rallar');
+    expect(args.peerId).toEqual('alice-client');
+    expect(args.remotePeerId).toEqual('bob');
+    expect(args.groupId).toEqual('overlay-1');
+    expect(args.overlayId).toEqual('overlay-1');
+    expect(args.signalingUrl).toEqual('ws://localhost:8080/signaling');
+    expect(args.signalingProtocols).toEqual(['rallar-v1']);
+    expect(args.dataChannelLabel).toEqual('rallar');
+    expect(args.connectTimeoutMs).toEqual(5000);
 });

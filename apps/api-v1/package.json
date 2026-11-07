@@ -17,7 +17,7 @@
     "db:pull": "npm run prisma -- db pull"
   },
   "dependencies": {
-    "@electric-sql/pglite": "0.4.1",
+    "@electric-sql/pglite": "0.5.4",
     "@js-temporal/polyfill": "^0.5.1",
     "dotenv": "^16.6.1",
     "graphology": "0.26.0",

@@ -550,7 +550,7 @@ jobs:
       - name: Setup local toolchains
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
           playwright: 'true'
 
       - name: Admit frozen ALM source
@@ -586,7 +586,7 @@ jobs:
             cpuCount: os.cpus().length, availableParallelism: os.availableParallelism(), memoryBytes: os.totalmem(),
             diskBytes: disk.blocks * disk.bsize, diskAvailableBytes: disk.bavail * disk.bsize,
             os: { platform: os.platform(), release: os.release(), version: os.version() }, node: process.version,
-            deno: spawnSync('deno', ['--version'], { encoding: 'utf8' }).stdout.trim(),
+            bun: spawnSync('bun', ['--version'], { encoding: 'utf8' }).stdout.trim(),
             chromium: spawnSync(require('playwright').chromium.executablePath(), ['--version'], { encoding: 'utf8' }).stdout.trim()
           };
           writeFileSync(path.join(directory, 'runner-provenance.json'), JSON.stringify(provenance, null, 2));

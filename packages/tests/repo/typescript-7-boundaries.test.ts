@@ -190,7 +190,7 @@ describe('native TypeScript 7 repository boundaries', () => {
         expect(importedBy).toEqual([]);
     });
 
-    it('keeps TypeScript and Deno checking as separate release gates', () => {
+    it('keeps TypeScript checking as a separate release gate', () => {
         const sharedTestManifest = readJson<PackageManifest>(
             path.join(repositoryRoot, 'packages/shared-test/package.json')
         );
@@ -201,7 +201,7 @@ describe('native TypeScript 7 repository boundaries', () => {
 
         expect(sharedTestManifest.scripts?.typecheck).toBe('npm run check:ts');
         expect(releaseGate).toContain(
-            'npm --workspace @ar-eye-hunter/shared-test run check:deno'
+            'npm --workspace @ar-eye-hunter/shared-test run check'
         );
     });
 });

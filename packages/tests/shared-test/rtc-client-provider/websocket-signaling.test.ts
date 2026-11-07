@@ -1,11 +1,11 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import {
     createRallarWebRtcSignalingOnlyProvider,
     createRallarWebRtcWebSocketSignalingFactory
 } from '../../../shared-test/black-box-runner/rallar-webrtc-runtime.ts';
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory bridges transport send message and close events', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory bridges transport send message and close events', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
     const sentWireMessages: string[] = [];
     let transportCloseCalled = false;
@@ -120,21 +120,18 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory bridges transport send me
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(sentWireMessages).toEqual([
         '{"type":"offer","from":"alice","to":"bob","sdp":"fake-offer-sdp"}'
     ]);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceReceivesAnswerFromTransport[0].status, 'SUCCESS');
-    assertEquals(
-        report.resultsByName.aliceReceivesAnswerFromTransport[0].actual.matchedMessage.data.actor,
-        'alice'
-    );
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(transportCloseCalled, true);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceReceivesAnswerFromTransport[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceReceivesAnswerFromTransport[0].actual.matchedMessage.data.actor).toEqual('alice');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(transportCloseCalled).toEqual(true);
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory sends optional connect message after transport creation', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory sends optional connect message after transport creation', async () => {
     const sentWireMessages: string[] = [];
 
     const transport = {
@@ -191,14 +188,14 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory sends optional connect me
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(sentWireMessages).toEqual([
         '{"topic":"rallar.existing.signaling.join","payload":{"connection":"aliceRtc","peerId":"alice","roomId":"room-1"}}'
     ]);
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory can wait for transport open before connect message', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory can wait for transport open before connect message', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
     const sentWireMessages: string[] = [];
 
@@ -259,7 +256,7 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory can wait for transport op
         }
     );
 
-    assertEquals(sentWireMessages, []);
+    expect(sentWireMessages).toEqual([]);
 
     setTimeout(() => {
         transport.readyState = 'open';
@@ -272,17 +269,17 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory can wait for transport op
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(sentWireMessages).toEqual([
         '{"topic":"rallar.existing.signaling.join","payload":{"peerId":"alice","roomId":"room-1"}}'
     ]);
-    assertEquals(report.rtcMessages.aliceRtc[0].data.topic, 'rallar.webrtc.signaling.connected');
-    assertEquals(report.rtcMessages.aliceRtc[0].data.opened, true);
-    assertEquals(report.rtcMessages.aliceRtc[0].data.readyState, 'open');
+    expect(report.rtcMessages.aliceRtc[0].data.topic).toEqual('rallar.webrtc.signaling.connected');
+    expect(report.rtcMessages.aliceRtc[0].data.opened).toEqual(true);
+    expect(report.rtcMessages.aliceRtc[0].data.readyState).toEqual('open');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory can use request waitForOpen settings', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory can use request waitForOpen settings', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
     const sentWireMessages: string[] = [];
 
@@ -343,7 +340,7 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory can use request waitForOp
         }
     );
 
-    assertEquals(sentWireMessages, []);
+    expect(sentWireMessages).toEqual([]);
 
     setTimeout(() => {
         transport.readyState = 'open';
@@ -356,17 +353,17 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory can use request waitForOp
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(sentWireMessages).toEqual([
         '{"topic":"rallar.existing.signaling.join","payload":{"peerId":"alice","roomId":"room-1"}}'
     ]);
-    assertEquals(report.rtcMessages.aliceRtc[0].data.topic, 'rallar.webrtc.signaling.connected');
-    assertEquals(report.rtcMessages.aliceRtc[0].data.opened, true);
-    assertEquals(report.rtcMessages.aliceRtc[0].data.readyState, 'open');
+    expect(report.rtcMessages.aliceRtc[0].data.topic).toEqual('rallar.webrtc.signaling.connected');
+    expect(report.rtcMessages.aliceRtc[0].data.opened).toEqual(true);
+    expect(report.rtcMessages.aliceRtc[0].data.readyState).toEqual('open');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory request waitForOpen reports timeout', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory request waitForOpen reports timeout', async () => {
     const transport = {
         readyState: 'connecting',
         send: (_data: string) => {
@@ -413,16 +410,13 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory request waitForOpen repor
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
-        'Rallar WebRTC signaling transport did not open within 50ms. readyState=connecting'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('Rallar WebRTC signaling transport did not open within 50ms. readyState=connecting');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory uses request connectTimeoutMs for open timeout', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory uses request connectTimeoutMs for open timeout', async () => {
     const transport = {
         readyState: 'connecting',
         send: (_data: string) => {
@@ -469,16 +463,13 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory uses request connectTimeo
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
-        'Rallar WebRTC signaling transport did not open within 60ms. readyState=connecting'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('Rallar WebRTC signaling transport did not open within 60ms. readyState=connecting');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory factory openTimeoutMs overrides request timeout', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory factory openTimeoutMs overrides request timeout', async () => {
     const transport = {
         readyState: 'connecting',
         send: (_data: string) => {
@@ -524,16 +515,13 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory factory openTimeoutMs ove
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
-        'Rallar WebRTC signaling transport did not open within 40ms. readyState=connecting'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('Rallar WebRTC signaling transport did not open within 40ms. readyState=connecting');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory reports connect failure when transport open times out', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory reports connect failure when transport open times out', async () => {
     const transport = {
         readyState: 'connecting',
         send: (_data: string) => {
@@ -578,16 +566,13 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory reports connect failure w
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
-        'Rallar WebRTC signaling transport did not open within 50ms. readyState=connecting'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('Rallar WebRTC signaling transport did not open within 50ms. readyState=connecting');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory reports connect failure when transport closes before open', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory reports connect failure when transport closes before open', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const transport = {
@@ -652,16 +637,15 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory reports connect failure w
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual(
         'Rallar WebRTC signaling transport closed before open. readyState=closed, code=1006, reason=closed before open'
     );
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory reports connect failure when transport errors before open', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory reports connect failure when transport errors before open', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const transport = {
@@ -725,16 +709,15 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory reports connect failure w
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual(
         'Rallar WebRTC signaling transport failed before open. readyState=connecting, message=error before open'
     );
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory skips connect message when hook returns undefined', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory skips connect message when hook returns undefined', async () => {
     const sentWireMessages: string[] = [];
 
     const transport = {
@@ -780,12 +763,12 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory skips connect message whe
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(sentWireMessages, []);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(sentWireMessages).toEqual([]);
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory supports onmessage and onclose fallback handlers', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory supports onmessage and onclose fallback handlers', async () => {
     const sentWireMessages: string[] = [];
     let transportCloseCalled = false;
 
@@ -888,16 +871,16 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory supports onmessage and on
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(sentWireMessages).toEqual([
         '{"type":"offer"}'
     ]);
-    assertEquals(report.resultsByName.aliceReceivesFallbackAnswer[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(transportCloseCalled, true);
+    expect(report.resultsByName.aliceReceivesFallbackAnswer[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(transportCloseCalled).toEqual(true);
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory emits close event when decode fails', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory emits close event when decode fails', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const transport = {
@@ -1004,17 +987,14 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory emits close event when de
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.triggerMalformedSignalingMessage[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForSignalingDecodeFailure[0].status, 'SUCCESS');
-    assertEquals(
-        report.resultsByName.waitForSignalingDecodeFailure[0].actual.matchedCloseEvent.transportEvent.message,
-        'signaling decode failed'
-    );
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.triggerMalformedSignalingMessage[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingDecodeFailure[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingDecodeFailure[0].actual.matchedCloseEvent.transportEvent.message).toEqual('signaling decode failed');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory reports send failure when encode fails', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory reports send failure when encode fails', async () => {
     const transport = {
         send: (_data: string) => {
             throw new Error('transport send should not be called');
@@ -1083,17 +1063,14 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory reports send failure when
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsUnencodableSignalingMessage[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsUnencodableSignalingMessage[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsUnencodableSignalingMessage[0].actual.exception,
-        'signaling encode failed'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsUnencodableSignalingMessage[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsUnencodableSignalingMessage[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsUnencodableSignalingMessage[0].actual.exception).toEqual('signaling encode failed');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory reports send failure when transport send fails', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory reports send failure when transport send fails', async () => {
     const transport = {
         send: (_data: string) => {
             throw new Error('signaling transport send failed');
@@ -1156,17 +1133,14 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory reports send failure when
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsThroughFailingTransport[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsThroughFailingTransport[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsThroughFailingTransport[0].actual.exception,
-        'signaling transport send failed'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsThroughFailingTransport[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsThroughFailingTransport[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsThroughFailingTransport[0].actual.exception).toEqual('signaling transport send failed');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory emits close event when transport errors', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory emits close event when transport errors', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const transport = {
@@ -1266,18 +1240,15 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory emits close event when tr
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.triggerSignalingTransportError[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForSignalingTransportError[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForSignalingTransportError[0].actual.matchedCloseEvent.transportEvent.error, true);
-    assertEquals(
-        report.resultsByName.waitForSignalingTransportError[0].actual.matchedCloseEvent.transportEvent.message,
-        'signaling transport error'
-    );
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.triggerSignalingTransportError[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingTransportError[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingTransportError[0].actual.matchedCloseEvent.transportEvent.error).toEqual(true);
+    expect(report.resultsByName.waitForSignalingTransportError[0].actual.matchedCloseEvent.transportEvent.message).toEqual('signaling transport error');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingFactory preserves fallback close handler after waitForOpen', async () => {
+test('createRallarWebRtcWebSocketSignalingFactory preserves fallback close handler after waitForOpen', async () => {
     const sentWireMessages: string[] = [];
 
     const transport = {
@@ -1396,11 +1367,11 @@ Deno.test('createRallarWebRtcWebSocketSignalingFactory preserves fallback close 
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].status, 'SUCCESS');
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingClose[0].status).toEqual('SUCCESS');
+    expect(sentWireMessages).toEqual([
         '{"topic":"rallar.existing.signaling.join","payload":{"peerId":"alice","roomId":"room-1"}}'
     ]);
 });

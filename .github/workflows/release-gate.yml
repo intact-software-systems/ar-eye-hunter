@@ -38,7 +38,7 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
 
       - name: Report IDE navigation details
         run: npm run check:repo-style:navigation-details
@@ -74,11 +74,11 @@ jobs:
         run: |
           npm run build:rallar
 
-      - name: Check Deno apps
+      - name: Check Bun apps
         run: |
-          npm --workspace @ar-eye-hunter/shared-test run check:deno
-          (cd apps/api-v1 && deno task check)
-          (cd apps/rallar-black-box-control-server && deno task check)
+          npm --workspace @ar-eye-hunter/shared-test run check
+          (cd apps/api-v1 && bunx tsc -p tsconfig.json --noEmit)
+          (cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit)
 
   unit:
     name: Unit tests (${{ matrix.shard }})
@@ -102,7 +102,7 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
           playwright: 'true'
 
       - name: Run unit tests
@@ -127,13 +127,13 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
 
       - name: Run tooling unit tests
         run: npm run test:unit:tooling
 
-  deno:
-    name: Deno tests
+  bun:
+    name: Bun tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -150,12 +150,10 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
-          # Only a push validating its exact main commit may save cache state; every other lane restores only.
-          save-deno-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.candidate_ref == github.sha }}
+          bun: 'true'
 
-      - name: Run Deno tests
-        run: npm run test:deno:platform
+      - name: Run Bun tests
+        run: npm run test:bun:platform
 
   e2e-app:
     name: Browser tests (app)
@@ -175,7 +173,7 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
           playwright: 'true'
 
       - name: Run app browser tests
@@ -185,8 +183,6 @@ jobs:
         run: npm run test:full-stack:memory
 
       - name: Validate reopened member readiness windows
-        env:
-          DENO_NO_PACKAGE_JSON: '1'
         run: npm run test:rallar:full-stack:memory:live-rtc-3:lifecycle -- --grep 'monotonic readiness' --workers=1 --trace=retain-on-failure
 
       - name: Upload reopening readiness evidence
@@ -277,7 +273,7 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
 
       - name: Run API v1 black-box recipes
         uses: ./.github/actions/api-v1-black-box-test
@@ -333,7 +329,7 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
           playwright: 'true'
 
       - name: Run Postgres migrations
@@ -346,14 +342,13 @@ jobs:
         working-directory: apps/ar-eye-hunter-server-v1
         env:
           RALLAR_POSTGRES_INTEGRATION: '1'
-          DENO_NO_PACKAGE_JSON: '1'
-        run: deno test --allow-env --allow-read --allow-write --allow-net test/arena-tournament-cluster.test.ts
+        run: bun test test/arena-tournament-cluster.test.ts
 
       - name: Run native API PostgreSQL query planning test
         working-directory: apps/api-v1
         env:
           RALLAR_POSTGRES_INTEGRATION: '1'
-        run: deno test --allow-env --allow-read --allow-write --allow-net test/db/api-v1-query-planning.test.ts
+        run: bun test test/db/api-v1-query-planning.test.ts
 
       - name: Record exact topology replay checkout
         run: |
@@ -383,8 +378,6 @@ jobs:
 
       - name: Run private view push and subscriber recovery proof
         id: view_push
-        env:
-          DENO_NO_PACKAGE_JSON: '1'
         run: |
           mkdir -p .artifacts/api-v1-black-box/view-push
           git rev-parse HEAD > .artifacts/api-v1-black-box/view-push/validated-sha.txt

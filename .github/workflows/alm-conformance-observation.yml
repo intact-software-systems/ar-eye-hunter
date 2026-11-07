@@ -47,7 +47,7 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
           playwright: 'true'
 
       - name: Observe the ALM conformance lane over ${{ matrix.carrier }}

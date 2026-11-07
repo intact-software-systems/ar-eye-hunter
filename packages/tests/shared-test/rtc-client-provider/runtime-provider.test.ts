@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import {
     createRallarRtcClientEventDispatcher,
@@ -14,7 +14,7 @@ import {
 } from '../../../shared-test/black-box-runner/rallar-webrtc-runtime.ts';
 import { createFakeRtcClient } from './fake-rtc-client.ts';
 
-Deno.test('createRallarRtcProvider maps request to Rallar client factory args', async () => {
+test('createRallarRtcProvider maps request to Rallar client factory args', async () => {
     const fakeClient = createFakeRtcClient();
     let capturedArgs: any;
     let capturedConfig: any;
@@ -59,21 +59,21 @@ Deno.test('createRallarRtcProvider maps request to Rallar client factory args', 
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(fakeClient.connected, true);
-    assertEquals(capturedArgs.connection, 'aliceRtc');
-    assertEquals(capturedArgs.provider, 'rallar');
-    assertEquals(capturedArgs.actor, 'alice');
-    assertEquals(capturedArgs.peerId, 'alice');
-    assertEquals(capturedArgs.roomId, 'room-1');
-    assertEquals(capturedArgs.groupId, 'room-1');
-    assertEquals(capturedArgs.signalingUrl, 'ws://localhost:8080/ws');
-    assertEquals(capturedArgs.signalingType, 'ws');
-    assertEquals(capturedConfig.interactionName, 'connectAlice');
-    assertEquals(capturedContext.rtcProviders.rallar !== undefined, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(fakeClient.connected).toEqual(true);
+    expect(capturedArgs.connection).toEqual('aliceRtc');
+    expect(capturedArgs.provider).toEqual('rallar');
+    expect(capturedArgs.actor).toEqual('alice');
+    expect(capturedArgs.peerId).toEqual('alice');
+    expect(capturedArgs.roomId).toEqual('room-1');
+    expect(capturedArgs.groupId).toEqual('room-1');
+    expect(capturedArgs.signalingUrl).toEqual('ws://localhost:8080/ws');
+    expect(capturedArgs.signalingType).toEqual('ws');
+    expect(capturedConfig.interactionName).toEqual('connectAlice');
+    expect(capturedContext.rtcProviders.rallar !== undefined).toEqual(true);
 });
 
-Deno.test('createRallarRtcProvider supports operations-based Rallar client messages', async () => {
+test('createRallarRtcProvider supports operations-based Rallar client messages', async () => {
     const provider = createRallarRtcProvider({
         createClient: (args) => {
             return createRallarRtcClientFromOperations(args, {
@@ -160,15 +160,15 @@ Deno.test('createRallarRtcProvider supports operations-based Rallar client messa
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data, payload);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.rtcCloseEvents.aliceRtc.length >= 1, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data).toEqual(payload);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.rtcCloseEvents.aliceRtc.length >= 1).toEqual(true);
 });
 
-Deno.test('createRallarWebRtcRuntime fails clearly when createSession is missing', async () => {
+test('createRallarWebRtcRuntime fails clearly when createSession is missing', async () => {
     const runtime = createRallarWebRtcRuntime();
     const args = toRallarRtcClientArgs({
         connection: 'aliceRtc',
@@ -180,14 +180,11 @@ Deno.test('createRallarWebRtcRuntime fails clearly when createSession is missing
         throw new Error('Expected runtime connect to fail');
     }
     catch (error) {
-        assertEquals(
-            (error as Error).message,
-            'Rallar WebRTC runtime is not implemented yet. Missing createSession implementation for connection: aliceRtc'
-        );
+        expect((error as Error).message).toEqual('Rallar WebRTC runtime is not implemented yet. Missing createSession implementation for connection: aliceRtc');
     }
 });
 
-Deno.test('createRallarWebRtcProvider reports clear connect failure when createSession is missing', async () => {
+test('createRallarWebRtcProvider reports clear connect failure when createSession is missing', async () => {
     const provider = createRallarWebRtcProvider();
 
     const report = await executeBlackBox(
@@ -216,16 +213,15 @@ Deno.test('createRallarWebRtcProvider reports clear connect failure when createS
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual(
         'Rallar WebRTC runtime is not implemented yet. Missing createSession implementation for connection: aliceRtc'
     );
 });
 
-Deno.test('createRallarWebRtcProvider can execute scenario through injected createSession', async () => {
+test('createRallarWebRtcProvider can execute scenario through injected createSession', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: (_args, dispatcher) => {
             return {
@@ -310,14 +306,14 @@ Deno.test('createRallarWebRtcProvider can execute scenario through injected crea
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data, payload);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data).toEqual(payload);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
 });
 
-Deno.test('createRallarWebRtcSignalingOnlyProvider can connect and close signaling session', async () => {
+test('createRallarWebRtcSignalingOnlyProvider can connect and close signaling session', async () => {
     const signalingEvents: unknown[] = [];
 
     const provider = createRallarWebRtcSignalingOnlyProvider({
@@ -425,14 +421,14 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider can connect and close signali
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].status, 'SUCCESS');
-    assertEquals(report.rtcMessages.aliceRtc[0].data.actor, 'alice');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.closedBy, 'rallar-webrtc-signaling-only-runtime');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.actor, 'alice');
-    assertEquals(signalingEvents, [
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].status).toEqual('SUCCESS');
+    expect(report.rtcMessages.aliceRtc[0].data.actor).toEqual('alice');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.closedBy).toEqual('rallar-webrtc-signaling-only-runtime');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.actor).toEqual('alice');
+    expect(signalingEvents).toEqual([
         {
             type: 'connect',
             connection: 'aliceRtc',
@@ -447,7 +443,7 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider can connect and close signali
     ]);
 });
 
-Deno.test('createRallarWebRtcSignalingOnlyProvider emits group and overlay diagnostics', async () => {
+test('createRallarWebRtcSignalingOnlyProvider emits group and overlay diagnostics', async () => {
     const provider = createRallarWebRtcSignalingOnlyProvider({
         signalingFactory: {
             connect: () => {
@@ -551,17 +547,17 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider emits group and overlay diagn
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].status, 'SUCCESS');
-    assertEquals(report.rtcMessages.aliceRtc[0].data.groupId, 'group-1');
-    assertEquals(report.rtcMessages.aliceRtc[0].data.overlayId, 'overlay-1');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.groupId, 'group-1');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.overlayId, 'overlay-1');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].status).toEqual('SUCCESS');
+    expect(report.rtcMessages.aliceRtc[0].data.groupId).toEqual('group-1');
+    expect(report.rtcMessages.aliceRtc[0].data.overlayId).toEqual('overlay-1');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.groupId).toEqual('group-1');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.overlayId).toEqual('overlay-1');
 });
 
-Deno.test('createRallarWebRtcSignalingOnlyProvider reports send failure when data channel is missing', async () => {
+test('createRallarWebRtcSignalingOnlyProvider reports send failure when data channel is missing', async () => {
     const provider = createRallarWebRtcSignalingOnlyProvider({
         signalingFactory: {
             connect: () => {
@@ -620,17 +616,16 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider reports send failure when dat
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsWithoutDataChannel[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsWithoutDataChannel[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsWithoutDataChannel[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsWithoutDataChannel[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsWithoutDataChannel[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsWithoutDataChannel[0].actual.exception).toEqual(
         'Rallar WebRTC data channel is not implemented yet. Signaling-only runtime cannot send RTC payload for connection: aliceRtc'
     );
 });
 
-Deno.test('createRallarWebRtcSignalingOnlyProvider delegates send to signaling session when available', async () => {
+test('createRallarWebRtcSignalingOnlyProvider delegates send to signaling session when available', async () => {
     const signalingEvents: unknown[] = [];
 
     const provider = createRallarWebRtcSignalingOnlyProvider({
@@ -731,11 +726,11 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider delegates send to signaling s
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(signalingEvents, [
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsSignalingOffer[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(signalingEvents).toEqual([
         {
             type: 'connect',
             connection: 'aliceRtc',
@@ -754,7 +749,7 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider delegates send to signaling s
     ]);
 });
 
-Deno.test('createRallarWebRtcSignalingOnlyProvider forwards incoming signaling messages', async () => {
+test('createRallarWebRtcSignalingOnlyProvider forwards incoming signaling messages', async () => {
     const signalingMessageHandlers: Array<(message: any) => void> = [];
 
     const provider = createRallarWebRtcSignalingOnlyProvider({
@@ -850,13 +845,13 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider forwards incoming signaling m
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceReceivesSignalingAnswer[0].status, 'SUCCESS');
-    assertEquals(report.rtcMessages.aliceRtc[0].data.actor, 'alice');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceReceivesSignalingAnswer[0].status).toEqual('SUCCESS');
+    expect(report.rtcMessages.aliceRtc[0].data.actor).toEqual('alice');
 });
 
-Deno.test('createRallarWebRtcSignalingOnlyProvider forwards group and overlay on incoming signaling messages', async () => {
+test('createRallarWebRtcSignalingOnlyProvider forwards group and overlay on incoming signaling messages', async () => {
     const signalingMessageHandlers: Array<(message: any) => void> = [];
 
     const provider = createRallarWebRtcSignalingOnlyProvider({
@@ -950,13 +945,13 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider forwards group and overlay on
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceReceivesSignalingAnswer[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceReceivesSignalingAnswer[0].actual.matchedMessage.data.groupId, 'group-1');
-    assertEquals(report.resultsByName.aliceReceivesSignalingAnswer[0].actual.matchedMessage.data.overlayId, 'overlay-1');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceReceivesSignalingAnswer[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceReceivesSignalingAnswer[0].actual.matchedMessage.data.groupId).toEqual('group-1');
+    expect(report.resultsByName.aliceReceivesSignalingAnswer[0].actual.matchedMessage.data.overlayId).toEqual('overlay-1');
 });
 
-Deno.test('createRallarWebRtcSignalingOnlyProvider forwards signaling close events', async () => {
+test('createRallarWebRtcSignalingOnlyProvider forwards signaling close events', async () => {
     const signalingCloseHandlers: Array<(event: any) => void> = [];
 
     const provider = createRallarWebRtcSignalingOnlyProvider({
@@ -1060,19 +1055,19 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider forwards signaling close even
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.triggerSignalingClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.closedBy, 'rallar-webrtc-signaling-only-runtime');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.actor, 'alice');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.transportEvent.code, 1006);
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.transportEvent.reason, 'signaling transport closed');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.event.transportEvent.code, 1006);
-    assertEquals(report.rtcMessages.aliceRtc[0].data.actor, 'alice');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.triggerSignalingClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.closedBy).toEqual('rallar-webrtc-signaling-only-runtime');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.actor).toEqual('alice');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.transportEvent.code).toEqual(1006);
+    expect(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.transportEvent.reason).toEqual('signaling transport closed');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.matchedCloseEvent.event.transportEvent.code).toEqual(1006);
+    expect(report.rtcMessages.aliceRtc[0].data.actor).toEqual('alice');
 });
 
-Deno.test('createRallarRtcProviderFromRuntime supports scenario execution through runtime session', async () => {
+test('createRallarRtcProviderFromRuntime supports scenario execution through runtime session', async () => {
     const provider = createRallarRtcProviderFromRuntime({
         connect: (_args, dispatcher) => {
             return {
@@ -1156,14 +1151,14 @@ Deno.test('createRallarRtcProviderFromRuntime supports scenario execution throug
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data, payload);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data).toEqual(payload);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
 });
 
-Deno.test('createRallarRtcProviderFromRuntime supports ordered expect.messages from runtime session', async () => {
+test('createRallarRtcProviderFromRuntime supports ordered expect.messages from runtime session', async () => {
     const provider = createRallarRtcProviderFromRuntime({
         connect: (_args, dispatcher) => {
             return {
@@ -1248,14 +1243,14 @@ Deno.test('createRallarRtcProviderFromRuntime supports ordered expect.messages f
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].actual.ordered, true);
-    assertEquals(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].actual.consumed, true);
-    assertEquals(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].actual.matchedMessages.length, 2);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].actual.ordered).toEqual(true);
+    expect(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].actual.consumed).toEqual(true);
+    expect(report.resultsByName.aliceReceivesOrderedRuntimeMessages[0].actual.matchedMessages.length).toEqual(2);
 });
 
-Deno.test('createRallarRtcProviderFromRuntime supports rtc.wait expect.close from runtime session', async () => {
+test('createRallarRtcProviderFromRuntime supports rtc.wait expect.close from runtime session', async () => {
     const provider = createRallarRtcProviderFromRuntime({
         connect: (_args, dispatcher) => {
             return {
@@ -1335,13 +1330,13 @@ Deno.test('createRallarRtcProviderFromRuntime supports rtc.wait expect.close fro
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForRuntimeClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForRuntimeClose[0].actual.matchedCloseEvent.event.reason, 'closed by runtime provider');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForRuntimeClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForRuntimeClose[0].actual.matchedCloseEvent.event.reason).toEqual('closed by runtime provider');
 });
 
-Deno.test('createRallarRtcProviderFromRuntime reports runtime connect failure through scenario result', async () => {
+test('createRallarRtcProviderFromRuntime reports runtime connect failure through scenario result', async () => {
     const provider = createRallarRtcProviderFromRuntime({
         connect: () => {
             throw new Error('runtime connect failed');
@@ -1374,13 +1369,13 @@ Deno.test('createRallarRtcProviderFromRuntime reports runtime connect failure th
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(report.resultsByName.connectAlice[0].actual.exception, 'runtime connect failed');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('runtime connect failed');
 });
 
-Deno.test('createRallarRtcProviderFromRuntime reports runtime send failure through scenario result', async () => {
+test('createRallarRtcProviderFromRuntime reports runtime send failure through scenario result', async () => {
     const provider = createRallarRtcProviderFromRuntime({
         connect: () => {
             return {
@@ -1438,13 +1433,13 @@ Deno.test('createRallarRtcProviderFromRuntime reports runtime send failure throu
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSends[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSends[0].result, 'RTC send failed');
-    assertEquals(report.resultsByName.aliceSends[0].actual.exception, 'runtime send failed');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSends[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSends[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSends[0].actual.exception).toEqual('runtime send failed');
 });
 
-Deno.test('createRallarRtcProviderFromRuntime reports runtime close failure through scenario result', async () => {
+test('createRallarRtcProviderFromRuntime reports runtime close failure through scenario result', async () => {
     const provider = createRallarRtcProviderFromRuntime({
         connect: () => {
             return {
@@ -1499,8 +1494,8 @@ Deno.test('createRallarRtcProviderFromRuntime reports runtime close failure thro
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.closeAlice[0].result, 'RTC close failed');
-    assertEquals(report.resultsByName.closeAlice[0].actual.exception, 'runtime close failed');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.closeAlice[0].result).toEqual('RTC close failed');
+    expect(report.resultsByName.closeAlice[0].actual.exception).toEqual('runtime close failed');
 });
