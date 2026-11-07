@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type {
@@ -9,7 +10,7 @@ import { startApiRtcTopologyDelivery } from '../../src/runtime/rtc-topology/rtc-
 
 const STREAM_ID = '00000000-0000-4000-8000-000000000001';
 
-Deno.test('API topology delivery startup rejects stream identity collision before readiness', async () => {
+test('API topology delivery startup rejects stream identity collision before readiness', async () => {
     const scheduled: number[] = [];
     const lifecycle = startApiRtcTopologyDelivery({
         streamId: STREAM_ID,
@@ -23,7 +24,7 @@ Deno.test('API topology delivery startup rejects stream identity collision befor
     lifecycle.stop();
 });
 
-Deno.test('API topology delivery startup exposes typed post-readiness lease loss', async () => {
+test('API topology delivery startup exposes typed post-readiness lease loss', async () => {
     const tasks = new Map<number, () => Promise<void>>();
     const lifecycle = startApiRtcTopologyDelivery({
         streamId: STREAM_ID,

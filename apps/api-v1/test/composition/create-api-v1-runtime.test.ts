@@ -12,6 +12,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
@@ -34,7 +35,7 @@ import { waitFor } from '../db/pglite-traced-rallar-test-runtime.ts';
 
 const SCOPE = { applicationId: 'composition-app', workspaceId: 'default' };
 
-Deno.test('runtime rejects missing room bindings and invalid lease margins before SQL or background startup', () => {
+test('runtime rejects missing room bindings and invalid lease margins before SQL or background startup', () => {
     let effects = 0;
     const unreachable = (): never => {
         effects += 1;
@@ -58,7 +59,7 @@ Deno.test('runtime rejects missing room bindings and invalid lease margins befor
     assert.equal(effects, 0);
 });
 
-Deno.test('real runtime commits a party notice through AppInbox and sends only to its authenticated own account', async () => {
+test('real runtime commits a party notice through AppInbox and sends only to its authenticated own account', async () => {
     const fixture = await createFixture();
     try {
         const alice = await connectAccount(fixture.runtime, 'alice', fixture.releases);
@@ -104,7 +105,7 @@ Deno.test('real runtime commits a party notice through AppInbox and sends only t
     }
 });
 
-Deno.test('real runtime resubscribing either PostgreSQL listener resyncs unchanged authenticated sockets only', async () => {
+test('real runtime resubscribing either PostgreSQL listener resyncs unchanged authenticated sockets only', async () => {
     const fixture = await createFixture();
     try {
         const alice = await connectAccount(fixture.runtime, 'alice', fixture.releases);

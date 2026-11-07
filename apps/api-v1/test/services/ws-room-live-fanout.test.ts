@@ -1,4 +1,5 @@
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -28,7 +29,7 @@ import {
 import { putRoomSnapshot } from './ws-room-test-runtime.ts';
 
 for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const) {
-    Deno.test(`API authorized room fanout survives ${cacheState} cache`, async () => {
+    test(`API authorized room fanout survives ${cacheState} cache`, async () => {
         const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
         const runtime = createLiveRoomRuntime(Date.now());
         try {
@@ -61,7 +62,7 @@ for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const)
     });
 }
 
-Deno.test('API authorized broadcast keeps exclusions and closed connections out of the live audience', async () => {
+test('API authorized broadcast keeps exclusions and closed connections out of the live audience', async () => {
     const snapshot = createGroupSnapshot(2, ['closed-session', 'session-1', 'session-2']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -87,7 +88,7 @@ Deno.test('API authorized broadcast keeps exclusions and closed connections out 
     }
 });
 
-Deno.test('authorized room authority requires the exact application, workspace, and room identity', async () => {
+test('authorized room authority requires the exact application, workspace, and room identity', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -114,7 +115,7 @@ Deno.test('authorized room authority requires the exact application, workspace, 
     }
 });
 
-Deno.test('room authority checks leases again after asynchronous topic handlers', async () => {
+test('room authority checks leases again after asynchronous topic handlers', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -134,7 +135,7 @@ Deno.test('room authority checks leases again after asynchronous topic handlers'
     }
 });
 
-Deno.test('same-tuple authoritative disconnect removes a recipient despite the cached summary', async () => {
+test('same-tuple authoritative disconnect removes a recipient despite the cached summary', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -163,7 +164,7 @@ Deno.test('same-tuple authoritative disconnect removes a recipient despite the c
     }
 });
 
-Deno.test('transformed proxy targets and public publishes never inherit room authority', async () => {
+test('transformed proxy targets and public publishes never inherit room authority', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -200,7 +201,7 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
     }
 });
 
-Deno.test('outbox fanout keeps the original message and uses its existing queue path', async () => {
+test('outbox fanout keeps the original message and uses its existing queue path', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -240,7 +241,7 @@ Deno.test('outbox fanout keeps the original message and uses its existing queue 
     }
 });
 
-Deno.test('a WS-carried room multicast reaches the other admitted members live and never echoes to its origin', async () => {
+test('a WS-carried room multicast reaches the other admitted members live and never echoes to its origin', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -279,7 +280,7 @@ Deno.test('a WS-carried room multicast reaches the other admitted members live a
     }
 });
 
-Deno.test('a live-only receiver room multicast answers its origin with the admitted audience and the complete receipt', async () => {
+test('a live-only receiver room multicast answers its origin with the admitted audience and the complete receipt', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -315,7 +316,7 @@ Deno.test('a live-only receiver room multicast answers its origin with the admit
     }
 });
 
-Deno.test('generic custom authorization retains its configured resolver without group storage', async () => {
+test('generic custom authorization retains its configured resolver without group storage', async () => {
     const runtime = createLiveRoomRuntime(Date.now());
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,

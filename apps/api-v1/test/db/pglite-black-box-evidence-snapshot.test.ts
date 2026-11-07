@@ -1,9 +1,12 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPGliteBlackBoxSnapshotPublisher } from '../../src/db/pglite-black-box-evidence-snapshot.ts';
 
-Deno.test('PGlite black-box snapshot publishing atomically publishes a fresh archive', async () => {
-    const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+test('PGlite black-box snapshot publishing atomically publishes a fresh archive', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
     let resolveDump: ((value: Blob) => void) | undefined;
     const dump = new Promise<Blob>((resolve) => {
         resolveDump = resolve;
@@ -16,49 +19,50 @@ Deno.test('PGlite black-box snapshot publishing atomically publishes a fresh arc
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
     }
-    assert.equal((await Deno.stat(root)).mode! & 0o777, 0o700);
+    assert.equal((await stat(root)).mode! & 0o777, 0o700);
     const request = {
         nonce: 'freshsnapshot',
         generation: 'generationone',
         requestedAtEpochMs: Date.now()
     };
     const requestPath = join(root, 'requests', `${request.nonce}.json`);
-    await Deno.writeTextFile(`${requestPath}.part`, JSON.stringify(request), { mode: 0o600 });
-    await Deno.rename(`${requestPath}.part`, requestPath);
-    assert.equal((await Deno.stat(requestPath)).mode! & 0o777, 0o600);
+    await writeFile(`${requestPath}.part`, JSON.stringify(request), { mode: 0o600 });
+    await rename(`${requestPath}.part`, requestPath);
+    assert.equal((await stat(requestPath)).mode! & 0o777, 0o600);
 
     const publishing = publisher.publishPendingSnapshots();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await assert.rejects(() => Deno.stat(join(root, 'responses', `${request.nonce}.json`)));
+    await assert.rejects(() => stat(join(root, 'responses', `${request.nonce}.json`)));
 
     resolveDump?.(new Blob(['snapshot-body']));
     await publishing;
     const response = JSON.parse(
-        await Deno.readTextFile(
-            join(root, 'responses', `${request.nonce}.json`)
+        await readFile(
+            join(root, 'responses', `${request.nonce}.json`),
+            'utf8'
         )
     );
     assert.equal(response.nonce, request.nonce);
     assert.equal(response.generation, request.generation);
     assert.ok(response.publishedAtEpochMs > request.requestedAtEpochMs);
     assert.equal(
-        (await Deno.stat(join(root, 'responses', `${request.nonce}.json`))).mode! & 0o777,
+        (await stat(join(root, 'responses', `${request.nonce}.json`))).mode! & 0o777,
         0o600
     );
     assert.equal(
-        (await Deno.stat(join(root, 'snapshots', `${request.nonce}.tar`))).mode! & 0o777,
+        (await stat(join(root, 'snapshots', `${request.nonce}.tar`))).mode! & 0o777,
         0o600
     );
     assert.equal(
-        await Deno.readTextFile(join(root, 'snapshots', `${request.nonce}.tar`)),
+        await readFile(join(root, 'snapshots', `${request.nonce}.tar`), 'utf8'),
         'snapshot-body'
     );
-    await assert.rejects(() => Deno.stat(requestPath));
-    await Deno.remove(root, { recursive: true });
+    await assert.rejects(() => stat(requestPath));
+    await rm(root, { recursive: true });
 });
 
-Deno.test('PGlite black-box snapshot publishing discards a dump when its request is cancelled', async () => {
-    const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+test('PGlite black-box snapshot publishing discards a dump when its request is cancelled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
     let resolveDump: ((value: Blob) => void) | undefined;
     const dump = new Promise<Blob>((resolve) => {
         resolveDump = resolve;
@@ -77,21 +81,21 @@ Deno.test('PGlite black-box snapshot publishing discards a dump when its request
         requestedAtEpochMs: Date.now()
     };
     const requestPath = join(root, 'requests', `${request.nonce}.json`);
-    await Deno.writeTextFile(requestPath, JSON.stringify(request));
+    await writeFile(requestPath, JSON.stringify(request));
 
     const publishing = publisher.publishPendingSnapshots();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await Deno.remove(requestPath);
+    await rm(requestPath);
     resolveDump?.(new Blob(['snapshot-body']));
     await publishing;
 
-    await assert.rejects(() => Deno.stat(join(root, 'responses', `${request.nonce}.json`)));
-    await assert.rejects(() => Deno.stat(join(root, 'snapshots', `${request.nonce}.tar`)));
-    await Deno.remove(root, { recursive: true });
+    await assert.rejects(() => stat(join(root, 'responses', `${request.nonce}.json`)));
+    await assert.rejects(() => stat(join(root, 'snapshots', `${request.nonce}.tar`)));
+    await rm(root, { recursive: true });
 });
 
-Deno.test('PGlite black-box snapshot publishing honours a cancellation marker before archive publication', async () => {
-    const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+test('PGlite black-box snapshot publishing honours a cancellation marker before archive publication', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
     let dumpCalls = 0;
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
         dumpDataDir: () => {
@@ -109,29 +113,29 @@ Deno.test('PGlite black-box snapshot publishing honours a cancellation marker be
         generation: 'generation-four',
         requestedAtEpochMs: Date.now()
     };
-    await Deno.writeTextFile(
+    await writeFile(
         join(root, 'requests', `${request.nonce}.json`),
         JSON.stringify(request)
     );
-    await Deno.writeTextFile(join(root, 'requests', `${request.nonce}.orphan.part`), 'orphan');
-    await Deno.writeTextFile(join(root, 'responses', `${request.nonce}.orphan.part`), 'orphan');
-    await Deno.writeTextFile(join(root, 'snapshots', `${request.nonce}.orphan.part`), 'orphan');
-    await Deno.writeTextFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
+    await writeFile(join(root, 'requests', `${request.nonce}.orphan.part`), 'orphan');
+    await writeFile(join(root, 'responses', `${request.nonce}.orphan.part`), 'orphan');
+    await writeFile(join(root, 'snapshots', `${request.nonce}.orphan.part`), 'orphan');
+    await writeFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
 
     await publisher.publishPendingSnapshots();
 
     assert.equal(dumpCalls, 0);
     for (const directory of ['requests', 'responses', 'snapshots']) {
         assert.deepEqual(
-            (await Array.fromAsync(Deno.readDir(join(root, directory)))).map((entry) => entry.name),
+            (await (await readdir(join(root, directory), { withFileTypes: true }))).map((entry) => entry.name),
             []
         );
     }
-    await Deno.remove(root, { recursive: true });
+    await rm(root, { recursive: true });
 });
 
-Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellation arrives after archive', async () => {
-    const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+test('PGlite black-box snapshot publishing removes artifacts when cancellation arrives after archive', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
     const request = {
         nonce: 'cancel-after-archive',
         generation: 'generation-five',
@@ -143,34 +147,34 @@ Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellat
         directory: root,
         publicationHooks: {
             afterArchive: async () => {
-                await Deno.writeTextFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
+                await writeFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
             }
         }
     });
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
     }
-    await Deno.writeTextFile(
+    await writeFile(
         join(root, 'requests', `${request.nonce}.json`),
         JSON.stringify(request)
     );
-    await Deno.writeTextFile(join(root, 'requests', `${request.nonce}.orphan.part`), 'orphan');
-    await Deno.writeTextFile(join(root, 'responses', `${request.nonce}.orphan.part`), 'orphan');
-    await Deno.writeTextFile(join(root, 'snapshots', `${request.nonce}.orphan.part`), 'orphan');
+    await writeFile(join(root, 'requests', `${request.nonce}.orphan.part`), 'orphan');
+    await writeFile(join(root, 'responses', `${request.nonce}.orphan.part`), 'orphan');
+    await writeFile(join(root, 'snapshots', `${request.nonce}.orphan.part`), 'orphan');
 
     await publisher.publishPendingSnapshots();
 
     for (const directory of ['requests', 'responses', 'snapshots']) {
         assert.deepEqual(
-            (await Array.fromAsync(Deno.readDir(join(root, directory)))).map((entry) => entry.name),
+            (await (await readdir(join(root, directory), { withFileTypes: true }))).map((entry) => entry.name),
             []
         );
     }
-    await Deno.remove(root, { recursive: true });
+    await rm(root, { recursive: true });
 });
 
-Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellation arrives after response', async () => {
-    const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+test('PGlite black-box snapshot publishing removes artifacts when cancellation arrives after response', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
     const request = {
         nonce: 'cancel-after-response',
         generation: 'generation-seven',
@@ -182,14 +186,14 @@ Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellat
         directory: root,
         publicationHooks: {
             afterResponse: async () => {
-                await Deno.writeTextFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
+                await writeFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
             }
         }
     });
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
     }
-    await Deno.writeTextFile(
+    await writeFile(
         join(root, 'requests', `${request.nonce}.json`),
         JSON.stringify(request)
     );
@@ -198,15 +202,15 @@ Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellat
 
     for (const directory of ['requests', 'responses', 'snapshots']) {
         assert.deepEqual(
-            (await Array.fromAsync(Deno.readDir(join(root, directory)))).map((entry) => entry.name),
+            (await (await readdir(join(root, directory), { withFileTypes: true }))).map((entry) => entry.name),
             []
         );
     }
-    await Deno.remove(root, { recursive: true });
+    await rm(root, { recursive: true });
 });
 
-Deno.test('PGlite black-box snapshot publishing records dump failures without publishing an archive', async () => {
-    const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+test('PGlite black-box snapshot publishing records dump failures without publishing an archive', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
         dumpDataDir: () => Promise.reject(new Error('dump failed'))
     } as never, {
@@ -220,24 +224,25 @@ Deno.test('PGlite black-box snapshot publishing records dump failures without pu
         generation: 'generationtwo',
         requestedAtEpochMs: Date.now()
     };
-    await Deno.writeTextFile(
+    await writeFile(
         join(root, 'requests', `${request.nonce}.json`),
         JSON.stringify(request)
     );
 
     await publisher.publishPendingSnapshots();
     const response = JSON.parse(
-        await Deno.readTextFile(
-            join(root, 'responses', `${request.nonce}.json`)
+        await readFile(
+            join(root, 'responses', `${request.nonce}.json`),
+            'utf8'
         )
     );
     assert.match(response.failure, /dump failed/u);
-    await assert.rejects(() => Deno.stat(join(root, 'snapshots', `${request.nonce}.tar`)));
-    await Deno.remove(root, { recursive: true });
+    await assert.rejects(() => stat(join(root, 'snapshots', `${request.nonce}.tar`)));
+    await rm(root, { recursive: true });
 });
 
-Deno.test('PGlite black-box snapshot publishing does not publish a failure response after cancellation', async () => {
-    const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+test('PGlite black-box snapshot publishing does not publish a failure response after cancellation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
     const request = {
         nonce: 'cancelled-failure',
         generation: 'generation-six',
@@ -245,7 +250,7 @@ Deno.test('PGlite black-box snapshot publishing does not publish a failure respo
     };
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
         dumpDataDir: async () => {
-            await Deno.writeTextFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
+            await writeFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
             throw new Error('dump failed after cancellation');
         }
     } as never, {
@@ -254,7 +259,7 @@ Deno.test('PGlite black-box snapshot publishing does not publish a failure respo
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
     }
-    await Deno.writeTextFile(
+    await writeFile(
         join(root, 'requests', `${request.nonce}.json`),
         JSON.stringify(request)
     );
@@ -263,11 +268,11 @@ Deno.test('PGlite black-box snapshot publishing does not publish a failure respo
 
     for (const directory of ['requests', 'responses', 'snapshots']) {
         assert.deepEqual(
-            (await Array.fromAsync(Deno.readDir(join(root, directory)))).map((entry) => entry.name),
+            (await (await readdir(join(root, directory), { withFileTypes: true }))).map((entry) => entry.name),
             []
         );
     }
-    await Deno.remove(root, { recursive: true });
+    await rm(root, { recursive: true });
 });
 
 for (
@@ -342,8 +347,8 @@ for (
         }
     ] as const
 ) {
-    Deno.test(`PGlite black-box snapshot publishing cleans artifacts after ${failure.name} failure`, async () => {
-        const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
+    test(`PGlite black-box snapshot publishing cleans artifacts after ${failure.name} failure`, async () => {
+        const root = await mkdtemp(join(tmpdir(), 'pglite-evidence-snapshot-'));
         const request = {
             nonce: `failure-${failure.name.replaceAll(' ', '-')}`,
             generation: 'generation-eight',
@@ -359,7 +364,7 @@ for (
         if (!publisher) {
             throw new Error('Expected private snapshot publisher.');
         }
-        await Deno.writeTextFile(
+        await writeFile(
             join(root, 'requests', `${request.nonce}.json`),
             JSON.stringify(request)
         );
@@ -367,24 +372,24 @@ for (
         await publisher.publishPendingSnapshots();
 
         assert.deepEqual(
-            (await Array.fromAsync(Deno.readDir(join(root, 'requests')))).map((entry) => entry.name),
+            (await (await readdir(join(root, 'requests'), { withFileTypes: true }))).map((entry) => entry.name),
             []
         );
         assert.deepEqual(
-            (await Array.fromAsync(Deno.readDir(join(root, 'snapshots')))).map((entry) => entry.name),
+            (await (await readdir(join(root, 'snapshots'), { withFileTypes: true }))).map((entry) => entry.name),
             []
         );
-        const responseNames = (await Array.fromAsync(Deno.readDir(join(root, 'responses')))).map(
+        const responseNames = (await (await readdir(join(root, 'responses'), { withFileTypes: true }))).map(
             (entry) => entry.name
         );
         assert.equal(responseNames.some((name) => name.endsWith('.part')), false);
         assert.equal(responseNames.length === 1, failure.leavesFailureResponse);
         if (failure.leavesFailureResponse) {
             assert.match(
-                await Deno.readTextFile(join(root, 'responses', `${request.nonce}.json`)),
+                await readFile(join(root, 'responses', `${request.nonce}.json`), 'utf8'),
                 /failure/u
             );
         }
-        await Deno.remove(root, { recursive: true });
+        await rm(root, { recursive: true });
     });
 }

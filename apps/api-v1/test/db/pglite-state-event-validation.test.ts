@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -13,7 +14,7 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createResourceEntry } from './pglite-queue-crdt-test-runtime.ts';
 import { createGroupStateEvent } from './pglite-state-mutation-test-runtime.ts';
 
-Deno.test('PSql group event reads fail closed on a wrong-scope payload', async () => {
+test('PSql group event reads fail closed on a wrong-scope payload', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlGroupStateEventRepository(sql);
         const expectedRef = {
@@ -57,7 +58,7 @@ Deno.test('PSql group event reads fail closed on a wrong-scope payload', async (
     });
 });
 
-Deno.test(
+test(
     'PSql group event reads reject an incomplete current contract',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -106,7 +107,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PSql group event reads reject explicit null identities and payloads',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -157,7 +158,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSql group event reads validate the decoded event-id slot', async () => {
+test('PSql group event reads validate the decoded event-id slot', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlGroupStateEventRepository(sql);
         const ref = {
@@ -193,7 +194,7 @@ Deno.test('PSql group event reads validate the decoded event-id slot', async () 
     });
 });
 
-Deno.test(
+test(
     'PSql group events enforce the complete event contract and physical columns',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -273,7 +274,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSqlResourceInboxRepository rejects a persisted null attempt count', async () => {
+test('PSqlResourceInboxRepository rejects a persisted null attempt count', async () => {
     await withPGliteSql(async (sql) => {
         const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const nullAttempts = createResourceEntry('null-attempts', {
@@ -297,7 +298,7 @@ Deno.test('PSqlResourceInboxRepository rejects a persisted null attempt count', 
     });
 });
 
-Deno.test('PSqlResourceInboxRepository replay is independent of PostgreSQL DateStyle', async () => {
+test('PSqlResourceInboxRepository replay is independent of PostgreSQL DateStyle', async () => {
     await withPGliteSql(async (sql) => {
         await sql`set datestyle to 'SQL, DMY'`;
 
@@ -355,7 +356,7 @@ Deno.test('PSqlResourceInboxRepository replay is independent of PostgreSQL DateS
     });
 });
 
-Deno.test('PSqlResourceInboxRepository preserves supported expanded-year rollover', async () => {
+test('PSqlResourceInboxRepository preserves supported expanded-year rollover', async () => {
     await withPGliteSql(async (sql) => {
         await sql`set datestyle to 'SQL, DMY'`;
 
@@ -389,7 +390,7 @@ Deno.test('PSqlResourceInboxRepository preserves supported expanded-year rollove
     });
 });
 
-Deno.test(
+test(
     'PGlite reclaims stale AppInbox exhaustion as an exact finalization generation',
     async () => {
         await withPGliteSql(async (sql) => {

@@ -137,61 +137,86 @@ export class JsonWebSocketServer {
     // --------------------
 
     addConnection(ctx: ConnectionContext): void {
+        this.registerConnection(ctx);
+        this.addAllEventListeners(ctx);
+    }
+
+    /** Registers a connection whose events a runtime boundary dispatches itself (no addEventListener on the socket). */
+    registerConnection(ctx: ConnectionContext): void {
         const existing = this.connections.get(ctx.id);
         this.connections.set(ctx.id, ctx);
-
-        this.addAllEventListeners(ctx);
         if (existing && existing !== ctx) {
             this.closeContext(existing, 1000, 'connection-replaced');
         }
     }
 
-    private addAllEventListeners(ctx: ConnectionContext) {
-        ctx.socket.addEventListener('open', (_: Event) => {
-            this.expectedConnections.open({ id: ctx.id, generationId: ctx.generationId });
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    cb.onConnection?.(ctx);
-                }
-                catch (e) {
-                    console.error('Callback onConnection failed:', e);
-                }
-            }
-        });
-
+    private addAllEventListeners(ctx: ConnectionContext): void {
+        ctx.socket.addEventListener('open', () => this.dispatchConnectionOpen(ctx));
         ctx.socket.addEventListener('message', (event: MessageEvent) => this.dispatchMessage(ctx, event));
+        ctx.socket.addEventListener('error', (ev: Event) => this.dispatchConnectionError(ctx, ev));
+        ctx.socket.addEventListener('close', (ev: CloseEvent) => this.dispatchConnectionClose(ctx, ev));
+    }
 
-        ctx.socket.addEventListener('error', (ev: Event) => {
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    cb.onError?.(ctx, ev);
-                }
-                catch (e) {
-                    console.error('Callback onError failed:', e);
+    /** Runtime-boundary entry points mirroring the socket events the addEventListener path attaches. */
+
+    handleConnectionOpen(ctx: ConnectionContext): void {
+        this.dispatchConnectionOpen(ctx);
+    }
+
+    handleConnectionMessage(ctx: ConnectionContext, data: unknown): Promise<void> {
+        return this.dispatchMessage(ctx, { data } as MessageEvent);
+    }
+
+    handleConnectionError(ctx: ConnectionContext, error: unknown): void {
+        this.dispatchConnectionError(ctx, error as Event);
+    }
+
+    handleConnectionClose(ctx: ConnectionContext, code?: number, reason?: string): void {
+        this.dispatchConnectionClose(ctx, { code, reason } as CloseEvent);
+    }
+
+    private dispatchConnectionOpen(ctx: ConnectionContext): void {
+        this.expectedConnections.open({ id: ctx.id, generationId: ctx.generationId });
+        for (const cb of this.webSocketServerCallbacks.values()) {
+            try {
+                cb.onConnection?.(ctx);
+            }
+            catch (e) {
+                console.error('Callback onConnection failed:', e);
+            }
+        }
+    }
+
+    private dispatchConnectionError(ctx: ConnectionContext, ev: Event): void {
+        for (const cb of this.webSocketServerCallbacks.values()) {
+            try {
+                cb.onError?.(ctx, ev);
+            }
+            catch (e) {
+                console.error('Callback onError failed:', e);
+            }
+        }
+    }
+
+    private dispatchConnectionClose(ctx: ConnectionContext, ev: CloseEvent): void {
+        if (this.connections.get(ctx.id) === ctx) {
+            this.connections.delete(ctx.id);
+        }
+        this.expectedConnections.release({ id: ctx.id, generationId: ctx.generationId });
+
+        for (const cb of this.webSocketServerCallbacks.values()) {
+            try {
+                const completion = cb.onClose?.(ctx, ev);
+                if (completion) {
+                    void Promise.resolve(completion).catch((error) => {
+                        console.error('Callback onClose failed:', error);
+                    });
                 }
             }
-        });
-
-        ctx.socket.addEventListener('close', (ev: CloseEvent) => {
-            if (this.connections.get(ctx.id) === ctx) {
-                this.connections.delete(ctx.id);
+            catch (e) {
+                console.error('Callback onClose failed:', e);
             }
-            this.expectedConnections.release({ id: ctx.id, generationId: ctx.generationId });
-
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    const completion = cb.onClose?.(ctx, ev);
-                    if (completion) {
-                        void Promise.resolve(completion).catch((error) => {
-                            console.error('Callback onClose failed:', error);
-                        });
-                    }
-                }
-                catch (e) {
-                    console.error('Callback onClose failed:', e);
-                }
-            }
-        });
+        }
     }
 
     private async dispatchMessage(ctx: ConnectionContext, event: MessageEvent): Promise<void> {

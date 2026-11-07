@@ -5,9 +5,7 @@ import type {
     ApiV1ConfigurationSourceValue
 } from './decode-api-v1-configuration-source.ts';
 
-export interface ApiV1ConfigurationEnvironment {
-    get(name: string): string | undefined;
-}
+export type ApiV1ConfigurationEnvironment = Readonly<Record<string, string | undefined>>;
 
 export interface ApiV1ConfigurationEnvironmentResolution {
     readonly profileName: ApiV1ConfigurationProfile['name'];
@@ -69,7 +67,7 @@ export function readApiV1ConfigurationEnvironment(
     const environmentSource = createEnvironmentOverlay();
     const appliedEnvironmentOverrideNames: string[] = [];
     for (const setting of ENVIRONMENT_SETTINGS) {
-        const raw = environment.get(setting.name);
+        const raw = environment[setting.name];
         if (raw === undefined) {
             continue;
         }
@@ -78,7 +76,7 @@ export function readApiV1ConfigurationEnvironment(
     }
     const secretsSource: MutableSourceObject = {};
     for (const [name, key] of SECRET_SETTING_KEYS) {
-        const value = environment.get(name);
+        const value = environment[name];
         if (value !== undefined) {
             secretsSource[key] = value;
         }
@@ -94,7 +92,7 @@ export function readApiV1ConfigurationEnvironment(
 function readProfileName(
     environment: ApiV1ConfigurationEnvironment
 ): ApiV1ConfigurationProfile['name'] {
-    const value = environment.get('RALLAR_API_CONFIGURATION_PROFILE');
+    const value = environment['RALLAR_API_CONFIGURATION_PROFILE'];
     if (value === undefined) {
         return 'dev';
     }

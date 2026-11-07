@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
@@ -12,7 +13,7 @@ import {
     withStrictGroupStateRouteReadAuth
 } from './group-state-route-test-runtime.ts';
 
-Deno.test('group route errors retain policy details and structured AppInbox status', async () => {
+test('group route errors retain policy details and structured AppInbox status', async () => {
     const policyError = new GroupPolicyDeniedError({
         allowed: false,
         code: 'group-invite-required',
@@ -58,7 +59,7 @@ function createErrorResponseContext(): {
     };
 }
 
-Deno.test('group route adapter preserves canonical AppInbox status code and message', async () => {
+test('group route adapter preserves canonical AppInbox status code and message', async () => {
     const failure = Object.assign(
         new Error('Group mutation command differs for request same-request'),
         {
@@ -103,7 +104,7 @@ Deno.test('group route adapter preserves canonical AppInbox status code and mess
     });
 });
 
-Deno.test('group state routes return stable policy error codes when available', async () => {
+test('group state routes return stable policy error codes when available', async () => {
     await withStrictGroupStateRouteReadAuth(false, async () => {
         const { app } = createRejectingGroupStateRouteTestRuntime({
             session: createLiveGroupStateRouteAuthSession('alice'),
@@ -135,7 +136,7 @@ Deno.test('group state routes return stable policy error codes when available', 
     });
 });
 
-Deno.test('group mutation routes return stable lifecycle policy error codes', async () => {
+test('group mutation routes return stable lifecycle policy error codes', async () => {
     await withStrictGroupStateRouteReadAuth(false, async () => {
         const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
         const ownerSnapshot: GroupSnapshot = {

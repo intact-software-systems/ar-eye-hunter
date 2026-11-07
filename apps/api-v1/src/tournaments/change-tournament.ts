@@ -5,7 +5,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
 import { decodeTournamentRef } from '@shared/api/tournaments/decode-tournament-match-binding.ts';
 import { decodeTournamentRequest } from '@shared/api/tournaments/tournament-request.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { Context } from 'jsr:@hono/hono@4.11.9';
+import type { Context } from 'hono';
 import {
     toApiMutationFailureResponse,
     toApiMutationRateLimitResponse,

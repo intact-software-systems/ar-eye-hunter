@@ -16,13 +16,15 @@ export interface GroupStateRouteRequestContext {
 type GroupStateRouteRequestBodyRead = Either<ApiMutationRouteFailure, ApiMutationFailureJsonValue>;
 
 /** The transport failures a body read raises when the client aborts or drops the request mid-body. */
-const ABORTED_REQUEST_BODY_ERRORS = [
-    Deno.errors.BadResource,
-    Deno.errors.Http,
-    Deno.errors.ConnectionReset,
-    Deno.errors.UnexpectedEof,
-    Deno.errors.Interrupted
-] as const;
+function isAbortedRequestBodyError(error: unknown): boolean {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+        return true;
+    }
+    if (error instanceof Error) {
+        return error.name === 'AbortError' || (error as NodeJS.ErrnoException).code === 'ABORT_ERR';
+    }
+    return false;
+}
 
 export async function readGroupStateRouteRequest<T extends { requestId?: string; }>(
     context: GroupStateRouteRequestContext
@@ -55,7 +57,7 @@ async function readGroupStateRouteRequestBody(
         return Either.ofRight(body);
     }
     catch (error) {
-        if (!ABORTED_REQUEST_BODY_ERRORS.some((abortedError) => error instanceof abortedError)) {
+        if (!isAbortedRequestBodyError(error)) {
             throw error;
         }
         return Either.ofLeft(

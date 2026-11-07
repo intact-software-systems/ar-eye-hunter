@@ -7,7 +7,8 @@ import {
 import type { StateSyncCacheHydrationInput } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -135,7 +136,7 @@ function createGroupListRouteApp(
     return app;
 }
 
-Deno.test('canonical group read registrar uses resolved route dependencies', async () => {
+test('canonical group read registrar uses resolved route dependencies', async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const app = new Hono();
     const dependencies = createGroupStateRouteTestDependencies({
@@ -160,7 +161,7 @@ Deno.test('canonical group read registrar uses resolved route dependencies', asy
     assert.deepEqual(await response.json(), snapshot);
 });
 
-Deno.test(
+test(
     'canonical group read authorization uses its resolved strict-read configuration',
     async () => {
         const app = new Hono();
@@ -188,7 +189,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'canonical group list reads filter snapshots with strict-read authorization',
     async () => {
         const allowedSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
@@ -220,7 +221,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'group point reads retain normal, missing, and non-blocking cache cleanup exits',
     async () => {
         const snapshot = createGroupStateRouteSnapshot('room-1');
@@ -265,7 +266,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'group event routes use bounded recent listing and paged listing owners',
     async () => {
         const event = createGroupStateRouteEvent('event-1');
@@ -296,7 +297,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'strict state read routes allow active group members and reject non-members',
     async () => {
         const memberSnapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
@@ -328,7 +329,7 @@ Deno.test(
     }
 );
 
-Deno.test('group snapshot reads probe durable state instead of trusting a warm cache', async () => {
+test('group snapshot reads probe durable state instead of trusting a warm cache', async () => {
     const staleSnapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
     const currentSnapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
     let cachedReadCount = 0;
@@ -359,7 +360,7 @@ Deno.test('group snapshot reads probe durable state instead of trusting a warm c
     assert.equal(currentReadCount, 1);
 });
 
-Deno.test('strict group reads reject banned members for snapshots and events', async () => {
+test('strict group reads reject banned members for snapshots and events', async () => {
     const bannedSnapshot = createGroupStateRouteSnapshotWithMember(
         'room-1',
         'alice',
@@ -389,7 +390,7 @@ Deno.test('strict group reads reject banned members for snapshots and events', a
     assert.equal((await snapshotResponse.json()).code, 'member-banned');
 });
 
-Deno.test('strict group reads use shared full-state visibility policy', async () => {
+test('strict group reads use shared full-state visibility policy', async () => {
     const invitedSnapshot = createGroupStateRouteSnapshotWithMember(
         'room-invited',
         'alice',
@@ -433,7 +434,7 @@ Deno.test('strict group reads use shared full-state visibility policy', async ()
     assert.equal((await deletedSnapshotResponse.json()).code, 'group-deleted');
 });
 
-Deno.test('a strict group list serves the caller\'s groups exactly as the workspace scan and readability filter', async () => {
+test('a strict group list serves the caller\'s groups exactly as the workspace scan and readability filter', async () => {
     const seeded = await createSeededGroupStateService(SEEDED_WORKSPACE);
     const scanned = (await seeded.service.listSnapshots(TEST_GROUP_SCOPE))
         .filter((snapshot) => isGroupStateRouteSnapshotReadable(snapshot, 'alice'));
@@ -450,7 +451,7 @@ Deno.test('a strict group list serves the caller\'s groups exactly as the worksp
     assert.equal(seeded.calls.listSnapshotsForPrincipal, 1);
 });
 
-Deno.test('a non-strict group list keeps the workspace scan', async () => {
+test('a non-strict group list keeps the workspace scan', async () => {
     const seeded = await createSeededGroupStateService(SEEDED_WORKSPACE);
 
     const response = await createGroupListRouteApp(seeded.service, { strictReadAuthorization: false })
@@ -471,7 +472,7 @@ Deno.test('a non-strict group list keeps the workspace scan', async () => {
     assert.equal(seeded.calls.listSnapshotsForPrincipal, 0);
 });
 
-Deno.test('a group list hydrates only snapshots the state-sync cache does not already hold', async () => {
+test('a group list hydrates only snapshots the state-sync cache does not already hold', async () => {
     const held = createGroupStateRouteSnapshot('room-held', ['alice']);
     const advanced = createGroupStateRouteSnapshot('room-advanced', ['alice']);
     const incomparable = createGroupStateRouteSnapshot('room-incomparable', ['alice']);
@@ -499,7 +500,7 @@ Deno.test('a group list hydrates only snapshots the state-sync cache does not al
     );
 });
 
-Deno.test('a group list whose revisions are all held does not hydrate', async () => {
+test('a group list whose revisions are all held does not hydrate', async () => {
     const held = createGroupStateRouteSnapshot('room-held', ['alice']);
     const hydrated: StateSyncCacheHydrationInput[] = [];
     const service = (await createSeededGroupStateService([])).service;

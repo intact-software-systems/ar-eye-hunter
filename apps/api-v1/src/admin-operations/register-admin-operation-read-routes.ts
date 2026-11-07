@@ -15,7 +15,7 @@ import { ADMIN_METRICS_RESET_CATEGORIES } from '@shared/api/admin-operations-typ
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { RallarCrdtDebugBundle, RallarCrdtIntegrityReport } from '@shared/crdt/mod.ts';
-import { type Context, type Hono } from 'jsr:@hono/hono@4.11.9';
+import { type Context, type Hono } from 'hono';
 
 import {
     decodeCrdtAdminJsonObject,

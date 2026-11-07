@@ -1,5 +1,5 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import { cors } from 'jsr:@hono/hono@4.11.9/cors';
+import type { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 

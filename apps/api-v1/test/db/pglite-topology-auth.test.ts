@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
@@ -83,7 +84,7 @@ interface ProcessedTopologyCommand {
     readonly result: Either<AppInboxFailure, TopologyAppInboxResult>;
 }
 
-Deno.test(
+test(
     'PGlite AppGroup reuses the first durable topology command and rejects divergent stable identity',
     async () => {
         await withPGliteSql(async (sql) => {

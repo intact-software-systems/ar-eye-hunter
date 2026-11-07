@@ -1,4 +1,5 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import {
@@ -60,7 +61,7 @@ interface GroupSetupRequest {
 const GROUP_REF = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ordinary-setup-room' };
 const GROUP_PATH = '/api/state/apps/rallar-server/workspaces/default/groups';
 
-Deno.test('PGlite ordinary group setup completes for one director and fourteen concurrent authenticated players', async () => {
+test('PGlite ordinary group setup completes for one director and fourteen concurrent authenticated players', async () => {
     await withPGliteSql(async (sql) => {
         const setup = createGroupSetupRuntime(sql);
         const sessions = await createGroupSetupSessions(setup.mutation);
@@ -104,7 +105,7 @@ Deno.test('PGlite ordinary group setup completes for one director and fourteen c
     });
 });
 
-Deno.test('PGlite group creation writes its command and every outbox row under the request x-request-id', async () => {
+test('PGlite group creation writes its command and every outbox row under the request x-request-id', async () => {
     await withPGliteSql(async (sql) => {
         const setup = createGroupSetupRuntime(sql);
         const [director] = await createGroupSetupSessions(setup.mutation);

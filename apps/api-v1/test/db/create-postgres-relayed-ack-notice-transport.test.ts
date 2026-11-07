@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
@@ -60,7 +61,7 @@ function relayedNotice(ackedMsgId = 'room-message-1'): RelayedAckNotice {
     };
 }
 
-Deno.test('relayed ACK notices exist only for PostgreSQL pub/sub', () => {
+test('relayed ACK notices exist only for PostgreSQL pub/sub', () => {
     const notification = createRecordingNotificationPort();
     for (const mode of ['local', 'disabled'] as const) {
         assert.equal(
@@ -81,7 +82,7 @@ Deno.test('relayed ACK notices exist only for PostgreSQL pub/sub', () => {
     assert.equal(postgres?.publisherId, 'server-b');
 });
 
-Deno.test('the PostgreSQL relayed ACK transport notifies once and delivers only its own kind', async () => {
+test('the PostgreSQL relayed ACK transport notifies once and delivers only its own kind', async () => {
     const notification = createRecordingNotificationPort();
     const transport = createPostgresRelayedAckNoticeTransport(notification);
     const received: RelayedAckNotice[] = [];
@@ -115,7 +116,7 @@ Deno.test('the PostgreSQL relayed ACK transport notifies once and delivers only 
     assert.deepEqual(received, [notice]);
 });
 
-Deno.test('the live WS notice subscriber ignores a relayed ACK on the shared channel', async () => {
+test('the live WS notice subscriber ignores a relayed ACK on the shared channel', async () => {
     const notification = createRecordingNotificationPort();
     const live = createApiV1LiveWsNoticeTransport({
         mode: 'postgres',

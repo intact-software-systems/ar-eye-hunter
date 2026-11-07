@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -12,13 +13,13 @@ import { createApiV1MiddlewareResilience } from '../../src/middleware-resilience
 import { toApiAppInboxServiceOptions } from '../../src/services/timing-service.ts';
 import { validConfigurationProfileSource, validDecodeApiV1ConfigurationInput } from './api-v1-configuration-test-fixture.ts';
 
-Deno.test('AppInbox retry configuration controls conflict delay, ordinary backoff and exhaustion independently', () => {
+test('AppInbox retry configuration controls conflict delay, ordinary backoff and exhaustion independently', () => {
     const values: Record<string, string> = {
         RALLAR_APP_INBOX_MAX_ATTEMPTS: '9',
         RALLAR_APP_INBOX_MAX_RETRY_DELAY_MS: '400',
         RALLAR_APP_INBOX_CONFLICT_MAX_RETRY_DELAY_MS: '75'
     };
-    const environment = readApiV1ConfigurationEnvironment({ get: (name) => values[name] });
+    const environment = readApiV1ConfigurationEnvironment(values);
     const input = validDecodeApiV1ConfigurationInput();
     const configuration = decodeApiV1Configuration({
         ...input,
@@ -37,7 +38,7 @@ Deno.test('AppInbox retry configuration controls conflict delay, ordinary backof
     }
 });
 
-Deno.test('AppInbox retry defaults bound conflict backoff and allow profile and environment overrides', () => {
+test('AppInbox retry defaults bound conflict backoff and allow profile and environment overrides', () => {
     const input = { ...validDecodeApiV1ConfigurationInput(), defaultsSource };
     assert.deepEqual(decodeApiV1Configuration(input).appInbox.retry, {
         maxAttempts: 20,
@@ -53,7 +54,7 @@ Deno.test('AppInbox retry defaults bound conflict backoff and allow profile and 
     });
 });
 
-Deno.test('AppInbox rejects invalid attempt and delay bounds instead of silently replacing them', () => {
+test('AppInbox rejects invalid attempt and delay bounds instead of silently replacing them', () => {
     for (const field of ['maxAttempts', 'maxDelayMs', 'conflictMaxDelayMs']) {
         for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
             const input = validDecodeApiV1ConfigurationInput();
@@ -68,7 +69,7 @@ Deno.test('AppInbox rejects invalid attempt and delay bounds instead of silently
     }
 });
 
-Deno.test('AppInbox delay bounds keep positive jitter and persisted timestamps representable', () => {
+test('AppInbox delay bounds keep positive jitter and persisted timestamps representable', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.environmentSource = {
         group: { roomOwnedAppDataBindings: [] },

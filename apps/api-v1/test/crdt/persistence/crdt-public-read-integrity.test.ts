@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -44,7 +45,7 @@ interface DocumentKeyRow {
     readonly document_key: string;
 }
 
-Deno.test('public CRDT catch-up and debug export decode exact persisted rows', async () => {
+test('public CRDT catch-up and debug export decode exact persisted rows', async () => {
     await withPGliteSql(async (sql) => {
         await append(sql);
         await insertSnapshot(sql);
@@ -62,7 +63,7 @@ Deno.test('public CRDT catch-up and debug export decode exact persisted rows', a
     });
 });
 
-Deno.test(
+test(
     'public CRDT metadata and admin listing fail closed on physical identity corruption',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -84,7 +85,7 @@ Deno.test(
     }
 );
 
-Deno.test('public CRDT catch-up fails closed on physical update identity corruption', async () => {
+test('public CRDT catch-up fails closed on physical update identity corruption', async () => {
     await withPGliteSql(async (sql) => {
         await append(sql);
         await sql`update crdt_updates set update_id = 'physical-update-id'`;
@@ -96,7 +97,7 @@ Deno.test('public CRDT catch-up fails closed on physical update identity corrupt
     });
 });
 
-Deno.test(
+test(
     'public CRDT snapshot read fails closed on physical snapshot identity corruption',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -112,7 +113,7 @@ Deno.test(
     }
 );
 
-Deno.test('public and mutation CRDT reads reject reason-only snapshot corruption', async () => {
+test('public and mutation CRDT reads reject reason-only snapshot corruption', async () => {
     await withPGliteSql(async (sql) => {
         const { command, service } = await append(sql);
         await insertSnapshot(sql);
@@ -126,7 +127,7 @@ Deno.test('public and mutation CRDT reads reject reason-only snapshot corruption
     });
 });
 
-Deno.test('public and mutation CRDT reads reject an omitted snapshot reason', async () => {
+test('public and mutation CRDT reads reject an omitted snapshot reason', async () => {
     await withPGliteSql(async (sql) => {
         const { command, service } = await append(sql);
         await insertSnapshot(sql);
@@ -142,7 +143,7 @@ Deno.test('public and mutation CRDT reads reject an omitted snapshot reason', as
     });
 });
 
-Deno.test('mutation write persists one canonical snapshot reason in row and envelope', async () => {
+test('mutation write persists one canonical snapshot reason in row and envelope', async () => {
     await withPGliteSql(async (sql) => {
         const { service } = await append(sql);
         const compact = await createCrdtMutationCommand({
@@ -183,7 +184,7 @@ Deno.test('mutation write persists one canonical snapshot reason in row and enve
     });
 });
 
-Deno.test(
+test(
     'public CRDT integrity and export fail closed instead of reporting corrupt rows',
     async () => {
         await withPGliteSql(async (sql) => {

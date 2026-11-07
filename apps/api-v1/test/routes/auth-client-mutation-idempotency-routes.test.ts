@@ -1,4 +1,5 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -22,7 +23,7 @@ const AUTH_SESSION = {
     expiresAtEpochMs: 61_000
 } as const;
 
-Deno.test('auth logout accepts only the case-sensitive path request ID', async () => {
+test('auth logout accepts only the case-sensitive path request ID', async () => {
     const calls: Array<Parameters<configRoutes.ConfigRouteDependencies['appAuthInbox']['logoutSession']>[0]> = [];
     const app = createConfigRouteApp({
         appAuthInbox: ({
@@ -52,7 +53,7 @@ Deno.test('auth logout accepts only the case-sensitive path request ID', async (
     assert.equal((await app.request('/api/auth/logout', { method: 'POST' })).status, 404);
 });
 
-Deno.test(
+test(
     'auth mutation ingress rejects header and body identity with canonical failures',
     async () => {
         const app = createConfigRouteApp();
@@ -87,7 +88,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'auth failure authenticates before replay disclosure and uses the canonical envelope',
     async () => {
         let inboxCalls = 0;
@@ -124,7 +125,7 @@ Deno.test(
     }
 );
 
-Deno.test('logout reauthenticates before credential-proof replay disclosure', async () => {
+test('logout reauthenticates before credential-proof replay disclosure', async () => {
     const proofCalls: Array<
         Parameters<
             configRoutes.ConfigRouteDependencies[
@@ -174,7 +175,7 @@ Deno.test('logout reauthenticates before credential-proof replay disclosure', as
     }]);
 });
 
-Deno.test(
+test(
     'login, register, and websocket-ticket issue expose only strict request paths',
     async () => {
         const app = createConfigRouteApp({
@@ -247,7 +248,7 @@ Deno.test(
     }
 );
 
-Deno.test('registration validation failure uses the canonical envelope', async () => {
+test('registration validation failure uses the canonical envelope', async () => {
     const app = createConfigRouteApp();
     const response = await app.request(
         '/api/auth/register/requests/RegisterValidationRequest_01',
@@ -275,7 +276,7 @@ Deno.test('registration validation failure uses the canonical envelope', async (
     );
 });
 
-Deno.test('client mutation uses operation topic and target-plus-caller context', async () => {
+test('client mutation uses operation topic and target-plus-caller context', async () => {
     const enqueues: Array<{
         contextId?: string;
         resourceId?: string;
@@ -326,7 +327,7 @@ Deno.test('client mutation uses operation topic and target-plus-caller context',
     }]);
 });
 
-Deno.test(
+test(
     'client mutation rejects noncanonical identity before enqueue with a canonical failure',
     async () => {
         let inboxCalls = 0;
@@ -369,7 +370,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'client callers reuse one request ID independently across application scope',
     async () => {
         const enqueues: { contextId?: string; resourceId?: string; topicId?: string; }[] = [];
@@ -408,7 +409,7 @@ Deno.test(
     }
 );
 
-Deno.test('every removed auth and client mutation URL is absent', async () => {
+test('every removed auth and client mutation URL is absent', async () => {
     const app = createConfigRouteApp();
     clientStateRoutes.registerClientStateRoutes(
         app,

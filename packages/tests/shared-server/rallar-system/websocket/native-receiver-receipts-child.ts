@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -103,7 +104,7 @@ class NativeSubjectAckHold {
     }
 }
 
-Deno.test('fourteen automatic receiver ACKs cross native API sockets and complete the exact origin receipt after release', async () => {
+test('fourteen automatic receiver ACKs cross native API sockets and complete the exact origin receipt after release', async () => {
     const fixture = await createNativeSessionTestFixture();
     const peers: NativeReceiptPeer[] = [];
     const registry = new BrowserRallarDeliveryRegistry({

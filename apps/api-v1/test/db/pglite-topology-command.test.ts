@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 
 import assert from 'node:assert/strict';
 
@@ -58,7 +59,7 @@ interface ResourceInboxAttemptStatusRow {
     readonly ri_status: string;
 }
 
-Deno.test(
+test(
     'PGlite topology planning uses the immutable group update time for a planned removal tombstone',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -82,7 +83,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology planning does not let a stale removal delete a newer active topology',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -109,7 +110,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology planning does not treat a newer expired active group as removal cancellation',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -136,7 +137,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology planning replans a stale removal from the newer terminal group authority',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -164,7 +165,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology planning filters RTTs outside recomputed group reporting edges',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -299,7 +300,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology worker rereads authority and predecessor after removal CAS conflict',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -433,7 +434,7 @@ Deno.test(
     }
 );
 
-Deno.test('PGlite topology worker rolls back an exact orphan WS outbox collision', async () => {
+test('PGlite topology worker rolls back an exact orphan WS outbox collision', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createPGliteTopologyWorkFixture(
             sql,
@@ -477,7 +478,7 @@ Deno.test('PGlite topology worker rolls back an exact orphan WS outbox collision
     });
 });
 
-Deno.test(
+test(
     'PGlite topology worker revalidates durable delivery on a loaded work claim',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -517,7 +518,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology worker rejects a conflicting durable outbox on a loaded work claim',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -565,7 +566,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology worker rejects conflicting durable delivery on a loaded work claim',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -611,7 +612,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology worker fails closed and rolls back after delivery lease loss',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -654,7 +655,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology worker rolls state and receipt back on divergent WS outbox collision',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -703,7 +704,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite topology worker rolls every effect back when reservation completion loses its fence',
     async () => {
         await withPGliteSql(async (sql) => {

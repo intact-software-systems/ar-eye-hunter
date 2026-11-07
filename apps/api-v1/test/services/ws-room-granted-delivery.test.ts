@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -84,7 +85,7 @@ interface GrantedDeliveryHarnessInput {
     readonly withoutRecheck?: boolean;
 }
 
-Deno.test('each of socket admission, pending replay, inbox dispatch and route refuses a publication without a grant', async () => {
+test('each of socket admission, pending replay, inbox dispatch and route refuses a publication without a grant', async () => {
     for (const pass of ['socket admission', 'pending replay', 'inbox dispatch', 'route'] as const) {
         await withHarness({ fanout: 'live-only' }, async (harness) => {
             const aliceFrames = addConnection(harness.server, 'alice');
@@ -120,7 +121,7 @@ Deno.test('each of socket admission, pending replay, inbox dispatch and route re
 });
 
 for (const step of ['single-instance dequeue', 'cluster send'] as const) {
-    Deno.test(`a revoke between enqueue and dequeue skips the revoked session at ${step}`, async () => {
+    test(`a revoke between enqueue and dequeue skips the revoked session at ${step}`, async () => {
         await withHarness({ fanout: 'outbox', cluster: step === 'cluster send' }, async (harness) => {
             const frames = addAudience(harness.server);
             // Admission, inbox dispatch and route read the grant; the revoke commits before the dequeue's re-check.
@@ -138,7 +139,7 @@ for (const step of ['single-instance dequeue', 'cluster send'] as const) {
     });
 }
 
-Deno.test('a revoke between enqueue and dequeue skips the revoked session at repair', async () => {
+test('a revoke between enqueue and dequeue skips the revoked session at repair', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // The first dequeue sends to both subscribers; neither acknowledges, and the revoke commits before the retry.
@@ -157,7 +158,7 @@ Deno.test('a revoke between enqueue and dequeue skips the revoked session at rep
     });
 });
 
-Deno.test('a revoke between enqueue and dequeue records the revoked session outside the audience, expected set unchanged', async () => {
+test('a revoke between enqueue and dequeue records the revoked session outside the audience, expected set unchanged', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         harness.reads.push(...grantedReads(3), revokedReads());
@@ -173,7 +174,7 @@ Deno.test('a revoke between enqueue and dequeue records the revoked session outs
     });
 });
 
-Deno.test('a revoke between enqueue and dequeue skips the revoked session at the awaited hold', async () => {
+test('a revoke between enqueue and dequeue skips the revoked session at the awaited hold', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const aliceFrames = addConnection(harness.server, 'alice');
         // Bob and Carol upgraded but have not opened their sockets: the dequeued row waits for them.
@@ -198,7 +199,7 @@ Deno.test('a revoke between enqueue and dequeue skips the revoked session at the
     });
 });
 
-Deno.test('two held granted rows for one session reach it in admission order however long their re-checks take', async () => {
+test('two held granted rows for one session reach it in admission order however long their re-checks take', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         addConnection(harness.server, 'alice');
         harness.server.expectedConnections.expect({ id: 'bob', generationId: 'generation', expiresAtEpochMs: Date.now() + 60_000 });
@@ -226,7 +227,7 @@ Deno.test('two held granted rows for one session reach it in admission order how
     });
 });
 
-Deno.test('a server-producer outbox row skips a subscriber revoked before dequeue, never expects it in its own receipt, and completes on the others', async () => {
+test('a server-producer outbox row skips a subscriber revoked before dequeue, never expects it in its own receipt, and completes on the others', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // The publish reads the grant once; the revoke commits before the dequeue.
@@ -252,7 +253,7 @@ Deno.test('a server-producer outbox row skips a subscriber revoked before dequeu
     });
 });
 
-Deno.test('a server-producer outbox row skips a subscriber revoked before its retry, records it outside its own receipt, and completes on the others', async () => {
+test('a server-producer outbox row skips a subscriber revoked before its retry, records it outside its own receipt, and completes on the others', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // The publish and the first dequeue read the grant; neither subscriber acknowledges, and the revoke commits
@@ -275,7 +276,7 @@ Deno.test('a server-producer outbox row skips a subscriber revoked before its re
     });
 });
 
-Deno.test('a failed snapshot read at dequeue sends nothing and keeps the row for retry', async () => {
+test('a failed snapshot read at dequeue sends nothing and keeps the row for retry', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         harness.reads.push(...grantedReads(3), () => Promise.reject(new Error('version probe failed')));
@@ -294,7 +295,7 @@ Deno.test('a failed snapshot read at dequeue sends nothing and keeps the row for
 });
 
 for (const cluster of [false, true]) {
-    Deno.test(`a granted outbox row with no re-check port reaches nobody (${cluster ? 'cluster send' : 'single instance'})`, async () => {
+    test(`a granted outbox row with no re-check port reaches nobody (${cluster ? 'cluster send' : 'single instance'})`, async () => {
         await withHarness({ fanout: 'outbox', cluster, withoutRecheck: true }, async (harness) => {
             const frames = addAudience(harness.server);
             const message = feedMessage({ senderId: 'alice', msgId: `unchecked-${cluster ? 'cluster' : 'single'}` });
@@ -309,7 +310,7 @@ for (const cluster of [false, true]) {
     });
 }
 
-Deno.test('a run of granted rows for a missing room does not stop a members row\'s delivery and does not open the dequeue breaker', async () => {
+test('a run of granted rows for a missing room does not stop a members row\'s delivery and does not open the dequeue breaker', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         const granted = Array.from({ length: 12 }, (_, index) => feedMessage({ senderId: 'alice', msgId: `missing-room-${index}` }));
@@ -335,7 +336,7 @@ Deno.test('a run of granted rows for a missing room does not stop a members row\
     });
 });
 
-Deno.test('a granted row whose publisher\'s session left before dequeue reaches nobody and completes', async () => {
+test('a granted row whose publisher\'s session left before dequeue reaches nobody and completes', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         const departed = createAuthority(GRANTS);
@@ -359,7 +360,7 @@ Deno.test('a granted row whose publisher\'s session left before dequeue reaches 
     });
 });
 
-Deno.test('a granted row of a room archived before dequeue reaches nobody', async () => {
+test('a granted row of a room archived before dequeue reaches nobody', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         const authority = createAuthority(GRANTS, { snapshotVersion: 4 });
@@ -380,7 +381,7 @@ Deno.test('a granted row of a room archived before dequeue reaches nobody', asyn
     });
 });
 
-Deno.test('a remote node\'s broad live notice on a granted topic reaches no session', async () => {
+test('a remote node\'s broad live notice on a granted topic reaches no session', async () => {
     const localBus = createLocalQueuePubSubBus();
     const remote = new JsonWebSocketServer();
     const frames = addAudience(remote);
@@ -434,7 +435,7 @@ const ROUTE_TIME_CHANGES = [
 ] as const;
 
 for (const [change, routeRead] of ROUTE_TIME_CHANGES) {
-    Deno.test(`${change} between socket admission and route skips the session on a live-only granted topic`, async () => {
+    test(`${change} between socket admission and route skips the session on a live-only granted topic`, async () => {
         await withHarness({ fanout: 'live-only' }, async (harness) => {
             const frames = addAudience(harness.server);
             // Socket admission and inbox dispatch read Carol's live subscription; route's fresh read no longer finds it.
@@ -452,7 +453,7 @@ for (const [change, routeRead] of ROUTE_TIME_CHANGES) {
     });
 }
 
-Deno.test('only subscribed sessions receive a granted publication', async () => {
+test('only subscribed sessions receive a granted publication', async () => {
     for (const fanout of ['live-only', 'outbox'] as const) {
         await withHarness({ fanout }, async (harness) => {
             const frames = addAudience(harness.server);
@@ -472,7 +473,7 @@ Deno.test('only subscribed sessions receive a granted publication', async () => 
 });
 
 for (const step of ['single-instance dequeue', 'cluster send'] as const) {
-    Deno.test(`an unsubscribe between enqueue and dequeue skips the session at ${step}`, async () => {
+    test(`an unsubscribe between enqueue and dequeue skips the session at ${step}`, async () => {
         await withHarness({ fanout: 'outbox', cluster: step === 'cluster send' }, async (harness) => {
             const frames = addAudience(harness.server);
             // Admission, inbox dispatch and route read Carol's subscription; her unsubscribe commits before the re-check.
@@ -489,7 +490,7 @@ for (const step of ['single-instance dequeue', 'cluster send'] as const) {
     });
 }
 
-Deno.test('an unsubscribe between enqueue and dequeue skips the session at repair', async () => {
+test('an unsubscribe between enqueue and dequeue skips the session at repair', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // The first dequeue sends to both subscribers; neither acknowledges, and Carol unsubscribes before the retry.
@@ -508,7 +509,7 @@ Deno.test('an unsubscribe between enqueue and dequeue skips the session at repai
     });
 });
 
-Deno.test('a session that re-subscribed under a new generation between enqueue and dequeue is not sent the old row', async () => {
+test('a session that re-subscribed under a new generation between enqueue and dequeue is not sent the old row', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // Carol's socket reopened after route: her live client generation and her renewed subscription both moved on.
@@ -524,7 +525,7 @@ Deno.test('a session that re-subscribed under a new generation between enqueue a
     });
 });
 
-Deno.test('a held row for a session whose generation changed is not sent when its socket opens', async () => {
+test('a held row for a session whose generation changed is not sent when its socket opens', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         addConnection(harness.server, 'alice');
         for (const sessionId of ['bob', 'carol']) {
@@ -547,7 +548,7 @@ Deno.test('a held row for a session whose generation changed is not sent when it
     });
 });
 
-Deno.test('a granted outbox row without captured generations sends nobody', async () => {
+test('a granted outbox row without captured generations sends nobody', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         const message = feedMessage({ senderId: SERVER_PEER_ID, msgId: 'captured-without-generations' });
@@ -567,7 +568,7 @@ Deno.test('a granted outbox row without captured generations sends nobody', asyn
     });
 });
 
-Deno.test('an unsubscribe the re-check finds records the dropped session outside the audience, expected set unchanged', async () => {
+test('an unsubscribe the re-check finds records the dropped session outside the audience, expected set unchanged', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         harness.reads.push(...grantedReads(3), subscriptionReads(UNSUBSCRIBED_CAROL));
@@ -583,7 +584,7 @@ Deno.test('an unsubscribe the re-check finds records the dropped session outside
     });
 });
 
-Deno.test('a subscribed session live on another instance is expected and recorded by the dequeue, never judged outside by this instance', async () => {
+test('a subscribed session live on another instance is expected and recorded by the dequeue, never judged outside by this instance', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         // Carol's live session is on another instance: the room's live generations carry hers, this instance has no socket of hers.
         const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
@@ -603,7 +604,7 @@ Deno.test('a subscribed session live on another instance is expected and recorde
     });
 });
 
-Deno.test('a captured session live nowhere is outside at the dequeue, the receipt completing on the other recipient', async () => {
+test('a captured session live nowhere is outside at the dequeue, the receipt completing on the other recipient', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
         // Admission, inbox dispatch and route read Carol live; her last generation ended before the dequeue.
@@ -620,7 +621,7 @@ Deno.test('a captured session live nowhere is outside at the dequeue, the receip
     });
 });
 
-Deno.test('a captured session live at the dequeue and live nowhere at the retry is recorded outside by the retry, the receipt completing', async () => {
+test('a captured session live at the dequeue and live nowhere at the retry is recorded outside by the retry, the receipt completing', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
         // The first dequeue finds Carol live on another instance; her last generation ends before the retry's re-check.
@@ -639,7 +640,7 @@ Deno.test('a captured session live at the dequeue and live nowhere at the retry 
     });
 });
 
-Deno.test('a receipt retry records outside only the recipients it still waits on, never one that confirmed', async () => {
+test('a receipt retry records outside only the recipients it still waits on, never one that confirmed', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // The publish and the first dequeue read both subscribers live; Bob confirms, Carol does not, and neither has a
@@ -665,7 +666,7 @@ Deno.test('a receipt retry records outside only the recipients it still waits on
     });
 });
 
-Deno.test('a members-topic outbox row is narrowed by the durable filter only', async () => {
+test('a members-topic outbox row is narrowed by the durable filter only', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // No principal holds a grant on room.chat: the row is a members row, so no grant decides its sends.

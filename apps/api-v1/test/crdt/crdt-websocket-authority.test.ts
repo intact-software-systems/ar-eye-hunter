@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -95,7 +96,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
     documentId: 'document-1'
 };
 
-Deno.test(
+test(
     'browser WS ingress resolves real auth identity and rereads revoke through ' +
         'PGlite AppInbox',
     async () => {
@@ -154,7 +155,7 @@ Deno.test(
     }
 );
 
-Deno.test('production app-scope authorization rejects a foreign application context', async () => {
+test('production app-scope authorization rejects a foreign application context', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createCrdtWebSocketAuthorityFixture(sql);
         try {

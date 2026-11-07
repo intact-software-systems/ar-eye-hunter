@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -23,7 +24,7 @@ const notice: LiveWsNotice = {
     inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message' } }
 };
 
-Deno.test('local live notice transport shares its mode family and skips the publisher subscriber', async () => {
+test('local live notice transport shares its mode family and skips the publisher subscriber', async () => {
     const bus = createLocalQueuePubSubBus();
     const received: LiveWsNotice[] = [];
     const publisher = createApiV1LiveWsNoticeTransport({
@@ -53,7 +54,7 @@ Deno.test('local live notice transport shares its mode family and skips the publ
     assert.deepEqual(received, [notice, broad]);
 });
 
-Deno.test('disabled live notice transport does not claim a receiving callback', async () => {
+test('disabled live notice transport does not claim a receiving callback', async () => {
     const transport = createApiV1LiveWsNoticeTransport({
         mode: 'disabled',
         publisherId: 'publisher-a',
@@ -69,7 +70,7 @@ Deno.test('disabled live notice transport does not claim a receiving callback', 
     assert.equal(received, false);
 });
 
-Deno.test('PostgreSQL QueueBox and live notice subscribers coexist on one notification port', async () => {
+test('PostgreSQL QueueBox and live notice subscribers coexist on one notification port', async () => {
     const listeners: Array<(payload: string) => void | Promise<void>> = [];
     const notification = {
         notify: async () => {},
@@ -103,7 +104,7 @@ Deno.test('PostgreSQL QueueBox and live notice subscribers coexist on one notifi
     assert.deepEqual(liveReceived, [notice]);
 });
 
-Deno.test('a separate local receiver sends only to its currently authenticated addressed socket', async () => {
+test('a separate local receiver sends only to its currently authenticated addressed socket', async () => {
     const bus = createLocalQueuePubSubBus();
     const publisher = createApiV1LiveWsNoticeTransport({
         mode: 'local',

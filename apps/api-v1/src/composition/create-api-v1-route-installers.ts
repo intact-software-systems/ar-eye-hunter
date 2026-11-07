@@ -1,5 +1,5 @@
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 import {
     registerTournamentRoutes,
     type TournamentRouteDependencies
@@ -137,7 +137,6 @@ export interface ApiV1RouteInstallerOperations<Runtime extends ApiV1RouteInstall
         sessionId: string,
         repository: Runtime['authSessionRepository']
     ) => Promise<PersistedAuthSession | undefined>;
-    readonly upgradeWebSocket: (request: Request) => Deno.WebSocketUpgrade;
 }
 
 interface ApiV1RouteConstruction<
@@ -183,8 +182,28 @@ export function constructApiV1RouteInstallers<
         registerApiV1AdministrationRoutes(app, construction);
     }
     return {
-        webSocket: createApiV1WsRouteInstaller(construction),
+        // The WebSocket upgrade happens at the Bun `fetch` boundary (see createApiWebSocketRouteDependencies),
+        // not as a Hono route; `webSocket` remains only to satisfy the shared-server route-installer surface.
+        webSocket: () => {},
         rest: [installApiV1RestRoutes]
+    };
+}
+
+/**
+ * The fetch-boundary WebSocket dependencies, built from the assembled runtime. The `upgradeWebSocket` callback is
+ * supplied by `Bun.serve`'s `fetch` handler, where `server.upgrade(request, { data })` is in scope.
+ */
+export function createApiWebSocketRouteDependencies(
+    runtime: ApiV1Runtime,
+    nowEpochMs: () => number
+): wsRoutes.RegisterWsRoutesDependencies {
+    return {
+        socketServer: runtime.wsQBoxServerService.socket,
+        appClientInboxService: runtime.appClientInboxService,
+        readWsConnectTicket: async (ticketDigest) =>
+            (await runtime.authSessionRepository.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
+        readWsConnectSession: (sessionId) => runtime.authSessionRepository.findBySessionId(sessionId),
+        nowEpochMs
     };
 }
 
@@ -218,26 +237,6 @@ function createApiV1RouteConstruction<
         snapshots,
         authorizeCrdtDocumentAccess
     };
-}
-
-function createApiV1WsRouteInstaller<
-    Runtime extends ApiV1RouteInstallerRuntime,
-    Topology extends ApiV1RouteInstallerTopology,
->(
-    construction: ApiV1RouteConstruction<Runtime, Topology>
-): RallarServerRouteInstaller<Hono> {
-    const { input, operations } = construction;
-    return (app) =>
-        wsRoutes.registerWsRoutes(app, {
-            socketServer: input.runtime.wsQBoxServerService.socket,
-            appClientInboxService: input.runtime.appClientInboxService,
-            readWsConnectTicket: (ticketDigest) =>
-                operations.readWsConnectTicket(ticketDigest, input.runtime.authSessionRepository),
-            readWsConnectSession: (sessionId) =>
-                operations.readWsConnectSession(sessionId, input.runtime.authSessionRepository),
-            upgradeWebSocket: operations.upgradeWebSocket,
-            nowEpochMs: input.nowEpochMs
-        });
 }
 
 function registerApiV1StateRoutes<
@@ -323,6 +322,5 @@ const PRODUCTION_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1Runtime> = {
     requireApiAuthSession,
     readWsConnectTicket: async (ticketDigest, repository) =>
         (await repository.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
-    readWsConnectSession: (sessionId, repository) => repository.findBySessionId(sessionId),
-    upgradeWebSocket: (request) => Deno.upgradeWebSocket(request)
+    readWsConnectSession: (sessionId, repository) => repository.findBySessionId(sessionId)
 };

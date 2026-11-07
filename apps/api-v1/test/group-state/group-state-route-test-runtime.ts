@@ -7,7 +7,7 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 
 import type {
     AuthenticatedGroupMutationEnqueue
@@ -249,17 +249,17 @@ export async function withStrictGroupStateRouteReadAuth(
     enabled: boolean,
     action: () => Promise<void>
 ): Promise<void> {
-    const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-    Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', enabled ? 'true' : 'false');
+    const previous = process.env['RALLAR_STATE_STRICT_READ_AUTH'];
+    process.env['RALLAR_STATE_STRICT_READ_AUTH'] = enabled ? 'true' : 'false';
     try {
         await action();
     }
     finally {
         if (previous === undefined) {
-            Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
+            delete process.env['RALLAR_STATE_STRICT_READ_AUTH'];
         }
         else {
-            Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', previous);
+            process.env['RALLAR_STATE_STRICT_READ_AUTH'] = previous;
         }
     }
 }

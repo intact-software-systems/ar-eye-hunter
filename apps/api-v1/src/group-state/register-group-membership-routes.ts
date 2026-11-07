@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 
 import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

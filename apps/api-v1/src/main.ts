@@ -1,5 +1,6 @@
-import 'jsr:@std/dotenv@0.225.6/load';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { config } from 'dotenv';
+import { Hono } from 'hono';
+import { readFile } from 'node:fs/promises';
 
 import { createDefaultRallarServer } from './composition/create-default-rallar-server.ts';
 import { readApiV1Configuration } from './configuration/read-api-v1-configuration.ts';
@@ -10,10 +11,13 @@ import { serveApiApplication } from './runtime/serve-api-application.ts';
 import { installApiHttpMiddleware } from './services/install-api-http-middleware.ts';
 import { createApiTimingSink } from './services/timing-service.ts';
 
+config({ path: '.env' });
+config({ path: '.env.local', override: true });
+
 const configuration = await readApiV1Configuration({
-    environment: Deno.env,
+    environment: process.env,
     hardwareConcurrency: navigator.hardwareConcurrency,
-    readTextFile: Deno.readTextFile,
+    readTextFile: (url) => readFile(url, 'utf8'),
     defaultsUrl: new URL('../resources/configuration/defaults-config.json', import.meta.url),
     profileUrls: {
         dev: new URL('../resources/configuration/dev-config.json', import.meta.url),

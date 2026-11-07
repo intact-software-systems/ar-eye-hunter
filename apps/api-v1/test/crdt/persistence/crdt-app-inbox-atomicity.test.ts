@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { scheduler } from 'node:timers/promises';
 
@@ -114,11 +115,11 @@ interface FanoutDequeueFixture {
     readonly service: WsQueueBoxServerService;
 }
 
-Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
+test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
     await verifyAtomicMutationCommit();
 });
 
-Deno.test('committed CRDT append reply carries scoped producer authority for dequeue', async () => {
+test('committed CRDT append reply carries scoped producer authority for dequeue', async () => {
     await withPGliteSql(async (sql) => {
         const service = createMutationService(sql);
         const input = await command({
@@ -150,7 +151,7 @@ Deno.test('committed CRDT append reply carries scoped producer authority for deq
     });
 });
 
-Deno.test(
+test(
     'CRDT mutation rejects an identical final WS outbox collision and rolls back every write',
     async () => {
         await verifyIdenticalOutboxCollisionRollback();
@@ -159,7 +160,7 @@ Deno.test(
 
 for (const scope of ['room', 'principal', 'app'] as const) {
     for (const proofState of ['present', 'missing'] as const) {
-        Deno.test(`committed CRDT ${scope} fanout first dequeue with ${proofState} producer proof`, async () => {
+        test(`committed CRDT ${scope} fanout first dequeue with ${proofState} producer proof`, async () => {
             await withPGliteSql(async (sql) => {
                 const now = Date.now();
                 const document: RallarCrdtDocumentRef = {
@@ -602,7 +603,7 @@ async function closeFanoutDequeueFixture(
     }
 }
 
-Deno.test('CRDT fanout cleanup attempts every owned stage and joins the held engine after service failure', async () => {
+test('CRDT fanout cleanup attempts every owned stage and joins the held engine after service failure', async () => {
     const calls: string[] = [];
     const serviceFailure = new Error('fanout service disposal');
     const engineFailure = new Error('fanout engine stop');
@@ -667,7 +668,7 @@ Deno.test('CRDT fanout cleanup attempts every owned stage and joins the held eng
     assert.deepEqual(failure.errors, [serviceFailure, engineFailure, socketFailure]);
 });
 
-Deno.test('CRDT fanout cleanup preserves the exact assertion Error and reports actual secondary failures', async () => {
+test('CRDT fanout cleanup preserves the exact assertion Error and reports actual secondary failures', async () => {
     const primaryFailure = new Error('fanout wire assertion');
     const serviceFailure = new Error('fanout service disposal');
     const reports: AggregateError[] = [];

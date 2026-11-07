@@ -1,8 +1,10 @@
 import { resolvePublicServerUrl } from '@shared-server/http/resolve-public-server-url.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { installApiDocumentationRoutes } from '../src/routes/swagger-routes.ts';
 
 const SCOPED_GROUP_PATH = '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
@@ -17,7 +19,7 @@ const RECEIPT_MODES = ['hop', 'subtree', 'receiver', 'leader'] as const satisfie
 const RECEIPT_MODES_ARE_EXHAUSTIVE: [Exclude<ALReceiptMode, (typeof RECEIPT_MODES)[number]>] extends [never] ? true :
     false = true;
 
-Deno.test('OpenAPI JSON lists every receipt mode and the trace on the admin receipt entry', async () => {
+test('OpenAPI JSON lists every receipt mode and the trace on the admin receipt entry', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -45,7 +47,7 @@ Deno.test('OpenAPI JSON lists every receipt mode and the trace on the admin rece
     });
 });
 
-Deno.test('swagger public server URL trusts proxy HTTPS headers', () => {
+test('swagger public server URL trusts proxy HTTPS headers', () => {
     const request = new Request('http://internal-api:8080/swagger-ui', {
         headers: {
             'x-forwarded-proto': 'https',
@@ -59,13 +61,13 @@ Deno.test('swagger public server URL trusts proxy HTTPS headers', () => {
     );
 });
 
-Deno.test('swagger public server URL falls back to request origin', () => {
+test('swagger public server URL falls back to request origin', () => {
     const request = new Request('http://localhost:8080/swagger-ui');
 
     assert.equal(resolvePublicServerUrl(request), 'http://localhost:8080');
 });
 
-Deno.test('OpenAPI JSON route publishes the forwarded HTTPS server URL', async () => {
+test('OpenAPI JSON route publishes the forwarded HTTPS server URL', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json', {
         headers: {
@@ -80,7 +82,7 @@ Deno.test('OpenAPI JSON route publishes the forwarded HTTPS server URL', async (
     assert.equal(json.servers?.[0]?.url, 'https://api.rallar.intactss.com');
 });
 
-Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => {
+test('OpenAPI JSON includes black-box auth support contracts', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -138,7 +140,7 @@ Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => 
     );
 });
 
-Deno.test('OpenAPI JSON requires an explicit nullable registration display name', async () => {
+test('OpenAPI JSON requires an explicit nullable registration display name', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -155,7 +157,7 @@ Deno.test('OpenAPI JSON requires an explicit nullable registration display name'
     assert.equal(registerResponse.properties?.displayName?.type?.includes('null'), true);
 });
 
-Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async () => {
+test('OpenAPI JSON exposes mandatory convergent group state fields', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -204,7 +206,7 @@ Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async 
     }
 });
 
-Deno.test('OpenAPI JSON exposes point-read floors, headers, and status boundaries', async () => {
+test('OpenAPI JSON exposes point-read floors, headers, and status boundaries', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request(
         '/api/openapi.json'
     );
@@ -251,7 +253,7 @@ Deno.test('OpenAPI JSON exposes point-read floors, headers, and status boundarie
     );
 });
 
-Deno.test('OpenAPI JSON includes scoped graph and topology management contracts', async () => {
+test('OpenAPI JSON includes scoped graph and topology management contracts', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -549,7 +551,7 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     }
 });
 
-Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
+test('OpenAPI JSON includes admin operations contracts', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -611,7 +613,7 @@ Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
     assert.ok(json.components.schemas.AdminOperationResultResponse);
 });
 
-Deno.test('OpenAPI JSON includes admin support contracts', async () => {
+test('OpenAPI JSON includes admin support contracts', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -655,7 +657,7 @@ Deno.test('OpenAPI JSON includes admin support contracts', async () => {
     assert.equal(explainGroupRequest.properties?.limitRecentEvents?.maximum, 50);
 });
 
-Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
+test('OpenAPI JSON includes SPA statistics contracts', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const json = await response.json() as {
@@ -723,14 +725,16 @@ Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
     assert.equal(groupStatsGroup?.properties?.groupRef, undefined);
 });
 
-Deno.test(
+test(
     'graph topology product docs describe implemented REST and recompute behavior',
     async () => {
-        const apiReference = await Deno.readTextFile(
-            new URL('../../../docs/rallar-api-reference.md', import.meta.url)
+        const apiReference = await readFile(
+            new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+            'utf8'
         );
-        const rttDoc = await Deno.readTextFile(
-            new URL('../../../docs/rallar-rtc-rtt-reporting.md', import.meta.url)
+        const rttDoc = await readFile(
+            new URL('../../../docs/rallar-rtc-rtt-reporting.md', import.meta.url),
+            'utf8'
         );
 
         assert.match(apiReference, /\/graphs\/global/);
@@ -740,14 +744,16 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'admin operations product docs describe implemented REST auth and safety behavior',
     async () => {
-        const apiReference = await Deno.readTextFile(
-            new URL('../../../docs/rallar-api-reference.md', import.meta.url)
+        const apiReference = await readFile(
+            new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+            'utf8'
         );
-        const envDocs = await Deno.readTextFile(
-            new URL('../../../docs/environment-variables.md', import.meta.url)
+        const envDocs = await readFile(
+            new URL('../../../docs/environment-variables.md', import.meta.url),
+            'utf8'
         );
 
         assert.match(apiReference, /\/api\/admin\/operations\/overview/);
@@ -761,14 +767,16 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'SPA statistics product docs describe implemented REST auth and safety behavior',
     async () => {
-        const apiReference = await Deno.readTextFile(
-            new URL('../../../docs/rallar-api-reference.md', import.meta.url)
+        const apiReference = await readFile(
+            new URL('../../../docs/rallar-api-reference.md', import.meta.url),
+            'utf8'
         );
-        const envDocs = await Deno.readTextFile(
-            new URL('../../../docs/environment-variables.md', import.meta.url)
+        const envDocs = await readFile(
+            new URL('../../../docs/environment-variables.md', import.meta.url),
+            'utf8'
         );
 
         assert.match(apiReference, /\/stats\/summary/);

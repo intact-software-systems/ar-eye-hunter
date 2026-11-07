@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -22,7 +23,7 @@ import { createApiV1TopologyServices, type CreateApiV1TopologyServicesInput } fr
 
 const NOW_EPOCH_MS = 4_000_000_000_000;
 
-Deno.test('topology composition installs canonical owners and RTT policy inputs', async () => {
+test('topology composition installs canonical owners and RTT policy inputs', async () => {
     const runtimeStateRepository = new FakeRuntimeStateRepository();
     const snapshot = createGroupSnapshot();
     const formationEvents: GroupFormationRttMutationEvent[] = [];
@@ -65,7 +66,7 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
     assert.deepEqual(formationEvents, []);
 });
 
-Deno.test('RTT policy inputs read the reporting pair\'s presence rows by key suffix, never the whole namespace', async () => {
+test('RTT policy inputs read the reporting pair\'s presence rows by key suffix, never the whole namespace', async () => {
     const runtimeStateRepository = new ReadBatchFakeRuntimeStateRepository();
     const snapshot = createGroupSnapshot();
     const services = createApiV1TopologyServices(createServicesInput(runtimeStateRepository, snapshot, []));

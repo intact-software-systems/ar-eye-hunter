@@ -1,4 +1,6 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
@@ -44,7 +46,7 @@ function toStoredLatch(supersedes: StoredLayoutIdentity | null | undefined): str
     return JSON.stringify(latch);
 }
 
-Deno.test('the supersedes migration backfills latches written before the candidate existed', async () => {
+test('the supersedes migration backfills latches written before the candidate existed', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     try {
         const sql = lifecycle.database;
@@ -60,7 +62,7 @@ Deno.test('the supersedes migration backfills latches written before the candida
             `;
         }
 
-        await sql.exec(await Deno.readTextFile(MIGRATION_URL));
+        await sql.exec(await readFile(MIGRATION_URL, 'utf8'));
 
         const stored = await sql<{ store_key: string; store_value: string; }[]>`
             select store_key, store_value from runtime_state_store order by store_key

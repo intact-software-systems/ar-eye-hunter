@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
@@ -27,7 +28,7 @@ function dependencies(): FriendsRouteDependencies {
     };
 }
 
-Deno.test('friends reads and mutations bind authority to the authenticated caller', async () => {
+test('friends reads and mutations bind authority to the authenticated caller', async () => {
     const app = createTracedApiTestApp();
     const commands: FriendsCommand[] = [];
     registerFriendsRoutes(app, {
@@ -59,7 +60,7 @@ Deno.test('friends reads and mutations bind authority to the authenticated calle
     }]);
 });
 
-Deno.test('friends routes reject missing authentication and caller-injected authority', async () => {
+test('friends routes reject missing authentication and caller-injected authority', async () => {
     const app = createTracedApiTestApp();
     registerFriendsRoutes(app, { ...dependencies(), requireSession: () => Promise.reject(authenticationRequired('Sign in')) });
     assert.equal((await app.request('/api/friends/apps/game/workspaces/default')).status, 401);
@@ -74,7 +75,7 @@ Deno.test('friends routes reject missing authentication and caller-injected auth
     assert.equal(response.status, 400);
 });
 
-Deno.test('friends mutations require the canonical API request identity before admission', async () => {
+test('friends mutations require the canonical API request identity before admission', async () => {
     const app = createTracedApiTestApp();
     registerFriendsRoutes(app, dependencies());
     const response = await app.request('/api/friends/requests/short', {

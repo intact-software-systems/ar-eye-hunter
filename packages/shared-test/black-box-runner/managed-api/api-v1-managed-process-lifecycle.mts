@@ -1,3 +1,7 @@
+import { chmod, mkdir, mkdtemp, open, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 export type ManagedApiServerPlan = Readonly<{
     port: number;
     logPath: string;
@@ -13,8 +17,8 @@ export type ManagedApiServer = Readonly<{
 type ManagedApiChild = Readonly<{
     stdout: ReadableStream<Uint8Array> | null;
     stderr: ReadableStream<Uint8Array> | null;
-    status: Promise<Readonly<{ success: boolean; code: number; signal: string | null; }>>;
-    kill(signo?: number | Deno.Signal): void;
+    status: Promise<Readonly<{ success: boolean; code: number; signal: NodeJS.Signals | null; }>>;
+    kill(signo?: NodeJS.Signals): void;
 }>;
 
 type ManagedApiFile = Readonly<{
@@ -22,22 +26,56 @@ type ManagedApiFile = Readonly<{
     close(): void;
 }>;
 
-type ManagedDenoRuntime = Readonly<{
+type ManagedApiSpawnInput = Readonly<{
+    cmd: readonly string[];
+    cwd: string;
+    env: Record<string, string>;
+    stdout: 'pipe';
+    stderr: 'pipe';
+}>;
+
+type ManagedNodeRuntime = Readonly<{
     makeTempDir(input: Readonly<{ prefix: string; }>): Promise<string>;
     chmod(path: string, mode: number): Promise<void>;
     mkdir(path: string, input: Readonly<{ mode: number; }>): Promise<void>;
     remove(path: string, input: Readonly<{ recursive: boolean; }>): Promise<void>;
-    open(
-        path: string,
-        input: Readonly<{ append: boolean; create: boolean; write: boolean; }>
-    ): Promise<ManagedApiFile>;
-    Command: new(
-        command: string,
-        input: Deno.CommandOptions
-    ) => Readonly<{ spawn(): ManagedApiChild; }>;
+    open(path: string, input: Readonly<{ append: boolean; create: boolean; write: boolean; }>): Promise<ManagedApiFile>;
+    spawn(input: ManagedApiSpawnInput): ManagedApiChild;
 }>;
 
-const deno: { readonly Deno: ManagedDenoRuntime; } = globalThis;
+const defaultRuntime: ManagedNodeRuntime = {
+    makeTempDir: ({ prefix }) => mkdtemp(join(tmpdir(), prefix)),
+    chmod: (path, mode) => chmod(path, mode),
+    mkdir: (path, { mode }) => mkdir(path, { mode }),
+    remove: (path, { recursive }) => rm(path, { recursive }),
+    open: async (path) => {
+        const handle = await open(path, 'a');
+        return {
+            write: async (value) => {
+                const { bytesWritten } = await handle.write(value);
+                return bytesWritten;
+            },
+            close: () => {
+                void handle.close();
+            }
+        };
+    },
+    spawn: (input) => {
+        const child = Bun.spawn({
+            cmd: [...input.cmd],
+            cwd: input.cwd,
+            env: input.env,
+            stdout: 'pipe',
+            stderr: 'pipe'
+        });
+        return {
+            stdout: child.stdout,
+            stderr: child.stderr,
+            status: child.exited.then((code) => ({ success: code === 0, code, signal: null })),
+            kill: (signo) => child.kill(signo)
+        };
+    }
+};
 
 export type ManagedPGliteRunStorage = Readonly<{
     dataDir: string;
@@ -45,10 +83,10 @@ export type ManagedPGliteRunStorage = Readonly<{
     cleanup(): Promise<void>;
 }>;
 
-type ManagedPGliteStorageOperations = Pick<ManagedDenoRuntime, 'chmod' | 'makeTempDir' | 'mkdir' | 'remove'>;
+type ManagedPGliteStorageOperations = Pick<ManagedNodeRuntime, 'chmod' | 'makeTempDir' | 'mkdir' | 'remove'>;
 
 export async function createManagedPGliteRunStorage(
-    operations: ManagedPGliteStorageOperations = deno.Deno
+    operations: ManagedPGliteStorageOperations = defaultRuntime
 ): Promise<ManagedPGliteRunStorage> {
     const root = await operations.makeTempDir({ prefix: 'rallar-api-v1-pglite-' });
     const dataDir = `${root}/data`;
@@ -89,13 +127,13 @@ export function startManagedApiServer(
     cwd: string
 ): ManagedApiServer {
     const [program, ...args] = command;
-    const child = new deno.Deno.Command(program, {
-        args,
+    const child = defaultRuntime.spawn({
+        cmd: [program, ...args],
         cwd,
         env: plan.env,
-        stdout: 'piped',
-        stderr: 'piped'
-    }).spawn();
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
 
     const expectedStartupMarker = `Server started on port ${plan.port}.`;
     const stdoutDecoder = new TextDecoder();
@@ -159,7 +197,7 @@ async function appendStreamToFile(
     observe?: (chunk: Uint8Array) => void
 ): Promise<void> {
     const reader = stream.getReader();
-    const file = await deno.Deno.open(path, {
+    const file = await defaultRuntime.open(path, {
         append: true,
         create: true,
         write: true

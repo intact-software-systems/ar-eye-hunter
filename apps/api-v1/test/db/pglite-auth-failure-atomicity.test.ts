@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -22,7 +23,7 @@ import {
     withPGliteSql
 } from './pglite-auth-test-harness.ts';
 
-Deno.test(
+test(
     [
         'PGlite logout outbox collision rolls back session deletion',
         'and success receipt'
@@ -119,7 +120,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     [
         'PGlite auth finalization fence rolls back state and result',
         'through retry exhaustion'

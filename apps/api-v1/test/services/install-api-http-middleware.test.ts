@@ -1,5 +1,6 @@
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
@@ -8,7 +9,7 @@ import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-conf
 
 const ALLOWED_ORIGIN = 'http://localhost:5176';
 
-Deno.test('API HTTP middleware permits conditional, traced directory reads from an allowed origin', async () => {
+test('API HTTP middleware permits conditional, traced directory reads from an allowed origin', async () => {
     const app = createTimedApp([]);
     const response = await app.request('/api/state/apps/app-1/workspaces/workspace-1/group-directory', {
         method: 'OPTIONS',
@@ -27,7 +28,7 @@ Deno.test('API HTTP middleware permits conditional, traced directory reads from 
     }
 });
 
-Deno.test('API HTTP middleware does not authorize a disallowed origin', async () => {
+test('API HTTP middleware does not authorize a disallowed origin', async () => {
     const app = createTimedApp([]);
     const response = await app.request('/api/state/apps/app-1/workspaces/workspace-1/group-directory', {
         method: 'OPTIONS',
@@ -56,7 +57,7 @@ function createTimedApp(events: RallarTimingEvent[]): Hono {
 }
 
 // Every mutation URL is fresh, so each one pays a preflight the CORS middleware answers by itself.
-Deno.test('API HTTP middleware times a CORS preflight that never reaches a route', async () => {
+test('API HTTP middleware times a CORS preflight that never reaches a route', async () => {
     const events: RallarTimingEvent[] = [];
     const app = createTimedApp(events);
 
@@ -94,7 +95,7 @@ Deno.test('API HTTP middleware times a CORS preflight that never reaches a route
     );
 });
 
-Deno.test('API HTTP middleware times a routed request once and exposes its timing headers', async () => {
+test('API HTTP middleware times a routed request once and exposes its timing headers', async () => {
     const events: RallarTimingEvent[] = [];
     const app = createTimedApp(events);
 
@@ -110,7 +111,7 @@ Deno.test('API HTTP middleware times a routed request once and exposes its timin
     assert.deepEqual(events.map((event) => [event.method, event.httpStatus]), [['POST', 200]]);
 });
 
-Deno.test('API HTTP middleware leaves a WebSocket upgrade without CORS headers but still times it', async () => {
+test('API HTTP middleware leaves a WebSocket upgrade without CORS headers but still times it', async () => {
     const events: RallarTimingEvent[] = [];
     const app = createTimedApp(events);
 

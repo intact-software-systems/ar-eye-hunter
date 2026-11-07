@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -10,9 +10,11 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
+import { createApiWebSocketRouteDependencies } from '../../src/composition/create-api-v1-route-installers.ts';
 import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import type { GroupStateRouteCommandInput } from '../../src/group-state/group-state-route-contracts.ts';
+import { createApiWebSocketServeHandlers, type ApiWebSocketConnectionData } from '../../src/routes/ws-routes.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import {
@@ -66,6 +68,7 @@ interface NativeSessionTestFixtureDependencies {
     readonly backgroundProducersStopped: PromiseWithResolvers<void>;
     readonly queueEngineStopped: PromiseWithResolvers<void>;
     readonly queueEngineLifecycle: { started: boolean; };
+    readonly wsHandlers: ReturnType<typeof createApiWebSocketServeHandlers>;
 }
 
 export class NativeSessionTestFixture {
@@ -73,7 +76,7 @@ export class NativeSessionTestFixture {
     readonly databaseLifecycle: ApiV1TestPGliteDatabaseLifecycle;
     readonly sessionTtlMs: number;
     private readonly dependencies: NativeSessionTestFixtureDependencies;
-    private listener: Deno.HttpServer<Deno.NetAddr> | undefined;
+    private listener: Bun.Server<ApiWebSocketConnectionData> | undefined;
 
     constructor(dependencies: NativeSessionTestFixtureDependencies) {
         this.dependencies = dependencies;
@@ -86,8 +89,13 @@ export class NativeSessionTestFixture {
         await this.runtime.readiness;
         this.dependencies.startServer();
         this.dependencies.queueEngineLifecycle.started = true;
-        this.listener = Deno.serve({ hostname: '127.0.0.1', port: 0, onListen: () => {} }, this.dependencies.app.fetch);
-        return `http://127.0.0.1:${this.listener.addr.port}`;
+        this.listener = Bun.serve({
+            hostname: '127.0.0.1',
+            port: 0,
+            fetch: this.dependencies.wsHandlers.fetch,
+            websocket: this.dependencies.wsHandlers.websocket
+        });
+        return `http://127.0.0.1:${this.listener.port}`;
     }
 
     async stop(socketClosures: readonly Promise<void>[], primaryFailure: Error | undefined): Promise<void> {
@@ -136,8 +144,11 @@ export async function createNativeSessionTestFixture(): Promise<NativeSessionTes
     const app = createTracedApiTestApp();
     rallar.installSystemTopics();
     rallar.installWebSocketLifecycle();
-    rallar.mountWebSocket(app);
     rallar.mountRest(app);
+    const wsHandlers = createApiWebSocketServeHandlers(
+        createApiWebSocketRouteDependencies(rallar.runtime, Date.now),
+        app
+    );
     return new NativeSessionTestFixture({
         runtime: rallar.runtime,
         databaseLifecycle,
@@ -146,7 +157,8 @@ export async function createNativeSessionTestFixture(): Promise<NativeSessionTes
         sessionTtlMs: configuration.authentication.sessionTtlMs,
         backgroundProducersStopped,
         queueEngineStopped,
-        queueEngineLifecycle
+        queueEngineLifecycle,
+        wsHandlers
     });
 }
 

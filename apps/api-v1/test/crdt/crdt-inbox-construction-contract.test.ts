@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { CreateApiCrdtInboxServiceInput } from '../../src/crdt/create-api-crdt-inbox-service.ts';
@@ -16,6 +17,6 @@ const REQUIRED_CONSTRUCTION_INPUTS: readonly boolean[] = [
     true satisfies IsRequired<CrdtFactoryInput, 'policies'>
 ];
 
-Deno.test('lower CRDT inbox construction requires resolved authority and policy inputs', () => {
+test('lower CRDT inbox construction requires resolved authority and policy inputs', () => {
     assert.deepEqual(REQUIRED_CONSTRUCTION_INPUTS, [true, true, true, true]);
 });

@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -51,7 +52,7 @@ for (
     ] as const
 ) {
     // `unbridged`: RALLAR_DB_PUBSUB=disabled installs no cluster bridge; the dequeuing server's own sends deliver.
-    Deno.test(`committed client snapshot reaches ${placement} socket registered ${registration} through the cluster bridge`, async () => {
+    test(`committed client snapshot reaches ${placement} socket registered ${registration} through the cluster bridge`, async () => {
         await withPGliteSql(async (sql) => {
             const recipient: SnapshotRecipient = {
                 sessionId: crypto.randomUUID(),

@@ -1,7 +1,8 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { createPGliteSqlClient } from '../../src/db/pglite-sql-adapter.ts';
 
-Deno.test('PGlite SQL waits for readiness without mutating the existing session', async () => {
+test('PGlite SQL waits for readiness without mutating the existing session', async () => {
     let releaseReady: (() => void) | undefined;
     const ready = new Promise<void>((resolve) => {
         releaseReady = resolve;

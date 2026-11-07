@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -44,7 +45,7 @@ interface CountRow {
     readonly count: string;
 }
 
-Deno.test('PGlite persists distinct topology publications with one logical route', async () => {
+test('PGlite persists distinct topology publications with one logical route', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     try {
@@ -72,7 +73,7 @@ Deno.test('PGlite persists distinct topology publications with one logical route
     }
 });
 
-Deno.test('PGlite atomically publishes stale topology work without regressing latest topology', async () => {
+test('PGlite atomically publishes stale topology work without regressing latest topology', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     try {
@@ -180,7 +181,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
 });
 
 for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as const) {
-    Deno.test(`PGlite atomically publishes 1500 topology sessions with ${collision} collision`, async () => {
+    test(`PGlite atomically publishes 1500 topology sessions with ${collision} collision`, async () => {
         const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
         const sql = lifecycle.database;
         try {

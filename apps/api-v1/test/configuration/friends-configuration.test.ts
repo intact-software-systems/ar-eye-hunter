@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import defaultsSource from '../../resources/configuration/defaults-config.json' with { type: 'json' };
@@ -5,7 +6,7 @@ import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configur
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { validDecodeApiV1ConfigurationInput } from './api-v1-configuration-test-fixture.ts';
 
-Deno.test('friend capacity, invitation lifetime and mutation quota are explicit bounded configuration', () => {
+test('friend capacity, invitation lifetime and mutation quota are explicit bounded configuration', () => {
     const input = { ...validDecodeApiV1ConfigurationInput(), defaultsSource };
     assert.deepEqual(decodeApiV1Configuration(input).friends, {
         maxContacts: 200,
@@ -22,7 +23,7 @@ Deno.test('friend capacity, invitation lifetime and mutation quota are explicit 
     });
 });
 
-Deno.test('friend configuration rejects invalid bounds and unknown settings', () => {
+test('friend configuration rejects invalid bounds and unknown settings', () => {
     for (
         const friends of [
             { maxContacts: 0 },

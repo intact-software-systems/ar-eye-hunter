@@ -14,19 +14,25 @@ import {
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import { type GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/rallar-system/group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
 import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
+import { decodeALTraceId, newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import {
     readAuthorisedWsConnection,
     rememberAuthorisedWsConnection
 } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
-import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { RequestAuthFailure, toAuthErrorResponse } from '../services/request-auth-service.ts';
 
 /** Longer than the connect's completion wait plus a handshake: a socket that neither opens nor closes stops holding rows. */
 const EXPECTED_CONNECTION_TTL_MS = 120_000;
+
+/** The per-connection state carried through `server.upgrade(request, { data })` into the Bun websocket handlers. */
+export interface ApiWebSocketConnectionData {
+    readonly sessionId: string;
+    readonly generationId: string;
+    readonly generationStartedAtEpochMs: number;
+}
 
 export interface RegisterWsRoutesInput {
     readonly socketServer: JsonWebSocketServer;
@@ -36,9 +42,16 @@ export interface RegisterWsRoutesInput {
     >;
     readonly readWsConnectTicket: (ticketDigest: string) => Promise<PersistedWebSocketTicket | undefined>;
     readonly readWsConnectSession: (sessionId: string) => Promise<PersistedAuthSession | undefined>;
-    readonly upgradeWebSocket: (request: Request) => Deno.WebSocketUpgrade;
+    readonly upgradeWebSocket: (request: Request, connection: ApiWebSocketConnectionData) => boolean;
     readonly nowEpochMs: () => number;
 }
+
+export type RegisterWsRoutesDependencies = Omit<RegisterWsRoutesInput, 'upgradeWebSocket'>;
+
+export type ApiWebSocketUpgradeOutcome =
+    | { readonly kind: 'upgraded'; }
+    | { readonly kind: 'response'; readonly response: Response; }
+    | { readonly kind: 'passthrough'; };
 
 interface AuthorisedWsConnect {
     readonly enqueue: ToAuthorisedWsClientConnectEnqueueInput;
@@ -46,43 +59,154 @@ interface AuthorisedWsConnect {
     readonly expected: ExpectedConnectionHolds.Expectation;
 }
 
-export function registerWsRoutes(app: Hono, input: RegisterWsRoutesInput): void {
-    app.get(
-        '/api/ws/:sessionId',
-        (context) => upgradeAuthorisedWebSocket(context, input)
-    );
-}
-
-/** The ticket is consumed by the connect's own transaction; the socket upgrades and registers only after it commits. */
-async function upgradeAuthorisedWebSocket(
-    context: Context,
+/**
+ * The fetch-boundary WebSocket upgrade. Under Bun the upgrade must happen in the `fetch` handler of
+ * `Bun.serve`, where `server.upgrade(request, { data })` is in scope; it is not a Hono route.
+ */
+export async function upgradeApiWebSocket(
+    request: Request,
     input: RegisterWsRoutesInput
-): Promise<Response> {
-    if (!isWebSocketUpgradeHeader(context.req.header('upgrade'))) {
-        return context.text('Expected Upgrade: websocket', 426);
+): Promise<ApiWebSocketUpgradeOutcome> {
+    const sessionId = readWsSessionId(request.url);
+    if (sessionId === undefined) {
+        return { kind: 'passthrough' };
     }
-    const sessionId = context.req.param('sessionId');
-    const requestUrl = new URL(context.req.url);
+    if (!isWebSocketUpgradeHeader(request.headers.get('upgrade'))) {
+        return { kind: 'response', response: new Response('Expected Upgrade: websocket', { status: 426 }) };
+    }
+    const requestUrl = new URL(request.url);
     const ticket = requestUrl.searchParams.get('ticket');
     const ticketDigest = ticket ? await hashAuthSecret(ticket) : undefined;
     const session = ticketDigest ? await readTicketedWsSession(input, { sessionId, ticketDigest }) : undefined;
     if (!ticketDigest || session === undefined) {
-        return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
+        return {
+            kind: 'response',
+            response: toWsTicketRejectionResponse({ sessionId, generationId: null })
+        };
     }
     const connect = createAuthorisedWsConnect(input, {
         session,
         ticketDigest,
-        traceId: readApiRequestTraceId(context),
+        traceId: decodeALTraceId(request.headers.get('x-request-id')).right ?? newALTraceId(),
         requestUrl,
-        userAgent: context.req.header('user-agent')
+        userAgent: request.headers.get('user-agent') ?? undefined
     });
     input.socketServer.expectedConnections.expect(connect.expected);
     const written = await writeAuthorisedWsConnect(input, connect);
     if (written?.right?.status === 'ok') {
-        return await registerAuthorisedWebSocket(context, input, connect);
+        return registerAuthorisedWebSocket(request, input, connect);
     }
     input.socketServer.expectedConnections.release(connect.expected);
-    return await writeUnwrittenConnectResponse(context, input, { connect, written });
+    return { kind: 'response', response: await writeUnwrittenConnectResponse(input, { connect, written }) };
+}
+
+/** The Bun `websocket` config that dispatches each upgraded socket's events into the shared server. */
+export function createApiWebSocketHandlers(
+    socketServer: JsonWebSocketServer
+): Bun.WebSocketHandler<ApiWebSocketConnectionData> {
+    const readConnection = (data: ApiWebSocketConnectionData): ConnectionContext | undefined =>
+        socketServer.connections.get(data.sessionId);
+    return {
+        open(ws) {
+            const connection = new ConnectionContext({
+                id: ws.data.sessionId,
+                socket: ws as unknown as WebSocket,
+                generationId: ws.data.generationId,
+                generationStartedAtEpochMs: ws.data.generationStartedAtEpochMs
+            });
+            socketServer.registerConnection(connection);
+            socketServer.handleConnectionOpen(connection);
+        },
+        message(ws, data) {
+            const connection = readConnection(ws.data);
+            if (connection !== undefined) {
+                void socketServer.handleConnectionMessage(connection, data);
+            }
+        },
+        close(ws, code, reason) {
+            const connection = readConnection(ws.data) ?? new ConnectionContext({
+                id: ws.data.sessionId,
+                socket: ws as unknown as WebSocket,
+                generationId: ws.data.generationId,
+                generationStartedAtEpochMs: ws.data.generationStartedAtEpochMs
+            });
+            socketServer.handleConnectionClose(connection, code, reason);
+        },
+        error(error, ws) {
+            const connection = readConnection(ws.data);
+            if (connection !== undefined) {
+                socketServer.handleConnectionError(connection, error);
+            }
+        }
+    };
+}
+
+/** The `Bun.serve` fetch and websocket pair that upgrades API WebSockets at the boundary and falls back to the app. */
+export function createApiWebSocketServeHandlers(
+    dependencies: RegisterWsRoutesDependencies,
+    app: { fetch: (request: Request) => Response | Promise<Response>; }
+): {
+    readonly fetch: (request: Request, server: Bun.Server<ApiWebSocketConnectionData>) => Promise<Response | void>;
+    readonly websocket: Bun.WebSocketHandler<ApiWebSocketConnectionData>;
+} {
+    return {
+        fetch: async (request, server) => {
+            const outcome = await upgradeApiWebSocket(request, {
+                ...dependencies,
+                upgradeWebSocket: (request, connection) => server.upgrade(request, { data: connection })
+            });
+            if (outcome.kind === 'upgraded') {
+                return;
+            }
+            if (outcome.kind === 'response') {
+                return outcome.response;
+            }
+            return app.fetch(request);
+        },
+        websocket: createApiWebSocketHandlers(dependencies.socketServer)
+    };
+}
+
+function readWsSessionId(url: string): string | undefined {
+    const match = /^\/api\/ws\/([^/]+)$/u.exec(new URL(url).pathname);
+    return match ? decodeURIComponent(match[1]!) : undefined;
+}
+
+/** The ticket is consumed by the connect's own transaction; the socket upgrades and registers only after it commits. */
+async function registerAuthorisedWebSocket(
+    request: Request,
+    input: RegisterWsRoutesInput,
+    connect: AuthorisedWsConnect
+): Promise<ApiWebSocketUpgradeOutcome> {
+    if (request.signal.aborted) {
+        return {
+            kind: 'response',
+            response: await writeClosedGenerationResponse(input, { connect, reason: 'websocket-upgrade-abandoned' })
+        };
+    }
+    try {
+        const upgraded = input.upgradeWebSocket(request, {
+            sessionId: connect.expected.id,
+            generationId: connect.generation.generationId,
+            generationStartedAtEpochMs: connect.generation.generationStartedAtEpochMs
+        });
+        if (!upgraded) {
+            throw new Error('WebSocket upgrade was refused at the runtime boundary');
+        }
+        rememberAuthorisedWsConnection(
+            connect.expected.id,
+            connect.generation.generationId,
+            toAuthorisedWsClientConnection(connect.enqueue)
+        );
+        return { kind: 'upgraded' };
+    }
+    catch (error) {
+        console.error('WebSocket upgrade failed after its connect committed', error);
+        return {
+            kind: 'response',
+            response: await writeClosedGenerationResponse(input, { connect, reason: 'websocket-upgrade-failed' })
+        };
+    }
 }
 
 interface TicketedWsSessionRead {
@@ -156,32 +280,6 @@ async function writeAuthorisedWsConnect(
     }
 }
 
-async function registerAuthorisedWebSocket(
-    context: Context,
-    input: RegisterWsRoutesInput,
-    connect: AuthorisedWsConnect
-): Promise<Response> {
-    if (context.req.raw.signal.aborted) {
-        return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-abandoned' });
-    }
-    try {
-        const upgraded = input.upgradeWebSocket(context.req.raw);
-        rememberAuthorisedWsConnection(
-            connect.expected.id,
-            connect.generation.generationId,
-            toAuthorisedWsClientConnection(connect.enqueue)
-        );
-        input.socketServer.addConnection(
-            new ConnectionContext({ id: connect.expected.id, socket: upgraded.socket, ...connect.generation })
-        );
-        return upgraded.response;
-    }
-    catch (error) {
-        console.error('WebSocket upgrade failed after its connect committed', error);
-        return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-failed' });
-    }
-}
-
 interface ClosedGeneration {
     readonly connect: AuthorisedWsConnect;
     readonly reason: string;
@@ -189,13 +287,12 @@ interface ClosedGeneration {
 
 /** A committed connect whose socket never registers costs its disconnect, never a lingering session. */
 async function writeClosedGenerationResponse(
-    context: Context,
     input: RegisterWsRoutesInput,
     { connect, reason }: ClosedGeneration
 ): Promise<Response> {
     input.socketServer.expectedConnections.release(connect.expected);
     await enqueueGenerationDisconnect(input, connect, reason);
-    return context.json({ error: 'WebSocket setup failed' }, 500);
+    return Response.json({ error: 'WebSocket setup failed' }, { status: 500 });
 }
 
 interface UnwrittenConnect {
@@ -205,16 +302,15 @@ interface UnwrittenConnect {
 
 /** A connect whose outcome the route did not see may still commit, so its generation is closed behind it. */
 async function writeUnwrittenConnectResponse(
-    context: Context,
     input: RegisterWsRoutesInput,
     { connect, written }: UnwrittenConnect
 ): Promise<Response> {
     const generation = { sessionId: connect.expected.id, generationId: connect.generation.generationId };
     if (written?.right?.status === 'ticket-rejected') {
-        return toWsTicketRejectionResponse(context, generation);
+        return toWsTicketRejectionResponse(generation);
     }
     if (written?.right?.status === 'inactive') {
-        return context.json({ error: 'WebSocket generation is no longer active' }, 409);
+        return Response.json({ error: 'WebSocket generation is no longer active' }, { status: 409 });
     }
     await enqueueGenerationDisconnect(input, connect, 'websocket-connect-failed');
     const failure = written?.left;
@@ -242,7 +338,6 @@ async function enqueueGenerationDisconnect(
 }
 
 function toWsTicketRejectionResponse(
-    context: Context,
     generation: Readonly<{ sessionId: string; generationId: string | null; }>
 ): Response {
     const rejection = new RequestAuthFailure({
@@ -253,7 +348,10 @@ function toWsTicketRejectionResponse(
         details: generation
     });
     console.warn(rejection);
-    return toAuthErrorResponse(context, rejection);
+    return toAuthErrorResponse(
+        { json: (value, status) => Response.json(value, { status }) },
+        rejection
+    );
 }
 
 export function toAuthorisedWsClientInput(
@@ -292,7 +390,7 @@ export function toGroupPresenceSessionCleanupInput(
     };
 }
 
-function isWebSocketUpgradeHeader(upgrade?: string): boolean {
+function isWebSocketUpgradeHeader(upgrade?: string | null): boolean {
     return upgrade?.trim().toLowerCase() === 'websocket';
 }
 

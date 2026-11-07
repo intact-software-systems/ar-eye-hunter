@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -91,7 +92,7 @@ interface StringValueRow {
     readonly value: string;
 }
 
-Deno.test(
+test(
     'PGlite AppInbox accepts current typed failures and rejects non-current shapes',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -213,7 +214,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite AppGroup commits group mutations, including active-member no-ops, through fenced queue transactions',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -454,7 +455,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite summary reservation fence rolls back CAS and every downstream row atomically',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -600,7 +601,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'group event workspace keys encode every required value canonically',
     () => {
         const workspaces = ['_', '%5F', 'main', 'a:b', 'a%3Ab', '＿'];
@@ -612,7 +613,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite SQL adapter supports tagged templates, array interpolation, and transactions',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -658,7 +659,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async () => {
+test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlRuntimeStateRepository(sql);
 
@@ -702,7 +703,7 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     });
 });
 
-Deno.test(
+test(
     'PGlite client write commits state, event, and ResourceInbox rows in one caller transaction',
     async () => {
         await withPGliteSql(async (sql) => {

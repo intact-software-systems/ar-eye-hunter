@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -20,7 +21,7 @@ const RFC_7517_PUBLIC_JWK: EcdsaP256PublicJwk = {
     y: '4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM'
 };
 
-Deno.test('Deno WebCrypto signs and verifies an ECDSA P-256 detached signature', async () => {
+test('Deno WebCrypto signs and verifies an ECDSA P-256 detached signature', async () => {
     const message = new TextEncoder().encode('granted frame bytes');
     const pair = (await createSigningKeyPair(subtle)).right;
     assert.ok(pair);
@@ -38,14 +39,14 @@ Deno.test('Deno WebCrypto signs and verifies an ECDSA P-256 detached signature',
     );
 });
 
-Deno.test('Deno WebCrypto computes the RFC 7638 thumbprint of a fixed ECDSA P-256 key', async () => {
+test('Deno WebCrypto computes the RFC 7638 thumbprint of a fixed ECDSA P-256 key', async () => {
     assert.equal(
         await computeEcdsaP256JwkThumbprint(subtle, RFC_7517_PUBLIC_JWK),
         'cn-I_WNMClehiVp51i_0VpOENW1upEerA8sEam5hn-s'
     );
 });
 
-Deno.test('the ECDSA P-256 public JWK decoder accepts the public members and refuses a private one', () => {
+test('the ECDSA P-256 public JWK decoder accepts the public members and refuses a private one', () => {
     assert.deepEqual(decodeEcdsaP256PublicJwk({ ...RFC_7517_PUBLIC_JWK }).right, RFC_7517_PUBLIC_JWK);
     assert.deepEqual(
         decodeEcdsaP256PublicJwk({ ...RFC_7517_PUBLIC_JWK, d: '870MB6gfuTJ4HtUnUvYMyJpr5eUZNP4Bk43bVdj3eAE' }).left

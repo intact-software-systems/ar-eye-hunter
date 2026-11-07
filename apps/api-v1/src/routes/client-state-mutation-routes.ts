@@ -29,7 +29,7 @@ import type {
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'hono';
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { authorizationDenied } from '../services/request-auth-service.ts';
 import { toApiMutationFailureResponse, toApiMutationRouteFailure } from './api-mutation-route-failure.ts';

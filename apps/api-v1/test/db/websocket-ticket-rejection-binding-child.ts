@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
+import { inspect } from 'node:util';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -19,7 +19,7 @@ import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
+import { upgradeApiWebSocket, type RegisterWsRoutesInput } from '../../src/routes/ws-routes.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -38,7 +38,7 @@ interface TicketRejectionFixture {
     readonly runtime: TicketReadRepository;
     readonly sessions: AuthSessionRepository;
     readonly inboxReader: InboxQueueReader;
-    readonly app: Hono;
+    readonly wsInput: RegisterWsRoutesInput;
     readonly upgrades: number[];
 }
 
@@ -93,8 +93,7 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     await sessions.putSession(SESSION);
     await sessions.putSession({ ...SESSION, clientId: 'other-client', sessionId: 'other-session' });
     const upgrades: number[] = [];
-    const app = new Hono();
-    registerWsRoutes(app, {
+    const wsInput: RegisterWsRoutesInput = {
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: client,
         readWsConnectTicket: async (ticketDigest) =>
@@ -105,8 +104,8 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
             throw new Error('A rejected ticket must not upgrade');
         },
         nowEpochMs: Date.now
-    });
-    return { sql, runtime, sessions, inboxReader, app, upgrades };
+    };
+    return { sql, runtime, sessions, inboxReader, wsInput, upgrades };
 }
 
 async function verifyTicketRejection(
@@ -134,16 +133,21 @@ async function verifyTicketRejection(
     };
     originalConsoleError(`BEGIN ${provenance}`);
     try {
-        const response = await requestUpgrade(fixture, ticket);
-        assert.equal(response.status, 401);
-        assert.deepEqual(await response.json(), { error: 'Unauthorized: Invalid or expired websocket auth ticket' });
+        const outcome = await requestUpgrade(fixture, ticket);
+        assert.equal(outcome.kind, 'response');
+        if (outcome.kind === 'response') {
+            assert.equal(outcome.response.status, 401);
+            assert.deepEqual(await outcome.response.json(), {
+                error: 'Unauthorized: Invalid or expired websocket auth ticket'
+            });
+        }
         assert.equal(fixture.upgrades.length, 0);
         assert.deepEqual(await fixture.runtime.findAllEntries('auth-sessions:ws-tickets'), before);
         assert.equal(fixture.runtime.ticketReads.get(authTicketDigestKey(ticketDigest)), 1);
         await verifyNothingQueued(fixture.sql);
-        const rendered = Deno.inspect(loggedCalls, { depth: Infinity });
+        const rendered = inspect(loggedCalls, { depth: Infinity });
         assert.match(rendered, /RequestAuthFailure/u);
-        assert.match(rendered, /sessionId: "stored-session"/u);
+        assert.match(rendered, /sessionId: 'stored-session'/u);
         assert.equal(rendered.includes(ticketDigest), false);
         assert.equal(rendered.includes(await hashAuthSecret(SESSION.accessToken)), false);
         for (const entry of before) {
@@ -157,12 +161,16 @@ async function verifyTicketRejection(
     }
 }
 
-async function requestUpgrade(fixture: TicketRejectionFixture, ticket: string): Promise<Response> {
+async function requestUpgrade(
+    fixture: TicketRejectionFixture,
+    ticket: string
+): Promise<Awaited<ReturnType<typeof upgradeApiWebSocket>>> {
     let settled = false;
-    const response = Promise.resolve(
-        fixture.app.request(`http://localhost/api/ws/${SESSION.sessionId}?ticket=${ticket}`, {
+    const outcome = upgradeApiWebSocket(
+        new Request(`http://localhost/api/ws/${SESSION.sessionId}?ticket=${ticket}`, {
             headers: { upgrade: 'websocket' }
-        })
+        }),
+        fixture.wsInput
     ).finally(() => {
         settled = true;
     });
@@ -170,7 +178,7 @@ async function requestUpgrade(fixture: TicketRejectionFixture, ticket: string): 
         await fixture.inboxReader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await new Promise((resolve) => setTimeout(resolve, 2));
     }
-    return await response;
+    return await outcome;
 }
 
 /** A ticket the route can already refuse never reaches the session's lane or writes client state. */

@@ -2,6 +2,7 @@ import { PSqlAdminCrdtReader } from '@shared-server/rallar-system/admin-operatio
 import { PSqlAdminQueueReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-queue-reader.ts';
 import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
 import { PSqlAdminSystemReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-system-reader.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import {
     canonicalGroupRuntimeValue,
@@ -16,7 +17,7 @@ import {
     withPGliteSql
 } from './admin-operations-postgres-test-runtime.ts';
 
-Deno.test('named PostgreSQL admin readers aggregate their owned statistics', async () => {
+test('named PostgreSQL admin readers aggregate their owned statistics', async () => {
     await withPGliteSql(async (sql) => {
         await seedAdminOperationsRows(sql);
         const options = {
@@ -78,7 +79,7 @@ Deno.test('named PostgreSQL admin readers aggregate their owned statistics', asy
     });
 });
 
-Deno.test('admin stats bound recent events and expire active groups logically', async () => {
+test('admin stats bound recent events and expire active groups logically', async () => {
     await withPGliteSql(async (sql) => {
         const nowEpochMs = 1_700_000_000_000;
         const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -153,7 +154,7 @@ Deno.test('admin stats bound recent events and expire active groups logically', 
     });
 });
 
-Deno.test('admin stats fail closed on contract violations in both scopes', async () => {
+test('admin stats fail closed on contract violations in both scopes', async () => {
     const nowEpochMs = 1_700_000_000_000;
     const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
     const keyPrefix = 'app=app-1:ws=workspace-1';
@@ -221,7 +222,7 @@ Deno.test('admin stats fail closed on contract violations in both scopes', async
     }
 });
 
-Deno.test('admin stats count canonical group expiries in both scopes', async () => {
+test('admin stats count canonical group expiries in both scopes', async () => {
     await withPGliteSql(async (sql) => {
         const nowEpochMs = 1_700_000_000_000;
         const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -250,7 +251,7 @@ Deno.test('admin stats count canonical group expiries in both scopes', async () 
     });
 });
 
-Deno.test('admin stats apply a custom recent-event window within scope', async () => {
+test('admin stats apply a custom recent-event window within scope', async () => {
     await withPGliteSql(async (sql) => {
         const nowEpochMs = 1_700_000_000_000;
         const recentEventWindowMs = 60_000;
@@ -300,7 +301,7 @@ Deno.test('admin stats apply a custom recent-event window within scope', async (
     });
 });
 
-Deno.test('admin stats order queue topPressure by descending count', async () => {
+test('admin stats order queue topPressure by descending count', async () => {
     await withPGliteSql(async (sql) => {
         for (
             const input of [

@@ -1,4 +1,6 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1Configuration } from '../../src/configuration/api-v1-configuration.ts';
@@ -6,7 +8,7 @@ import { readApiV1Configuration } from '../../src/configuration/read-api-v1-conf
 import { reportApiV1Configuration } from '../../src/configuration/report-api-v1-configuration.ts';
 import { validConfigurationEnvironment } from './api-v1-configuration-test-fixture.ts';
 
-Deno.test('hardened startup rejects an advertised WebSocket host outside the public API authority', async () => {
+test('hardened startup rejects an advertised WebSocket host outside the public API authority', async () => {
     try {
         await readConfiguration({
             ...validConfigurationEnvironment('prod-hardened'),
@@ -26,7 +28,7 @@ Deno.test('hardened startup rejects an advertised WebSocket host outside the pub
     }
 });
 
-Deno.test('hardened startup accepts the same public authority despite URL spelling and a separate SPA origin', async () => {
+test('hardened startup accepts the same public authority despite URL spelling and a separate SPA origin', async () => {
     const configuration = await readConfiguration({
         ...validConfigurationEnvironment('prod-hardened'),
         RALLAR_API_BASE_URL: 'https://API.example.test:443/base',
@@ -38,7 +40,7 @@ Deno.test('hardened startup accepts the same public authority despite URL spelli
     assert.deepEqual(configuration.http.corsOrigins, ['https://game.example.test']);
 });
 
-Deno.test('non-hardened startup emits a safe actionable warning while allowing configuration', async () => {
+test('non-hardened startup emits a safe actionable warning while allowing configuration', async () => {
     for (const profile of ['dev', 'prod', 'prod-in-memory'] as const) {
         const configuration = await readConfiguration({
             ...validConfigurationEnvironment(profile),
@@ -64,7 +66,7 @@ Deno.test('non-hardened startup emits a safe actionable warning while allowing c
     }
 });
 
-Deno.test('matching public hosts produce a startup summary without a mismatch warning', async () => {
+test('matching public hosts produce a startup summary without a mismatch warning', async () => {
     const configuration = await readConfiguration(validConfigurationEnvironment());
     const summaries: string[] = [];
     const warnings: string[] = [];
@@ -80,9 +82,9 @@ Deno.test('matching public hosts produce a startup summary without a mismatch wa
 
 function readConfiguration(environment: Readonly<Record<string, string>>): Promise<ApiV1Configuration> {
     return readApiV1Configuration({
-        environment: { get: (name) => environment[name] },
+        environment,
         hardwareConcurrency: 4,
-        readTextFile: Deno.readTextFile,
+        readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: new URL('../../resources/configuration/defaults-config.json', import.meta.url),
         profileUrls: {
             dev: new URL('../../resources/configuration/dev-config.json', import.meta.url),
