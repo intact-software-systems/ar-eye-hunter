@@ -6023,6 +6023,21 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-outbound-ordering-stored-predecessors-bounded-read",
+      "domain": "ALM outbound track order",
+      "owner": "Rallar shared maintainers",
+      "summary": "A tracked dequeue reads its track's listed predecessors' stored rows from the highest sequence down and stops at the first settled one; the sequences below it are neither read nor pending.",
+      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-track-order.test.ts#stops at a settled predecessor: the absent sequences below it are neither read nor pending",
+      "coverageRelation": "The tests list index rows below a settled stored row and observe, through the in-memory backend's reads, that only the stored rows at and above the settled one are read, and that the authority treats nothing below it as pending.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "ALAdmissionReadSession.read of sent-message keys during readStoredPredecessorsToSettled",
+        "observableEffect": "Each stored-row read is a store round trip; a client-state track can list every live event of its process, so an unbounded read costs a dequeue one round trip per listed sequence.",
+        "requiredConstraint": "Stored rows are read in descending sequence order, ending at the first present row that is not unrecorded.",
+        "failureRationale": "The authority returned is the same whether or not the rows below the settled one were read and found absent-but-ignored, so only the read sequence shows the bound holds."
+      }
+    },
+    {
       "id": "alm-outbound-track-index-end-recorded-row-untouched",
       "domain": "ALM outbound track index end",
       "owner": "Rallar shared maintainers",
@@ -12898,7 +12913,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
       "rationale": "The stored-row keys the backend reads are the contract: a track's predecessors are read from the highest sequence down and the read stops at the first settled row, so a long live track pays reads only down to its last recorded row rather than one per listed sequence.",
-      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts#reads the listed sequences' stored rows from the highest down to the first settled one, and none below it"
+      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-track-order.test.ts#stops at a settled predecessor: the absent sequences below it are neither read nor pending"
     },
     {
       "id": "test-structure-coupling-504f1b47667d96b1",
