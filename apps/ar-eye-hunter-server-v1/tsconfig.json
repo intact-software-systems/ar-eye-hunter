@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "target": "ES2024",
+    "module": "ESNext",
+    "lib": ["ES2024", "DOM"],
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": ["bun"],
+    "paths": {
+      "@api-v1/*": ["../api-v1/*"],
+      "@ar-eye-hunter/*": ["../../packages/ar-eye-hunter/*"],
+      "@shared/*": ["../../packages/shared/*"],
+      "@shared-server/*": ["../../packages/shared-server/*"],
+      "@shared-graph/*": ["../../packages/shared-graph/*"],
+      "@shared-web/*": ["../../packages/shared-web/*"],
+      "@shared-test/*": ["../../packages/shared-test/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

@@ -18,7 +18,7 @@ export class ArenaTournamentClusterNode {
     readonly socket = new JsonWebSocketServer();
     private readonly engine = new InboxOutboxEngine();
     private readonly database: ReturnType<typeof postgres>;
-    private readonly listener: Deno.HttpServer<Deno.NetAddr>;
+    private readonly listener: Bun.Server<{ id: string; generationId: string; }>;
     private readonly clients: WebSocket[] = [];
     readonly service;
     readonly transport;
@@ -56,11 +56,27 @@ export class ArenaTournamentClusterNode {
                 expiresAtEpochMs: Date.now() + 60000
             })
         });
-        this.listener = Deno.serve({ hostname: '127.0.0.1', port: 0, onListen: () => {} }, (request) => {
-            const [id, generationId] = new URL(request.url).pathname.slice(1).split('/');
-            const { socket, response } = Deno.upgradeWebSocket(request);
-            this.socket.addConnection(new ConnectionContext({ id, generationId, socket }));
-            return response;
+        this.listener = Bun.serve({
+            hostname: '127.0.0.1',
+            port: 0,
+            fetch: (request, server) => {
+                const [id, generationId] = new URL(request.url).pathname.slice(1).split('/');
+                if (server.upgrade(request, { data: { id, generationId } })) {
+                    return;
+                }
+                return new Response('Expected a WebSocket upgrade', { status: 400 });
+            },
+            websocket: {
+                open: (ws) => {
+                    this.socket.addConnection(
+                        new ConnectionContext({
+                            id: ws.data.id,
+                            generationId: ws.data.generationId,
+                            socket: ws as unknown as WebSocket
+                        })
+                    );
+                }
+            }
         });
     }
 
@@ -78,7 +94,7 @@ export class ArenaTournamentClusterNode {
     }
 
     async connect(id: string, generation: string): Promise<string[]> {
-        const client = new WebSocket(`ws://127.0.0.1:${this.listener.addr.port}/${id}/${generation}`);
+        const client = new WebSocket(`ws://127.0.0.1:${this.listener.port}/${id}/${generation}`);
         this.clients.push(client);
         const frames: string[] = [];
         client.addEventListener('message', (event) => frames.push(String(event.data)));
@@ -94,7 +110,7 @@ export class ArenaTournamentClusterNode {
         for (const client of this.clients) {
             client.close();
         }
-        await this.listener.shutdown();
+        this.listener.stop();
         await this.service.dispose();
         await this.engine.stop();
         await this.database.end();

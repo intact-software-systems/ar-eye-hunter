@@ -1,6 +1,8 @@
 import { serveApiApplication } from '@api-v1/src/runtime/serve-api-application.ts';
-import { loadSync } from '@std/dotenv';
+import { config } from 'dotenv';
 import { Hono } from 'hono';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { reportApiV1Configuration } from '@api-v1/src/configuration/report-api-v1-configuration.ts';
@@ -23,9 +25,9 @@ loadEnvironment();
 
 const app: Hono = new Hono();
 const configuration = await readRelicHunterServerConfiguration({
-    environment: Deno.env,
+    environment: process.env,
     hardwareConcurrency: navigator.hardwareConcurrency,
-    readTextFile: Deno.readTextFile,
+    readTextFile: (url) => readFile(url, 'utf8'),
     defaultsUrl: new URL('../../api-v1/resources/configuration/defaults-config.json', import.meta.url),
     profileUrls: {
         dev: new URL('../../api-v1/resources/configuration/dev-config.json', import.meta.url),
@@ -120,18 +122,14 @@ function loadEnvironment(): void {
     loadEnvFileIfPresent(new URL('../../api-v1/.env.local', import.meta.url));
 }
 
-function loadEnvFileIfPresent(envPath: URL): void {
-    try {
-        loadSync({
-            envPath,
-            export: true
-        });
+function loadEnvFileIfPresent(envUrl: URL): void {
+    const result = config({ path: fileURLToPath(envUrl), quiet: true });
+    if (result.error === undefined) {
+        return;
     }
-    catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
-            return;
-        }
-
-        throw error;
+    const error = result.error as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') {
+        return;
     }
+    throw result.error;
 }

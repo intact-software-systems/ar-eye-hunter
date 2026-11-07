@@ -157,11 +157,11 @@ function readRelicHunterServerEnvironmentSource(
     environment: ReadApiV1ConfigurationInput['environment']
 ): RelicHunterServerEnvironmentSource {
     return {
-        restAuthorizationMode: environment.get('RELIC_REST_AUTH_MODE'),
-        expeditionAiMode: environment.get('RELIC_AI_EXPEDITION_MODE'),
-        expeditionAiTimeoutMs: environment.get('RELIC_AI_EXPEDITION_TIMEOUT_MS'),
-        expeditionAiOllamaBaseUrl: environment.get('RELIC_AI_EXPEDITION_OLLAMA_BASE_URL'),
-        expeditionAiOllamaModel: environment.get('RELIC_AI_EXPEDITION_OLLAMA_MODEL')
+        restAuthorizationMode: environment['RELIC_REST_AUTH_MODE'],
+        expeditionAiMode: environment['RELIC_AI_EXPEDITION_MODE'],
+        expeditionAiTimeoutMs: environment['RELIC_AI_EXPEDITION_TIMEOUT_MS'],
+        expeditionAiOllamaBaseUrl: environment['RELIC_AI_EXPEDITION_OLLAMA_BASE_URL'],
+        expeditionAiOllamaModel: environment['RELIC_AI_EXPEDITION_OLLAMA_MODEL']
     };
 }
 

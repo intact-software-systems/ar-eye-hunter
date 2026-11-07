@@ -1,3 +1,5 @@
+import { test } from 'bun:test';
+
 import { decodeArenaTournamentSnapshot, type ArenaTournamentSnapshot } from '@ar-eye-hunter/arena-tournament-snapshot.ts';
 import { ARENA_TOURNAMENT_SNAPSHOT_SENDER, decodeArenaTournamentFrame, isArenaTournamentFrameMessage } from '@ar-eye-hunter/arena-tournament-stream.ts';
 import { ARENA_TOURNAMENT_FINISH_TOPIC } from '@ar-eye-hunter/server/arena-tournament-deadline.ts';
@@ -28,12 +30,11 @@ import { ArenaTournamentClusterNode } from './arena-tournament-cluster-node.ts';
 const scope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 const roomRef = { ...scope, groupId: 'native-cluster-room' };
 const sessionIds = ['local-player', 'remote-spectator', 'replaced'];
-const databaseUrl = Deno.env.get('DATABASE_URL');
+const databaseUrl = process.env['DATABASE_URL'];
 
-Deno.test({
-    name: 'a mixed remote node delivers one complete oversized AR frame to the admitted player and spectator generations through real PostgreSQL',
-    ignore: Deno.env.get('RALLAR_POSTGRES_INTEGRATION') !== '1',
-    fn: async () => {
+test.skipIf(process.env['RALLAR_POSTGRES_INTEGRATION'] !== '1')(
+    'a mixed remote node delivers one complete oversized AR frame to the admitted player and spectator generations through real PostgreSQL',
+    async () => {
         assert.ok(databaseUrl, 'Set DATABASE_URL to an isolated test database');
         const channel = 'frame_' + crypto.randomUUID().replaceAll('-', '');
         const producer = new ArenaTournamentClusterNode({ id: 'producer', databaseUrl, channel, scope });
@@ -76,7 +77,7 @@ Deno.test({
             await Promise.all([producer.stop(), mixed.stop()]);
         }
     }
-});
+);
 
 function clusterPublisher(node: ArenaTournamentClusterNode): RallarServerWsRouter {
     const base = createGroupSnapshot(2, sessionIds);
@@ -148,10 +149,9 @@ async function waitForFrames(...recipients: string[][]): Promise<void> {
     }
 }
 
-Deno.test({
-    name: 'a replacement finish worker sends the committed terminal snapshot to a continuously connected remote spectator',
-    ignore: Deno.env.get('RALLAR_POSTGRES_INTEGRATION') !== '1',
-    fn: async () => {
+test.skipIf(process.env['RALLAR_POSTGRES_INTEGRATION'] !== '1')(
+    'a replacement finish worker sends the committed terminal snapshot to a continuously connected remote spectator',
+    async () => {
         assert.ok(databaseUrl);
         const game = await createArenaTournamentSqlFixture(roomRef);
         const channel = 'finish_' + crypto.randomUUID().replaceAll('-', '');
@@ -205,7 +205,7 @@ Deno.test({
             await Promise.all([replacement.stop(), remote.stop(), game.storage.close()]);
         }
     }
-});
+);
 
 async function commitArenaTick(game: ArenaTournamentSqlFixture, requestId: string): Promise<void> {
     await commitArenaTournamentCommand(game, { kind: 'tick', roomRef: game.binding.roomRef, requestId, actor: null, input: null, capturedAtEpochMs: 0 });

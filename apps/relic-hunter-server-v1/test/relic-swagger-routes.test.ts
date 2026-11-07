@@ -1,9 +1,9 @@
-import { expect } from '@std/expect';
+import { expect, test } from 'bun:test';
 import { Hono } from 'hono';
 
 import { initRelicSwaggerRoutes } from '../src/relic-swagger-routes.ts';
 
-Deno.test('Relic OpenAPI route publishes the forwarded public server URL', async () => {
+test('Relic OpenAPI route publishes the forwarded public server URL', async () => {
     const app = initRelicSwaggerRoutes(new Hono());
 
     const response = await app.request('/api/relic/openapi.json', {
@@ -20,7 +20,7 @@ Deno.test('Relic OpenAPI route publishes the forwarded public server URL', async
     expect(document.servers?.[0]?.url).toBe('https://relic.rallar.example');
 });
 
-Deno.test('Relic docs load the server-published OpenAPI document directly', async () => {
+test('Relic docs load the server-published OpenAPI document directly', async () => {
     const app = initRelicSwaggerRoutes(new Hono());
 
     const response = await app.request('/api/relic/docs');

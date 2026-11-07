@@ -1,5 +1,5 @@
-import { expect } from '@std/expect';
-import { describe, it } from '@std/testing/bdd';
+import { describe, expect, it } from 'bun:test';
+import { readFile } from 'node:fs/promises';
 
 import { readRelicHunterServerConfiguration } from '../src/relic-hunter-server-configuration.ts';
 
@@ -28,14 +28,9 @@ describe('Relic Hunter server configuration', () => {
         };
         const reads = new Map<string, number>();
         const configuration = await readRelicHunterServerConfiguration({
-            environment: {
-                get(name) {
-                    reads.set(name, (reads.get(name) ?? 0) + 1);
-                    return values[name];
-                }
-            },
+            environment: trackingEnvironment(values, reads),
             hardwareConcurrency: 4,
-            readTextFile: Deno.readTextFile,
+            readTextFile: (url) => readFile(url, 'utf8'),
             defaultsUrl: apiV1ResourceUrl('defaults-config.json'),
             profileUrls: {
                 dev: apiV1ResourceUrl('dev-config.json'),
@@ -177,9 +172,9 @@ async function readConfiguration(
         ...overrides
     };
     return await readRelicHunterServerConfiguration({
-        environment: { get: (name) => values[name] },
+        environment: values,
         hardwareConcurrency: 4,
-        readTextFile: Deno.readTextFile,
+        readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: apiV1ResourceUrl('defaults-config.json'),
         profileUrls: {
             dev: apiV1ResourceUrl('dev-config.json'),
@@ -202,6 +197,20 @@ function apiV1ResourceUrl(fileName: string): URL {
 
 function relicResourceUrl(fileName: string): URL {
     return new URL(`../resources/configuration/${fileName}`, import.meta.url);
+}
+
+function trackingEnvironment(
+    values: Readonly<Record<string, string | undefined>>,
+    reads: Map<string, number>
+): Readonly<Record<string, string | undefined>> {
+    return new Proxy(values, {
+        get(target, name) {
+            if (typeof name === 'string') {
+                reads.set(name, (reads.get(name) ?? 0) + 1);
+            }
+            return Reflect.get(target, name);
+        }
+    });
 }
 
 function productionOverrides(profile: 'prod' | 'prod-hardened'): Readonly<Record<string, string>> {
