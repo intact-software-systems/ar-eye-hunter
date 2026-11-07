@@ -28,13 +28,13 @@ export interface AppOutboxInsert {
     readonly trackIndex: AppOutboxTrackIndexRow | null;
 }
 
-export interface ComputeOrderedWsOutboxInsertInput {
+export interface ComputeWsOutboxInsertInput {
     readonly entry: ResourceEntry;
     readonly admissionNamespace: string;
 }
 
 /** A WS outbox row as its producer computes it: an ordered row with its track index row, any other row without. */
-export function computeWsOutboxInsert(input: ComputeOrderedWsOutboxInsertInput): AppOutboxInsert {
+export function computeWsOutboxInsert(input: ComputeWsOutboxInsertInput): AppOutboxInsert {
     return isOrderedWsOutboxEntry(input.entry)
         ? computeOrderedWsOutboxInsert(input)
         : computeAppOutboxInsert(input.entry);
@@ -60,7 +60,7 @@ export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
     return { ...computeAppOutboxRow(entry), trackIndex: null };
 }
 
-export function computeOrderedWsOutboxInsert(input: ComputeOrderedWsOutboxInsertInput): AppOutboxInsert {
+export function computeOrderedWsOutboxInsert(input: ComputeWsOutboxInsertInput): AppOutboxInsert {
     const row = computeAppOutboxRow(input.entry);
     return {
         ...row,
@@ -130,7 +130,7 @@ function isSameTrackIndexRow(
         return computed === expected;
     }
     return computed.namespace === expected.namespace && computed.key === expected.key &&
-        computed.msgId === expected.msgId && computed.value === expected.value &&
+        computed.value === expected.value &&
         computed.expiresAt === expected.expiresAt;
 }
 
@@ -205,6 +205,9 @@ function requireAppOutboxRowsInserted(
 
 /** Whether the row was written; a live row already stored under its key is left as it is, an expired one written over. */
 export async function writeAppOutboxInsertIfAbsent(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
+    if (computed.trackIndex !== null) {
+        throw new TypeError('An ordered WS outbox row is not written if-absent');
+    }
     return (await insertAppOutboxRows(transaction, [computed])).length === 1;
 }
 

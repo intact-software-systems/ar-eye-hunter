@@ -34,7 +34,6 @@ describe('the track index row of an ordered WS outbox row', () => {
         expect(computed.trackIndex).toEqual({
             namespace: TRACK_INDEX_NAMESPACE,
             key: toALOutboundOrderingMessageKey(TRACK_INDEX_NAMESPACE, toALOrderingTrackKey(message)!, 2),
-            msgId: message.id.msgId,
             value: JSON.stringify(message.id.msgId),
             expiresAt: computed.expiresAt
         });
@@ -75,7 +74,6 @@ describe('the track index row of an ordered WS outbox row', () => {
         const trackIndex = computed.trackIndex!;
 
         expect(isExactAppOutboxInsert(entry, computed)).toBe(true);
-        expect(isExactAppOutboxInsert(entry, { ...computed, trackIndex: { ...trackIndex, msgId: 'other-msg' } })).toBe(false);
         expect(isExactAppOutboxInsert(entry, { ...computed, trackIndex: { ...trackIndex, value: '"other-msg"' } })).toBe(false);
         expect(isExactAppOutboxInsert(entry, { ...computed, trackIndex: { ...trackIndex, key: `${trackIndex.key}0` } }))
             .toBe(false);

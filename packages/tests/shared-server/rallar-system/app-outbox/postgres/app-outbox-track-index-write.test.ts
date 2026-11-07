@@ -6,6 +6,7 @@ import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/p
 import {
     computeAppOutboxInsert,
     computeOrderedWsOutboxInsert,
+    writeAppOutboxInsertIfAbsent,
     writeAppOutboxInserts,
     type AppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
@@ -15,7 +16,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PGliteSql } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 import { createResourceInboxTestStorage, recordResourceInboxStatements } from '../../../queuebox/resource-inbox-test-storage.ts';
-import { createTrackIndexTestEntry, TRACK_INDEX_NAMESPACE } from '../app-outbox-track-index-fixture.ts';
+import { createTrackIndexTestEntry, toTrackIndexTestMessage, TRACK_INDEX_NAMESPACE } from '../app-outbox-track-index-fixture.ts';
 
 interface StoredTrackIndexRow {
     readonly store_value: string;
@@ -97,7 +98,7 @@ describe('the app outbox writer with a track index row', () => {
         await recordResourceInboxStatements(sql, recorded).begin((tx) => writeAppOutboxInserts(tx, [computed]));
 
         const stored = await readTrackIndexRow(sql, computed.trackIndex);
-        expect(stored?.store_value).toBe(JSON.stringify(computed.trackIndex.msgId));
+        expect(stored?.store_value).toBe(JSON.stringify(toTrackIndexTestMessage(computed.entry).id.msgId));
         expect(new Date(stored!.expire_at_ts).getTime()).toBe(computed.entry.audit.expiryTs.epochMilliseconds);
         expect(Number(stored!.revision)).toBe(0);
         expect(await countOutboxRows(sql, computed.entry.key.resourceId)).toBe(1);
@@ -129,7 +130,7 @@ describe('the app outbox writer with a track index row', () => {
         await sql.begin((tx) => writeAppOutboxInserts(tx, [computed]));
 
         const stored = await readTrackIndexRow(sql, computed.trackIndex);
-        expect(stored?.store_value).toBe(JSON.stringify(computed.trackIndex.msgId));
+        expect(stored?.store_value).toBe(JSON.stringify(toTrackIndexTestMessage(computed.entry).id.msgId));
         expect(Number(stored!.revision)).toBe(1);
     });
 
@@ -144,6 +145,16 @@ describe('the app outbox writer with a track index row', () => {
 
         expect(recorded).toEqual(['begin']);
         expect(await readTrackIndexRow(sql, computed.trackIndex)).toBeUndefined();
+    });
+
+    it('refuses to write an ordered WS row if-absent, before any statement', async () => {
+        const sql = await createStorage();
+        const recorded: string[] = [];
+
+        await expect(recordResourceInboxStatements(sql, recorded).begin((tx) => writeAppOutboxInsertIfAbsent(tx, computeOrdered())))
+            .rejects.toThrow(TypeError);
+
+        expect(recorded).toEqual(['begin']);
     });
 
     it('leaves an APP_OUTBOX batch\'s statement as it was', async () => {

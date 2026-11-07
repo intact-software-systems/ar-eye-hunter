@@ -13,7 +13,6 @@ import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 export interface AppOutboxTrackIndexRow {
     readonly namespace: string;
     readonly key: string;
-    readonly msgId: string;
     /** The stored value: the JSON string the admission store writes for the message id. */
     readonly value: string;
     readonly expiresAt: string;
@@ -49,7 +48,6 @@ export function computeAppOutboxTrackIndexRow(input: ComputeAppOutboxTrackIndexR
     return {
         namespace: admissionNamespace,
         key: toALOutboundOrderingMessageKey(admissionNamespace, trackKey, seq),
-        msgId: message.id.msgId,
         value: JSON.stringify(message.id.msgId),
         expiresAt
     };
