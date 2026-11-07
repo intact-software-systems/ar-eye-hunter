@@ -161,14 +161,15 @@ function toApiConfigurationProbe(): string {
     const configurationModule = new URL('apps/api-v1/src/configuration/read-api-v1-configuration.ts', repositoryRoot);
     const resources = new URL('apps/api-v1/resources/', repositoryRoot);
     return `
+        import { readFile } from "node:fs/promises";
         import { readApiV1Configuration } from ${JSON.stringify(configurationModule.href)};
         const resource = (name: string) => new URL(name, ${JSON.stringify(resources.href)});
         const meteredNames = ${JSON.stringify(METERED_ENVIRONMENT_NAMES)};
         try {
             const configuration = await readApiV1Configuration({
-                environment: { get: (name) => Deno.env.get(name) },
+                environment: process.env,
                 hardwareConcurrency: 4,
-                readTextFile: (url) => Deno.readTextFile(url),
+                readTextFile: (url) => readFile(url, 'utf8'),
                 defaultsUrl: resource('configuration/defaults-config.json'),
                 profileUrls: {
                     dev: resource('configuration/dev-config.json'),
@@ -183,8 +184,8 @@ function toApiConfigurationProbe(): string {
                 iceMode: configuration.ice.mode,
                 databaseMode: configuration.database.mode,
                 databaseUrlFromLaunch: 'url' in configuration.database && configuration.database.url === ${JSON.stringify(LAUNCH_DATABASE_URL)},
-                iceModeVariable: Deno.env.get('RALLAR_ICE_MODE') ?? null,
-                receivedMeteredNames: meteredNames.filter((name) => Deno.env.get(name) !== undefined)
+                iceModeVariable: process.env['RALLAR_ICE_MODE'] ?? null,
+                receivedMeteredNames: meteredNames.filter((name) => process.env[name] !== undefined)
             }));
         } catch (error) {
             console.log(JSON.stringify({ outcome: 'rejected', message: String(error) }));

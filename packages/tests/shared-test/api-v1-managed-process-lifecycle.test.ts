@@ -7,9 +7,9 @@ describe('managed API-v1 process lifecycle', () => {
         vi.useFakeTimers();
         const signals: ('SIGTERM' | 'SIGKILL')[] = [];
         let resolveStatus!: (
-            status: Readonly<{ success: boolean; code: number; signal: string | null; }>
+            status: Readonly<{ success: boolean; code: number; signal: NodeJS.Signals | null; }>
         ) => void;
-        const status = new Promise<Readonly<{ success: boolean; code: number; signal: string | null; }>>(
+        const status = new Promise<Readonly<{ success: boolean; code: number; signal: NodeJS.Signals | null; }>>(
             (resolve) => {
                 resolveStatus = resolve;
             }

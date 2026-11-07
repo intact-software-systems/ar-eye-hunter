@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import postgres from 'postgres';
 
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
@@ -66,7 +67,7 @@ interface TopologyAppInboxWorkerTrace extends PostgresAppInboxWorkerTrace {
 }
 
 async function main(): Promise<void> {
-    const databaseUrl = Deno.env.get('DATABASE_URL');
+    const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
         throw new Error('DATABASE_URL is required');
     }
@@ -88,7 +89,7 @@ async function main(): Promise<void> {
         console.log(JSON.stringify(await runWorker(input, sql, trace)));
     }
     finally {
-        await Deno.writeTextFile(input.traceFilePath, JSON.stringify(trace));
+        await writeFile(input.traceFilePath, JSON.stringify(trace), 'utf8');
         await postgresSql.end();
     }
 }
@@ -125,7 +126,7 @@ function createTopologyAppInboxRuntime(
 ): PostgresAppInboxWorkerRuntime {
     return createPostgresAppInboxWorkerRuntime({
         sql,
-        serviceId: `postgres-topology-inbox-${Deno.pid}`,
+        serviceId: `postgres-topology-inbox-${process.pid}`,
         newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrierPhase === 'transaction' ? input.barrier : undefined,
@@ -134,7 +135,7 @@ function createTopologyAppInboxRuntime(
                 trace.topologyReadBarrierPrimitive = primitive;
                 await waitForPostgresWorkerBarrier(
                     input.barrier,
-                    `postgres-topology-inbox-${Deno.pid}`
+                    `postgres-topology-inbox-${process.pid}`
                 );
             }
             : undefined,
@@ -237,7 +238,7 @@ function toWorkerOutput(
 }
 
 function readInput(): WorkerInput {
-    const raw = Deno.env.get('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT');
+    const raw = process.env.RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT;
     if (!raw) {
         throw new Error('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT is required');
     }

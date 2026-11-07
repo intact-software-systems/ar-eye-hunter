@@ -15,6 +15,7 @@ import type {
     JoinGroupRequest,
     StateScope
 } from '@shared/api/state-types.ts';
+import { writeFile } from 'node:fs/promises';
 import postgres from 'postgres';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -177,7 +178,7 @@ interface WorkerTraceState {
 }
 
 async function main(): Promise<void> {
-    const databaseUrl = Deno.env.get('DATABASE_URL');
+    const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
         throw new Error('DATABASE_URL is required for postgres-expiry-worker');
     }
@@ -207,7 +208,7 @@ async function main(): Promise<void> {
             console.log(JSON.stringify(await runStateMutationWorker(input, sql, trace)));
         }
         finally {
-            await Deno.writeTextFile(traceFilePath, JSON.stringify(trace));
+            await writeFile(traceFilePath, JSON.stringify(trace), 'utf8');
         }
     }
     finally {
@@ -246,7 +247,7 @@ async function runClientMutation(
     const requestId = requireRequestId(input.request.requestId);
     const runtime = createPostgresAppInboxWorkerRuntime({
         sql,
-        serviceId: `postgres-state-worker-${Deno.pid}`,
+        serviceId: `postgres-state-worker-${process.pid}`,
         newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrier,
@@ -327,7 +328,7 @@ async function runClientMutation(
         {
             traceId: 'trace-postgres-expiry-worker',
             nowEpochMs: input.atEpochMs,
-            serviceId: `postgres-state-worker-${Deno.pid}`,
+            serviceId: `postgres-state-worker-${process.pid}`,
             wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: `postgres-client-event:${requestId}`,
             attemptCount: entry.dequeueAudit.attempts,
@@ -423,7 +424,7 @@ async function runGroupMutation(
     const requestId = requireRequestId(input.request.requestId);
     const runtime = createPostgresAppInboxWorkerRuntime({
         sql,
-        serviceId: `postgres-state-worker-${Deno.pid}`,
+        serviceId: `postgres-state-worker-${process.pid}`,
         newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrier,
@@ -524,7 +525,7 @@ async function runTopologyMutation(
     const requestId = requireRequestId(input.request.requestId);
     const runtime = createPostgresAppInboxWorkerRuntime({
         sql,
-        serviceId: `postgres-state-worker-${Deno.pid}`,
+        serviceId: `postgres-state-worker-${process.pid}`,
         newLaneHeldRows: undefined,
         atEpochMs: input.atEpochMs,
         barrier: input.barrier,
@@ -650,7 +651,7 @@ function compactTopologyReceipt(
 }
 
 function readInputValue(): JsonWireValue {
-    const raw = Deno.env.get('RALLAR_EXPIRY_WORKER_INPUT');
+    const raw = process.env.RALLAR_EXPIRY_WORKER_INPUT;
     if (!raw) {
         throw new Error('RALLAR_EXPIRY_WORKER_INPUT is required');
     }
