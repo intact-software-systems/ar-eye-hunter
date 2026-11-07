@@ -28,6 +28,7 @@ import {
     issueNativeWebSocketTicket,
     issueSameUserSessions,
     readAdmittedSnapshot,
+    warmNativeGroupCreatePath,
     writeNativeGroupCreate,
     writeNativeGroupJoin,
     writeNativeGroupPresence,
@@ -149,6 +150,7 @@ Deno.test('fourteen automatic receiver ACKs cross native API sockets and complet
         assert.ok(origin);
         const setup = { fixture, baseUrl, groupRef };
         const originFlow = getNativeReceiptRoomFlow(origin, setup, 0);
+        await warmNativeGroupCreatePath(originFlow);
         assertNativeReceiptRoomResponse(await writeNativeGroupCreate(originFlow));
         assertNativeReceiptRoomResponse(await writeNativeGroupJoin(originFlow));
         const presenceConnections = await Promise.allSettled(
