@@ -45,19 +45,23 @@ export function decodeALOutboundOrderingMessageKey(
     if (!key.startsWith(family)) {
         return undefined;
     }
-    let tuple: unknown;
+    const position = toOrderingMessagePosition(key.slice(family.length));
+    return position !== undefined && toALOutboundOrderingMessageKey(namespace, position.trackKey, position.seq) === key
+        ? position
+        : undefined;
+}
+
+function toOrderingMessagePosition(tupleText: string): ALOutboundOrderingPosition | undefined {
     try {
-        tuple = JSON.parse(key.slice(family.length));
+        return decodeOrderingMessageTuple(JSON.parse(tupleText));
     }
     catch {
         return undefined;
     }
-    if (!Array.isArray(tuple) || tuple.length !== 2) {
-        return undefined;
-    }
-    const [trackKey, seq]: unknown[] = tuple;
-    return typeof trackKey === 'string' && typeof seq === 'number' &&
-            toALOutboundOrderingMessageKey(namespace, trackKey, seq) === key
-        ? { trackKey, seq }
+}
+
+function decodeOrderingMessageTuple(value: unknown): ALOutboundOrderingPosition | undefined {
+    return Array.isArray(value) && value.length === 2 && typeof value[0] === 'string' && typeof value[1] === 'number'
+        ? { trackKey: value[0], seq: value[1] }
         : undefined;
 }

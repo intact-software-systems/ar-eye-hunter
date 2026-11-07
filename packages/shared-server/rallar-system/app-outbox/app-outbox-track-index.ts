@@ -25,7 +25,7 @@ export interface ComputeAppOutboxTrackIndexRowInput {
 
 /** A `WS_OUTBOX` row whose message names `ordering.seq`; the full decode of its message is the dequeue's. */
 export function isOrderedWsOutboxEntry(entry: ResourceEntry): boolean {
-    return entry.typeId === EnqueuedType.WS_OUTBOX && typeof toShallowOrderingSeq(entry.resource) === 'number';
+    return entry.typeId === EnqueuedType.WS_OUTBOX && toShallowOrderingSeq(entry.resource) !== undefined;
 }
 
 export function computeAppOutboxTrackIndexRow(input: ComputeAppOutboxTrackIndexRowInput): AppOutboxTrackIndexRow {
@@ -76,18 +76,23 @@ export function toAppOutboxTrackIndexInsert(rows: readonly AppOutboxTrackIndexRo
         returning store_key`;
 }
 
-function toShallowOrderingSeq(resource: string): unknown {
-    let parsed: unknown;
+function toShallowOrderingSeq(resource: string): number | undefined {
     try {
-        parsed = JSON.parse(resource);
+        return decodeShallowOrderingSeq(JSON.parse(resource));
     }
     catch {
         return undefined;
     }
-    const ordering = isObject(parsed) ? parsed.ordering : undefined;
-    return isObject(ordering) ? ordering.seq : undefined;
 }
 
-function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
-    return typeof value === 'object' && value !== null;
+function decodeShallowOrderingSeq(value: unknown): number | undefined {
+    return typeof value === 'object' && value !== null && 'ordering' in value
+        ? decodeOrderingSeq(value.ordering)
+        : undefined;
+}
+
+function decodeOrderingSeq(value: unknown): number | undefined {
+    return typeof value === 'object' && value !== null && 'seq' in value && typeof value.seq === 'number'
+        ? value.seq
+        : undefined;
 }
