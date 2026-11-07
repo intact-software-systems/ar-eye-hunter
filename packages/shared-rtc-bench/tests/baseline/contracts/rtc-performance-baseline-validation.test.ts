@@ -268,9 +268,6 @@ describe('RTC baseline core validation', () => {
     it('derives the exact fixed and lexical configuration flag projection', () => {
         const argumentsList = [
             'run',
-            '--config=packages/shared-rtc-bench/deno.json',
-            '--allow-read',
-            '--allow-write',
             'scripts/perf/example.ts',
             '--capture=worker',
             '--baseline-id=20260807-0123456789ab-e1-local',
@@ -283,7 +280,7 @@ describe('RTC baseline core validation', () => {
             '--rtc-inner-runs=5',
             '--rtc-peers=500'
         ];
-        expect(deriveRtcBaselineWorkerProjection(argumentsList, 5)).toEqual({
+        expect(deriveRtcBaselineWorkerProjection(argumentsList, 2)).toEqual({
             ok: true,
             value: {
                 fixedWorkerFlags: [
@@ -303,9 +300,6 @@ describe('RTC baseline core validation', () => {
             deriveRtcBaselineWorkerProjection(
                 [
                     'run',
-                    '--config=packages/shared-rtc-bench/deno.json',
-                    '--allow-read',
-                    '--allow-write',
                     'scripts/perf/example.ts',
                     '--capture=worker',
                     '--baseline-id=20260807-0123456789ab-e1-local',
@@ -319,13 +313,13 @@ describe('RTC baseline core validation', () => {
                     '--rtc-inner-runs',
                     '5'
                 ],
-                5
+                2
             )
         ).toEqual({
             ok: false,
             issues: [
                 {
-                    path: '$.redactedArgv.arguments[14]',
+                    path: '$.redactedArgv.arguments[11]',
                     code: 'two-token-option',
                     message: 'Worker options must use one --name=value token.'
                 }

@@ -11,12 +11,9 @@ const scenarioPath = 'packages/shared-rtc-bench/tests/baseline/evidence/rtc-base
 
 it('finalizes and validates a corpus larger than the constrained heap without retaining it', () => {
     const result = spawnSync(
-        'deno',
+        'bun',
         [
             'run',
-            '--no-check',
-            '--config=packages/shared-rtc-bench/deno.json',
-            '--v8-flags=--max-old-space-size=64,--expose-gc',
             scenarioPath,
             '--samples=640',
             '--payload-bytes=131072'

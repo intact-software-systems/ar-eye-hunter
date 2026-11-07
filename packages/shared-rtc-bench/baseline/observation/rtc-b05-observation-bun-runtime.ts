@@ -1,7 +1,7 @@
 import { RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT } from '../../workloads/browser-lifecycle/rtc-data-channel-browser-soak-validation.ts';
 import type { RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
-import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
+import type { BunRtcBaselineAdapters } from '../runtime/rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunPort } from '../runtime/rtc-baseline-bun-port.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
 import type { RtcB05ObservationRunnerDependencies } from './rtc-b05-observation-runner.ts';
 import {
@@ -11,16 +11,16 @@ import {
     readRtcPerformanceObservationFinalizedArtifacts,
     readRtcPerformanceObservationSource,
     writeRtcPerformanceObservationOutput
-} from './rtc-performance-observation-deno-support.ts';
+} from './rtc-performance-observation-bun-support.ts';
 
-export interface RtcB05ObservationDenoRuntimeInput {
-    readonly runtime: RtcBaselineDenoPort;
-    readonly adapters: DenoRtcBaselineAdapters;
+export interface RtcB05ObservationBunRuntimeInput {
+    readonly runtime: RtcBaselineBunPort;
+    readonly adapters: BunRtcBaselineAdapters;
     readonly envelope: RtcBaselineEnvelope;
 }
 
-export function createRtcB05ObservationDenoRuntime(
-    input: RtcB05ObservationDenoRuntimeInput
+export function createRtcB05ObservationBunRuntime(
+    input: RtcB05ObservationBunRuntimeInput
 ): RtcB05ObservationRunnerDependencies {
     return {
         envelope: input.envelope,
@@ -36,7 +36,7 @@ export function createRtcB05ObservationDenoRuntime(
     };
 }
 
-async function preflight(runtime: RtcBaselineDenoPort): Promise<RtcBaselineResult<void>> {
+async function preflight(runtime: RtcBaselineBunPort): Promise<RtcBaselineResult<void>> {
     try {
         const status = await runtime.lstat(RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT.scriptPath);
         return status.isFile && !status.isSymlink
@@ -57,7 +57,7 @@ async function preflight(runtime: RtcBaselineDenoPort): Promise<RtcBaselineResul
 }
 
 async function runBrowserProducer(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     baselineId: string,
     attempt: Parameters<RtcB05ObservationRunnerDependencies['runBrowserProducer']>[0]['attempt']
 ) {

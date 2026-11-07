@@ -5,9 +5,9 @@ import {
     inspectRtcBaselineChecksumEntries,
     RTC_BASELINE_CHECKSUM_FILE
 } from '../evidence/rtc-baseline-evidence-layout.ts';
-import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
-import { RTC_BASELINE_DENO_ROOT_PATH } from '../runtime/rtc-baseline-deno-runtime.ts';
+import type { BunRtcBaselineAdapters } from '../runtime/rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunPort } from '../runtime/rtc-baseline-bun-port.ts';
+import { RTC_BASELINE_BUN_ROOT_PATH } from '../runtime/rtc-baseline-bun-runtime.ts';
 import {
     createRtcPerformanceObservationArchive,
     verifyRtcPerformanceObservationArchive,
@@ -17,7 +17,7 @@ import {
 
 const encoder = new TextEncoder();
 
-export type RtcPerformanceObservationDenoPort = Pick<RtcBaselineDenoPort, 'mkdir' | 'readFile' | 'writeFile'>;
+export type RtcPerformanceObservationBunPort = Pick<RtcBaselineBunPort, 'mkdir' | 'readFile' | 'writeFile'>;
 
 export interface RtcPerformanceObservationOutputWritten {
     readonly archivePath: string;
@@ -25,7 +25,7 @@ export interface RtcPerformanceObservationOutputWritten {
 }
 
 export async function readRtcPerformanceObservationSource(
-    adapters: Pick<DenoRtcBaselineAdapters, 'git'>
+    adapters: Pick<BunRtcBaselineAdapters, 'git'>
 ) {
     const commit = await adapters.git.readHeadCommit();
     if (!commit.ok) {
@@ -38,10 +38,10 @@ export async function readRtcPerformanceObservationSource(
 }
 
 export async function readRtcPerformanceObservationFinalizedArtifacts(
-    runtime: Pick<RtcBaselineDenoPort, 'readFile'>,
+    runtime: Pick<RtcBaselineBunPort, 'readFile'>,
     baselineId: string
 ): Promise<RtcBaselineResult<ReadonlyMap<string, Uint8Array>>> {
-    const baselinePath = join(RTC_BASELINE_DENO_ROOT_PATH, baselineId);
+    const baselinePath = join(RTC_BASELINE_BUN_ROOT_PATH, baselineId);
     let checksumBytes: Uint8Array;
     try {
         checksumBytes = await runtime.readFile(join(baselinePath, RTC_BASELINE_CHECKSUM_FILE));
@@ -96,7 +96,7 @@ export async function createVerifiedRtcPerformanceObservationArchive(
 }
 
 export async function writeRtcPerformanceObservationOutput(
-    runtime: RtcPerformanceObservationDenoPort,
+    runtime: RtcPerformanceObservationBunPort,
     outputDirectory: string,
     archive: RtcPerformanceObservationArchiveWritten
 ): Promise<RtcBaselineResult<RtcPerformanceObservationOutputWritten>> {

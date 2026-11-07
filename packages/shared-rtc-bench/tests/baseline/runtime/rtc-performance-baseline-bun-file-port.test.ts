@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createRtcBaselineDenoFilePort } from '../../../baseline/runtime/rtc-baseline-deno-file-port.ts';
-import type { RtcBaselineDenoFile, RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-port.ts';
+import { createRtcBaselineBunFilePort } from '../../../baseline/runtime/rtc-baseline-bun-file-port.ts';
+import type { RtcBaselineBunFile, RtcBaselineBunPort } from '../../../baseline/runtime/rtc-baseline-bun-port.ts';
 
 class AlreadyExists extends Error {}
 
@@ -9,7 +9,7 @@ function createFileDouble(input: { readonly dev?: number; readonly ino?: number;
     let bytes = new Uint8Array([1, 2, 3]);
     let position = 0;
     const events: string[] = [];
-    const file: RtcBaselineDenoFile = {
+    const file: RtcBaselineBunFile = {
         stat: async () => ({
             isFile: true,
             isDirectory: false,
@@ -62,15 +62,15 @@ function createFileDouble(input: { readonly dev?: number; readonly ino?: number;
     return { file, events, readBytes: () => bytes };
 }
 
-function createRuntimeDouble(file: RtcBaselineDenoFile, existing = true) {
+function createRuntimeDouble(file: RtcBaselineBunFile, existing = true) {
     const events: string[] = [];
     const unused = async (): Promise<never> => {
-        throw new Error('Unused Deno runtime operation.');
+        throw new Error('Unused Bun runtime operation.');
     };
-    const runtime: RtcBaselineDenoPort = {
+    const runtime: RtcBaselineBunPort = {
         envGet: () => undefined,
         build: { os: 'darwin', arch: 'aarch64' },
-        version: { deno: '2.4.0' },
+        version: { bun: '2.4.0' },
         pid: 123,
         hostname: () => 'runner-a',
         randomUuid: () => '00000000-0000-4000-8000-000000000001',
@@ -99,7 +99,7 @@ function createRuntimeDouble(file: RtcBaselineDenoFile, existing = true) {
         writeFile: unused,
         remove: unused,
         async *readDir(): AsyncIterable<never> {
-            throw new Error('Unused Deno runtime operation.');
+            throw new Error('Unused Bun runtime operation.');
         },
         command: unused,
         now: () => new Date('2026-08-07T10:00:00.000Z'),
@@ -110,11 +110,11 @@ function createRuntimeDouble(file: RtcBaselineDenoFile, existing = true) {
     return { runtime, events };
 }
 
-describe('RTC baseline Deno file lock port', () => {
+describe('RTC baseline Bun file lock port', () => {
     it('waits for the advisory lock when this process atomically created the lock file', async () => {
         const fileDouble = createFileDouble();
         const runtimeDouble = createRuntimeDouble(fileDouble.file, false);
-        const port = createRtcBaselineDenoFilePort(runtimeDouble.runtime);
+        const port = createRtcBaselineBunFilePort(runtimeDouble.runtime);
 
         const lock = await port.tryAcquireExclusiveFileLock('/evidence/.writer.lock');
 
@@ -126,7 +126,7 @@ describe('RTC baseline Deno file lock port', () => {
     it('locks the inspected file identity and performs durable handle-scoped metadata I/O', async () => {
         const fileDouble = createFileDouble();
         const runtimeDouble = createRuntimeDouble(fileDouble.file);
-        const port = createRtcBaselineDenoFilePort(runtimeDouble.runtime);
+        const port = createRtcBaselineBunFilePort(runtimeDouble.runtime);
 
         const lock = await port.tryAcquireExclusiveFileLock('/evidence/.writer.lock');
 
@@ -148,7 +148,7 @@ describe('RTC baseline Deno file lock port', () => {
     it('rejects a path-to-handle identity swap before attempting the advisory lock', async () => {
         const fileDouble = createFileDouble({ ino: 21 });
         const runtimeDouble = createRuntimeDouble(fileDouble.file);
-        const port = createRtcBaselineDenoFilePort(runtimeDouble.runtime);
+        const port = createRtcBaselineBunFilePort(runtimeDouble.runtime);
 
         await expect(port.tryAcquireExclusiveFileLock('/evidence/.writer.lock')).rejects.toThrow(
             'Writer lock path changed while it was being opened.'
@@ -160,7 +160,7 @@ describe('RTC baseline Deno file lock port', () => {
         const fileDouble = createFileDouble();
         fileDouble.file.tryLock = async () => false;
         const runtimeDouble = createRuntimeDouble(fileDouble.file);
-        const port = createRtcBaselineDenoFilePort(runtimeDouble.runtime);
+        const port = createRtcBaselineBunFilePort(runtimeDouble.runtime);
 
         expect(await port.tryAcquireExclusiveFileLock('/evidence/.writer.lock')).toBeNull();
         expect(fileDouble.events).toEqual(['close']);

@@ -24,14 +24,14 @@ import {
     type RtcBaselineCaptureObserver
 } from './rtc-baseline-runtime-observation.ts';
 
-interface CreateRtcBaselineDenoEvidenceInput {
+interface CreateRtcBaselineBunEvidenceInput {
     readonly rootPath: string;
     readonly filePort: RtcBaselineFilePort;
     readonly writerLockRuntime: RtcBaselineWriterLockRuntime;
     readonly observeRuntime: RtcBaselineCaptureObserver;
 }
 
-export interface RtcBaselineDenoEvidence {
+export interface RtcBaselineBunEvidence {
     readonly store: RtcBaselineFileStore;
     readManifest(baselineId: string): Promise<RtcBaselineResult<RtcBaselineCaptureManifestDto>>;
     readEnvironment(baselineId: string): Promise<RtcBaselineResult<RtcBaselineEnvironmentDto>>;
@@ -41,9 +41,9 @@ export interface RtcBaselineDenoEvidence {
     ): Promise<RtcBaselineIssueDto[]>;
 }
 
-export function createRtcBaselineDenoEvidence(
-    evidenceInput: CreateRtcBaselineDenoEvidenceInput
-): RtcBaselineDenoEvidence {
+export function createRtcBaselineBunEvidence(
+    evidenceInput: CreateRtcBaselineBunEvidenceInput
+): RtcBaselineBunEvidence {
     const store = createRtcBaselineFileStore({
         rootPath: evidenceInput.rootPath,
         filePort: evidenceInput.filePort,

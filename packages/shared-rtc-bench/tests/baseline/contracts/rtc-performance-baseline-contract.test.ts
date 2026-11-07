@@ -117,12 +117,9 @@ describe('RTC baseline data contracts', () => {
         };
         const command: RtcBaselineWorkerCommandDto = {
             redactedArgv: {
-                executable: 'deno',
+                executable: 'bun',
                 arguments: [
                     'run',
-                    '--config=packages/shared-rtc-bench/deno.json',
-                    '--allow-read',
-                    '--allow-write',
                     'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts',
                     '--capture=worker',
                     '--baseline-id=20260807-0123456789ab-e1-local',

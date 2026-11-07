@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RtcBaselineResolvedConfigurationValueDto, RtcBaselineResult } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
-import type { DenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
-import { createRtcBaselineDenoRuntime, RTC_BASELINE_DENO_ROOT_PATH } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
+import type { BunRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-bun-adapters.ts';
+import { createRtcBaselineBunRuntime, RTC_BASELINE_BUN_ROOT_PATH } from '../../../baseline/runtime/rtc-baseline-bun-runtime.ts';
 const baselineId = '20260807-0123456789ab-e2-browser';
 const browserWorker = 'packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs';
 type FixtureOuter = {
@@ -59,7 +59,7 @@ const hostFacts = {
     cpuModel: 'Apple M4',
     totalMemoryBytes: 1
 };
-const runtimeFacts = { node: '', npm: '', deno: '2.4.0', playwright: '', chromium: '' };
+const runtimeFacts = { node: '', npm: '', bun: '2.4.0', playwright: '', chromium: '' };
 const timingFacts = {
     startedAtUtc: '2026-08-07T10:00:00.000Z',
     endedAtUtc: '2026-08-07T10:00:00.000Z',
@@ -68,7 +68,7 @@ const timingFacts = {
 };
 const successfulRun = { ok: true as const, value: { exitStatus: 0, stdout: '', stderr: '' } };
 const runSuccessfully = async () => successfulRun;
-const emptyHashes: DenoRtcBaselineAdapters['sourceConfigHashing'] = {
+const emptyHashes: BunRtcBaselineAdapters['sourceConfigHashing'] = {
     read: async () => ({ ok: true, value: [] })
 };
 const invalidFailureKindIssue = '$.artifactKind\tunsupported-value\tExpected failure or not-run.';
@@ -90,13 +90,13 @@ function configured(
     return { caseKey: { workloadId, caseId, inputKey }, field, value, source: 'default' };
 }
 function runtimeAdapters(
-    fileOverrides: Partial<DenoRtcBaselineAdapters['filePort']>,
-    sourceConfigHashing: DenoRtcBaselineAdapters['sourceConfigHashing'] = emptyHashes
-): DenoRtcBaselineAdapters {
+    fileOverrides: Partial<BunRtcBaselineAdapters['filePort']>,
+    sourceConfigHashing: BunRtcBaselineAdapters['sourceConfigHashing'] = emptyHashes
+): BunRtcBaselineAdapters {
     let writerLockBytes: Uint8Array = new Uint8Array();
     let writerLockCreated = true;
     let writerLockHeld = false;
-    const filePort: DenoRtcBaselineAdapters['filePort'] = {
+    const filePort: BunRtcBaselineAdapters['filePort'] = {
         inspectPath: async () => null,
         createDirectory: async () => undefined,
         writeFileCreateNew: async () => undefined,
@@ -142,7 +142,7 @@ function runtimeAdapters(
         freshWorker: { run: runSuccessfully },
         environment: { readAllowlisted: () => ({}) },
         runtimeHost: {
-            read: async () => ({ deno: '2.4.0', ...hostFacts, executionContext: 'local' as const })
+            read: async () => ({ bun: '2.4.0', ...hostFacts, executionContext: 'local' as const })
         },
         clock: { nowUtc: () => '2026-08-07T10:00:00.000Z', monotonicNowMs: () => 10 },
         sourceConfigHashing,
@@ -176,9 +176,9 @@ function persistedEnvironment(manifest_: typeof manifest, observation: unknown) 
     return { ...request, schema: 'rallar.rtc-baseline.environment.v1', observation };
 }
 const entry = (name: string, kind: 'file' | 'directory') => ({ name, kind });
-describe('RTC baseline Deno runtime composition', () => {
+describe('RTC baseline Bun runtime composition', () => {
     it('declares the confined accepted-evidence root', () => {
-        expect(RTC_BASELINE_DENO_ROOT_PATH).toBe('tmp/perf/rtc-baseline');
+        expect(RTC_BASELINE_BUN_ROOT_PATH).toBe('tmp/perf/rtc-baseline');
     });
 
     it('runs each synthetic outer with its exact catalog executable and flags', async () => {
@@ -200,12 +200,9 @@ describe('RTC baseline Deno runtime composition', () => {
             runtimeObservation: null
         }));
         const observation = reconciledObservation(
-            'deno',
+            'bun',
             [
                 'run',
-                '--config=packages/shared-rtc-bench/deno.json',
-                '--allow-read',
-                '--allow-write',
                 'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts'
             ],
             [
@@ -232,17 +229,14 @@ describe('RTC baseline Deno runtime composition', () => {
             workerCalls.push(input);
             return { ok: true, value: { exitStatus: 0, stdout: JSON.stringify(outcomes), stderr: '' } };
         };
-        const runtime = createRtcBaselineDenoRuntime(adapters);
+        const runtime = createRtcBaselineBunRuntime(adapters);
         const captured = await runtime.captureWorkload({ baselineId: b01Id, workloadId: 'RTC-B01' });
         expect(captured).toEqual({ ok: true, value: { acceptedSampleCount: 5 } });
         expect(workerCalls).toHaveLength(1);
         expect(workerCalls[0]).toEqual({
-            executable: 'deno',
+            executable: 'bun',
             arguments: [
                 'run',
-                '--config=packages/shared-rtc-bench/deno.json',
-                '--allow-read',
-                '--allow-write',
                 'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts',
                 '--capture=worker',
                 `--baseline-id=${b01Id}`,
@@ -292,7 +286,7 @@ describe('RTC baseline Deno runtime composition', () => {
         adapters.environment.readAllowlisted = () => ({
             DATABASE_URL: 'postgres://user:secret@db/name'
         });
-        const runtime = createRtcBaselineDenoRuntime(adapters);
+        const runtime = createRtcBaselineBunRuntime(adapters);
         const result = await runtime.initializeBaseline(manifest.request);
         expect(result).toEqual({ ok: true, value: undefined });
         expect(writes.map((write) => write.path).join('\n')).toBe(
@@ -371,7 +365,7 @@ describe('RTC baseline Deno runtime composition', () => {
         const stored = new Map<string, Uint8Array>();
         let exposeUnknownResult = true;
         let useFailureOutcome = false;
-        const runtime = createRtcBaselineDenoRuntime(
+        const runtime = createRtcBaselineBunRuntime(
             runtimeAdapters({
                 inspectPath: async () => ({ kind: 'directory' }),
                 readFile: async (path: string) => {

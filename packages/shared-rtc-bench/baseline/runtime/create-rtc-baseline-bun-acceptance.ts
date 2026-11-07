@@ -17,18 +17,18 @@ import {
 } from '../contracts/rtc-baseline-contracts.ts';
 import { normalizeRtcBaselineJson } from '../contracts/rtc-baseline-decoding.ts';
 import { createRtcBaselineWorkerCommand } from '../contracts/rtc-baseline-validation.ts';
-import type { DenoRtcBaselineAdapters } from './rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoEvidence } from './rtc-baseline-deno-evidence.ts';
+import type { BunRtcBaselineAdapters } from './rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunEvidence } from './rtc-baseline-bun-evidence.ts';
 
-interface RtcBaselineDenoWorkerRequest {
+interface RtcBaselineBunWorkerRequest {
     readonly baselineId: string;
     readonly outerAttempt: RtcBaselineOuterAttemptDto;
 }
 
 const encoder = new TextEncoder();
 
-async function initializeRtcBaselineDenoStore(
-    evidence: RtcBaselineDenoEvidence,
+async function initializeRtcBaselineBunStore(
+    evidence: RtcBaselineBunEvidence,
     baselineId: string,
     initialization: RtcBaselineInitializeAcceptanceInputDto
 ) {
@@ -53,7 +53,7 @@ async function initializeRtcBaselineDenoStore(
 }
 
 async function writeRtcBaselineAcceptedArtifact(
-    evidence: RtcBaselineDenoEvidence,
+    evidence: RtcBaselineBunEvidence,
     baselineId: string,
     artifact: RtcBaselineAcceptedArtifact
 ) {
@@ -88,10 +88,10 @@ export function decodeRtcBaselineWorkerSamples(
     });
 }
 
-async function runRtcBaselineDenoWorker(
-    evidence: RtcBaselineDenoEvidence,
-    freshWorker: DenoRtcBaselineAdapters['freshWorker'],
-    workerRequest: RtcBaselineDenoWorkerRequest
+async function runRtcBaselineBunWorker(
+    evidence: RtcBaselineBunEvidence,
+    freshWorker: BunRtcBaselineAdapters['freshWorker'],
+    workerRequest: RtcBaselineBunWorkerRequest
 ) {
     const workload = RTC_BASELINE_WORKLOAD_CATALOG.find(
         (entry) => entry.workloadId === workerRequest.outerAttempt.workloadId
@@ -128,13 +128,13 @@ async function runRtcBaselineDenoWorker(
     return { outcomes: decodeRtcBaselineWorkerSamples(result.value.stdout, runtimeObservation) };
 }
 
-export function createRtcBaselineDenoAcceptance(
-    evidence: RtcBaselineDenoEvidence,
-    freshWorker: DenoRtcBaselineAdapters['freshWorker']
+export function createRtcBaselineBunAcceptance(
+    evidence: RtcBaselineBunEvidence,
+    freshWorker: BunRtcBaselineAdapters['freshWorker']
 ) {
     return createRtcBaselineEvidenceAcceptance({
         initializeStore: (baselineId, initialization) =>
-            initializeRtcBaselineDenoStore(evidence, baselineId, initialization),
+            initializeRtcBaselineBunStore(evidence, baselineId, initialization),
         readManifest: evidence.readManifest,
         async readInitializedConfiguration(baselineId) {
             const environment = await evidence.readEnvironment(baselineId);
@@ -145,7 +145,7 @@ export function createRtcBaselineDenoAcceptance(
         writeAcceptedArtifact: (baselineId, artifact) =>
             writeRtcBaselineAcceptedArtifact(evidence, baselineId, artifact),
         readStagedJson: evidence.store.readJson,
-        runFreshWorker: (workerRequest) => runRtcBaselineDenoWorker(evidence, freshWorker, workerRequest),
+        runFreshWorker: (workerRequest) => runRtcBaselineBunWorker(evidence, freshWorker, workerRequest),
         reconcileAcceptedOperation: evidence.reconcileAcceptedOperation
     });
 }

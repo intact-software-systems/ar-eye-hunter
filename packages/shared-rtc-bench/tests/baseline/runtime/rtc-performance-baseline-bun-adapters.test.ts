@@ -1,21 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDenoRtcBaselineAdapters, type RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
-import { createRtcBaselineDenoObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
+import { createBunRtcBaselineAdapters, type RtcBaselineBunPort } from '../../../baseline/runtime/rtc-baseline-bun-adapters.ts';
+import { createRtcBaselineBunObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
 interface RtcBaselineRuntimeDouble {
     readonly calls: string[];
-    readonly runtime: RtcBaselineDenoPort;
+    readonly runtime: RtcBaselineBunPort;
 }
 
 function createRuntimeDouble(): RtcBaselineRuntimeDouble {
     const calls: string[] = [];
-    const runtime: RtcBaselineDenoPort = {
+    const runtime: RtcBaselineBunPort = {
         envGet: (name: string) => {
             calls.push(`env:${name}`);
             const values: Record<string, string> = { RTC_ALLOWED: 'yes', RALLAR_ICE_MODE: 'local' };
             return values[name];
         },
         build: { os: 'darwin', arch: 'aarch64' },
-        version: { deno: '2.4.0' },
+        version: { bun: '2.4.0' },
         pid: 321,
         hostname: () => 'runner-a',
         randomUuid: () => '00000000-0000-4000-8000-000000000001',
@@ -43,7 +43,7 @@ function createRuntimeDouble(): RtcBaselineRuntimeDouble {
         runtime
     };
 }
-function createRuntimeFileDouble(calls: string[]): Pick<RtcBaselineDenoPort, 'lstat' | 'open' | 'mkdir' | 'readFile' | 'writeFile' | 'remove' | 'readDir'> {
+function createRuntimeFileDouble(calls: string[]): Pick<RtcBaselineBunPort, 'lstat' | 'open' | 'mkdir' | 'readFile' | 'writeFile' | 'remove' | 'readDir'> {
     return {
         lstat: async (path: string) => {
             calls.push(`lstat:${path}`);
@@ -90,10 +90,10 @@ function captureRequest(environmentId: 'E1-local' | 'E5-remote') {
         conditionalEnvironmentDecisions: []
     };
 }
-describe('RTC baseline Deno adapters', () => {
-    it('provides local writer identity and conservative Deno process liveness', async () => {
+describe('RTC baseline Bun adapters', () => {
+    it('provides local writer identity and conservative Bun process liveness', async () => {
         const double = createRuntimeDouble();
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
 
         expect(adapters.writerLockRuntime.createOwnerToken()).toBe(
             '00000000-0000-4000-8000-000000000001'
@@ -120,7 +120,7 @@ describe('RTC baseline Deno adapters', () => {
 
     it('implements file, SHA-256, clock, runtime, host, and allowlisted environment adapters', async () => {
         const double = createRuntimeDouble();
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         expect(double.calls).toEqual([]);
         expect(await adapters.filePort.readFile('/repo/value')).toEqual(
             new TextEncoder().encode('bytes')
@@ -133,7 +133,7 @@ describe('RTC baseline Deno adapters', () => {
         expect(adapters.environment.readAllowlisted(['RTC_ALLOWED'])).toEqual({ RTC_ALLOWED: 'yes' });
         expect(double.calls.filter((call) => call.startsWith('env:'))).toEqual(['env:RTC_ALLOWED']);
         expect(await adapters.runtimeHost.read()).toEqual({
-            deno: '2.4.0',
+            bun: '2.4.0',
             os: 'darwin',
             kernel: '24.6.0',
             architecture: 'aarch64',
@@ -173,7 +173,7 @@ describe('RTC baseline Deno adapters', () => {
                 stderr: new Uint8Array()
             };
         };
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
 
         expect((await adapters.runtimeHost.read()).cpuModel).toBe('Apple M2 Max');
         expect(double.calls.filter((call) => call.startsWith('run:'))).toEqual([
@@ -197,7 +197,7 @@ describe('RTC baseline Deno adapters', () => {
                 stderr: new Uint8Array()
             };
         };
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
 
         expect((await adapters.runtimeHost.read()).cpuModel).toBe('8-Core Intel Core i9');
 
@@ -210,7 +210,7 @@ describe('RTC baseline Deno adapters', () => {
     });
     it('reads branch and detached Git facts and preserves typed command failures', async () => {
         const double = createRuntimeDouble();
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         expect(await adapters.git.readHeadCommit()).toEqual({ ok: true, value: 'output' });
         expect(await adapters.git.readHeadTree()).toEqual({ ok: true, value: 'output' });
         expect(await adapters.git.readRef()).toEqual({ ok: true, value: 'output' });
@@ -232,7 +232,7 @@ describe('RTC baseline Deno adapters', () => {
                     stderr: new Uint8Array()
                 };
         };
-        expect(await createDenoRtcBaselineAdapters(detachedDouble.runtime).git.readRef()).toEqual({
+        expect(await createBunRtcBaselineAdapters(detachedDouble.runtime).git.readRef()).toEqual({
             ok: true,
             value: `detached@${'a'.repeat(40)}`
         });
@@ -260,7 +260,7 @@ describe('RTC baseline Deno adapters', () => {
             stdout: new TextEncoder().encode('partial'),
             stderr: new TextEncoder().encode('bad ref')
         });
-        const failed = createDenoRtcBaselineAdapters(failedDouble.runtime);
+        const failed = createBunRtcBaselineAdapters(failedDouble.runtime);
         expect(await failed.git.readHeadCommit()).toEqual({
             ok: false,
             issues: [
@@ -282,11 +282,11 @@ describe('RTC baseline Deno adapters', () => {
     });
     it('hashes complete source and config files with literal path/kind provenance', async () => {
         const double = createRuntimeDouble();
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         expect(
             await adapters.sourceConfigHashing.read([
                 { path: 'scripts/perf/example.ts', kind: 'source' },
-                { path: 'packages/shared-rtc-bench/deno.json', kind: 'config' }
+                { path: 'packages/shared-rtc-bench/tsconfig.json', kind: 'config' }
             ])
         ).toEqual({
             ok: true,
@@ -297,7 +297,7 @@ describe('RTC baseline Deno adapters', () => {
                     sha256: '277089d91c0bdf4f2e6862ba7e4a07605119431f5d13f726dd352b06f1b206a9'
                 },
                 {
-                    path: 'packages/shared-rtc-bench/deno.json',
+                    path: 'packages/shared-rtc-bench/tsconfig.json',
                     kind: 'config',
                     sha256: '277089d91c0bdf4f2e6862ba7e4a07605119431f5d13f726dd352b06f1b206a9'
                 }
@@ -305,7 +305,7 @@ describe('RTC baseline Deno adapters', () => {
         });
         expect(double.calls.filter((call) => call.startsWith('read:'))).toEqual([
             'read:scripts/perf/example.ts',
-            'read:packages/shared-rtc-bench/deno.json'
+            'read:packages/shared-rtc-bench/tsconfig.json'
         ]);
     });
     it.each([false, true])('binds selected native tool hashes through the existing owner and fails closed on resolver failure=%s', async (fails) => {
@@ -316,7 +316,7 @@ describe('RTC baseline Deno adapters', () => {
             stdout: new TextEncoder().encode(JSON.stringify([selected])),
             stderr: new TextEncoder().encode('private override value must never escape')
         });
-        const result = await createDenoRtcBaselineAdapters(double.runtime).sourceConfigHashing.read([{
+        const result = await createBunRtcBaselineAdapters(double.runtime).sourceConfigHashing.read([{
             path: 'node_modules/typescript/package.json',
             kind: 'config'
         }]);
@@ -336,16 +336,16 @@ describe('RTC baseline Deno adapters', () => {
     it('returns a typed source/config read failure without a partial hash list', async () => {
         const double = createRuntimeDouble();
         double.runtime.readFile = async (path) => {
-            if (path === 'packages/shared-rtc-bench/deno.json') {
+            if (path === 'packages/shared-rtc-bench/tsconfig.json') {
                 throw new Error('config denied');
             }
             return new TextEncoder().encode('source');
         };
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         expect(
             await adapters.sourceConfigHashing.read([
                 { path: 'scripts/perf/example.ts', kind: 'source' },
-                { path: 'packages/shared-rtc-bench/deno.json', kind: 'config' }
+                { path: 'packages/shared-rtc-bench/tsconfig.json', kind: 'config' }
             ])
         ).toEqual({
             ok: false,
@@ -360,7 +360,7 @@ describe('RTC baseline Deno adapters', () => {
     });
     it('implements every filesystem operation with exact paths and typed failures', async () => {
         const double = createRuntimeDouble();
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         await adapters.filePort.inspectPath('/repo/a');
         await adapters.filePort.createDirectory('/repo/root', { recursive: true });
         await adapters.filePort.createDirectory('/repo/new', { recursive: false });
@@ -383,7 +383,7 @@ describe('RTC baseline Deno adapters', () => {
         double.runtime.readFile = async () => {
             throw new Error('read denied');
         };
-        const failed = createDenoRtcBaselineAdapters(double.runtime);
+        const failed = createBunRtcBaselineAdapters(double.runtime);
         await expect(failed.filePort.readFile('/repo/denied')).rejects.toThrow('read denied');
         expect(
             adapters.filePort.classifyError!(new double.runtime.errors!.AlreadyExists!('exists'))
@@ -399,9 +399,9 @@ describe('RTC baseline Deno adapters', () => {
             double.calls.push(`read:${path}`);
             return new TextEncoder().encode('processor : 0\nmodel name : AMD EPYC 7B13\n');
         };
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         expect(await adapters.runtimeHost.read()).toEqual({
-            deno: '2.4.0',
+            bun: '2.4.0',
             os: 'linux',
             kernel: '24.6.0',
             architecture: 'x86_64',
@@ -426,16 +426,16 @@ describe('RTC baseline Deno adapters', () => {
             stdout: new TextEncoder().encode('partial'),
             stderr: new TextEncoder().encode('bad')
         });
-        const nonzero = createDenoRtcBaselineAdapters(nonzeroDouble.runtime);
+        const nonzero = createBunRtcBaselineAdapters(nonzeroDouble.runtime);
         expect(
-            await nonzero.process.run({ executable: 'deno', arguments: ['check', 'file.ts'] })
+            await nonzero.process.run({ executable: 'bun', arguments: ['check', 'file.ts'] })
         ).toEqual({
             ok: false,
             issues: [
                 {
                     path: '$.process',
                     code: 'command-failed',
-                    message: 'deno exited with status 7.',
+                    message: 'bun exited with status 7.',
                     details: { exitStatus: 7, stdout: 'partial', stderr: 'bad' }
                 }
             ]
@@ -450,10 +450,10 @@ describe('RTC baseline Deno adapters', () => {
     });
     it('allows only the exhaustive protocol executable set', async () => {
         const double = createRuntimeDouble();
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         expect(
             await Promise.all([
-                adapters.process.run({ executable: 'deno', arguments: ['--version'] }),
+                adapters.process.run({ executable: 'bun', arguments: ['--version'] }),
                 adapters.process.run({ executable: 'node', arguments: ['--version'] }),
                 adapters.process.run({ executable: 'npm', arguments: ['--version'] }),
                 adapters.process.run({ executable: 'git', arguments: ['--version'] }),
@@ -504,12 +504,12 @@ describe('RTC baseline Deno adapters', () => {
             }
             return originalCommand(executable, arguments_);
         };
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
-        const observed = await createRtcBaselineDenoObservation(adapters)(captureRequest('E1-local'));
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
+        const observed = await createRtcBaselineBunObservation(adapters)(captureRequest('E1-local'));
         expect(observed.ok && observed.value.runtime).toEqual({
             node: 'v24.4.1',
             npm: '11.4.2',
-            deno: '2.4.0',
+            bun: '2.4.0',
             playwright: '1.55.0',
             chromium: 'Chromium 139.0.7258.5'
         });
@@ -517,7 +517,7 @@ describe('RTC baseline Deno adapters', () => {
             DATABASE_URL: 'present'
         });
         expect(JSON.stringify(observed)).not.toContain('postgres://user:secret');
-        const distributed = await createRtcBaselineDenoObservation(adapters)(
+        const distributed = await createRtcBaselineBunObservation(adapters)(
             captureRequest('E5-remote')
         );
         expect([
@@ -527,11 +527,11 @@ describe('RTC baseline Deno adapters', () => {
     });
     it('starts every worker through a fresh approved process invocation', async () => {
         const double = createRuntimeDouble();
-        const adapters = createDenoRtcBaselineAdapters(double.runtime);
+        const adapters = createBunRtcBaselineAdapters(double.runtime);
         expect(
             await Promise.all([
                 adapters.freshWorker.run({
-                    executable: 'deno',
+                    executable: 'bun',
                     arguments: ['run', 'worker-entrypoint']
                 }),
                 adapters.freshWorker.run({
@@ -544,7 +544,7 @@ describe('RTC baseline Deno adapters', () => {
             { ok: true, value: { exitStatus: 0, stdout: 'output\n', stderr: '' } }
         ]);
         expect(double.calls.filter((call) => call.startsWith('run:'))).toEqual([
-            'run:deno:run,worker-entrypoint',
+            'run:bun:run,worker-entrypoint',
             'run:node:worker-entrypoint'
         ]);
     });

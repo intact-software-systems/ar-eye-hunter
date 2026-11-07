@@ -11,11 +11,11 @@ import type {
 import type { RtcBaselineStoredFile } from '../../../baseline/evidence/rtc-baseline-artifact-files.ts';
 import type { RtcBaselineFileStore } from '../../../baseline/evidence/rtc-baseline-evidence-store.ts';
 import {
-    createDenoRtcBaselineAdapters,
-    type RtcBaselineDenoPort
-} from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoEvidence } from '../../../baseline/runtime/rtc-baseline-deno-evidence.ts';
-import { createRtcBaselineDenoFinalization } from '../../../baseline/runtime/rtc-baseline-deno-finalization.ts';
+    createBunRtcBaselineAdapters,
+    type RtcBaselineBunPort
+} from '../../../baseline/runtime/rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunEvidence } from '../../../baseline/runtime/rtc-baseline-bun-evidence.ts';
+import { createRtcBaselineBunFinalization } from '../../../baseline/runtime/rtc-baseline-bun-finalization.ts';
 
 interface MemoryPeak {
     readonly heapUsed: number;
@@ -93,7 +93,7 @@ function createRuntimeObservation(): RtcBaselineRuntimeObservationDto {
             ref: 'codex/rtc-memory-bounds',
             clean: true
         },
-        runtime: { node: '26', npm: '11', deno: '2.9.5', playwright: '1', chromium: '139' },
+        runtime: { node: '26', npm: '11', bun: '2.9.5', playwright: '1', chromium: '139' },
         host: {
             os: 'darwin',
             kernel: '25.0.0',
@@ -115,7 +115,7 @@ function createRuntimeObservation(): RtcBaselineRuntimeObservationDto {
         resolvedConfiguration: [],
         controllerInputs: [],
         workerCommand: {
-            redactedArgv: { executable: 'deno', arguments: [] },
+            redactedArgv: { executable: 'bun', arguments: [] },
             projection: { fixedWorkerFlags: [], configurationFlags: [] }
         },
         allowlistedEnvironment: {}
@@ -220,7 +220,7 @@ function createGeneratedEvidence(
     config: ScenarioConfig,
     sampler: MemorySampler,
     sha256: (bytes: Uint8Array) => Promise<string>
-): RtcBaselineDenoEvidence {
+): RtcBaselineBunEvidence {
     const observation = createRuntimeObservation();
     const environment = createEnvironment(observation);
     const manifest = createManifest(config.sampleCount);
@@ -305,14 +305,14 @@ function createGeneratedEvidence(
     };
 }
 
-function createUnusedDenoPort(): RtcBaselineDenoPort {
+function createUnusedBunPort(): RtcBaselineBunPort {
     const unused = async (): Promise<never> => {
-        throw new Error('The generated evidence scenario does not use the Deno file/process port.');
+        throw new Error('The generated evidence scenario does not use the Bun file/process port.');
     };
     return {
         envGet: () => undefined,
         build: { os: process.platform, arch: process.arch },
-        version: { deno: process.versions.bun ?? process.versions.node },
+        version: { bun: process.versions.bun ?? process.versions.node },
         pid: process.pid,
         hostname: () => hostname(),
         randomUuid: () => crypto.randomUUID(),
@@ -324,7 +324,7 @@ function createUnusedDenoPort(): RtcBaselineDenoPort {
         writeFile: unused,
         remove: unused,
         async *readDir(): AsyncIterable<never> {
-            throw new Error('The generated evidence scenario does not enumerate the Deno file port.');
+            throw new Error('The generated evidence scenario does not enumerate the Bun file port.');
         },
         command: unused,
         now: () => new Date('2026-08-18T10:00:00.000Z'),
@@ -336,7 +336,7 @@ function createUnusedDenoPort(): RtcBaselineDenoPort {
 
 async function runScenario(config: ScenarioConfig): Promise<MemoryBoundsScenarioResult> {
     const sampler = createMemorySampler();
-    const adapterSha256 = createDenoRtcBaselineAdapters(createUnusedDenoPort()).sha256;
+    const adapterSha256 = createBunRtcBaselineAdapters(createUnusedBunPort()).sha256;
     const sha256 = async (bytes: Uint8Array) => {
         sampler.sample();
         const digest = await adapterSha256(bytes);
@@ -344,7 +344,7 @@ async function runScenario(config: ScenarioConfig): Promise<MemoryBoundsScenario
         return digest;
     };
     const evidence = createGeneratedEvidence(config, sampler, sha256);
-    const { finalizedEvidence, finalizedReader } = createRtcBaselineDenoFinalization(
+    const { finalizedEvidence, finalizedReader } = createRtcBaselineBunFinalization(
         evidence,
         sha256
     );

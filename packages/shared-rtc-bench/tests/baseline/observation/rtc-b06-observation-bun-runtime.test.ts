@@ -23,15 +23,15 @@ import {
 import { RTC_BASELINE_WORKLOAD_CATALOG } from '../../../baseline/catalog/rtc-baseline-workload-catalog.ts';
 import {
     createRtcB06LiveProducerCommand,
-    createRtcB06ObservationDenoRuntime,
+    createRtcB06ObservationBunRuntime,
     runRtcB06LiveProducer,
-    type RtcB06ObservationDenoRuntimeInput
-} from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
+    type RtcB06ObservationBunRuntimeInput
+} from '../../../baseline/observation/rtc-b06-observation-bun-runtime.ts';
 import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
-import { createDenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-port.ts';
-import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
-import { createRtcBaselineDenoObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
+import { createBunRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunPort } from '../../../baseline/runtime/rtc-baseline-bun-port.ts';
+import { createRtcBaselineBunRuntime } from '../../../baseline/runtime/rtc-baseline-bun-runtime.ts';
+import { createRtcBaselineBunObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
 
 const baselineId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
 
@@ -322,7 +322,7 @@ describe('governed RTC-B06 producer evidence', () => {
     });
 });
 
-describe('RTC-B06 observation Deno runtime', () => {
+describe('RTC-B06 observation Bun runtime', () => {
     it.each(
         [
             ['E3-memory', 'default', 'test:rallar:full-stack:memory:live-rtc-3'],
@@ -425,11 +425,11 @@ describe('RTC-B06 observation Deno runtime', () => {
 
     it('refuses E4 initialization with nonlocal ICE before source effects', async () => {
         const port = producerRuntime();
-        const adapters = createDenoRtcBaselineAdapters(port);
-        const runtime = createRtcB06ObservationDenoRuntime({
+        const adapters = createBunRtcBaselineAdapters(port);
+        const runtime = createRtcB06ObservationBunRuntime({
             repositoryRoot: '/repository',
             adapters,
-            envelope: createRtcBaselineDenoRuntime(adapters),
+            envelope: createRtcBaselineBunRuntime(adapters),
             producerOutput: { writeStdout: async () => {}, writeStderr: async () => {} },
             runtime: {
                 ...port,
@@ -470,15 +470,15 @@ describe('RTC-B06 observation Deno runtime', () => {
             }
         };
         const port = producerRuntime();
-        const adapters = createDenoRtcBaselineAdapters(port);
+        const adapters = createBunRtcBaselineAdapters(port);
         adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
         adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
         const modes: string[] = [];
         const failures: string[] = [];
-        const runtime = createRtcB06ObservationDenoRuntime({
+        const runtime = createRtcB06ObservationBunRuntime({
             repositoryRoot: '/repository',
             adapters,
-            envelope: createRtcBaselineDenoRuntime(adapters),
+            envelope: createRtcBaselineBunRuntime(adapters),
             producerOutput: {
                 writeStdout: async () => {},
                 writeStderr: async (bytes) => {
@@ -551,14 +551,14 @@ describe('RTC-B06 observation Deno runtime', () => {
                     return { code: 9, stdout: new TextEncoder().encode(databaseUrl), stderr: new Uint8Array() };
                 }
             };
-            const adapters = createDenoRtcBaselineAdapters(port);
+            const adapters = createBunRtcBaselineAdapters(port);
             adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
             adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
-            const runtime = createRtcB06ObservationDenoRuntime({
+            const runtime = createRtcB06ObservationBunRuntime({
                 repositoryRoot: '/repository',
                 runtime: port,
                 adapters,
-                envelope: createRtcBaselineDenoRuntime(adapters),
+                envelope: createRtcBaselineBunRuntime(adapters),
                 producerOutput: {
                     writeStdout: async (bytes) => {
                         diagnostics.push(new TextDecoder().decode(bytes));
@@ -600,12 +600,12 @@ describe('RTC-B06 observation Deno runtime', () => {
     it('uses the initialized per-case ALM policy for every producer despite ambient changes', async () => {
         const observed: string[] = [];
         const port = producerRuntime();
-        const adapters = createDenoRtcBaselineAdapters(port);
+        const adapters = createBunRtcBaselineAdapters(port);
         const environment = initializedProducerEnvironment();
         const failures: string[] = [];
         adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
         adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
-        const runtime = createRtcB06ObservationDenoRuntime({
+        const runtime = createRtcB06ObservationBunRuntime({
             repositoryRoot: '/repository',
             runtime: {
                 ...port,
@@ -616,7 +616,7 @@ describe('RTC-B06 observation Deno runtime', () => {
                 }
             },
             adapters,
-            envelope: createRtcBaselineDenoRuntime(adapters),
+            envelope: createRtcBaselineBunRuntime(adapters),
             producerOutput: {
                 writeStdout: async () => {},
                 writeStderr: async (bytes) => {
@@ -643,7 +643,7 @@ describe('RTC-B06 observation Deno runtime', () => {
                     throw new Error('Producer launch is forbidden for an unverified initialized selection.');
                 }
             };
-            const adapters = createDenoRtcBaselineAdapters(port);
+            const adapters = createBunRtcBaselineAdapters(port);
             const environment = initializedProducerEnvironment();
             const diagnostics: string[] = [];
             if (failure === 'missing') {
@@ -660,11 +660,11 @@ describe('RTC-B06 observation Deno runtime', () => {
             }
             adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
             adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
-            const runtime = createRtcB06ObservationDenoRuntime({
+            const runtime = createRtcB06ObservationBunRuntime({
                 repositoryRoot: '/repository',
                 runtime: port,
                 adapters,
-                envelope: createRtcBaselineDenoRuntime(adapters),
+                envelope: createRtcBaselineBunRuntime(adapters),
                 producerOutput: {
                     writeStdout: async () => {},
                     writeStderr: async (bytes) => {
@@ -732,7 +732,7 @@ describe('RTC-B06 observation Deno runtime', () => {
     );
 
     it('records the finite case policies and hashes their real configuration owners in the existing observation', async () => {
-        const adapters = createDenoRtcBaselineAdapters(producerRuntime());
+        const adapters = createBunRtcBaselineAdapters(producerRuntime());
         adapters.environment.readAllowlisted = () => ({
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -745,7 +745,7 @@ describe('RTC-B06 observation Deno runtime', () => {
             logicalCpuCount: 10,
             cpuModel: 'Apple M4',
             totalMemoryBytes: 1,
-            deno: '2.9.5',
+            bun: '2.9.5',
             executionContext: 'local'
         });
         adapters.sourceConfigHashing.read = async (files) => ({
@@ -756,7 +756,7 @@ describe('RTC-B06 observation Deno runtime', () => {
                 sha256: createHash('sha256').update(await readFile(path)).digest('hex')
             })))
         });
-        const observe = createRtcBaselineDenoObservation(adapters);
+        const observe = createRtcBaselineBunObservation(adapters);
         const result = await observe({
             schema: 'rallar.rtc-baseline.capture-request.v1',
             baselineId,
@@ -814,7 +814,7 @@ describe('RTC-B06 observation Deno runtime', () => {
                 'tests/playwright/rallar-black-box/live-rtc-recorder-rows.ts',
                 'tests/playwright/rallar-black-box/live-rtc-control-diagnostic-projections.ts',
                 'apps/rallar-black-box/playwright.full-stack.config.ts',
-                'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
+                'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-bun-runtime.ts',
                 'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts',
                 'packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts'
             ]
@@ -832,14 +832,14 @@ describe('RTC-B06 observation Deno runtime', () => {
     it('uses initialized mode across cases, phases, ordinals and a repeat despite ambient mutation', async () => {
         const observed: string[] = [];
         const port = producerRuntime();
-        const adapters = createDenoRtcBaselineAdapters(port);
+        const adapters = createBunRtcBaselineAdapters(port);
         adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
         adapters.filePort.readFile = async (path) =>
             new TextEncoder().encode(
                 JSON.stringify({ ...initializedProducerEnvironment(), baselineId: path.includes('-repeat-01/') ? `${baselineId}-repeat-01` : baselineId })
             );
         let ambient = 'off';
-        const input: RtcB06ObservationDenoRuntimeInput = {
+        const input: RtcB06ObservationBunRuntimeInput = {
             repositoryRoot: '/repository',
             runtime: {
                 ...port,
@@ -855,9 +855,9 @@ describe('RTC-B06 observation Deno runtime', () => {
             },
             producerOutput: { writeStdout: async () => {}, writeStderr: async () => {} },
             adapters,
-            envelope: createRtcBaselineDenoRuntime(adapters)
+            envelope: createRtcBaselineBunRuntime(adapters)
         };
-        const runtime = createRtcB06ObservationDenoRuntime(input);
+        const runtime = createRtcB06ObservationBunRuntime(input);
         await runtime.runLiveRtcProducer({ baselineId, attempt: attempt('default') });
         ambient = 'native';
         for (const caseId of ['default', 'all-scenarios', 'retention-100'] as const) {
@@ -957,11 +957,11 @@ describe('RTC-B06 observation Deno runtime', () => {
     });
 });
 
-function producerRuntime(): RtcBaselineDenoPort {
+function producerRuntime(): RtcBaselineBunPort {
     return {
         envGet: () => undefined,
         build: { os: 'darwin', arch: 'arm64' },
-        version: { deno: '2' },
+        version: { bun: '2' },
         pid: 1,
         hostname: () => 'test',
         randomUuid: () => 'test',
@@ -990,7 +990,7 @@ function producerRuntime(): RtcBaselineDenoPort {
     };
 }
 
-function filesystemProducerRuntime(events: string[]): RtcBaselineDenoPort {
+function filesystemProducerRuntime(events: string[]): RtcBaselineBunPort {
     class NotFound extends Error {}
     return {
         ...producerRuntime(),
@@ -1039,7 +1039,7 @@ function initializedProducerEnvironment() {
         conditionalEnvironmentDecisions: [],
         observation: {
             git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'feature', clean: true },
-            runtime: { node: '24', npm: '11', deno: '2', playwright: '1', chromium: '1' },
+            runtime: { node: '24', npm: '11', bun: '2', playwright: '1', chromium: '1' },
             host: { os: 'test', kernel: 'test', architecture: 'test', logicalCpuCount: 1, cpuModel: 'test', totalMemoryBytes: 1, executionContext: 'local' },
             timing: { startedAtUtc: '2026-08-16T10:00:00.000Z', endedAtUtc: '2026-08-16T10:00:00.000Z', monotonicDurationMs: 0, monotonicSource: 'test' },
             deviations: [],

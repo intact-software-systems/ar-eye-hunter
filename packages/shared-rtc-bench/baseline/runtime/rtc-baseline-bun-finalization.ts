@@ -29,7 +29,7 @@ import {
     computeRtcBaselineMetricSummary,
     partitionRtcBaselineMetricObservations
 } from '../evidence/rtc-baseline-statistics.ts';
-import type { RtcBaselineDenoEvidence } from './rtc-baseline-deno-evidence.ts';
+import type { RtcBaselineBunEvidence } from './rtc-baseline-bun-evidence.ts';
 
 type RtcBaselineClassifiedArtifactKind = NonNullable<ReturnType<typeof classifyRtcBaselineArtifactPath>>;
 
@@ -41,13 +41,13 @@ interface AppendRtcBaselineResultArtifactInput {
 }
 
 interface CollectRtcBaselineResultArtifactsInput {
-    readonly evidence: RtcBaselineDenoEvidence;
+    readonly evidence: RtcBaselineBunEvidence;
     readonly baselineId: string;
     readonly listedFiles: readonly RtcBaselineStoredFile[];
     readonly projector: RtcBaselineArtifactProjector;
 }
 
-export interface RtcBaselineDenoFinalization {
+export interface RtcBaselineBunFinalization {
     readonly finalizedEvidence: RtcBaselineFinalizedEvidence;
     readonly finalizedReader: RtcBaselineFinalizedReader;
 }
@@ -119,7 +119,7 @@ async function collectRtcBaselineResultArtifacts(
 }
 
 async function collectRtcBaselineArtifacts(
-    evidence: RtcBaselineDenoEvidence,
+    evidence: RtcBaselineBunEvidence,
     sha256: (bytes: Uint8Array) => Promise<string>,
     baselineId: string
 ): Promise<RtcBaselineResult<RtcBaselineCollectedArtifacts>> {
@@ -182,7 +182,7 @@ async function collectRtcBaselineArtifacts(
 }
 
 async function listRtcBaselineFinalizedArtifactPaths(
-    evidence: RtcBaselineDenoEvidence,
+    evidence: RtcBaselineBunEvidence,
     baselineId: string
 ) {
     const results = await evidence.store.listArtifacts(baselineId, 'results');
@@ -226,7 +226,7 @@ function toRtcBaselineFinalizationWriter(
 }
 
 async function withRtcBaselineFinalizationLock<T>(
-    evidence: RtcBaselineDenoEvidence,
+    evidence: RtcBaselineBunEvidence,
     baselineId: string,
     operation: (writer: RtcBaselineFinalizationLockedWriter) => Promise<RtcBaselineResult<T>>
 ) {
@@ -236,10 +236,10 @@ async function withRtcBaselineFinalizationLock<T>(
     );
 }
 
-export function createRtcBaselineDenoFinalization(
-    evidence: RtcBaselineDenoEvidence,
+export function createRtcBaselineBunFinalization(
+    evidence: RtcBaselineBunEvidence,
     sha256: (bytes: Uint8Array) => Promise<string>
-): RtcBaselineDenoFinalization {
+): RtcBaselineBunFinalization {
     const finalizedReader = createRtcBaselineFinalizedReader({
         readJson: evidence.store.readJson,
         readBytes: evidence.store.readBytes,

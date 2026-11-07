@@ -9,9 +9,9 @@ import type {
 } from '../contracts/rtc-baseline-contracts.ts';
 import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-file-port.ts';
 import type { RtcBaselineWriterLockRuntime } from '../evidence/rtc-baseline-writer-lock.ts';
-import { createRtcBaselineDenoFilePort } from './rtc-baseline-deno-file-port.ts';
-import type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
-export type { RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
+import { createRtcBaselineBunFilePort } from './rtc-baseline-bun-file-port.ts';
+import type { RtcBaselineBunPort } from './rtc-baseline-bun-port.ts';
+export type { RtcBaselineBunPort } from './rtc-baseline-bun-port.ts';
 
 interface CommandInput {
     executable: string;
@@ -25,14 +25,14 @@ export interface RtcBaselineCommandOutput {
 interface ProcessPort {
     run(input: CommandInput): Promise<RtcBaselineResult<RtcBaselineCommandOutput>>;
 }
-export interface DenoRtcBaselineAdapters {
+export interface BunRtcBaselineAdapters {
     filePort: RtcBaselineFilePort;
     writerLockRuntime: RtcBaselineWriterLockRuntime;
     sha256(bytes: Uint8Array): Promise<string>;
     clock: { nowUtc(): string; monotonicNowMs(): number; };
     environment: { readAllowlisted(names: readonly string[]): Readonly<Record<string, string>>; };
     runtimeHost: {
-        read(): Promise<RtcBaselineRuntimeObservationDto['host'] & { deno: string; }>;
+        read(): Promise<RtcBaselineRuntimeObservationDto['host'] & { bun: string; }>;
     };
     process: ProcessPort;
     freshWorker: ProcessPort;
@@ -53,7 +53,7 @@ const allowedExecutables = new Set([
     'git',
     'node',
     'npm',
-    'deno',
+    'bun',
     'uname',
     'sysctl',
     'system_profiler'
@@ -92,10 +92,10 @@ async function readDarwinCpuModel(run: ProcessPort['run']) {
     return profilerCpuModel;
 }
 
-export function createDenoRtcBaselineAdapters(runtime: RtcBaselineDenoPort): DenoRtcBaselineAdapters {
+export function createBunRtcBaselineAdapters(runtime: RtcBaselineBunPort): BunRtcBaselineAdapters {
     const run: ProcessPort['run'] = (input) => runRtcBaselineCommand(runtime, input);
     return {
-        filePort: createRtcBaselineDenoFilePort(runtime),
+        filePort: createRtcBaselineBunFilePort(runtime),
         writerLockRuntime: createRtcBaselineWriterLockRuntime(runtime),
         sha256,
         clock: { nowUtc: () => runtime.now().toISOString(), monotonicNowMs: () => runtime.performanceNow() },
@@ -108,7 +108,7 @@ export function createDenoRtcBaselineAdapters(runtime: RtcBaselineDenoPort): Den
     };
 }
 
-function createRtcBaselineWriterLockRuntime(runtime: RtcBaselineDenoPort): RtcBaselineWriterLockRuntime {
+function createRtcBaselineWriterLockRuntime(runtime: RtcBaselineBunPort): RtcBaselineWriterLockRuntime {
     return {
         createOwnerToken: () => runtime.randomUuid(),
         readOwnerIdentity: () => ({ hostname: runtime.hostname(), processId: runtime.pid }),
@@ -126,7 +126,7 @@ function createRtcBaselineWriterLockRuntime(runtime: RtcBaselineDenoPort): RtcBa
     };
 }
 
-function createRtcBaselineGitAdapter(run: ProcessPort['run']): DenoRtcBaselineAdapters['git'] {
+function createRtcBaselineGitAdapter(run: ProcessPort['run']): BunRtcBaselineAdapters['git'] {
     async function gitValue(
         arguments_: readonly string[],
         trim: boolean
@@ -164,7 +164,7 @@ function createRtcBaselineGitAdapter(run: ProcessPort['run']): DenoRtcBaselineAd
 }
 
 async function runRtcBaselineCommand(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     input: CommandInput
 ): Promise<RtcBaselineResult<RtcBaselineCommandOutput>> {
     if (!allowedExecutables.has(input.executable)) {
@@ -219,9 +219,9 @@ async function sha256(bytes: Uint8Array) {
 }
 
 async function readRtcBaselineRuntimeHost(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     run: ProcessPort['run']
-): Promise<Awaited<ReturnType<DenoRtcBaselineAdapters['runtimeHost']['read']>>> {
+): Promise<Awaited<ReturnType<BunRtcBaselineAdapters['runtimeHost']['read']>>> {
     const kernel = await run({ executable: 'uname', arguments: ['-r'] });
     if (!kernel.ok) {
         throw new Error(kernel.issues[0]!.message);
@@ -238,7 +238,7 @@ async function readRtcBaselineRuntimeHost(
         cpuModel = await readDarwinCpuModel(run);
     }
     return {
-        deno: runtime.version.deno,
+        bun: runtime.version.bun,
         os: runtime.build.os,
         kernel: kernel.value.stdout.trim(),
         architecture: runtime.build.arch,
@@ -250,7 +250,7 @@ async function readRtcBaselineRuntimeHost(
 }
 
 function readRtcBaselineAllowlistedEnvironment(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     names: readonly string[]
 ): Readonly<Record<string, string>> {
     const values: Record<string, string> = {};
@@ -264,7 +264,7 @@ function readRtcBaselineAllowlistedEnvironment(
 }
 
 async function readRtcBaselineSourceConfigHashes(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     inputs: readonly { path: string; kind: 'source' | 'config'; }[]
 ): Promise<RtcBaselineResult<RtcBaselineRuntimeObservationDto['sourceHashes']>> {
     const owners = await readRtcBaselineInstalledBuildToolInputs(runtime, inputs);
@@ -293,7 +293,7 @@ async function readRtcBaselineSourceConfigHashes(
 }
 
 async function readRtcBaselineInstalledBuildToolInputs(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     inputs: readonly { path: string; }[]
 ): Promise<RtcBaselineResult<readonly string[]>> {
     if (!inputs.some((file) => file.path === 'node_modules/typescript/package.json')) {

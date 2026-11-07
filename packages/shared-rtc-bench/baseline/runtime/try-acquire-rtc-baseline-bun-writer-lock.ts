@@ -1,5 +1,5 @@
 import type { RtcBaselineExclusiveFileLock } from '../evidence/rtc-baseline-file-port.ts';
-import type { RtcBaselineDenoFile, RtcBaselineDenoPort } from './rtc-baseline-deno-port.ts';
+import type { RtcBaselineBunFile, RtcBaselineBunPort } from './rtc-baseline-bun-port.ts';
 
 const maximumMetadataBytes = 65_536;
 
@@ -26,7 +26,7 @@ function sameFileIdentity(
     );
 }
 
-async function readMetadata(file: RtcBaselineDenoFile) {
+async function readMetadata(file: RtcBaselineBunFile) {
     const { size } = await file.stat();
     if (!Number.isSafeInteger(size) || size < 0 || size > maximumMetadataBytes) {
         throw new Error(`Writer lock metadata must not exceed ${maximumMetadataBytes} bytes.`);
@@ -47,7 +47,7 @@ async function readMetadata(file: RtcBaselineDenoFile) {
     return offset === bytes.length ? bytes : bytes.slice(0, offset);
 }
 
-async function writeMetadata(file: RtcBaselineDenoFile, bytes: Uint8Array) {
+async function writeMetadata(file: RtcBaselineBunFile, bytes: Uint8Array) {
     await file.seek(0, 0);
     let offset = 0;
     while (offset < bytes.length) {
@@ -61,7 +61,7 @@ async function writeMetadata(file: RtcBaselineDenoFile, bytes: Uint8Array) {
     await file.sync();
 }
 
-async function openWriterLock(runtime: RtcBaselineDenoPort, path: string) {
+async function openWriterLock(runtime: RtcBaselineBunPort, path: string) {
     try {
         const file = await runtime.open(path, { read: true, write: true, createNew: true });
         return { file, created: true };
@@ -80,9 +80,9 @@ async function openWriterLock(runtime: RtcBaselineDenoPort, path: string) {
 }
 
 async function verifyOpenedPath(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     path: string,
-    file: RtcBaselineDenoFile
+    file: RtcBaselineBunFile
 ) {
     const openedFile = await file.stat();
     const pathFile = await runtime.lstat(path);
@@ -93,8 +93,8 @@ async function verifyOpenedPath(
     }
 }
 
-export async function tryAcquireRtcBaselineDenoWriterLock(
-    runtime: RtcBaselineDenoPort,
+export async function tryAcquireRtcBaselineBunWriterLock(
+    runtime: RtcBaselineBunPort,
     path: string
 ): Promise<RtcBaselineExclusiveFileLock | null> {
     const { file, created } = await openWriterLock(runtime, path);

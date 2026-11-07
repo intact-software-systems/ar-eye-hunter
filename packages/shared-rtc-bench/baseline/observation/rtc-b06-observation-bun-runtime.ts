@@ -9,7 +9,7 @@ import type { RallarBlackBoxEventHistoryPolicy } from '../../../shared-test/rall
 import { toRtcBaselineFullStackRuntimeScript } from '../catalog/rtc-baseline-workload-catalog.ts';
 import { createRtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
 import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../evidence/rtc-baseline-writer-lock.ts';
-import { RTC_BASELINE_DENO_ROOT_PATH } from '../runtime/rtc-baseline-deno-runtime.ts';
+import { RTC_BASELINE_BUN_ROOT_PATH } from '../runtime/rtc-baseline-bun-runtime.ts';
 import { readRtcB06DiagnosticSelection } from './read-rtc-b06-diagnostic-selection.ts';
 import {
     allocateRtcB06PrivateBuild,
@@ -18,8 +18,8 @@ import {
 } from './rtc-b06-private-build.ts';
 
 import type { RtcBaselineAttemptLocatorDto, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
-import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
+import type { BunRtcBaselineAdapters } from '../runtime/rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunPort } from '../runtime/rtc-baseline-bun-port.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
 import type { RtcB06BaselineCaptureInput, RtcB06ObservationRunnerDependencies } from './rtc-b06-observation-runner.ts';
 import {
@@ -29,7 +29,7 @@ import {
     readRtcPerformanceObservationFinalizedArtifacts,
     readRtcPerformanceObservationSource,
     writeRtcPerformanceObservationOutput
-} from './rtc-performance-observation-deno-support.ts';
+} from './rtc-performance-observation-bun-support.ts';
 
 export interface RtcB06LiveProducerCommandInput {
     readonly repositoryRoot: string;
@@ -47,10 +47,10 @@ export interface RtcB06LiveProducerCommand {
     readonly arguments: readonly string[];
 }
 
-export interface RtcB06ObservationDenoRuntimeInput {
+export interface RtcB06ObservationBunRuntimeInput {
     readonly repositoryRoot: string;
-    readonly runtime: RtcBaselineDenoPort;
-    readonly adapters: DenoRtcBaselineAdapters;
+    readonly runtime: RtcBaselineBunPort;
+    readonly adapters: BunRtcBaselineAdapters;
     readonly envelope: RtcBaselineEnvelope;
     readonly producerOutput: RtcB06ProducerOutput;
 }
@@ -80,12 +80,12 @@ const inheritedConfiguration = [
 
 const encoder = new TextEncoder();
 
-export function createRtcB06ObservationDenoRuntime(
-    input: RtcB06ObservationDenoRuntimeInput
+export function createRtcB06ObservationBunRuntime(
+    input: RtcB06ObservationBunRuntimeInput
 ): RtcB06ObservationRunnerDependencies {
     const repositoryRoot = input.repositoryRoot;
     const store = createRtcBaselineFileStore({
-        rootPath: RTC_BASELINE_DENO_ROOT_PATH,
+        rootPath: RTC_BASELINE_BUN_ROOT_PATH,
         filePort: input.adapters.filePort,
         writerLockRuntime: input.adapters.writerLockRuntime,
         writerLockConfig: { staleAfterMs: RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS }
@@ -116,7 +116,7 @@ export function createRtcB06ObservationDenoRuntime(
 }
 
 export async function runRtcB06LiveProducer(
-    runtime: Pick<RtcBaselineDenoPort, 'command' | 'mkdir' | 'writeFile' | 'remove' | 'lstat' | 'errors' | 'envGet'>,
+    runtime: Pick<RtcBaselineBunPort, 'command' | 'mkdir' | 'writeFile' | 'remove' | 'lstat' | 'errors' | 'envGet'>,
     producerOutput: RtcB06ProducerOutput,
     input: RtcB06LiveProducerCommandInput
 ) {
@@ -228,7 +228,7 @@ function recorderDirectory(input: RtcB06LiveProducerCommandInput) {
 }
 
 async function runLiveRtcCommand(
-    runtime: Pick<RtcBaselineDenoPort, 'command'>,
+    runtime: Pick<RtcBaselineBunPort, 'command'>,
     command: RtcB06LiveProducerCommand,
     databaseUrl: string | undefined
 ) {
@@ -274,7 +274,7 @@ function caseConfiguration(caseId: string) {
 }
 
 function readProducerConfiguration(
-    runtime: Pick<RtcBaselineDenoPort, 'envGet'>,
+    runtime: Pick<RtcBaselineBunPort, 'envGet'>,
     environmentId: string
 ): RtcBaselineResult<string | undefined> {
     if (environmentId === 'E3-memory') {
@@ -292,7 +292,7 @@ function readProducerConfiguration(
 }
 
 async function preflight(
-    runtime: RtcBaselineDenoPort,
+    runtime: RtcBaselineBunPort,
     environmentId: RtcB06BaselineCaptureInput['environmentId']
 ): Promise<RtcBaselineResult<void>> {
     const configuration = readProducerConfiguration(runtime, environmentId);

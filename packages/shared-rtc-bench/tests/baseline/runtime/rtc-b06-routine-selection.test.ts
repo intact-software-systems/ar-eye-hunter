@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { expect, it } from 'vitest';
 
 import type { RtcBaselineCaptureRequestDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
-import { createRtcB06LiveProducerCommand } from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
+import { createRtcB06LiveProducerCommand } from '../../../baseline/observation/rtc-b06-observation-bun-runtime.ts';
 import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
 
 const request: RtcBaselineCaptureRequestDto = {

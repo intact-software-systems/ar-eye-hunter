@@ -3,9 +3,9 @@ import { writeSync, type Stats } from 'node:fs';
 import { lstat, mkdir, open, readdir, readFile, rm, writeFile, type FileHandle } from 'node:fs/promises';
 import { availableParallelism, hostname, totalmem } from 'node:os';
 
-import { createRtcB05ObservationDenoRuntime } from '../observation/rtc-b05-observation-deno-runtime.ts';
+import { createRtcB05ObservationBunRuntime } from '../observation/rtc-b05-observation-bun-runtime.ts';
 import { createRtcB05ObservationRunner } from '../observation/rtc-b05-observation-runner.ts';
-import { createRtcB06ObservationDenoRuntime } from '../observation/rtc-b06-observation-deno-runtime.ts';
+import { createRtcB06ObservationBunRuntime } from '../observation/rtc-b06-observation-bun-runtime.ts';
 import { createRtcB06ObservationRunner } from '../observation/rtc-b06-observation-runner.ts';
 import { verifyRtcPerformanceObservationArchive } from '../observation/rtc-performance-observation-archive.ts';
 import {
@@ -17,14 +17,14 @@ import {
     runRtcPerformanceObservationCommand,
     type RtcPerformanceObservationCliDependencies
 } from '../observation/rtc-performance-observation-cli.ts';
+import { createBunRtcBaselineAdapters } from '../runtime/rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunFile, RtcBaselineBunPort } from '../runtime/rtc-baseline-bun-port.ts';
+import { createRtcBaselineBunRuntime } from '../runtime/rtc-baseline-bun-runtime.ts';
 import {
     resolveRtcBaselineCaptureAdmission,
     RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME,
     type RtcBaselineCaptureAdmission
 } from '../runtime/rtc-baseline-capture-admission.ts';
-import { createDenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoFile, RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
-import { createRtcBaselineDenoRuntime } from '../runtime/rtc-baseline-deno-runtime.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
 import { parseRtcBaselineCommand, type RtcBaselineParsedCommand } from './rtc-baseline-cli-grammar.ts';
 import { writeRtcBaselineCliOutput } from './write-rtc-baseline-cli-output.ts';
@@ -210,7 +210,7 @@ async function dispatchBaselineRead(
     };
 }
 
-class RtcBaselineNodeNotFound extends Error {}
+class RtcBaselineNotFound extends Error {}
 class RtcBaselineNodeAlreadyExists extends Error {}
 class RtcBaselineNodePermissionDenied extends Error {}
 
@@ -218,7 +218,7 @@ function translateNodeError(error: unknown): never {
     if (error instanceof Error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === 'ENOENT') {
-            throw new RtcBaselineNodeNotFound('File not found.');
+            throw new RtcBaselineNotFound('File not found.');
         }
         if (code === 'EEXIST') {
             throw new RtcBaselineNodeAlreadyExists('File already exists.');
@@ -263,7 +263,7 @@ function toOpenFlags(options: { read: boolean; write: boolean; createNew?: boole
 async function openNodeFile(
     path: string,
     options: { read: boolean; write: boolean; createNew?: boolean; }
-): Promise<RtcBaselineDenoFile> {
+): Promise<RtcBaselineBunFile> {
     try {
         const handle = await open(path, toOpenFlags(options));
         return wrapFileHandle(path, handle);
@@ -273,7 +273,43 @@ async function openNodeFile(
     }
 }
 
-function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineDenoFile {
+async function readLockOwnerPid(lockPath: string): Promise<number | null> {
+    let handle: FileHandle;
+    try {
+        handle = await open(lockPath, 'r');
+    }
+    catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            return null;
+        }
+        translateNodeError(error);
+    }
+    try {
+        const { size } = await handle.stat();
+        if (size === 0 || size > 64) {
+            return null;
+        }
+        const buffer = new Uint8Array(size);
+        const { bytesRead } = await handle.read(buffer, 0, size, 0);
+        const pid = Number(new TextDecoder().decode(buffer.subarray(0, bytesRead)).trim());
+        return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+    }
+    finally {
+        await handle.close();
+    }
+}
+
+function isProcessAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    }
+    catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'EPERM';
+    }
+}
+
+function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {
     let position = 0;
     let lockHandle: FileHandle | undefined;
     const lockPath = `${path}.lock`;
@@ -282,16 +318,25 @@ function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineDenoFile {
         if (lockHandle !== undefined) {
             return true;
         }
-        try {
-            lockHandle = await open(lockPath, 'wx');
-            return true;
-        }
-        catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-                return false;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                const created = await open(lockPath, 'wx');
+                await created.write(String(process.pid));
+                lockHandle = created;
+                return true;
             }
-            translateNodeError(error);
+            catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+                    translateNodeError(error);
+                }
+                const ownerPid = await readLockOwnerPid(lockPath);
+                if (ownerPid === null || isProcessAlive(ownerPid)) {
+                    return false;
+                }
+                await rm(lockPath, { force: true });
+            }
         }
+        return false;
     }
 
     return {
@@ -368,14 +413,14 @@ function defaultRuntime() {
             return { os: process.platform, arch: process.arch };
         },
         get version() {
-            return { deno: process.versions.bun ?? process.versions.node };
+            return { bun: process.versions.bun ?? process.versions.node };
         },
         get pid() {
             return process.pid;
         },
         get errors() {
             return {
-                NotFound: RtcBaselineNodeNotFound,
+                NotFound: RtcBaselineNotFound,
                 AlreadyExists: RtcBaselineNodeAlreadyExists,
                 PermissionDenied: RtcBaselineNodePermissionDenied
             };
@@ -410,7 +455,7 @@ function defaultRuntime() {
             }
             catch (error) {
                 if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-                    throw new RtcBaselineNodeNotFound('Process not found.');
+                    throw new RtcBaselineNotFound('Process not found.');
                 }
                 throw error;
             }
@@ -433,14 +478,14 @@ function createDefaultRtcBaselineCliComposition(
     captureAdmission: RtcBaselineCaptureAdmission | undefined
 ): RtcBaselineCliComposition {
     const runtime = defaultRuntime();
-    const adapters = createDenoRtcBaselineAdapters(runtime);
-    const envelope = createRtcBaselineDenoRuntime(adapters, captureAdmission);
-    const browserObservation = createRtcB05ObservationDenoRuntime({
+    const adapters = createBunRtcBaselineAdapters(runtime);
+    const envelope = createRtcBaselineBunRuntime(adapters, captureAdmission);
+    const browserObservation = createRtcB05ObservationBunRuntime({
         runtime,
         adapters,
         envelope
     });
-    const liveRtcObservation = createRtcB06ObservationDenoRuntime({
+    const liveRtcObservation = createRtcB06ObservationBunRuntime({
         repositoryRoot: process.cwd(),
         runtime,
         adapters,

@@ -79,7 +79,7 @@ const initializedRuntimeObservation: RtcBaselineRuntimeObservationDto = {
     runtime: {
         node: 'v24.0.0',
         npm: '11.0.0',
-        deno: '2.0.0',
+        bun: '2.0.0',
         playwright: '1.0.0',
         chromium: 'Chromium 140.0.0'
     },
