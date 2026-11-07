@@ -190,7 +190,7 @@ describe('Relic committed notifications', () => {
                 expect(privateEvents.every(isRelicHunterEvent)).toBe(true);
                 expect(privateEvents.every((event) => event.playerId === sessionId && event.kind === 'action-recorded')).toBe(true);
                 // Every transition was committed before any dequeue: each track's rows still arrive in sequence order.
-                expect(toTrackPositions(delivered)).toEqual([[1, 1], [1, 2], [2, 1], [2, 2], [3, 1]]);
+                expect(toTrackSequences(delivered)).toEqual({ '1': [1, 2], '2': [1, 2], '3': [1] });
             }
             const readJoinerTransitionFrames = () => joinerSocket.sent.filter((frame) => decodePersistedALMessage(frame).payload.typeId === 'relic.event.v1');
             await expect.poll(async () => {
@@ -207,8 +207,8 @@ describe('Relic committed notifications', () => {
                 priorSeqByRecipient: { [joiner.sessionId]: 0 }
             });
             expect(joinerTransitions.map((message) => message.id.msgId)).not.toContain(transitions[0].id.msgId);
-            expect(toTrackPositions([...new Map(joinerTransitions.map((message) => [message.id.msgId, message])).values()]))
-                .toEqual([[1, 2], [2, 1], [2, 2], [3, 1]]);
+            expect(toTrackSequences([...new Map(joinerTransitions.map((message) => [message.id.msgId, message])).values()]))
+                .toEqual({ '1': [2], '2': [1, 2], '3': [1] });
             // The joiner enters the round's track at sequence 2 with no range missing below it: no resync.
             const replay = replayALOrderingObservation(joinerTransitionFrames, joiner.sessionId);
             expect(replay.statuses[0]).toBe('entered');
@@ -222,10 +222,17 @@ describe('Relic committed notifications', () => {
     }, 30_000);
 });
 
-/** Each distinct transition's `(epoch, seq)`, in the order its first frame arrived. */
-function toTrackPositions(messages: readonly ALMessage[]): readonly (readonly [number | undefined, number | undefined])[] {
-    return messages.filter((message) => message.payload.typeId === 'relic.event.v1')
-        .map((message) => [message.ordering?.epoch, message.ordering?.seq] as const);
+/**
+ * Each round track's transition sequences, by epoch, in the order their first frames arrived; the order across tracks
+ * is not pinned, since the track wait orders a track's rows only.
+ */
+function toTrackSequences(messages: readonly ALMessage[]): Readonly<Record<string, readonly (number | undefined)[]>> {
+    const byEpoch: Record<string, (number | undefined)[]> = {};
+    for (const message of messages.filter((candidate) => candidate.payload.typeId === 'relic.event.v1')) {
+        const epoch = String(message.ordering?.epoch);
+        byEpoch[epoch] = [...(byEpoch[epoch] ?? []), message.ordering?.seq];
+    }
+    return byEpoch;
 }
 
 function openSocket(sockets: JsonWebSocketServer, sessionId: string): TestWebSocket {

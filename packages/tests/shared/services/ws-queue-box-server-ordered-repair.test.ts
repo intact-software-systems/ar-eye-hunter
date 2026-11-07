@@ -16,6 +16,7 @@ import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/a
 import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -62,13 +63,16 @@ interface OrderedServer {
     readonly outbox: InMemoryQueueBox;
     readonly outboundBackend: InMemoryAdmissionBackend;
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
-    /** The authority each producer-written row's provenance proves, by message id; `'corrupt'` cannot be read. */
-    readonly producerRows: Map<string, WsOutboxProducerAuthority | 'corrupt'>;
+    /**
+     * The authority each producer-written row's provenance proves, by message id; `'corrupt'` cannot be read, and
+     * `'non-retryable'` fails its dequeue for good.
+     */
+    readonly producerRows: Map<string, WsOutboxProducerAuthority | 'corrupt' | 'non-retryable'>;
 }
 
 interface ProducerRowOptions {
-    /** Leaves the row's provenance unreadable, as a corrupt producer record would. */
-    readonly corrupt?: boolean;
+    /** Leaves the row's provenance unreadable (`corrupt`), or fails its dequeue for good (`non-retryable`). */
+    readonly provenanceFailure?: 'corrupt' | 'non-retryable';
 }
 
 interface OrderedServerOptions {
@@ -473,12 +477,36 @@ describe.each([
     it('releases a row whose predecessor ends unrecorded through the cleared index, long before that predecessor\'s deadline', async () => {
         const server = await createOrderedServer({ cluster });
         const startedAtMs = server.clock.nowMs;
-        await writeProducerRow(server, producerEvent(1), ['b'], { corrupt: true });
+        await writeProducerRow(server, producerEvent(1), ['b'], { provenanceFailure: 'corrupt' });
         await writeProducerRow(server, producerEvent(2), ['b']);
 
         await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.b)), { timeout: 5_000 }).toEqual(['s-event-2']);
         expect(server.clock.nowMs - startedAtMs).toBeLessThan(EVENT_TTL_MS);
         expect(await server.stores.admissionStore.listOrderingMessages(TRACK_KEY)).toEqual([{ seq: 2, msgId: 's-event-2' }]);
+    });
+
+    it('releases a row whose predecessor fails for good, non-retryably, through the cleared index, not its deadline', async () => {
+        const server = await createOrderedServer({ cluster });
+        const startedAtMs = server.clock.nowMs;
+        await writeProducerRow(server, producerEvent(1), ['b'], { provenanceFailure: 'non-retryable' });
+        await writeProducerRow(server, producerEvent(2), ['b']);
+
+        await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.b)), { timeout: 5_000 }).toEqual(['s-event-2']);
+        expect(server.clock.nowMs - startedAtMs).toBeLessThan(EVENT_TTL_MS);
+        expect(await server.stores.admissionStore.listOrderingMessages(TRACK_KEY)).toEqual([{ seq: 2, msgId: 's-event-2' }]);
+    });
+
+    it('keeps a failed row\'s outcome when its index end cannot be written', async () => {
+        const server = await createOrderedServer({ cluster });
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(server.stores.admissionStore, 'commitOrderingMessageEnd').mockRejectedValue(new Error('Index end unavailable'));
+        await writeProducerRow(server, producerEvent(1), ['b'], { provenanceFailure: 'corrupt' });
+
+        await expect.poll(async () => {
+            await runEngineTicking(server, () => undefined);
+            return (await server.outbox.getItem(producerEvent(1).route))?.status;
+        }).toBe(EntityStatus.NON_RETRYABLE);
+        expect(consoleError).toHaveBeenCalledWith('Outbound track index end failed', expect.objectContaining({ msgId: 's-event-1' }));
     });
 
     it('never waits for a sequence nobody wrote: 3 then 5 deliver in order with no hold on 4', async () => {
@@ -521,7 +549,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
         decodePrepared: decodeWsQueueBoxServerPreparedMessage,
         outboundBackend
     });
-    const producerRows = new Map<string, WsOutboxProducerAuthority | 'corrupt'>();
+    const producerRows = new Map<string, WsOutboxProducerAuthority | 'corrupt' | 'non-retryable'>();
     const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
     const rechecksAudience = options.unreadableOnceMsgId !== undefined || options.recheckGate !== undefined;
     const service = createDefaultWsQueueBoxServerService({
@@ -547,6 +575,9 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
         outboundStores,
         readProducerProvenance: async (message) => {
             const authority = producerRows.get(message.id.msgId);
+            if (authority === 'non-retryable') {
+                throw new NonRetryableException('Producer provenance refuses the row for good');
+            }
             if (authority === undefined || authority === 'corrupt') {
                 throw new ALAdmissionCorruptionError(message.id.msgId, new TypeError('Producer provenance cannot be read'));
             }
@@ -610,7 +641,7 @@ async function writeProducerRow(
     }
     server.producerRows.set(
         message.id.msgId,
-        options.corrupt === true ? 'corrupt' : { admittedAudience: audience, recipientScope: undefined }
+        options.provenanceFailure ?? { admittedAudience: audience, recipientScope: undefined }
     );
     const createdAt = Temporal.Instant.fromEpochMilliseconds(server.clock.nowMs);
     await server.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, createdAt));
