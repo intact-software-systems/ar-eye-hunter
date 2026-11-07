@@ -16,6 +16,12 @@ defines the proposed shared pacing and publication-permission semantics that
 the actor would consume. Those capabilities also apply to browsers and server
 producers; they are not a separate actor protocol.
 
+The addendum's later outcomes name the ALM capabilities the actor still
+depends on before its full posture is available: native publication-key
+custody outside a browser, granted fixed-list (named member subset) delivery
+over RTC, a re-examined per-session budget for a multi-group publishing seat,
+and the local attachment trust boundary that ALM leaves to the actor product.
+
 ## The job
 
 Rallar is a room product. A room has members, presence, validated events, and
