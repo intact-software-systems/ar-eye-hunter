@@ -211,8 +211,8 @@ async function dispatchBaselineRead(
 }
 
 class RtcBaselineNotFound extends Error {}
-class RtcBaselineNodeAlreadyExists extends Error {}
-class RtcBaselineNodePermissionDenied extends Error {}
+class RtcBaselineAlreadyExists extends Error {}
+class RtcBaselinePermissionDenied extends Error {}
 
 function translateNodeError(error: unknown): never {
     if (error instanceof Error) {
@@ -221,10 +221,10 @@ function translateNodeError(error: unknown): never {
             throw new RtcBaselineNotFound('File not found.');
         }
         if (code === 'EEXIST') {
-            throw new RtcBaselineNodeAlreadyExists('File already exists.');
+            throw new RtcBaselineAlreadyExists('File already exists.');
         }
         if (code === 'EACCES' || code === 'EPERM') {
-            throw new RtcBaselineNodePermissionDenied('Permission denied.');
+            throw new RtcBaselinePermissionDenied('Permission denied.');
         }
     }
     throw error;
@@ -309,7 +309,16 @@ function isProcessAlive(pid: number): boolean {
     }
 }
 
-function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {
+async function removeStaleLockIfStillOwned(lockPath: string, ownerPid: number): Promise<boolean> {
+    const currentPid = await readLockOwnerPid(lockPath);
+    if (currentPid !== ownerPid) {
+        return false;
+    }
+    await rm(lockPath, { force: true });
+    return true;
+}
+
+export function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {
     let position = 0;
     let lockHandle: FileHandle | undefined;
     const lockPath = `${path}.lock`;
@@ -333,7 +342,9 @@ function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {
                 if (ownerPid === null || isProcessAlive(ownerPid)) {
                     return false;
                 }
-                await rm(lockPath, { force: true });
+                if (!(await removeStaleLockIfStillOwned(lockPath, ownerPid))) {
+                    return false;
+                }
             }
         }
         return false;
@@ -421,8 +432,8 @@ function defaultRuntime() {
         get errors() {
             return {
                 NotFound: RtcBaselineNotFound,
-                AlreadyExists: RtcBaselineNodeAlreadyExists,
-                PermissionDenied: RtcBaselineNodePermissionDenied
+                AlreadyExists: RtcBaselineAlreadyExists,
+                PermissionDenied: RtcBaselinePermissionDenied
             };
         },
         lstat: (path: string) => translateError(async () => toFileInfo(await lstat(path))),

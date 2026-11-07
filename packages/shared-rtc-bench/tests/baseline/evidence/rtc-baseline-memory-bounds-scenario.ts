@@ -79,6 +79,11 @@ function createMemorySampler(): MemorySampler {
 }
 
 function collectGarbage() {
+    const bun = Reflect.get(globalThis, 'Bun') as { gc?(synchronous: boolean): void; } | undefined;
+    if (typeof bun?.gc === 'function') {
+        bun.gc(true);
+        return;
+    }
     const garbageCollect = Reflect.get(globalThis, 'gc');
     if (typeof garbageCollect === 'function') {
         garbageCollect();

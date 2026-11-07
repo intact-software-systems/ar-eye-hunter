@@ -9,7 +9,7 @@ interface ScenarioMeasurement {
 
 const scenarioPath = 'packages/shared-rtc-bench/tests/baseline/evidence/rtc-baseline-memory-bounds-scenario.ts';
 
-it('finalizes and validates a corpus larger than the constrained heap without retaining it', () => {
+it('finalizes and validates the generated corpus without retaining it in memory', () => {
     const result = spawnSync(
         'bun',
         [
@@ -23,10 +23,12 @@ it('finalizes and validates a corpus larger than the constrained heap without re
 
     expect(result.status, result.stderr).toBe(0);
     const measurement = JSON.parse(result.stdout) as ScenarioMeasurement;
-    expect(measurement).toMatchObject({
-        sampleCount: 640,
-        sourcePayloadBytes: 83_886_080,
-        finalization: { peak: { heapUsed: expect.any(Number), rss: expect.any(Number) } },
-        validation: { peak: { heapUsed: expect.any(Number), rss: expect.any(Number) } }
-    });
+    expect(measurement.sampleCount).toBe(640);
+    expect(measurement.sourcePayloadBytes).toBe(83_886_080);
+    // Bun 1.4.4 has no reliable hard heap cap: --max-old-space-size is silently
+    // ignored and BUN_JSC_forceRAMSize does not bound JSC allocation. Assert the
+    // streaming property directly instead: peak heap stays below the corpus, so a
+    // regression to buffering the whole corpus is still caught.
+    expect(measurement.finalization.peak.heapUsed).toBeLessThan(measurement.sourcePayloadBytes);
+    expect(measurement.validation.peak.heapUsed).toBeLessThan(measurement.sourcePayloadBytes);
 }, 120_000);
