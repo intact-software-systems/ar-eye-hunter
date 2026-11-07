@@ -556,6 +556,14 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'resilience',
         maximumMagnitude: 22
     }),
+    // One owner per concern of the WS server (dequeue authority, live delivery, track order, receipts, ...) beside the
+    // `scope/` subfolder of per-recipient functions; 22 is the current count.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server',
+        rule: 'layout.directory-density',
+        symbol: 'ws-queue-box-server',
+        maximumMagnitude: 22
+    }),
     // Caught-value boundaries: thrown values reach these callbacks, retry predicates and the abort helpers;
     // normalising with toError changes what callers receive, so that change is a backlog item, not a silent rewrite.
     Object.freeze({
