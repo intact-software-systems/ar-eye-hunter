@@ -53,6 +53,7 @@ import {
     type CreateALOutboundControlAdmissionInput
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
+import type { ALOrderingIndexedSequence } from '../lane/compute-al-outbound-group-sent-positions.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -443,6 +444,23 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         seq: number
     ) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
+    /** One track's live ordering index, ascending by sequence, in one list. */
+    readonly listOrderingMessages: (trackKey: string) => Promise<readonly ALOrderingIndexedSequence[]>;
+
+    /** The stored rows of the messages, read in one session; a message never stored has none. */
+    readonly readStoredMessages: (msgIds: readonly string[]) => Promise<ReadonlyMap<string, ALStoredOutboundMessage>>;
+
+    /** The message one sequence's index row names and its stored row, in one session. */
+    readonly readOrderingPredecessor: (
+        trackKey: string,
+        seq: number
+    ) => Promise<{ msgId: string; stored: ALStoredOutboundMessage | undefined; } | undefined>;
+
+    /** Removes one sequence's index row only while it still names the message that ended unrecorded. */
+    readonly commitOrderingMessageEnd: (
+        input: { trackKey: string; seq: number; msgId: string; }
+    ) => Promise<'deleted' | 'absent' | 'other-message' | 'conflict'>;
+
     /** The receipt state in its own session; only tests read it. */
     readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
@@ -664,6 +682,27 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {
         return await this.backend.readWithin((session) => this.reads.readSentMessageByOrdering(session, trackKey, seq));
+    }
+
+    async listOrderingMessages(trackKey: string): Promise<readonly ALOrderingIndexedSequence[]> {
+        return await this.backend.readWithin((session) => this.reads.listOrderingMessages(session, trackKey));
+    }
+
+    async readStoredMessages(msgIds: readonly string[]): Promise<ReadonlyMap<string, ALStoredOutboundMessage>> {
+        return await this.backend.readWithin((session) => this.reads.readStoredMessages(session, msgIds));
+    }
+
+    async readOrderingPredecessor(
+        trackKey: string,
+        seq: number
+    ): Promise<{ msgId: string; stored: ALStoredOutboundMessage | undefined; } | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readOrderingPredecessor(session, trackKey, seq));
+    }
+
+    async commitOrderingMessageEnd(
+        input: { trackKey: string; seq: number; msgId: string; }
+    ): Promise<'deleted' | 'absent' | 'other-message' | 'conflict'> {
+        return await this.mutations.commitOrderingMessageEnd(this.backend, input, this.nowMs());
     }
 
     async readPendingAck(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {

@@ -503,7 +503,7 @@ export namespace ALOutboundMessageRuntime {
      */
     export type DequeuedAdmissionAuthority =
         | PendingAdmissionAuthority
-        | Readonly<{ status: 'follows-batch-predecessor'; }>
+        | Readonly<{ status: 'follows-batch-predecessor'; seqs: readonly number[]; }>
         | Readonly<{ status: 'held'; reason: string; readReleased: () => Promise<boolean>; }>;
     export interface SendLifecycle {
         readonly deferReceiptObservation?: ALWorkObservationDeferral;
@@ -790,7 +790,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const lane = await this.readLaneForMessage(retransmission.msg.id.msgId);
         const computed = await lane.commit({
             msg: retransmission.msg,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: () => retransmission.plan,
             intent: 'repair',
             phase: 'immediate',
@@ -951,7 +951,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     ): ALOutboundDispatchAdmission.Input<TPrepared> {
         return {
             msg,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner,
             intent: 'enqueue',
             phase: 'immediate',

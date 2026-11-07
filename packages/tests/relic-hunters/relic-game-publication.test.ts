@@ -14,6 +14,7 @@ import {
 import { createDefaultPSqlALOutboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { toALOutboundAdmissionNamespace } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
@@ -188,7 +189,8 @@ describe('Relic committed notifications', () => {
                 expect(privateEvents).toHaveLength(2);
                 expect(privateEvents.every(isRelicHunterEvent)).toBe(true);
                 expect(privateEvents.every((event) => event.playerId === sessionId && event.kind === 'action-recorded')).toBe(true);
-                expect(delivered.filter((message) => message.payload.typeId === 'relic.event.v1')).toHaveLength(5);
+                // Every transition was committed before any dequeue: each track's rows still arrive in sequence order.
+                expect(toTrackPositions(delivered)).toEqual([[1, 1], [1, 2], [2, 1], [2, 2], [3, 1]]);
             }
             const readJoinerTransitionFrames = () => joinerSocket.sent.filter((frame) => decodePersistedALMessage(frame).payload.typeId === 'relic.event.v1');
             await expect.poll(async () => {
@@ -205,6 +207,8 @@ describe('Relic committed notifications', () => {
                 priorSeqByRecipient: { [joiner.sessionId]: 0 }
             });
             expect(joinerTransitions.map((message) => message.id.msgId)).not.toContain(transitions[0].id.msgId);
+            expect(toTrackPositions([...new Map(joinerTransitions.map((message) => [message.id.msgId, message])).values()]))
+                .toEqual([[1, 2], [2, 1], [2, 2], [3, 1]]);
             // The joiner enters the round's track at sequence 2 with no range missing below it: no resync.
             const replay = replayALOrderingObservation(joinerTransitionFrames, joiner.sessionId);
             expect(replay.statuses[0]).toBe('entered');
@@ -217,6 +221,12 @@ describe('Relic committed notifications', () => {
         }
     }, 30_000);
 });
+
+/** Each distinct transition's `(epoch, seq)`, in the order its first frame arrived. */
+function toTrackPositions(messages: readonly ALMessage[]): readonly (readonly [number | undefined, number | undefined])[] {
+    return messages.filter((message) => message.payload.typeId === 'relic.event.v1')
+        .map((message) => [message.ordering?.epoch, message.ordering?.seq] as const);
+}
 
 function openSocket(sockets: JsonWebSocketServer, sessionId: string): TestWebSocket {
     const socket = new TestWebSocket(`ws://${sessionId}`);

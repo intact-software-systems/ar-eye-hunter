@@ -126,7 +126,7 @@ function createTransactionDispatchAdmission(
 }
 
 function toSendDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
-    return { msg, followsBatchPredecessor: false, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {}, planner: SEND_PLANNER };
+    return { msg, batchPredecessorSeqs: [], intent: 'enqueue', phase: 'immediate', origin: 'send', options: {}, planner: SEND_PLANNER };
 }
 
 async function createAdmissionFixture(name: string): Promise<AdmissionTransactionFixture> {

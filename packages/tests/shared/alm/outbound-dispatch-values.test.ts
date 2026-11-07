@@ -101,7 +101,7 @@ describe('outbound dispatch value ownership', () => {
 
         const result = await admission.commit({
             msg: message,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
@@ -193,7 +193,7 @@ describe('outbound dispatch value ownership', () => {
         });
         const result = await admission.commit({
             msg: message,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,

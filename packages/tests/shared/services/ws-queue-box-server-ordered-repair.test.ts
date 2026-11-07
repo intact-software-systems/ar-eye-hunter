@@ -16,6 +16,7 @@ import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/a
 import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
@@ -66,8 +67,6 @@ interface OrderedServer {
 }
 
 interface ProducerRowOptions {
-    /** When the row's track index entry expires; the row's own deadline unless named. */
-    readonly indexExpiresAtMs?: number;
     /** Leaves the row's provenance unreadable, as a corrupt producer record would. */
     readonly corrupt?: boolean;
 }
@@ -442,6 +441,56 @@ describe.each([
         expect(readMsgIds(server.sockets.c)).toEqual(['s-event-2']);
         expect((await server.stores.admissionStore.readStoredMessage('s-event-2'))?.sentPositions).toEqual({ a: 1, b: 1, c: 0 });
     });
+
+    it('holds a producer row claimed without its track\'s earlier producer row, still unrecorded after a failed re-check, until it records; both deliver in order', async () => {
+        const server = await createOrderedServer({ cluster, unreadableOnceMsgId: 's-event-1' });
+        // Sequence 1's first dequeue cannot read its audience and retries a millisecond on; sequence 2 is written and
+        // claimed alone before then.
+        await writeProducerRow(server, producerEvent(1), ['b']);
+        await runEngineTicking(server, () => undefined);
+        await waitForRetry(server, producerEvent(1));
+        await writeProducerRow(server, producerEvent(2), ['b']);
+        await runEngine(server, () => undefined);
+
+        await expect.poll(() => runEngineAdvancing(server, () => readMsgIds(server.sockets.b).slice(0, 2)), { timeout: 10_000 })
+            .toEqual(['s-event-1', 's-event-2']);
+        expect(readHeldMsgIds(server)).toEqual(['s-event-2']);
+    });
+
+    it('holds a row on its nearest pending predecessor past a sequence nobody wrote between them', async () => {
+        const server = await createOrderedServer({ cluster, unreadableOnceMsgId: 's-event-1' });
+        await writeProducerRow(server, producerEvent(1), ['b']);
+        await runEngineTicking(server, () => undefined);
+        await waitForRetry(server, producerEvent(1));
+        await writeProducerRow(server, producerEvent(3), ['b']);
+        await runEngine(server, () => undefined);
+
+        await expect.poll(() => runEngineAdvancing(server, () => readSeqs(server.sockets.b).slice(0, 2)), { timeout: 10_000 })
+            .toEqual([1, 3]);
+        expect(readHoldDetails(server)).toEqual(['WS row waits for sequence 1 of its track to record first']);
+    });
+
+    it('releases a row whose predecessor ends unrecorded through the cleared index, long before that predecessor\'s deadline', async () => {
+        const server = await createOrderedServer({ cluster });
+        const startedAtMs = server.clock.nowMs;
+        await writeProducerRow(server, producerEvent(1), ['b'], { corrupt: true });
+        await writeProducerRow(server, producerEvent(2), ['b']);
+
+        await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.b)), { timeout: 5_000 }).toEqual(['s-event-2']);
+        expect(server.clock.nowMs - startedAtMs).toBeLessThan(EVENT_TTL_MS);
+        expect(await server.stores.admissionStore.listOrderingMessages(TRACK_KEY)).toEqual([{ seq: 2, msgId: 's-event-2' }]);
+    });
+
+    it('never waits for a sequence nobody wrote: 3 then 5 deliver in order with no hold on 4', async () => {
+        const server = await createOrderedServer({ cluster });
+        await writeProducerRow(server, producerEvent(3), ['b']);
+        await writeProducerRow(server, producerEvent(5), ['b']);
+
+        await expect.poll(() => runEngineTicking(server, () => readSeqs(server.sockets.b))).toEqual([3, 5]);
+        await settle(server);
+        expect(readSeqs(server.sockets.b)).toEqual([3, 5]);
+        expect(readHoldDetails(server).filter((detail) => detail.includes('sequence 4 '))).toEqual([]);
+    });
 });
 
 /**
@@ -565,10 +614,15 @@ async function writeProducerRow(
     );
     const createdAt = Temporal.Instant.fromEpochMilliseconds(server.clock.nowMs);
     await server.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, createdAt));
-    const expiresAtMs = options.indexExpiresAtMs ?? server.clock.nowMs + EVENT_TTL_MS;
+    const expiresAtMs = server.clock.nowMs + EVENT_TTL_MS;
     const key = toALOutboundOrderingMessageKey(server.stores.admissionStore.namespace, trackKey, seq);
     await server.outboundBackend.write((tx) => tx.set(key, message.id.msgId, expiresAtMs));
     server.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
+}
+
+/** Waits until the row's failed attempt has handed it back to the queue for its retry. */
+async function waitForRetry(server: OrderedServer, message: ALMessage): Promise<void> {
+    await expect.poll(async () => (await server.outbox.getItem(message.route))?.status).toBe(EntityStatus.RETRY);
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */
@@ -763,6 +817,16 @@ function readHeldMsgIds(server: OrderedServer): readonly string[] {
             settlement.detail?.includes('of its track to record first') === true
         )
         .map((settlement) => settlement.msgId);
+}
+
+/** Why each held row waited, each time a track's order held one. */
+function readHoldDetails(server: OrderedServer): readonly string[] {
+    return server.settlements.flatMap((settlement) =>
+        settlement.kind === 'attempt-settled' && settlement.outcome === 'not-ready' &&
+            settlement.detail?.includes('of its track to record first') === true
+            ? [settlement.detail]
+            : []
+    );
 }
 
 /** The messages whose repair budget a requester found spent; each is stated once. */

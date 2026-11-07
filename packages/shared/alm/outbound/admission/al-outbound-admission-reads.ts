@@ -39,6 +39,7 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import type { ALOrderingIndexedSequence } from '../lane/compute-al-outbound-group-sent-positions.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
@@ -73,8 +74,10 @@ import {
 } from './al-outbound-admission-validation.ts';
 import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-captured-policy-timing.ts';
 import {
+    decodeALOutboundOrderingMessageKey,
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
+    toALOutboundOrderingTrackPrefix,
     toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
@@ -377,6 +380,48 @@ export class ALOutboundAdmissionReads<TPrepared> {
             throw new ALAdmissionCorruptionError(key, new TypeError('Ordering index differs from canonical message'));
         }
         return sent;
+    }
+
+    /** One track's live index rows, ascending; a key under its prefix that names no sequence of it is corrupt. */
+    async listOrderingMessages(
+        session: ALAdmissionReadSession,
+        trackKey: string
+    ): Promise<readonly ALOrderingIndexedSequence[]> {
+        this.readOperationCount += 1;
+        const rows = await session.list(
+            toALOutboundOrderingTrackPrefix(this.namespace, trackKey),
+            decodeALAdmissionString
+        );
+        return rows.map(({ key, value }) => {
+            const position = decodeALOutboundOrderingMessageKey(this.namespace, key);
+            if (position?.trackKey !== trackKey) {
+                throw new ALAdmissionCorruptionError(
+                    key,
+                    new TypeError('Ordering index key names no sequence of its track')
+                );
+            }
+            return { seq: position.seq, msgId: value };
+        }).toSorted((left, right) => left.seq - right.seq);
+    }
+
+    /** The stored rows of the messages by id; a message never stored has none. */
+    async readStoredMessages(
+        session: ALAdmissionReadSession,
+        msgIds: readonly string[]
+    ): Promise<ReadonlyMap<string, ALStoredOutboundMessage>> {
+        const stored = await Promise.all(msgIds.map((msgId) => this.readStoredMessage(session, msgId)));
+        return new Map(stored.flatMap((row) => row === undefined ? [] : [[row.msgId, row] as const]));
+    }
+
+    /** The message one sequence's index row names, and that message's stored row. */
+    async readOrderingPredecessor(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        seq: number
+    ): Promise<{ msgId: string; stored: ALStoredOutboundMessage | undefined; } | undefined> {
+        const key = toALOutboundOrderingMessageKey(this.namespace, trackKey, seq);
+        const msgId = await this.readValue(session, key, decodeALAdmissionString);
+        return msgId === undefined ? undefined : { msgId, stored: await this.readStoredMessage(session, msgId) };
     }
 
     async readPendingAck(

@@ -48,14 +48,47 @@ export function isALOutboundRowUnrecorded(stored: ALStoredOutboundMessage, nowMs
         stored.reference.expiresAtMs > nowMs;
 }
 
+/** One sequence a track's ordering index names, and the message written at it. */
+export interface ALOrderingIndexedSequence {
+    readonly seq: number;
+    readonly msgId: string;
+}
+
+/** The lower sequences of a tracked row's track still to record: those its batch claimed, and the nearest it did not. */
+export interface ALOrderingPendingPredecessors {
+    readonly inBatch: readonly number[];
+    readonly nearestOutside: ALOrderingIndexedSequence | undefined;
+}
+
 /**
- * Whether a tracked row's predecessor (`seq - 1` of its track) is claimed in the same batch: the batch admits the two
- * in sequence order and chains their positions, so the row follows it there and is never held for it.
+ * A listed sequence below the row's is pending while its stored row is absent (a producer row before its dequeue) or
+ * unrecorded; a recorded, expired or audience-free row holds nothing. The row follows every pending one its batch
+ * claimed, and waits for the highest one its batch did not.
  */
-export function isALOrderingPredecessorInBatch(message: ALMessage, batch: ALOrderingBatchSequences): boolean {
+export function toALOrderingPendingPredecessors(input: {
+    message: ALMessage;
+    indexed: readonly ALOrderingIndexedSequence[];
+    stored: ReadonlyMap<string, ALStoredOutboundMessage>;
+    batch: ALOrderingBatchSequences;
+    nowMs: number;
+}): ALOrderingPendingPredecessors {
+    const { message, stored, nowMs } = input;
     const trackKey = toALOrderingTrackKey(message);
     const seq = message.ordering?.seq;
-    return trackKey !== undefined && seq !== undefined && batch.get(trackKey)?.has(seq - 1) === true;
+    if (trackKey === undefined || seq === undefined) {
+        return { inBatch: [], nearestOutside: undefined };
+    }
+    const claimed = input.batch.get(trackKey) ?? new Set<number>();
+    const pending = input.indexed
+        .filter((indexed) => {
+            const row = stored.get(indexed.msgId);
+            return indexed.seq < seq && (row === undefined || isALOutboundRowUnrecorded(row, nowMs));
+        })
+        .toSorted((left, right) => left.seq - right.seq);
+    return {
+        inBatch: pending.filter((indexed) => claimed.has(indexed.seq)).map((indexed) => indexed.seq),
+        nearestOutside: pending.findLast((indexed) => !claimed.has(indexed.seq))
+    };
 }
 
 /** The sequences the messages claim, by track key; an absent or untracked message claims none. */
@@ -71,22 +104,25 @@ export function toALOrderingBatchSequences(messages: readonly (ALMessage | undef
     return batch;
 }
 
-/** A dispatch of a dequeued batch, and whether its carrier admits it only behind its batch predecessor. */
+/** A dispatch of a dequeued batch, and the pending lower sequences of its batch its carrier admits it behind. */
 export interface ALOutboundBatchFollowerCandidate {
     readonly msg: ALMessage;
-    readonly followsBatchPredecessor: boolean;
+    /** Ascending; empty for a dispatch that follows nothing. */
+    readonly batchPredecessorSeqs: readonly number[];
 }
 
 /**
- * Whether a dispatch that follows its batch predecessor is left to the next pass: its predecessor is not among the
- * messages admitted ahead of it, so committing it now would record positions out of sequence order.
+ * Whether a dispatch that follows batch predecessors is left to the next pass: one of them is not among the messages
+ * admitted ahead of it, so committing it now would record positions out of sequence order.
  */
 export function isALOutboundLeftBehindPredecessor(
     dispatch: ALOutboundBatchFollowerCandidate,
     admittedAhead: readonly ALMessage[]
 ): boolean {
-    return dispatch.followsBatchPredecessor &&
-        !isALOrderingPredecessorInBatch(dispatch.msg, toALOrderingBatchSequences(admittedAhead));
+    const trackKey = toALOrderingTrackKey(dispatch.msg);
+    const admitted = trackKey === undefined ? undefined : toALOrderingBatchSequences(admittedAhead).get(trackKey);
+    return dispatch.batchPredecessorSeqs.length > 0 &&
+        !dispatch.batchPredecessorSeqs.every((seq) => admitted?.has(seq) === true);
 }
 
 /** The dispatches left to the next pass: each that follows a batch predecessor not admitted ahead of it. */
@@ -120,7 +156,7 @@ export function toALOutboundFollowerOrder<T>(
         return candidate === undefined ? undefined : toALOrderingTrackKey(candidate.msg);
     };
     const followedTracks = new Set(
-        items.flatMap((item) => toCandidate(item)?.followsBatchPredecessor === true ? toTrackKey(item) ?? [] : [])
+        items.flatMap((item) => (toCandidate(item)?.batchPredecessorSeqs.length ?? 0) > 0 ? toTrackKey(item) ?? [] : [])
     );
     const toSeq = (item: T) => toCandidate(item)?.msg.ordering?.seq ?? 0;
     const ascendingByTrack = new Map<string | undefined, T[]>([...followedTracks].map((trackKey) => [

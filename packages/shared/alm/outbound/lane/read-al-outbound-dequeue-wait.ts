@@ -13,7 +13,7 @@ export const AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS = 50;
 /** Where a dequeued row's front leaves it: held, with the attempt its claim states, or passed on to its read. */
 export type ALOutboundDequeueFront =
     | Readonly<{ kind: 'held'; attempt: ALWorkAttemptResult; }>
-    | Readonly<{ kind: 'passed'; followsBatchPredecessor: boolean; }>;
+    | Readonly<{ kind: 'passed'; batchPredecessorSeqs: readonly number[]; }>;
 
 export interface ReadALOutboundDequeueWaitInput<TPrepared> {
     readonly effect: ALOutboundEffectSnapshot<TPrepared>;
@@ -51,7 +51,10 @@ export async function readALOutboundDequeueWait<TPrepared>(
         msg === undefined || readAuthority === undefined ||
         (authority?.status !== 'not-ready' && authority?.status !== 'held')
     ) {
-        return { kind: 'passed', followsBatchPredecessor: authority?.status === 'follows-batch-predecessor' };
+        return {
+            kind: 'passed',
+            batchPredecessorSeqs: authority?.status === 'follows-batch-predecessor' ? authority.seqs : []
+        };
     }
     input.settlements({
         kind: 'attempt-settled',
@@ -75,6 +78,13 @@ export async function readALOutboundDequeueWait<TPrepared>(
 /** The outcome a front's timing records: the held attempt's status, or `ready` for a row passed on to its read. */
 export function toALOutboundDequeueFrontOutcome(front: ALOutboundDequeueFront): string {
     return front.kind === 'held' ? front.attempt.status : 'ready';
+}
+
+/** The pending lower sequences of its batch a passed row is admitted behind; a held or failed front, none. */
+export function toALOutboundBatchPredecessorSeqs(
+    front: PromiseSettledResult<ALOutboundDequeueFront>
+): readonly number[] {
+    return front.status === 'fulfilled' && front.value.kind === 'passed' ? front.value.batchPredecessorSeqs : [];
 }
 
 async function holdALOutboundDequeueClaim<TPrepared>(

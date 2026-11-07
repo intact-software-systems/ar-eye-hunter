@@ -5,12 +5,13 @@ import {
     decodeALAdmissionString,
     decodeALAdmissionSupersedenceValue
 } from '../../al-admission-value-validation.ts';
-import type { ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
+import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
     ALLatestSupersedenceValue,
@@ -55,6 +56,7 @@ export type ALOutboundAdmissionMutation =
     | Readonly<
         { kind: 'set-ordering-message'; trackKey: string; seq: number; msgId: string; expireAtTimestamp: number; }
     >
+    | Readonly<{ kind: 'delete-ordering-message'; trackKey: string; seq: number; }>
     | Readonly<{
         kind: 'set-ordering-head';
         trackKey: string;
@@ -311,6 +313,38 @@ export class ALOutboundAdmissionMutations {
         }
     }
 
+    /**
+     * Removes one sequence's index row only while it still names the message that ended: the row is read inside the
+     * write, so a row another message holds, or one already gone, stays as it is.
+     */
+    async commitOrderingMessageEnd(
+        backend: ALAdmissionWorkBackend,
+        input: { trackKey: string; seq: number; msgId: string; },
+        nowMs: number
+    ): Promise<'deleted' | 'absent' | 'other-message' | 'conflict'> {
+        const key = toALOutboundOrderingMessageKey(this.namespace, input.trackKey, input.seq);
+        const writes = this.computeStateWrites(
+            [{ kind: 'delete-ordering-message', trackKey: input.trackKey, seq: input.seq }],
+            nowMs
+        );
+        try {
+            return await backend.write(async (transaction) => {
+                const named = await transaction.read(key, decodeALAdmissionString);
+                if (named !== input.msgId) {
+                    return named === undefined ? 'absent' : 'other-message';
+                }
+                await this.writeStateWrites(transaction, writes);
+                return 'deleted';
+            });
+        }
+        catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) {
+                return 'conflict';
+            }
+            throw error;
+        }
+    }
+
     private async readMessageIdentityIssue(
         transaction: ALAdmissionWorkWriteContext,
         mutation: ALOutboundAdmissionMutation
@@ -356,6 +390,7 @@ export class ALOutboundAdmissionMutations {
             case 'set-repair-attempt':
             case 'set-pending-ack':
                 return this.computeReceiptWrite(mutation, nowMs);
+            case 'delete-ordering-message':
             case 'delete-sent-message':
             case 'delete-pending-ack':
             case 'delete-repair-attempt':
@@ -457,12 +492,17 @@ export class ALOutboundAdmissionMutations {
     }
 
     private toDeletedMutationKey(
-        mutation: Extract<
-            ALOutboundAdmissionMutation,
-            { kind: 'delete-sent-message' | 'delete-pending-ack' | 'delete-repair-attempt'; }
-        >
+        mutation: Extract<ALOutboundAdmissionMutation, {
+            kind:
+                | 'delete-ordering-message'
+                | 'delete-sent-message'
+                | 'delete-pending-ack'
+                | 'delete-repair-attempt';
+        }>
     ): string {
         switch (mutation.kind) {
+            case 'delete-ordering-message':
+                return toALOutboundOrderingMessageKey(this.namespace, mutation.trackKey, mutation.seq);
             case 'delete-sent-message':
                 return toALOutboundSentMessageKey(this.namespace, mutation.msgId);
             case 'delete-pending-ack':

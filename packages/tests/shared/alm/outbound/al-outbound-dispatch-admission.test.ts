@@ -139,7 +139,7 @@ function recordDecisionStoreRounds(backend: InMemoryAdmissionBackend, isCommitti
 }
 
 function toDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
-    return { msg, followsBatchPredecessor: false, planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
+    return { msg, batchPredecessorSeqs: [], planner: OUTBOUND_TEST_SEND_PLANNER, intent: 'enqueue', phase: 'immediate', origin: 'send', options: {} };
 }
 
 it('reads every member of a burst at once before committing in input order and admitting a late send', async () => {
@@ -207,16 +207,16 @@ it('reads every member of a burst at once before committing in input order and a
 });
 
 /** The sender's row at `seq` of track `k`, which a dequeued batch may admit only behind its predecessor. */
-function toTrackedDispatch(seq: number, followsBatchPredecessor: boolean): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
+function toTrackedDispatch(seq: number, batchPredecessorSeqs: readonly number[]): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
     const message = createOutboundMessage(`tracked-${seq}`);
-    return { ...toDispatch({ ...message, ordering: { orderingKey: 'k', seq } }), followsBatchPredecessor };
+    return { ...toDispatch({ ...message, ordering: { orderingKey: 'k', seq } }), batchPredecessorSeqs };
 }
 
 it('leaves a row that follows its batch predecessor to the next pass, unread, when the predecessor is not among the dispatches', async () => {
     const { admission, store } = createDispatchFixture();
     const readsBefore = store.getReadOperationCount();
 
-    const [left] = await admission.commitAllSettled([toTrackedDispatch(2, true)]);
+    const [left] = await admission.commitAllSettled([toTrackedDispatch(2, [1])]);
 
     expect(left).toMatchObject({ status: 'rejected', reason: expect.any(NotReadyException) });
     expect(store.getReadOperationCount()).toBe(readsBefore);
@@ -232,7 +232,7 @@ it.each(
     'commits a track\'s rows alone by ascending sequence when the group falls back, its followers only once the predecessor $predecessor',
     async ({ predecessor, reads, committed }) => {
         const { admission, store } = createDispatchFixture();
-        const dispatches = [toTrackedDispatch(3, true), toTrackedDispatch(1, false), toTrackedDispatch(2, true)];
+        const dispatches = [toTrackedDispatch(3, [2]), toTrackedDispatch(1, []), toTrackedDispatch(2, [1])];
         vi.spyOn(store, 'readOutgoingMessage').mockRejectedValueOnce(new Error('group read failed'));
         const readOutgoingDecision = store.readOutgoingDecision.bind(store);
         const decisionReads = vi.spyOn(store, 'readOutgoingDecision').mockImplementation(async (input, decide) => {

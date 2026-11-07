@@ -14,7 +14,6 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
-import type { ALStoredOutboundMessage } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
@@ -29,7 +28,6 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { isALOutboundRowUnrecorded } from '../../alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
@@ -390,12 +388,6 @@ function toSentPositionRecipients(
     return phase === 'dequeue' && admittedAudience !== undefined && toALOrderingTrackKey(message) !== undefined
         ? admittedAudience.filter((peerId) => peerId !== message.id.senderId)
         : undefined;
-}
-
-/** A stored row the WS outbound admitted that still has to record its recipients' positions at its dequeue. */
-export function isWsQueueBoxServerUnrecordedRow(stored: ALStoredOutboundMessage | undefined, nowMs: number): boolean {
-    return stored !== undefined && stored.reference.key.topicId === 'AL_OUTBOUND_MESSAGE' &&
-        isALOutboundRowUnrecorded(stored, nowMs);
 }
 
 /** The authority a dispatch carries on to its captured policy, each field only when the request names it. */
