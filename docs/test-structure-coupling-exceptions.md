@@ -6027,7 +6027,7 @@ moved or changed test.
       "domain": "ALM outbound track order",
       "owner": "Rallar shared maintainers",
       "summary": "A tracked dequeue reads its track's listed predecessors' stored rows from the highest sequence down and stops at the first settled one; the sequences below it are neither read nor pending.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-track-order.test.ts#stops at a settled predecessor: the absent sequences below it are neither read nor pending",
+      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts#reads the listed sequences' stored rows from the highest down to the first settled one, and none below it",
       "coverageRelation": "The tests list index rows below a settled stored row and observe, through the in-memory backend's reads, that only the stored rows at and above the settled one are read, and that the authority treats nothing below it as pending.",
       "interactionRequirement": {
         "interactionKind": "order",
@@ -12913,7 +12913,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
       "rationale": "The stored-row keys the backend reads are the contract: a track's predecessors are read from the highest sequence down and the read stops at the first settled row, so a long live track pays reads only down to its last recorded row rather than one per listed sequence.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-track-order.test.ts#stops at a settled predecessor: the absent sequences below it are neither read nor pending"
+      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts#reads the listed sequences' stored rows from the highest down to the first settled one, and none below it"
     },
     {
       "id": "test-structure-coupling-504f1b47667d96b1",
@@ -12924,7 +12924,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
       "rationale": "The stored-row keys the backend reads prove the dequeue wait reads its own row and the settled predecessor only: the absent sequences below a settled row are neither read nor pending, which bounds the wait's cost on a long client-state track.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-track-order.test.ts#stops at a settled predecessor: the absent sequences below it are neither read nor pending"
+      "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts#reads the listed sequences' stored rows from the highest down to the first settled one, and none below it"
     }
   ]
 }

@@ -426,8 +426,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 continue;
             }
             stored.set(sequence.msgId, row);
-            // A row the wait authorized and that then recorded had no pending lower sequence left in this build, and an
-            // audience-free row is pending for nobody: below either, no sequence is pending.
+            // A stored row exists only after a dispatch that passed the full wait in this build, so whatever kind it
+            // settled as (recorded, admitted to no audience, expired, non-persist) no sequence below it is pending.
             if (!isALOutboundRowUnrecorded(row, nowMs)) {
                 break;
             }

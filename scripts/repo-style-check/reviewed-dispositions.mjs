@@ -2245,12 +2245,15 @@ export const reviewedDispositions = Object.freeze([
     }),
     // The decision reads of one dispatch stay together: the one read that also asks
     // whether a repair attempt's sends are already committed keeps the budget charge
-    // under the same sender fence as the plan it charges for.
+    // under the same sender fence as the plan it charges for, and the ordering-index
+    // reads of the track wait (the track's listed sequences, the stored predecessors
+    // down to the first settled one, the one predecessor a held row re-checks) read
+    // the same keys the dispatch commits; 65 is the count at the Slice 5 close.
     Object.freeze({
         path: 'packages/shared/alm/outbound/admission/al-outbound-admission-reads.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 50
+        maximumMagnitude: 65
     }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',

@@ -53,7 +53,8 @@ export class WsQueueBoxServerTrackOrder {
      * A dequeued row that still has to record on its track follows every pending indexed predecessor its batch claimed
      * too, and otherwise waits for the nearest one its batch did not, so the track's positions are written in sequence
      * order: a sequence nobody indexed, one recorded, expired or admitted to no audience holds nothing. A held row's
-     * re-check reads that one predecessor's index row: it releases once the row records, ends or names another message.
+     * re-check reads that one predecessor's index row and stored row: it releases once the row records, ends or names
+     * another message.
      */
     async readTrackOrderAuthority(
         message: ALMessage,
