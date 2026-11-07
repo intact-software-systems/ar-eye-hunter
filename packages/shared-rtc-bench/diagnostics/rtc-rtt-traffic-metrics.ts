@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import {
@@ -148,7 +150,7 @@ function createArtifact(
     };
 }
 
-const args = parseArgs(Deno.args);
+const args = parseArgs(process.argv.slice(2));
 
 const sessionIds = Array.from(
     { length: args.sessions },
@@ -198,7 +200,7 @@ for (const measurement of measurements) {
     );
 }
 
-await Deno.writeTextFile(
+await writeFile(
     args.out,
     `${
         JSON.stringify(

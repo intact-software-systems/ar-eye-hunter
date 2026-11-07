@@ -1,3 +1,5 @@
+import { hostname } from 'node:os';
+
 import type {
     RtcBaselineCaptureManifestDto,
     RtcBaselineEnvironmentDto,
@@ -49,7 +51,7 @@ const decoder = new TextDecoder();
 
 function readPositiveIntegerArgument(name: string): number {
     const prefix = `--${name}=`;
-    const raw = Deno.args.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
+    const raw = process.argv.slice(2).find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
     const value = Number(raw);
     if (!Number.isSafeInteger(value) || value < 1) {
         throw new Error(`Expected --${name}=<positive-safe-integer>.`);
@@ -60,7 +62,7 @@ function readPositiveIntegerArgument(name: string): number {
 function createMemorySampler(): MemorySampler {
     let peak: MemoryPeak = { heapUsed: 0, rss: 0 };
     function sample() {
-        const current = Deno.memoryUsage();
+        const current = process.memoryUsage();
         peak = {
             heapUsed: Math.max(peak.heapUsed, current.heapUsed),
             rss: Math.max(peak.rss, current.rss)
@@ -309,10 +311,10 @@ function createUnusedDenoPort(): RtcBaselineDenoPort {
     };
     return {
         envGet: () => undefined,
-        build: Deno.build,
-        version: Deno.version,
-        pid: Deno.pid,
-        hostname: () => Deno.hostname(),
+        build: { os: process.platform, arch: process.arch },
+        version: { deno: process.versions.bun ?? process.versions.node },
+        pid: process.pid,
+        hostname: () => hostname(),
         randomUuid: () => crypto.randomUUID(),
         kill: () => undefined,
         lstat: unused,

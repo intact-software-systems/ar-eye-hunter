@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { flushRtcIceCandidateQueue } from '@shared/webrtc/flush-rtc-ice-candidate-queue.ts';
 
 import {
@@ -120,7 +122,7 @@ function acceptedWorkerIdentity(worker: AcceptedArguments): RtcBaselineAcceptedW
 }
 
 async function main(): Promise<void> {
-    const parsed = parseRtcIceCandidateQueueArguments(Deno.args);
+    const parsed = parseRtcIceCandidateQueueArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -139,7 +141,7 @@ async function main(): Promise<void> {
     for (let run = 1; run <= parsed.value.input.runs; run += 1) {
         results.push({ run, ...(await runQueue(parsed.value.input.candidates)) });
     }
-    await Deno.writeTextFile(
+    await writeFile(
         parsed.value.out,
         JSON.stringify(
             {
@@ -150,7 +152,7 @@ async function main(): Promise<void> {
             null,
             2
         ),
-        { createNew: true }
+        { encoding: 'utf8', flag: 'wx' }
     );
     writeLine(`Wrote ${parsed.value.out}`);
 }
