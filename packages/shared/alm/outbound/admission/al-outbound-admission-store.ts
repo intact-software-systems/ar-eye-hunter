@@ -533,6 +533,13 @@ interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundA
     readonly durability: ALStoreDurability;
 }
 
+/** A message that expired before its receipt's outside class was written has no receipt left to record in. */
+const OUTSIDE_AUDIENCE_COMMIT_RESULTS = {
+    committed: 'committed',
+    conflict: 'conflict',
+    expired: 'absent'
+} as const satisfies Record<'committed' | 'conflict' | 'expired', 'committed' | 'conflict' | 'absent'>;
+
 class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdmissionStore<TPrepared> {
     readonly namespace: string;
     readonly canonicalScope: string;
@@ -725,10 +732,11 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             pending: await this.reads.readPendingAck(session, receipt),
             stored: await this.reads.readStoredMessage(session, receipt.msgId)
         }));
-        return await this.mutations.commitOutsideAudience(
-            this,
-            toALOutboundOutsideAudienceCommit<TPrepared>({ ...surface, receipt, recipientPeerIds })
-        );
+        const commit = toALOutboundOutsideAudienceCommit<TPrepared>({ ...surface, receipt, recipientPeerIds });
+        if (commit.status !== 'write') {
+            return commit.status;
+        }
+        return OUTSIDE_AUDIENCE_COMMIT_RESULTS[await this.commitBundle(commit.bundle)];
     }
 
     async readPendingAck(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {

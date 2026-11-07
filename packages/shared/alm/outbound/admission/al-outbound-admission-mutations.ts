@@ -19,7 +19,6 @@ import type {
 } from '../../compute-al-supersedence-observation.ts';
 import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
-import type { ALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
 import {
     toALOutboundMessageOwnerKey,
     toALOutboundPendingAckKey,
@@ -29,7 +28,6 @@ import {
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
 import type {
-    ALOutboundAdmissionStore,
     ALOutboundMessageReadDto,
     ALOutboundOrderingHead,
     ALOutboundSentPositions
@@ -345,21 +343,6 @@ export class ALOutboundAdmissionMutations {
             }
             throw error;
         }
-    }
-
-    /**
-     * Writes the receipt row the server's own outside class folded, under the origin's version fence; a conflict is
-     * the caller's to re-read, and a message that expired meanwhile has no receipt left to record in.
-     */
-    async commitOutsideAudience<TPrepared>(
-        store: Pick<ALOutboundAdmissionStore<TPrepared>, 'commitBundle'>,
-        commit: ALOutboundOutsideAudienceCommit<TPrepared>
-    ): Promise<'committed' | 'conflict' | 'absent'> {
-        if (commit.status !== 'write') {
-            return commit.status;
-        }
-        const result = await store.commitBundle(commit.bundle);
-        return result === 'expired' ? 'absent' : result;
     }
 
     private async readMessageIdentityIssue(

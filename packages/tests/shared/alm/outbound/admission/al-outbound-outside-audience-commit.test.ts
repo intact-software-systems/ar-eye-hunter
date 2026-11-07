@@ -6,6 +6,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { toALOutboundSentMessageKey, toALOutboundVersionKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundReceiptClasses } from '@shared/alm/outbound/control/to-al-outbound-receipt-classes.ts';
+import { isALOutboundReceiptComplete } from '@shared/alm/outbound/transition-al-outbound-pending-ack.ts';
 
 const NAMESPACE = 'outbound';
 const NOW_MS = 1_700_000_000_000;
@@ -145,5 +146,31 @@ describe('the server records its own skipped recipients outside its receipt', ()
         const receipt = await fixture.store.readReceiptState(RECEIPT);
         expect(receipt).toMatchObject({ ackedPeerIds: [], outsideAudiencePeerIds: ['b', 'c'] });
         expect(toALOutboundReceiptClasses(receipt!).unconfirmedPeerIds).toEqual([]);
+        expect(isALOutboundReceiptComplete(receipt!)).toBe(false);
+        expect(await fixture.store.readPendingAck(RECEIPT)).toEqual(receipt);
+    });
+
+    it('answers absent for a receipt already complete and writes nothing', async () => {
+        const fixture = await createOutsideFixture();
+        expect(
+            await fixture.store.commitBundle({
+                senderId: ORIGIN,
+                expectedVersion: 1,
+                mutations: [{
+                    kind: 'set-pending-ack',
+                    originPeerId: ORIGIN,
+                    snapshot: { ...toPending(MSG_ID), ackedPeerIds: ['b'], outsideAudiencePeerIds: ['c'] },
+                    expireAtTimestamp: LIVE_UNTIL_MS
+                }],
+                durableEffects: []
+            })
+        ).toBe('committed');
+        const before = await readRows(fixture);
+        const write = vi.spyOn(fixture.backend, 'write');
+
+        expect(await fixture.store.commitOutsideAudience(RECEIPT, ['b'])).toBe('absent');
+
+        expect(write).not.toHaveBeenCalled();
+        expect(await readRows(fixture)).toBe(before);
     });
 });

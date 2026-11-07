@@ -199,8 +199,10 @@ describe('Relic committed notifications', () => {
             }, { timeout: 5_000 }).toEqual(transitions.slice(1).map((message) => message.id.msgId).sort());
             const joinerTransitionFrames = readJoinerTransitionFrames();
             const joinerTransitions = joinerTransitionFrames.map((frame) => decodePersistedALMessage(frame));
-            expect(joinerTransitions[0]?.id.msgId).toBe(transitions[1].id.msgId);
-            expect(joinerTransitions[0]?.ordering).toEqual({
+            // Tracks dequeue independently, so only the round's own track fixes which of its frames the joiner sees first.
+            const joinerRoundTransitions = joinerTransitions.filter((message) => message.ordering?.epoch === 1);
+            expect(joinerRoundTransitions[0]?.id.msgId).toBe(transitions[1].id.msgId);
+            expect(joinerRoundTransitions[0]?.ordering).toEqual({
                 ...transitions[1].ordering,
                 epoch: 1,
                 seq: 2,
