@@ -1,3 +1,5 @@
+import { rm, writeFile } from 'node:fs/promises';
+
 import type { ApiV1RtcTopologyProofApi } from './api-v1-rtc-topology-proof-api.mts';
 import { readRtcTopologyProofDurableState } from './api-v1-rtc-topology-proof-postgres.mts';
 import type { ApiV1RtcTopologyProofSocket } from './api-v1-rtc-topology-proof-websocket.mts';
@@ -12,9 +14,10 @@ interface WriteFailureArtifactInput {
 }
 
 export async function writeProofArtifact(artifactDir: string, proof: object): Promise<void> {
-    await Deno.writeTextFile(
+    await writeFile(
         `${artifactDir.replace(/\/+$/, '')}/rtc-topology-replay-proof.json`,
-        `${JSON.stringify(proof, null, 2)}\n`
+        `${JSON.stringify(proof, null, 2)}\n`,
+        'utf8'
     );
 }
 
@@ -30,7 +33,7 @@ export async function writeFailureArtifact(
             unavailable: databaseError instanceof Error ? databaseError.message : String(databaseError)
         }))
     ]);
-    await Deno.writeTextFile(
+    await writeFile(
         `${input.artifactDir.replace(/\/+$/, '')}/rtc-topology-replay-proof-failure.json`,
         `${
             JSON.stringify(
@@ -45,21 +48,22 @@ export async function writeFailureArtifact(
                 null,
                 2
             )
-        }\n`
+        }\n`,
+        'utf8'
     );
 }
 
 export async function removePriorProofArtifacts(artifactDir: string): Promise<void> {
     const root = artifactDir.replace(/\/+$/, '');
     await Promise.all([
-        Deno.remove(`${root}/rtc-topology-replay-proof.json`).catch((error) => {
-            if (error instanceof Deno.errors.NotFound) {
+        rm(`${root}/rtc-topology-replay-proof.json`).catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
                 return;
             }
             throw error;
         }),
-        Deno.remove(`${root}/rtc-topology-replay-proof-failure.json`).catch((error) => {
-            if (error instanceof Deno.errors.NotFound) {
+        rm(`${root}/rtc-topology-replay-proof-failure.json`).catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
                 return;
             }
             throw error;

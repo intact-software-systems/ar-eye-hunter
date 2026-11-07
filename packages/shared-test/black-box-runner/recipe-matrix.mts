@@ -1,5 +1,4 @@
-/// <reference lib="deno.ns" />
-// deno-lint-ignore-file no-explicit-any
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 
 import {
     blackBoxRunnerLivePreflightSkipReasons,
@@ -91,7 +90,7 @@ const OFFLINE_VALIDATION_PROFILE = 'validation';
 function usage(): string {
     return [
         'Usage:',
-        '  deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts [options]',
+        '  bun run packages/shared-test/black-box-runner/recipe-matrix.mts [options]',
         '',
         'Options:',
         '  --profile=<name>              quick, dry, deterministic, validation, soak, traffic, parallel, failure-diagnostics, live, live-soak, live-traffic, live-parallel, live-crdt, rallar-server-live, api-v1-black-box, browser-live, remote-live, signaling-live. Default: quick',
@@ -187,11 +186,11 @@ function repoRelativePath(url: URL): string {
 }
 
 async function readMatrix(): Promise<MatrixFile> {
-    return JSON.parse(await Deno.readTextFile(MATRIX_FILE));
+    return JSON.parse(await readFile(MATRIX_FILE, 'utf8'));
 }
 
 async function readShardWeights(): Promise<RecipeShardWeights> {
-    return JSON.parse(await Deno.readTextFile(SHARD_WEIGHTS_FILE));
+    return JSON.parse(await readFile(SHARD_WEIGHTS_FILE, 'utf8'));
 }
 
 function selectedEntries(matrix: MatrixFile, options: CliOptions): MatrixEntry[] {
@@ -222,7 +221,7 @@ function selectedEntries(matrix: MatrixFile, options: CliOptions): MatrixEntry[]
 
 async function fileExists(path: string): Promise<boolean> {
     try {
-        await Deno.stat(path);
+        await stat(path);
         return true;
     }
     catch (_error) {
@@ -231,14 +230,14 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 async function hasPlaywrightCli(): Promise<boolean> {
-    const output = await new Deno.Command('npx', {
-        args: ['playwright', '--version'],
+    const child = Bun.spawn({
+        cmd: ['npx', 'playwright', '--version'],
         cwd: filePath(REPO_ROOT),
-        stdout: 'null',
-        stderr: 'null'
-    }).output();
+        stdout: 'ignore',
+        stderr: 'ignore'
+    });
 
-    return output.success;
+    return await child.exited === 0;
 }
 
 function entryArtifactDir(options: CliOptions, entry: MatrixEntry): string | undefined {
@@ -256,7 +255,6 @@ function commandArgs(entry: MatrixEntry, options: CliOptions, artifactDir?: stri
     const recipeUrl = new URL(entry.recipe, SCRIPT_DIR);
     const args = [
         'run',
-        '-A',
         repoRelativePath(SCENARIO_CLI),
         '-c',
         repoRelativePath(recipeUrl)
@@ -278,13 +276,13 @@ function commandArgs(entry: MatrixEntry, options: CliOptions, artifactDir?: stri
 
 function entryEnvironment(entry: MatrixEntry): Record<string, string | undefined> {
     return {
-        ...Deno.env.toObject(),
+        ...process.env,
         ...(entry.env ?? {})
     };
 }
 
 async function readRecipeConfig(entry: MatrixEntry): Promise<any> {
-    return JSON.parse(await Deno.readTextFile(filePath(new URL(entry.recipe, SCRIPT_DIR))));
+    return JSON.parse(await readFile(filePath(new URL(entry.recipe, SCRIPT_DIR)), 'utf8'));
 }
 
 async function writePreflightReport(
@@ -295,9 +293,9 @@ async function writePreflightReport(
         return undefined;
     }
 
-    await Deno.mkdir(artifactDir, { recursive: true });
+    await mkdir(artifactDir, { recursive: true });
     const path = artifactDir.replace(/\/+$/, '') + '/preflight-report.json';
-    await Deno.writeTextFile(path, JSON.stringify(report, null, 2));
+    await writeFile(path, JSON.stringify(report, null, 2), 'utf8');
     return path;
 }
 
@@ -402,27 +400,30 @@ async function runEntry(entry: MatrixEntry, options: CliOptions): Promise<Matrix
     }
 
     const expectedExitCode = expectedExitCodeFor(entry, options);
-    const output = await new Deno.Command(Deno.execPath(), {
-        args: commandArgs(entry, options, artifactDir),
+    const child = Bun.spawn({
+        cmd: [process.execPath, ...commandArgs(entry, options, artifactDir)],
         cwd: filePath(REPO_ROOT),
         env: {
-            ...Deno.env.toObject(),
+            ...process.env,
             ...(entry.env ?? {})
         },
-        stdout: 'piped',
-        stderr: 'piped'
-    }).output();
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited
+    ]);
     const endedAt = Date.now();
-    const stdout = new TextDecoder().decode(output.stdout);
-    const stderr = new TextDecoder().decode(output.stderr);
-    const passed = output.code === expectedExitCode;
+    const passed = exitCode === expectedExitCode;
 
     return {
         id: entry.id,
         recipe: entry.recipe,
         status: passed ? 'PASSED' : 'FAILED',
         expectedExitCode,
-        code: output.code,
+        code: exitCode,
         durationMs: endedAt - startedAt,
         artifactDir,
         summary: parseReportSummary(stdout),
@@ -436,8 +437,8 @@ async function writeMatrixSummary(options: CliOptions, runs: MatrixRun[]): Promi
         return;
     }
 
-    await Deno.mkdir(options.artifactDir, { recursive: true });
-    await Deno.writeTextFile(
+    await mkdir(options.artifactDir, { recursive: true });
+    await writeFile(
         options.artifactDir.replace(/\/+$/, '') + '/matrix-summary.json',
         JSON.stringify(
             {
@@ -450,7 +451,8 @@ async function writeMatrixSummary(options: CliOptions, runs: MatrixRun[]): Promi
             },
             null,
             2
-        )
+        ),
+        'utf8'
     );
 }
 
@@ -495,7 +497,7 @@ function printRun(run: MatrixRun): void {
 }
 
 async function main(): Promise<void> {
-    const options = parseArgs(Deno.args);
+    const options = parseArgs(process.argv.slice(2));
     if (options.help) {
         console.log(usage());
         return;
@@ -535,11 +537,11 @@ async function main(): Promise<void> {
     );
 
     if (summary.FAILED > 0 || (options.requireGates && summary.SKIPPED > 0)) {
-        Deno.exit(1);
+        process.exit(1);
     }
 }
 
 main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
+    process.exit(1);
 });

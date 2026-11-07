@@ -5,7 +5,6 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 export default {
     resolve: {
         alias: {
-            '@js-temporal/polyfill': `${repoRoot}/packages/tests/shared-server/deno-temporal-polyfill-shim.mjs`,
             '@shared-web': `${repoRoot}/packages/shared-web`,
             '@shared-server': `${repoRoot}/packages/shared-server`,
             '@shared': `${repoRoot}/packages/shared`,
@@ -17,6 +16,7 @@ export default {
     },
     test: {
         environment: 'node',
-        globals: true
+        globals: true,
+        setupFiles: [`${repoRoot}/packages/tests/setup-vitest.ts`]
     }
 };

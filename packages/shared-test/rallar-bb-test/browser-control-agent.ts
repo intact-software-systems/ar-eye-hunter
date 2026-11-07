@@ -290,7 +290,7 @@ function createDefaultBrowserControlAgentRuntime(bootstrap: RallarBlackBoxBootst
         routineBrowserDiagnostics: bootstrap.routineBrowserDiagnostics,
         eventHistory: bootstrap.eventHistory,
         rallarRuntime: createSpaBrowserRallarRuntime(),
-        fetch: (request, init) => globalThis.fetch(request, init),
+        fetch: ((request, init) => globalThis.fetch(request, init)) as typeof fetch,
         webSocketFactory: createBrowserWebSocketFactory()
     });
     return {
