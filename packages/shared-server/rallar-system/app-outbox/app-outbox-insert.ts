@@ -25,7 +25,6 @@ export interface AppOutboxInsert {
     readonly finishedAt: string | null;
     readonly nextAt: string | null;
     readonly attempts: number;
-    /** The ordering index row of an ordered `WS_OUTBOX` row, written in the same statement; null for any other row. */
     readonly trackIndex: AppOutboxTrackIndexRow | null;
 }
 
@@ -40,7 +39,6 @@ interface AppOutboxInsertedRow {
     readonly fk_ext_bank_id: string;
 }
 
-/** The rows a statement with track index rows returns: each outbox row, then each index key it wrote. */
 interface AppOutboxTrackIndexedRow {
     readonly ri_resource_id: string | null;
     readonly ri_topic_id: string | null;
@@ -84,7 +82,6 @@ function computeAppOutboxRow(entry: ResourceEntry): Omit<AppOutboxInsert, 'track
     };
 }
 
-/** Re-derives through the compute the computed row names; a track index row on an unordered entry is not exact. */
 export function isExactAppOutboxInsert(
     entry: ResourceEntry,
     computed: AppOutboxInsert
@@ -167,14 +164,13 @@ function requireDistinctTrackIndexKeys(computed: readonly AppOutboxInsert[]): vo
         if (trackIndex === null) {
             continue;
         }
-        const key = JSON.stringify([trackIndex.namespace, trackIndex.key]);
-        if (keys.has(key)) {
+        if (keys.has(trackIndex.key)) {
             throw new ResourceInboxInvariantCorruptionError(
                 entry.key,
                 'App outbox batch names one track index row twice'
             );
         }
-        keys.add(key);
+        keys.add(trackIndex.key);
     }
 }
 

@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
@@ -84,6 +84,10 @@ async function seedTrackIndexRow(sql: PSqlSql, row: AppOutboxTrackIndexRow, msgI
 }
 
 describe('the app outbox writer with a track index row', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('writes the outbox row and its index row in one statement of one transaction', async () => {
         const sql = await createStorage();
         const computed = computeOrdered();
@@ -98,7 +102,9 @@ describe('the app outbox writer with a track index row', () => {
         expect(Number(stored!.revision)).toBe(0);
         expect(await countOutboxRows(sql, computed.entry.key.resourceId)).toBe(1);
         expect(recorded.filter((statement) => statement !== 'begin' && statement !== 'commit')).toHaveLength(1);
-        expect(counted?.() ?? 1).toBe(1);
+        if (counted !== undefined) {
+            expect(counted()).toBe(1);
+        }
     });
 
     it('rolls the whole transaction back on a live index row under the same track and sequence', async () => {
@@ -155,6 +161,8 @@ describe('the app outbox writer with a track index row', () => {
         expect(statements).toHaveLength(1);
         expect(statements[0]).toMatch(/^insert into resource_inbox /u);
         expect(statements[0]).not.toContain('runtime_state_store');
-        expect(counted?.() ?? 1).toBe(1);
+        if (counted !== undefined) {
+            expect(counted()).toBe(1);
+        }
     });
 });

@@ -73,6 +73,14 @@ describe('the ordering-message key family of one track', () => {
         expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-1:a:10', 1).startsWith(prefix)).toBe(false);
     });
 
+    it('keeps a track whose key holds a quote and a comma apart from its neighbour', () => {
+        const prefix = toALOutboundOrderingTrackPrefix(NAMESPACE, 'game-"1",a:1');
+
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-"1",a:1', 3).startsWith(prefix)).toBe(true);
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-"1"', 3).startsWith(prefix)).toBe(false);
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-"1",a:10', 3).startsWith(prefix)).toBe(false);
+    });
+
     it('decodes the track and the sequence a key names, and nothing from a key of another family', () => {
         const key = toALOutboundOrderingMessageKey(NAMESPACE, TRACK_KEY, 7);
 

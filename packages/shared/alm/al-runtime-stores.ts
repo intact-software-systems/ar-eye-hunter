@@ -405,7 +405,7 @@ function toInMemoryALOutboundAdmissionStoreInput<TPrepared>(
 ): CreateALOutboundAdmissionStoreInput<TPrepared> {
     return {
         nowMs: input.nowMs,
-        namespace: `${input.namespace}:outbound:admission`,
+        namespace: toALOutboundAdmissionNamespace(input.namespace),
         canonicalScope: input.canonicalScope ?? input.namespace,
         orderingHeadNamespace: input.orderingHeadNamespace,
         backend,

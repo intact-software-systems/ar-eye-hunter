@@ -65,7 +65,6 @@ export function toServerWsQBoxALRuntimeStoreId(
     return toALRuntimeStoreId(`server-ws-qbox:${name}`);
 }
 
-/** The namespace the named server WS runtime keeps its outbound admission state under. */
 export function toServerWsQBoxALOutboundAdmissionNamespace(name: string): string {
     return toALOutboundAdmissionNamespace(toServerWsQBoxALRuntimeStoreId(name));
 }
