@@ -1150,14 +1150,16 @@ re-subscribe under the new connection generation whenever the socket reopens, a
 tab whose socket was replaced sends nothing, and session end releases them. On
 the same reopen the page restores the session's presence in its current room,
 the one it explicitly selected, under a fresh presence generation and the new
-connection generation, so the reopened session is in the audience again; a
-failure that may pass is retried on the same socket with a bounded backoff, and
-a room change waits for the restore's write. A room the page is still a member
-of but has not selected keeps the closed presence until the page enters it
-again. While the session holds a live socket, a presence connect that names a
-connection generation none of its live sockets holds is refused
-`403 stale-generation`, which ends that socket's restore; the next reopen
-starts a new one.
+connection generation, so the reopened session is in the audience again.
+Presence commits before its summary, so the restore adopts the room only once a
+snapshot read floored at the write reply's revision lists the written
+generation, as entering a room does; a failure that may pass is retried on the
+same socket with a bounded backoff, and a room change waits for the restore's
+write. A room the page is still a member of but has not selected keeps the
+closed presence until the page enters it again. While the session holds a live
+socket, a presence connect that names a connection generation none of its live
+sockets holds is refused `403 stale-generation`, which ends that socket's
+restore; the next reopen starts a new one.
 REST errors become statuses and never throw.
 
 ```ts
