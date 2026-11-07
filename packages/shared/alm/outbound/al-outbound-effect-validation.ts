@@ -281,12 +281,14 @@ function requireALOutboundSendEffectIdentity(
 function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
     const request = decodeALAdmissionRecord(value, ['trigger', 'failedPeerIds', 'missingRanges'], [
         'requestedByPeerId',
+        'logicalRecipientPeerId',
         'orderingTrackKey'
     ]);
     if (request.trigger !== 'ack-timeout' && request.trigger !== 'nack' && request.trigger !== 'repair') {
         throw new TypeError('Persisted AL repair trigger is invalid');
     }
     requireOptionalPersistedALNonEmptyString(request.requestedByPeerId, 'repair requester');
+    requireOptionalPersistedALNonEmptyString(request.logicalRecipientPeerId, 'repair recipient');
     requireOptionalPersistedALNonEmptyString(request.orderingTrackKey, 'repair ordering track');
     if (request.failedPeerIds === undefined) {
         throw new TypeError('Persisted AL repair peer or sequence array is missing');

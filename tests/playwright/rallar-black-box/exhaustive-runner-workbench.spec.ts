@@ -190,6 +190,8 @@ test('preserves loaded Local recipe intent through capture choices and experienc
 });
 
 test('preserves copied Manual history through Local Load, run choices, and experience remount', async ({ page, context }) => {
+    // Six local recipe runs: 20.7–29.4 s on CI against the 30 s default, so the budget is tripled.
+    test.slow();
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto('/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=manual-rallar');
     const manual = page.locator('#panel-manual-rallar');

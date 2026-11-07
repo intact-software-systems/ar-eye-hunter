@@ -17,7 +17,7 @@ import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/
 import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
@@ -468,6 +468,29 @@ it('associates the exact received ACK with independently stored regenerated cont
     fixture.sendGate.resolve();
     await expect.poll(() => fixture.handoffs.length).toBe(1);
     expect(fixture.sent.map((msg) => msg.id.msgId).sort()).toEqual(['generated-1:0']);
+});
+
+it('names the reason of a gap NACK the relay refused in its evidence', async () => {
+    const fixture = new AcknowledgementFixture();
+    await fixture.seed();
+    const gap = newALNackControlMessage({ v: 4, msgId: 'incoming-gap', senderId: 'child', ts: 1, traceId: 'trace-al-inbound-acknowledgement-evidence' }, {
+        msgId: 'subject',
+        fromPeerId: 'child',
+        toPeerId: 'relay',
+        logicalRecipientPeerId: 'leaf',
+        reason: 'gap',
+        observedAtEpochMs: 2,
+        orderingKey: 'chat:origin:1',
+        expectedSeq: 1,
+        missingRanges: [{ from: 1, to: 1 }]
+    });
+
+    expect((await fixture.runtime.admitIncomingMessage(gap, { kind: 'trusted-server' })).right).toEqual({ kind: 'control', handled: false });
+
+    expect(fixture.resolveAssociation()?.data).toMatchObject({
+        incoming: { control: 'nack', reason: 'gap', controlMsgId: 'incoming-gap', subjectMsgId: 'subject', logicalRecipientPeerId: 'leaf' },
+        attempts: [{ candidate: { ownerPeerId: 'origin', parentPeerId: 'parent', validated: false }, commit: 'not-called', result: 'rejected' }]
+    });
 });
 
 it('separates a conflicted candidate from replay IDs and retained work', async () => {

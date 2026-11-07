@@ -31,17 +31,20 @@ interface AlmConformanceDiagnosticWaitInput {
     readonly absent?: boolean;
 }
 
-interface AlmConformanceOrderingPositionWaitInput {
+interface AlmConformanceOrderingPositionTrack {
     readonly name: string;
     readonly status: ALInboundOrderingPosition['status'];
-    readonly priorSeq: number | null;
     /**
      * The track's key up to its epoch, `<ordering key>:<sender peer id>`. The peer id is unknown when the recipe is
      * authored, so it is a result reference to an arrival the page received from that sender.
      */
     readonly track: string;
-    readonly absent?: boolean;
 }
+
+/** The event the page states, at `priorSeq`; or, `absent`, no event of the status on the track, whatever its prior. */
+type AlmConformanceOrderingPositionWaitInput =
+    | (AlmConformanceOrderingPositionTrack & { readonly priorSeq: number | null; })
+    | (AlmConformanceOrderingPositionTrack & { readonly absent: true; });
 
 interface AlmConformanceControlAdmissionWaitInput {
     readonly step: AlmConformanceMessageStepInput;
@@ -82,15 +85,17 @@ export function toDiagnosticWait(
  */
 export function toOrderingPositionWait(
     step: AlmConformanceStepInput,
-    { name, status, priorSeq, track, absent }: AlmConformanceOrderingPositionWaitInput
+    position: AlmConformanceOrderingPositionWaitInput
 ): RallarBlackBoxTestWaitCommand {
+    const kind = { 'data.kind': 'ordering-position', 'data.status': position.status };
     return toDiagnosticWait({
         step,
-        name,
+        name: position.name,
         topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-        contains: `"trackKey":"${track}:`,
-        payloadFields: { 'data.kind': 'ordering-position', 'data.status': status, 'data.priorSeq': priorSeq },
-        absent
+        contains: `"trackKey":"${position.track}:`,
+        ...('absent' in position
+            ? { payloadFields: kind, absent: true }
+            : { payloadFields: { ...kind, 'data.priorSeq': position.priorSeq } })
     });
 }
 

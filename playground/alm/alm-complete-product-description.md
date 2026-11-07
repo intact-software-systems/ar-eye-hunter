@@ -317,10 +317,11 @@ owner and admin workflows `rooms.grantTopic` and `rooms.revokeTopic`; a granted
 channel's `subscribe(handler)` returns a `RallarTopicSubscription` token
 (`pending`, `active`, `refused`, `lapsed`), counted per tab, room and topic,
 renewed on the heartbeat cadence, re-asserted under the new generation when the
-socket reopens and released at session end (D490, D509). **Limit:** a
-same-session WS reconnect leaves the session's room presence closed, so the
-reopened session receives no granted publication although its subscription is
-re-asserted (D506); the four-role cells run on the local lane only (D505).
+socket reopens and released at session end (D490, D509). Since #785 the
+reopened socket also restores the session's presence in the room the page
+selected (D506, D531), so the reopened session receives granted publications
+there again. **Limit:** the
+four-role cells run on the local lane only (D505).
 
 **CURRENT — S3, restricted RTC parity:** a granted room multicast rides RTC,
 receipted or not, under `rtc` and `rtc-with-ws-fallback`. The origin freezes it
@@ -880,9 +881,16 @@ transitions, state-sync) record no positions; the server's own publications
 record no outside class, so a skipped recipient of one stays unconfirmed; in a
 cluster positions and the
 outside class cover sessions on the dequeuing instance only; a receiver whose
-entry frame is lost and whose next frame arrives first enters past it. A
-reopened socket's room presence (D506) and relay re-origination of gap NACKs
-are S4-ii's.
+entry frame is lost and whose next frame arrives first enters past it.
+
+**CURRENT — S4-ii, reconnect, relays and restart:** a reconnect reads as an
+omission, never loss, a relay re-originates a child's gap NACK toward the
+origin, and a minted sequence continues across a reload; the server refuses a
+presence connect naming a connection generation none of the session's live
+client-state rows holds `stale-generation`, when the session holds any. The
+"As applied (S4-ii)" note under Slice 4 of the
+[addendum](./alm-publication-qos-addendum.md) is the full account, with its
+limits.
 
 ## Deduplication and supersedence
 

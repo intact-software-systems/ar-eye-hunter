@@ -13,6 +13,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
@@ -139,7 +140,8 @@ describe('own-share-under-inbound', () => {
         deliveredMarkers: 0,
         repliesHeld: 0,
         replyWaitsOpen: 0,
-        publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
+        publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
+        ordering: createALInboundOrderingCounters()
     };
 
     it.each(FAIRNESS_CARRIERS['own-share-under-inbound'])(
@@ -312,7 +314,8 @@ describe('churn-bounded-tracks', () => {
         deliveredMarkers: 256,
         repliesHeld: 0,
         replyWaitsOpen: 0,
-        publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
+        publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
+        ordering: createALInboundOrderingCounters()
     };
 
     it('opens 280 tracks with one send each, paced, and leaves; the receiver then holds exactly the cap of ordering snapshots', async () => {

@@ -87,14 +87,14 @@ const FOUR_ROLE_KEYS = [
     'subscription-delivery',
     'subscription-token-count',
     'subscription-revoke-disconnected',
-    'subscription-reconnect',
     'subscription-ordered-entry',
-    'subscription-ordered-omission'
+    'subscription-ordered-omission',
+    'subscription-ordered-reconnect'
 ] as const;
 
 /**
  * A granted topic rides RTC as a signed room multicast: its cells run over rtc, the two-agent ones before the
- * congestion and fairness cells and the three-agent ones last, the relay-only cell, which reshapes the room's
+ * congestion and fairness cells and the three-agent ones last, the two relay cells, which reshape the room's
  * topology, after every other. The revoked publisher runs over the fallback carrier too.
  */
 const GRANTED_RTC_TWO_AGENT_KEYS = [
@@ -108,7 +108,8 @@ const GRANTED_RTC_TWO_AGENT_KEYS = [
 const GRANTED_RTC_THREE_AGENT_KEYS = [
     'granted-rtc-forged-sender',
     'granted-rtc-not-subscribed',
-    'granted-rtc-relay-only'
+    'granted-rtc-relay-only',
+    'granted-rtc-ordered-relay'
 ] as const;
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';

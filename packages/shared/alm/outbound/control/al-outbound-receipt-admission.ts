@@ -17,6 +17,7 @@ import {
     computeALOutboundReceiptAdmission,
     toALOutboundReceiptMutation,
     toALOutboundReceiptSettlement,
+    toALOutboundReceiptTrackMutations,
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
 import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
@@ -33,10 +34,12 @@ export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
 
 /**
  * A server receipt moving a receipt row: at the origin, and at the WS server for its own pending row of
- * an outbox-fanned message. One conditional commit fenced on the origin's version; a conflict starts a
- * fresh read, and the few attempts bound a receipt racing the origin's own writes. A receipt that runs out
- * of them is retained as work and replayed until its deadline, since the row would otherwise keep waiting
- * on acknowledgements the receipt already counted.
+ * an outbox-fanned message. At a browser origin whose carriers share their heads, an `admitted` receipt
+ * also moves the recipients it names on the shared head and resolves the room floor (S4ii-R7). One
+ * conditional commit fenced on the origin's version; a conflict starts a fresh read, and the few attempts
+ * bound a receipt racing the origin's own writes. A receipt that runs out of them is retained as work and
+ * replayed until its deadline, since the row would otherwise keep waiting on acknowledgements the receipt
+ * already counted.
  */
 export class ALOutboundReceiptAdmission<TPrepared> {
     private static readonly MAX_ATTEMPTS = 3;
@@ -94,10 +97,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         attempt: number
     ): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
         const { admissionStore, clock, diagnostics, settlements } = this.dependencies;
-        const surface = await admissionStore.readReceiptAdmission({
-            originPeerId: receipt.originPeerId,
-            msgId: receipt.msgId
-        });
+        const surface = await admissionStore.readReceiptAdmission(receipt);
         const candidate = computeALOutboundReceiptAdmission({ ...surface, receipt, nowMs: clock.nowMs() });
         const issues = validateALOutboundReceiptAdmission(candidate);
         if (issues.length > 0 || candidate.write === undefined) {
@@ -118,7 +118,10 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         const status = await admissionStore.commitBundle({
             senderId: receipt.originPeerId,
             expectedVersion: surface.clientRecord?.version,
-            mutations: [toALOutboundReceiptMutation(candidate.write, receipt)],
+            mutations: [
+                toALOutboundReceiptMutation(candidate.write, receipt),
+                ...toALOutboundReceiptTrackMutations(surface.trackPositions, candidate.write)
+            ],
             durableEffects: []
         });
         const settlement = status === 'committed'

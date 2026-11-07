@@ -14,7 +14,7 @@ import type { ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-
 import {
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
-    toALOutboundRoomSentPositionKey,
+    toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import {
@@ -49,6 +49,11 @@ describe('the sent-position row key', () => {
     it('names one recipient on one track, apart from the track head', () => {
         expect(toALOutboundSentPositionKey(NAMESPACE, TRACK_KEY, 'b')).toBe(`outbound:sent-position:["${TRACK_KEY}","b"]`);
         expect(toALOutboundSentPositionKey(NAMESPACE, TRACK_KEY, 'b')).not.toBe(toALOutboundOrderingHeadKey(NAMESPACE, TRACK_KEY));
+    });
+
+    it('names the track\'s room-wide floor apart from its head and its recipients\' positions', () => {
+        expect(toALOutboundRoomSentFloorKey(NAMESPACE, TRACK_KEY)).toBe(`outbound:room-sent-floor:${TRACK_KEY}`);
+        expect(toALOutboundRoomSentFloorKey(NAMESPACE, TRACK_KEY)).not.toBe(toALOutboundOrderingHeadKey(NAMESPACE, TRACK_KEY));
     });
 
     it('keeps a track and a recipient apart whatever characters they hold', () => {
@@ -92,13 +97,13 @@ describe('the positions a sent row or a send keeps', () => {
 
 describe('the sent-position mutations of one admission', () => {
     it('writes nothing when the admission recorded no positions', () => {
-        expect(toALOutboundSentPositionMutations(undefined, NOW_MS)).toEqual([]);
+        expect(toALOutboundSentPositionMutations(undefined, NOW_MS, 'pair')).toEqual([]);
     });
 
     it('moves each recipient whose prior is below the sequence to it, and never moves one back', () => {
-        expect(toALOutboundSentPositionMutations(POSITIONS, NOW_MS + 1_000)).toEqual([
-            { kind: 'set-sent-position', trackKey: TRACK_KEY, recipientPeerId: 'b', seq: 5, expireAtTimestamp: NOW_MS + 1_000 },
-            { kind: 'set-sent-position', trackKey: TRACK_KEY, recipientPeerId: 'c', seq: 5, expireAtTimestamp: NOW_MS + 1_000 }
+        expect(toALOutboundSentPositionMutations(POSITIONS, NOW_MS + 1_000, 'pair')).toEqual([
+            { kind: 'set-sent-position', namespace: 'pair', trackKey: TRACK_KEY, recipientPeerId: 'b', seq: 5, expireAtTimestamp: NOW_MS + 1_000 },
+            { kind: 'set-sent-position', namespace: 'pair', trackKey: TRACK_KEY, recipientPeerId: 'c', seq: 5, expireAtTimestamp: NOW_MS + 1_000 }
         ]);
     });
 
@@ -107,7 +112,7 @@ describe('the sent-position mutations of one admission', () => {
         const deadlineAtMs = NOW_MS + 1_000;
 
         const [position, head] = mutations.computeStateWrites([
-            ...toALOutboundSentPositionMutations(POSITIONS, deadlineAtMs).slice(0, 1),
+            ...toALOutboundSentPositionMutations(POSITIONS, deadlineAtMs, 'pair').slice(0, 1),
             { kind: 'set-ordering-head', trackKey: TRACK_KEY, seq: 5, observedSeq: 4, expireAtTimestamp: deadlineAtMs }
         ], NOW_MS);
 
@@ -120,7 +125,7 @@ describe('the sent-position mutations of one admission', () => {
         expect(position?.expireAtTimestamp).toBe(head?.expireAtTimestamp);
     });
 
-    it('moves the room-wide sent position beside the head it moves with, unguarded, under the head\'s retention', () => {
+    it('moves the room-wide sent position beside the head it moves with, over the floor it read, under the head\'s retention', () => {
         const mutations = new ALOutboundAdmissionMutations({
             namespace: NAMESPACE,
             orderingHeadNamespace: SESSION_HEADS,
@@ -139,26 +144,63 @@ describe('the sent-position mutations of one admission', () => {
         );
         const msg = { ...sent, ordering: { ...sent.ordering, seq: 5 } };
         const trackKey = toALOrderingTrackKey(msg)!;
-        const head = { trackKey, seq: 5, observedSeq: 4, movesRoomSentPosition: true };
+        const observed = { unreceiptedSeq: 0, pendingReceiptSeqs: [4] };
+        const value = { unreceiptedSeq: 0, pendingReceiptSeqs: [4, 5] };
+        const head = { trackKey, seq: 5, observedSeq: 4, roomSentFloor: { observed, value } };
 
         const writes = mutations.computeStateWrites(
             toALOutboundOrderingTrackMutations({ msg, orderingHead: head, sentPositions: undefined }, NOW_MS + 1_000),
             NOW_MS
         );
 
-        expect(writes.map(({ key, value, guard }) => ({ key, value, guard: guard?.kind }))).toEqual([
+        expect(writes.map((write) => ({ key: write.key, value: write.value, guard: write.guard }))).toEqual([
             { key: toALOutboundOrderingMessageKey(NAMESPACE, trackKey, 5), value: msg.id.msgId, guard: undefined },
-            { key: toALOutboundOrderingHeadKey(SESSION_HEADS, trackKey), value: { seq: 5 }, guard: 'ordering-head' },
-            { key: toALOutboundRoomSentPositionKey(SESSION_HEADS, trackKey), value: { seq: 5 }, guard: undefined }
+            {
+                key: toALOutboundOrderingHeadKey(SESSION_HEADS, trackKey),
+                value: { seq: 5 },
+                guard: { kind: 'ordering-head', expected: { seq: 4 } }
+            },
+            {
+                key: toALOutboundRoomSentFloorKey(SESSION_HEADS, trackKey),
+                value,
+                guard: { kind: 'room-sent-floor', expected: observed }
+            }
         ]);
         expect(writes[2]?.expireAtTimestamp).toBe(writes[1]?.expireAtTimestamp);
+    });
+
+    it('sets a receipted recipient\'s position in the namespace the session\'s pairs share, and the floor under its guard', () => {
+        const mutations = new ALOutboundAdmissionMutations({
+            namespace: NAMESPACE,
+            orderingHeadNamespace: SESSION_HEADS,
+            canonicalScope: 'scope',
+            retention: normalizeALRuntimeStoreRetention(),
+            supersedenceTrackTtlMs: 60_000,
+            durability: 'durable'
+        });
+        const observed = { unreceiptedSeq: 0, pendingReceiptSeqs: [5, 6] };
+        const value = { unreceiptedSeq: 0, pendingReceiptSeqs: [6] };
+
+        const writes = mutations.computeStateWrites([
+            ...toALOutboundSentPositionMutations(POSITIONS, NOW_MS + 1_000, 'ordering-head').slice(0, 1),
+            { kind: 'set-room-sent-floor', trackKey: TRACK_KEY, observed, value, expireAtTimestamp: NOW_MS + 1_000 }
+        ], NOW_MS);
+
+        expect(writes.map(({ key, value, guard }) => ({ key, value, guard }))).toEqual([
+            { key: toALOutboundSentPositionKey(SESSION_HEADS, TRACK_KEY, 'b'), value: { seq: 5 }, guard: undefined },
+            {
+                key: toALOutboundRoomSentFloorKey(SESSION_HEADS, TRACK_KEY),
+                value,
+                guard: { kind: 'room-sent-floor', expected: observed }
+            }
+        ]);
     });
 
     it('keeps a durable row to a deadline past the repository TTL', () => {
         const deadlineAtMs = NOW_MS + DEFAULT_AL_REPOSITORY_TTL_MS + 5_000;
 
         const [position] = createMutations('durable').computeStateWrites(
-            toALOutboundSentPositionMutations(POSITIONS, deadlineAtMs),
+            toALOutboundSentPositionMutations(POSITIONS, deadlineAtMs, 'pair'),
             NOW_MS
         );
 
@@ -169,7 +211,7 @@ describe('the sent-position mutations of one admission', () => {
         const deadlineAtMs = NOW_MS + 1_000;
 
         const [position] = createMutations('volatile').computeStateWrites(
-            toALOutboundSentPositionMutations(POSITIONS, deadlineAtMs),
+            toALOutboundSentPositionMutations(POSITIONS, deadlineAtMs, 'pair'),
             NOW_MS
         );
 

@@ -357,6 +357,13 @@ describe('GroupStateService mutation exact reads', () => {
                     })
                 },
                 {
+                    selectorId: 'client-session:0',
+                    kind: 'prefix-containing',
+                    namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+                    keyPrefix: `${clientStatePrincipalStorageKey({ ...SCOPE, principalId: 'owner' })}:`,
+                    storedValueContains: { sessionId: 'presence-session', status: 'active' }
+                },
+                {
                     selectorId: 'auth-session',
                     kind: 'key',
                     namespace: AUTH_SESSIONS_BY_SESSION_NAMESPACE,

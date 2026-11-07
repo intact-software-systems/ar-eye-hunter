@@ -48,7 +48,11 @@ wire and the rows. A NACK and a repair request naming the same gap are one hint:
 requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names the hint's
 effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never the control
 that reported it, so the second control is absorbed by the write-if-absent effect store rather than
-filed again. One execution of a hint retransmits at most
+filed again. A relay's gap NACK for a recipient below it also names that recipient
+(`logicalRecipientPeerId`, absent when the requester is the recipient): the origin admits it from a next hop
+for a recipient the receipt still owes, the responder admits the copy on that recipient while sending it to the
+relay, and the recipient joins the hint's identity, so each recipient a relay reports one gap for is its own
+hint and a hint without one keeps its identity. One execution of a hint retransmits at most
 `AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages` (32) sequences, ascending across its ranges, and
 re-commits the remaining ranges as one follow-up hint whose identity is those ranges, so a wide gap
 costs a bounded page of indexed reads and dispatch commits per execution and no page is served
@@ -867,14 +871,23 @@ frame carries `{}`), and its commit moves each recipient below the sequence to i
 the same sender version. A commit that loses the fence retains the request without the record (the captured policy
 keeps `recordsSentPositions`), and its replay reads the positions again. When both browser carriers share the head
 (`orderingHeadNamespace`), a minting admission whose plan records no recipient -- the WS leg, which hands its audience
-to the server -- also moves the track's room-wide sent position (`toALOutboundRoomSentPositionKey`) beside the head,
-under the head's guard, and a recording admission reads each recipient no lower than it: the RTC record then never
-lists a recipient behind a sequence the WS leg sent the room, so a recipient whose WS copy is in flight asks a gap that
-copy closes instead of reading an omission. The browser cannot know the server's audience, so a recipient the WS
-server left out of that send (a narrowed audience: a revoked or late subscriber, or a stale audience) reads a gap the
-RTC origin cannot serve, and its track stalls until resync or the track expires, instead of a silent loss; S4-ii closes
-it, by the server's receipt returning the admitted audience or by per-recipient rows when the sender states
-`recipientPeerIds`. A pair whose head is its own (the WS server) has no room-wide position.
+to the server -- also moves the track's room-wide sent floor, a `room-sent-floor` row beside the head
+(`toALOutboundRoomSentFloorKey`, [`al-outbound-room-sent-floor.ts`](./admission/sequencing/al-outbound-room-sent-floor.ts)) that holds the sequences whose audience no receipt has named: the highest
+mint of a send with no logical receipt mode, which no receipt will answer, and the receipted mints whose `admitted`
+receipt has not landed, ascending (at most `AL_OUTBOUND_MAX_PENDING_RECEIPT_SEQS` = 64; past it the oldest is folded
+into the first). The WS leg's `admitted` receipt (`expectedRecipientPeerIds`, the audience the server's route
+captured) writes, in the receipt's own commit, one position row per named recipient at the send's sequence in the
+shared namespace, forward only, and removes only its own sequence from the floor; a mint and a receipt write the
+floor under one compare-and-set on the value they read, and a conflict retries from a fresh read. A recording
+admission reads each recipient's prior as the highest of its own carrier row, its shared row and the floor's highest
+sequence (`toALOutboundSentPositionPriors`): the RTC record never lists a recipient behind a sequence the WS leg sent
+it, or one whose audience is still unknown, so a recipient whose WS copy is in flight asks a gap that copy closes
+instead of reading an omission, while a recipient a landed receipt left out reads its own prior. A recipient the WS
+server left out still stalls until resync or the track expires in three windows: the dequeue dropped it after the
+route captured the receipt's audience; the send asked no logical receipt, so its sequence stays a floor until the row
+expires; or the `admitted` receipt arrived after the `complete` one, which is refused as a repeat and writes no rows.
+The WS server's receipt admission has no shared head and writes none. A pair whose head is its own (the WS server)
+has no room-wide floor.
 On RTC the carrier then signs the stamped
 frame once, in that first admission (`signAdmittedMessage`, `RtcGrantedPublicationCarrier.signAdmitted`): the stored
 canonical carries the proof over the sequence and the record, and every re-plan, dequeue and repair resends it as
@@ -1018,7 +1031,9 @@ at least one counted admission on it, so it leaves the count when the last of th
 message never opens a counted track. The ledger answers its state in one read, `readReport(nowMs)`
 (`ALVolatileSessionReport`: the usage, the totals of both pools, with `oldestAgeMs`, 0 when nothing is counted, and
 `tracks`; `own` and `inbound`, each pool's `admissions` and `bytes`; the limits; and `overloaded`), which the browser
-exposes as `rallar.messages.readUsage()` and the black-box `stats` result as `rallar.alm` (D180, D189).
+exposes as `rallar.messages.readUsage()` and the black-box `stats` result as `rallar.alm` (D180, D189); beside it
+`readUsage()` reports the connect's inbound `ordering` counters
+([inbound README](../inbound/README.md), "Entry, omission and witness"), which the ledger does not keep.
 
 An inbound admission is counted and never refused, and it counts toward the same limits as the session's own sends
 (R-S3c-ii-3), in the inbound pool. Under one shared pool arrivals alone refused own sends: refusal began where

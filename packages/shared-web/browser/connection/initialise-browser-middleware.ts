@@ -12,6 +12,7 @@ import {
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
 import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import { readApiConfig } from '@shared-web/browser/connection/connection-http-api.ts';
 import {
@@ -183,6 +184,8 @@ export interface InitialiseBrowserTransportInput {
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
     readonly volatileBound: BrowserSessionVolatileBound;
+    /** Built once per connect over the session's port; both carriers' runtimes report through it. */
+    readonly inboundOrderingCounters: BrowserInboundOrderingCountersSink;
     readonly publicationStageLimits: ALPublicationStageLimits;
     /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
     readonly checkpointStores: BrowserALCheckpointStores;
@@ -363,6 +366,7 @@ export function createBrowserTransportInput(
             options.diagnosticsPorts.storage
         ),
         volatileBound,
+        inboundOrderingCounters: new BrowserInboundOrderingCountersSink(options.diagnosticsPorts.inboundDiagnostics),
         publicationStageLimits: options.readPublicationStageLimits?.() ?? AL_PUBLICATION_STAGE_LIMITS,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
         ...publication,
@@ -427,11 +431,15 @@ export function toCreateWsUrl(
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
 export function toBrowserMiddleware(
     input: InitialiseBrowserTransportInput,
-    carriers: Omit<RallarBrowserMiddleware, 'volatileBudget' | 'publicationStageLimits' | 'outboundDiagnostics'>
+    carriers: Omit<
+        RallarBrowserMiddleware,
+        'volatileBudget' | 'orderingCounters' | 'publicationStageLimits' | 'outboundDiagnostics'
+    >
 ): RallarBrowserMiddleware {
     return {
         ...carriers,
         volatileBudget: input.volatileBound.budget,
+        orderingCounters: input.inboundOrderingCounters,
         publicationStageLimits: input.publicationStageLimits,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
     };
@@ -457,7 +465,7 @@ export function toBrowserWebSocketQueueBoxInput(
         newConnectionRequestId: input.creation.newConnectionRequestId,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.ws,
-        inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics,
+        inboundDiagnostics: input.inboundOrderingCounters.sink,
         onResyncRequired: input.options.onResyncRequired
     };
 }
@@ -612,7 +620,7 @@ async function initialiseBrowserRtcTransport(
                 inboundVolatileStores: input.inboundVolatileStores,
                 durableWorkOwnership: input.options.durableWorkOwnership,
                 roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
-                inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics,
+                inboundDiagnostics: input.inboundOrderingCounters.sink,
                 onResyncRequired: input.options.onResyncRequired
             }
         );

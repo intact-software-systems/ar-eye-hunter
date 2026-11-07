@@ -3,9 +3,16 @@ import type { ALMessageRejection } from '../../../al-contracts/al-message-persis
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
-import type { ALOutboundAdmissionMutation } from '../admission/al-outbound-admission-mutations.ts';
-import type { ALOutboundVersionedClientRecord } from '../admission/al-outbound-admission-store.ts';
+import {
+    toALOutboundSentPositionMutations,
+    type ALOutboundAdmissionMutation
+} from '../admission/al-outbound-admission-mutations.ts';
+import type {
+    ALOutboundReceiptTrackPositions,
+    ALOutboundVersionedClientRecord
+} from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
+import { computeALOutboundRoomSentFloorReceipt } from '../admission/sequencing/al-outbound-room-sent-floor.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
 import {
     isALOutboundReceiptComplete,
@@ -17,6 +24,11 @@ export interface ALOutboundReceiptAdmissionSurface {
     readonly stored: ALStoredOutboundMessage | undefined;
     readonly pending: ALOutboundPendingAckSnapshot | undefined;
     readonly clientRecord: ALOutboundVersionedClientRecord | undefined;
+    /**
+     * Read only for an `admitted` receipt, the one phase carrying the audience the server routed, of a sequenced
+     * message at a pair whose session's pairs share its heads; undefined otherwise.
+     */
+    readonly trackPositions: ALOutboundReceiptTrackPositions | undefined;
 }
 
 export interface ALOutboundReceiptAdmissionRead extends ALOutboundReceiptAdmissionSurface {
@@ -103,6 +115,31 @@ export function toALOutboundReceiptMutation(
         snapshot: write.value,
         expireAtTimestamp: write.expireAtTimestamp
     };
+}
+
+/**
+ * The shared-head rows the receipt's commit writes beside its receipt row: each recipient the server sent the
+ * sequence, moved to it as a recording admission moves its own and never back, and a room-wide sent position that
+ * waited on this receipt no longer waiting, so the other carrier pair reads those recipients at their rows. A receipt
+ * speaks only for its own sequence, so a floor that does not wait on it is left as it is.
+ */
+export function toALOutboundReceiptTrackMutations(
+    track: ALOutboundReceiptTrackPositions | undefined,
+    write: ALOutboundReceiptWrite
+): readonly ALOutboundAdmissionMutation[] {
+    if (track === undefined) {
+        return [];
+    }
+    const { trackKey, seq } = track.positions;
+    const observed = track.roomFloor;
+    const value = observed === undefined ? undefined : computeALOutboundRoomSentFloorReceipt(observed, seq);
+    const expireAtTimestamp = write.value.deadlineAtMs;
+    return [
+        ...toALOutboundSentPositionMutations(track.positions, expireAtTimestamp, 'ordering-head'),
+        ...(value === undefined
+            ? []
+            : [{ kind: 'set-room-sent-floor', trackKey, observed, value, expireAtTimestamp } as const])
+    ];
 }
 
 /**

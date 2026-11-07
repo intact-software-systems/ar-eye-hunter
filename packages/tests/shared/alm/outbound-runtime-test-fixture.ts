@@ -5,11 +5,23 @@ import {
     vi
 } from 'vitest';
 
+import {
+    AL_WS_CLIENT_CAPABILITIES,
+    toALCarrierQosInputProvider
+} from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALReceiptControlMessage,
+    type ALReceiptPayload
+} from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
+import {
+    createDefaultInMemoryALOutboundRuntimeStores,
+    createVolatileALOutboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -20,6 +32,7 @@ import type {
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundMintingPlan } from '@shared/alm/outbound/admission/sequencing/to-al-outbound-minting-plan.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type {
     ALCheckpointOutboundRuntimeStores,
@@ -28,6 +41,10 @@ import type {
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     AL_OUTBOUND_WORK_LEASE_MS,
     readALOutboundWorkReadyAt,
@@ -65,6 +82,7 @@ import {
     INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO,
     InboxOutboxEngine
 } from '@shared/services/inbox-outbox-engine.ts';
+import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -365,6 +383,66 @@ export function createDefaultOutboundTestStores(outbox?: InMemoryQueueBox): Outb
         workQueue: backend.workQueue,
         backend
     };
+}
+
+/** Both carriers' durable pairs of one browser session over one backend, and the namespace their track heads share. */
+export interface SharedHeadCarrierStores {
+    readonly ws: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+    readonly rtc: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+    readonly headNamespace: string;
+}
+
+/** Each carrier pair in its own namespace, as the browser composition keys them, minting on the session's one head. */
+export function createSharedHeadCarrierStores(sessionId: string, backend: ALAdmissionWorkBackend): SharedHeadCarrierStores {
+    const headNamespace = `browser:session-${sessionId}-ordering`;
+    const createCarrierStores = (carrier: string) =>
+        createDefaultInMemoryALOutboundRuntimeStores({
+            outboundBackend: backend,
+            namespace: `browser:${carrier}:${sessionId}`,
+            canonicalScope: `browser-session:${sessionId}`,
+            orderingHeadNamespace: headNamespace,
+            decodePrepared: decodeALOutboundTransportMessage
+        });
+    return { ws: createCarrierStores('ws-client'), rtc: createCarrierStores('rtc-overlay'), headNamespace };
+}
+
+/** A carrier runtime's planner as the WS client plans: its dispatch plan, then the minting plan at a first admission. */
+export function createWsClientMintingPlanner(sessionId: string): ALOutboundPlanner<ALOutboundTransportMessage> {
+    const qosProvider = toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, undefined);
+    return (msg, authority) =>
+        toALOutboundMintingPlan(
+            toWsQueueBoxClientDispatchPlan(msg, {
+                sessionId,
+                serverPeerId: 'server',
+                socketOpen: true,
+                nowMs: Date.now(),
+                backpressured: false,
+                qosProvider
+            }),
+            authority === undefined ? 'admission' : 'replan',
+            sessionId
+        );
+}
+
+/** The WS server's receipt to the origin of `message` naming the audience it routed; it confirms nobody yet. */
+export function createServerReceipt(
+    message: ALMessage,
+    phase: ALReceiptPayload['phase'],
+    expectedRecipientPeerIds: readonly string[]
+): ALMessage {
+    return newALReceiptControlMessage(
+        { v: 4, msgId: `receipt-${phase}-${message.id.msgId}`, senderId: 'server', ts: Date.now(), traceId: 'trace-server-receipt' },
+        {
+            msgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            expectedRecipientPeerIds,
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
+            snapshotVersion: 1,
+            phase,
+            observedAtEpochMs: Date.now()
+        }
+    );
 }
 
 /** Holds claims until the supplied real fixture owners have completed all work they started. */

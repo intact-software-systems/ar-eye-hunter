@@ -536,14 +536,6 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   `apps/api-v1/test/services/ws-room-granted-delivery.test.ts` ("a revoke between enqueue and
   dequeue skips the revoked session at the awaited hold"; "a held row for a session whose
   generation changed is not sent when its socket opens").
-- `subscription-reconnect`: the sibling's socket drops and reopens under a new generation; its
-  token re-asserts `active` and the session's row names the new generation (S2ii-R5). A probe
-  publishes until the receiver alone is expected, since an RTC sender freezes the sibling in with
-  its active election until its snapshot drops the presence that closed with the old socket. The
-  reopened sibling can send nothing, so the publication is the sender's continuation, a recipe the
-  lane starts on the sender's agent once the sibling's token reads `active` after its row names the
-  new generation, the same gate that starts the `subscription-successor` page; the publication then
-  reaches the receiver and not the reopened sibling.
 - `subscription-ordered-entry` (`ws`, `rtc`, `rtc-with-ws-fallback`): a late subscriber enters each
   producer's track at its first copy. Both producers publish `p1` and `p2` on a page-minted track keyed by the
   cell (no `seq`) that the receiver alone confirms; the receiver relays that both were confirmed, and only then
@@ -555,6 +547,17 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   `p4` reach the receiver and never the sibling, then grants it back; the sibling releases its first election,
   elects anew and receives `p5`, whose `ordering-position` event reads `omitted` with prior `2` per track, with
   no gap NACK and no repair dispatch.
+- `subscription-ordered-reconnect` (`ws`, `rtc`, `rtc-with-ws-fallback`): a reconnect reads as an omission. Both
+  producers publish `p1` and `p2` to the receiver and the sibling on their page-minted tracks; the sibling's product
+  socket closes; the producers probe until the receiver alone is expected and publish `p3` and `p4` to it. A closed
+  page hears no cue, so the sibling's reopen is its continuation: a recipe the lane starts on the role a
+  continuation names (`AlmConformanceContinuationDefinition.role`, here the sibling) once its gate holds, here the
+  receiver's cue that `p4` was confirmed. The continuation reopens the socket, waits for the token to read `active`
+  under the new connection generation, for its subscription row and for its own room presence under that
+  generation (the page restored it), waits a 2 s delta margin and cues `reentered`; the producers probe
+  readiness and publish `p5`, which the sibling receives with `ordering-position` `omitted` prior `2` per track and
+  without `p3` or `p4`. The sibling holds its election until both producers' `p5` loops end, and no producer
+  dispatches a repair or admits a gap NACK about the cell's tracks.
 
 `subscription-successor` runs in the `same-context` family over `ws` alone: the harness holds one RTC peer per
 session, so over `rtc` and `rtc-with-ws-fallback` its successor page would wait for RTC readiness while the owner page
@@ -597,13 +600,23 @@ reliability. No hosted manifest carries them (D505).
   meshParamK: 2 }` to the room's topology config through `http.request`, so the three pages form a path, and the
   sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
   `subscribe` and an election and recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen
-  to the receiver; the sender publishes until the receiver hears it. Recipient-b admits the frame over RTC and
-  delivers nothing whether the path puts it in the middle, where it forwards the frame, or at a leaf. Each page
-  records its overlay next hops in a `health` read, which names the layout the run drew; the cell asserts neither
-  which agent relays nor the hop count, and the relay fixture
-  (`packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`) proves a publisher-only relay on every run. The
+  to the receiver; the sender publishes until the receiver hears it. Recipient-b delivers nothing whether the path
+  puts it in the middle, where it forwards the frame, or at a leaf, where the frozen audience routes it no copy, so
+  it asserts the publication's absence and no admission. Each page records its overlay next hops in a `health`
+  read, which names the layout the run drew; the cell asserts neither which agent relays nor the hop count, and the
+  relay fixture (`packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`) proves a publisher-only relay's
+  admission on every run. The
   receiver deletes the topology config once every page recorded its hops, since the room's three-agent cells
   share it.
+- `granted-rtc-ordered-relay` (three-agent, `rtc`, after `granted-rtc-relay-only` on the same path config): the
+  sender publishes a receipted (`all-logical-recipients`, at-least-once) track it mints (`orderingKey`, no
+  `seq`): `p1`, then `p2` held at the transport, then `p3`, and releases `p2` only after its repair dispatch
+  commits. The receiver receives `p1`–`p3`, its `ordering-position` for `p1` reads `entered` with prior `0`, and no
+  `omitted` event appears. Recipient-b, a publish-only peer, asserts the publications' absence and records its next
+  hops; a frame frozen to the receiver reaches it only when the path puts it in the middle, so it asserts no
+  admission. The drawn layout is recorded, and when recipient-b is the middle its re-originated gap NACK is in the
+  run's evidence, reported and not asserted; the relay fixture
+  (`packages/tests/shared/multicast/rtc-relay-gap-repair.test.ts`) is the blocking proof of relay re-origination.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.
@@ -1493,7 +1506,7 @@ A browser agent's `stats` result also carries its page's session ledger under
 `stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
 own: { admissions, bytes }, inbound: { admissions, bytes },
 limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
-repliesHeld, replyWaitsOpen, publication, orderingTracks, deliveredMarkers }`. All but the last two are read at the
+repliesHeld, replyWaitsOpen, publication, ordering, orderingTracks, deliveredMarkers }`. All but the last two are read at the
 command from `rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
 two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
@@ -1506,6 +1519,9 @@ connect, one per value the stage settled that way, with `admitted` the values it
 and `deferred` the values each opportunity left for a later one, summed over the opportunities. A connect that
 staged no live value yet reports zeros with its limits. An `assert` reads it as
 `latestStats.rallar.alm.publication.counters.refused`.
+`ordering` is `readUsage().ordering`, required: `{ entered, omitted, witnessed, beforeEntry }`, the
+`ordering-position` events the connect's inbound admissions stated on either carrier, cumulative over the
+connect and counted per event, not per distinct copy.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

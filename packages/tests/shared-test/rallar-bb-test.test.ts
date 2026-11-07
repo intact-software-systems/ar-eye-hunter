@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -108,7 +109,8 @@ describe('runtime construction', () => {
             replyWaitsOpen: 0,
             limits: AL_VOLATILE_SESSION_LIMITS,
             overloaded: false,
-            publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
+            publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
+            ordering: createALInboundOrderingCounters()
         };
         const initialCongestion = { dropped: 2, deferred: 3, handedOver: 4, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 };
         const input = {

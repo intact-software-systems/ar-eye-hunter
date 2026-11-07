@@ -448,7 +448,12 @@ describe('WS client receipt admission edges', () => {
         });
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
-        const before = await fixture.outboundStores.admissionStore.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1' });
+        const before = await fixture.outboundStores.admissionStore.readReceiptAdmission({
+            originPeerId: 'self',
+            msgId: 'room-message-1',
+            phase: 'complete',
+            expectedRecipientPeerIds: []
+        });
         vi.setSystemTime(1_000_100);
         const control = receiptMessage('complete', confirmed);
         vi.setSystemTime(1_000_150);
@@ -537,7 +542,7 @@ describe('WS client receipt admission edges', () => {
         const fixture = await createReceiptTrackingFixture();
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());
         const store = fixture.outboundStores.admissionStore;
-        const before = await store.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1' });
+        const before = await store.readReceiptAdmission({ originPeerId: 'self', msgId: 'room-message-1', phase: 'complete', expectedRecipientPeerIds: [] });
         const commitBundle = store.commitBundle.bind(store);
         const commit = vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
             const concurrent = roomMessage();

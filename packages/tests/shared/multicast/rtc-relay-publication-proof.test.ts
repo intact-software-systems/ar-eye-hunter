@@ -7,17 +7,11 @@ import { newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
-import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
-import {
-    createAvailablePublicationCryptoFixture,
-    UNAVAILABLE_PUBLICATION_CRYPTO,
-    type AvailablePublicationCrypto
-} from '../signature/publication-crypto-fixtures.ts';
+import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginOverlay,
@@ -26,21 +20,23 @@ import {
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import {
-    createPublicationRoomSnapshot,
     PUBLICATION_TOPIC_ID,
     PUBLISH_AND_SUBSCRIBE,
     PUBLISH_ONLY,
     SUBSCRIBE_ONLY
 } from './rtc-publication-proof-fixtures.ts';
+import {
+    createOriginRelayChain,
+    GRANTED_TYPE_ID,
+    publishOrderedFromOrigin,
+    toGrantsSnapshot,
+    type OriginRelayChain
+} from './rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 import { createRtcTopicSubscriptionsFixture, NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
-/** The origin `a` reaches the receiver `c` only through the relay `r`. */
-interface RelayChain {
-    readonly keys: Readonly<Record<'a' | 'r' | 'c', AvailablePublicationCrypto>>;
-    readonly snapshot: GroupSnapshot;
-    readonly origin: RtcOriginOverlayFixture;
-}
+/** The origin's publish grant is revoked: it may still subscribe. */
+const PUBLISH_REVOKED = { a: SUBSCRIBE_ONLY };
 
 interface RelayHopInput {
     readonly selfPeerId: 'r' | 'c';
@@ -62,8 +58,6 @@ const GRANTS_WITH_UNSUBSCRIBED_RELAY = { a: PUBLISH_AND_SUBSCRIBE, c: SUBSCRIBE_
 /** The relay is a frozen recipient too, so its receipt obligation lets it ask the origin for a repair. */
 const GRANTS_WITH_SUBSCRIBED_RELAY = { ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY } as const;
 
-const GRANTED_TYPE_ID = 'room.granted-feed.v1';
-
 const MEMBERS_TYPE_ID = 'room.chat.v1';
 
 /** The accepted layout of the leaf origin: `a` with `r` and `c` as its leaves. */
@@ -84,7 +78,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('forwards at a relay without subscribe, delivering nothing there, and the copy verifies at the next hop', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const receiver = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1');
@@ -101,11 +95,11 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('forwards a recorded track at a pure relay 300 sequences past anything it saw, observing nothing of it', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r' });
         const receiver = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
-        const first = await publishOrderedFromOrigin(chain, 1);
-        const far = await publishOrderedFromOrigin(chain, 301);
+        const first = await publishOrderedFromOrigin({ origin: chain.origin, seq: 1 });
+        const far = await publishOrderedFromOrigin({ origin: chain.origin, seq: 301 });
 
         await relay.receive(first, 'a');
         await relay.receive(far, 'a');
@@ -121,7 +115,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('only forwards at a publisher-only relay, and delivers at a subscribed one only while its token is active', async () => {
-        const chain = await createRelayChain({ a: PUBLISH_AND_SUBSCRIBE, r: PUBLISH_ONLY, c: SUBSCRIBE_ONLY });
+        const chain = await createOriginRelayChain({ a: PUBLISH_AND_SUBSCRIBE, r: PUBLISH_ONLY, c: SUBSCRIBE_ONLY });
         const publisherOnly = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const pending = createRelayHop(chain, { selfPeerId: 'c', subscribed: false });
         const active = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
@@ -136,7 +130,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('drops a frame whose senderId is forged to another member at the first relay, never forwarding it', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1');
 
@@ -151,7 +145,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
         ['a unicast', () => ({ mode: 'unicast', toPeerId: 'r' })],
         ['a world broadcast', () => ({ mode: 'broadcast', scope: 'world' })]
     ])('drops %s naming no room on a granted app topic as unbound, never delivering or forwarding it', async (_name, toTargets) => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
+        const chain = await createOriginRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true, grantedTopicId: APP_TOPIC_ID });
         const forged = newALUnicastMessage(
             'a',
@@ -169,7 +163,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('drops a frame without a proof at the first hop', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const { proof: _proof, ...unsigned } = await publishFromOrigin(chain, 'feed-1');
 
@@ -180,11 +174,11 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('drops a frame its publisher signed before a revoke the relay has since observed', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1');
 
-        relay.acceptSnapshot(toRevokedSnapshot(chain));
+        relay.acceptSnapshot(toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         await relay.receive(signed, 'a');
 
         expect(await relay.readSent('c')).toEqual([]);
@@ -192,7 +186,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('drops every granted frame at a keyless relay: it verifies none, so it neither delivers nor forwards', async () => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
+        const chain = await createOriginRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, { selfPeerId: 'r', crypto: UNAVAILABLE_PUBLICATION_CRYPTO, subscribed: true });
 
         await relay.receive(await publishFromOrigin(chain, 'feed-1'), 'a');
@@ -203,7 +197,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('re-sends a retried copy whose signing input is byte-identical and which verifies at the next hop', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const receiver = createRelayHop(chain, { selfPeerId: 'c', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1');
@@ -225,7 +219,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('keeps the signed expiry of a frame whose receiver computes an earlier deadline, so it still verifies and delivers', async () => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
+        const chain = await createOriginRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         // The receiver cannot honour the origin's `expires-at`: it falls back to `fresh-until` over the unsigned audit time.
         const relay = createRelayHop(chain, {
             selfPeerId: 'r',
@@ -247,7 +241,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('delivers a members-topic frame without a proof as before: only granted topics are judged by proof', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: false });
         const members = createMembersTransportCopy();
 
@@ -258,7 +252,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('drops a members-topic frame carrying a proof at the first hop, unauthorized: it never forwards or answers it', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: false });
         const signed = await publishFromOrigin(chain, 'feed-1');
 
@@ -269,7 +263,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('keeps a snapshot readable for its cache TTL: delivered a second before it lapses, dropped no-authority a second after', async () => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
+        const chain = await createOriginRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, {
             selfPeerId: 'r',
             subscribed: true,
@@ -288,10 +282,10 @@ describe('a granted RTC publication at its relays and receivers', () => {
     it.each(['replan', 'dequeue'] as const)(
         'plans no re-send at %s of a frame its origin signed before its publish was revoked: a drop no-publish-grant',
         async (stage) => {
-            const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+            const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
             const admitted = await admitAtOrigin(chain, 'feed-1', 'none');
 
-            chain.origin.groups.accept('room', toRevokedSnapshot(chain));
+            chain.origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
             // The stage planner is the manager's own; element access reaches it without widening its type.
             const plan = chain.origin.manager['planOutgoingMessage'](admitted.message, stage);
 
@@ -300,7 +294,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     );
 
     it('leaves a stored signed frame whose origin holds no room snapshot to the room-authority planning, never refusing it', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
         const volatile = await admitAt(origin, 'feed-volatile', 'none');
         const durable = await admitAt(origin, 'feed-durable', 'receiver', 'durable');
@@ -315,7 +309,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('keeps the receipt of a signed frame whose origin lost its room snapshot, stating no refusal at its retry', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
         const admitted = await admitAt(origin, 'feed-1', 'receiver');
 
@@ -328,12 +322,12 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('ends a held signed frame rejected no-publish-grant at its dequeue after its origin\'s publish was revoked, sending nothing', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
         origin.overlays.delete('room');
         const held = await admitAt(origin, 'feed-1', 'receiver', 'durable');
 
-        origin.groups.accept('room', toRevokedSnapshot(chain));
+        origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         origin.overlays.accept('room', createOriginOverlay(['r', 'c'], LEAF_LAYOUT));
         await vi.advanceTimersByTimeAsync(500);
 
@@ -344,12 +338,12 @@ describe('a granted RTC publication at its relays and receivers', () => {
         ]);
     });
 
-    it.each<[string, (chain: RelayChain) => GroupSnapshot, 'committed' | 'not-handled', number]>([
+    it.each<[string, (chain: OriginRelayChain) => GroupSnapshot, 'committed' | 'not-handled', number]>([
         ['while both still hold their grants', (chain) => chain.snapshot, 'committed', 1],
-        ['after the origin\'s publish was revoked', toRevokedSnapshot, 'not-handled', 0],
+        ['after the origin\'s publish was revoked', (chain) => toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED), 'not-handled', 0],
         ['after the requester\'s subscribe was revoked', (chain) => toSubscribeRevokedSnapshot(chain, 'r'), 'not-handled', 0]
     ])('answers a frozen recipient\'s repair control for a signed frame %s with the outcome and copies named', async (_name, toSnapshot, kind, copies) => {
-        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const admitted = await admitAtOrigin(chain, 'feed-1', 'receiver');
         const sentBefore = chain.origin.channels.r!.sent.length;
 
@@ -364,7 +358,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('retries an unconfirmed receipt only toward the frozen recipients the origin\'s snapshot still lets subscribe', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
         const admitted = await admitAt(origin, 'feed-1', 'receiver');
 
@@ -376,11 +370,11 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('ends the receipt of a revoked origin\'s signed frame rejected no-publish-grant at its next retry, re-sending nothing', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const origin = createLeafOrigin(chain);
         const admitted = await admitAt(origin, 'feed-1', 'receiver');
 
-        origin.groups.accept('room', toRevokedSnapshot(chain));
+        origin.groups.accept('room', toGrantsSnapshot(chain.snapshot, 4, PUBLISH_REVOKED));
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
 
         expect([origin.channels.r!.sent.length, origin.channels.c!.sent.length]).toEqual([1, 1]);
@@ -393,7 +387,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('refuses an expired stored copy of a signed frame at the native send: no submission after the signed deadline', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_SUBSCRIBED_RELAY);
         const admitted = await admitAtOrigin(chain, 'feed-1', 'none');
         const copy = chain.origin.channels.r!.sent[0]!;
         const expiresAtMs = admitted.message.constraints!.expiresAtMs!;
@@ -411,7 +405,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('refuses a repair control that arrives on another peer\'s channel than its sender\'s: unauthorized, nothing served', async () => {
-        const chain = await createRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
+        const chain = await createOriginRelayChain(GRANTS_WITH_UNSUBSCRIBED_RELAY);
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1', 'receiver');
         await relay.receive(signed, 'a');
@@ -424,7 +418,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 
     it('emits no inbound diagnostic that carries the payload resource', async () => {
-        const chain = await createRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
+        const chain = await createOriginRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true });
         const signed = await publishFromOrigin(chain, 'feed-1');
 
@@ -436,32 +430,7 @@ describe('a granted RTC publication at its relays and receivers', () => {
     });
 });
 
-async function createRelayChain(grants: Readonly<Record<string, GroupPublicationTopicPermissions>>): Promise<RelayChain> {
-    const keys = {
-        a: await createAvailablePublicationCryptoFixture(),
-        r: await createAvailablePublicationCryptoFixture(),
-        c: await createAvailablePublicationCryptoFixture()
-    };
-    const snapshot = createPublicationRoomSnapshot({
-        sessionIds: ['a', 'r', 'c'],
-        snapshotVersion: 3,
-        keys: {
-            a: toGroupPresencePublicationKey(keys.a)!,
-            r: toGroupPresencePublicationKey(keys.r)!,
-            c: toGroupPresencePublicationKey(keys.c)!
-        },
-        grants
-    });
-    const origin = createRtcOriginOverlayFixture({
-        snapshot,
-        nextHopPeerIds: ['r'],
-        grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
-        publicationCrypto: keys.a
-    });
-    return { keys, snapshot, origin };
-}
-
-function createRelayHop(chain: RelayChain, input: RelayHopInput): RtcRelayOverlayFixture {
+function createRelayHop(chain: OriginRelayChain, input: RelayHopInput): RtcRelayOverlayFixture {
     return createRtcRelayOverlayFixture({
         selfPeerId: input.selfPeerId,
         snapshot: input.snapshot ?? chain.snapshot,
@@ -477,38 +446,19 @@ function createRelayHop(chain: RelayChain, input: RelayHopInput): RtcRelayOverla
 }
 
 /** The transport copy the signing origin sends `r` for one granted room multicast. */
-async function publishFromOrigin(chain: RelayChain, resourceId: string, ack: 'none' | 'receiver' = 'none'): Promise<ALMessage> {
+async function publishFromOrigin(chain: OriginRelayChain, resourceId: string, ack: 'none' | 'receiver' = 'none'): Promise<ALMessage> {
     const sentBefore = chain.origin.channels.r!.sent.length;
     await admitAtOrigin(chain, resourceId, ack);
     return chain.origin.channels.r!.sent[sentBefore]!;
 }
 
-/** The transport copy the signing origin sends `r` for one granted room multicast on its recorded track, at `seq`. */
-async function publishOrderedFromOrigin(chain: RelayChain, seq: number): Promise<ALMessage> {
-    const sentBefore = chain.origin.channels.r!.sent.length;
-    const admitted = await chain.origin.manager.enqueueLegIfAbsent(
-        newALMulticastMessage(
-            'a',
-            { topicId: PUBLICATION_TOPIC_ID, resourceId: `feed-${seq}`, contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            GRANTED_TYPE_ID,
-            { text: `feed ${seq}` },
-            { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: `trace-feed-${seq}`, orderingKey: 'feed-track', seq }
-        ),
-        'hold'
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
-    return chain.origin.channels.r!.sent[sentBefore]!;
-}
-
 /** The signing origin's admission of one granted room multicast, its stored signed message included. */
-async function admitAtOrigin(chain: RelayChain, resourceId: string, ack: 'none' | 'receiver'): Promise<ALOutboundEnqueueResult> {
+async function admitAtOrigin(chain: OriginRelayChain, resourceId: string, ack: 'none' | 'receiver'): Promise<ALOutboundEnqueueResult> {
     return await admitAt(chain.origin, resourceId, ack);
 }
 
 /** The chain's origin `a` with both `r` and `c` as its direct next hops, each a leaf of its accepted layout. */
-function createLeafOrigin(chain: RelayChain): RtcOriginOverlayFixture {
+function createLeafOrigin(chain: OriginRelayChain): RtcOriginOverlayFixture {
     return createRtcOriginOverlayFixture({
         snapshot: chain.snapshot,
         nextHopPeerIds: ['r', 'c'],
@@ -576,19 +526,8 @@ function toTransportCopy(message: ALMessage): ALMessage {
     };
 }
 
-/** The origin's publish grant is revoked in the next snapshot: it may still subscribe. */
-function toRevokedSnapshot(chain: RelayChain): GroupSnapshot {
-    return {
-        ...chain.snapshot,
-        group: { ...chain.snapshot.group, snapshotVersion: 4 },
-        publicationGrants: chain.snapshot.publicationGrants.map((grant) =>
-            grant.principalId === 'a' ? { ...grant, topics: { [PUBLICATION_TOPIC_ID]: SUBSCRIBE_ONLY } } : grant
-        )
-    };
-}
-
 /** The relay's next snapshot no longer lets `principalId` subscribe: it may still publish. */
-function toSubscribeRevokedSnapshot(chain: RelayChain, principalId: string): GroupSnapshot {
+function toSubscribeRevokedSnapshot(chain: OriginRelayChain, principalId: string): GroupSnapshot {
     return {
         ...chain.snapshot,
         group: { ...chain.snapshot.group, snapshotVersion: 4 },

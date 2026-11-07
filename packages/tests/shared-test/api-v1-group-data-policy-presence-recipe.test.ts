@@ -309,7 +309,16 @@ function readPresenceRecipeInteractions(boundary: PresenceRecipeBoundary): Execu
     const steps = recipe.steps ?? [];
     const start = steps.findIndex((step) => step.name === boundary.start);
     const end = steps.findIndex((step) => step.name === boundary.end);
-    const setupNames = ['createAliceWsTicket', 'deriveAliceWsUrl', 'openAliceWs', 'createBobWsTicket', 'deriveBobWsUrl', 'openBobWs'];
+    const setupNames = [
+        'createAliceWsTicket',
+        'deriveAliceWsUrl',
+        'openAliceWs',
+        'createBobWsTicket',
+        'deriveBobWsUrl',
+        'openBobWs',
+        'captureAliceSocketGeneration',
+        'captureBobSocketGeneration'
+    ];
     const outputs = {
         aliceClientId: 'alice',
         aliceSessionId: 'alice-session',
@@ -318,7 +327,9 @@ function readPresenceRecipeInteractions(boundary: PresenceRecipeBoundary): Execu
         bobClientId: 'bob',
         bobSessionId: 'bob-session',
         bobAuthHeader: 'Bearer bob-test',
-        bobWsUrl: 'ws://presence.test/bob'
+        bobWsUrl: 'ws://presence.test/bob',
+        aliceSocketGenerationId: 'alice-ws-generation',
+        bobSocketGenerationId: 'bob-ws-generation'
     };
     if (start < 0 || end < start) {
         throw new Error(`Missing policy recipe segment ${boundary.start} -> ${boundary.end}`);

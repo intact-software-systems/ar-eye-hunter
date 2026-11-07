@@ -308,6 +308,7 @@ describe('a browser room send that asks its outbound for a sequence', () => {
             },
             {
                 kind: 'set-sent-position',
+                namespace: 'pair',
                 trackKey: 'chat:session-a:0',
                 recipientPeerId: 'b',
                 seq: 3,
@@ -331,19 +332,50 @@ describe('the room-wide sent position a mint moves', () => {
         mintsSequence: true
     };
 
+    const observed = { unreceiptedSeq: 2, pendingReceiptSeqs: [4] };
+    const receipting = {
+        enabled: true,
+        timeoutMs: 1_000,
+        maxAttempts: 0,
+        expectedPeerIds: ['server'],
+        nextHopPeerIds: ['server'],
+        mode: 'receiver'
+    } as const;
+
     it.each([
-        { label: 'a shared head minted by a plan that records no recipient', sharesHead: true, records: false, moves: true },
-        { label: 'a shared head minted by a plan that records its recipients', sharesHead: true, records: true, moves: false },
-        { label: 'a pair\'s own head', sharesHead: false, records: false, moves: false }
-    ])('is moved for $label: $moves', ({ sharesHead, records, moves }) => {
+        {
+            label: 'a send recording no recipient that asks for no receipt',
+            sharesHead: true,
+            records: false,
+            ackTracking: undefined,
+            moved: { observed, value: { unreceiptedSeq: 5, pendingReceiptSeqs: [] } }
+        },
+        {
+            label: 'a send recording no recipient whose receipt will name them',
+            sharesHead: true,
+            records: false,
+            ackTracking: receipting,
+            moved: { observed, value: { unreceiptedSeq: 2, pendingReceiptSeqs: [4, 5] } }
+        },
+        {
+            label: 'a send recording no recipient whose receipt only counts hops',
+            sharesHead: true,
+            records: false,
+            ackTracking: { ...receipting, mode: 'hop' as const },
+            moved: { observed, value: { unreceiptedSeq: 5, pendingReceiptSeqs: [] } }
+        },
+        { label: 'a send recording its recipients', sharesHead: true, records: true, ackTracking: undefined, moved: undefined },
+        { label: 'a pair\'s own head', sharesHead: false, records: false, ackTracking: undefined, moved: undefined }
+    ])('is moved for $label', ({ sharesHead, records, ackTracking, moved }) => {
         const minted = computeALOutboundSequenceMint({
-            plan: records ? { ...plan, recordsSentPositions: ['b'] } : plan,
+            plan: { ...plan, ackTracking, ...(records ? { recordsSentPositions: ['b'] } : {}) },
             trackKey: 'chat',
             head: { seq: 4 },
+            roomFloor: observed,
             sharesHead
         });
 
-        expect(minted.orderingHead).toEqual({ trackKey: 'chat', seq: 5, observedSeq: 4, movesRoomSentPosition: moves });
+        expect(minted.orderingHead).toEqual({ trackKey: 'chat', seq: 5, observedSeq: 4, roomSentFloor: moved });
     });
 });
 

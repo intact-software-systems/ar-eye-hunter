@@ -889,8 +889,13 @@ the total and the own pool both at their bounds. It throws while the session is 
 connected, before `connect` and again after `disconnect`, so a poll guards it
 with `rallar.isConnected()`. The report is a `RallarMessagesUsage`: beside the
 ledger it states `repliesHeld`, the retained deliveries that hold a matched reply, and
-`replyWaitsOpen`, the `awaitReply` waits in flight (see Replies below), and
-`publication`, the live channels' staging (see the `live` channel below).
+`replyWaitsOpen`, the `awaitReply` waits in flight (see Replies below),
+`publication`, the live channels' staging (see the `live` channel below), and
+`ordering` (`ALInboundOrderingCounters`: `entered`, `omitted`, `witnessed`,
+`beforeEntry`), the `ordering-position` events the connect's inbound admissions
+stated on either carrier, cumulative over the connect (see Ordering below). It
+counts events, not distinct copies: a repeated `before-entry` refusal or a
+duplicate `witnessed` counts again.
 
 ```ts
 if (rallar.isConnected()) {
@@ -1142,7 +1147,19 @@ tokens per room and topic: the first token subscribes and the last one
 unsubscribes, the held subscriptions renew on the owner's own timer at the 20 s
 session heartbeat cadence and
 re-subscribe under the new connection generation whenever the socket reopens, a
-tab whose socket was replaced sends nothing, and session end releases them.
+tab whose socket was replaced sends nothing, and session end releases them. On
+the same reopen the page restores the session's presence in its current room,
+the one it explicitly selected, under a fresh presence generation and the new
+connection generation, so the reopened session is in the audience again.
+Presence commits before its summary, so the restore adopts the room only once a
+snapshot read floored at the write reply's revision lists the written
+generation, as entering a room does; a failure that may pass is retried on the
+same socket with a bounded backoff, and a room change waits for the restore's
+write. A room the page is still a member of but has not selected keeps the
+closed presence until the page enters it again. While the session holds a live
+socket, a presence connect that names a connection generation none of its live
+sockets holds is refused `403 stale-generation`, which ends that socket's
+restore; the next reopen starts a new one.
 REST errors become statuses and never throw.
 
 ```ts
@@ -1908,12 +1925,13 @@ carries only that recipient's entry. No WS copy carries a `proof`: a server copy
 is the server's own word, and a copy of a row no dequeue recorded (a live-only
 hand-over) carries no record either. Under `rtc-with-ws-fallback` the RTC
 origin's record also counts the sequences its session's WS leg sent the room,
-whose audience only the server knows: it lists no recipient behind the last of
-them, so a recipient waiting for that WS copy asks a gap the copy closes rather
-than reading an omission. A recipient the WS server left out of that send -- a
-narrowed audience, such as a revoked or late subscriber, or a stale audience --
-then reads a gap the RTC origin cannot serve, and its track stalls until
-resync or the track expires, instead of a silent loss. The server's record of a
+whose audience the server decides: the WS leg's `admitted` receipt names the
+recipients the server routed a send to, and the session records each at that
+sequence, while a sequence no receipt has named yet -- a send that asked no
+logical receipt, or one whose `admitted` receipt has not landed -- counts for
+every recipient. A recipient waiting for that WS copy therefore asks a gap the
+copy closes rather than reading an omission, and one the receipt left out reads
+its own prior. The server's record of a
 WS copy counts only the server's own copies, so the two may differ; a prior
 behind the recipient's position says nothing it does not know. A recipient
 reads its prior from the record, or `seq - 1` when the record lists it not:
@@ -1952,6 +1970,15 @@ sequence order. The
 inbound diagnostics state every `entered`, `omitted`, `witnessed` and
 `before-entry` as an `ordering-position` event.
 
+A reconnect is an exit and a re-entry: positions are kept per track and
+session, not per connection generation, and the reopened socket restores the
+session's presence in its current room (Subscriptions above), so a session that
+missed sequences while its socket was down reads its next copy as `omitted`,
+never as loss. A recipient behind an RTC relay reports a gap to the relay, which
+re-originates the NACK toward the origin for that recipient; the origin applies
+the entry rule to the recipient and sends the repair copy through the relay,
+which forwards it down the tree.
+
 **Limits:** a row a server producer writes straight to the outbox (Relic's round
 transitions, state-sync) records no positions, so its copies carry no record and
 its receivers keep the rule from their own position; a live-only send records
@@ -1964,18 +1991,21 @@ over plain `ws` it is dropped `stale` with no NACK and stays unconfirmed,
 repaired by nothing; under `rtc-with-ws-fallback` a server copy whose record
 meets the receiver's position can be read as an omission while the RTC frame for
 an earlier sequence is in flight, since the server's record does not count the
-RTC origin's sends, and that frame then arrives stale; under the same mode, when
-the WS leg mints a send the RTC origin reads the browser's room-wide sent
-position as a floor for every recipient's prior, so a WS frame in flight is
-never read as an omission, but a recipient the WS server left out of that send
-(a narrowed audience: a revoked or late subscriber, or a stale audience) reads a
-gap the RTC origin cannot serve, and its track stalls until resync or the track
-expires, instead of a silent loss, since the browser cannot know the server's
-audience (S4-ii closes it, by the server's receipt returning the admitted
-audience or by per-recipient rows when the sender states `recipientPeerIds`);
-the WS dequeue wait checks the immediate predecessor only, and a predecessor
-that ends without recording holds its track's later rows until its own
-deadline.
+RTC origin's sends, and that frame then arrives stale; under the same mode a
+recipient the WS server left out of a WS-leg send reads a gap the RTC origin
+cannot serve, and its track stalls until resync or the track expires, instead
+of a silent loss, in three cases the receipt does not cover: the server's
+dequeue dropped the session after the route captured the audience the receipt
+names, the send asked no logical receipt (its sequence stays a floor for every
+recipient until the track's row expires), or the `admitted` receipt arrived
+after the `complete` one; a relay re-originates a gap NACK only for a receipted
+send, so an `ack: 'none'` ordered track behind a relay stalls until resync or
+expiry, and two recipients reporting one gap through one relay are two repair
+requests at the origin; the WS dequeue wait checks the immediate predecessor
+only, and a predecessor that ends without recording holds its track's later
+rows until its own deadline. Positions for producer rows, a cross-instance
+record and a server record that counts the RTC origin's sends are later
+outcomes.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the

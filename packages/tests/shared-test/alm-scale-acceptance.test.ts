@@ -10,6 +10,7 @@ import { decodeBarrierArrival, toBarrierResolvedEvent } from '@shared-test/ralla
 
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 
@@ -74,7 +75,8 @@ const HEALTHY: RallarBlackBoxTestAlmUsage = {
     deliveredMarkers: 85,
     repliesHeld: 0,
     replyWaitsOpen: 0,
-    publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS)
+    publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
+    ordering: createALInboundOrderingCounters()
 };
 const EMPTY: RallarBlackBoxTestAlmUsage = {
     ...HEALTHY,

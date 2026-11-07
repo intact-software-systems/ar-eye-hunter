@@ -82,24 +82,23 @@ export async function createAgentRun(input: CreateAgentRunInput): Promise<AgentR
     }
 }
 
-/** Each role's recipe outcome, and the outcome of the sender's continuation when the scenario holds one back. */
+/** Each role's recipe outcome, and the outcome of a role's continuation when the scenario holds one back. */
 export interface AgentRunOutcomes {
     readonly roles: ReadonlyMap<AlmConformanceRole, RecipeRunOutcome>;
     readonly continuation: RecipeRunOutcome | undefined;
 }
 
 /**
- * A gate's command may sit at the end of its role's recipe: the gate waits as long as that recipe may run. In the S3-ii
- * lanes the reconnect sibling, whose step gates the sender's continuation, ran 11.8 s over `ws` and 12.3–13.6 s over
- * `rtc` and `rtc-with-ws-fallback`, and the longest four-role recipe 15.4 s, so the budget keeps over ten times that.
+ * A gate's command may sit at the end of its role's recipe: the gate waits as long as that recipe may run. In the S4-ii
+ * lanes the longest four-role recipe ran 15.7 s, so the budget keeps over ten times that.
  */
 const CONTINUATION_GATE_TIMEOUT_MS = 180_000;
 
 /**
  * The receiver starts first: its prologue creates the run's group and owns it, so a role that leaves the group is
  * never its only owner, whose leave is refused, and the owner's grants name a room that exists. Every other recipient
- * starts once the one before it connected, and the sender last. A continuation starts on the sender's agent after the
- * sender's first recipe, once its gate passed.
+ * starts once the one before it connected, and the sender last. A continuation starts on its role's agent after that
+ * role's first recipe, once its gate passed.
  */
 export async function runRecipesOnAgents(
     run: AgentRecipeRun,
@@ -133,22 +132,22 @@ function requireSettled<T>(settled: PromiseSettledResult<T>): T {
 }
 
 /**
- * The continuation is the sender's later steps, so it starts once the sender's first recipe ended, whatever its
- * outcome, and the gate passed: a page runs its recipes side by side, and a gate that passes early must not let the
- * later steps overtake the first.
+ * The continuation is its role's later steps, so it starts once that role's first recipe ended, whatever its outcome,
+ * and the gate passed: a page runs its recipes side by side, and a gate that passes early must not let the later steps
+ * overtake the first.
  */
 async function startContinuation(
     run: AgentRecipeRun,
     continuation: AlmConformanceContinuation,
     started: ReadonlyMap<AlmConformanceRole, StartedRecipeRun>
 ): Promise<StartedRecipeRun> {
-    await requireRoleValue(started, 'sender').readOutcome();
+    await requireRoleValue(started, continuation.role).readOutcome();
     await waitForRecipeGate(run, {
         commandId: continuation.gate.commandId,
         gatingRun: requireRoleValue(started, continuation.gate.role),
         timeoutMs: CONTINUATION_GATE_TIMEOUT_MS
     });
-    return await startRecipeRun(run, requireRoleValue(run.agents, 'sender'), continuation.recipe);
+    return await startRecipeRun(run, requireRoleValue(run.agents, continuation.role), continuation.recipe);
 }
 
 async function readRoleOutcomes(

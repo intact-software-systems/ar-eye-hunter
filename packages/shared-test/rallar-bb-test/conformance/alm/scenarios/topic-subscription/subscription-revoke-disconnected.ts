@@ -41,7 +41,6 @@ const RECEIPT_SETTLE_MS = 2_000;
  * neither, and neither receipt confirms the sibling. A clean close removes the sibling's live generation at once, so
  * no dispatch is held for it: the held-dispatch revocation is proven server-side by
  * `apps/api-v1/test/services/ws-room-granted-delivery.test.ts`.
- * A reopened socket's session holds no room presence, so the sibling sends nothing after it drops.
  */
 export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-revoke-disconnected',

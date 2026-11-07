@@ -159,7 +159,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
                 isALOutboundOwnHopPeer(read.plan, this.dependencies.hopPeerIds, control.payload.fromPeerId);
         }
         const planned = await this.dependencies.planRepairMessage(msg, {
-            ...toALOutboundControlRepairHint(control.payload),
+            ...toALOutboundControlRepairHint(control),
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
             admittedConnectionGenerationIds: read.plan?.admittedConnectionGenerationIds,

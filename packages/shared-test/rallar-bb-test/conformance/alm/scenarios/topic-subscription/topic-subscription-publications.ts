@@ -1,19 +1,18 @@
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import {
-    ALM_CONFORMANCE_GRANTED_TOPIC_ID,
     ALM_CONFORMANCE_TOPIC_ID,
     toCommandId,
     toConnectionName,
     toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
+import { toGrantedSend } from './to-granted-send.ts';
 import {
     SUBSCRIPTION_ABSENCE_MS,
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
@@ -249,28 +248,6 @@ function toPayloadWait({ step, name, payload, absent }: PayloadWaitInput): Ralla
         match: { kind: 'message', connection: toConnectionName(step), payloadPath: 'data.payload', equals: payload },
         ...(absent ? { absent: true } : {}),
         timeoutMs: absent ? SUBSCRIPTION_ABSENCE_MS : SUBSCRIPTION_PHASE_MS
-    };
-}
-
-/** A minted track names its key and no `seq`: the page's outbound allocates the next sequence of its own track. */
-function toGrantedSend(
-    step: AlmConformanceStepInput,
-    payload: Readonly<Record<string, string>>,
-    orderingKey?: string
-): Omit<RallarBlackBoxTestMessagesSendCommand, 'commandId'> {
-    return {
-        kind: 'messages.send',
-        connection: toConnectionName(step),
-        carrier: step.input.carrier,
-        typeId: toScenarioTypeId(step),
-        topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID,
-        roomRef: toRoomRef(step.input.group),
-        payload,
-        reliability: 'at-least-once',
-        ack: 'all-logical-recipients',
-        ttlMs: NON_EXPIRING_TTL_MS,
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-        ...(orderingKey === undefined ? {} : { orderingKey })
     };
 }
 

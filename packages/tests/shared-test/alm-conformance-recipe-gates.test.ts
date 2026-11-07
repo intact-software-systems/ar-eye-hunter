@@ -11,17 +11,17 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 // A gate that names a step its role's recipe lacks would hold the continuation back until the lane's gate timeout.
 vi.mock(
-    '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-reconnect.ts',
+    '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-ordered-reconnect.ts',
     async (importOriginal) => {
         const original = await importOriginal<
-            typeof import('@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-reconnect.ts')
+            typeof import('@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/subscription-ordered-reconnect.ts')
         >();
-        const continuation = original.subscriptionReconnect.continuation!;
+        const continuation = original.subscriptionOrderedReconnect.continuation!;
         return {
             ...original,
-            subscriptionReconnect: {
-                ...original.subscriptionReconnect,
-                continuation: { ...continuation, gate: { role: 'sibling', commandName: 'assert-never-run' } }
+            subscriptionOrderedReconnect: {
+                ...original.subscriptionOrderedReconnect,
+                continuation: { ...continuation, gate: { role: 'receiver', commandName: 'assert-never-run' } }
             }
         };
     }
@@ -30,8 +30,8 @@ vi.mock(
 describe('a scenario gate', () => {
     it('fails recipe creation, naming the command its role\'s recipe lacks', () => {
         expect(() => createAlmConformanceRecipes(toConformanceInput('ws'))).toThrow(
-            'alm-ws-subscription-reconnect-sibling names no alm-ws-subscription-reconnect-sibling-assert-never-run command ' +
-                'for its gate.'
+            'alm-ws-subscription-ordered-reconnect-receiver names no ' +
+                'alm-ws-subscription-ordered-reconnect-receiver-assert-never-run command for its gate.'
         );
     });
 });

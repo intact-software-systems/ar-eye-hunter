@@ -18,6 +18,7 @@ import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@share
 import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -25,10 +26,12 @@ import {
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { clearSession, writeSession } from '@shared/api/auth.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
+import { configureGroupStateSnapshotRepository, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
@@ -36,6 +39,8 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import '../../setup-browser-indexeddb.ts';
+import { createTestAuthSession } from '../../shared-server/rallar-system/group-state/group-state-test-runtime.ts';
+import { createBrowserTestStorage } from '../../shared-test/browser-test-storage.ts';
 import { captureOutboundWorkRunnable, peekOutboundWorkReadyAt } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
@@ -46,9 +51,19 @@ import {
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
+import {
+    createKeyedRoomSend,
+    decodeSentOrderingSeqs,
+    replayALOrderingObservation,
+    type KeyedRoomSendInput
+} from '../al-runtime/al-ordering-frame-replay-test-support.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { openRecoveryOwner } from '../websocket/ws-recovery-owner-fixture.ts';
 
 let nativeRuntime: NativeRtcRuntime;
+
+const RESTART_ORDERING_KEY = 'reload.track';
 
 beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -204,6 +219,64 @@ it.each(['different-origin', 'relay'] as const)('does not grant originating rete
     vi.setSystemTime(1_200);
     await fresh.drain();
     expect(fresh.native.sent).toEqual([]);
+});
+
+it('continues its minted sequence when a fresh owner reopens the same session, and the recipient reads no gap', async () => {
+    const sessionId = crypto.randomUUID();
+    const old = new RtcRecoveryOwner(sessionId);
+    await old.open();
+    for (const resourceId of ['one', 'two', 'three']) {
+        expect((await old.sendKeyed({ orderingKey: RESTART_ORDERING_KEY, resourceId })).verdict).toMatchObject({ kind: 'admitted' });
+    }
+    await old.drain();
+    const oldNative = old.native;
+    expect(decodeSentOrderingSeqs(oldNative.sent)).toEqual([1, 2, 3]);
+    await old.close();
+
+    const fresh = new RtcRecoveryOwner(sessionId);
+    await fresh.open();
+    // A stated sequence at or below the reopened head would reuse a sent position, so it is refused and moves nothing.
+    const stated = createKeyedRoomSend(sessionId, fresh.roomRef, { orderingKey: RESTART_ORDERING_KEY, resourceId: 'stated' });
+    expect((await fresh.manager.enqueueIfAbsent({ ...stated, ordering: { ...stated.ordering, seq: 2 } })).verdict)
+        .toMatchObject({ kind: 'refused', reason: 'unsupported' });
+    expect((await fresh.sendKeyed({ orderingKey: RESTART_ORDERING_KEY, resourceId: 'four' })).verdict).toMatchObject({ kind: 'admitted' });
+    await fresh.drain();
+    expect(decodeSentOrderingSeqs(fresh.native.sent)).toEqual([4]);
+
+    expect(replayALOrderingObservation([...oldNative.sent, ...fresh.native.sent], 'receiver')).toEqual({
+        statuses: ['entered', 'in-order', 'in-order', 'in-order'],
+        missingRanges: []
+    });
+    // The record lists only a recipient whose prior is not `seq - 1`, so an empty one names nobody below it.
+    expect(decodePersistedALMessage(String(fresh.native.sent[0])).ordering?.priorSeqByRecipient).toEqual({});
+});
+
+it('continues the shared session head on the WS owner after the RTC owner that minted it closes', async () => {
+    vi.stubGlobal('WebSocket', TestWebSocket);
+    vi.stubGlobal('localStorage', createBrowserTestStorage());
+    onTestFinished(() => {
+        clearSession();
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+    const sessionId = crypto.randomUUID();
+    const rtc = new RtcRecoveryOwner(sessionId);
+    await rtc.open();
+    for (const resourceId of ['one', 'two']) {
+        await rtc.sendKeyed({ orderingKey: RESTART_ORDERING_KEY, resourceId });
+    }
+    await rtc.drain();
+    expect(decodeSentOrderingSeqs(rtc.native.sent)).toEqual([1, 2]);
+    await rtc.close();
+
+    writeSession(createTestAuthSession(sessionId, sessionId));
+    configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+    setGroupStateSnapshot(createGroupSnapshotFixture({ ...rtc.roomRef, sessionIds: [sessionId] }));
+    const ws = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: createScriptedTransportFaultPort(), beforeOpenDelayMs: 0 });
+    const third = createKeyedRoomSend(sessionId, rtc.roomRef, { orderingKey: RESTART_ORDERING_KEY, resourceId: 'three' });
+    expect((await ws.service.enqueueOutboxIfAbsent(third)).verdict).toMatchObject({ kind: 'admitted' });
+    await ws.drain();
+    expect(decodeSentOrderingSeqs(ws.native.sent)).toEqual([3]);
 });
 
 interface RetainedRtcOriginal {
@@ -374,6 +447,11 @@ class RtcRecoveryOwner {
             ),
             delivery: { reliability: 'at-least-once', ack: 'none' }
         };
+    }
+
+    /** The track's next keyed room send: it states no `seq` and meets no hold, so the outbound mints and sends it. */
+    sendKeyed(input: KeyedRoomSendInput): Promise<ALOutboundEnqueueResult> {
+        return this.manager.enqueueIfAbsent(createKeyedRoomSend(this.sessionId, this.roomRef, input));
     }
 
     async close(): Promise<void> {

@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALNackPayload,
+    ALReceiptPayload,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessageRow } from '../../../al-contracts/al-message-persistence-validation.ts';
@@ -74,6 +75,10 @@ import {
 import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
+import type {
+    ALOutboundRoomSentFloorChange,
+    ALOutboundRoomSentFloorRow
+} from './sequencing/al-outbound-room-sent-floor.ts';
 
 export type { ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
@@ -191,10 +196,11 @@ export interface ALOutboundOrderingHead {
     readonly seq: number;
     readonly observedSeq: number | undefined;
     /**
-     * The session's carriers share the head and this admission records none of its recipients: the commit also moves
-     * the track's room-wide sent position to `seq`, so a carrier that records never states a recipient behind it.
+     * The session's carriers share the head and this admission records none of its recipients: the commit also adds
+     * `seq` to the track's room-wide sent position, so a carrier that records never states a recipient behind it
+     * until a receipt names who it reached. Undefined for an admission that moves no floor.
      */
-    readonly movesRoomSentPosition: boolean;
+    readonly roomSentFloor: ALOutboundRoomSentFloorChange | undefined;
 }
 
 /** The positions one admission read on its track: each planned recipient's prior sequence, `0` for none. */
@@ -202,6 +208,21 @@ export interface ALOutboundSentPositions {
     readonly trackKey: string;
     readonly seq: number;
     readonly priorSeqByRecipient: Readonly<Record<string, number>>;
+}
+
+/** What the origin reads for a receipt: the message and origin it names, and the audience the server routed. */
+export type ALOutboundReceiptAdmissionReadInput = Pick<
+    ALReceiptPayload,
+    'msgId' | 'originPeerId' | 'phase' | 'expectedRecipientPeerIds'
+>;
+
+/**
+ * The shared-head rows an `admitted` receipt answers: each recipient it names in the namespace the session's pairs
+ * share, as last sent on the receipted message's track, and that track's room-wide sent position.
+ */
+export interface ALOutboundReceiptTrackPositions {
+    readonly positions: ALOutboundSentPositions;
+    readonly roomFloor: ALOutboundRoomSentFloorRow | undefined;
 }
 
 export interface ALOutboundMessageReadDto<TPrepared> {
@@ -258,6 +279,11 @@ export interface ALOutboundRepairHint {
      */
     readonly trigger: ALOutboundRepairTrigger;
     readonly requestedByPeerId?: string;
+    /**
+     * The recipient a relay's gap NACK asks the repair for, which the responder admits the copy on while the copy
+     * goes to the requester; absent, the requester is the recipient.
+     */
+    readonly logicalRecipientPeerId?: string;
     readonly failedPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingRanges: readonly ALSeqRange[];
@@ -423,7 +449,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     readonly readPendingAck: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     /** The sent message, its receipt and its origin's version fence, read in one session. */
-    readonly readReceiptAdmission: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundReceiptAdmissionSurface>;
+    readonly readReceiptAdmission: (
+        receipt: ALOutboundReceiptAdmissionReadInput
+    ) => Promise<ALOutboundReceiptAdmissionSurface>;
 
     /**
      * Decodes one claimed work row of this scope, including the canonical message its payload
@@ -646,12 +674,18 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.readReceiptState(session, receipt));
     }
 
-    async readReceiptAdmission(receipt: ALOutboundPendingAckRef): Promise<ALOutboundReceiptAdmissionSurface> {
-        return await this.backend.readWithin(async (session) => ({
-            stored: await this.reads.readStoredMessage(session, receipt.msgId),
-            pending: await this.reads.readReceiptState(session, receipt),
-            clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId)
-        }));
+    async readReceiptAdmission(
+        receipt: ALOutboundReceiptAdmissionReadInput
+    ): Promise<ALOutboundReceiptAdmissionSurface> {
+        return await this.backend.readWithin(async (session) => {
+            const stored = await this.reads.readStoredMessage(session, receipt.msgId);
+            return {
+                stored,
+                pending: await this.reads.readReceiptState(session, receipt),
+                clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId),
+                trackPositions: await this.reads.readReceiptTrackPositions(session, receipt, stored)
+            };
+        });
     }
 
     async readWorkSnapshot(

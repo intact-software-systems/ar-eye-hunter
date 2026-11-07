@@ -3,7 +3,7 @@ import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-c
 import { decodeALControlMessage, type ALAckPayload } from '../../../al-contracts/al-control.ts';
 import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
-import { isALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
+import { isALRelayedNackReason, type ALRelayedNackReason } from '../../delivery/is-al-relayed-nack-reason.ts';
 import type { ALWorkBatchObservations } from '../../work/al-work-batch-observations.ts';
 import type { ALWorkObservationDeferral } from '../../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkOutcome } from '../../work/al-work-queue-port.ts';
@@ -52,7 +52,7 @@ export namespace ALInboundAcknowledgementEvidence {
 
     /**
      * A control's own trace and correlation close it; its trace is the one of the message it answers. The relay admits
-     * a child's ACK and its `not-subscribed` NACK, so the evidence covers those two controls and no other.
+     * a child's ACK and the NACKs it relays, so the evidence covers those controls and no other.
      */
     export type Identity = AckIdentity | NackIdentity;
 
@@ -76,6 +76,7 @@ export namespace ALInboundAcknowledgementEvidence {
     /** A NACK names no origin or status: the relay's message-owner row is its only word on the origin. */
     export interface NackIdentity extends ControlIdentity {
         readonly control: 'nack';
+        readonly reason: ALRelayedNackReason;
     }
 
     export interface Candidate {
@@ -361,10 +362,11 @@ function toControlIdentity(
             producerObservedAtEpochMs: ack.observedAtEpochMs
         });
     }
-    if (control?.type === 'nack' && isALOutsideAudienceNackReason(control.payload.reason)) {
-        const nack = control.payload;
+    const nack = control?.type === 'nack' ? control.payload : undefined;
+    if (nack !== undefined && isALRelayedNackReason(nack.reason)) {
         return Object.freeze({
             control: 'nack',
+            reason: nack.reason,
             ...envelope,
             subjectMsgId: nack.msgId,
             logicalRecipientPeerId: nack.logicalRecipientPeerId,

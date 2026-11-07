@@ -2,6 +2,7 @@ import { decodeApiMutationFailure, type ApiMutationFailureJsonObject } from '@sh
 import assert from 'node:assert/strict';
 
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { InactiveGroupPresenceResult } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -423,6 +424,50 @@ Deno.test('inactive group presence returns the current snapshot as a no-op', asy
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), snapshot);
     assert.equal(currentSnapshotReads, 1);
+});
+
+Deno.test('a presence connect naming a dead connection generation answers the stale-generation denial', async () => {
+    let currentSnapshotReads = 0;
+    const runtime = createGroupStateRouteTestRuntime({
+        groupService: {
+            readCurrentSnapshot: () => {
+                currentSnapshotReads += 1;
+                return Promise.resolve(createGroupStateRouteSnapshot('room-1'));
+            }
+        },
+        processGroupAppInbox: () =>
+            Promise.reject(
+                new GroupPolicyDeniedError({
+                    allowed: false,
+                    code: 'stale-generation',
+                    message: 'The asserted connection generation is not a live one.'
+                })
+            )
+    });
+
+    const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
+        generationId: 'generation-fresh',
+        connectionGenerationId: 'ws-generation-closed',
+        publicationKey: null,
+        requestId: 'stale-generation-request'
+    });
+
+    assert.equal(response.status, 403);
+    assert.deepEqual(decodeApiMutationFailure(await response.json()), {
+        type: 'api-mutation-failure',
+        version: 'canonical.v2',
+        code: 'stale-generation',
+        status: 403,
+        message: 'The asserted connection generation is not a live one.',
+        issues: null,
+        denial: {
+            code: 'stale-generation',
+            message: 'The asserted connection generation is not a live one.',
+            details: null
+        },
+        retry: null
+    });
+    assert.equal(currentSnapshotReads, 0);
 });
 
 Deno.test('group presence route rejects a receipt before its cleanup read', async () => {

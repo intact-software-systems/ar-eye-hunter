@@ -400,6 +400,72 @@
       }
     },
     {
+      "name": "captureAliceSocketGeneration",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}",
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "captureBobSocketGeneration",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{bobClientId}",
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{bobSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "blockedRoomPresenceIsAdmitted",
       "type": "http",
       "connection": "primary",
@@ -722,7 +788,7 @@
         "body": {
           "generationId": "generation-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-{runId}",
+          "connectionGenerationId": "{aliceSocketGenerationId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -744,7 +810,7 @@
         "body": {
           "generationId": "generation-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-{runId}",
+          "connectionGenerationId": "{bobSocketGenerationId}",
           "principalId": "{bobClientId}"
         }
       },
@@ -967,7 +1033,7 @@
         "body": {
           "generationId": "generation-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-{runId}",
+          "connectionGenerationId": "{aliceSocketGenerationId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -989,7 +1055,7 @@
         "body": {
           "generationId": "generation-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-{runId}",
+          "connectionGenerationId": "{bobSocketGenerationId}",
           "principalId": "{bobClientId}"
         }
       },
@@ -1326,7 +1392,7 @@
         "body": {
           "generationId": "generation-paused-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-paused-{runId}",
+          "connectionGenerationId": "{bobSocketGenerationId}",
           "principalId": "{bobClientId}"
         }
       },
@@ -1400,7 +1466,7 @@
         "body": {
           "generationId": "generation-paused-rejoin-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-paused-rejoin-{runId}",
+          "connectionGenerationId": "{bobSocketGenerationId}",
           "principalId": "{bobClientId}"
         }
       },

@@ -293,10 +293,15 @@ which completes the hop and confirms no recipient: no relay passes it upward and
 (PL11). Such a recipient witnesses the copy's ordering track: its position moves to the copy, nothing is buffered
 and no gap is ever asked for, so a copy past where a gap would have been is answered the same way. A recipient
 that receives a recorded frozen copy below the position it entered the track at answers `before-entry` for itself,
-which places it outside the audience as `not-subscribed` does. A relay admits a child's outside-audience NACK
-(`not-subscribed`, `before-entry`) -- the NACKs inbound control admission handles; every other NACK stays its
-outbound owner's -- from a child hop its row waits on and for a recipient of the frozen audience whose
-confirmation it has not relayed, records that recipient in the row's `outsideAudiencePeerIds`, and
+which places it outside the audience as `not-subscribed` does. A relay admits a child's relayed NACK
+(`not-subscribed`, `before-entry`, `gap` -- the NACKs inbound control admission handles; every other NACK stays its
+outbound owner's) from a child hop its row waits on and for a recipient of the frozen audience it has neither
+recorded outside nor relayed a confirmation for. A `gap` NACK must carry its `orderingKey`, `expectedSeq` and
+`missingRanges` (else it is refused as malformed); the relay writes no row for it and re-originates it to its
+parent from itself, naming the same recipient and ordering hints, so the origin repairs that recipient through the
+relay (S4ii-R3). Only a receipted send leaves a relay row, so a gap NACK on an `ack: 'none'` track is not handled at
+the relay and that track stalls until resync or expiry; the leaf's paired `repair` control is not relayed. An
+outside-audience NACK the relay records in the row's `outsideAudiencePeerIds`, and
 re-originates it to its parent from itself naming the same recipient and reason, once per recipient, and as
 `not-subscribed` in its answer to a retried copy, since the row records who is outside, not why (the origin
 records the recipient outside under either reason); the NACK completes no hop, and no confirming ACK for that recipient is admitted after
@@ -543,7 +548,13 @@ position before it is sent. After each committed admission, replays included,
 [`toALInboundOrderingPosition`](./admission/to-al-inbound-ordering-position.ts) states an `ordering-position`
 diagnostic for an `entered`, an `omitted`, a `witnessed` copy that moved the position and a `before-entry`
 refusal, with the lane's `workerId`, the track, `seq`, the record's `priorSeq` (`null` without one) and the
-carrier. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it; the lost
+carrier. Its bounded dimensions are `status` (four values) and `carrier` (`rtc`, `ws`); `workerId`, `trackKey` and the
+trace (`msgId`, `traceId`, `corrId`) are identifiers for logs and traces, and `seq` and `priorSeq` are values, never
+metric labels. [`computeALInboundOrderingCounters`](./admission/al-inbound-ordering-counters.ts) folds those events
+into `ALInboundOrderingCounters` (`entered`, `omitted`, `witnessed`, `beforeEntry`), returning its input unchanged for
+any other event; it counts events, not distinct copies, so a repeated `before-entry` refusal or a duplicate `witnessed`
+counts again. The browser keeps one fold per connect in a tee around the connect's inbound diagnostics sink, shared by
+both carriers, and reports it as `rallar.messages.readUsage().ordering`, keyed on `status` alone. **Limit:** a recipient whose entry copy is lost and whose next copy arrives first enters past it; the lost
 copy, arriving later, answers `before-entry` on a recorded frozen copy; a live-only hand-over copy carries no
 record and is dropped silently (`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with no NACK
 and stays unconfirmed in the origin's receipt.

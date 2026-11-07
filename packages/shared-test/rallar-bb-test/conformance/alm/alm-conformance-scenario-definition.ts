@@ -62,6 +62,7 @@ export type AlmConformanceScenarioId =
     | 'granted-rtc-forged-sender'
     | 'granted-rtc-missing-proof'
     | 'granted-rtc-not-subscribed'
+    | 'granted-rtc-ordered-relay'
     | 'granted-rtc-publish-refused'
     | 'granted-rtc-receipted-delivered'
     | 'granted-rtc-relay-only'
@@ -96,7 +97,7 @@ export type AlmConformanceScenarioId =
     | 'subscription-delivery'
     | 'subscription-ordered-entry'
     | 'subscription-ordered-omission'
-    | 'subscription-reconnect'
+    | 'subscription-ordered-reconnect'
     | 'subscription-revoke-disconnected'
     | 'subscription-successor'
     | 'subscription-token-count'
@@ -129,10 +130,15 @@ export interface AlmConformanceRecipeGate {
     readonly commandName: string;
 }
 
-/** A further recipe of the sender, which the lane starts on the sender's agent, on its open connection, at the gate. */
+/**
+ * A further recipe of `role`, which the lane starts on that role's agent, on its open connection, once the role's
+ * first recipe ended and the gate passed: how a page that hears no cue, such as one whose socket is closed, waits for
+ * another role's step.
+ */
 export interface AlmConformanceContinuationDefinition {
+    readonly role: AlmConformanceRole;
     readonly gate: AlmConformanceRecipeGate;
-    readonly toCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
+    readonly toCommands: (step: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
 }
 
 export interface AlmConformanceStepInput {
@@ -214,7 +220,7 @@ export interface AlmConformanceScenarioDefinition {
     readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
     /** Absent when the successor starts once the owner page ended; otherwise the owner's step it starts after. */
     readonly successorGate?: AlmConformanceRecipeGate;
-    /** Absent when the sender runs one recipe; otherwise the sender's later steps, which wait for another role. */
+    /** Absent when every role runs one recipe; otherwise one role's later steps, which wait for another role. */
     readonly continuation?: AlmConformanceContinuationDefinition;
 }
 

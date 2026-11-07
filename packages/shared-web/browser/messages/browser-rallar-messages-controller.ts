@@ -97,7 +97,8 @@ export class BrowserRallarMessagesController {
                 return {
                     ...context.middleware.volatileBudget.readReport(input.nowMs()),
                     ...input.deliveries.getReplyCounts(),
-                    publication: input.publicationStages.readReport(context)
+                    publication: input.publicationStages.readReport(context),
+                    ordering: context.middleware.orderingCounters.readReport()
                 };
             }
         );

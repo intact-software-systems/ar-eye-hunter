@@ -6,53 +6,37 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { decodeALControlMessage, newALNackControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
-import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { createDefaultOutboundTestRuntime, enqueueOutboundOrThrow } from '../alm/outbound-runtime-test-fixture.ts';
-import { createAvailablePublicationCryptoFixture, type AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
 import { createRtcOriginOverlayFixture, ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
 import {
     createFrozenGrantedMulticast,
-    createPublicationRoomSnapshot,
     PUBLICATION_TOPIC_ID,
     PUBLISH_AND_SUBSCRIBE,
     PUBLISH_ONLY,
     signPublication,
     SUBSCRIBE_ONLY
 } from './rtc-publication-proof-fixtures.ts';
-import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
-import { createRtcTopicSubscriptionsFixture, NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
-
-/** The origin `a` and the sessions below it, each its own principal with a registered key. */
-interface RelayChain {
-    readonly keys: Readonly<Record<string, AvailablePublicationCrypto>>;
-    readonly snapshot: GroupSnapshot;
-}
-
-interface ChainHopInput {
-    readonly selfPeerId: string;
-    /** The hop's parent first, then its children. */
-    readonly neighbourPeerIds: readonly string[];
-    /** Absent, the hop holds no token. */
-    readonly topicSubscriptions?: RtcTopicSubscriptionReader;
-}
+import {
+    createChainHop,
+    createRelayChain,
+    deliverEach,
+    readOrderingPositions,
+    signOrderedReceiptedPublication,
+    signTrack,
+    toControlTuples,
+    type RelayChain
+} from './rtc-relay-chain-test-support.ts';
+import { createRtcTopicSubscriptionsFixture } from './rtc-topic-subscription-reader-fixtures.ts';
 
 interface ReceiptedPublicationInput {
     readonly resourceId: string;
     /** The audience the origin froze the frame to, which the proof signs. */
     readonly recipientPeerIds: readonly string[];
     readonly nextHopPeerId: string;
-}
-
-interface OrderedReceiptedPublicationInput extends ReceiptedPublicationInput {
-    readonly seq: number;
-    /** The record the origin signs into the frame; absent, no authority recorded the copy. */
-    readonly priorSeqByRecipient?: Readonly<Record<string, number>>;
 }
 
 /** The origin's receipt for a frame, fed the controls its next hop sent it. */
@@ -499,34 +483,6 @@ describe('a receipted granted send its own RTC origin signs', () => {
     });
 });
 
-async function createRelayChain(
-    sessionIds: readonly string[],
-    grants: Readonly<Record<string, GroupPublicationTopicPermissions>>
-): Promise<RelayChain> {
-    const keys: Record<string, AvailablePublicationCrypto> = {};
-    for (const sessionId of sessionIds) {
-        keys[sessionId] = await createAvailablePublicationCryptoFixture();
-    }
-    const snapshot = createPublicationRoomSnapshot({
-        sessionIds,
-        snapshotVersion: 3,
-        keys: Object.fromEntries(sessionIds.map((sessionId) => [sessionId, toGroupPresencePublicationKey(keys[sessionId]!)!])),
-        grants
-    });
-    return { keys, snapshot };
-}
-
-function createChainHop(chain: RelayChain, input: ChainHopInput): RtcRelayOverlayFixture {
-    return createRtcRelayOverlayFixture({
-        selfPeerId: input.selfPeerId,
-        snapshot: chain.snapshot,
-        neighbourPeerIds: input.neighbourPeerIds,
-        grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
-        publicationCrypto: chain.keys[input.selfPeerId],
-        topicSubscriptions: input.topicSubscriptions ?? NO_RTC_TOPIC_SUBSCRIPTIONS
-    });
-}
-
 /** A receipted granted frame as the origin `a` signs it. */
 async function signReceiptedPublication(chain: RelayChain, input: ReceiptedPublicationInput): Promise<ALMessage> {
     const frozen = createFrozenGrantedMulticast({
@@ -540,52 +496,6 @@ async function signReceiptedPublication(chain: RelayChain, input: ReceiptedPubli
         ...frozen,
         forwarding: { ...frozen.forwarding, nextHopPeerIds: [input.nextHopPeerId] }
     });
-}
-
-/** A receipted granted frame on the origin's ordered at-least-once track, at `seq`. */
-async function signOrderedReceiptedPublication(chain: RelayChain, input: OrderedReceiptedPublicationInput): Promise<ALMessage> {
-    const frozen = createFrozenGrantedMulticast({
-        senderId: 'a',
-        resourceId: input.resourceId,
-        recipientPeerIds: input.recipientPeerIds,
-        snapshotVersion: 3,
-        ack: 'receiver'
-    });
-    return await signPublication(chain.keys.a!, {
-        ...frozen,
-        delivery: { ack: 'receiver', reliability: 'at-least-once' },
-        ordering: {
-            orderingKey: 'feed-track',
-            seq: input.seq,
-            ...(input.priorSeqByRecipient === undefined ? {} : { priorSeqByRecipient: input.priorSeqByRecipient })
-        },
-        forwarding: { ...frozen.forwarding, nextHopPeerIds: [input.nextHopPeerId] }
-    });
-}
-
-interface TrackFrameInput {
-    readonly seq: number;
-    readonly recipientPeerIds: readonly string[];
-    readonly priorSeqByRecipient: Readonly<Record<string, number>>;
-    /** Absent, the origin's only next hop is the first recipient. */
-    readonly nextHopPeerId?: string;
-}
-
-/** The origin's signed frames of one recorded track, one message per sequence. */
-async function signTrack(chain: RelayChain, frames: readonly TrackFrameInput[]): Promise<readonly ALMessage[]> {
-    const signed: ALMessage[] = [];
-    for (const frame of frames) {
-        signed.push(
-            await signOrderedReceiptedPublication(chain, {
-                resourceId: `feed-${frame.seq}`,
-                recipientPeerIds: frame.recipientPeerIds,
-                nextHopPeerId: frame.nextHopPeerId ?? frame.recipientPeerIds.at(-1)!,
-                seq: frame.seq,
-                priorSeqByRecipient: frame.priorSeqByRecipient
-            })
-        );
-    }
-    return signed;
 }
 
 /** The origin's own `receiver` receipt for the frame, as its RTC dispatch tracks it. */
@@ -624,12 +534,6 @@ function toSortedByControlType(
     return controls.toSorted((left, right) => rank(left) - rank(right));
 }
 
-async function deliverEach(messages: readonly ALMessage[], to: RtcRelayOverlayFixture, fromPeerId: string): Promise<void> {
-    for (const message of messages) {
-        await to.receive(message, fromPeerId);
-    }
-}
-
 function toDeliveryReceiptStatement(settlements: readonly ALDeliverySettlement[]) {
     const last = settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1);
     return last?.kind === 'acknowledgement'
@@ -654,17 +558,6 @@ function toControlledMsgId(control: ALPeerControlMessage): string {
     return control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
 }
 
-/** Each control as its type, the recipient it speaks for, and its status or reason. */
-function toControlTuples(controls: readonly ALPeerControlMessage[]): readonly (readonly string[])[] {
-    return controls.map((control) =>
-        control.type === 'ack'
-            ? ['ack', control.payload.logicalRecipientPeerId, control.payload.status]
-            : control.type === 'nack'
-            ? ['nack', control.payload.logicalRecipientPeerId, control.payload.reason]
-            : ['repair', control.payload.fromPeerId, control.payload.reason]
-    );
-}
-
 /** The message a sent control answers; undefined for a data copy. */
 function toControlledMsgIdOf(message: ALMessage): string | undefined {
     const control = decodeALControlMessage(message).right;
@@ -674,11 +567,6 @@ function toControlledMsgIdOf(message: ALMessage): string | undefined {
 /** A NACK or repair that asks the origin for history, as opposed to one placing the recipient outside. */
 function isRepairRequest(control: readonly string[]): boolean {
     return control[0] === 'repair' || (control[0] === 'nack' && control[2] !== 'not-subscribed');
-}
-
-/** Each `ordering-position` the session stated, as its status, sequence and the record's prior for it. */
-function readOrderingPositions(fixture: RtcRelayOverlayFixture): readonly (readonly [string, number, number | null])[] {
-    return fixture.diagnostics.flatMap((event) => event.kind === 'ordering-position' ? [[event.status, event.seq, event.priorSeq] as const] : []);
 }
 
 /** A token the test activates, as the tab's held subscription does once its subscribe call answers. */

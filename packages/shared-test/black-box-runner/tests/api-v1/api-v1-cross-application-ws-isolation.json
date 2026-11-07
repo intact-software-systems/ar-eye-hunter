@@ -431,6 +431,72 @@
       }
     },
     {
+      "name": "captureAliceSocketGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/clients/{aliceClientId}",
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "captureBobSocketGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/clients/{bobClientId}",
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{bobSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "connectBobPresenceScopeB",
       "type": "http",
       "connection": "api",
@@ -444,7 +510,7 @@
         "body": {
           "generationId": "generation-ws-iso-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-ws-iso-{runId}",
+          "connectionGenerationId": "{bobSocketGenerationId}",
           "principalId": "{bobClientId}"
         }
       },
@@ -533,7 +599,7 @@
         "body": {
           "generationId": "generation-ws-iso-{runId}",
           "publicationKey": null,
-          "connectionGenerationId": "connection-generation-ws-iso-{runId}",
+          "connectionGenerationId": "{aliceSocketGenerationId}",
           "principalId": "{aliceClientId}"
         }
       },

@@ -164,27 +164,27 @@ and it has no status list.
 - Ordered subscription history (the addendum's later outcome after Slice 4):
   a latest-state snapshot with a fenced live cursor, and an authorized replay
   of retained history; Slice 4 delivers live entry and omissions only (D526).
-- Relay re-origination of downstream gap NACKs (S4-ii, D534): a relay's stored
-  forward names the origin as its owner, so its outbound control admission
-  refuses a gap NACK addressed to the relay itself and the repair it plans is
-  discarded; RTC repair behind a relay is receipt-retry only until relays carry
-  the NACK toward the origin per logical recipient.
-- The rest of Slice 4 (S4-ii, D537): the cells `subscription-ordered-reconnect`
-  and `granted-rtc-ordered-relay`, the reload proof that a publisher continues
-  its minted sequence, `readUsage().ordering` counters with the
-  `ordering-position` dimensions, and the design proposal's deletion.
-- Positions for rows a producer writes straight to the outbox (S4-ii, D533):
-  Relic's round transitions and state-sync record no positions, since nothing
-  indexes such a row's `(track, seq)` before its own dequeue; a track index
-  written in the producer's transaction would let the dequeue wait and the
-  record cover them, and generalize the wait beyond the immediate predecessor
-  (D524).
-- Cross-instance positions and outside class (S4-ii, D524, D532): in a cluster
-  the dequeuing instance records positions and the outside class only for the
-  sessions connected to it, so a session on another instance carries no entry
-  and one that another instance's re-check drops after the dequeue reads loss
-  until its repair or receipt retry; a merge of positions into the sent row
-  under its own fenced write would close it.
+- Relayed gap repair for `ack: 'none'` ordered tracks (S4-ii, D534): a relay
+  keeps a row only for a receipted send, so it has nothing to re-originate a
+  child's gap NACK from, and an `ack: 'none'` ordered track behind a relay
+  stalls until resync or expiry; it needs a relay surface that holds the
+  forward without a receipt row.
+- A browser-lane reload witness for the restart proof (S4-ii, D537): the
+  minted sequence's continuation across a reload is proven over the reopened
+  IndexedDB store (`rtc-durable-owner-recovery.test.ts`), not by an
+  `agent.reload` on the lane.
+- Positions for rows a producer writes straight to the outbox (a later outcome
+  after S4-ii, D533): Relic's round transitions and state-sync record no
+  positions, since nothing indexes such a row's `(track, seq)` before its own
+  dequeue; a track index written in the producer's transaction would let the
+  dequeue wait and the record cover them, and generalize the wait beyond the
+  immediate predecessor (D524).
+- Cross-instance positions and outside class (a later outcome after S4-ii,
+  D524, D532): in a cluster the dequeuing instance records positions and the
+  outside class only for the sessions connected to it, so a session on another
+  instance carries no entry and one that another instance's re-check drops
+  after the dequeue reads loss until its repair or receipt retry; a merge of
+  positions into the sent row under its own fenced write would close it.
 - An outside class for the server's own publications (S4-i, D532): a recipient
   of a server publication that the dequeue re-check drops or the WS server
   skips below its position stays expected and unconfirmed, and each retry skips
@@ -193,10 +193,10 @@ and it has no status list.
 - A recorded witnessed position (S4-i, D528): a session that witnesses while
   its own deliveries are pending and then becomes a recipient again resyncs its
   next delivered copy.
-- A lost entry frame (S4-i, D527): a receiver whose entry frame is lost and
-  whose next frame arrives first enters past it; the lost frame answers
-  `before-entry` on a recorded frozen copy, a live-only hand-over copy
-  carries no record and is dropped silently (`ordering-rejected`, no NACK), and
+- A lost entry frame (S4-i, D527; a later outcome after S4-ii): a receiver
+  whose entry frame is lost and whose next frame arrives first enters past it;
+  the lost frame answers `before-entry` on a recorded frozen copy, a live-only
+  hand-over copy carries no record and is dropped silently (`ordering-rejected`, no NACK), and
   over plain `ws` it is dropped `stale` with no NACK and stays unconfirmed.
   Under `rtc-with-ws-fallback` a server copy whose record meets the receiver's
   position can be read as an omission while the origin's RTC frame for an
@@ -204,19 +204,19 @@ and it has no status list.
   the RTC origin's sends; the RTC record already counts the WS leg's (D525), so
   a server-side room-wide position fed by the browser's RTC sends would close
   the mirror.
-- A stall for a recipient the WS leg left out (S4-i, D525): under
-  `rtc-with-ws-fallback`, when the WS leg mints a send, the browser moves a
-  room-wide sent position that the RTC origin reads as a floor for every
-  recipient's prior, so a WS frame still in flight is never read as an
-  omission. A recipient the WS server left out of that send (a narrowed
-  audience: a revoked or late subscriber, or a stale audience) then reads a gap
-  the RTC origin cannot serve, and its track stalls until resync or the track
-  expires, instead of a silent loss. The same holds for the omission cell's
-  revoked subscriber if `p3`/`p4` fall back to WS before admission (the cells
-  run each carrier alone, so the lane does not hit it). The browser cannot know
-  the server's audience; S4-ii closes it either by the server's receipt
-  returning the admitted audience, so the WS leg records per recipient, or by
-  per-recipient rows when the sender states `recipientPeerIds`.
+- The residual stall for a recipient the WS leg left out (S4-i and S4-ii,
+  D525): under `rtc-with-ws-fallback` the WS leg's `admitted` receipt names the
+  recipients the server routed a send to, and the browser records each at the
+  send's sequence, while the room-wide floor the RTC origin reads for every
+  recipient keeps the sequences no receipt has named. A recipient the WS server
+  left out still reads a gap the RTC origin cannot serve, and its track stalls
+  until resync or expiry, in three windows: a session the server's dequeue drops
+  after the route captured the receipt's audience (the receipt names it); a
+  send that asked no logical receipt, whose sequence stays a floor until the
+  row expires; and an `admitted` receipt that arrives after its `complete` one,
+  which writes no rows (its sequence stays pending until folded or expired).
+  Full closure needs a hold for the receipt and a receipt field that states the
+  audience the dequeue recorded, a protocol change.
 - A stuck predecessor on a WS track (S4-i, D524): an admitted row that ends
   without recording (dropped at dequeue, a non-retryable corruption, superseded
   or cancelled) holds its track's later rows at dequeue until its own deadline,
@@ -233,8 +233,11 @@ and it has no status list.
   13 s on the ws lane); `subscription-ordered-omission` releases its first
   election before electing again (S4-i).
 - The measured cost of ordered browser sends (S4-i, D529): every ordered own
-  room send now admits through IndexedDB, and a sender reads up to 256 position
-  rows per ordered send; neither is measured.
+  room send now admits through IndexedDB, a sender reads up to 256 position
+  rows per ordered send, and under `rtc-with-ws-fallback` the WS leg's
+  `admitted` receipt writes up to 256 shared position rows per receipted send
+  (S4-ii); none is measured. `readUsage().ordering` counts position events and
+  is not this measurement.
 - An admission-time declared publication grant for joiners (D494), with its
   persisted declaration and lifetime rule; today only the creator declares a
   grant at creation, and each joiner is granted explicitly.
@@ -250,12 +253,17 @@ and it has no status list.
   and the `granted-rtc` cells (S2-ii, D505; S3, D521): the cells name each
   role's principal, which a static hosted manifest cannot, so today only the
   local lane runs them.
-- A same-session WS reconnect leaves the session's room presence closed
-  (S2-ii, D506; task_6dcb2b11; S4-ii absorbs it, D531): cleanup closes the closed socket's
-  generation's presence row and nothing re-writes it when the socket reopens,
-  so the reopened session receives no granted publication although its
-  re-asserted subscription is active; the reconnect cells pin today's
-  behaviour.
+- The reopened socket's presence limits (S4-ii, D531): the page restores
+  presence only in its current, explicitly selected room (#785's
+  `SelectedRoomRecovery`), so a retained room it has not selected keeps the
+  closed presence after a reconnect until the page enters it again; the server
+  compares the connection generation only while the session holds a live
+  client-state row, so a dead-generation connect with no socket open is accepted
+  and cleaned by lease expiry; and the generation decision is read in the
+  AppInbox read and not fenced at commit, so a connect read before its socket
+  closed and committed after that socket's cleanup stays active under the dead
+  generation until lease expiry (an observation of the client-state row at
+  commit, as view-watch makes, would close it).
 - The measured pub/sub operating envelope: subscription and permission churn,
   multi-group producers and slow consumers.
 - The page snapshot read lists each group's publication grants after its three

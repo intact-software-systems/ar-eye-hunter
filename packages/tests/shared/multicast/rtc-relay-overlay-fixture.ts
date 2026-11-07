@@ -6,6 +6,13 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState
+} from '@shared/alm/al-admission-backend.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { createVolatileALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type {
     ALInboundMessageRuntime,
     ALInboundRuntimeStores,
@@ -26,6 +33,7 @@ import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-gr
 import { RtcPublicationProofVerifier } from '@shared/multicast/publication/rtc-publication-proof-verifier.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
 import { readRtcGroupSnapshotByRef } from '@shared/multicast/read-rtc-outbound-observation.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { toPublicationVerificationCrypto, type PublicationCrypto } from '@shared/signature/publication-crypto.ts';
@@ -86,6 +94,12 @@ export interface RtcRelayOverlayFixture {
     forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
     /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
+}
+
+/** A relay session's inbound memory pair together with the admission map it writes, which a test reads back. */
+export interface ObservedVolatileInboundPair {
+    readonly state: ALAdmissionMemoryState;
+    readonly stores: ALVolatileInboundRuntimeStores;
 }
 
 interface RtcRelayOverlayResources {
@@ -198,6 +212,32 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         { ...resources, connection, service, inboundStores, diagnostics },
         input.neighbourPeerIds
     );
+}
+
+/** The relay session's memory pair under `namespace`, whose admission map the test reads back. */
+export function createObservedVolatileInboundPair(namespace: string): ObservedVolatileInboundPair {
+    const state = createInMemoryALAdmissionState(
+        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(Date.now()))
+    );
+    const backend = new InMemoryAdmissionBackend(state, Date.now);
+    return {
+        state,
+        stores: {
+            admissionStore: createVolatileALInboundAdmissionStore({
+                nowMs: Date.now,
+                namespace,
+                backend,
+                orderingTrackTtlMs: 5 * 60_000,
+                supersedenceTrackTtlMs: 5 * 60_000,
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined,
+                maxDeliveredMarkers: undefined
+            }),
+            workQueue: backend.workQueue,
+            evictExpired: () => backend.evictExpired(),
+            budget: undefined
+        }
+    };
 }
 
 function createDefaultRelayOverlayResources(

@@ -752,12 +752,57 @@ skipped recipient of one stays unconfirmed; in a cluster, positions and the
 outside class cover sessions on the dequeuing instance only; a receiver whose entry frame is lost and whose
 next frame arrives first enters past it. The cells `subscription-ordered-entry`
 and `subscription-ordered-omission` pass over the three carriers on the local
-lane. S4-ii re-asserts a reopened socket's room presence (D506), so a reconnect
-reads as an omission on a lane, and has relays re-originate gap NACKs toward the
-origin. Decisions D524–D537 are in the roadmap.
+lane. Decisions D524–D537 are in the roadmap.
 Under `rtc-with-ws-fallback` a recipient the WS server left out of a WS-leg send
 reads a gap the RTC origin cannot serve and its track stalls until resync or
-expiry, instead of losing the frame (D525); S4-ii closes it.
+expiry, instead of losing the frame (D525); S4-ii narrows it to three residual
+windows, below.
+
+As applied (S4-ii): a reopened socket restores the session's room presence in
+the room the page explicitly selected (D506, D531). The restore is main's
+`SelectedRoomRecovery` (#785): on a reopen it reads the room, and when the
+session is an active member not yet listed under the new connection generation
+it connects its presence there under a fresh presence generation and that
+connection generation, confirms a write whose reply was lost, retries a failure
+that may pass with a bounded backoff on the same socket, and holds a room change
+until its write settled. A retained room the page has not selected keeps the
+closed presence until the page enters it again. #785's `'server'` room-snapshot
+topic reaches a session only on the generation its presence records, so it
+depends on the same restore. S4-ii adds the server side: a presence connect
+that names a connection generation none of the session's live client-state
+rows holds is refused `stale-generation` (403), when the session holds any,
+which ends that socket's restore. The decision is read in the AppInbox read and
+not fenced at commit, so a connect read before its socket closed can commit
+after that socket's cleanup and stay active until lease expiry. A reconnect
+therefore reads as an omission: in `subscription-ordered-reconnect`, which replaces the
+S2-ii reconnect cell, the reopened sibling receives `p5` `omitted` with
+prior 2 on each producer's track, and never `p3` or `p4`, over the three
+carriers. A relay re-originates a waited child's gap NACK toward the origin with
+its track, expected sequence and missing ranges, writing no row (D534); the
+origin admits it from a next hop for a recipient the receipt still owes, checks
+the entry floor on that recipient, and sends the repair copy to the relay,
+which forwards it down the tree. A relay keeps a row only for a receipted send,
+so an `ack: 'none'` ordered track behind a relay still stalls until resync or
+expiry. A publisher's minted sequence continues across a reload of its session
+and across its carriers, proven over the reopened IndexedDB store.
+`rallar.messages.readUsage().ordering` counts a connect's `ordering-position`
+events by status. The WS-leg stall is narrowed: the leg's `admitted` receipt
+names the recipients the server routed the send to, and the browser records
+each at that sequence in the positions both carriers share, while the
+room-wide floor keeps only the sequences whose audience no receipt has named,
+the highest send that asked no logical receipt and the receipted sends whose
+`admitted` receipt has not landed (at most 64, the oldest folded into the
+first). A recipient left out of a receipted WS-leg send enters or reads an
+omission once that receipt lands. It still stalls when the server's dequeue
+drops it after the route captured the receipt's audience, when it is left out
+of a send that asked no logical receipt, whose sequence stays a floor until the
+row expires, or when the `admitted` receipt arrives after the `complete` one.
+`granted-rtc-ordered-relay` passes over `rtc` on the local lane; the relay
+fixture is the blocking proof of re-origination, since the lane draws the path
+and its runs never put the publish-only session in the middle. Positions for rows a producer writes
+straight to the outbox, the cross-instance record and outside class, and the
+server's record under `rtc-with-ws-fallback` with the lost entry frame stay
+later outcomes. Slice 4 is complete.
 
 ### Later outcomes
 

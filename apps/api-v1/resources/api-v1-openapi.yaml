@@ -2626,6 +2626,10 @@ paths:
       description: |
         Creates or refreshes live group presence for the authenticated session.
         The caller must already have an `active` membership in the group.
+        While the session holds a live client-state session,
+        `connectionGenerationId` must be one of its live connection
+        generations; a closed socket's generation is refused `403`
+        (`stale-generation`).
         An unknown group is refused `400` `group-mutation-rejected`
         ("Group not found").
       security:

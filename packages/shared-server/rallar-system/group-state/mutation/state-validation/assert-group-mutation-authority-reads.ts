@@ -22,6 +22,7 @@ import {
 } from '../../persistence/validate-persisted-group-presence.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import {
+    readsTargetClientSessions,
     readsTargetPrincipalSubscriptions,
     readsTargetPublicationGrant,
     readsTopicSubscriptionTarget
@@ -45,31 +46,41 @@ export function assertGroupMutationAuthorityReads({
     assertAuthorityPresenceReads(read, ref);
     assertTargetPublicationGrantRead({ read, command, ref, identities });
     assertTopicSubscriptionTargetReads({ read, command, ref, identities });
+    assertTargetClientSessionReads({ read, command, ref, identities });
     assertTargetPrincipalSubscriptionReads({ read, command, ref, identities });
 }
 
-/** Exactly subscribe and unsubscribe read their (session, topic) row and the session's client-state rows, the target's. */
+/** Exactly subscribe and unsubscribe read their (session, topic) row, the target's. */
 function assertTopicSubscriptionTargetReads({
     read,
     command,
     ref,
     identities
 }: AssertGroupMutationAuthorityReadsInput): void {
-    const { targetTopicSubscription: subscription, targetClientSessions: sessions } = read;
+    const subscription = read.targetTopicSubscription;
+    if (subscription === null) {
+        return;
+    }
     if (!readsTopicSubscriptionTarget(command)) {
-        if (subscription !== null || sessions !== null) {
-            throw new TypeError('Topic subscription read differs from the command read scope');
+        throw new TypeError('Topic subscription read differs from the command read scope');
+    }
+    const key = groupStateTopicSubscriptionStorageKey(ref, command.sessionId, command.input.topicId);
+    assertTopicSubscriptionRow(subscription, key, identities.targetPrincipalId);
+}
+
+/** Exactly the commands that assert a connection generation read the target session's active client-state rows. */
+function assertTargetClientSessionReads({ read, command, identities }: AssertGroupMutationAuthorityReadsInput): void {
+    const sessions = read.targetClientSessions;
+    if (!readsTargetClientSessions(command)) {
+        if (sessions !== null) {
+            throw new TypeError('Target client session read differs from the command read scope');
         }
         return;
     }
-    if (sessions === null || identities.targetPrincipalId === null) {
-        throw new TypeError('Topic subscription read differs from the command read scope');
-    }
-    if (subscription !== null) {
-        const key = groupStateTopicSubscriptionStorageKey(ref, command.sessionId, command.input.topicId);
-        assertTopicSubscriptionRow(subscription, key, identities.targetPrincipalId);
-    }
     const principalId = identities.targetPrincipalId;
+    if (sessions === null || principalId === null) {
+        throw new TypeError('Target client session read differs from the command read scope');
+    }
     const foreign = sessions.find(({ value }) =>
         value.sessionId !== command.sessionId || value.principalId !== principalId || value.status !== 'active'
     );

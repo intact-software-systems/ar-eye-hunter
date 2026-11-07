@@ -10,6 +10,8 @@ method, then follow its named workflow below.
 | Account-scoped recent history and local Forget                             | `recent-rooms/rallar-recent-rooms.ts`; Return uses the entry owner above          |
 | Create a room                                                              | `create-and-join-room.ts`                                                         |
 | Join, Watch, Quick Join, Move, and clean up the previous room              | `join-room.ts`                                                                    |
+| Restore the selected room's presence when its socket reopens               | `entry/selected-room-recovery.ts`                                                 |
+| Wait until a presence write is listed in the room's presence summary       | `room-presence.ts`                                                                |
 | Adopt admitted snapshots and recover conflicting observations              | `adopt-joined-room.ts`                                                            |
 | Leave membership and presence                                              | `leave-room.ts`                                                                   |
 | Invite, revoke, rotate codes, and govern members                           | `room-membership.ts`                                                              |

@@ -6,7 +6,8 @@ import type {
 } from '../../../al-contracts/al-control.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
-import type { ALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
+import { isALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
+import type { ALRelayedNackReason } from '../../delivery/is-al-relayed-nack-reason.ts';
 import type {
     ALInboundCommitBundle,
     ALInboundControlOwnerIndex,
@@ -16,12 +17,16 @@ import type { ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import { acceptALPendingOutsideAudienceNack } from '../transition-al-pending-ack.ts';
 import type { PendingControlValue } from './al-inbound-control-rows.ts';
 import { toALInboundControlObservations } from './compute-al-inbound-control-admission.ts';
-import { toALInboundUpwardControlWork } from './to-al-inbound-upward-control-work.ts';
+import {
+    toALInboundUpwardControlWork,
+    toALInboundUpwardNackOrdering,
+    type ALInboundUpwardControl
+} from './to-al-inbound-upward-control-work.ts';
 
 export interface ALInboundNackAdmissionRead {
     readonly namespace: string;
-    /** A child's outside-audience NACK, for itself or for a recipient below it. */
-    readonly nack: ALNackPayload & Readonly<{ reason: ALOutsideAudienceNackReason; }>;
+    /** A child's relayed NACK, for itself or for a recipient below it. */
+    readonly nack: ALNackPayload & Readonly<{ reason: ALRelayedNackReason; }>;
     readonly controlOwners: ALInboundControlOwnerIndex;
     readonly owner: ALInboundMessageOwner;
     readonly pending: ALPendingAckSnapshot | undefined;
@@ -33,6 +38,7 @@ export interface ALInboundNackAdmissionRead {
 
 export interface ALInboundNackAdmissionCandidate {
     readonly read: ALInboundNackAdmissionRead;
+    /** The row with the recipient recorded outside; `undefined` for a gap NACK, which leaves the row as it was. */
     readonly pending: PendingControlValue | undefined;
     /** The NACK this relay re-originates toward the origin. */
     readonly upwardEffects: readonly ALInboundDurableEffectWrite[];
@@ -40,29 +46,35 @@ export interface ALInboundNackAdmissionCandidate {
     readonly pendingExpireAtTimestamp: number;
 }
 
-/** A relay passes a child's outside-audience NACK upward, keeping its reason, as it passes a child's ACK (PL9). */
+/**
+ * A relay passes a child's NACK upward, keeping its reason, as it passes a child's ACK (PL9). An outside-audience NACK
+ * also records its recipient outside on the row; a gap NACK changes nothing here (S4ii-R3): the relay keeps no ordering
+ * record, and the origin's repair reaches the recipient through the relay's forward.
+ */
 export function computeALInboundNackAdmission(
     read: ALInboundNackAdmissionRead,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundNackAdmissionCandidate {
-    const pending = read.pending === undefined
-        ? undefined
-        : acceptALPendingOutsideAudienceNack(read.pending, read.nack);
+    const pending = read.pending !== undefined && isALOutsideAudienceNackReason(read.nack.reason)
+        ? acceptALPendingOutsideAudienceNack(read.pending, read.nack)
+        : undefined;
+    const row = pending ?? read.pending;
+    const upwardNack = toUpwardNack(read.nack);
     return {
         read,
         pending: pending === undefined ? undefined : { kind: 'pending', value: pending },
-        upwardEffects: pending === undefined ? [] : toALInboundUpwardControlWork(
+        upwardEffects: row === undefined || upwardNack === undefined ? [] : toALInboundUpwardControlWork(
             {
                 namespace: read.namespace,
                 msgId: read.nack.msgId,
                 owner: read.owner,
                 relayPeerId: read.nack.toPeerId,
-                pending,
+                pending: row,
                 nowMs: read.nowMs,
                 controlMsgId: read.controlMsgId,
                 traceId: read.traceId
             },
-            [{ kind: 'nack', logicalRecipientPeerId: read.nack.logicalRecipientPeerId, reason: read.nack.reason }],
+            [upwardNack],
             retention
         ),
         acceptance: { handled: true, completedPendingAcks: [] },
@@ -74,7 +86,16 @@ export function computeALInboundNackAdmission(
     };
 }
 
-/** One conditional commit: the row that records the recipient, and the controls relayed upstream. */
+function toUpwardNack(nack: ALInboundNackAdmissionRead['nack']): ALInboundUpwardControl | undefined {
+    const { logicalRecipientPeerId, reason } = nack;
+    if (reason !== 'gap') {
+        return { kind: 'nack', logicalRecipientPeerId, reason };
+    }
+    const ordering = toALInboundUpwardNackOrdering(nack);
+    return ordering === undefined ? undefined : { kind: 'nack', logicalRecipientPeerId, reason, ordering };
+}
+
+/** One conditional commit: the row that records the recipient, if any, and the controls relayed upstream. */
 export function toALInboundNackCommitBundle(candidate: ALInboundNackAdmissionCandidate): ALInboundCommitBundle {
     const { nack, owner } = candidate.read;
     return {

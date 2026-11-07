@@ -161,7 +161,7 @@ export class RtcGrantedPublicationCarrier {
             this.isRepairTargetAdmitted({ msg, targetPeerId: peerId, receiptMode });
         return this.readOwnRepairRefusal(msg).fold(
             (refusal) => refusal,
-            () => toRequesterAdmittedPlan(plan(isTargetAdmitted), request.requestedByPeerId, isTargetAdmitted)
+            () => toRequesterAdmittedPlan(plan(isTargetAdmitted), request, isTargetAdmitted)
         );
     }
 
@@ -292,14 +292,19 @@ interface RtcRepairTargetInput {
     readonly receiptMode: ALAckAlgo;
 }
 
-/** A requester-targeted repair serves its requester only while the responder admits it under the receipt it tracks. */
+/**
+ * A requester-targeted repair serves its requester only while the responder admits, under the receipt it tracks, the
+ * recipient it is for: the requester itself, or the recipient below a relay that asked for it (S4ii-R3). The copy
+ * still goes to the requester; checking the recipient keeps a relay's repair to the audience its origin froze.
+ */
 function toRequesterAdmittedPlan(
     planned: RtcRepairPlan,
-    requesterPeerId: string | undefined,
+    request: ALOutboundRepairRequest,
     isTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission
 ): RtcRepairPlan {
-    return planned === undefined || requesterPeerId === undefined ||
-            isTargetAdmitted(requesterPeerId, planned.ackTracking?.mode ?? 'none')
+    const { requestedByPeerId, logicalRecipientPeerId } = request;
+    return planned === undefined || requestedByPeerId === undefined ||
+            isTargetAdmitted(logicalRecipientPeerId ?? requestedByPeerId, planned.ackTracking?.mode ?? 'none')
         ? planned
         : undefined;
 }

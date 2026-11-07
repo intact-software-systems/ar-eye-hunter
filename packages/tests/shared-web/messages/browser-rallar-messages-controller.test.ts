@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import {
     ALVolatileSessionBudget,
@@ -18,6 +19,7 @@ import {
 const LIMITS: ALVolatileSessionLimits = { maxAdmissions: 2, maxBytes: 1_024, maxAgeMs: 300_000, maxTracks: 4 };
 const STAGE_LIMITS: ALPublicationStageLimits = { maxStreams: 4, maxStagedValues: 8, maxStagedBytes: 65_536 };
 const NO_PUBLICATION_COUNTERS = { staged: 0, superseded: 0, expired: 0, refused: 0, cancelled: 0, admitted: 0, deferred: 0 };
+const NO_ORDERING_COUNTERS = { entered: 0, omitted: 0, witnessed: 0, beforeEntry: 0 };
 const NOT_CONNECTED = 'Rallar is not connected. Call rallar.connect() first.';
 
 const mocks = getRallarFacadeMocks();
@@ -27,13 +29,16 @@ installFakeBroadcastChannelPerTest();
 // The facade reads the ledger at the wall clock, so each admission is placed relative to it.
 describe('rallar.messages.readUsage', () => {
     let budget: ALVolatileSessionBudget;
+    let orderingCounters: BrowserInboundOrderingCountersSink;
 
     beforeEach(() => {
         resetRallarFacadeTestRuntime();
         budget = new ALVolatileSessionBudget(LIMITS);
+        orderingCounters = new BrowserInboundOrderingCountersSink(() => {});
         mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({
             middleware: {
                 volatileBudget: budget,
+                orderingCounters,
                 publicationStageLimits: STAGE_LIMITS,
                 // Never started: a staged value waits for an engine pass no test runs.
                 qboxEngine: new InboxOutboxEngine({ nowEpochMs: Date.now, random: () => 0.5, reportTaskFailure: () => undefined })
@@ -68,7 +73,8 @@ describe('rallar.messages.readUsage', () => {
             overloaded: false,
             repliesHeld: 0,
             replyWaitsOpen: 0,
-            publication: expect.any(Object)
+            publication: expect.any(Object),
+            ordering: NO_ORDERING_COUNTERS
         });
         expect(report.usage.oldestAgeMs).toBeGreaterThanOrEqual(1_000);
         expect(report.usage.oldestAgeMs).toBeLessThan(31_000);
@@ -119,7 +125,8 @@ describe('rallar.messages.readUsage', () => {
             overloaded: false,
             repliesHeld: 0,
             replyWaitsOpen: 0,
-            publication: expect.any(Object)
+            publication: expect.any(Object),
+            ordering: NO_ORDERING_COUNTERS
         });
     });
 
@@ -168,5 +175,25 @@ describe('rallar.messages.readUsage', () => {
             counters: { ...NO_PUBLICATION_COUNTERS, staged: 1 }
         });
         expect(staged.stagedBytes).toBeGreaterThan(0);
+    });
+
+    it('reads the ordering positions the connect\'s carriers stated, by status, counting each event', async () => {
+        const facade = createRallarTestFacade();
+        await facade.connect();
+        for (const status of ['entered', 'omitted', 'before-entry', 'before-entry'] as const) {
+            orderingCounters.sink({
+                kind: 'ordering-position',
+                workerId: 'worker-1',
+                trackKey: 'track-a',
+                seq: 3,
+                priorSeq: 2,
+                status,
+                carrier: 'ws',
+                traceId: 'trace-1',
+                corrId: 'corr-1'
+            });
+        }
+
+        expect(facade.messages.readUsage().ordering).toEqual({ entered: 1, omitted: 1, witnessed: 0, beforeEntry: 2 });
     });
 });

@@ -154,6 +154,8 @@ export interface ALOutboundRepairRequest {
     readonly trigger: ALOutboundRepairTrigger;
     readonly repair: ALOutboundRepairTrackingPlan;
     readonly requestedByPeerId?: string;
+    /** The recipient a relay asked the repair for, admitted in its place; absent, the requester is the recipient. */
+    readonly logicalRecipientPeerId?: string;
     readonly failedPeerIds: readonly string[];
     /** The next hops whose subtree the receipt saw complete; empty for a retry no receipt timed out. */
     readonly completedHopPeerIds: readonly string[];

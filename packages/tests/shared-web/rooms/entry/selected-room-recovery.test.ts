@@ -52,6 +52,14 @@ function fixture() {
     };
 }
 
+function atPresenceRevision(body: GroupSnapshot, presenceRevision: number): GroupSnapshot {
+    return {
+        ...body,
+        causalRevision: { ...body.causalRevision, presenceRevision },
+        group: { ...body.group, presenceVersion: presenceRevision }
+    };
+}
+
 function pointRead(body: GroupSnapshot): Response {
     return Response.json(body, {
         headers: {
@@ -223,4 +231,59 @@ it('retries a transiently failed restore on the same socket instead of staying a
     await test.owner.changeRoom(async () => {});
     expect(methods).toEqual(['GET', 'GET', 'GET', 'GET', 'PUT']);
     expect(test.adopted.at(-1)?.activeSessions.some((row) => row.principalId === 'watcher')).toBe(true);
+});
+
+it('adopts the written generation once the presence summary catches up with a reply that omits it', async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((message: string, error: Error) => {
+        warnings.push(`${message}: ${error.message}`);
+    });
+    const test = fixture();
+    const reads: string[] = [];
+    let summarised = snapshot;
+    const written = atPresenceRevision(snapshot, 5);
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'GET') {
+            reads.push(String(url));
+            return pointRead(summarised);
+        }
+        const { generationId, connectionGenerationId } = JSON.parse(String(init?.body));
+        // The presence row commits before the worker rebuilds the summary the reply is read from.
+        summarised = {
+            ...atPresenceRevision(snapshot, 6),
+            onlineMemberCount: 2,
+            activeSessions: [...snapshot.activeSessions, { ...initial.activeSessions[1], generationId, connectionGenerationId }]
+        };
+        return Response.json(written);
+    });
+    test.owner.onSocket('close');
+    test.owner.onSocket('open');
+    await test.owner.changeRoom(async () => {});
+    expect(warnings).toEqual([]);
+    expect(test.adopted).toEqual([summarised]);
+    expect(reads.at(-1)).toContain('minPresenceRevision=5');
+});
+
+it('ends the attempt without polling when the reply names another room', async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((message: string, error: Error) => {
+        warnings.push(`${message}: ${error.message}`);
+    });
+    const test = fixture();
+    const methods: string[] = [];
+    vi.stubGlobal('fetch', async (_url: RequestInfo | URL, init?: RequestInit) => {
+        methods.push(init?.method ?? 'GET');
+        if (init?.method === 'GET') {
+            return pointRead(snapshot);
+        }
+        return Response.json({ ...snapshot, group: { ...snapshot.group, workspaceId: 'elsewhere' } });
+    });
+    test.owner.onSocket('close');
+    test.owner.onSocket('open');
+    await test.owner.changeRoom(async () => {});
+    expect(warnings).toEqual([
+        'Selected room presence recovery failed: Selected room did not confirm presence on the replacement socket.'
+    ]);
+    expect(methods).toEqual(['GET', 'PUT']);
+    expect(test.adopted).toEqual([]);
 });

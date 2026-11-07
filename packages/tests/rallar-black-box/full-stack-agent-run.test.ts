@@ -90,9 +90,9 @@ describe('ALM run on an agent per role', () => {
                 'subscription-delivery',
                 'subscription-token-count',
                 'subscription-revoke-disconnected',
-                'subscription-reconnect',
                 'subscription-ordered-entry',
-                'subscription-ordered-omission'
+                'subscription-ordered-omission',
+                'subscription-ordered-reconnect'
             ]);
             expect(fourRole.every((scenario) => scenario.publisherB !== undefined && scenario.sibling !== undefined), carrier)
                 .toBe(true);
@@ -213,20 +213,23 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
-    it('starts the sender\'s continuation only once its first recipe ended and the gate passed in the sibling\'s still running recipe', async () => {
+    it('starts the sibling\'s continuation on its own agent only once its first recipe ended and the gate passed in the receiver\'s still running recipe', async () => {
         const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const sibling = { ...baseline.receiver, recipeId: `${baseline.receiver.recipeId}-sibling` };
         const continuation = {
-            gate: { role: 'sibling', commandId: 'sibling-reasserted' } as const,
-            recipe: { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-continuation` }
-        };
+            role: 'sibling',
+            gate: { role: 'receiver', commandId: 'receiver-p4-confirmed' },
+            recipe: { ...sibling, recipeId: `${sibling.recipeId}-continuation` }
+        } as const;
+        const receiverRunId = `${baseline.receiver.recipeId}-run`;
         const siblingRunId = `${sibling.recipeId}-run`;
-        const senderRunId = `${baseline.sender.recipeId}-run`;
         const continuationRunId = `${continuation.recipe.recipeId}-run`;
-        const siblingConnect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+        // The sibling copies the receiver's recipe, so one passed connect releases both barriers.
+        const connect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
         const posted: string[] = [];
+        const agentsByCommand = new Map<string, string>();
         let gateOpen = false;
-        let senderDone = false;
+        let siblingDone = false;
         const server = createServer((_request, response) => {
             response.writeHead(202, { 'content-type': 'application/json' });
             response.end('{}');
@@ -239,21 +242,22 @@ describe('ALM run on an agent per role', () => {
         }
         const request = await Playwright.request.newContext();
         const post = request.post.bind(request);
-        vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
+        vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
             const data = options?.data;
             if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
                 throw new Error('Expected the actual control HTTP command body.');
             }
             posted.push(data.commandId);
+            agentsByCommand.set(data.commandId, decodeURIComponent(String(url).split('/agents/')[1]?.split('/')[0] ?? ''));
             return await post(`http://127.0.0.1:${address.port}`, options);
         });
-        const toPassedEvent = (commandId: string) => ({
+        const toPassedEvent = (agentId: string, commandId: string) => ({
             kind: 'event' as const,
             protocolVersion: 1 as const,
             runId: 'gated-run',
-            agentId: 'sibling-agent',
+            agentId,
             atEpochMs: 1,
-            eventId: `event-${commandId}`,
+            eventId: `event-${agentId}-${commandId}`,
             commandId,
             payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId, payload: { commandId, ok: true } }
         });
@@ -271,12 +275,15 @@ describe('ALM run on an agent per role', () => {
                 updatedAtEpochMs: 2,
                 agents: [],
                 commands: [],
-                // The sibling's connect passed, so it is started; its recipe runs on until the gate opens.
-                events: [toPassedEvent(siblingConnect), ...(gateOpen ? [toPassedEvent('sibling-reasserted')] : [])],
+                // The receiver runs on until the gate opens; the sibling's first recipe until it is done.
+                events: [
+                    toPassedEvent('receiver-agent', connect),
+                    ...(gateOpen ? [toPassedEvent('receiver-agent', 'receiver-p4-confirmed')] : [])
+                ],
                 stats: [],
                 reports: [],
                 heartbeats: [],
-                results: posted.filter((commandId) => (gateOpen || commandId !== siblingRunId) && (senderDone || commandId !== senderRunId)).map((
+                results: posted.filter((commandId) => (gateOpen || commandId !== receiverRunId) && (siblingDone || commandId !== siblingRunId)).map((
                     commandId
                 ) => ({
                     kind: 'result',
@@ -294,19 +301,20 @@ describe('ALM run on an agent per role', () => {
                 new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['sibling', sibling]]),
                 continuation
             );
-            await vi.waitFor(() => expect(posted).toContain(senderRunId));
+            await vi.waitFor(() => expect(posted).toContain(siblingRunId));
             await new Promise((resolve) => setTimeout(resolve, 600));
             expect(posted).not.toContain(continuationRunId);
 
-            // The gate passed, but the continuation is the sender's later steps: its first recipe must end first.
+            // The gate passed, but the continuation is the sibling's later steps: its first recipe must end first.
             gateOpen = true;
             await new Promise((resolve) => setTimeout(resolve, 600));
             expect(posted).not.toContain(continuationRunId);
 
-            senderDone = true;
+            siblingDone = true;
             const outcome = await running;
 
             expect(posted.at(-1)).toBe(continuationRunId);
+            expect(agentsByCommand.get(continuationRunId)).toBe('sibling-agent');
             expect(outcome.continuation).toEqual({ commandId: continuationRunId, ok: true, summary: 'ok' });
             expect([...outcome.roles.keys()].toSorted()).toEqual(['receiver', 'sender', 'sibling']);
         }
