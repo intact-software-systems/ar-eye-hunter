@@ -25,3 +25,39 @@ export function toALOutboundRoomSentFloorKey(namespace: string, trackKey: string
 export function toALOutboundOrderingMessageKey(namespace: string, trackKey: string, seq: number): string {
     return `${namespace}:ordering-message:${JSON.stringify([trackKey, seq])}`;
 }
+
+/** The start every `ordering-message` key of one track shares and no key of another track does. */
+export function toALOutboundOrderingTrackPrefix(namespace: string, trackKey: string): string {
+    return `${namespace}:ordering-message:${JSON.stringify([trackKey]).slice(0, -1)},`;
+}
+
+export interface ALOutboundOrderingPosition {
+    readonly trackKey: string;
+    readonly seq: number;
+}
+
+/** The track and sequence an `ordering-message` key names; undefined for a key of another family or namespace. */
+export function decodeALOutboundOrderingMessageKey(
+    namespace: string,
+    key: string
+): ALOutboundOrderingPosition | undefined {
+    const family = `${namespace}:ordering-message:`;
+    if (!key.startsWith(family)) {
+        return undefined;
+    }
+    let tuple: unknown;
+    try {
+        tuple = JSON.parse(key.slice(family.length));
+    }
+    catch {
+        return undefined;
+    }
+    if (!Array.isArray(tuple) || tuple.length !== 2) {
+        return undefined;
+    }
+    const [trackKey, seq]: unknown[] = tuple;
+    return typeof trackKey === 'string' && typeof seq === 'number' &&
+            toALOutboundOrderingMessageKey(namespace, trackKey, seq) === key
+        ? { trackKey, seq }
+        : undefined;
+}

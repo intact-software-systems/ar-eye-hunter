@@ -13,6 +13,7 @@ import {
 } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { toALOutboundAdmissionNamespace } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
     type ALOutboundPreparedMessageDecoder
@@ -64,6 +65,11 @@ export function toServerWsQBoxALRuntimeStoreId(
     return toALRuntimeStoreId(`server-ws-qbox:${name}`);
 }
 
+/** The namespace the named server WS runtime keeps its outbound admission state under. */
+export function toServerWsQBoxALOutboundAdmissionNamespace(name: string): string {
+    return toALOutboundAdmissionNamespace(toServerWsQBoxALRuntimeStoreId(name));
+}
+
 function createPSqlRuntimeStoreFactories(
     runtimeStoreId: ALRuntimeStoreId<WsQueueBoxServerPreparedMessage>,
     options: CreateDefaultPSqlALOutboundRuntimeStoresInput<WsQueueBoxServerPreparedMessage>
@@ -104,7 +110,7 @@ export function createPSqlALInboundRuntimeStores(
 export function createPSqlALOutboundRuntimeStores<TPrepared>(
     input: CreatePSqlALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
-    const namespace = `${input.namespace}:outbound:admission`;
+    const namespace = toALOutboundAdmissionNamespace(input.namespace);
     const backend = new PSqlAdmissionWorkBackend({
         sql: input.repository.sql,
         namespace,

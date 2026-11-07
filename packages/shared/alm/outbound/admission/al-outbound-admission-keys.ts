@@ -1,5 +1,10 @@
 /** The outbound admission state keys; the store, its reads and the control owner all address these. */
 
+/** The namespace an outbound admission store keeps its state under, inside its runtime store namespace. */
+export function toALOutboundAdmissionNamespace(storeNamespace: string): string {
+    return `${storeNamespace}:outbound:admission`;
+}
+
 export function toALOutboundMessageOwnerKey(namespace: string, msgId: string): string {
     return `${namespace}:msg-owner:${msgId}`;
 }
