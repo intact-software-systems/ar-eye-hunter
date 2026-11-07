@@ -1,16 +1,17 @@
+import { assert } from './assert.ts';
+
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { assert } from '@std/assert';
 
 /** Execute actual selected ranges at the test agent boundary; these fixtures use matching Full replacement defaults. */
 export function executeControlRuntimeCommand(
     runtime: RallarBlackBoxTestRuntime,
     envelope: ControlCommandEnvelope
 ): Promise<RallarBlackBoxTestResult> {
-    assert(envelope.agentId !== undefined, 'runtime dispatch requires the registered agent address');
+    assert(envelope.agentId !== undefined);
     return runtime.execute(
         {
             ...envelope.command,

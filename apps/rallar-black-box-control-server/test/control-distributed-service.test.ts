@@ -1,3 +1,6 @@
+import { expect, test } from 'bun:test';
+import { assert } from './support/assert.ts';
+
 import { decodeBlackBoxRallarCrdtOpenInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts';
 import { toControlAgentIdentity } from '@shared-test/rallar-bb-test/control-client/to-control-agent-identity.ts';
 import {
@@ -26,7 +29,6 @@ import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test
 import { isJsonRecordValue, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import { assert, assertEquals, assertThrows } from '@std/assert';
 
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import {
@@ -84,7 +86,7 @@ function toCaptureRuntimeIdentity(agentId: string, runtime: RallarBlackBoxTestRu
     });
 }
 
-Deno.test('distributed run Off reaches both role invocations but an intent-only executor cannot certify application', async () => {
+test('distributed run Off reaches both role invocations but an intent-only executor cannot certify application', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     const agents = ['agent-1', 'agent-2'].map((agentId) => {
         const connections: RallarBlackBoxTestCommandContext[] = [];
@@ -142,12 +144,12 @@ Deno.test('distributed run Off reaches both role invocations but an intent-only 
 
     for (const { agentId, runtime } of agents) {
         const commands = takeAgentDispatchableCommands(service, 'run-1', agentId);
-        assertEquals(commands.length, 1);
+        expect(commands.length).toEqual(1);
         const decoded = parseControlServerMessage(JSON.stringify(commands[0]), { runId: 'run-1', agentId });
         assert(decoded.ok);
-        assertEquals(decoded.envelope.command.kind, 'recipe.load');
+        expect(decoded.envelope.command.kind).toEqual('recipe.load');
         const result = await runtime.execute({ ...decoded.envelope.command, commandId: decoded.envelope.commandId });
-        assertEquals(result.ok, true);
+        expect(result.ok).toEqual(true);
         const received = service.receiveClientEnvelope({
             kind: 'result',
             protocolVersion: 1,
@@ -157,26 +159,26 @@ Deno.test('distributed run Off reaches both role invocations but an intent-only 
             ok: result.ok,
             result
         });
-        assertEquals(received.accepted, true);
+        expect(received.accepted).toEqual(true);
     }
-    assertEquals(service.snapshotDistributedRun('capture-execution')?.state, 'ready');
+    expect(service.snapshotDistributedRun('capture-execution')?.state).toEqual('ready');
     assertRight(service.startDistributedRun('capture-execution'));
 
     const invocations = [];
     for (const { agentId, runtime, connections } of agents) {
         const commands = takeAgentDispatchableCommands(service, 'run-1', agentId);
-        assertEquals(commands.length, 1);
+        expect(commands.length).toEqual(1);
         const decoded = parseControlServerMessage(JSON.stringify(commands[0]), { runId: 'run-1', agentId });
         assert(decoded.ok);
         const command = decoded.envelope.command;
         assert(command.kind === 'recipe.run');
-        assertEquals(command.recipe, manifest.recipes[agentId === 'agent-1' ? 0 : 1].recipe);
+        expect(command.recipe).toEqual(manifest.recipes[agentId === 'agent-1' ? 0 : 1].recipe);
         const result = await runtime.execute({ ...command, commandId: decoded.envelope.commandId });
-        assertEquals(result.ok, true);
+        expect(result.ok).toEqual(true);
         assert(isJsonRecordValue(result.value));
         assert(isJsonRecordValue(result.value.invocation));
         assert(Array.isArray(result.value.results));
-        assertEquals(result.value.results.length, 4);
+        expect(result.value.results.length).toEqual(4);
         invocations.push({
             agentId,
             dispatchedMode: command.rtcCaptureMode,
@@ -193,12 +195,12 @@ Deno.test('distributed run Off reaches both role invocations but an intent-only 
             ok: result.ok,
             result
         });
-        assertEquals(received.accepted, false);
-        assertEquals(service.snapshotCommand('run-1', decoded.envelope.commandId)?.completedAtEpochMs, undefined);
-        assertEquals(service.snapshotRun('run-1')?.results.some((envelope) => envelope.commandId === decoded.envelope.commandId), false);
+        expect(received.accepted).toEqual(false);
+        expect(service.snapshotCommand('run-1', decoded.envelope.commandId)?.completedAtEpochMs).toEqual(undefined);
+        expect(service.snapshotRun('run-1')?.results.some((envelope) => envelope.commandId === decoded.envelope.commandId)).toEqual(false);
     }
-    assertEquals(service.snapshotDistributedRun('capture-execution')?.state, 'running');
-    assertEquals(invocations, [
+    expect(service.snapshotDistributedRun('capture-execution')?.state).toEqual('running');
+    expect(invocations).toEqual([
         {
             agentId: 'agent-1',
             dispatchedMode: 'off',
@@ -238,7 +240,7 @@ for (
             { name: 'scheduled loaded reference', mode: 'scheduled' as const, stage: true, referenceOnly: true }
         ]
     ) {
-        Deno.test(`distributed run ${capture.mode ?? 'Inherit'} executes ${start.name} and preserves intent without certifying missing application`, async () => {
+        test(`distributed run ${capture.mode ?? 'Inherit'} executes ${start.name} and preserves intent without certifying missing application`, async () => {
             let now = 1_000;
             const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now }));
             const connections: RallarBlackBoxTestCommandContext[] = [];
@@ -260,9 +262,9 @@ for (
             };
             if (start.referenceOnly) {
                 const loaded = await runtime.execute({ kind: 'recipe.load', commandId: 'admit-reference-body', recipe });
-                assertEquals(loaded.ok, true);
+                expect(loaded.ok).toEqual(true);
                 const loadedBody = decodeJsonValue(runtime.state().loadedRecipe);
-                assertEquals(loadedBody, recipe);
+                expect(loadedBody).toEqual(recipe);
             }
             const manifest = toDistributedManifest(
                 {
@@ -298,18 +300,18 @@ for (
                         assert(decoded.ok);
                         const command = decoded.envelope.command;
                         if (command.kind === 'recipe.run') {
-                            assertEquals(command.recipe, start.referenceOnly ? undefined : recipe);
-                            assertEquals(command.rtcCaptureMode, capture.expected);
-                            assertEquals(Object.hasOwn(command, 'rtcCaptureMode'), capture.mode !== undefined);
+                            expect(command.recipe).toEqual(start.referenceOnly ? undefined : recipe);
+                            expect(command.rtcCaptureMode).toEqual(capture.expected);
+                            expect(Object.hasOwn(command, 'rtcCaptureMode')).toEqual(capture.mode !== undefined);
                         }
                         const result = await runtime.execute({ ...command, commandId: decoded.envelope.commandId });
-                        assertEquals(result.ok, true);
+                        expect(result.ok).toEqual(true);
                         if (result.kind === 'recipe.run') {
                             assert(isJsonRecordValue(result.value));
                             assert(isJsonRecordValue(result.value.invocation));
                             invocations.push({ run: result.value.invocation.run, recipe: result.value.invocation.recipe });
                         }
-                        assertEquals(
+                        expect(
                             service.receiveClientEnvelope({
                                 kind: 'result',
                                 protocolVersion: 1,
@@ -318,53 +320,52 @@ for (
                                 commandId: decoded.envelope.commandId,
                                 ok: result.ok,
                                 result
-                            }).accepted,
-                            command.kind !== 'recipe.run' || (capture.mode === undefined && start.referenceOnly)
-                        );
+                            }).accepted
+                        ).toEqual(command.kind !== 'recipe.run' || (capture.mode === undefined && start.referenceOnly));
                         if (command.kind === 'recipe.run' && !(capture.mode === undefined && start.referenceOnly)) {
-                            assertEquals(service.snapshotCommand('run-1', decoded.envelope.commandId)?.completedAtEpochMs, undefined);
-                            assertEquals(service.snapshotRun('run-1')?.results.some((envelope) => envelope.commandId === decoded.envelope.commandId), false);
+                            expect(service.snapshotCommand('run-1', decoded.envelope.commandId)?.completedAtEpochMs).toEqual(undefined);
+                            expect(service.snapshotRun('run-1')?.results.some((envelope) => envelope.commandId === decoded.envelope.commandId)).toEqual(false);
                         }
                     }
                 }
                 if (phase === 'admission' && start.mode === 'scheduled') {
-                    assertEquals(service.snapshotDistributedRun('capture-variant')?.state, 'ready');
+                    expect(service.snapshotDistributedRun('capture-variant')?.state).toEqual('ready');
                     now = 1_500;
-                    assertEquals(service.snapshotDistributedRun('capture-variant')?.state, 'running');
+                    expect(service.snapshotDistributedRun('capture-variant')?.state).toEqual('running');
                 }
                 if (phase === 'admission' && start.stage && start.mode === 'manual') {
-                    assertEquals(service.snapshotDistributedRun('capture-variant')?.state, 'ready');
+                    expect(service.snapshotDistributedRun('capture-variant')?.state).toEqual('ready');
                     assertRight(service.startDistributedRun('capture-variant'));
                 }
             }
-            assertEquals(service.snapshotDistributedRun('capture-variant')?.state, capture.mode === undefined && start.referenceOnly ? 'passed' : 'running');
-            assertEquals(connections.map((context) => context.rtcCapture), [
+            expect(service.snapshotDistributedRun('capture-variant')?.state).toEqual(capture.mode === undefined && start.referenceOnly ? 'passed' : 'running');
+            expect(connections.map((context) => context.rtcCapture)).toEqual([
                 { run: capture.expected, recipe: 'native', step: undefined }
             ]);
-            assertEquals(invocations, [{ run: capture.expected, recipe: 'native' }]);
-            assertEquals(runtime.captureConsumptions, [{ mode: capture.expected ?? 'native', origin: capture.expected === undefined ? 'recipe' : 'run' }]);
+            expect(invocations).toEqual([{ run: capture.expected, recipe: 'native' }]);
+            expect(runtime.captureConsumptions).toEqual([{ mode: capture.expected ?? 'native', origin: capture.expected === undefined ? 'recipe' : 'run' }]);
             if (start.stage || start.referenceOnly) {
                 const loadedBody = decodeJsonValue(runtime.state().loadedRecipe);
-                assertEquals(loadedBody, recipe);
+                expect(loadedBody).toEqual(recipe);
             }
             const accepted = service.snapshotDistributedRun('capture-variant');
             assert(accepted);
-            assertEquals(accepted.manifest, manifest);
+            expect(accepted.manifest).toEqual(manifest);
             const restored = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now }));
             restored.restoreSnapshot({
                 ...service.snapshot(),
                 distributedRuns: [assertRight(decodeControlDistributedRunSnapshot(JSON.parse(JSON.stringify(accepted))))]
             });
-            assertEquals(restored.snapshotDistributedRun('capture-variant')?.manifest, manifest);
+            expect(restored.snapshotDistributedRun('capture-variant')?.manifest).toEqual(manifest);
             const bundle = createDistributedRunArtifactBundle(restored, 'capture-variant');
             assert(bundle);
             const exported = decodeJsonValue(JSON.parse(bundle.files['manifest.json']));
-            assertEquals(exported, decodeJsonValue(manifest));
+            expect(exported).toEqual(decodeJsonValue(manifest));
         });
     }
 }
 
-Deno.test('control service stages, starts, monitors, and exports distributed runs', () => {
+test('control service stages, starts, monitors, and exports distributed runs', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
@@ -421,7 +422,7 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
     assertJsonEquals(restored.snapshotDistributedRun('dist-1')?.state, 'passed');
 });
 
-Deno.test('a start result the agent could not frame fails the distributed run instead of leaving it running', () => {
+test('a start result the agent could not frame fails the distributed run instead of leaving it running', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
@@ -468,7 +469,7 @@ Deno.test('a start result the agent could not frame fails the distributed run in
     assertJsonEquals(failed?.rollup.ok, false);
 });
 
-Deno.test('control service reconciles persisted distributed start links from completed control results', () => {
+test('control service reconciles persisted distributed start links from completed control results', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
@@ -514,7 +515,7 @@ Deno.test('control service reconciles persisted distributed start links from com
     assertJsonEquals(reconciled.rollup.ok, true);
 });
 
-Deno.test('control service derives, filters, persists, and exports fleet reports', () => {
+test('control service derives, filters, persists, and exports fleet reports', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => {
@@ -676,7 +677,7 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
     assertJsonEquals(restored.listFleetReports({}).reports.length, 1);
 });
 
-Deno.test('control service coordinates distributed barrier before auto start', () => {
+test('control service coordinates distributed barrier before auto start', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now++
@@ -733,7 +734,7 @@ Deno.test('control service coordinates distributed barrier before auto start', (
     assert(running.barrierCompletedAtEpochMs !== undefined);
 });
 
-Deno.test('control service holds barrier-ready scheduled runs until start time', () => {
+test('control service holds barrier-ready scheduled runs until start time', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now
@@ -783,7 +784,7 @@ Deno.test('control service holds barrier-ready scheduled runs until start time',
     assertJsonEquals(running.commandLinks.filter((link) => link.phase === 'start').length, 2);
 });
 
-Deno.test('control service reports distributed barrier timeout, disconnect, and cancellation', () => {
+test('control service reports distributed barrier timeout, disconnect, and cancellation', () => {
     let now = 1_000;
     const timeoutService = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now
@@ -861,7 +862,7 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
     assertJsonEquals(cancelled.commandLinks.filter((link) => link.phase === 'cancel').length, 2);
 });
 
-Deno.test('control service cancels distributed runs and queues cancel commands', () => {
+test('control service cancels distributed runs and queues cancel commands', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.createDistributedRun(toDistributedManifest({
@@ -880,7 +881,7 @@ Deno.test('control service cancels distributed runs and queues cancel commands',
     assertJsonEquals(commands[0].command.kind, 'recipe.cancel');
 });
 
-Deno.test('control service resolves all-online distributed targets from Rallar identity', () => {
+test('control service resolves all-online distributed targets from Rallar identity', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({
         runId: 'run-1',
@@ -940,7 +941,7 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
     assertJsonEquals(staged.commandLinks.map((link) => link.agentId), ['agent-1']);
 });
 
-Deno.test('control service keeps explicit role-map target resolution aligned without fleet identity', () => {
+test('control service keeps explicit role-map target resolution aligned without fleet identity', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
@@ -1004,9 +1005,9 @@ Deno.test('control service keeps explicit role-map target resolution aligned wit
     );
 });
 
-Deno.test('control service refuses required Native RTC capture for explicit roles before staging any target', () => {
+test('control service refuses required Native RTC capture for explicit roles before staging any target', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    assertEquals(
+    expect(
         service.receiveClientEnvelope(toRegisterEnvelope({
             agentId: 'agent-1',
             identity: toFleetIdentity('agent-1', {
@@ -1017,10 +1018,9 @@ Deno.test('control service refuses required Native RTC capture for explicit role
                     messaging: { supported: false, carriers: [], faults: false, storageCounters: false, reload: false }
                 }
             })
-        })).accepted,
-        true
-    );
-    assertEquals(service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2' })).accepted, true);
+        })).accepted
+    ).toEqual(true);
+    expect(service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2' })).accepted).toEqual(true);
     assertRight(service.createDistributedRun(toDistributedManifest({
         rtcCaptureMode: 'native',
         recipes: [
@@ -1050,13 +1050,13 @@ Deno.test('control service refuses required Native RTC capture for explicit role
 
     const staged = service.stageDistributedRun('dist-1');
     const message = staged.left?.message ?? staged.right?.error?.message;
-    assertEquals({
+    expect({
         refused: staged.left !== undefined || staged.right?.state === 'failed',
         mentionsCapture: message?.toLowerCase().includes('capture') === true,
         commandLinks: service.snapshotDistributedRun('dist-1')?.commandLinks,
         queuedAgent1: takeAgentDispatchableCommands(service, 'run-1', 'agent-1'),
         queuedAgent2: takeAgentDispatchableCommands(service, 'run-1', 'agent-2')
-    }, {
+    }).toEqual({
         refused: true,
         mentionsCapture: true,
         commandLinks: [],
@@ -1065,10 +1065,10 @@ Deno.test('control service refuses required Native RTC capture for explicit role
     });
 });
 
-Deno.test('control service refuses required Native RTC capture on unstaged selected-agent manual start', () => {
+test('control service refuses required Native RTC capture on unstaged selected-agent manual start', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    assertEquals(service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-1' })).accepted, true);
-    assertEquals(service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2' })).accepted, true);
+    expect(service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-1' })).accepted).toEqual(true);
+    expect(service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2' })).accepted).toEqual(true);
     const created = assertRight(service.createDistributedRun(toDistributedManifest({
         rtcCaptureMode: 'native',
         recipes: [{
@@ -1082,18 +1082,18 @@ Deno.test('control service refuses required Native RTC capture on unstaged selec
         }],
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1', 'agent-2'] }
     })));
-    assertEquals(created.targetAgentIds, ['agent-1', 'agent-2']);
-    assertEquals(created.commandLinks, []);
+    expect(created.targetAgentIds).toEqual(['agent-1', 'agent-2']);
+    expect(created.commandLinks).toEqual([]);
 
     const started = service.startDistributedRun('dist-1');
     const message = started.left?.message ?? started.right?.error?.message;
-    assertEquals({
+    expect({
         refused: started.left !== undefined || started.right?.state === 'failed',
         mentionsCapture: message?.toLowerCase().includes('capture') === true,
         commandLinks: service.snapshotDistributedRun('dist-1')?.commandLinks,
         queuedAgent1: takeAgentDispatchableCommands(service, 'run-1', 'agent-1'),
         queuedAgent2: takeAgentDispatchableCommands(service, 'run-1', 'agent-2')
-    }, {
+    }).toEqual({
         refused: true,
         mentionsCapture: true,
         commandLinks: [],
@@ -1102,7 +1102,7 @@ Deno.test('control service refuses required Native RTC capture on unstaged selec
     });
 });
 
-Deno.test('capture admission restaging preserves frozen membership and rechecks its original targets', () => {
+test('capture admission restaging preserves frozen membership and rechecks its original targets', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     for (const agentId of ['agent-1', 'agent-2']) {
         service.receiveClientEnvelope(toRegisterEnvelope({ agentId, identity: toCaptureTestIdentity(agentId, ['native']) }));
@@ -1120,14 +1120,14 @@ Deno.test('capture admission restaging preserves frozen membership and rechecks 
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-0', identity: toCaptureTestIdentity('agent-0', ['native']) }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2', identity: toFleetIdentity('agent-2') }));
     const refused = assertRight(service.stageDistributedRun('dist-1'));
-    assertEquals(refused.state, 'failed');
-    assertEquals(refused.targetAgentIds, ['agent-1', 'agent-2']);
-    assertEquals(refused.targetResolution?.roleAssignments, first.targetResolution?.roleAssignments);
-    assertEquals(refused.commandLinks, first.commandLinks);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-0'), []);
+    expect(refused.state).toEqual('failed');
+    expect(refused.targetAgentIds).toEqual(['agent-1', 'agent-2']);
+    expect(refused.targetResolution?.roleAssignments).toEqual(first.targetResolution?.roleAssignments);
+    expect(refused.commandLinks).toEqual(first.commandLinks);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-0')).toEqual([]);
 });
 
-Deno.test('capture admission keeps an unsupported Health role alongside the supported RTC role', () => {
+test('capture admission keeps an unsupported Health role alongside the supported RTC role', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-1' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2', identity: toCaptureTestIdentity('agent-2', ['native']) }));
@@ -1141,9 +1141,9 @@ Deno.test('capture admission keeps an unsupported Health role alongside the supp
     });
     assertRight(service.createDistributedRun(manifest));
     const staged = assertRight(service.stageDistributedRun('dist-1'));
-    assertEquals(staged.state, 'waiting-for-ack');
-    assertEquals(staged.targetAgentIds, ['agent-1', 'agent-2']);
-    assertEquals(staged.commandLinks.map((link) => ({ agentId: link.agentId, recipeId: link.recipeId })), [{ agentId: 'agent-1', recipeId: 'health' }, {
+    expect(staged.state).toEqual('waiting-for-ack');
+    expect(staged.targetAgentIds).toEqual(['agent-1', 'agent-2']);
+    expect(staged.commandLinks.map((link) => ({ agentId: link.agentId, recipeId: link.recipeId }))).toEqual([{ agentId: 'agent-1', recipeId: 'health' }, {
         agentId: 'agent-2',
         recipeId: 'rtc'
     }]);
@@ -1161,7 +1161,7 @@ function toCaptureTestIdentity(agentId: string, modes: readonly ('off' | 'signal
 }
 
 for (const policy of ['selected-agents', 'role-map', 'all-online-group-members'] as const) {
-    Deno.test(`capture admission refuses mixed supported targets with no partial staging for ${policy}`, () => {
+    test(`capture admission refuses mixed supported targets with no partial staging for ${policy}`, () => {
         const service = createRallarBlackBoxControlService(toControlServiceInput());
         service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-1', identity: toCaptureTestIdentity('agent-1', ['off', 'signaling', 'native']) }));
         service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2', identity: toCaptureTestIdentity('agent-2', ['off', 'signaling']) }));
@@ -1180,18 +1180,18 @@ for (const policy of ['selected-agents', 'role-map', 'all-online-group-members']
         });
         assertRight(service.createDistributedRun(manifest));
         const staged = assertRight(service.stageDistributedRun('dist-1'));
-        assertEquals(staged.state, 'failed');
+        expect(staged.state).toEqual('failed');
         assert(staged.error?.message.includes('agent-2'));
         assert(staged.error?.message.toLowerCase().includes('capture'));
-        assertEquals(staged.commandLinks, []);
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-2'), []);
+        expect(staged.commandLinks).toEqual([]);
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-2')).toEqual([]);
     });
 }
 
 for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
     for (const loss of ['missing', 'signaling-only'] as const) {
-        Deno.test(`capture admission rechecks frozen roles after staging for ${startMode} with ${loss} support`, async () => {
+        test(`capture admission rechecks frozen roles after staging for ${startMode} with ${loss} support`, async () => {
             let now = 1_000;
             const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now }));
             const runtimes = new Map(['agent-1', 'agent-2'].map((agentId) => [agentId, createDefaultRallarBlackBoxTestRuntime()]));
@@ -1211,10 +1211,10 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
             }, startMode === 'scheduled' ? { startMode, startDeadlineEpochMs: 1_500 } : { startMode });
             assertRight(service.createDistributedRun(manifest));
             const staged = assertRight(service.stageDistributedRun('dist-1'));
-            assertEquals(staged.targetAgentIds, ['agent-1', 'agent-2']);
+            expect(staged.targetAgentIds).toEqual(['agent-1', 'agent-2']);
             const frozenRoles = staged.targetResolution?.roleAssignments;
             const commands = [...runtimes.keys()].flatMap((agentId) => takeAgentDispatchableCommands(service, 'run-1', agentId));
-            assertEquals(commands.length, 2);
+            expect(commands.length).toEqual(2);
             service.receiveClientEnvelope(
                 toRegisterEnvelope({
                     agentId: 'agent-2',
@@ -1229,8 +1229,8 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
                 const runtime = runtimes.get(envelope.agentId);
                 assert(runtime);
                 const result = await runtime.execute({ ...envelope.command, commandId: envelope.commandId });
-                assertEquals(result.ok, true);
-                assertEquals(
+                expect(result.ok).toEqual(true);
+                expect(
                     service.receiveClientEnvelope({
                         kind: 'result',
                         protocolVersion: 1,
@@ -1239,9 +1239,8 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
                         commandId: envelope.commandId,
                         ok: result.ok,
                         result
-                    }).accepted,
-                    true
-                );
+                    }).accepted
+                ).toEqual(true);
             }
             if (startMode === 'manual') {
                 service.startDistributedRun('dist-1');
@@ -1251,13 +1250,13 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
             }
             const refused = service.snapshotDistributedRun('dist-1');
             assert(refused);
-            assertEquals(refused.state, 'failed');
+            expect(refused.state).toEqual('failed');
             assert(refused.error?.message.toLowerCase().includes('capture'));
-            assertEquals(refused.targetAgentIds, ['agent-1', 'agent-2']);
-            assertEquals(refused.targetResolution?.roleAssignments, frozenRoles);
-            assertEquals(refused.commandLinks.filter((link) => link.phase === 'start'), []);
+            expect(refused.targetAgentIds).toEqual(['agent-1', 'agent-2']);
+            expect(refused.targetResolution?.roleAssignments).toEqual(frozenRoles);
+            expect(refused.commandLinks.filter((link) => link.phase === 'start')).toEqual([]);
             for (const agentId of ['agent-0', 'agent-1', 'agent-2']) {
-                assertEquals(takeAgentDispatchableCommands(service, 'run-1', agentId), []);
+                expect(takeAgentDispatchableCommands(service, 'run-1', agentId)).toEqual([]);
             }
         });
     }
@@ -1266,7 +1265,7 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
 for (const policy of ['selected-agents', 'role-map'] as const) {
     for (const peer of ['absent', 'unidentified', 'offline'] as const) {
         for (const phase of ['stage', 'start'] as const) {
-            Deno.test(`capture admission fix1 refuses ${policy} ${phase} with named ${peer} peer before any dispatch`, () => {
+            test(`capture admission fix1 refuses ${policy} ${phase} with named ${peer} peer before any dispatch`, () => {
                 const service = createRallarBlackBoxControlService(toControlServiceInput());
                 service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-1', identity: toCaptureTestIdentity('agent-1', ['native']) }));
                 if (peer !== 'absent') {
@@ -1292,18 +1291,18 @@ for (const policy of ['selected-agents', 'role-map'] as const) {
                 });
                 assertRight(service.createDistributedRun(manifest));
                 const refused = assertRight(phase === 'stage' ? service.stageDistributedRun('dist-1') : service.startDistributedRun('dist-1'));
-                assertEquals(refused.state, 'failed');
+                expect(refused.state).toEqual('failed');
                 assert(refused.error?.message.includes('agent-2'));
                 assert(refused.error?.message.toLowerCase().includes('capture'));
-                assertEquals(refused.commandLinks, []);
-                assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
-                assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-2'), []);
+                expect(refused.commandLinks).toEqual([]);
+                expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
+                expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-2')).toEqual([]);
             });
         }
     }
 }
 
-Deno.test('capture admission fix1 preserves unrelated role work with a named missing Health peer', () => {
+test('capture admission fix1 preserves unrelated role work with a named missing Health peer', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-1', identity: toCaptureTestIdentity('agent-1', ['native']) }));
     const manifest = toDistributedManifest({
@@ -1317,12 +1316,12 @@ Deno.test('capture admission fix1 preserves unrelated role work with a named mis
     });
     assertRight(service.createDistributedRun(manifest));
     const staged = assertRight(service.stageDistributedRun('dist-1'));
-    assertEquals(staged.state, 'waiting-for-ack');
-    assertEquals(staged.targetAgentIds, ['agent-1']);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.command.kind), ['recipe.load']);
+    expect(staged.state).toEqual('waiting-for-ack');
+    expect(staged.targetAgentIds).toEqual(['agent-1']);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.command.kind)).toEqual(['recipe.load']);
 });
 
-Deno.test('control service resolves 50 global fleet targets and routes derived roles', () => {
+test('control service resolves 50 global fleet targets and routes derived roles', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     registerFleetAgents(service, 50);
 
@@ -1369,7 +1368,7 @@ Deno.test('control service resolves 50 global fleet targets and routes derived r
     );
 });
 
-Deno.test('control service fails global fleet mismatch before queueing commands', () => {
+test('control service fails global fleet mismatch before queueing commands', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     registerFleetAgents(service, 49);
 
@@ -1385,7 +1384,7 @@ Deno.test('control service fails global fleet mismatch before queueing commands'
     assertJsonEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-01'), []);
 });
 
-Deno.test('control service freezes global fleet target roles after staging', () => {
+test('control service freezes global fleet target roles after staging', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     registerFleetAgents(service, 3);
 
@@ -1420,7 +1419,7 @@ Deno.test('control service freezes global fleet target roles after staging', () 
     ]);
 });
 
-Deno.test('control service reports distributed target mismatch and ACK timeout', () => {
+test('control service reports distributed target mismatch and ACK timeout', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now
@@ -1464,7 +1463,7 @@ Deno.test('control service reports distributed target mismatch and ACK timeout',
     assertJsonEquals(timedOutAgain.rollup.failures[0].state, 'timed-out');
 });
 
-Deno.test('control service defers a refused automatic start to a later refresh instead of failing the read', () => {
+test('control service defers a refused automatic start to a later refresh instead of failing the read', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now,
@@ -1494,7 +1493,7 @@ Deno.test('control service defers a refused automatic start to a later refresh i
     assertJsonEquals(started.commandLinks.filter((link) => link.phase === 'start').length, 1);
 });
 
-Deno.test('control service returns lifecycle failures as values without changing the run', () => {
+test('control service returns lifecycle failures as values without changing the run', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ allowedCommandKinds: ['recipe.cancel'] }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.createDistributedRun(toDistributedManifest({
@@ -1687,63 +1686,57 @@ const CRDT_ADMISSION_WITNESSES: readonly CrdtAdmissionWitness[] = [
 
 for (const phase of ['stage', 'start'] as const) {
     for (const witness of CRDT_ADMISSION_WITNESSES) {
-        Deno.test(`capture admission fix2 ${phase} preserves visible ${witness.title} outcome`, () => {
+        test(`capture admission fix2 ${phase} preserves visible ${witness.title} outcome`, () => {
             const recipe: RallarBlackBoxTestRecipe = {
                 schemaVersion: 1,
                 recipeId: 'crdt-admission-boundary',
                 commands: [...(witness.config ? [{ kind: 'configure' as const, config: witness.config }] : []), witness.command]
             };
-            assertEquals(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe).ok, true);
-            assertEquals(validateExecutableRecipe(recipe), []);
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe).ok).toEqual(true);
+            expect(validateExecutableRecipe(recipe)).toEqual([]);
             const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_500 }));
             if (witness.registered) {
                 service.receiveClientEnvelope(
                     toRegisterEnvelope({ agentId: 'agent-1', identity: toCaptureTestIdentity('agent-1', witness.supported ? ['native'] : ['off']) })
                 );
             }
-            assertEquals(
+            expect(
                 assertRight(service.createDistributedRun(toDistributedManifest({
                     rtcCaptureMode: witness.capture,
                     targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] },
                     recipes: [{ recipeId: recipe.recipeId, recipe, variables: {} }]
-                }))).state,
-                'draft'
-            );
+                }))).state
+            ).toEqual('draft');
             const snapshot = assertRight(phase === 'stage' ? service.stageDistributedRun('dist-1') : service.startDistributedRun('dist-1'));
             const commands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
             if (witness.outcome === 'dispatch') {
-                assertEquals(snapshot.state, phase === 'stage' ? 'waiting-for-ack' : 'running');
-                assertEquals(commands.map((envelope) => envelope.command.kind), [phase === 'stage' ? 'recipe.load' : 'recipe.run']);
+                expect(snapshot.state).toEqual(phase === 'stage' ? 'waiting-for-ack' : 'running');
+                expect(commands.map((envelope) => envelope.command.kind)).toEqual([phase === 'stage' ? 'recipe.load' : 'recipe.run']);
             }
             else if (witness.outcome === 'missing-target') {
-                assertEquals(snapshot.state, phase === 'stage' ? 'failed' : 'running');
-                assertEquals(snapshot.error, undefined);
-                assertEquals(snapshot.commandLinks.map((link) => link.phase), [phase]);
-                assertEquals(
-                    snapshot.rollup.failures,
+                expect(snapshot.state).toEqual(phase === 'stage' ? 'failed' : 'running');
+                expect(snapshot.error).toEqual(undefined);
+                expect(snapshot.commandLinks.map((link) => link.phase)).toEqual([phase]);
+                expect(snapshot.rollup.failures).toEqual(
                     phase === 'stage' ? [{ kind: 'participant', key: 'agent-1', state: 'disconnected', error: undefined }] : []
                 );
-                assertEquals(commands, []);
+                expect(commands).toEqual([]);
             }
             else {
-                assertEquals(snapshot.state, 'failed');
-                assertEquals(snapshot.error?.code, 'RALLAR_BB_DISTRIBUTED_CAPTURE_UNSUPPORTED');
-                assertEquals(snapshot.commandLinks, []);
-                assertEquals(commands, []);
+                expect(snapshot.state).toEqual('failed');
+                expect(snapshot.error?.code).toEqual('RALLAR_BB_DISTRIBUTED_CAPTURE_UNSUPPORTED');
+                expect(snapshot.commandLinks).toEqual([]);
+                expect(commands).toEqual([]);
             }
         });
     }
 }
 
-Deno.test('capture admission fix2 keeps the execution decoder strict for blank names and invalid transport', () => {
-    assertThrows(() => decodeBlackBoxRallarCrdtOpenInput({ name: '', transport: 'local-only' }), TypeError, 'CRDT option must be a non-empty string.');
-    assertThrows(
-        () => decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', rallar: { crdtTransport: 'unverified' } }),
-        TypeError,
-        'CRDT transport is invalid.'
-    );
-    assertEquals(decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', transport: 'local-only', rallar: { crdtTransport: 'ws' } }).transport, 'local-only');
-    assertThrows(() => decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', transport: 'unverified' }), TypeError, 'CRDT transport is invalid.');
-    assertEquals(decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', transport: 'ws', rallar: { crdtTransport: 'local-only' } }).transport, 'ws');
-    assertEquals(decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name' }).transport, undefined);
+test('capture admission fix2 keeps the execution decoder strict for blank names and invalid transport', () => {
+    expect(() => decodeBlackBoxRallarCrdtOpenInput({ name: '', transport: 'local-only' })).toThrow(TypeError);
+    expect(() => decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', rallar: { crdtTransport: 'unverified' } })).toThrow(TypeError);
+    expect(decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', transport: 'local-only', rallar: { crdtTransport: 'ws' } }).transport).toEqual('local-only');
+    expect(() => decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', transport: 'unverified' })).toThrow(TypeError);
+    expect(decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name', transport: 'ws', rallar: { crdtTransport: 'local-only' } }).transport).toEqual('ws');
+    expect(decodeBlackBoxRallarCrdtOpenInput({ name: 'valid-name' }).transport).toEqual(undefined);
 });

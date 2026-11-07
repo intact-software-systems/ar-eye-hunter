@@ -1,10 +1,15 @@
+import { expect, test } from 'bun:test';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { assert } from './support/assert.ts';
+
 import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import { assert, assertEquals } from '@std/assert';
 
 import { toRallarBlackBoxCompositeResultFlatEntries } from '@shared-test/rallar-bb-test/composite-results.ts';
 import { parseControlClientMessage, RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -107,7 +112,7 @@ interface SnapshotRestoreResult {
 async function restoreSnapshotText(
     snapshot: object
 ): Promise<SnapshotRestoreResult> {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-restore-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-snapshot-restore-'));
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     const warnings: string[] = [];
     const warn = console.warn;
@@ -115,35 +120,32 @@ async function restoreSnapshotText(
     console.warn = (message: string) => warnings.push(message);
     console.log = () => undefined;
     try {
-        await Deno.writeTextFile(
-            `${storageDir}/control-snapshot.json`,
-            JSON.stringify({ schemaVersion: 1, savedAtEpochMs: 1_000, snapshot })
-        );
+        await writeFile(`${storageDir}/control-snapshot.json`, JSON.stringify({ schemaVersion: 1, savedAtEpochMs: 1_000, snapshot }), 'utf8');
         await toSnapshotPersistence({ storageDir, controlService: service }).restore();
         return { service, warnings };
     }
     finally {
         console.warn = warn;
         console.log = log;
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 }
 
-Deno.test('control snapshot restore brings back the runs and distributed runs this server persisted', async () => {
+test('control snapshot restore brings back the runs and distributed runs this server persisted', async () => {
     const persisted = toStagedService().snapshotForPersistence({});
 
     const { service, warnings } = await restoreSnapshotText(persisted);
 
-    assertEquals(warnings, []);
-    assertEquals(service.snapshotRun('run-1')?.agents.map((agent) => agent.agentId), ['agent-1', 'agent-2']);
-    assertEquals(service.snapshotDistributedRun('dist-1')?.manifest, persisted.distributedRuns?.[0]?.manifest);
+    expect(warnings).toEqual([]);
+    expect(service.snapshotRun('run-1')?.agents.map((agent) => agent.agentId)).toEqual(['agent-1', 'agent-2']);
+    expect(service.snapshotDistributedRun('dist-1')?.manifest).toEqual(persisted.distributedRuns?.[0]?.manifest);
 });
 
-Deno.test('control snapshot persistence writes compact JSON once per changed snapshot and never serializes an unchanged one', async () => {
+test('control snapshot persistence writes compact JSON once per changed snapshot and never serializes an unchanged one', async () => {
     const service = toStagedService();
     const timers = createManualTimers(10_000);
     let serializations = 0;
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-change-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-snapshot-change-'));
     const snapshotPath = `${storageDir}/control-snapshot.json`;
     try {
         const persistence = toSnapshotPersistence({
@@ -153,40 +155,40 @@ Deno.test('control snapshot persistence writes compact JSON once per changed sna
         });
         persistence.persist();
         await timers.advanceTo(10_000);
-        const first = await Deno.readTextFile(snapshotPath);
+        const first = await readFile(snapshotPath, 'utf8');
 
         persistence.persist();
         persistence.persist();
         await timers.advanceTo(10_000 + FLUSH_INTERVAL_MS * 4);
-        const unchanged = await Deno.readTextFile(snapshotPath);
+        const unchanged = await readFile(snapshotPath, 'utf8');
         const serializationsWhileUnchanged = serializations;
 
         service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-3', identity: toFleetIdentity('agent-3') }));
         persistence.persist();
         await timers.advanceTo(10_000 + FLUSH_INTERVAL_MS * 8);
-        const changed = await Deno.readTextFile(snapshotPath);
+        const changed = await readFile(snapshotPath, 'utf8');
 
-        assertEquals(serializationsWhileUnchanged, 1, 'an unchanged revision is not serialized again');
-        assertEquals(unchanged, first, 'an unchanged snapshot is not rewritten');
-        assertEquals(serializations, 2);
-        assertEquals(first.includes('\n'), false, 'the snapshot file is compact');
+        expect(serializationsWhileUnchanged).toEqual(1);
+        expect(unchanged).toEqual(first);
+        expect(serializations).toEqual(2);
+        expect(first.includes('\n')).toEqual(false);
         const restored = await restoreSnapshotText(JSON.parse(changed).snapshot);
-        assertEquals(restored.warnings, []);
-        assertEquals(restored.service.snapshotRun('run-1')?.agents.map((agent) => agent.agentId).sort(), ['agent-1', 'agent-2', 'agent-3']);
+        expect(restored.warnings).toEqual([]);
+        expect(restored.service.snapshotRun('run-1')?.agents.map((agent) => agent.agentId).sort()).toEqual(['agent-1', 'agent-2', 'agent-3']);
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
 // Every flush serializes every retained run, so flushes per burst is the cost being bounded.
-Deno.test('a 2 s burst of 1,000 accepted envelopes writes the snapshot at most once per flush interval plus the trailing write', async () => {
+test('a 2 s burst of 1,000 accepted envelopes writes the snapshot at most once per flush interval plus the trailing write', async () => {
     const burstMs = 2_000;
     const startEpochMs = 10_000;
     const service = toStagedService();
     const timers = createManualTimers(startEpochMs);
     let serializations = 0;
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-burst-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-snapshot-burst-'));
     try {
         const persistence = toSnapshotPersistence({
             storageDir,
@@ -203,22 +205,22 @@ Deno.test('a 2 s burst of 1,000 accepted envelopes writes the snapshot at most o
             await timers.advanceTo(startEpochMs + index * 2);
         }
         await timers.advanceTo(startEpochMs + burstMs + FLUSH_INTERVAL_MS);
-        const persisted = JSON.parse(await Deno.readTextFile(`${storageDir}/control-snapshot.json`));
+        const persisted = JSON.parse(await readFile(`${storageDir}/control-snapshot.json`, 'utf8'));
 
-        assert(serializations <= Math.ceil(burstMs / FLUSH_INTERVAL_MS) + 1, `${serializations} flushes in ${burstMs} ms`);
-        assertEquals(persisted.snapshot.runs[0].heartbeats.at(-1).atEpochMs, startEpochMs + burstMs, 'the trailing write holds the last envelope');
+        assert(serializations <= Math.ceil(burstMs / FLUSH_INTERVAL_MS) + 1);
+        expect(persisted.snapshot.runs[0].heartbeats.at(-1).atEpochMs).toEqual(startEpochMs + burstMs);
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('a distributed-run lifecycle change and shutdown write the snapshot at once', async () => {
+test('a distributed-run lifecycle change and shutdown write the snapshot at once', async () => {
     const service = toStagedService();
     const timers = createManualTimers(10_000);
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-lifecycle-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-snapshot-lifecycle-'));
     const snapshotPath = `${storageDir}/control-snapshot.json`;
-    const persistedState = async () => JSON.parse(await Deno.readTextFile(snapshotPath)).snapshot.distributedRuns[0].state;
+    const persistedState = async () => JSON.parse(await readFile(snapshotPath, 'utf8')).snapshot.distributedRuns[0].state;
     try {
         const persistence = toSnapshotPersistence({ storageDir, controlService: service, timers });
         persistence.persist();
@@ -233,19 +235,19 @@ Deno.test('a distributed-run lifecycle change and shutdown write the snapshot at
         service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-3', identity: toFleetIdentity('agent-3') }));
         persistence.persist();
         await persistence.stop();
-        const stopped = JSON.parse(await Deno.readTextFile(snapshotPath)).snapshot.runs[0].agents.length;
+        const stopped = JSON.parse(await readFile(snapshotPath, 'utf8')).snapshot.runs[0].agents.length;
 
-        assertEquals([staged, cancelled, stopped], ['waiting-for-ack', 'cancelled', 3]);
+        expect([staged, cancelled, stopped]).toEqual(['waiting-for-ack', 'cancelled', 3]);
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('a snapshot read that throws during a flush is logged as a warning with its cause', async () => {
+test('a snapshot read that throws during a flush is logged as a warning with its cause', async () => {
     const service = toStagedService();
     const timers = createManualTimers(10_000);
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-throw-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-snapshot-throw-'));
     const warnings: string[] = [];
     const warn = console.warn;
     console.warn = (message: string) => warnings.push(message);
@@ -261,77 +263,77 @@ Deno.test('a snapshot read that throws during a flush is logged as a warning wit
         await timers.advanceTo(10_000);
         await persistence.stop();
 
-        assertEquals(warnings, [
+        expect(warnings).toEqual([
             `Could not persist control snapshot to ${storageDir}/control-snapshot.json: snapshot projection failed`
         ]);
     }
     finally {
         console.warn = warn;
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('control snapshot restore rejects a distributed run whose manifest omits a now-required setting', async () => {
+test('control snapshot restore rejects a distributed run whose manifest omits a now-required setting', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     const distributedRun = persisted.distributedRuns[0];
     delete distributedRun.manifest.groupAssertions;
 
     const { service, warnings } = await restoreSnapshotText(persisted);
 
-    assertEquals(service.listDistributedRuns(), []);
-    assertEquals(service.snapshotRun('run-1'), undefined);
-    assertEquals(warnings.length, 1);
-    assert(warnings[0].includes('distributedRuns[0]: manifest is not a valid distributed run manifest'), warnings[0]);
-    assert(warnings[0].includes('$: Missing required property groupAssertions.'), warnings[0]);
+    expect(service.listDistributedRuns()).toEqual([]);
+    expect(service.snapshotRun('run-1')).toEqual(undefined);
+    expect(warnings.length).toEqual(1);
+    assert(warnings[0].includes('distributedRuns[0]: manifest is not a valid distributed run manifest'));
+    assert(warnings[0].includes('$: Missing required property groupAssertions.'));
 });
 
-Deno.test('control snapshot restore rejects a resolved role assignment without its recipe scope', async () => {
+test('control snapshot restore rejects a resolved role assignment without its recipe scope', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     const resolution = persisted.distributedRuns[0].targetResolution;
     resolution.roleAssignments = [{ role: 'sender', agentId: 'agent-1' }];
 
     const { service, warnings } = await restoreSnapshotText(persisted);
 
-    assertEquals(service.listDistributedRuns(), []);
-    assertEquals(warnings.length, 1);
-    assert(warnings[0].includes('targetResolution.roleAssignments[0].recipeIds must be an array of strings'), warnings[0]);
+    expect(service.listDistributedRuns()).toEqual([]);
+    expect(warnings.length).toEqual(1);
+    assert(warnings[0].includes('targetResolution.roleAssignments[0].recipeIds must be an array of strings'));
 });
 
-Deno.test('control snapshot restore rejects an agent identity without its session label', async () => {
+test('control snapshot restore rejects an agent identity without its session label', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     delete persisted.runs[0].agents[0].identity.sessionLabel;
 
     const { service, warnings } = await restoreSnapshotText(persisted);
 
-    assertEquals(service.snapshotRun('run-1'), undefined);
-    assertEquals(warnings.length, 1);
-    assert(warnings[0].includes('agents[0].identity.sessionLabel must be a non-empty string'), warnings[0]);
+    expect(service.snapshotRun('run-1')).toEqual(undefined);
+    expect(warnings.length).toEqual(1);
+    assert(warnings[0].includes('agents[0].identity.sessionLabel must be a non-empty string'));
 });
 
-Deno.test('control snapshot restore rejects a snapshot without its fleet reports instead of restoring none', async () => {
+test('control snapshot restore rejects a snapshot without its fleet reports instead of restoring none', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     delete persisted.fleetReports;
 
     const { service, warnings } = await restoreSnapshotText(persisted);
 
-    assertEquals(service.snapshotRun('run-1'), undefined);
-    assertEquals(service.listDistributedRuns(), []);
-    assertEquals(warnings.length, 1);
-    assert(warnings[0].endsWith(': fleetReports must be an array'), warnings[0]);
+    expect(service.snapshotRun('run-1')).toEqual(undefined);
+    expect(service.listDistributedRuns()).toEqual([]);
+    expect(warnings.length).toEqual(1);
+    assert(warnings[0].endsWith(': fleetReports must be an array'));
 });
 
-Deno.test('control snapshot restore rejects a snapshot without its distributed runs instead of restoring none', async () => {
+test('control snapshot restore rejects a snapshot without its distributed runs instead of restoring none', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     delete persisted.distributedRuns;
 
     const { service, warnings } = await restoreSnapshotText(persisted);
 
-    assertEquals(service.snapshotRun('run-1'), undefined);
-    assertEquals(warnings.length, 1);
-    assert(warnings[0].endsWith(': distributedRuns must be an array'), warnings[0]);
+    expect(service.snapshotRun('run-1')).toEqual(undefined);
+    expect(warnings.length).toEqual(1);
+    assert(warnings[0].endsWith(': distributedRuns must be an array'));
 });
 
-Deno.test('capture admission preserves an unidentified capture blocker through decode, restore and export', async () => {
+test('capture admission preserves an unidentified capture blocker through decode, restore and export', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     const blocker: RallarBlackBoxDistributedTargetBlocker = {
         agentId: 'agent-2',
@@ -341,17 +343,17 @@ Deno.test('capture admission preserves an unidentified capture blocker through d
     persisted.distributedRuns[0].targetResolution.blockers = [blocker];
 
     const decoded = assertRight(decodeControlDistributedRunSnapshot(persisted.distributedRuns[0]));
-    assertEquals(decoded.targetResolution?.blockers, [blocker]);
+    expect(decoded.targetResolution?.blockers).toEqual([blocker]);
     const { service, warnings } = await restoreSnapshotText(persisted);
-    assertEquals(warnings, []);
-    assertEquals(service.snapshotDistributedRun('dist-1')?.targetResolution?.blockers, [blocker]);
+    expect(warnings).toEqual([]);
+    expect(service.snapshotDistributedRun('dist-1')?.targetResolution?.blockers).toEqual([blocker]);
     const bundle = createDistributedRunArtifactBundle(service, 'dist-1');
     assert(bundle);
     const exported = assertRight(decodeControlDistributedRunSnapshot(JSON.parse(bundle.files['distributed-run.json'])));
-    assertEquals(exported.targetResolution?.blockers, [blocker]);
+    expect(exported.targetResolution?.blockers).toEqual([blocker]);
 });
 
-Deno.test('capture admission rejects supplied malformed identities and requires identities for other statuses', () => {
+test('capture admission rejects supplied malformed identities and requires identities for other statuses', () => {
     const snapshot = JSON.parse(JSON.stringify(toStagedService().snapshotDistributedRun('dist-1')));
     for (
         const blocker of [
@@ -376,96 +378,96 @@ Deno.test('capture admission rejects supplied malformed identities and requires 
 });
 
 /** The optional handoff file is produced by the real private SDK Vitest seat; literal receipts cannot satisfy this test. */
-Deno.test({
-    name: 'actual SDK provenance survives native persistence, restore, disk JSONL, fallback and distributed export',
-    ignore: Deno.env.get('RALLAR_SDK_RECEIPT_WITNESS_PATH') === undefined,
-    fn: async () => {
-        const witnessPath = Deno.env.get('RALLAR_SDK_RECEIPT_WITNESS_PATH');
-        assert(witnessPath);
-        const text = await Deno.readTextFile(witnessPath);
-        const witness = decodeRecord(JSON.parse(text));
-        const producer = decodeRecord(witness.producer);
-        const receipt = assertRight(toRtcCaptureReadout(decodeJsonValue(witness.receipt)));
-        const invocation = decodeRecord(witness.invocation);
-        const source = await Deno.readFile(
-            new URL('../../../packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts', import.meta.url)
+const sdkReceiptWitnessPath = process.env['RALLAR_SDK_RECEIPT_WITNESS_PATH'];
+const sdkReceiptTest = sdkReceiptWitnessPath === undefined ? test.skip : test;
+sdkReceiptTest('actual SDK provenance survives native persistence, restore, disk JSONL, fallback and distributed export', async () => {
+    if (sdkReceiptWitnessPath === undefined) {
+        throw new Error('RALLAR_SDK_RECEIPT_WITNESS_PATH is required for this test.');
+    }
+    const witnessPath = sdkReceiptWitnessPath;
+    const text = await readFile(witnessPath, 'utf8');
+    const witness = decodeRecord(JSON.parse(text));
+    const producer = decodeRecord(witness.producer);
+    const receipt = assertRight(toRtcCaptureReadout(decodeJsonValue(witness.receipt)));
+    const invocation = decodeRecord(witness.invocation);
+    const source = await readFile(
+        new URL('../../../packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts', import.meta.url)
+    );
+    expect(producer.sourceSha256).toEqual(await sha256(source));
+    expect(producer.test).toEqual('actual SDK distributed Off receipt and replay');
+    const persisted = decodeRecord(witness.snapshot);
+    assert(Array.isArray(persisted.runs));
+    const run = assertRight(decodeControlRunSnapshot(persisted.runs[0]));
+    assert(Array.isArray(persisted.distributedRuns));
+    const distributedRuns = persisted.distributedRuns.map((value) => assertRight(decodeControlDistributedRunSnapshot(value)));
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
+    service.restoreSnapshot({ runs: [run], distributedRuns, fleetReports: [] });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-sdk-receipt-disk-'));
+    try {
+        const persistence = toSnapshotPersistence({ storageDir, controlService: service });
+        persistence.persist();
+        await persistence.stop();
+        const diskText = await readFile(`${storageDir}/control-snapshot.json`, 'utf8');
+        assert(diskText.includes(String(witness.commandId)));
+        const restored = createRallarBlackBoxControlService(toControlServiceInput());
+        await toSnapshotPersistence({ storageDir, controlService: restored }).restore();
+        const restoredRun = restored.snapshotRun(run.runId);
+        assert(restoredRun);
+        const root = restoredRun.results.find((entry) => entry.commandId === witness.commandId);
+        assert(root?.result);
+        expect(root.replayed).toEqual(true);
+        expect(root.result.replayed).toEqual(true);
+        expect(decodeRecord(root.result.value).invocation).toEqual(invocation);
+        assertSdkCaptureReceipts(root.result, receipt);
+        const recorder = new ControlArtifactRecorder({
+            storageDir,
+            commandSnapshots: restored,
+            timers: createDefaultTimers(),
+            config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+        });
+        assert(Array.isArray(witness.envelopes));
+        for (const value of witness.envelopes) {
+            const parsed = parseControlClientMessage(value);
+            assert(parsed.ok);
+            recorder.record(parsed.envelope);
+        }
+        const diskResponse = await recorder.response({ runId: run.runId, kind: 'results', fallbackRun: restoredRun, corsOrigins: [] });
+        const diskRows = await diskResponse.text();
+        expect(diskRows).toEqual(await readFile(`${storageDir}/runs/${toRunDirectoryName(run.runId)}/results.jsonl`, 'utf8'));
+        assertSdkArtifactReceipt({ text: diskRows, result: root.result, receipt: receipt, invocation: invocation });
+        const fallback = new ControlArtifactRecorder({
+            storageDir: undefined,
+            commandSnapshots: restored,
+            timers: createDefaultTimers(),
+            config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+        });
+        const fallbackText = await (await fallback.response({ runId: run.runId, kind: 'results', fallbackRun: restoredRun, corsOrigins: [] })).text();
+        assertSdkArtifactReceipt({ text: fallbackText, result: root.result, receipt: receipt, invocation: invocation });
+        const bundle = createDistributedRunArtifactBundle(restored, 'sdk-distributed');
+        assert(bundle);
+        const exported = assertRight(decodeControlRunSnapshot(JSON.parse(bundle.files['control-run.json'])));
+        const exportedRoot = exported.results.find((entry) => entry.commandId === witness.commandId);
+        assert(exportedRoot?.result);
+        assertSdkCaptureReceipts(exportedRoot.result, receipt);
+        expect(restored.snapshotDistributedRun('sdk-distributed')?.commandLinks.find((link) => link.commandId === witness.commandId)?.phase).toEqual('start');
+        for (
+            const [suffix, artifact] of [
+                ['native-snapshot.json', diskText],
+                ['native-disk-results.jsonl', diskRows],
+                ['native-fallback-results.jsonl', fallbackText],
+                ['native-distributed-control-run.json', bundle.files['control-run.json']]
+            ]
+        ) {
+            await writeFile(`${witnessPath}.${suffix}`, artifact, { encoding: 'utf8', flag: 'wx' });
+        }
+        console.log(
+            `Native SDK disk lineage: input SHA256 ${await sha256(new TextEncoder().encode(text))}; snapshot SHA256 ${await sha256(
+                new TextEncoder().encode(diskText)
+            )}; disk JSONL SHA256 ${await sha256(new TextEncoder().encode(diskRows))}`
         );
-        assertEquals(producer.sourceSha256, await sha256(source));
-        assertEquals(producer.test, 'actual SDK distributed Off receipt and replay');
-        const persisted = decodeRecord(witness.snapshot);
-        assert(Array.isArray(persisted.runs));
-        const run = assertRight(decodeControlRunSnapshot(persisted.runs[0]));
-        assert(Array.isArray(persisted.distributedRuns));
-        const distributedRuns = persisted.distributedRuns.map((value) => assertRight(decodeControlDistributedRunSnapshot(value)));
-        const service = createRallarBlackBoxControlService(toControlServiceInput());
-        service.restoreSnapshot({ runs: [run], distributedRuns, fleetReports: [] });
-        const storageDir = await Deno.makeTempDir({ prefix: 'rallar-sdk-receipt-disk-' });
-        try {
-            const persistence = toSnapshotPersistence({ storageDir, controlService: service });
-            persistence.persist();
-            await persistence.stop();
-            const diskText = await Deno.readTextFile(`${storageDir}/control-snapshot.json`);
-            assert(diskText.includes(String(witness.commandId)));
-            const restored = createRallarBlackBoxControlService(toControlServiceInput());
-            await toSnapshotPersistence({ storageDir, controlService: restored }).restore();
-            const restoredRun = restored.snapshotRun(run.runId);
-            assert(restoredRun);
-            const root = restoredRun.results.find((entry) => entry.commandId === witness.commandId);
-            assert(root?.result);
-            assertEquals(root.replayed, true);
-            assertEquals(root.result.replayed, true);
-            assertEquals(decodeRecord(root.result.value).invocation, invocation);
-            assertSdkCaptureReceipts(root.result, receipt);
-            const recorder = new ControlArtifactRecorder({
-                storageDir,
-                commandSnapshots: restored,
-                timers: createDefaultTimers(),
-                config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
-            });
-            assert(Array.isArray(witness.envelopes));
-            for (const value of witness.envelopes) {
-                const parsed = parseControlClientMessage(value);
-                assert(parsed.ok);
-                recorder.record(parsed.envelope);
-            }
-            const diskResponse = await recorder.response({ runId: run.runId, kind: 'results', fallbackRun: restoredRun, corsOrigins: [] });
-            const diskRows = await diskResponse.text();
-            assertEquals(diskRows, await Deno.readTextFile(`${storageDir}/runs/${toRunDirectoryName(run.runId)}/results.jsonl`));
-            assertSdkArtifactReceipt({ text: diskRows, result: root.result, receipt: receipt, invocation: invocation });
-            const fallback = new ControlArtifactRecorder({
-                storageDir: undefined,
-                commandSnapshots: restored,
-                timers: createDefaultTimers(),
-                config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
-            });
-            const fallbackText = await (await fallback.response({ runId: run.runId, kind: 'results', fallbackRun: restoredRun, corsOrigins: [] })).text();
-            assertSdkArtifactReceipt({ text: fallbackText, result: root.result, receipt: receipt, invocation: invocation });
-            const bundle = createDistributedRunArtifactBundle(restored, 'sdk-distributed');
-            assert(bundle);
-            const exported = assertRight(decodeControlRunSnapshot(JSON.parse(bundle.files['control-run.json'])));
-            const exportedRoot = exported.results.find((entry) => entry.commandId === witness.commandId);
-            assert(exportedRoot?.result);
-            assertSdkCaptureReceipts(exportedRoot.result, receipt);
-            assertEquals(restored.snapshotDistributedRun('sdk-distributed')?.commandLinks.find((link) => link.commandId === witness.commandId)?.phase, 'start');
-            for (
-                const [suffix, artifact] of [
-                    ['native-snapshot.json', diskText],
-                    ['native-disk-results.jsonl', diskRows],
-                    ['native-fallback-results.jsonl', fallbackText],
-                    ['native-distributed-control-run.json', bundle.files['control-run.json']]
-                ]
-            ) {
-                await Deno.writeTextFile(`${witnessPath}.${suffix}`, artifact, { createNew: true });
-            }
-            console.log(
-                `Native SDK disk lineage: input SHA256 ${await sha256(new TextEncoder().encode(text))}; snapshot SHA256 ${await sha256(
-                    new TextEncoder().encode(diskText)
-                )}; disk JSONL SHA256 ${await sha256(new TextEncoder().encode(diskRows))}`
-            );
-        }
-        finally {
-            await Deno.remove(storageDir, { recursive: true });
-        }
+    }
+    finally {
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
@@ -476,10 +478,10 @@ async function sha256(value: Uint8Array): Promise<string> {
 
 function assertSdkCaptureReceipts(result: RallarBlackBoxTestResult, receipt: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>): void {
     const connections = toRallarBlackBoxCompositeResultFlatEntries([result]).filter((entry) => entry.kind === 'rtc.connect');
-    assertEquals(connections.length, 4);
-    assertEquals(new Set(connections.map((entry) => entry.path)).size, 4);
+    expect(connections.length).toEqual(4);
+    expect(new Set(connections.map((entry) => entry.path)).size).toEqual(4);
     for (const connection of connections) {
-        assertEquals(toRtcCaptureReadout(decodeJsonValue(decodeRecord(connection.result.value).rtcCapture)).right, receipt);
+        expect(toRtcCaptureReadout(decodeJsonValue(decodeRecord(connection.result.value).rtcCapture)).right).toEqual(receipt);
     }
 }
 
@@ -495,14 +497,14 @@ function assertSdkArtifactReceipt(input: SdkArtifactReceiptInput): void {
         .find((entry) => entry.commandId === input.result.commandId);
     assert(row);
     const actual = decodeRecord(row.actual);
-    assertEquals(actual.invocation, input.invocation);
+    expect(actual.invocation).toEqual(input.invocation);
     assertSdkCaptureReceipts({ ...input.result, value: actual }, input.receipt);
 }
 
 const SLOW_SLICES = 8;
 const SLOW_SLICE_MS = 60;
 
-Deno.test('the sliced snapshot serialization is exactly JSON.stringify of the snapshot', () => {
+test('the sliced snapshot serialization is exactly JSON.stringify of the snapshot', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     for (const agentId of ['agent-1', 'agent-2']) {
         service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId, identity: toFleetIdentity(agentId) }));
@@ -514,14 +516,14 @@ Deno.test('the sliced snapshot serialization is exactly JSON.stringify of the sn
     const snapshot = service.snapshotForPersistence({});
     const withEdgeValues = { ...snapshot, edge: [undefined, () => 1, { skipped: undefined, kept: null, date: new Date(0) }] };
 
-    assertEquals([...toJsonPieces(snapshot, 0)].join(''), JSON.stringify(snapshot));
-    assertEquals([...toJsonPieces(withEdgeValues, 0)].join(''), JSON.stringify(withEdgeValues));
+    expect([...toJsonPieces(snapshot, 0)].join('')).toEqual(JSON.stringify(snapshot));
+    expect([...toJsonPieces(withEdgeValues, 0)].join('')).toEqual(JSON.stringify(withEdgeValues));
 });
 
 // Before the serialization was sliced, a barrier arrival that landed during a flush waited for the whole
 // JSON.stringify; on the hosted VM that held barrier resolutions for seconds.
-Deno.test('a barrier arrival during a slow snapshot flush is resolved on its socket before the flush ends', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-slow-flush-' });
+test('a barrier arrival during a slow snapshot flush is resolved on its socket before the flush ends', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-snapshot-slow-flush-'));
     const timings: RallarTimingEvent[] = [];
     const service = createRallarBlackBoxControlService(toControlServiceInput({ timingSink: (event) => timings.push(event) }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1' }));
@@ -560,16 +562,16 @@ Deno.test('a barrier arrival during a slow snapshot flush is resolved on its soc
         const flush = timings.find((event) => event.operation === 'snapshot.flush');
         const resolution = timings.find((event) => event.operation === 'barrier.resolution');
 
-        assert(resolutionSentAt !== undefined, 'the barrier resolution was sent');
-        assert(resolutionSentAt < flushEndedAt, 'the resolution went out while the flush was still writing');
-        assert(resolutionSentAt - arrivalDueAt < 4 * SLOW_SLICE_MS, `${resolutionSentAt - arrivalDueAt} ms after the arrival was due`);
-        assertEquals(flush?.status, 'ok');
+        assert(resolutionSentAt !== undefined);
+        assert(resolutionSentAt < flushEndedAt);
+        assert(resolutionSentAt - arrivalDueAt < 4 * SLOW_SLICE_MS);
+        expect(flush?.status).toEqual('ok');
         assert((flush?.details?.bytes ?? 0) as number > SLOW_SLICES * 1_000_000);
         assert((flush?.details?.serializeMs ?? 0) as number >= SLOW_SLICES * SLOW_SLICE_MS);
-        assertEquals(resolution?.details, { barrierId: 'armed', outcome: 'failed', arrivals: 1, participants: 0 });
+        expect(resolution?.details).toEqual({ barrierId: 'armed', outcome: 'failed', arrivals: 1, participants: 0 });
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 

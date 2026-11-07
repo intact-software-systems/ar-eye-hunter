@@ -120,12 +120,16 @@ export class ControlAgentSockets {
         const existing = sockets.get(agent.agentId);
         if (existing && existing !== socket) {
             this.controlService.recordDuplicateAgentSocketReplacement(agent.runId, agent.agentId);
-            existing.close(DUPLICATE_AGENT_CLOSE_CODE, 'agent re-registered');
         }
 
+        // Register first, then close the replaced socket: Bun fires a socket's close handler synchronously, so the
+        // stale socket's close must see the replacement already owning the agent instead of releasing it as disconnected.
         this.agentBySocket.set(socket, agent);
         sockets.set(agent.agentId, socket);
         this.socketsByRun.set(agent.runId, sockets);
+        if (existing && existing !== socket) {
+            existing.close(DUPLICATE_AGENT_CLOSE_CODE, 'agent re-registered');
+        }
     }
 
     release(socket: ControlAgentSocket): ControlAgentIdentity | undefined {

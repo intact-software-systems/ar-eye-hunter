@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import { assert } from './support/assert.ts';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import type { RallarBlackBoxTestMessagesObserveResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
@@ -24,7 +25,7 @@ import {
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 for (const scheduled of [false, true]) {
-    Deno.test(`generated full ALM ${scheduled ? 'scheduled' : 'manual'} start preserves paired recovery connections and execution budget`, () => {
+    test(`generated full ALM ${scheduled ? 'scheduled' : 'manual'} start preserves paired recovery connections and execution budget`, () => {
         let now = 1_000;
         const generated = createAlmConformance2AgentEntry().manifest;
         const manifest = scheduled
@@ -46,7 +47,7 @@ for (const scheduled of [false, true]) {
         for (const phase of ['stage', 'barrier']) {
             for (const agentId of agents) {
                 const commands = takeAgentDispatchableCommands(service, runId, agentId);
-                assert(commands.length > 0, `${phase} must reach ${agentId}`);
+                assert(commands.length > 0);
                 for (const command of commands) {
                     service.receiveClientEnvelope(resultEnvelope(command));
                 }
@@ -55,23 +56,23 @@ for (const scheduled of [false, true]) {
         assertRight(service.startDistributedRun(manifest.distributedRunId));
         if (scheduled) {
             for (const agentId of agents) {
-                assertEquals(takeAgentDispatchableCommands(service, runId, agentId), [], 'scheduled start remains a not-before gate');
+                expect(takeAgentDispatchableCommands(service, runId, agentId)).toEqual([]);
             }
-            assertEquals(service.snapshotDistributedRun(manifest.distributedRunId)?.state, 'ready');
+            expect(service.snapshotDistributedRun(manifest.distributedRunId)?.state).toEqual('ready');
             now = 2_000;
-            assertEquals(service.snapshotDistributedRun(manifest.distributedRunId)?.state, 'running');
+            expect(service.snapshotDistributedRun(manifest.distributedRunId)?.state).toEqual('running');
         }
         const queuedAt = now;
         const [senderPrefix] = takeAgentDispatchableCommands(service, runId, agents[0]);
         const [receiverReady] = takeAgentDispatchableCommands(service, runId, agents[1]);
         assert(senderPrefix?.command.kind === 'recipe.run' && senderPrefix.command.recipe);
         assert(receiverReady?.command.kind === 'recipe.run' && receiverReady.command.recipe);
-        assertEquals(senderPrefix.command.recipe.recipeId, 'alm-conformance-sender');
-        assertEquals(receiverReady.command.recipe.recipeId, 'alm-conformance-receiver');
-        assertEquals(senderPrefix.recipeExecution?.segment?.start, 0);
-        assertEquals(senderPrefix.recipeExecution?.segment?.first, true);
-        assertEquals(receiverReady.recipeExecution?.segment?.start, 0);
-        assertEquals(receiverReady.recipeExecution?.segment?.first, true);
+        expect(senderPrefix.command.recipe.recipeId).toEqual('alm-conformance-sender');
+        expect(receiverReady.command.recipe.recipeId).toEqual('alm-conformance-receiver');
+        expect(senderPrefix.recipeExecution?.segment?.start).toEqual(0);
+        expect(senderPrefix.recipeExecution?.segment?.first).toEqual(true);
+        expect(receiverReady.recipeExecution?.segment?.start).toEqual(0);
+        expect(receiverReady.recipeExecution?.segment?.first).toEqual(true);
 
         const roots = service.snapshotRun(runId)!.commands.map((command) => command.envelope);
         const sender = roots.find((root) => root.command.kind === 'recipe.run' && root.command.recipe?.recipeId === 'alm-conformance-sender');
@@ -79,26 +80,26 @@ for (const scheduled of [false, true]) {
         assert(sender?.command.kind === 'recipe.run' && sender.command.recipe);
         assert(receiver?.command.kind === 'recipe.run' && receiver.command.recipe);
         const pair = toAlmReloadPair(sender.command);
-        assert(pair, 'actual hosted roots must bind the generated checkpoints');
-        assertEquals(toAlmReloadPair(receiver.command), pair);
-        assertEquals(pair.runId, runId);
-        assertEquals(pair.sender, { agentId: agents[0], commandId: sender.commandId });
-        assertEquals(pair.receiver, { agentId: agents[1], commandId: receiver.commandId });
-        assertEquals(sender.command.timeoutMs, 1_800_000);
-        assertEquals(receiver.command.timeoutMs, 1_800_000);
-        assertEquals(pair.checkpoints.length, 3, 'one full reload specimen per supported carrier');
-        assertEquals(sender.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
-        assertEquals(receiver.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
+        assert(pair);
+        expect(toAlmReloadPair(receiver.command)).toEqual(pair);
+        expect(pair.runId).toEqual(runId);
+        expect(pair.sender).toEqual({ agentId: agents[0], commandId: sender.commandId });
+        expect(pair.receiver).toEqual({ agentId: agents[1], commandId: receiver.commandId });
+        expect(sender.command.timeoutMs).toEqual(1_800_000);
+        expect(receiver.command.timeoutMs).toEqual(1_800_000);
+        expect(pair.checkpoints.length).toEqual(3);
+        expect(sender.command.recipe.metadata?.almReloadCheckpoints).toEqual(pair.checkpoints);
+        expect(receiver.command.recipe.metadata?.almReloadCheckpoints).toEqual(pair.checkpoints);
         assert(senderPrefix.recipeExecution?.segment);
-        assertEquals(senderPrefix.command.recipe.commands[senderPrefix.recipeExecution.segment.end - 1]?.commandId, pair.checkpoints[0].senderPrefixEnd);
-        assertEquals(senderPrefix.command.recipe, sender.command.recipe);
+        expect(senderPrefix.command.recipe.commands[senderPrefix.recipeExecution.segment.end - 1]?.commandId).toEqual(pair.checkpoints[0].senderPrefixEnd);
+        expect(senderPrefix.command.recipe).toEqual(sender.command.recipe);
         assert(receiverReady.recipeExecution?.segment);
-        assertEquals(receiverReady.command.recipe.commands[receiverReady.recipeExecution.segment.end - 1]?.commandId, pair.checkpoints[0].receiverReadyEnd);
-        assertEquals(receiverReady.command.recipe, receiver.command.recipe);
-        assertEquals(takeAgentDispatchableCommands(service, runId, agents[1]), [], 'absence cannot execute before sender prefix receipt');
+        expect(receiverReady.command.recipe.commands[receiverReady.recipeExecution.segment.end - 1]?.commandId).toEqual(pair.checkpoints[0].receiverReadyEnd);
+        expect(receiverReady.command.recipe).toEqual(receiver.command.recipe);
+        expect(takeAgentDispatchableCommands(service, runId, agents[1])).toEqual([]);
 
         let prefixStart = 0;
-        const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'];
+        const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'] as const;
         const commands: RallarBlackBoxTestRecipe['commands'] = sender.command.recipe.commands;
         for (const [index, checkpoint] of pair.checkpoints.entries()) {
             const prefixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderPrefixEnd);
@@ -106,38 +107,34 @@ for (const scheduled of [false, true]) {
             const suffixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
             const prefix = commands.slice(prefixStart, prefixEnd + 1);
             const originals = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
-            assertEquals(originals.map((command) => command.carrier), [carriers[index]], 'reload precedes ordinary scenario work');
-            assertEquals(reloadIndex, prefixEnd + 1);
-            assertEquals(commands[reloadIndex]?.kind, 'agent.reload');
+            expect(originals.map((command) => command.carrier)).toEqual([carriers[index]]);
+            expect(reloadIndex).toEqual(prefixEnd + 1);
+            expect(commands[reloadIndex]?.kind).toEqual('agent.reload');
             const suffix = commands.slice(reloadIndex + 1, suffixEnd + 1);
             const reconnect = suffix[0];
-            assert(reconnect?.kind === 'rtc.connect', 'fresh document reconnect must survive combined composition');
-            assertEquals(reconnect.transport, 'messages.rtc');
-            assertEquals(reconnect.rallar?.messageSelector, { topicId: 'room.alm-conformance' });
-            assertEquals(reconnect.rallar?.username, '');
-            assertEquals(reconnect.rallar?.password, '');
-            assertEquals(reconnect.rallar?.restoreSession, true);
-            assertEquals(reconnect.readiness?.minReadyPeers, 1);
-            assertEquals(suffix.filter((command) => command.kind === 'messages.send'), [], 'recovery must not resend the original');
+            assert(reconnect?.kind === 'rtc.connect');
+            expect(reconnect.transport).toEqual('messages.rtc');
+            expect(reconnect.rallar?.messageSelector).toEqual({ topicId: 'room.alm-conformance' });
+            expect(reconnect.rallar?.username).toEqual('');
+            expect(reconnect.rallar?.password).toEqual('');
+            expect(reconnect.rallar?.restoreSession).toEqual(true);
+            expect(reconnect.readiness?.minReadyPeers).toEqual(1);
+            expect(suffix.filter((command) => command.kind === 'messages.send')).toEqual([]);
             prefixStart = suffixEnd + 1;
         }
-        assertEquals(takeAgentDispatchableCommands(service, runId, agents[0]), [], 'no reload while the initial prefix is incomplete');
+        expect(takeAgentDispatchableCommands(service, runId, agents[0])).toEqual([]);
         now = queuedAt + 1_799_999;
         takeAgentDispatchableCommands(service, runId, agents[0]);
-        assertEquals(
-            service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId),
-            undefined,
-            'the actual root remains pending within its original execution budget'
-        );
+        expect(service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId)).toEqual(undefined);
         now = queuedAt + 1_800_000;
         takeAgentDispatchableCommands(service, runId, agents[0]);
         const expired = service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId);
-        assertEquals(expired?.result?.error?.code, 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT', 'dispatch does not reset or extend the original queued budget');
+        expect(expired?.result?.error?.code).toEqual('RALLAR_BLACK_BOX_RECIPE_TIMEOUT');
     });
 }
 
 for (const invalid of ['budget', 'peer'] as const) {
-    Deno.test(`generated paired start rejects a missing ${invalid} before queueing either root`, () => {
+    test(`generated paired start rejects a missing ${invalid} before queueing either root`, () => {
         const source = createAlmConformance2AgentEntry().manifest;
         const manifest = {
             ...source,
@@ -168,17 +165,13 @@ for (const invalid of ['budget', 'peer'] as const) {
             }
         }
         const rejected = service.startDistributedRun(manifest.distributedRunId);
-        assertEquals(rejected.left?.code, 'command-payload-conflict');
-        assertEquals(
-            service.snapshotRun(manifest.controlRunId)?.commands.filter((entry) => entry.envelope.command.kind === 'recipe.run'),
-            [],
-            'invalid pairing must not queue a one-sided root'
-        );
+        expect(rejected.left?.code).toEqual('command-payload-conflict');
+        expect(service.snapshotRun(manifest.controlRunId)?.commands.filter((entry) => entry.envelope.command.kind === 'recipe.run')).toEqual([]);
     });
 }
 
 for (const wrongIdentity of [false, true]) {
-    Deno.test(`lifecycle-only ALM assessment ${wrongIdentity ? 'rejects wrong identity' : 'passes actual identity'} through bounded restore`, () => {
+    test(`lifecycle-only ALM assessment ${wrongIdentity ? 'rejects wrong identity' : 'passes actual identity'} through bounded restore`, () => {
         const manifest = toLifecycleManifest();
         const runId = manifest.controlRunId;
         const agents = ['controller-01', 'controller-02'];
@@ -211,26 +204,26 @@ for (const wrongIdentity of [false, true]) {
         const receiverRecipe = manifest.recipes.find((selection) => selection.recipe?.recipeId === 'alm-conformance-receiver')!.recipe!;
         service.receiveClientEnvelope(resultEnvelope(sender, senderRecipe));
         const snapshot = service.snapshot({ commands: 0, results: 0 });
-        assert(snapshot.runs[0].results.some((result) => result.commandId === sender.commandId), 'pending sender evidence survives bounds');
+        assert(snapshot.runs[0].results.some((result) => result.commandId === sender.commandId));
         service = createRallarBlackBoxControlService(input);
         service.restoreSnapshot(snapshot);
         service.receiveClientEnvelope(resultEnvelope(receiver, receiverRecipe, wrongIdentity));
         const completed = service.snapshotDistributedRun(manifest.distributedRunId);
-        assertEquals(completed?.state, wrongIdentity ? 'failed' : 'passed');
-        assertEquals(completed?.rollup.ok, !wrongIdentity);
-        assertEquals(service.snapshot({ commands: 0, results: 0 }).runs[0].results.length, 0, 'terminal evidence obeys bounds');
+        expect(completed?.state).toEqual(wrongIdentity ? 'failed' : 'passed');
+        expect(completed?.rollup.ok).toEqual(!wrongIdentity);
+        expect(service.snapshot({ commands: 0, results: 0 }).runs[0].results.length).toEqual(0);
     });
 }
 
-Deno.test('three-role ALM assessment accepts a complete recipient-b envelope (D45)', () => {
-    assertEquals(toThreeRoleLifecycleOutcome(undefined), { state: 'passed', ok: true });
+test('three-role ALM assessment accepts a complete recipient-b envelope (D45)', () => {
+    expect(toThreeRoleLifecycleOutcome(undefined)).toEqual({ state: 'passed', ok: true });
 });
 
-Deno.test('three-role ALM assessment rejects a malformed recipient-b envelope (D45)', () => {
-    assertEquals(toThreeRoleLifecycleOutcome('controller-03'), { state: 'failed', ok: false });
+test('three-role ALM assessment rejects a malformed recipient-b envelope (D45)', () => {
+    expect(toThreeRoleLifecycleOutcome('controller-03')).toEqual({ state: 'failed', ok: false });
 });
 
-Deno.test('independent local ALM roots keep actual child evidence only within normal finite limits', () => {
+test('independent local ALM roots keep actual child evidence only within normal finite limits', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ runtimeRetentionBounds: { commands: 1, results: 1 } }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     const recipe = toLifecycleManifest().recipes[0].recipe!;
@@ -239,10 +232,10 @@ Deno.test('independent local ALM roots keep actual child evidence only within no
     service.receiveClientEnvelope(resultEnvelope(root, recipe));
     const recorded = service.snapshotRun('run-1')!.results[0].result?.value;
     assert(isJsonRecordValue(recorded) && Array.isArray(recorded.results));
-    assertEquals(recorded.results.length, recipe.commands.length);
+    expect(recorded.results.length).toEqual(recipe.commands.length);
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'next', command: { kind: 'health' } }));
     service.receiveClientEnvelope(resultEnvelope(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0]));
-    assertEquals(service.snapshotRun('run-1')!.results.map((result) => result.commandId), ['next']);
+    expect(service.snapshotRun('run-1')!.results.map((result) => result.commandId)).toEqual(['next']);
 });
 
 /** Synthetic lifecycle outcomes exercise identity/retention only; full reload uses the unmodified generated manifest above. */
@@ -301,7 +294,7 @@ function toThreeRoleLifecycleOutcome(malformedAgentId: string | undefined): Life
     assertRight(service.startDistributedRun(manifest.distributedRunId));
     agents.forEach((agentId) => {
         const [root] = takeAgentDispatchableCommands(service, runId, agentId);
-        assert(root?.command.kind === 'recipe.run' && root.command.recipe, `${agentId} must start its role recipe`);
+        assert(root?.command.kind === 'recipe.run' && root.command.recipe);
         const recipe = root.command.recipe;
         service.receiveClientEnvelope(resultEnvelope(root, agentId === malformedAgentId ? { ...recipe, commands: [] } : recipe));
     });

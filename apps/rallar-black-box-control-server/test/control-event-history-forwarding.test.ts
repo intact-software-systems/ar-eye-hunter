@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import { assert } from './support/assert.ts';
 
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { toCompactedResultEnvelope } from '../src/control-evidence-compaction.ts';
@@ -14,7 +15,7 @@ import {
 } from './support/control-service-test-fixtures.ts';
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
-Deno.test('distributed starts forward the actual run history choice to existing agents', async () => {
+test('distributed starts forward the actual run history choice to existing agents', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ identity: toFleetIdentity('agent-1') }));
     const manifest = {
@@ -31,13 +32,13 @@ Deno.test('distributed starts forward the actual run history choice to existing 
     const start = commands.find((envelope) => envelope.command.kind === 'recipe.run');
     assert(start);
     assert(start.command.kind === 'recipe.run');
-    assertEquals(start.command.eventHistory, { mode: 'recent', maxEvents: 2 });
+    expect(start.command.eventHistory).toEqual({ mode: 'recent', maxEvents: 2 });
     const runtime = createDefaultRallarBlackBoxTestRuntime();
     await runtime.execute(start.command);
-    assertEquals(runtime.state().eventHistory.policy, { mode: 'recent', maxEvents: 2 });
+    expect(runtime.state().eventHistory.policy).toEqual({ mode: 'recent', maxEvents: 2 });
 });
 
-Deno.test('reload segments preserve run override and authored history independently', () => {
+test('reload segments preserve run override and authored history independently', () => {
     const root: ControlRecipeReloadRoot = {
         kind: 'command',
         protocolVersion: 1,
@@ -61,15 +62,15 @@ Deno.test('reload segments preserve run override and authored history independen
         }
     };
     const segments = toControlRecipeReloadCommands(root).filter((envelope) => envelope.command.kind === 'recipe.run');
-    assertEquals(segments.length, 2);
+    expect(segments.length).toEqual(2);
     for (const segment of segments) {
         assert(segment.command.kind === 'recipe.run');
-        assertEquals(segment.command.eventHistory, { mode: 'full' });
-        assertEquals(segment.command.recipe?.eventHistory, { mode: 'recent', maxEvents: 64 });
+        expect(segment.command.eventHistory).toEqual({ mode: 'full' });
+        expect(segment.command.recipe?.eventHistory).toEqual({ mode: 'recent', maxEvents: 64 });
     }
 });
 
-Deno.test('controller finite result compaction preserves actual admitted history choice', async () => {
+test('controller finite result compaction preserves actual admitted history choice', async () => {
     const runtime = createDefaultRallarBlackBoxTestRuntime();
     const result = await runtime.execute({
         kind: 'recipe.run',
@@ -89,10 +90,10 @@ Deno.test('controller finite result compaction preserves actual admitted history
     assert(stored.result?.value && typeof stored.result.value === 'object' && 'invocation' in stored.result.value);
     const invocation = stored.result.value.invocation;
     assert(invocation && typeof invocation === 'object' && 'eventHistory' in invocation);
-    assertEquals(invocation.eventHistory, { mode: 'recent', maxEvents: 2 });
+    expect(invocation.eventHistory).toEqual({ mode: 'recent', maxEvents: 2 });
 });
 
-Deno.test('finite stored receipts preserve the actual accepted recipe segment and its original intent', async () => {
+test('finite stored receipts preserve the actual accepted recipe segment and its original intent', async () => {
     const runtime = createDefaultRallarBlackBoxTestRuntime();
     const result = await runtime.execute(
         {
@@ -106,8 +107,8 @@ Deno.test('finite stored receipts preserve the actual accepted recipe segment an
         undefined,
         { recipeExecution: { rootCommandId: 'receipt-owner', first: true, last: true, segment: { start: 0, end: 1, first: true } } }
     );
-    assertEquals(result.status, 'ok');
-    assertEquals(runtime.state().resultCache.later, undefined);
+    expect(result.status).toEqual('ok');
+    expect(runtime.state().resultCache.later).toBeUndefined();
     const stored = toCompactedResultEnvelope({
         kind: 'result',
         protocolVersion: 1,
@@ -120,5 +121,5 @@ Deno.test('finite stored receipts preserve the actual accepted recipe segment an
     assert(stored.result?.value && typeof stored.result.value === 'object' && 'invocation' in stored.result.value);
     const invocation = stored.result.value.invocation;
     assert(invocation && typeof invocation === 'object' && 'segment' in invocation);
-    assertEquals(invocation.segment, { start: 0, end: 1, first: true });
+    expect(invocation.segment).toEqual({ start: 0, end: 1, first: true });
 });

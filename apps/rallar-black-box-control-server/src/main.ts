@@ -18,6 +18,7 @@ import { ControlHttpSecurity } from './http/control-http-security.ts';
 import { createControlRequestBodyReader } from './http/control-request-body.ts';
 import { createDefaultRetentionPlanTokenAdapter } from './retention-plan-token.ts';
 import { routeControlHttpRequest } from './routes/control-http-router.ts';
+import { createControlWebSocketHandlers, type ControlSocketData } from './routes/control-socket-route.ts';
 import {
     ControlCompletedRunArchive,
     DEFAULT_CONTROL_RUN_COMPLETION_CONFIG
@@ -25,14 +26,14 @@ import {
 
 const DEFAULT_PORT = 5180;
 
-assertBlackBoxControlProductionEnv(Deno.env);
+assertBlackBoxControlProductionEnv(process.env);
 
-const security = readBlackBoxControlServerConfiguration(Deno.env);
+const security = readBlackBoxControlServerConfiguration(process.env);
 const configurationIssues = validateBlackBoxControlServerConfiguration(security);
 if (configurationIssues.length > 0) {
     throw new Error(`Invalid black-box control server configuration: ${configurationIssues.join(' ')}`);
 }
-const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
+const port = Number(process.env['PORT'] ?? DEFAULT_PORT);
 const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
 const timers = createDefaultTimers();
 const timingSink = createConsoleRallarTimingSink();
@@ -101,7 +102,7 @@ const routeDependencies = {
 
 const restoredSnapshot = await snapshotPersistence.restore();
 if (restoredSnapshot.left !== undefined) {
-    Deno.exit(1);
+    process.exit(1);
 }
 await completedRuns.restore();
 const stopRunCompletion = completedRuns.start();
@@ -114,12 +115,17 @@ const stopDeadlineSweep = startControlDeadlineSweep({
 
 if (security.storageDir) {
     for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-        Deno.addSignalListener(signal, () => void stopControlServer());
+        process.on(signal, () => void stopControlServer());
     }
 }
 
-Deno.serve({ port }, async (request) => {
-    return applyControlCorsHeaders(request, await routeControlHttpRequest(request, routeDependencies), corsOrigins);
+Bun.serve<ControlSocketData>({
+    port,
+    websocket: createControlWebSocketHandlers(routeDependencies),
+    async fetch(request, server) {
+        const response = await routeControlHttpRequest(request, routeDependencies, server);
+        return response === undefined ? undefined : applyControlCorsHeaders(request, response, corsOrigins);
+    }
 });
 
 console.log(`Rallar black-box control server listening on http://localhost:${port}`);
@@ -130,5 +136,5 @@ async function stopControlServer(): Promise<void> {
     stopRunCompletion();
     await completedRuns.stop();
     await Promise.all([snapshotPersistence.stop(), artifactRecorder.stop()]);
-    Deno.exit(0);
+    process.exit(0);
 }

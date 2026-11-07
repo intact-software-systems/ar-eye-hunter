@@ -1,3 +1,5 @@
+import { lstat, readFile } from 'node:fs/promises';
+
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type {
     ControlRunSnapshot,
@@ -41,6 +43,8 @@ export interface ControlSnapshotPersistenceInput {
     readonly timers: Timers;
     /** Absent when flushes are not timed. */
     readonly timingSink: RallarTimingSink | undefined;
+    /** Injected by the atomic-replacement failure fixture; defaults to the runtime rename. */
+    readonly renameFile?: (source: string, destination: string) => Promise<void>;
 }
 
 export type ControlSnapshotRestoreStatus = 'restored' | 'absent' | 'disabled';
@@ -50,6 +54,7 @@ interface WriteControlSnapshotFileInput {
     readonly tempPath: string;
     readonly savedAtEpochMs: number;
     readonly snapshot: ControlServerSnapshot;
+    readonly renameFile?: (source: string, destination: string) => Promise<void>;
 }
 
 const SNAPSHOT_FILE_SCHEMA_VERSION = 1;
@@ -109,9 +114,10 @@ export class ControlSnapshotPersistence {
         }
         const write = await writeControlSnapshotFile({
             path: toSnapshotPath(storageDir),
-            tempPath: `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${savedAtEpochMs}-${this.sequence += 1}`,
+            tempPath: `${toSnapshotPath(storageDir)}.tmp-${process.pid}-${savedAtEpochMs}-${this.sequence += 1}`,
             savedAtEpochMs,
-            snapshot: controlService.snapshotForPersistence(snapshotBounds)
+            snapshot: controlService.snapshotForPersistence(snapshotBounds),
+            renameFile: this.input.renameFile
         });
         recordSnapshotFlushTiming(this.input.timingSink, write);
         if (write.written) {
@@ -129,6 +135,10 @@ function applyAutomaticRetention(input: ControlSnapshotPersistenceInput): void {
 
 function toSnapshotPath(storageDir: string): string {
     return `${storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
+}
+
+function isNotFound(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
 function recordSnapshotFlushTiming(sink: RallarTimingSink | undefined, write: SlicedJsonFileWrite): void {
@@ -153,7 +163,8 @@ async function writeControlSnapshotFile(input: WriteControlSnapshotFileInput): P
     const write = await writeSlicedJsonFile({
         path: input.path,
         tempPath: input.tempPath,
-        pieces: toSnapshotFilePieces(input.snapshot, input.savedAtEpochMs)
+        pieces: toSnapshotFilePieces(input.snapshot, input.savedAtEpochMs),
+        renameFile: input.renameFile
     });
     if (write.failure !== undefined) {
         console.warn(`Could not persist control snapshot to ${input.path}: ${write.failure}`);
@@ -172,16 +183,16 @@ async function restoreSnapshotFile(
     controlService: ControlSnapshotPersistenceInput['controlService']
 ): Promise<Either<Error, ControlSnapshotRestoreStatus>> {
     try {
-        await Deno.lstat(path);
+        await lstat(path);
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if (isNotFound(error)) {
             return Either.ofRight('absent');
         }
         return Either.ofLeft(new Error(`Could not restore control snapshot from ${path}: ${toError(error).message}`));
     }
     try {
-        return decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path))).fold(
+        return decodeSnapshotFile(JSON.parse(await readFile(path, 'utf8'))).fold(
             (issue) =>
                 Either.ofLeft<Error, ControlSnapshotRestoreStatus>(
                     new Error(`Could not restore control snapshot from ${path}: ${issue}`)

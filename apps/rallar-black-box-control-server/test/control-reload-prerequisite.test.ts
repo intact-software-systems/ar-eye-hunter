@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import { assert } from './support/assert.ts';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { isRallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/composite-results.ts';
@@ -61,7 +62,7 @@ const RECEIVER: RallarBlackBoxTestRecipe = {
     ]
 };
 
-Deno.test('paired reload cannot dispatch before its exact receiver absence result', async () => {
+test('paired reload cannot dispatch before its exact receiver absence result', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
@@ -71,13 +72,13 @@ Deno.test('paired reload cannot dispatch before its exact receiver absence resul
     const senderRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
     const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, receiverRuntime, ready);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'receiver')).toEqual([]);
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     await runSegment(service, senderRuntime, prefix);
     const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     assert(absence.command.kind === 'recipe.run');
-    assertEquals(absence.command.recipe, RECEIVER);
-    assertEquals(absence.recipeExecution?.segment, { start: 1, end: 2, first: false });
+    expect(absence.command.recipe).toEqual(RECEIVER);
+    expect(absence.recipeExecution?.segment).toEqual({ start: 1, end: 2, first: false });
     const absenceStarted = Promise.withResolvers<void>();
     const unsubscribe = receiverRuntime.subscribe((state) => {
         if (state.activeCommand?.commandId === 'receiver-absence') {
@@ -87,11 +88,11 @@ Deno.test('paired reload cannot dispatch before its exact receiver absence resul
     const receiverResult = runSegment(service, receiverRuntime, absence);
     await absenceStarted.promise;
     try {
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
         await receiverResult;
         const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
-        assertEquals(reload.command.kind, 'agent.reload');
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+        expect(reload.command.kind).toEqual('agent.reload');
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
     }
     finally {
         await receiverResult;
@@ -99,12 +100,12 @@ Deno.test('paired reload cannot dispatch before its exact receiver absence resul
     }
 });
 
-Deno.test('paired reload waits for both exact logical roots before dispatching either prefix', () => {
+test('paired reload waits for both exact logical roots before dispatching either prefix', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
 
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
 });
 
 function toPairedRoot(role: 'sender' | 'receiver', recipe: RallarBlackBoxTestRecipe): EnqueueControlCommandInput {
@@ -128,8 +129,8 @@ function toRootEnvelope(role: 'sender' | 'receiver', recipe: RallarBlackBoxTestR
 
 async function runSegment(service: RallarBlackBoxControlService, runtime: RallarBlackBoxTestRuntime, command: ControlCommandEnvelope): Promise<void> {
     const result = await executeControlRuntimeCommand(runtime, command);
-    assertEquals(result.ok, true);
-    assertEquals(
+    expect(result.ok).toEqual(true);
+    expect(
         service.receiveClientEnvelope({
             kind: 'result',
             protocolVersion: 1,
@@ -138,39 +139,38 @@ async function runSegment(service: RallarBlackBoxControlService, runtime: Rallar
             commandId: command.commandId,
             ok: result.ok,
             result
-        }).accepted,
-        true
-    );
+        }).accepted
+    ).toEqual(true);
 }
 
-Deno.test('missing paired peer consumes the original queued deadline across restore', () => {
+test('missing paired peer consumes the original queued deadline across restore', () => {
     let now = 1_000;
     const input = toControlServiceInput({ now: () => now });
     const service = createRallarBlackBoxControlService(input);
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
     now = 1_500;
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
     const restored = createRallarBlackBoxControlService(input);
     restored.restoreSnapshot(service.snapshotForPersistence());
     restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     now = 2_001;
-    assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'sender'), []);
+    expect(takeAgentDispatchableCommands(restored, 'run-1', 'sender')).toEqual([]);
     const root = restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'sender-root');
-    assertEquals(root?.result?.error?.code, 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT');
+    expect(root?.result?.error?.code).toEqual('RALLAR_BLACK_BOX_RECIPE_TIMEOUT');
 });
 
-Deno.test('malformed pair metadata cannot fall back to ordinary recipe dispatch', () => {
+test('malformed pair metadata cannot fall back to ordinary recipe dispatch', () => {
     for (const almReloadPair of [null, {}, { ...PAIR, receiver: PAIR.sender }]) {
         const service = createRallarBlackBoxControlService(toControlServiceInput());
         const root = toPairedRoot('receiver', RECEIVER);
         const outcome = service.enqueueCommand({ ...root, command: { ...root.command, metadata: { almReloadPair } } });
-        assertEquals(outcome.left?.code, 'command-payload-conflict');
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+        expect(outcome.left?.code).toEqual('command-payload-conflict');
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'receiver')).toEqual([]);
     }
 });
 
-Deno.test('receiver reconnect cannot reuse a ready result to authorize reload', async () => {
+test('receiver reconnect cannot reuse a ready result to authorize reload', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
@@ -180,14 +180,14 @@ Deno.test('receiver reconnect cannot reuse a ready result to authorize reload', 
     await runSegment(service, createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 }), ready);
     service.markAgentDisconnected('run-1', 'receiver');
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'receiver')).toEqual([]);
     const roots = service.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId));
-    assertEquals(roots?.map((result) => result.ok), [false, false]);
+    expect(roots?.map((result) => result.ok)).toEqual([false, false]);
 });
 
 for (const bounds of [1, 1_000]) {
-    Deno.test(`paired cancellation reaches actual receiver invocation with retention bound ${bounds}`, async () => {
+    test(`paired cancellation reaches actual receiver invocation with retention bound ${bounds}`, async () => {
         const service = createRallarBlackBoxControlService(
             toControlServiceInput({ now: () => 1_000, runtimeRetentionBounds: { commands: bounds, results: bounds } })
         );
@@ -212,11 +212,11 @@ for (const bounds of [1, 1_000]) {
             assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'sender', commandId: 'stop-pair', command: { kind: 'recipe.cancel' } }));
             const [cleanup] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
             assert(cleanup.command.kind === 'recipe.cancel');
-            assertEquals(cleanup.command.targetCommandId, absence.commandId);
+            expect(cleanup.command.targetCommandId).toEqual(absence.commandId);
             const cancellation = await executeControlRuntimeCommand(runtime, cleanup);
-            assertEquals(cancellation.value, { cancelRequested: true, reason: 'Paired reload stopped.', targetCommandId: absence.commandId });
-            assertEquals((await pending).status, 'cancelled');
-            assertEquals(
+            expect(cancellation.value).toEqual({ cancelRequested: true, reason: 'Paired reload stopped.', targetCommandId: absence.commandId });
+            expect((await pending).status).toEqual('cancelled');
+            expect(
                 service.receiveClientEnvelope({
                     kind: 'result',
                     protocolVersion: 1,
@@ -225,21 +225,20 @@ for (const bounds of [1, 1_000]) {
                     commandId: cleanup.commandId,
                     ok: cancellation.ok,
                     result: cancellation
-                }).accepted,
-                true
-            );
-            assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+                }).accepted
+            ).toEqual(true);
+            expect(takeAgentDispatchableCommands(service, 'run-1', 'receiver')).toEqual([]);
             const senderCleanup = takeAgentDispatchableCommands(service, 'run-1', 'sender');
-            assertEquals(senderCleanup.map((command) => command.command.kind), ['recipe.cancel', 'close']);
+            expect(senderCleanup.map((command) => command.command.kind)).toEqual(['recipe.cancel', 'close']);
             for (const command of senderCleanup) {
                 await runSegment(service, senderRuntime, command);
             }
             const roots = service.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId));
             if (bounds > 1) {
-                assertEquals(roots?.map((result) => result.result?.status), ['cancelled', 'cancelled']);
+                expect(roots?.map((result) => result.result?.status)).toEqual(['cancelled', 'cancelled']);
             }
             else {
-                assertEquals(service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.length, 1);
+                expect(service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.length).toEqual(1);
             }
         }
         finally {
@@ -250,7 +249,7 @@ for (const bounds of [1, 1_000]) {
     });
 }
 
-Deno.test('completed receiver proof remains full under retention pressure while sender reload is pending', async () => {
+test('completed receiver proof remains full under retention pressure while sender reload is pending', async () => {
     const input = toControlServiceInput({ now: () => 1_000, runtimeRetentionBounds: { commands: 1, results: 1 } });
     const service = createRallarBlackBoxControlService(input);
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
@@ -266,9 +265,9 @@ Deno.test('completed receiver proof remains full under retention pressure while 
     const [recovery] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, runtime, recovery);
     const snapshot = service.snapshotForPersistence({ commands: 1, results: 1 });
-    assertEquals(snapshot.runs[0].results.find((result) => result.commandId === 'receiver-root')?.ok, true);
+    expect(snapshot.runs[0].results.find((result) => result.commandId === 'receiver-root')?.ok).toEqual(true);
     const retained = snapshot.runs[0].results.filter((result) => [ready.commandId, absence.commandId, recovery.commandId].includes(result.commandId));
-    assertEquals(retained.length, 3);
+    expect(retained.length).toEqual(3);
     for (const result of retained) {
         assert(typeof result.result?.value === 'object' && result.result.value !== null && 'results' in result.result.value);
     }
@@ -276,13 +275,13 @@ Deno.test('completed receiver proof remains full under retention pressure while 
     restored.restoreSnapshot(snapshot);
     restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     const [reload] = takeAgentDispatchableCommands(restored, 'run-1', 'sender');
-    assertEquals(reload.command.kind, 'agent.reload');
+    expect(reload.command.kind).toEqual('agent.reload');
     const restoredProof = restored.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.find((result) => result.commandId === absence.commandId);
-    assertEquals(restoredProof?.result?.value, retained.find((result) => result.commandId === absence.commandId)?.result?.value);
+    expect(restoredProof?.result?.value).toEqual(retained.find((result) => result.commandId === absence.commandId)?.result?.value);
 });
 
 for (const phase of ['ready', 'absence-pending', 'absence-completed'] as const) {
-    Deno.test(`restored ${phase} proof cannot authorize a different receiver generation`, async () => {
+    test(`restored ${phase} proof cannot authorize a different receiver generation`, async () => {
         const input = toControlServiceInput({ now: () => 1_000 });
         const service = createRallarBlackBoxControlService(input);
         service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
@@ -302,15 +301,15 @@ for (const phase of ['ready', 'absence-pending', 'absence-completed'] as const) 
         restored.restoreSnapshot(service.snapshotForPersistence());
         restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
         restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-        assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'sender'), []);
-        assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'receiver'), []);
+        expect(takeAgentDispatchableCommands(restored, 'run-1', 'sender')).toEqual([]);
+        expect(takeAgentDispatchableCommands(restored, 'run-1', 'receiver')).toEqual([]);
         const roots = restored.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId));
-        assertEquals(roots?.length, 2);
+        expect(roots?.length).toEqual(2);
         assert(roots?.every((root) => root.ok === false));
     });
 }
 
-Deno.test('queued cleanup is refused after receiver generation changes and never replays', async () => {
+test('queued cleanup is refused after receiver generation changes and never replays', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
@@ -324,14 +323,14 @@ Deno.test('queued cleanup is refused after receiver generation changes and never
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'sender', commandId: 'stop', command: { kind: 'recipe.cancel' } }));
     service.markAgentDisconnected('run-1', 'receiver');
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'receiver')).toEqual([]);
     const refused = service.snapshotRun('run-1')?.results.find((result) => result.result?.error?.code === 'RALLAR_BLACK_BOX_RELOAD_CLEANUP_TARGET_UNAVAILABLE');
-    assertEquals(refused?.result?.value, { cancelRequested: false, targetCommandId: absence.commandId });
+    expect(refused?.result?.value).toEqual({ cancelRequested: false, targetCommandId: absence.commandId });
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'receiver')).toEqual([]);
 });
 
-Deno.test('only the exact complete receiver absence result unlocks sender reload', async () => {
+test('only the exact complete receiver absence result unlocks sender reload', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
@@ -342,7 +341,7 @@ Deno.test('only the exact complete receiver absence result unlocks sender reload
     await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'sender')[0]);
     const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     const result = await executeControlRuntimeCommand(runtime, absence);
-    assertEquals(result.ok, true);
+    expect(result.ok).toEqual(true);
     const actual = {
         kind: 'result' as const,
         protocolVersion: 1 as const,
@@ -359,15 +358,15 @@ Deno.test('only the exact complete receiver absence result unlocks sender reload
             { ...actual, result: { ...result, value: { recipeId: 'reload-receiver', results: [] } } }
         ]
     ) {
-        assertEquals(service.receiveClientEnvelope(invalid).accepted, false);
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+        expect(service.receiveClientEnvelope(invalid).accepted).toEqual(false);
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
     }
-    assertEquals(service.receiveClientEnvelope(actual).accepted, true);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender').map((command) => command.command.kind), ['agent.reload']);
+    expect(service.receiveClientEnvelope(actual).accepted).toEqual(true);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'sender').map((command) => command.command.kind)).toEqual(['agent.reload']);
 });
 
 for (const restrictedBy of ['allowlist', 'rate'] as const) {
-    Deno.test(`actual receiver failure reports cleanup ${restrictedBy} denial without claiming sender cancellation`, async () => {
+    test(`actual receiver failure reports cleanup ${restrictedBy} denial without claiming sender cancellation`, async () => {
         const service = createRallarBlackBoxControlService(
             toControlServiceInput({
                 now: () => 1_000,
@@ -410,8 +409,8 @@ for (const restrictedBy of ['allowlist', 'rate'] as const) {
             receiverRuntime.recordEvent({ kind: 'event', topic: 'unexpected' });
             const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
             const failure = await executeControlRuntimeCommand(receiverRuntime, ready);
-            assertEquals(failure.ok, false);
-            assertEquals(
+            expect(failure.ok).toEqual(false);
+            expect(
                 service.receiveClientEnvelope({
                     kind: 'result',
                     protocolVersion: 1,
@@ -420,27 +419,26 @@ for (const restrictedBy of ['allowlist', 'rate'] as const) {
                     commandId: ready.commandId,
                     ok: false,
                     result: failure
-                }).accepted,
-                true
-            );
-            assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+                }).accepted
+            ).toEqual(true);
+            expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
             const root = service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'sender-root');
-            assertEquals(root?.result?.error?.details, {
+            expect(root?.result?.error?.details).toEqual({
                 cleanupFailure: restrictedBy === 'allowlist'
                     ? { code: 'command-kind-not-allowed', message: 'Command kind is not allowed: recipe.cancel.' }
                     : { code: 'command-rate-limited', message: 'Command rate limit exceeded.' }
             });
-            assertEquals(senderRuntime.state().status, 'running');
+            expect(senderRuntime.state().status).toEqual('running');
         }
         finally {
             await senderRuntime.execute({ kind: 'recipe.cancel' });
-            assertEquals((await running).status, 'cancelled');
+            expect((await running).status).toEqual('cancelled');
             unsubscribe();
         }
     });
 }
 
-Deno.test('failed actual receiver absence closes the successful sender prefix instead of targeting idle cancellation', async () => {
+test('failed actual receiver absence closes the successful sender prefix instead of targeting idle cancellation', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
@@ -454,8 +452,8 @@ Deno.test('failed actual receiver absence closes the successful sender prefix in
     const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     receiverRuntime.recordEvent({ kind: 'event', topic: 'original' });
     const failure = await executeControlRuntimeCommand(receiverRuntime, absence);
-    assertEquals(failure.ok, false);
-    assertEquals(
+    expect(failure.ok).toEqual(false);
+    expect(
         service.receiveClientEnvelope({
             kind: 'result',
             protocolVersion: 1,
@@ -464,15 +462,14 @@ Deno.test('failed actual receiver absence closes the successful sender prefix in
             commandId: absence.commandId,
             ok: false,
             result: failure
-        }).accepted,
-        true
-    );
+        }).accepted
+    ).toEqual(true);
     const [cleanup] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     assert(cleanup.command.kind === 'close');
-    assertEquals(cleanup.command.targetCommandId, prefix.commandId);
+    expect(cleanup.command.targetCommandId).toEqual(prefix.commandId);
     const closed = await executeControlRuntimeCommand(senderRuntime, cleanup);
-    assertEquals(closed.value, { closed: true });
-    assertEquals(
+    expect(closed.value).toEqual({ closed: true });
+    expect(
         service.receiveClientEnvelope({
             kind: 'result',
             protocolVersion: 1,
@@ -481,13 +478,12 @@ Deno.test('failed actual receiver absence closes the successful sender prefix in
             commandId: cleanup.commandId,
             ok: closed.ok,
             result: closed
-        }).accepted,
-        true
-    );
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+        }).accepted
+    ).toEqual(true);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
 });
 
-Deno.test('actual finish between cancel queue and execution permits exactly one guarded close successor', async () => {
+test('actual finish between cancel queue and execution permits exactly one guarded close successor', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000, runtimeRetentionBounds: { commands: 1, results: 1 } }));
     const sender = {
         ...SENDER,
@@ -517,8 +513,8 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
         assert(cancellation.command.kind === 'recipe.cancel');
         runtime.recordEvent({ kind: 'event', topic: 'finish-prefix' });
         const finished = await running;
-        assertEquals(finished.ok, true);
-        assertEquals(
+        expect(finished.ok).toEqual(true);
+        expect(
             service.receiveClientEnvelope({
                 kind: 'result',
                 protocolVersion: 1,
@@ -527,11 +523,10 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
                 commandId: prefix.commandId,
                 ok: true,
                 result: finished
-            }).accepted,
-            false
-        );
+            }).accepted
+        ).toEqual(false);
         const refused = await executeControlRuntimeCommand(runtime, cancellation);
-        assertEquals(refused.value, { cancelRequested: false, targetCommandId: prefix.commandId, reason: 'target-not-exclusively-active' });
+        expect(refused.value).toEqual({ cancelRequested: false, targetCommandId: prefix.commandId, reason: 'target-not-exclusively-active' });
         const refusal = {
             kind: 'result' as const,
             protocolVersion: 1 as const,
@@ -541,18 +536,18 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
             ok: refused.ok,
             result: refused
         };
-        assertEquals(service.receiveClientEnvelope(refusal).accepted, true);
+        expect(service.receiveClientEnvelope(refusal).accepted).toEqual(true);
         const pending = service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
         assert(pending.commands.some((command) => command.envelope.commandId === prefix.commandId));
         assert(pending.results.some((result) => result.commandId === cancellation.commandId));
         const [close] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
         assert(close.command.kind === 'close');
-        assertEquals(close.command.targetCommandId, prefix.commandId);
-        assertEquals(close.deadlineEpochMs, cancellation.deadlineEpochMs);
-        assertEquals(service.receiveClientEnvelope(refusal).accepted, false);
+        expect(close.command.targetCommandId).toEqual(prefix.commandId);
+        expect(close.deadlineEpochMs).toEqual(cancellation.deadlineEpochMs);
+        expect(service.receiveClientEnvelope(refusal).accepted).toEqual(false);
         const closed = await executeControlRuntimeCommand(runtime, close);
-        assertEquals(closed.value, { closed: true });
-        assertEquals(
+        expect(closed.value).toEqual({ closed: true });
+        expect(
             service.receiveClientEnvelope({
                 kind: 'result',
                 protocolVersion: 1,
@@ -561,11 +556,10 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
                 commandId: close.commandId,
                 ok: closed.ok,
                 result: closed
-            }).accepted,
-            true
-        );
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
-        assertEquals(service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.length, 1);
+            }).accepted
+        ).toEqual(true);
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'sender')).toEqual([]);
+        expect(service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.length).toEqual(1);
     }
     finally {
         await runtime.execute({ kind: 'recipe.cancel' });
@@ -574,17 +568,17 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
     }
 });
 
-Deno.test('authored checkpoints cannot silently become an ordinary unpaired recipe', () => {
+test('authored checkpoints cannot silently become an ordinary unpaired recipe', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     for (const role of ['sender', 'receiver'] as const) {
         const root = toRootEnvelope(role, role === 'sender' ? SENDER : RECEIVER);
         const outcome = service.enqueueCommand({ ...root, agentId: PAIR[role].agentId });
-        assertEquals(outcome.left?.code, 'command-payload-conflict');
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', PAIR[role].agentId), []);
+        expect(outcome.left?.code).toEqual('command-payload-conflict');
+        expect(takeAgentDispatchableCommands(service, 'run-1', PAIR[role].agentId)).toEqual([]);
     }
 });
 
-Deno.test('completed sender proof remains full until actual receiver recovery completes', async () => {
+test('completed sender proof remains full until actual receiver recovery completes', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000, runtimeRetentionBounds: { commands: 1, results: 1 } }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
@@ -605,7 +599,7 @@ Deno.test('completed sender proof remains full until actual receiver recovery co
         written: 'written',
         atEpochMs: 1_000
     });
-    assertEquals(
+    expect(
         service.receiveClientEnvelope({
             kind: 'result',
             protocolVersion: 1,
@@ -614,10 +608,9 @@ Deno.test('completed sender proof remains full until actual receiver recovery co
             commandId: reload.commandId,
             ok: true,
             result: { ...acknowledgement, commandId: 'replace-page' }
-        }).accepted,
-        false
-    );
-    assertEquals(
+        }).accepted
+    ).toEqual(false);
+    expect(
         service.receiveClientEnvelope({
             kind: 'result',
             protocolVersion: 1,
@@ -626,31 +619,30 @@ Deno.test('completed sender proof remains full until actual receiver recovery co
             commandId: reload.commandId,
             ok: true,
             result: acknowledgement
-        }).accepted,
-        true
-    );
+        }).accepted
+    ).toEqual(true);
     service.markAgentDisconnected('run-1', 'sender');
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender', completedCommandIds: [reload.commandId] }));
     const [suffix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     await runSegment(service, senderRuntime, suffix);
     const snapshot = service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
-    assertEquals(snapshot.results.find((result) => result.commandId === 'sender-root')?.ok, true);
+    expect(snapshot.results.find((result) => result.commandId === 'sender-root')?.ok).toEqual(true);
     const value = snapshot.results.find((result) => result.commandId === 'sender-root')?.result?.value;
     assert(isJsonRecordValue(value) && Array.isArray(value.results));
     const projectedReload = value.results.filter(isRallarBlackBoxTestResult).find((result) => result.kind === 'agent.reload');
-    assertEquals(projectedReload, { ...acknowledgement, commandId: 'replace-page' });
-    assertEquals(snapshot.results.find((result) => result.commandId === reload.commandId)?.result, acknowledgement);
+    expect(projectedReload).toEqual({ ...acknowledgement, commandId: 'replace-page' });
+    expect(snapshot.results.find((result) => result.commandId === reload.commandId)?.result).toEqual(acknowledgement);
     for (const id of [prefix.commandId, suffix.commandId]) {
         const result = snapshot.results.find((result) => result.commandId === id);
         assert(typeof result?.result?.value === 'object' && result.result.value !== null && 'results' in result.result.value);
     }
     await runSegment(service, receiverRuntime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
     const terminal = service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
-    assertEquals(terminal.results.length, 1);
-    assertEquals(terminal.commands.length, 1);
+    expect(terminal.results.length).toEqual(1);
+    expect(terminal.commands.length).toEqual(1);
 });
 
-Deno.test('a stale targeted external cancellation cannot terminalize the current paired roots', async () => {
+test('a stale targeted external cancellation cannot terminalize the current paired roots', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
@@ -668,7 +660,7 @@ Deno.test('a stale targeted external cancellation cannot terminalize the current
     );
     const [cancel] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     const refusal = await executeControlRuntimeCommand(runtime, cancel);
-    assertEquals(refusal.value, { cancelRequested: false, targetCommandId: 'old-unrelated-root', reason: 'target-not-exclusively-active' });
+    expect(refusal.value).toEqual({ cancelRequested: false, targetCommandId: 'old-unrelated-root', reason: 'target-not-exclusively-active' });
     service.receiveClientEnvelope({
         kind: 'result',
         protocolVersion: 1,
@@ -678,14 +670,14 @@ Deno.test('a stale targeted external cancellation cannot terminalize the current
         ok: refusal.ok,
         result: refusal
     });
-    assertEquals(service.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId)), []);
+    expect(service.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId))).toEqual([]);
     const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 }), ready);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]?.command.kind, 'recipe.run');
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]?.command.kind).toEqual('recipe.run');
 });
 
 for (const restore of [false, true]) {
-    Deno.test(`lost dispatched cleanup is bounded without replay (restore=${restore})`, async () => {
+    test(`lost dispatched cleanup is bounded without replay (restore=${restore})`, async () => {
         let now = 1_000;
         const input = toControlServiceInput({ now: () => now, runtimeRetentionBounds: { commands: 1, results: 1 } });
         const service = createRallarBlackBoxControlService(input);
@@ -703,13 +695,13 @@ for (const restore of [false, true]) {
             current.restoreSnapshot(service.snapshotForPersistence({ commands: 1, results: 1 }));
             current.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
         }
-        assertEquals(takeAgentDispatchableCommands(current, 'run-1', 'sender'), []);
+        expect(takeAgentDispatchableCommands(current, 'run-1', 'sender')).toEqual([]);
         now = 2_001;
-        assertEquals(takeAgentDispatchableCommands(current, 'run-1', 'sender'), []);
+        expect(takeAgentDispatchableCommands(current, 'run-1', 'sender')).toEqual([]);
         const snapshot = current.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
         const failure = snapshot.results.find((result) => result.commandId === cleanup.commandId);
-        assertEquals(failure?.ok, false);
-        assertEquals(failure?.result?.value, { targetCommandId: prefix.commandId });
-        assertEquals(snapshot.commands.some((command) => command.envelope.commandId === prefix.commandId), false);
+        expect(failure?.ok).toEqual(false);
+        expect(failure?.result?.value).toEqual({ targetCommandId: prefix.commandId });
+        expect(snapshot.commands.some((command) => command.envelope.commandId === prefix.commandId)).toEqual(false);
     });
 }

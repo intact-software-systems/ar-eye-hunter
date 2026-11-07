@@ -1,7 +1,13 @@
+import type { Server } from 'bun';
+import { expect, test } from 'bun:test';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { assert } from './support/assert.ts';
+
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
-import { assert, assertEquals } from '@std/assert';
 
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
 import {
@@ -15,6 +21,7 @@ import { ControlHttpSecurity } from '../src/http/control-http-security.ts';
 import { createControlRequestBodyReader } from '../src/http/control-request-body.ts';
 import { createDefaultRetentionPlanTokenAdapter } from '../src/retention-plan-token.ts';
 import { routeControlHttpRequest, type ControlHttpRouteDependencies } from '../src/routes/control-http-router.ts';
+import type { ControlSocketData } from '../src/routes/control-socket-route.ts';
 import { toControlServiceInput } from './support/control-service-test-fixtures.ts';
 
 interface RetentionRouteHarness {
@@ -29,6 +36,8 @@ interface RetentionRouteHarness {
 
 const PRESERVED_MARKER = 'manual-cleanup-must-preserve-this\n';
 const NO_COMMAND_SNAPSHOTS = { snapshotCommand: () => undefined };
+// The retention routes never reach the `/control` upgrade path, so a non-upgrading server is enough.
+const NO_UPGRADE_SERVER = { upgrade: () => false } as unknown as Server<ControlSocketData>;
 const OPEN_ACCESS_CONFIGURATION = {
     adminToken: undefined,
     allowedOrigins: [],
@@ -38,47 +47,47 @@ const OPEN_ACCESS_CONFIGURATION = {
     requireTls: false
 };
 
-Deno.test('immediate manual retention deletes runs without closing sockets, deleting artifacts, or reading the body', async () => {
+test('immediate manual retention deletes runs without closing sockets, deleting artifacts, or reading the body', async () => {
     const harness = await createRetentionRouteHarness();
     try {
-        const response = await routeControlHttpRequest(harness.toRequest(''), harness.dependencies);
+        const response = (await routeControlHttpRequest(harness.toRequest(''), harness.dependencies, NO_UPGRADE_SERVER))!;
 
-        assertEquals(response.status, 200);
-        assertEquals(await response.json(), { deletedRunIds: ['run-old'], retainedRuns: 1, maxRuns: 1 });
-        assertEquals(harness.closedSockets, []);
-        assertEquals(harness.readBodyPulls(), 0);
-        assertEquals(await harness.readMarker(), PRESERVED_MARKER);
-        assertEquals(harness.persistCalls, ['persist']);
+        expect(response.status).toEqual(200);
+        expect(await response.json()).toEqual({ deletedRunIds: ['run-old'], retainedRuns: 1, maxRuns: 1 });
+        expect(harness.closedSockets).toEqual([]);
+        expect(harness.readBodyPulls()).toEqual(0);
+        expect(await harness.readMarker()).toEqual(PRESERVED_MARKER);
+        expect(harness.persistCalls).toEqual(['persist']);
     }
     finally {
-        await Deno.remove(harness.storageDir, { recursive: true });
+        await rm(harness.storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('previewed and confirmed manual retention keeps sockets, artifacts, and the body untouched', async () => {
+test('previewed and confirmed manual retention keeps sockets, artifacts, and the body untouched', async () => {
     const harness = await createRetentionRouteHarness();
     try {
-        const preview = await routeControlHttpRequest(harness.toRequest('?dryRun=true'), harness.dependencies);
+        const preview = (await routeControlHttpRequest(harness.toRequest('?dryRun=true'), harness.dependencies, NO_UPGRADE_SERVER))!;
         const previewBody = await preview.json() as { planToken?: string; };
         assert(typeof previewBody.planToken === 'string');
 
         const confirmQuery = `?planToken=${encodeURIComponent(previewBody.planToken)}`;
-        const confirm = await routeControlHttpRequest(harness.toRequest(confirmQuery), harness.dependencies);
+        const confirm = (await routeControlHttpRequest(harness.toRequest(confirmQuery), harness.dependencies, NO_UPGRADE_SERVER))!;
 
-        assertEquals(preview.status, 200);
-        assertEquals(confirm.status, 200);
-        assertEquals(await confirm.json(), { deletedRunIds: ['run-old'], retainedRuns: 1, maxRuns: 1 });
-        assertEquals(harness.closedSockets, []);
-        assertEquals(harness.readBodyPulls(), 0);
-        assertEquals(await harness.readMarker(), PRESERVED_MARKER);
+        expect(preview.status).toEqual(200);
+        expect(confirm.status).toEqual(200);
+        expect(await confirm.json()).toEqual({ deletedRunIds: ['run-old'], retainedRuns: 1, maxRuns: 1 });
+        expect(harness.closedSockets).toEqual([]);
+        expect(harness.readBodyPulls()).toEqual(0);
+        expect(await harness.readMarker()).toEqual(PRESERVED_MARKER);
     }
     finally {
-        await Deno.remove(harness.storageDir, { recursive: true });
+        await rm(harness.storageDir, { recursive: true, force: true });
     }
 });
 
 async function createRetentionRouteHarness(): Promise<RetentionRouteHarness> {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-retention-route-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-retention-route-'));
     const markerPath = await writeArtifactMarker(storageDir, 'run-old');
     const closedSockets: string[] = [];
     const persistCalls: string[] = [];
@@ -109,7 +118,7 @@ async function createRetentionRouteHarness(): Promise<RetentionRouteHarness> {
                 fallbackRun: toControlRun('run-new', 2_000),
                 corsOrigins: []
             });
-            return await Deno.readTextFile(markerPath).catch(() => '');
+            return await readFile(markerPath, 'utf8').catch(() => '');
         }
     };
 }
@@ -160,8 +169,8 @@ function createRetentionRouteDependencies(
 
 async function writeArtifactMarker(storageDir: string, runId: string): Promise<string> {
     const markerDirectory = `${storageDir}/runs/${toRunDirectoryName(runId)}`;
-    await Deno.mkdir(markerDirectory, { recursive: true });
-    await Deno.writeTextFile(`${markerDirectory}/sentinel.jsonl`, PRESERVED_MARKER);
+    await mkdir(markerDirectory, { recursive: true });
+    await writeFile(`${markerDirectory}/sentinel.jsonl`, PRESERVED_MARKER, 'utf8');
     return `${markerDirectory}/sentinel.jsonl`;
 }
 

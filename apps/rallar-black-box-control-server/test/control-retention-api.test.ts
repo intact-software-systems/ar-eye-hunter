@@ -1,18 +1,21 @@
+import { expect, test } from 'bun:test';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { assert } from './support/assert.ts';
+
 import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { assert, assertEquals } from '@std/assert';
 
 import { registerAgent, waitForSocketOpen } from './support/control-api-test-agent.ts';
 import { ADMIN_TOKEN, adminHeaders, canBindLoopback, getJson, startControlServer } from './support/control-api-test-server.ts';
 import { toDistributedManifest } from './support/control-service-test-fixtures.ts';
 
-Deno.test('retention preview is authorized, non-destructive, and guarded before cleanup', async () => {
+test('retention preview is authorized, non-destructive, and guarded before cleanup', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({
-        prefix: 'rallar-retention-api-'
-    });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-retention-api-'));
     const snapshotPath = `${storageDir}/control-snapshot.json`;
     const run = (runId: string, updatedAtEpochMs: number) => ({
         runId,
@@ -26,7 +29,7 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
         reports: [],
         heartbeats: []
     });
-    await Deno.writeTextFile(
+    await writeFile(
         snapshotPath,
         JSON.stringify({
             schemaVersion: 1,
@@ -108,9 +111,9 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
     );
     const artifactDir = `${storageDir}/runs/retention-old`;
     const artifactPath = `${artifactDir}/sentinel.jsonl`;
-    await Deno.mkdir(artifactDir, { recursive: true });
-    await Deno.writeTextFile(artifactPath, 'manual-cleanup-must-preserve-this\n');
-    const beforePreview = await Deno.readTextFile(snapshotPath);
+    await mkdir(artifactDir, { recursive: true });
+    await writeFile(artifactPath, 'manual-cleanup-must-preserve-this\n', 'utf8');
+    const beforePreview = await readFile(snapshotPath, 'utf8');
     const server = await startControlServer({
         RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
         RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '1',
@@ -141,8 +144,8 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
                     method: 'POST'
                 }
             );
-            assertEquals(unauthorized.status, 401);
-            assertEquals(await unauthorized.json(), unauthorizedBody);
+            expect(unauthorized.status).toEqual(401);
+            expect(await unauthorized.json()).toEqual(unauthorizedBody);
         }
 
         for (
@@ -163,7 +166,7 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
                     headers: adminHeaders()
                 }
             );
-            assertEquals(invalid.status, 400);
+            expect(invalid.status).toEqual(400);
         }
 
         const previewResponse = await fetch(
@@ -174,7 +177,7 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
                 body: `{ malformed and intentionally larger than the request body limit ${'x'.repeat(RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES)}`
             }
         );
-        assertEquals(previewResponse.status, 200);
+        expect(previewResponse.status).toEqual(200);
         const preview = await previewResponse.json() as {
             dryRun?: boolean;
             deletedRunIds?: readonly string[];
@@ -199,12 +202,12 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
             };
             planToken?: string;
         };
-        assertEquals(preview.dryRun, true);
-        assertEquals(preview.deletedRunIds, []);
-        assertEquals(preview.retainedRuns, 2);
-        assertEquals(preview.projectedRetainedRuns, 1);
-        assertEquals(preview.maxRuns, 1);
-        assertEquals(preview.wouldDeleteRuns, [{
+        expect(preview.dryRun).toEqual(true);
+        expect(preview.deletedRunIds).toEqual([]);
+        expect(preview.retainedRuns).toEqual(2);
+        expect(preview.projectedRetainedRuns).toEqual(1);
+        expect(preview.maxRuns).toEqual(1);
+        expect(preview.wouldDeleteRuns).toEqual([{
             runId: 'retention-old',
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 1_000,
@@ -216,29 +219,23 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
             }],
             fleetReportIds: ['retention-dist-old']
         }]);
-        assertEquals(preview.wouldDeleteRunIds, ['retention-old']);
-        assertEquals(preview.wouldDeleteDistributedRunIds, ['retention-dist-old']);
-        assertEquals(preview.wouldDeleteFleetReportIds, ['retention-dist-old']);
-        assertEquals(preview.preserves, {
+        expect(preview.wouldDeleteRunIds).toEqual(['retention-old']);
+        expect(preview.wouldDeleteDistributedRunIds).toEqual(['retention-dist-old']);
+        expect(preview.wouldDeleteFleetReportIds).toEqual(['retention-dist-old']);
+        expect(preview.preserves).toEqual({
             connectedAgentSockets: true,
             storedArtifactFiles: true
         });
-        assert(
-            typeof preview.planToken === 'string' && preview.planToken.length > 0
-        );
+        assert(typeof preview.planToken === 'string' && preview.planToken.length > 0);
         assert(!JSON.stringify(preview).includes('revision:'));
         assert(!JSON.stringify(preview).includes('canonicalConsequence'));
-        assertEquals(await Deno.readTextFile(snapshotPath), beforePreview);
-        assertEquals(
-            await Deno.readTextFile(artifactPath),
-            'manual-cleanup-must-preserve-this\n'
-        );
-        assertEquals(unregisteredSocket.readyState, WebSocket.OPEN);
-        assertEquals(
+        expect(await readFile(snapshotPath, 'utf8')).toEqual(beforePreview);
+        expect(await readFile(artifactPath, 'utf8')).toEqual('manual-cleanup-must-preserve-this\n');
+        expect(unregisteredSocket.readyState).toEqual(WebSocket.OPEN);
+        expect(
             (await getJson<{ runs: readonly object[]; }>(server.baseUrl, '/runs')).runs
-                .length,
-            2
-        );
+                .length
+        ).toEqual(2);
 
         const tamperedToken = `${preview.planToken.slice(0, -1)}${preview.planToken.endsWith('A') ? 'B' : 'A'}`;
         const staleBody = {
@@ -248,28 +245,22 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
             `${server.baseUrl}/retention/cleanup?planToken=${encodeURIComponent(tamperedToken)}`,
             { method: 'POST', headers: adminHeaders() }
         );
-        assertEquals(tampered.status, 409);
-        assertEquals(await tampered.json(), staleBody);
-        assertEquals(
+        expect(tampered.status).toEqual(409);
+        expect(await tampered.json()).toEqual(staleBody);
+        expect(
             (await getJson<{ runs: readonly object[]; }>(server.baseUrl, '/runs')).runs
-                .length,
-            2
-        );
+                .length
+        ).toEqual(2);
 
         const unauthorizedIssuedToken = await fetch(
             `${server.baseUrl}/retention/cleanup?planToken=${encodeURIComponent(preview.planToken)}`,
             { method: 'POST' }
         );
-        assertEquals(unauthorizedIssuedToken.status, 401);
-        assertEquals(await unauthorizedIssuedToken.json(), unauthorizedBody);
+        expect(unauthorizedIssuedToken.status).toEqual(401);
+        expect(await unauthorizedIssuedToken.json()).toEqual(unauthorizedBody);
 
-        const otherStorageDir = await Deno.makeTempDir({
-            prefix: 'rallar-retention-other-'
-        });
-        await Deno.writeTextFile(
-            `${otherStorageDir}/control-snapshot.json`,
-            beforePreview
-        );
+        const otherStorageDir = await mkdtemp(join(tmpdir(), 'rallar-retention-other-'));
+        await writeFile(`${otherStorageDir}/control-snapshot.json`, beforePreview, 'utf8');
         const otherServer = await startControlServer({
             RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
             RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '1',
@@ -280,19 +271,18 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
                 `${otherServer.baseUrl}/retention/cleanup?planToken=${encodeURIComponent(preview.planToken)}`,
                 { method: 'POST', headers: adminHeaders() }
             );
-            assertEquals(wrongProcess.status, 409);
-            assertEquals(await wrongProcess.json(), staleBody);
-            assertEquals(
+            expect(wrongProcess.status).toEqual(409);
+            expect(await wrongProcess.json()).toEqual(staleBody);
+            expect(
                 (await getJson<{ runs: readonly object[]; }>(
                     otherServer.baseUrl,
                     '/runs'
-                )).runs.length,
-                2
-            );
+                )).runs.length
+            ).toEqual(2);
         }
         finally {
             await otherServer.stop();
-            await Deno.remove(otherStorageDir, { recursive: true });
+            await rm(otherStorageDir, { recursive: true, force: true });
         }
 
         const confirmResponse = await fetch(
@@ -303,55 +293,48 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
                 body: '{ malformed and intentionally larger than the request body limit'
             }
         );
-        assertEquals(confirmResponse.status, 200);
-        assertEquals(await confirmResponse.json(), {
+        expect(confirmResponse.status).toEqual(200);
+        expect(await confirmResponse.json()).toEqual({
             deletedRunIds: ['retention-old'],
             retainedRuns: 1,
             maxRuns: 1
         });
-        assertEquals(
-            await Deno.readTextFile(artifactPath),
-            'manual-cleanup-must-preserve-this\n'
-        );
-        assertEquals(unregisteredSocket.readyState, WebSocket.OPEN);
-        assertEquals(
+        expect(await readFile(artifactPath, 'utf8')).toEqual('manual-cleanup-must-preserve-this\n');
+        expect(unregisteredSocket.readyState).toEqual(WebSocket.OPEN);
+        expect(
             (await getJson<{ distributedRuns: readonly object[]; }>(
                 server.baseUrl,
                 '/distributed-runs'
-            )).distributedRuns.length,
-            0
-        );
-        assertEquals(
+            )).distributedRuns.length
+        ).toEqual(0);
+        expect(
             (await getJson<{ reports: readonly object[]; }>(
                 server.baseUrl,
                 '/fleet/reports'
             )).reports
-                .length,
-            0
-        );
+                .length
+        ).toEqual(0);
 
         const reused = await fetch(
             `${server.baseUrl}/retention/cleanup?planToken=${encodeURIComponent(preview.planToken)}`,
             { method: 'POST', headers: adminHeaders() }
         );
-        assertEquals(reused.status, 409);
-        assertEquals(await reused.json(), staleBody);
+        expect(reused.status).toEqual(409);
+        expect(await reused.json()).toEqual(staleBody);
     }
     finally {
         unregisteredSocket?.close();
         await server.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('automatic retention past its cap keeps a live run, its socket and its artifact files', async () => {
+test('automatic retention past its cap keeps a live run, its socket and its artifact files', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({
-        prefix: 'rallar-auto-retention-'
-    });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-auto-retention-'));
     const server = await startControlServer({
         RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '1',
         RALLAR_BLACK_BOX_STORAGE_DIR: storageDir
@@ -361,8 +344,8 @@ Deno.test('automatic retention past its cap keeps a live run, its socket and its
     try {
         oldSocket = await registerAgent(server.baseUrl, 'auto-old', 'agent-old');
         const oldArtifactFile = `${storageDir}/runs/auto-old/sentinel.jsonl`;
-        await Deno.mkdir(`${storageDir}/runs/auto-old`, { recursive: true });
-        await Deno.writeTextFile(oldArtifactFile, 'kept-while-live\n');
+        await mkdir(`${storageDir}/runs/auto-old`, { recursive: true });
+        await writeFile(oldArtifactFile, 'kept-while-live\n', 'utf8');
 
         newSocket = await registerAgent(server.baseUrl, 'auto-new', 'agent-new');
         const runs = await getJson<{ runs: readonly { runId: string; }[]; }>(
@@ -370,15 +353,15 @@ Deno.test('automatic retention past its cap keeps a live run, its socket and its
             '/runs'
         );
 
-        assertEquals(runs.runs.map((entry) => entry.runId).sort(), ['auto-new', 'auto-old']);
-        assertEquals(oldSocket.readyState, WebSocket.OPEN);
-        assertEquals(newSocket.readyState, WebSocket.OPEN);
-        assertEquals(await Deno.readTextFile(oldArtifactFile), 'kept-while-live\n');
+        expect(runs.runs.map((entry) => entry.runId).sort()).toEqual(['auto-new', 'auto-old']);
+        expect(oldSocket.readyState).toEqual(WebSocket.OPEN);
+        expect(newSocket.readyState).toEqual(WebSocket.OPEN);
+        expect(await readFile(oldArtifactFile, 'utf8')).toEqual('kept-while-live\n');
     }
     finally {
         oldSocket?.close();
         newSocket?.close();
         await server.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });

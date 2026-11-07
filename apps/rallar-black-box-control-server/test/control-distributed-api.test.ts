@@ -1,4 +1,8 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { assert } from './support/assert.ts';
 
 import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import {
@@ -23,9 +27,9 @@ import {
 } from './support/control-api-test-server.ts';
 import { assertRight } from './support/control-service-test-fixtures.ts';
 
-Deno.test('distributed HTTP stage and unstaged start visibly refuse unsupported required capture', async () => {
-    assert(await canBindLoopback(), 'HTTP capture admission requires a local listener.');
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-capture-admission-' });
+test('distributed HTTP stage and unstaged start visibly refuse unsupported required capture', async () => {
+    assert(await canBindLoopback());
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-capture-admission-'));
     try {
         const server = await startControlServer({ RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN, RALLAR_BLACK_BOX_STORAGE_DIR: storageDir });
         let socket: WebSocket | undefined;
@@ -48,17 +52,17 @@ Deno.test('distributed HTTP stage and unstaged start visibly refuse unsupported 
                     headers: adminHeaders(),
                     body: JSON.stringify({ manifest })
                 });
-                assertEquals(created.status, 201);
+                expect(created.status).toEqual(201);
                 await created.body?.cancel();
                 const refused = await fetch(`${server.baseUrl}/distributed-runs/${distributedRunId}/${phase}`, { method: 'POST', headers: adminHeaders() });
                 const response: unknown = await refused.json();
                 const snapshot = await getJson<unknown>(server.baseUrl, `/distributed-runs/${distributedRunId}`);
                 assert(isJsonRecordValue(snapshot));
-                assertEquals({
+                expect({
                     refused: refused.status >= 400 || snapshot.state === 'failed',
                     captureReason: JSON.stringify(response).toLowerCase().includes('capture'),
                     links: snapshot.commandLinks
-                }, {
+                }).toEqual({
                     refused: true,
                     captureReason: true,
                     links: []
@@ -75,13 +79,13 @@ Deno.test('distributed HTTP stage and unstaged start visibly refuse unsupported 
         }
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('distributed HTTP admission retains explicit Off through actual results and serialized export', async () => {
-    assert(await canBindLoopback(), 'This HTTP capture proof requires a local controller listener.');
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-capture-' });
+test('distributed HTTP admission retains explicit Off through actual results and serialized export', async () => {
+    assert(await canBindLoopback());
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-capture-'));
     try {
         const server = await startControlServer({
             RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
@@ -90,11 +94,12 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
         let socket: WebSocket | undefined;
         try {
             const manifest: unknown = JSON.parse(
-                await Deno.readTextFile(
+                await readFile(
                     new URL(
                         '../../../packages/shared-test/black-box-runner/fixtures/distributed-run-capture.json',
                         import.meta.url
-                    )
+                    ),
+                    'utf8'
                 )
             );
             assert(isJsonRecordValue(manifest));
@@ -108,7 +113,7 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
                         const decoded = parseControlServerMessage(event.data, { runId: 'api-capture-control', agentId: 'agent-a' });
                         assert(decoded.ok);
                         const result = await runtime.execute({ ...decoded.envelope.command, commandId: decoded.envelope.commandId });
-                        assertEquals(result.ok, true);
+                        expect(result.ok).toEqual(true);
                         agentSocket.send(JSON.stringify({
                             kind: 'result',
                             protocolVersion: 1,
@@ -121,8 +126,8 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
                         if (result.kind === 'recipe.run') {
                             assert(isJsonRecordValue(result.value));
                             assert(isJsonRecordValue(result.value.invocation));
-                            assertEquals(result.value.invocation.run, 'off');
-                            assertEquals(result.value.invocation.recipe, 'native');
+                            expect(result.value.invocation.run).toEqual('off');
+                            expect(result.value.invocation.recipe).toEqual('native');
                             completed.resolve();
                         }
                     }
@@ -137,14 +142,14 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
                 body: JSON.stringify({ manifest })
             });
             const accepted: unknown = await created.json();
-            assertEquals(created.status, 201, JSON.stringify(accepted));
+            expect(created.status).toEqual(201);
             assert(isJsonRecordValue(accepted));
-            assertEquals(accepted.manifest, manifest);
+            expect(accepted.manifest).toEqual(manifest);
             const started = await fetch(`${server.baseUrl}/distributed-runs/api-capture-run/start`, {
                 method: 'POST',
                 headers: adminHeaders()
             });
-            assertEquals(started.status, 202);
+            expect(started.status).toEqual(202);
             await started.body?.cancel();
             const timeout = setTimeout(() => completed.reject(new Error('The actual capture invocation did not complete.')), 5_000);
             try {
@@ -156,13 +161,13 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
             await waitForPersistedSnapshot(storageDir, '"state":"passed"');
             const run = await getJson<unknown>(server.baseUrl, '/distributed-runs/api-capture-run');
             assert(isJsonRecordValue(run));
-            assertEquals(run.state, 'passed');
-            assertEquals(run.manifest, manifest);
+            expect(run.state).toEqual('passed');
+            expect(run.manifest).toEqual(manifest);
             const artifact = await getJson<unknown>(server.baseUrl, '/distributed-runs/api-capture-run/artifacts');
             assert(isJsonRecordValue(artifact));
             assert(isJsonRecordValue(artifact.files));
             assert(typeof artifact.files['manifest.json'] === 'string');
-            assertEquals(JSON.parse(artifact.files['manifest.json']), manifest);
+            expect(JSON.parse(artifact.files['manifest.json'])).toEqual(manifest);
         }
         finally {
             try {
@@ -174,16 +179,16 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
         }
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('read-token mode protects run, fleet, and distributed GET routes', async () => {
+test('read-token mode protects run, fleet, and distributed GET routes', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-api-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-api-'));
     try {
         const server = await startControlServer({
             RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
@@ -193,19 +198,19 @@ Deno.test('read-token mode protects run, fleet, and distributed GET routes', asy
         try {
             const health = await getJson<unknown>(server.baseUrl, '/health');
             assert(isJsonRecordValue(health));
-            assertEquals(health.ok, true);
+            expect(health.ok).toEqual(true);
 
             const openApi = await fetch(`${server.baseUrl}/api/openapi.json`);
-            assertEquals(openApi.status, 200);
+            expect(openApi.status).toEqual(200);
 
             for (const path of ['/runs', '/distributed-runs', '/fleet/reports']) {
                 const unauthorized = await fetch(`${server.baseUrl}${path}`);
-                assertEquals(unauthorized.status, 401);
+                expect(unauthorized.status).toEqual(401);
 
                 const authorized = await fetch(`${server.baseUrl}${path}`, {
                     headers: adminHeaders()
                 });
-                assertEquals(authorized.status, 200);
+                expect(authorized.status).toEqual(200);
             }
         }
         finally {
@@ -213,16 +218,16 @@ Deno.test('read-token mode protects run, fleet, and distributed GET routes', asy
         }
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('read-token mode fails closed without an auth backend', async () => {
+test('read-token mode fails closed without an auth backend', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-api-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-api-'));
     try {
         const server = await startControlServer({
             RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN: '1',
@@ -231,11 +236,11 @@ Deno.test('read-token mode fails closed without an auth backend', async () => {
         try {
             const health = await getJson<unknown>(server.baseUrl, '/health');
             assert(isJsonRecordValue(health));
-            assertEquals(health.ok, true);
+            expect(health.ok).toEqual(true);
 
             for (const path of ['/runs', '/distributed-runs', '/fleet/reports']) {
                 const unauthorized = await fetch(`${server.baseUrl}${path}`);
-                assertEquals(unauthorized.status, 401);
+                expect(unauthorized.status).toEqual(401);
             }
         }
         finally {
@@ -243,16 +248,16 @@ Deno.test('read-token mode fails closed without an auth backend', async () => {
         }
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and persisted restore', async () => {
+test('distributed and fleet APIs validate auth, artifacts, filters, and persisted restore', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-api-' });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-api-'));
     try {
         const server = await startControlServer({
             RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
@@ -274,7 +279,7 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     body: JSON.stringify({ manifest: distributedManifest() })
                 }
             );
-            assertEquals(unauthorizedCreate.status, 401);
+            expect(unauthorizedCreate.status).toEqual(401);
 
             const signedOperatorToken = await operatorToken();
             const unversionedRecipeResponse = await fetch(`${server.baseUrl}/distributed-runs`, {
@@ -291,8 +296,8 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     }
                 })
             });
-            assertEquals(unversionedRecipeResponse.status, 400);
-            assertEquals(await unversionedRecipeResponse.json(), {
+            expect(unversionedRecipeResponse.status).toEqual(400);
+            expect(await unversionedRecipeResponse.json()).toEqual({
                 error: '$.recipes[0].recipe: Missing required property schemaVersion.'
             });
 
@@ -317,22 +322,22 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     })
                 }
             );
-            assertEquals(previewResponse.status, 200);
+            expect(previewResponse.status).toEqual(200);
             const preview = assertRight(decodeTargetResolution(await previewResponse.json()));
-            assertEquals(preview.targetAgentIds, ['agent-a']);
-            assertEquals(preview.summary.selected, 1);
-            assertEquals(preview.summary.expectedParticipantCount, 1);
-            assertEquals(preview.summary.roleCounts, { sender: 1 });
+            expect(preview.targetAgentIds).toEqual(['agent-a']);
+            expect(preview.summary.selected).toEqual(1);
+            expect(preview.summary.expectedParticipantCount).toEqual(1);
+            expect(preview.summary.roleCounts).toEqual({ sender: 1 });
 
             const createdResponse = await fetch(`${server.baseUrl}/distributed-runs`, {
                 method: 'POST',
                 headers: bearerJsonHeaders(signedOperatorToken),
                 body: JSON.stringify({ manifest: distributedManifest() })
             });
-            assertEquals(createdResponse.status, 201);
+            expect(createdResponse.status).toEqual(201);
             const created = assertRight(decodeControlDistributedRunSnapshot(await createdResponse.json()));
-            assertEquals(created.distributedRunId, 'api-dist-1');
-            assertEquals(created.targetAgentIds, ['agent-a']);
+            expect(created.distributedRunId).toEqual('api-dist-1');
+            expect(created.targetAgentIds).toEqual(['agent-a']);
 
             const stagedResponse = await fetch(
                 `${server.baseUrl}/distributed-runs/api-dist-1/stage`,
@@ -341,13 +346,13 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     headers: bearerJsonHeaders(signedOperatorToken)
                 }
             );
-            assertEquals(stagedResponse.status, 202);
+            expect(stagedResponse.status).toEqual(202);
             const staged = assertRight(decodeControlDistributedRunSnapshot(await stagedResponse.json()));
-            assertEquals(staged.state, 'waiting-for-ack');
-            assertEquals(staged.commandLinks.length, 1);
-            assertEquals(staged.commandLinks[0].phase, 'stage');
-            assertEquals(staged.commandLinks[0].agentId, 'agent-a');
-            assertEquals(staged.commandLinks[0].recipeId, 'api-health');
+            expect(staged.state).toEqual('waiting-for-ack');
+            expect(staged.commandLinks.length).toEqual(1);
+            expect(staged.commandLinks[0].phase).toEqual('stage');
+            expect(staged.commandLinks[0].agentId).toEqual('agent-a');
+            expect(staged.commandLinks[0].recipeId).toEqual('api-health');
 
             const startedResponse = await fetch(
                 `${server.baseUrl}/distributed-runs/api-dist-1/start`,
@@ -356,20 +361,20 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     headers: bearerJsonHeaders(signedOperatorToken)
                 }
             );
-            assertEquals(startedResponse.status, 202);
+            expect(startedResponse.status).toEqual(202);
             const started = assertRight(decodeControlDistributedRunSnapshot(await startedResponse.json()));
-            assertEquals(started.state, 'waiting-for-ack');
+            expect(started.state).toEqual('waiting-for-ack');
 
             const distributed = assertRight(decodeControlDistributedRunSnapshot(
                 await getJson<unknown>(server.baseUrl, '/distributed-runs/api-dist-1')
             ));
-            assertEquals(distributed.manifest.distributedRunId, 'api-dist-1');
+            expect(distributed.manifest.distributedRunId).toEqual('api-dist-1');
 
             const distributedArtifact = await getJson<unknown>(server.baseUrl, '/distributed-runs/api-dist-1/artifacts');
             assert(isJsonRecordValue(distributedArtifact));
             assert(isJsonRecordValue(distributedArtifact.files));
             assert(typeof distributedArtifact.files['manifest.json'] === 'string');
-            assertEquals(distributedArtifact.artifactSchemaVersion, 2);
+            expect(distributedArtifact.artifactSchemaVersion).toEqual(2);
             assert(distributedArtifact.files['manifest.json'].includes('api-dist-1'));
             assert('metadata.json' in distributedArtifact.files);
 
@@ -377,8 +382,8 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
             assert(isJsonRecordValue(fleet));
             assert(Array.isArray(fleet.reports));
             assert(isJsonRecordValue(fleet.aggregate));
-            assertEquals(fleet.reports.length, 0);
-            assertEquals(fleet.aggregate.runCount, 0);
+            expect(fleet.reports.length).toEqual(0);
+            expect(fleet.aggregate.runCount).toEqual(0);
 
             const unauthorizedRebuild = await fetch(
                 `${server.baseUrl}/fleet/reports/rebuild`,
@@ -386,7 +391,7 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     method: 'POST'
                 }
             );
-            assertEquals(unauthorizedRebuild.status, 401);
+            expect(unauthorizedRebuild.status).toEqual(401);
             const rebuildResponse = await fetch(
                 `${server.baseUrl}/fleet/reports/rebuild`,
                 {
@@ -394,7 +399,7 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     headers: adminHeaders()
                 }
             );
-            assertEquals(rebuildResponse.status, 200);
+            expect(rebuildResponse.status).toEqual(200);
 
             await waitForPersistedSnapshot(storageDir, 'api-dist-1');
             agentSocket.close();
@@ -418,14 +423,14 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
             const restoredRun = assertRight(decodeControlDistributedRunSnapshot(
                 await getJson<unknown>(restored.baseUrl, '/distributed-runs/api-dist-1')
             ));
-            assertEquals(restoredRun.distributedRunId, 'api-dist-1');
-            assertEquals(restoredRun.state, 'failed');
+            expect(restoredRun.distributedRunId).toEqual('api-dist-1');
+            expect(restoredRun.state).toEqual('failed');
         }
         finally {
             await restored.stop();
         }
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });

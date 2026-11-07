@@ -1,6 +1,8 @@
+import { test } from 'bun:test';
+import { assert } from './support/assert.ts';
+
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { assert } from '@std/assert';
 
 import {
     controlRunEventsJsonl,
@@ -168,7 +170,7 @@ const run: ControlRunSnapshot = {
     heartbeats: []
 };
 
-Deno.test('control artifacts export redacted shared-test compatible files', () => {
+test('control artifacts export redacted shared-test compatible files', () => {
     const bundle = createControlRunArtifactBundle(run, 3_000);
     const report = JSON.parse(bundle.files['report.json']);
     const failures = JSON.parse(bundle.files['failures.json']);
@@ -197,7 +199,7 @@ function assertCompactJsonMembers(files: Readonly<Record<string, string>>): void
     }
 }
 
-Deno.test('control run artifact bundles hold compact JSON members, each also built alone', () => {
+test('control run artifact bundles hold compact JSON members, each also built alone', () => {
     const bundle = createControlRunArtifactBundle(run, 3_000);
 
     assertCompactJsonMembers(bundle.files);
@@ -206,7 +208,7 @@ Deno.test('control run artifact bundles hold compact JSON members, each also bui
     }
 });
 
-Deno.test('an artifact bundle streams as exactly its JSON, one chunk per member', () => {
+test('an artifact bundle streams as exactly its JSON, one chunk per member', () => {
     const bundle = createControlRunArtifactBundle(run, 3_000);
     const chunks = [...toArtifactBundleJsonChunks(bundle)];
 
@@ -214,7 +216,7 @@ Deno.test('an artifact bundle streams as exactly its JSON, one chunk per member'
     assert(chunks.length > Object.keys(bundle.files).length);
 });
 
-Deno.test('control artifacts export event, result, and failure bundles', () => {
+test('control artifacts export event, result, and failure bundles', () => {
     assert(controlRunEventsJsonl(run).includes('rtc-diagnostic'));
     assert(controlRunEventsJsonl(run).includes('crdt-diagnostic'));
     assert(controlRunResultsJsonl(run).includes('HTTP_FAILED'));
@@ -222,7 +224,7 @@ Deno.test('control artifacts export event, result, and failure bundles', () => {
     assertJsonEquals(controlRunFailureBundle(run).failures.length, 1);
 });
 
-Deno.test('control artifact JSONL helpers preserve queued command metadata', () => {
+test('control artifact JSONL helpers preserve queued command metadata', () => {
     const lines = toControlResultArtifactLines(run.results[2], run.commands[1]);
     const resultRow = JSON.parse(lines.resultLine) as {
         action?: string;
@@ -245,7 +247,7 @@ Deno.test('control artifact JSONL helpers preserve queued command metadata', () 
     assertJsonEquals(eventRow.connection, 'checklist');
 });
 
-Deno.test('control distributed artifacts export filtered v2 analysis files', () => {
+test('control distributed artifacts export filtered v2 analysis files', () => {
     const distributedRun: ControlDistributedRunSnapshot = {
         distributedRunId: 'dist-artifact',
         controlRunId: 'artifact-run',

@@ -1,6 +1,4 @@
-export interface BlackBoxControlEnvironment {
-    get(key: string): string | undefined;
-}
+export type BlackBoxControlEnvironment = Readonly<Record<string, string | undefined>>;
 
 export interface BlackBoxControlProductionEnvErrorDetail {
     readonly variable: string;
@@ -196,7 +194,7 @@ function readEnvironmentValue(
     environment: BlackBoxControlEnvironment,
     key: string
 ): string | undefined {
-    const value = environment.get(key)?.trim();
+    const value = environment[key]?.trim();
     return value && value.length > 0 ? value : undefined;
 }
 

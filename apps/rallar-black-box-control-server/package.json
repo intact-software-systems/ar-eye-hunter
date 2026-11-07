@@ -1,0 +1,15 @@
+{
+  "name": "@ar-eye-hunter/rallar-black-box-control-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test test/"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4"
+  }
+}

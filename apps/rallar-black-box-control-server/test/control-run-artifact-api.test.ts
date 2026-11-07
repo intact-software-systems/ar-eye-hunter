@@ -1,8 +1,13 @@
+import { expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { assert } from './support/assert.ts';
+
 import {
     parseControlServerMessage,
     RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { assert, assertEquals } from '@std/assert';
 
 import { registerAgent, waitForJsonl, waitForSocketClose, waitForSocketOpen } from './support/control-api-test-agent.ts';
 import { reportEnvelope } from './support/control-api-test-fixtures.ts';
@@ -13,7 +18,7 @@ interface HealthResponse {
     readonly app?: string;
 }
 
-Deno.test('REST API enforces tokens, queues commands, and exports run artifacts', async () => {
+test('REST API enforces tokens, queues commands, and exports run artifacts', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
@@ -24,8 +29,8 @@ Deno.test('REST API enforces tokens, queues commands, and exports run artifacts'
     });
     try {
         const health = await getJson<HealthResponse>(server.baseUrl, '/health');
-        assertEquals(health.ok, true);
-        assertEquals(health.app, 'rallar-black-box-control-server');
+        expect(health.ok).toEqual(true);
+        expect(health.app).toEqual('rallar-black-box-control-server');
 
         const unauthorizedCommand = await fetch(
             `${server.baseUrl}/runs/http-run/agents/agent-a/commands`,
@@ -37,7 +42,7 @@ Deno.test('REST API enforces tokens, queues commands, and exports run artifacts'
                 })
             }
         );
-        assertEquals(unauthorizedCommand.status, 401);
+        expect(unauthorizedCommand.status).toEqual(401);
 
         const tokenResponse = await fetch(
             `${server.baseUrl}/runs/http-run/agents/agent-a/tokens`,
@@ -47,7 +52,7 @@ Deno.test('REST API enforces tokens, queues commands, and exports run artifacts'
                 body: JSON.stringify({ ttlMs: 60_000 })
             }
         );
-        assertEquals(tokenResponse.status, 201);
+        expect(tokenResponse.status).toEqual(201);
         const token = await tokenResponse.json() as { token: string; };
         assert(token.token.length > 12);
 
@@ -65,13 +70,13 @@ Deno.test('REST API enforces tokens, queues commands, and exports run artifacts'
                 })
             }
         );
-        assertEquals(commandResponse.status, 202);
+        expect(commandResponse.status).toEqual(202);
         const commandAccepted = await commandResponse.json() as {
             accepted?: boolean;
             command?: { commandId?: string; };
         };
-        assertEquals(commandAccepted.accepted, true);
-        assertEquals(commandAccepted.command?.commandId, 'health-1');
+        expect(commandAccepted.accepted).toEqual(true);
+        expect(commandAccepted.command?.commandId).toEqual('health-1');
 
         const bulkResponse = await fetch(
             `${server.baseUrl}/runs/http-run/commands`,
@@ -85,11 +90,11 @@ Deno.test('REST API enforces tokens, queues commands, and exports run artifacts'
                 })
             }
         );
-        assertEquals(bulkResponse.status, 202);
+        expect(bulkResponse.status).toEqual(202);
         const bulkAccepted = await bulkResponse.json() as {
             commands?: readonly { commandId: string; agentId?: string; }[];
         };
-        assertEquals(bulkAccepted.commands?.map((command) => command.commandId), [
+        expect(bulkAccepted.commands?.map((command) => command.commandId)).toEqual([
             'bulk-health-agent-a',
             'bulk-health-agent-b'
         ]);
@@ -97,16 +102,13 @@ Deno.test('REST API enforces tokens, queues commands, and exports run artifacts'
         const runResponse = await fetch(
             `${server.baseUrl}/runs/http-run?limitCommands=2`
         );
-        assertEquals(runResponse.status, 200);
+        expect(runResponse.status).toEqual(200);
         const runText = await runResponse.text();
-        assert(
-            !runText.includes('\n'),
-            'High-frequency control JSON responses should use compact serialization.'
-        );
+        assert(!runText.includes('\n'));
         const run = JSON.parse(runText) as {
             commands: readonly { envelope: { commandId: string; }; }[];
         };
-        assertEquals(run.commands.map((command) => command.envelope.commandId), [
+        expect(run.commands.map((command) => command.envelope.commandId)).toEqual([
             'bulk-health-agent-a',
             'bulk-health-agent-b'
         ]);
@@ -115,31 +117,29 @@ Deno.test('REST API enforces tokens, queues commands, and exports run artifacts'
             artifactSchemaVersion: number;
             files: Record<string, string>;
         }>(server.baseUrl, '/runs/http-run/artifacts');
-        assertEquals(artifact.artifactSchemaVersion, 1);
+        expect(artifact.artifactSchemaVersion).toEqual(1);
         const artifactReport = JSON.parse(artifact.files['report.json']) as {
             outputs?: { commandCount?: number; };
         };
-        assertEquals(artifactReport.outputs?.commandCount, 3);
+        expect(artifactReport.outputs?.commandCount).toEqual(3);
 
         const reportFile = await fetch(
             `${server.baseUrl}/runs/http-run/artifacts/report.json`
         );
-        assertEquals(reportFile.status, 200);
-        assert(
-            reportFile.headers.get('content-type')?.includes('application/json')
-        );
+        expect(reportFile.status).toEqual(200);
+        assert(reportFile.headers.get('content-type')?.includes('application/json'));
 
         const missingFile = await fetch(
             `${server.baseUrl}/runs/http-run/artifacts/unknown.json`
         );
-        assertEquals(missingFile.status, 404);
+        expect(missingFile.status).toEqual(404);
     }
     finally {
         await server.stop();
     }
 });
 
-Deno.test('HTTP and WebSocket agent ingress reject oversized payloads', async () => {
+test('HTTP and WebSocket agent ingress reject oversized payloads', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
@@ -168,7 +168,7 @@ Deno.test('HTTP and WebSocket agent ingress reject oversized payloads', async ()
                 })
             }
         );
-        assertEquals(oversizedReport.status, 413);
+        expect(oversizedReport.status).toEqual(413);
 
         const socket = new WebSocket(
             `${server.baseUrl.replace(/^http/, 'ws')}/control`
@@ -186,21 +186,19 @@ Deno.test('HTTP and WebSocket agent ingress reject oversized payloads', async ()
                 value: 'x'.repeat(RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES)
             }
         }));
-        assertEquals((await closed).code, 1009);
+        expect((await closed).code).toEqual(1009);
     }
     finally {
         await server.stop();
     }
 });
 
-Deno.test('artifact JSONL retains full evidence after runtime trimming', async () => {
+test('artifact JSONL retains full evidence after runtime trimming', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({
-        prefix: 'rallar-control-artifacts-'
-    });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-artifacts-'));
     const server = await startControlServer({
         RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
         RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: '0',
@@ -270,40 +268,32 @@ Deno.test('artifact JSONL retains full evidence after runtime trimming', async (
         const artifactResults = await fetch(
             `${server.baseUrl}/runs/trim-run/artifacts/results.jsonl`
         );
-        assertEquals(artifactResults.status, 200);
-        assert(
-            (await artifactResults.text()).includes('HEAVY_FAILURE'),
-            'Per-file results artifacts should stream the stored JSONL evidence.'
-        );
+        expect(artifactResults.status).toEqual(200);
+        assert((await artifactResults.text()).includes('HEAVY_FAILURE'));
 
         const snapshot = await getJson<{
             results?: readonly object[];
             events?: readonly object[];
             reports?: readonly object[];
         }>(server.baseUrl, '/runs/trim-run');
-        assertEquals(snapshot.results?.length, 0);
-        assertEquals(snapshot.events?.length, 0);
-        assertEquals(snapshot.reports?.length, 1);
-        assertEquals(
-            JSON.stringify(snapshot.reports).includes('report-heavy'),
-            false
-        );
+        expect(snapshot.results?.length).toEqual(0);
+        expect(snapshot.events?.length).toEqual(0);
+        expect(snapshot.reports?.length).toEqual(1);
+        expect(JSON.stringify(snapshot.reports).includes('report-heavy')).toEqual(false);
     }
     finally {
         socket?.close();
         await server.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('disk-backed result and event rows retain command metadata', async () => {
+test('disk-backed result and event rows retain command metadata', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({
-        prefix: 'rallar-control-artifact-metadata-'
-    });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-artifact-metadata-'));
     const server = await startControlServer({
         RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
         RALLAR_BLACK_BOX_RUNTIME_RETAIN_COMMANDS: '0',
@@ -337,15 +327,15 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
                 })
             }
         );
-        assertEquals(commandResponse.status, 202);
+        expect(commandResponse.status).toEqual(202);
 
         const command = parseControlServerMessage((await dispatched.promise).data, {
             runId: 'metadata-run',
             agentId: 'agent-a'
         });
         assert(command.ok && command.envelope.kind === 'command');
-        assertEquals(command.envelope.commandId, 'rtc-send-1');
-        assertEquals(command.envelope.command.kind, 'rtc.send');
+        expect(command.envelope.commandId).toEqual('rtc-send-1');
+        expect(command.envelope.command.kind).toEqual('rtc.send');
         const startedAtEpochMs = Date.now();
         const endedAtEpochMs = Date.now();
         socket.send(JSON.stringify({
@@ -377,9 +367,9 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
             transport?: string;
             connection?: string;
         };
-        assertEquals(resultRow.action, 'rtc.send');
-        assertEquals(resultRow.transport, 'messages.rtc');
-        assertEquals(resultRow.connection, 'rtc-connection-1');
+        expect(resultRow.action).toEqual('rtc.send');
+        expect(resultRow.transport).toEqual('messages.rtc');
+        expect(resultRow.connection).toEqual('rtc-connection-1');
 
         const eventsText = await waitForJsonl(
             server.baseUrl,
@@ -398,35 +388,33 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
             )
             .find((row) => row.kind === 'step-result');
         assert(stepResult);
-        assertEquals(stepResult.action, 'rtc.send');
-        assertEquals(stepResult.transport, 'messages.rtc');
+        expect(stepResult.action).toEqual('rtc.send');
+        expect(stepResult.transport).toEqual('messages.rtc');
         const snapshot = await getJson<{
             commands: readonly object[];
             results: readonly object[];
             events: readonly object[];
             agents: readonly { agentId: string; completedCommandIds: readonly string[]; }[];
         }>(server.baseUrl, '/runs/metadata-run');
-        assertEquals(snapshot.commands.length, 0);
-        assertEquals(snapshot.results.length, 0);
-        assertEquals(snapshot.events.length, 0);
-        assertEquals(snapshot.agents.find((agent) => agent.agentId === 'agent-a')?.completedCommandIds, ['rtc-send-1']);
+        expect(snapshot.commands.length).toEqual(0);
+        expect(snapshot.results.length).toEqual(0);
+        expect(snapshot.events.length).toEqual(0);
+        expect(snapshot.agents.find((agent) => agent.agentId === 'agent-a')?.completedCommandIds).toEqual(['rtc-send-1']);
     }
     finally {
         clearTimeout(dispatchTimeout);
         socket?.close();
         await server.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('artifact JSONL responses wait for queued writes', async () => {
+test('artifact JSONL responses wait for queued writes', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({
-        prefix: 'rallar-control-artifact-flush-'
-    });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-artifact-flush-'));
     const server = await startControlServer({
         RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
         RALLAR_BLACK_BOX_MAX_REQUEST_BYTES: '2000000',
@@ -447,7 +435,7 @@ Deno.test('artifact JSONL responses wait for queued writes', async () => {
                 }))
             }
         );
-        assertEquals(seedResponse.status, 202);
+        expect(seedResponse.status).toEqual(202);
         await waitForJsonl(
             server.baseUrl,
             '/runs/flush-run/events.jsonl',
@@ -472,7 +460,7 @@ Deno.test('artifact JSONL responses wait for queued writes', async () => {
             )
         );
         for (const response of backlogResponses) {
-            assertEquals(response.status, 202);
+            expect(response.status).toEqual(202);
         }
 
         const targetMarker = 'artifact-flush-target';
@@ -489,31 +477,26 @@ Deno.test('artifact JSONL responses wait for queued writes', async () => {
                 }))
             }
         );
-        assertEquals(targetResponse.status, 202);
+        expect(targetResponse.status).toEqual(202);
 
         const jsonlResponse = await fetch(
             `${server.baseUrl}/runs/flush-run/events.jsonl`
         );
-        assertEquals(jsonlResponse.status, 200);
-        assert(
-            (await jsonlResponse.text()).includes(targetMarker),
-            'Direct JSONL responses should include accepted report uploads.'
-        );
+        expect(jsonlResponse.status).toEqual(200);
+        assert((await jsonlResponse.text()).includes(targetMarker));
     }
     finally {
         await server.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('final report artifact rows dedupe across WebSocket and HTTP ingress', async () => {
+test('final report artifact rows dedupe across WebSocket and HTTP ingress', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({
-        prefix: 'rallar-control-artifact-dedupe-'
-    });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-artifact-dedupe-'));
     const server = await startControlServer({
         RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
         RALLAR_BLACK_BOX_RUNTIME_RETAIN_REPORTS: '0'
@@ -542,33 +525,31 @@ Deno.test('final report artifact rows dedupe across WebSocket and HTTP ingress',
                 body: JSON.stringify(report)
             }
         );
-        assertEquals(uploadResponse.status, 202);
+        expect(uploadResponse.status).toEqual(202);
 
         const eventsResponse = await fetch(
             `${server.baseUrl}/runs/dedupe-run/events.jsonl`
         );
-        assertEquals(eventsResponse.status, 200);
+        expect(eventsResponse.status).toEqual(200);
         const reportRows = (await eventsResponse.text())
             .trim()
             .split(/\r?\n/g)
             .filter((line) => line.includes('final-report-duplicate'));
-        assertEquals(reportRows.length, 1);
+        expect(reportRows.length).toEqual(1);
     }
     finally {
         socket?.close();
         await server.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('run artifact directories stay disk-address distinct for colliding run ids over HTTP', async () => {
+test('run artifact directories stay disk-address distinct for colliding run ids over HTTP', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
 
-    const storageDir = await Deno.makeTempDir({
-        prefix: 'rallar-control-artifact-directory-'
-    });
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-control-artifact-directory-'));
     // Retention is zero so the in-memory snapshot fallback is empty and events.jsonl responses
     // can only come from the on-disk run directory, proving the directory codec rather than
     // the runtime fallback.
@@ -599,7 +580,7 @@ Deno.test('run artifact directories stay disk-address distinct for colliding run
     }
     finally {
         await server.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
@@ -617,5 +598,5 @@ async function postReport(baseUrl: string, runId: string, marker: string): Promi
             }))
         }
     );
-    assertEquals(response.status, 202);
+    expect(response.status).toEqual(202);
 }

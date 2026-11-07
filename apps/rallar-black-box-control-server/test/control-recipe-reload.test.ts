@@ -1,5 +1,7 @@
+import { expect, test } from 'bun:test';
+import { assert } from './support/assert.ts';
+
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
-import { assert, assertEquals } from '@std/assert';
 
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -27,7 +29,7 @@ const RELOAD_RECIPE: RallarBlackBoxTestRecipe = {
     ]
 };
 
-Deno.test('ALM reload dispatches only the prefix before replacing the page', async () => {
+test('ALM reload dispatches only the prefix before replacing the page', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(
@@ -35,49 +37,49 @@ Deno.test('ALM reload dispatches only the prefix before replacing the page', asy
     );
 
     const dispatched = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(dispatched.length, 1);
+    expect(dispatched.length).toEqual(1);
     assert(dispatched[0].command.kind === 'recipe.run');
-    assertEquals(dispatched[0].command.recipe?.commands, RELOAD_RECIPE.commands);
-    assertEquals(dispatched[0].recipeExecution?.segment, { start: 0, end: 1, first: true });
+    expect(dispatched[0].command.recipe?.commands).toEqual(RELOAD_RECIPE.commands);
+    expect(dispatched[0].recipeExecution?.segment).toEqual({ start: 0, end: 1, first: true });
     const runtime = createDefaultRallarBlackBoxTestRuntime();
     const prefix = await runtime.execute(dispatched[0].command, undefined, { recipeExecution: dispatched[0].recipeExecution });
-    assertEquals(prefix.status, 'ok');
-    assertEquals(runtime.state().resultCache['original-send']?.status, 'ok');
-    assertEquals(runtime.state().resultCache['replace-page'], undefined);
-    assertEquals(runtime.state().resultCache['restore-session'], undefined);
+    expect(prefix.status).toEqual('ok');
+    expect(runtime.state().resultCache['original-send']?.status).toEqual('ok');
+    expect(runtime.state().resultCache['replace-page']).toBeUndefined();
+    expect(runtime.state().resultCache['restore-session']).toBeUndefined();
     assert(dispatched[0].commandId !== 'logical-root');
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
 });
 
-Deno.test('ALM reload waits for actual successful results and a later resumed connection', () => {
+test('ALM reload waits for actual successful results and a later resumed connection', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe: RELOAD_RECIPE } }));
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     const prefixResult = toSuccessfulResult(prefix);
-    assertEquals(service.receiveClientEnvelope({ ...prefixResult, agentId: 'other-agent' }).accepted, false);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
-    assertEquals(service.receiveClientEnvelope(prefixResult).accepted, true);
+    expect(service.receiveClientEnvelope({ ...prefixResult, agentId: 'other-agent' }).accepted).toEqual(false);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
+    expect(service.receiveClientEnvelope(prefixResult).accepted).toEqual(true);
     const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(reload.command.kind, 'agent.reload');
+    expect(reload.command.kind).toEqual('agent.reload');
     service.receiveClientEnvelope(toSuccessfulResult(reload));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
     service.markAgentDisconnected('run-1', 'agent-1');
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: ['replace-page'] }));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
     service.markAgentDisconnected('run-1', 'agent-1');
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
     const [suffix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     assert(suffix.command.kind === 'recipe.run');
-    assertEquals(suffix.command.recipe?.commands, RELOAD_RECIPE.commands);
-    assertEquals(suffix.recipeExecution?.segment, { start: 2, end: 3, first: false });
+    expect(suffix.command.recipe?.commands).toEqual(RELOAD_RECIPE.commands);
+    expect(suffix.recipeExecution?.segment).toEqual({ start: 2, end: 3, first: false });
     service.receiveClientEnvelope(toSuccessfulResult(suffix));
     const root = service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root');
-    assertEquals(root?.ok, true);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(root?.ok).toEqual(true);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
 });
 
-Deno.test('ALM reload rejects a failed prefix without dispatching reload', () => {
+test('ALM reload rejects a failed prefix without dispatching reload', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe: RELOAD_RECIPE } }));
@@ -88,11 +90,11 @@ Deno.test('ALM reload rejects a failed prefix without dispatching reload', () =>
         ok: false,
         result: { ...success.result!, ok: false, status: 'failed', error: { code: 'SEND_REJECTED', message: 'denied' } }
     });
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
-    assertEquals(service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.ok, false);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
+    expect(service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.ok).toEqual(false);
 });
 
-Deno.test('pending reload evidence survives low runtime and persistence bounds and restore', () => {
+test('pending reload evidence survives low runtime and persistence bounds and restore', () => {
     const input = toControlServiceInput({ now: () => 1_000, runtimeRetentionBounds: { commands: 1, results: 1 } });
     let service = createRallarBlackBoxControlService(input);
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -106,23 +108,23 @@ Deno.test('pending reload evidence survives low runtime and persistence bounds a
     service.restoreSnapshot(snapshot);
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [prefix.commandId] }));
     const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(reload.command.kind, 'agent.reload');
+    expect(reload.command.kind).toEqual('agent.reload');
     service.receiveClientEnvelope(toSuccessfulResult(reload));
     snapshot = service.snapshotForPersistence({ commands: 1, results: 1 });
-    assertEquals(snapshot.runs[0].results.length, 2);
+    expect(snapshot.runs[0].results.length).toEqual(2);
     service = createRallarBlackBoxControlService(input);
     service.restoreSnapshot(snapshot);
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
     const [suffix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     assert(suffix.command.kind === 'recipe.run');
-    assertEquals(suffix.recipeExecution?.segment, { start: 2, end: 3, first: false });
+    expect(suffix.recipeExecution?.segment).toEqual({ start: 2, end: 3, first: false });
     service.receiveClientEnvelope(toSuccessfulResult(suffix));
-    assertEquals(service.snapshotRun('run-1')?.commands.length, 1);
-    assertEquals(service.snapshotRun('run-1')?.results.length, 1);
-    assertEquals(service.snapshotRun('run-1')?.results[0].commandId, 'root');
+    expect(service.snapshotRun('run-1')?.commands.length).toEqual(1);
+    expect(service.snapshotRun('run-1')?.results.length).toEqual(1);
+    expect(service.snapshotRun('run-1')?.results[0].commandId).toEqual('root');
 });
 
-Deno.test('a dispatched business segment with missing result is never resent after restore', () => {
+test('a dispatched business segment with missing result is never resent after restore', () => {
     const input = toControlServiceInput({ now: () => 1_000 });
     const service = createRallarBlackBoxControlService(input);
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -131,14 +133,13 @@ Deno.test('a dispatched business segment with missing result is never resent aft
     const restored = createRallarBlackBoxControlService(input);
     restored.restoreSnapshot(service.snapshotForPersistence());
     restored.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [prefix.commandId] }));
-    assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1'), []);
-    assertEquals(
-        restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.error?.code,
+    expect(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1')).toEqual([]);
+    expect(restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.error?.code).toEqual(
         'RALLAR_BLACK_BOX_RELOAD_RESULT_UNOBSERVABLE'
     );
 });
 
-Deno.test('reload readiness and parent deadlines are not renewed by restore or refresh', () => {
+test('reload readiness and parent deadlines are not renewed by restore or refresh', () => {
     let now = 1_000;
     const input = toControlServiceInput({ now: () => now });
     const service = createRallarBlackBoxControlService(input);
@@ -147,21 +148,23 @@ Deno.test('reload readiness and parent deadlines are not renewed by restore or r
         service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe: RELOAD_RECIPE, timeoutMs: 80 } })
     );
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(prefix.deadlineEpochMs, 1_080);
+    expect(prefix.deadlineEpochMs).toEqual(1_080);
     now = 1_040;
     service.receiveClientEnvelope(toSuccessfulResult(prefix));
     const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(reload.deadlineEpochMs, 1_080);
+    expect(reload.deadlineEpochMs).toEqual(1_080);
     service.receiveClientEnvelope(toSuccessfulResult(reload));
     const restored = createRallarBlackBoxControlService(input);
     restored.restoreSnapshot(service.snapshotForPersistence());
     now = 1_081;
     restored.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
-    assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1'), []);
-    assertEquals(restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.error?.code, 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT');
+    expect(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1')).toEqual([]);
+    expect(restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.error?.code).toEqual(
+        'RALLAR_BLACK_BOX_RECIPE_TIMEOUT'
+    );
 });
 
-Deno.test('ordinary cancellation stops pending reload continuation', () => {
+test('ordinary cancellation stops pending reload continuation', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe: RELOAD_RECIPE } }));
@@ -172,44 +175,46 @@ Deno.test('ordinary cancellation stops pending reload continuation', () => {
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'cancel', command: { kind: 'recipe.cancel', reason: 'stop' } }));
     service.markAgentDisconnected('run-1', 'agent-1');
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.command.kind), ['recipe.cancel']);
-    assertEquals(service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.status, 'cancelled');
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.command.kind)).toEqual(['recipe.cancel']);
+    expect(service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.status).toEqual('cancelled');
 });
 
-Deno.test('ordinary recipes and ALM recipes without reload retain their original command', () => {
+test('ordinary recipes and ALM recipes without reload retain their original command', () => {
     for (const recipe of [{ ...RELOAD_RECIPE, metadata: {} }, { ...RELOAD_RECIPE, commands: [RELOAD_RECIPE.commands[0]] }]) {
         const service = createRallarBlackBoxControlService(toControlServiceInput());
         service.receiveClientEnvelope(toRegisterEnvelope());
         const queued = assertRight(
             service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'ordinary', command: { kind: 'recipe.run', recipe } })
         );
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), [queued]);
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([queued]);
     }
 });
 
-Deno.test('external command and result collisions cannot impersonate reload work', () => {
+test('external command and result collisions cannot impersonate reload work', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     const rootRequest = { runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run' as const, recipe: RELOAD_RECIPE } };
     const queued = assertRight(service.enqueueCommand(rootRequest));
-    assertEquals(assertRight(service.enqueueCommand(rootRequest)), queued);
-    assertEquals(service.enqueueCommand({ ...rootRequest, agentId: 'agent-2' }).left?.code, 'command-payload-conflict');
+    expect(assertRight(service.enqueueCommand(rootRequest))).toEqual(queued);
+    expect(service.enqueueCommand({ ...rootRequest, agentId: 'agent-2' }).left?.code).toEqual('command-payload-conflict');
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(service.enqueueCommand({ ...rootRequest, commandId: prefix.commandId, command: prefix.command }).left?.code, 'command-payload-conflict');
-    assertEquals(service.receiveClientEnvelope(toSuccessfulResult(queued)).accepted, false);
+    expect(service.enqueueCommand({ ...rootRequest, commandId: prefix.commandId, command: prefix.command }).left?.code).toEqual('command-payload-conflict');
+    expect(service.receiveClientEnvelope(toSuccessfulResult(queued)).accepted).toEqual(false);
     const malformed = toSuccessfulResult(prefix);
-    assertEquals(service.receiveClientEnvelope({ ...malformed, result: { ...malformed.result!, value: { recipeId: 'wrong', results: [] } } }).accepted, false);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(service.receiveClientEnvelope({ ...malformed, result: { ...malformed.result!, value: { recipeId: 'wrong', results: [] } } }).accepted).toEqual(
+        false
+    );
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
     const collided = createRallarBlackBoxControlService(toControlServiceInput());
     assertRight(collided.enqueueCommand({ ...rootRequest, commandId: prefix.commandId, command: prefix.command }));
-    assertEquals(collided.enqueueCommand(rootRequest).left?.code, 'command-payload-conflict');
+    expect(collided.enqueueCommand(rootRequest).left?.code).toEqual('command-payload-conflict');
     const forged = createRallarBlackBoxControlService(toControlServiceInput());
-    assertEquals(forged.receiveClientEnvelope(toSuccessfulResult(queued)).accepted, false);
-    assertEquals(forged.snapshotRun('run-1'), undefined);
-    assertEquals(assertRight(forged.enqueueCommand(rootRequest)), queued);
+    expect(forged.receiveClientEnvelope(toSuccessfulResult(queued)).accepted).toEqual(false);
+    expect(forged.snapshotRun('run-1')).toEqual(undefined);
+    expect(assertRight(forged.enqueueCommand(rootRequest))).toEqual(queued);
 });
 
-Deno.test('rate limits defer derived execution and the allowlist still rejects reload', () => {
+test('rate limits defer derived execution and the allowlist still rejects reload', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now, commandRateLimitMax: 1, commandRateLimitWindowMs: 20 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -221,24 +226,24 @@ Deno.test('rate limits defer derived execution and the allowlist still rejects r
             command: { kind: 'recipe.run', recipe: RELOAD_RECIPE, timeoutMs: 100 }
         })
     );
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
     now = 1_021;
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(prefix.deadlineEpochMs, 1_121);
+    expect(prefix.deadlineEpochMs).toEqual(1_121);
     service.receiveClientEnvelope(toSuccessfulResult(prefix));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
     now = 1_042;
     const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(reload.deadlineEpochMs, 1_121);
+    expect(reload.deadlineEpochMs).toEqual(1_121);
     const restricted = createRallarBlackBoxControlService(toControlServiceInput({ allowedCommandKinds: ['recipe.run'], now: () => now }));
     restricted.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(restricted.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe: RELOAD_RECIPE } }));
     const [allowedPrefix] = takeAgentDispatchableCommands(restricted, 'run-1', 'agent-1');
     restricted.receiveClientEnvelope(toSuccessfulResult(allowedPrefix));
-    assertEquals(takeAgentDispatchableCommands(restricted, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(restricted, 'run-1', 'agent-1')).toEqual([]);
 });
 
-Deno.test('reload readiness expires from first dispatch even when a valid resume arrives late', () => {
+test('reload readiness expires from first dispatch even when a valid resume arrives late', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now }));
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -250,14 +255,13 @@ Deno.test('reload readiness expires from first dispatch even when a valid resume
     now = 1_101;
     service.markAgentDisconnected('run-1', 'agent-1');
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
-    assertEquals(
-        service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.error?.code,
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
+    expect(service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.result?.error?.code).toEqual(
         'RALLAR_BLACK_BOX_RELOAD_READY_TIMEOUT'
     );
 });
 
-Deno.test('a queued suffix is restored without replaying its preceding business send', () => {
+test('a queued suffix is restored without replaying its preceding business send', () => {
     const input = toControlServiceInput({ now: () => 1_000 });
     const service = createRallarBlackBoxControlService(input);
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -273,12 +277,12 @@ Deno.test('a queued suffix is restored without replaying its preceding business 
     restored.restoreSnapshot(service.snapshotForPersistence());
     restored.receiveClientEnvelope(toRegisterEnvelope());
     const commands = takeAgentDispatchableCommands(restored, 'run-1', 'agent-1');
-    assertEquals(commands.length, 1);
+    expect(commands.length).toEqual(1);
     assert(commands[0].command.kind === 'recipe.run');
-    assertEquals(commands[0].recipeExecution?.segment, { start: 2, end: 3, first: false });
+    expect(commands[0].recipeExecution?.segment).toEqual({ start: 2, end: 3, first: false });
 });
 
-Deno.test('an ordinary hosted inline reload preserves its logical distributed link', () => {
+test('an ordinary hosted inline reload preserves its logical distributed link', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     const source = createAlmConformance2AgentEntry().manifest;
     const manifest = {
@@ -313,42 +317,40 @@ Deno.test('an ordinary hosted inline reload preserves its logical distributed li
     const logicalSender = started.commandLinks.find((link) => link.phase === 'start' && link.role === 'sender')!;
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', logicalSender.agentId);
     assert(prefix.command.kind === 'recipe.run');
-    assertEquals(prefix.recipeExecution?.segment, { start: 0, end: 1, first: true });
-    assertEquals(prefix.command.recipe?.commands[0].commandId, 'original-send');
+    expect(prefix.recipeExecution?.segment).toEqual({ start: 0, end: 1, first: true });
+    expect(prefix.command.recipe?.commands[0].commandId).toEqual('original-send');
     assert(prefix.commandId !== logicalSender.commandId);
     const prefixResult = toSuccessfulResult(prefix);
     service.receiveClientEnvelope(prefixResult);
     const [reload] = takeAgentDispatchableCommands(service, 'run-1', logicalSender.agentId);
-    assertEquals(reload.command.kind, 'agent.reload');
+    expect(reload.command.kind).toEqual('agent.reload');
     const reloadResult = toSuccessfulResult(reload);
     service.receiveClientEnvelope(reloadResult);
-    assertEquals(service.snapshotDistributedRun(manifest.distributedRunId)?.state, 'running');
+    expect(service.snapshotDistributedRun(manifest.distributedRunId)?.state).toEqual('running');
     service.markAgentDisconnected('run-1', logicalSender.agentId);
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: logicalSender.agentId, completedCommandIds: [reload.commandId] }));
     const [suffix] = takeAgentDispatchableCommands(service, 'run-1', logicalSender.agentId);
     const suffixResult = toSuccessfulResult(suffix);
     service.receiveClientEnvelope(suffixResult);
     const logicalResult = service.snapshotRun('run-1')?.results.find((result) => result.commandId === logicalSender.commandId);
-    assertEquals(logicalResult?.ok, true);
+    expect(logicalResult?.ok).toEqual(true);
     const aggregate = logicalResult?.result?.value;
     const prefixValue = prefixResult.result?.value;
     const suffixValue = suffixResult.result?.value;
     assert(isJsonRecordValue(aggregate) && Array.isArray(aggregate.results));
     assert(isJsonRecordValue(prefixValue) && Array.isArray(prefixValue.results));
     assert(isJsonRecordValue(suffixValue) && Array.isArray(suffixValue.results));
-    assertEquals(aggregate.results.slice(-3), [
+    expect(aggregate.results.slice(-3)).toEqual([
         prefixValue.results.at(-1),
         { ...reloadResult.result, commandId: 'replace-page' },
         suffixValue.results[0]
     ]);
-    assertEquals(service.snapshotRun('run-1')?.results.find((result) => result.commandId === reload.commandId), reloadResult);
-    assertEquals(
-        service.snapshotDistributedRun(manifest.distributedRunId)?.commandLinks.filter((link) => link.phase === 'start' && link.role === 'sender').length,
-        1
-    );
+    expect(service.snapshotRun('run-1')?.results.find((result) => result.commandId === reload.commandId)).toEqual(reloadResult);
+    expect(service.snapshotDistributedRun(manifest.distributedRunId)?.commandLinks.filter((link) => link.phase === 'start' && link.role === 'sender').length)
+        .toEqual(1);
 });
 
-Deno.test('reload preserves an earlier child deadline instead of expanding it to the parent budget', () => {
+test('reload preserves an earlier child deadline instead of expanding it to the parent budget', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now }));
     const recipe = {
@@ -360,25 +362,25 @@ Deno.test('reload preserves an earlier child deadline instead of expanding it to
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     service.receiveClientEnvelope(toSuccessfulResult(prefix));
     const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(reload.deadlineEpochMs, 1_040);
+    expect(reload.deadlineEpochMs).toEqual(1_040);
     service.receiveClientEnvelope(toSuccessfulResult(reload));
     now = 1_041;
     service.markAgentDisconnected('run-1', 'agent-1');
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
 });
 
-Deno.test('malformed result timing cannot become accepted reload evidence', () => {
+test('malformed result timing cannot become accepted reload evidence', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe: RELOAD_RECIPE } }));
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     const result = toSuccessfulResult(prefix);
-    assertEquals(service.receiveClientEnvelope({ ...result, result: { ...result.result!, durationMs: NaN } }).accepted, false);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+    expect(service.receiveClientEnvelope({ ...result, result: { ...result.result!, durationMs: NaN } }).accepted).toEqual(false);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
 });
 
-Deno.test('restored unearned or altered suffix commands cannot bypass the reload fence', () => {
+test('restored unearned or altered suffix commands cannot bypass the reload fence', () => {
     const input = toControlServiceInput({ now: () => 1_000 });
     const service = createRallarBlackBoxControlService(input);
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -406,10 +408,10 @@ Deno.test('restored unearned or altered suffix commands cannot bypass the reload
     const restored = createRallarBlackBoxControlService(input);
     restored.restoreSnapshot(altered);
     restored.receiveClientEnvelope(toRegisterEnvelope());
-    assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1'), []);
+    expect(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1')).toEqual([]);
 });
 
-Deno.test('restored missing dispatched prefix metadata cannot cause a repeated business send', () => {
+test('restored missing dispatched prefix metadata cannot cause a repeated business send', () => {
     const input = toControlServiceInput({ now: () => 1_000 });
     const service = createRallarBlackBoxControlService(input);
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -424,11 +426,11 @@ Deno.test('restored missing dispatched prefix metadata cannot cause a repeated b
     const restored = createRallarBlackBoxControlService(input);
     restored.restoreSnapshot(missingPrefix);
     restored.receiveClientEnvelope(toRegisterEnvelope());
-    assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1'), []);
-    assertEquals(restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.ok, false);
+    expect(takeAgentDispatchableCommands(restored, 'run-1', 'agent-1')).toEqual([]);
+    expect(restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root')?.ok).toEqual(false);
 });
 
-Deno.test('terminal reload completes the logical root at the later resume time', () => {
+test('terminal reload completes the logical root at the later resume time', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => now }));
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -442,8 +444,8 @@ Deno.test('terminal reload completes the logical root at the later resume time',
         }
     }));
     const [admission] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(admission.recipeExecution?.segment, { start: 0, end: 0, first: true });
-    assertEquals(service.receiveClientEnvelope(toSuccessfulResult(admission)).accepted, true);
+    expect(admission.recipeExecution?.segment).toEqual({ start: 0, end: 0, first: true });
+    expect(service.receiveClientEnvelope(toSuccessfulResult(admission)).accepted).toEqual(true);
     const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     now = 1_010;
     service.receiveClientEnvelope(toSuccessfulResult(reload));
@@ -452,20 +454,20 @@ Deno.test('terminal reload completes the logical root at the later resume time',
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
     const results = service.snapshotRun('run-1')!.results;
     const root = results.find((result) => result.commandId === 'root')!.result!;
-    assertEquals(root.startedAtEpochMs, 1_000);
-    assertEquals(root.endedAtEpochMs, 1_050);
-    assertEquals(root.durationMs, 50);
-    assertEquals(results.find((result) => result.commandId === reload.commandId)!.result!.endedAtEpochMs, 1_010);
+    expect(root.startedAtEpochMs).toEqual(1_000);
+    expect(root.endedAtEpochMs).toEqual(1_050);
+    expect(root.durationMs).toEqual(50);
+    expect(results.find((result) => result.commandId === reload.commandId)!.result!.endedAtEpochMs).toEqual(1_010);
 });
 
-Deno.test('a segment result must identify its actual recipe as well as its ordered children', () => {
+test('a segment result must identify its actual recipe as well as its ordered children', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe: RELOAD_RECIPE } }));
     const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     const actual = toSuccessfulResult(prefix);
     assert(actual.result?.value && typeof actual.result.value === 'object' && !Array.isArray(actual.result.value));
-    assertEquals(
+    expect(
         service.receiveClientEnvelope({
             ...actual,
             result: {
@@ -475,30 +477,29 @@ Deno.test('a segment result must identify its actual recipe as well as its order
                     recipeId: 'different-recipe'
                 }
             }
-        }).accepted,
-        false
-    );
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
-    assertEquals(service.receiveClientEnvelope(actual).accepted, true);
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0].command.kind, 'agent.reload');
+        }).accepted
+    ).toEqual(false);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
+    expect(service.receiveClientEnvelope(actual).accepted).toEqual(true);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0].command.kind).toEqual('agent.reload');
 });
 
-Deno.test('derived child identities support distinct root IDs containing lone UTF-16 surrogates', () => {
+test('derived child identities support distinct root IDs containing lone UTF-16 surrogates', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     for (const commandId of ['root-\uD800', 'root-\uD801']) {
         assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId, command: { kind: 'recipe.run', recipe: RELOAD_RECIPE } }));
     }
     const dispatched = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
-    assertEquals(dispatched.length, 2);
-    assertEquals(new Set(dispatched.map((command) => command.commandId)).size, 2);
+    expect(dispatched.length).toEqual(2);
+    expect(new Set(dispatched.map((command) => command.commandId)).size).toEqual(2);
     for (const command of dispatched) {
-        assertEquals(service.receiveClientEnvelope(toSuccessfulResult(command)).accepted, true);
+        expect(service.receiveClientEnvelope(toSuccessfulResult(command)).accepted).toEqual(true);
     }
-    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.command.kind), ['agent.reload', 'agent.reload']);
+    expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.command.kind)).toEqual(['agent.reload', 'agent.reload']);
 });
 
-Deno.test('unsupported opt-in continuation and nested reload shapes fail before dispatch', () => {
+test('unsupported opt-in continuation and nested reload shapes fail before dispatch', () => {
     const recipes: readonly RallarBlackBoxTestRecipe[] = [
         { ...RELOAD_RECIPE, continueOnFailure: true },
         { ...RELOAD_RECIPE, commands: [{ kind: 'recipe.run', commandId: 'nested', recipe: RELOAD_RECIPE }] }
@@ -506,11 +507,10 @@ Deno.test('unsupported opt-in continuation and nested reload shapes fail before 
     for (const recipe of recipes) {
         const service = createRallarBlackBoxControlService(toControlServiceInput());
         service.receiveClientEnvelope(toRegisterEnvelope());
-        assertEquals(
-            service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe } }).left?.code,
+        expect(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'root', command: { kind: 'recipe.run', recipe } }).left?.code).toEqual(
             'command-payload-conflict'
         );
-        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+        expect(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')).toEqual([]);
     }
 });
 
