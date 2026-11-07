@@ -76,7 +76,7 @@ describe('ALM server-ordered-entry cell', () => {
         }
     });
 
-    it('waits for entry at prior 0 and the absence of before-entry on the sibling, and for no client-state event on the receiver', () => {
+    it('waits for entry at prior 0 and the absence of before-entry on the sibling, and on the receiver for entry on the sender principal track and the absence of before-entry', () => {
         const scenario = readServerOrderedEntry();
         expect(findCommand(scenario.sibling!, `${PREFIX}-sibling-entered`)).toEqual({
             kind: 'wait',
@@ -101,17 +101,38 @@ describe('ALM server-ordered-entry cell', () => {
             absent: true,
             timeoutMs: 5_000
         });
-        expect(findCommand(scenario.receiver, `${PREFIX}-receiver-no-client-state-event`)).toMatchObject({
+        const arrival = `resultCache.${PREFIX}-receiver-sender-principal-event.value.event.payload`;
+        expect(scenario.receiver.commands.slice(3, 6).map(({ commandId }) => commandId)).toEqual([
+            `${PREFIX}-receiver-sender-principal-event`,
+            `${PREFIX}-receiver-entered`,
+            `${PREFIX}-receiver-no-before-entry`
+        ]);
+        expect(findCommand(scenario.receiver, `${PREFIX}-receiver-sender-principal-event`)).toEqual({
             kind: 'wait',
+            commandId: `${PREFIX}-receiver-sender-principal-event`,
             match: {
                 kind: 'message',
                 topic: 'rallar.browser.ws.message',
                 connection: 'receiver',
-                payloadFields: { 'data.topicId': 'client-state.event' }
+                payloadFields: { 'data.topicId': 'client-state.event', 'data.payload.principalId': 'principal-alice' }
             },
-            absent: true,
-            timeoutMs: 17_000
+            timeoutMs: 27_000
         });
+        expect(findCommand(scenario.receiver, `${PREFIX}-receiver-entered`)).toEqual({
+            kind: 'wait',
+            commandId: `${PREFIX}-receiver-entered`,
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                payloadPath: 'data',
+                contains: `"trackKey":"{${arrival}.contextId}:{${arrival}.senderId}:`,
+                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 0 }
+            },
+            timeoutMs: 27_000
+        });
+        expect(findCommand(scenario.receiver, `${PREFIX}-receiver-no-before-entry`)).toEqual(
+            { ...findCommand(scenario.sibling!, `${PREFIX}-sibling-no-before-entry`), commandId: `${PREFIX}-receiver-no-before-entry` }
+        );
     });
 
     it('validates every command against the recipe schema and the control protocol', () => {

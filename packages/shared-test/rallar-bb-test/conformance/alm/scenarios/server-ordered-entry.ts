@@ -7,7 +7,11 @@ import type {
 } from '../../../rallar-black-box-test-contracts.ts';
 
 import { RESPONSE_MARGIN_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
-import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../alm-conformance-diagnostic-waits.ts';
+import {
+    ALM_INBOUND_DIAGNOSTICS_TOPIC,
+    toDiagnosticWait,
+    toVerdictTimeoutMs
+} from '../alm-conformance-diagnostic-waits.ts';
 import { ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES } from '../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -15,6 +19,7 @@ import {
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
+import { toPrincipalPlaceholder } from '../resolve-alm-conformance-principals.ts';
 import { toPauseCommand } from '../to-pause-command.ts';
 
 const PRINCIPAL_WRITE_COUNT = 3;
@@ -22,9 +27,14 @@ const PRINCIPAL_WRITE_TIMEOUT_MS = 5_000;
 const ORDERING_POSITION = 'ordering-position';
 
 /**
- * The server orders a principal's client-state events on its own producer track. The sender writes its principal
- * three times; the principal's second session, the sibling, reads its first copy as `entered` at prior 0, whatever
- * sequence it carries, and states no `before-entry`. The receiver, another principal's session, hears none of them.
+ * The server orders a principal's client-state events on its own producer track, and a principal's event reaches its
+ * own sessions and every co-member's. The sender writes its principal three times.
+ * The lane starts the sender after every other connect, so its first copy, its own connect event, is revision 2: it is
+ * the nonzero-entry witness, which before Slice 5 read a gap from 1.
+ * The sibling, the principal's second session, enters at its first copy, its own connect event at revision 1, and
+ * states no `before-entry`.
+ * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it and
+ * states no `before-entry`.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-ordered-entry',
@@ -34,9 +44,10 @@ export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     roles: ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES,
     laneFamily: 'same-principal',
     messageSelector: { topicId: AppTopics.clientStateEvent },
+    principalRoles: ['sender'],
     toSenderCommands: (sender) => toPrincipalUpsertCommands(sender, PRINCIPAL_WRITE_COUNT),
     toRecipientCommands: (recipient) =>
-        recipient.role === 'sibling' ? toOrderingEntryWait(recipient) : [toNoClientStateEventWait(recipient)]
+        recipient.role === 'sibling' ? toOrderingEntryWait(recipient, undefined) : toCoMemberEntryWaits(recipient)
 };
 
 /** Each write settles before the next, so each event leaves the server as its own copy. */
@@ -75,17 +86,24 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
     };
 }
 
-/** The page's lanes hear `client-state.event` alone on this cell, so the position names no track to scope by. */
-function toOrderingEntryWait(sibling: AlmConformanceStepInput): readonly RallarBlackBoxTestWaitCommand[] {
+/**
+ * The page's lanes hear `client-state.event` alone on this cell. Absent a track, the entry may be on any principal's
+ * track; `before-entry` is absent on every track either way.
+ */
+function toOrderingEntryWait(
+    step: AlmConformanceStepInput,
+    track: string | undefined
+): readonly RallarBlackBoxTestWaitCommand[] {
     return [
         toDiagnosticWait({
-            step: sibling,
+            step,
             name: 'entered',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+            ...(track === undefined ? {} : { contains: `"trackKey":"${track}:` }),
             payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'entered', 'data.priorSeq': 0 }
         }),
         toDiagnosticWait({
-            step: sibling,
+            step,
             name: 'no-before-entry',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
             payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'before-entry' },
@@ -94,18 +112,29 @@ function toOrderingEntryWait(sibling: AlmConformanceStepInput): readonly RallarB
     ];
 }
 
-/** The receiver starts before the sender, so its window covers every write of the sender's recipe. */
-function toNoClientStateEventWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
+/**
+ * A co-member's page also enters its own principal's track, so its entry wait names the sender principal's track:
+ * the ordering key and the server's peer id of an arrival of that principal's event.
+ */
+function toCoMemberEntryWaits(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestWaitCommand[] {
+    const arrival = toSenderPrincipalEventWait(receiver);
+    const event = `resultCache.${arrival.commandId}.value.event.payload`;
+    return [arrival, ...toOrderingEntryWait(receiver, `{${event}.contextId}:{${event}.senderId}`)];
+}
+
+function toSenderPrincipalEventWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
-        commandId: toCommandId(receiver, 'no-client-state-event'),
+        commandId: toCommandId(receiver, 'sender-principal-event'),
         match: {
             kind: 'message',
             topic: 'rallar.browser.ws.message',
             connection: toConnectionName(receiver),
-            payloadFields: { 'data.topicId': AppTopics.clientStateEvent }
+            payloadFields: {
+                'data.topicId': AppTopics.clientStateEvent,
+                'data.payload.principalId': toPrincipalPlaceholder('sender')
+            }
         },
-        absent: true,
-        timeoutMs: receiver.input.deadlineMs - RESPONSE_MARGIN_MS
+        timeoutMs: toVerdictTimeoutMs(receiver.input.deadlineMs)
     };
 }
