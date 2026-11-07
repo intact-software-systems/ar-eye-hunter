@@ -1,4 +1,4 @@
-import { assert } from './assert.ts';
+import assert from 'node:assert/strict';
 
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {

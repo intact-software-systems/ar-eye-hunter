@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { assert } from './support/assert.ts';
+import assert from 'node:assert/strict';
 
 import { toRallarBlackBoxCompositeResultFlatEntries } from '@shared-test/rallar-bb-test/composite-results.ts';
 import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';

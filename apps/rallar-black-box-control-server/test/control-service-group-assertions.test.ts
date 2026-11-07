@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { assert } from './support/assert.ts';
+import assert from 'node:assert/strict';
 
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';

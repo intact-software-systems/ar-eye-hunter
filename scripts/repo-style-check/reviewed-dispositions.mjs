@@ -816,12 +816,12 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined
     }),
     // Actual attempted/replacement snapshot envelopes are record-guarded before
-    // their snapshot values are emitted only as opaque assertion evidence. The
-    // caller independently checks complete DTOs; no raw value feeds domain logic.
+    // their snapshot values are asserted only as opaque evidence. No raw value
+    // feeds domain logic.
     Object.freeze({
-        path: 'apps/rallar-black-box-control-server/test/support/run-control-snapshot-atomic-replacement-fixture.ts',
+        path: 'apps/rallar-black-box-control-server/test/control-snapshot-atomic-replacement.test.ts',
         rule: 'boundary.unknown',
-        symbol: 'runControlSnapshotAtomicReplacementFixture'
+        symbol: undefined
     }),
     // The native execFile rejection is immediately narrowed for captured stdout;
     // every other rejection is normalized through canonical toError, preserving

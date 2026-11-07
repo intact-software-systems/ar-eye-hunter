@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assert } from './support/assert.ts';
 
 import { toError } from '@shared/resilience/to-error.ts';
 

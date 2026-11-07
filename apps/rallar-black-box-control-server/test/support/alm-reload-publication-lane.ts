@@ -1,4 +1,4 @@
-import { assert } from './assert.ts';
+import assert from 'node:assert/strict';
 
 import type { RallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';

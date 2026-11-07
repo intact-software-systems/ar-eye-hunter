@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 import { readFile, rm } from 'node:fs/promises';
-import { assert } from './support/assert.ts';
 
 import { createDefaultRallarBlackBoxControlClient } from '@shared-test/rallar-bb-test/control-client.ts';
 import { releaseControlResults } from '@shared-test/rallar-bb-test/result-release/release-control-results.ts';

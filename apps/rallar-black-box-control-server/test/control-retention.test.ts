@@ -1,5 +1,5 @@
 import { test } from 'bun:test';
-import { assert } from './support/assert.ts';
+import assert from 'node:assert/strict';
 
 import type { ControlRetentionPlan } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';

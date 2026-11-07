@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { assert } from './support/assert.ts';
 
 import {
     decodeControlBarrierEnvelope,

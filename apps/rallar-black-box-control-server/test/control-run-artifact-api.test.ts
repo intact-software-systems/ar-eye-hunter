@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assert } from './support/assert.ts';
 
 import {
     parseControlServerMessage,

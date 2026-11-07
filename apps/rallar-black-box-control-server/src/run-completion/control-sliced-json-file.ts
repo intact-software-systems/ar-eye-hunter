@@ -8,8 +8,6 @@ export interface SlicedJsonFileWriteInput {
     readonly tempPath: string;
     /** Concatenates to the file's text; see `toJsonPieces`. */
     readonly pieces: Iterable<string>;
-    /** Injected by the atomic-replacement failure fixture; defaults to the runtime rename. */
-    readonly renameFile?: (source: string, destination: string) => Promise<void>;
 }
 
 export interface SlicedJsonFileWrite {
@@ -51,7 +49,7 @@ export async function writeSlicedJsonFile(input: SlicedJsonFileWriteInput): Prom
             bytes += encoded.length;
         }
         await file.close();
-        await (input.renameFile ?? rename)(input.tempPath, input.path);
+        await rename(input.tempPath, input.path);
         return { written: true, bytes, serializeMs, writeMs, failure: undefined };
     }
     catch (error) {

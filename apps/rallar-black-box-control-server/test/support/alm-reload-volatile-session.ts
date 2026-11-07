@@ -1,4 +1,4 @@
-import { assert } from './assert.ts';
+import assert from 'node:assert/strict';
 
 import { decodeBlackBoxRallarConfigFields } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type {

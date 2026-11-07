@@ -1,5 +1,5 @@
 import { test } from 'bun:test';
-import { assert } from './support/assert.ts';
+import assert from 'node:assert/strict';
 
 import {
     parseControlClientMessage,

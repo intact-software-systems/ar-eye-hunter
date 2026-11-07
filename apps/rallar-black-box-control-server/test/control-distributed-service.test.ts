@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { assert } from './support/assert.ts';
+import assert from 'node:assert/strict';
 
 import { decodeBlackBoxRallarCrdtOpenInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts';
 import { toControlAgentIdentity } from '@shared-test/rallar-bb-test/control-client/to-control-agent-identity.ts';

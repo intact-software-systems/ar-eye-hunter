@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { assert } from './support/assert.ts';
+import assert from 'node:assert/strict';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { isRallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/composite-results.ts';

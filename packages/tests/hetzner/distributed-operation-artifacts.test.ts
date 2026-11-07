@@ -9,7 +9,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import {
     describe,
     expect,
@@ -517,79 +516,16 @@ describe('Hetzner artifacts contracts and effects', () => {
     });
 
     it('persists control-server snapshots with an atomic temp-file rename', async (context) => {
-        const directory = await mkdtemp(
-            path.join(tmpdir(), 'rallar-native-snapshot-')
-        );
-        onTestFinished(() => rm(directory, { recursive: true, force: true }));
-        const storageDirectory = path.join(directory, 'snapshots');
-        await mkdir(storageDirectory);
-        const scriptPath = path.join(storageDirectory, 'atomic-snapshot.ts');
-        await writeFile(
-            scriptPath,
-            `import { runControlSnapshotAtomicReplacementFixture } from ${
-                JSON.stringify(
-                    pathToFileURL(path.join(
-                        repoRoot,
-                        'apps/rallar-black-box-control-server/test/support/run-control-snapshot-atomic-replacement-fixture.ts'
-                    )).href
-                )
-            };
-await runControlSnapshotAtomicReplacementFixture(Deno.args[0]);
-`
-        );
-        const { stdout } = await runOwnedTestProcess(context, {
-            executable: 'deno',
+        await runOwnedTestProcess(context, {
+            executable: 'bun',
             args: [
-                'run',
-                '--cached-only',
-                '--node-modules-dir=manual',
-                '--no-lock',
-                '--allow-read',
-                '--allow-write',
-                '--config',
-                path.join(repoRoot, 'apps/rallar-black-box-control-server/deno.json'),
-                scriptPath,
-                storageDirectory
+                'test',
+                path.join(
+                    repoRoot,
+                    'apps/rallar-black-box-control-server/test/control-snapshot-atomic-replacement.test.ts'
+                )
             ],
-            options: { env: { ...process.env, DENO_DIR: path.join(directory, 'deno-cache') } }
-        });
-        const observed: unknown = JSON.parse(stdout);
-        const expectedSnapshot = {
-            runs: [
-                {
-                    runId: 'replacement-run',
-                    createdAtEpochMs: 10,
-                    updatedAtEpochMs: 20,
-                    agents: [],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }
-            ],
-            distributedRuns: [],
-            fleetReports: []
-        };
-        expect(observed).toEqual({
-            priorText: JSON.stringify({
-                schemaVersion: 1,
-                savedAtEpochMs: 1,
-                snapshot: { runs: [], distributedRuns: [], fleetReports: [] }
-            }),
-            afterFailureText: JSON.stringify({
-                schemaVersion: 1,
-                savedAtEpochMs: 1,
-                snapshot: { runs: [], distributedRuns: [], fleetReports: [] }
-            }),
-            attemptedSnapshot: expectedSnapshot,
-            replacementSnapshot: expectedSnapshot,
-            restoredSnapshot: expectedSnapshot,
-            remainingFiles: ['atomic-snapshot.ts', 'control-snapshot.json'],
-            failedWarning: expect.stringContaining(
-                'controlled snapshot rename refusal'
-            )
+            options: { cwd: path.join(repoRoot, 'apps/rallar-black-box-control-server') }
         });
     });
 

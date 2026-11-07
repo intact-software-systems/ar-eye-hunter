@@ -43,8 +43,6 @@ export interface ControlSnapshotPersistenceInput {
     readonly timers: Timers;
     /** Absent when flushes are not timed. */
     readonly timingSink: RallarTimingSink | undefined;
-    /** Injected by the atomic-replacement failure fixture; defaults to the runtime rename. */
-    readonly renameFile?: (source: string, destination: string) => Promise<void>;
 }
 
 export type ControlSnapshotRestoreStatus = 'restored' | 'absent' | 'disabled';
@@ -54,7 +52,6 @@ interface WriteControlSnapshotFileInput {
     readonly tempPath: string;
     readonly savedAtEpochMs: number;
     readonly snapshot: ControlServerSnapshot;
-    readonly renameFile?: (source: string, destination: string) => Promise<void>;
 }
 
 const SNAPSHOT_FILE_SCHEMA_VERSION = 1;
@@ -116,8 +113,7 @@ export class ControlSnapshotPersistence {
             path: toSnapshotPath(storageDir),
             tempPath: `${toSnapshotPath(storageDir)}.tmp-${process.pid}-${savedAtEpochMs}-${this.sequence += 1}`,
             savedAtEpochMs,
-            snapshot: controlService.snapshotForPersistence(snapshotBounds),
-            renameFile: this.input.renameFile
+            snapshot: controlService.snapshotForPersistence(snapshotBounds)
         });
         recordSnapshotFlushTiming(this.input.timingSink, write);
         if (write.written) {
@@ -163,8 +159,7 @@ async function writeControlSnapshotFile(input: WriteControlSnapshotFileInput): P
     const write = await writeSlicedJsonFile({
         path: input.path,
         tempPath: input.tempPath,
-        pieces: toSnapshotFilePieces(input.snapshot, input.savedAtEpochMs),
-        renameFile: input.renameFile
+        pieces: toSnapshotFilePieces(input.snapshot, input.savedAtEpochMs)
     });
     if (write.failure !== undefined) {
         console.warn(`Could not persist control snapshot to ${input.path}: ${write.failure}`);

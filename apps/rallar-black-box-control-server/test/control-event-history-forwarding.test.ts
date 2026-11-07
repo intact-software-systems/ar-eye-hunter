@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { assert } from './support/assert.ts';
+import assert from 'node:assert/strict';
 
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { toCompactedResultEnvelope } from '../src/control-evidence-compaction.ts';

@@ -1,9 +1,9 @@
 import type { Server } from 'bun';
 import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assert } from './support/assert.ts';
 
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { Either } from '@shared/resilience/Either.ts';

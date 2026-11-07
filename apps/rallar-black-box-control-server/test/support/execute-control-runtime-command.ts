@@ -1,4 +1,4 @@
-import { assert } from './assert.ts';
+import assert from 'node:assert/strict';
 
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {

@@ -1,5 +1,5 @@
 import { expect } from 'bun:test';
-import { assert } from './assert.ts';
+import assert from 'node:assert/strict';
 
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { RallarBlackBoxTestMessagesReceivedResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
