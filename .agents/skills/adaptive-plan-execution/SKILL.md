@@ -156,7 +156,7 @@ production structure merely to satisfy it.
 
 Select validation from changed behavior, boundaries, and risk. Run focused affected checks first,
 broad CI for a build-affecting change, and distributed validation only for classified distributed
-risk or explicit acceptance. Report passed, failed, and skipped checks. Do not copy workflow IDs,
+risk or explicit acceptance. Write the command catalog only as the AI Handoff Contract in `AGENTS.md` describes. Do not copy workflow IDs,
 commit IDs, digests, or check snapshots into tracked governance state.
 
 ## Completion boundary

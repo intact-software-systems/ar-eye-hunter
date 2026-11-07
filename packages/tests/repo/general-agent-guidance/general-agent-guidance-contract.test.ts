@@ -88,12 +88,14 @@ describe('general agent guidance routing', () => {
             'No AI or agent may create or place a commit on `main`',
             'No AI or agent may push `main`',
             'Retained production legacy',
-            'Report commands that passed, failed, or were skipped'
+            'Write the command catalog only as the AI Handoff Contract describes',
+            'Write a Markdown `### Validation` section when a command or consequential',
+            'invokes the `validation` skill (`/validation`)',
+            'Leave that section out of every other handoff',
+            'When more than five grouped actions ran, write one tally line',
+            'Add a lesson only on those bullets',
+            'No commands or tool actions were run.'
         ]);
-        expect(readRepo('AGENTS.md')).toContain(
-            '- Every final handoff ends with a Markdown\n' +
-                '  `### Commands executed and what they taught us` section.'
-        );
         expectAll(testing, [
             'test:api-v1:black-box:postgres:medium-scale',
             'test:api-v1:black-box:postgres:topology-replay',

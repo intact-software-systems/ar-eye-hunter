@@ -165,4 +165,4 @@ When UI behavior changes, acceptance requires a Playwright test that operates vi
 
 ## Reporting
 
-Always say exactly which commands passed, failed, or were skipped. If a build emits known large-chunk warnings but exits zero, report it as pass with warning.
+Write the command catalog only as the AI Handoff Contract in `AGENTS.md` describes.

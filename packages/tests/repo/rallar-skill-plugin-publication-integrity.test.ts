@@ -43,7 +43,8 @@ const expectedSkills = [
     'rallar-platform',
     'publishing-plan-progress',
     'rallar-realtime',
-    'rallar-testing'
+    'rallar-testing',
+    'validation'
 ] as const;
 
 describe('Rallar skill plugin and publication integrity', () => {
@@ -281,17 +282,19 @@ describe('Rallar skill plugin and publication integrity', () => {
         }
     });
 
-    it('requires a Markdown learning-oriented command summary in every final handoff', () => {
+    it('writes the command catalog only when the handoff contract requires it', () => {
         const agents = readRepo('AGENTS.md');
 
         expectAllNormalized(agents, [
-            'Every final handoff ends with a Markdown `### Commands executed and what they taught us` section',
-            'When commands or tool actions ran, include a concise grouped bullet for each repeated or consequential action',
-            'If no commands or tool actions ran, write `No commands or tool actions were run.` in that section',
+            'Write a Markdown `### Validation` section when a command or consequential tool action failed, was skipped, or changed a decision',
+            'invokes the `validation` skill (`/validation`)',
+            'Leave that section out of every other handoff',
             'Group repeated or equivalent commands',
-            'why the command or action was chosen',
-            'what its result means',
-            'useful lesson or reusable troubleshooting insight',
+            'why it was chosen',
+            'what that result means',
+            'When more than five grouped actions ran, write one tally line',
+            'Add a lesson only on those bullets',
+            'If that section is required and no commands or tool actions ran, write `No commands or tool actions were run.`',
             'Never expose secrets, tokens, credentials, authorization headers'
         ]);
     });
