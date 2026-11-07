@@ -7,14 +7,20 @@ import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, newALNackControlMessage, type ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsOutboxProducerAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
@@ -52,6 +58,18 @@ interface OrderedServer {
     readonly groupCommits: number[];
     /** The rows each dequeue handed on after its admission, in the order it handed them. */
     readonly orderedDispatches: string[];
+    readonly outbox: InMemoryQueueBox;
+    readonly outboundBackend: InMemoryAdmissionBackend;
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    /** The authority each producer-written row's provenance proves, by message id; `'corrupt'` cannot be read. */
+    readonly producerRows: Map<string, WsOutboxProducerAuthority | 'corrupt'>;
+}
+
+interface ProducerRowOptions {
+    /** When the row's track index entry expires; the row's own deadline unless named. */
+    readonly indexExpiresAtMs?: number;
+    /** Leaves the row's provenance unreadable, as a corrupt producer record would. */
+    readonly corrupt?: boolean;
 }
 
 interface OrderedServerOptions {
@@ -408,6 +426,22 @@ describe.each([
         expect(Math.max(...server.groupCommits)).toBeGreaterThan(1);
         expect(readHeldMsgIds(server)).toEqual([]);
     });
+
+    it('records a producer row\'s positions at its first dequeue, so a session the producer admitted first at a later sequence enters there', async () => {
+        const server = await createOrderedServer({ cluster });
+        await writeProducerRow(server, producerEvent(1), ['a', 'b']);
+        await expect.poll(() => runEngineTicking(server, () => ['a', 'b'].map((peerId) => readMsgIds(server.sockets[peerId]!))))
+            .toEqual([['s-event-1'], ['s-event-1']]);
+
+        await writeProducerRow(server, producerEvent(2), ['a', 'b', 'c']);
+        await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.c))).toEqual(['s-event-2']);
+        await settle(server);
+
+        expect(readFrames(server.sockets.c, 's-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: { c: 0 } }, proof: undefined }]);
+        expect(readFrames(server.sockets.b, 's-event-2')).toEqual([{ ordering: { ...ORDERING, seq: 2, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readMsgIds(server.sockets.c)).toEqual(['s-event-2']);
+        expect((await server.stores.admissionStore.readStoredMessage('s-event-2'))?.sentPositions).toEqual({ a: 1, b: 1, c: 0 });
+    });
 });
 
 /**
@@ -432,11 +466,13 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     const groupCommits: number[] = [];
     const orderedDispatches: string[] = [];
     const engine = new InboxOutboxEngine();
+    const outboundBackend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs);
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         nowMs,
         decodePrepared: decodeWsQueueBoxServerPreparedMessage,
-        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
+        outboundBackend
     });
+    const producerRows = new Map<string, WsOutboxProducerAuthority | 'corrupt'>();
     const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
     const rechecksAudience = options.unreadableOnceMsgId !== undefined || options.recheckGate !== undefined;
     const service = createDefaultWsQueueBoxServerService({
@@ -460,6 +496,13 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
                 ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         outboundStores,
+        readProducerProvenance: async (message) => {
+            const authority = producerRows.get(message.id.msgId);
+            if (authority === undefined || authority === 'corrupt') {
+                throw new ALAdmissionCorruptionError(message.id.msgId, new TypeError('Producer provenance cannot be read'));
+            }
+            return authority;
+        },
         outboundDiagnostics: (event) => {
             if (event.kind === 'control-admission') {
                 controlAdmissions.push(event);
@@ -485,7 +528,47 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     if (options.cluster === true) {
         await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: new LoopbackBridge(), channel: 'ws', publisherId: SERVER_ID });
     }
-    return { service, engine, sockets, clock, controlAdmissions, settlements, groupCommits, orderedDispatches };
+    return {
+        service,
+        engine,
+        sockets,
+        clock,
+        controlAdmissions,
+        settlements,
+        groupCommits,
+        orderedDispatches,
+        outbox,
+        outboundBackend,
+        stores: outboundStores,
+        producerRows
+    };
+}
+
+/**
+ * Writes an ordered row as a producer's transaction leaves it: the row on the outbox, its provenance, and its track
+ * index entry, with no outbound admission of its own; then announces the write as the producer's commit does.
+ */
+async function writeProducerRow(
+    server: OrderedServer,
+    message: ALMessage,
+    audience: readonly string[],
+    options: ProducerRowOptions = {}
+): Promise<void> {
+    const trackKey = toALOrderingTrackKey(message);
+    const seq = message.ordering?.seq;
+    if (trackKey === undefined || seq === undefined) {
+        throw new TypeError('A producer row names its track and sequence');
+    }
+    server.producerRows.set(
+        message.id.msgId,
+        options.corrupt === true ? 'corrupt' : { admittedAudience: audience, recipientScope: undefined }
+    );
+    const createdAt = Temporal.Instant.fromEpochMilliseconds(server.clock.nowMs);
+    await server.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, createdAt));
+    const expiresAtMs = options.indexExpiresAtMs ?? server.clock.nowMs + EVENT_TTL_MS;
+    const key = toALOutboundOrderingMessageKey(server.stores.admissionStore.namespace, trackKey, seq);
+    await server.outboundBackend.write((tx) => tx.set(key, message.id.msgId, expiresAtMs));
+    server.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
 }
 
 /** Publishes `event-1` .. `event-<count>` on one track and returns the ordering each was admitted with. */
@@ -556,6 +639,12 @@ function browserEvent(seq: number, msgId = `a-event-${seq}`): ALMessage {
         { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: { ...ORDERING, seq } }
     );
     return { ...message, id: { ...message.id, msgId } };
+}
+
+/** The server's keyed room event at the sequence its producer minted, shaped as `browserEvent` shapes a client's. */
+function producerEvent(seq: number, msgId = `s-event-${seq}`): ALMessage {
+    const message = browserEvent(seq, msgId);
+    return { ...message, id: { ...message.id, senderId: SERVER_ID } };
 }
 
 /** The server's own keyed round event; `ack: 'none'` asks no receipt of its recipients. */

@@ -245,7 +245,7 @@ describe('WS server outbound planning', () => {
         expect(planAt('immediate').mintsSequence).toBe(true);
     });
 
-    it('records the positions of a row it admitted at its dequeue, and none of a row a producer wrote', () => {
+    it('records the positions of a tracked row at its dequeue, whether its outbound admitted it or a producer wrote it', () => {
         const planning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: 'server',
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
@@ -268,13 +268,45 @@ describe('WS server outbound planning', () => {
                 message,
                 phase: 'dequeue',
                 clusterPublisherRegistered: false,
-                admittedAudience: ['b'],
+                admittedAudience: ['server', 'b'],
                 admittedConnectionGenerationIds: undefined,
                 referenceKey
             });
 
         expect(planFor({ topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'scope', contextId: 'message' }).recordsSentPositions).toEqual(['b']);
-        expect(planFor(message.route).recordsSentPositions).toBeUndefined();
+        expect(planFor(message.route).recordsSentPositions).toEqual(['b']);
+    });
+
+    it('records nothing at an immediate send and nothing for a row admitted to no audience', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { requiresFrozenAudience: () => false, resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'server',
+            { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'tracked' },
+            ROOM,
+            'app.event.v1',
+            {},
+            { ttlMs: 30_000, orderingKey: 'game-1', seq: 3 }
+        );
+        const planOf = (phase: 'immediate' | 'dequeue', admittedAudience: readonly string[] | undefined) =>
+            planning.planOutboundMessage({
+                message,
+                phase,
+                clusterPublisherRegistered: false,
+                admittedAudience,
+                admittedConnectionGenerationIds: undefined,
+                referenceKey: message.route
+            });
+
+        expect(planOf('immediate', ['b']).recordsSentPositions).toBeUndefined();
+        expect(planOf('dequeue', undefined).recordsSentPositions).toBeUndefined();
     });
 
     it('normalizes the expiry of a message carrying a publication proof as it does any other', () => {

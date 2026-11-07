@@ -380,27 +380,21 @@ export class WsQueueBoxServerOutboundPlanning {
 
 /**
  * The dequeue sends the audience the re-check narrowed (D498), so it fixes those recipients' positions on a tracked
- * row this outbound admitted (S4-R1); an immediate send is live-only and records nothing (D508), and neither does a
- * producer-written row, whose copies carry no entry and skip no recipient.
+ * row at its dequeue, whether this outbound admitted the row (S4-R1) or a producer wrote it (S5-R6); an immediate send
+ * is live-only and records nothing (D508), and neither does a row admitted to no audience.
  */
 function toSentPositionRecipients(
     message: ALMessage,
-    { phase, admittedAudience, referenceKey }: WsQueueBoxServerOutboundPlanning.Request
+    { phase, admittedAudience }: WsQueueBoxServerOutboundPlanning.Request
 ): readonly string[] | undefined {
-    return phase === 'dequeue' && admittedAudience !== undefined && toALOrderingTrackKey(message) !== undefined &&
-            isWsQueueBoxServerAdmittedRow(referenceKey)
+    return phase === 'dequeue' && admittedAudience !== undefined && toALOrderingTrackKey(message) !== undefined
         ? admittedAudience.filter((peerId) => peerId !== message.id.senderId)
         : undefined;
 }
 
-/** A row the WS outbound admitted, named by its canonical key, as opposed to a row a producer wrote to the outbox. */
-function isWsQueueBoxServerAdmittedRow(referenceKey: Key | undefined): boolean {
-    return referenceKey?.topicId === 'AL_OUTBOUND_MESSAGE';
-}
-
 /** A stored row the WS outbound admitted that still has to record its recipients' positions at its dequeue. */
 export function isWsQueueBoxServerUnrecordedRow(stored: ALStoredOutboundMessage | undefined, nowMs: number): boolean {
-    return stored !== undefined && isWsQueueBoxServerAdmittedRow(stored.reference.key) &&
+    return stored !== undefined && stored.reference.key.topicId === 'AL_OUTBOUND_MESSAGE' &&
         isALOutboundRowUnrecorded(stored, nowMs);
 }
 
