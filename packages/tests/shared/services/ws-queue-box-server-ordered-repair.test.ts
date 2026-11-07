@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi, type MockInstance } from 'vitest';
 
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
@@ -12,7 +12,6 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundCommitBundle } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -841,7 +840,7 @@ function toReceiverAck(server: OrderedServer, ackedMsgId: string, recipient: str
 
 /** The peers each committed receipt retry of a message asked its repair to resend to, in commit order. */
 function readRetriedPeerIds(
-    commitBundle: { readonly mock: { readonly calls: readonly (readonly [ALOutboundCommitBundle<WsQueueBoxServerPreparedMessage>, ...unknown[]])[]; }; },
+    commitBundle: MockInstance<ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>['admissionStore']['commitBundle']>,
     msgId: string
 ): readonly (readonly string[])[] {
     return commitBundle.mock.calls.flatMap(([bundle]) =>
