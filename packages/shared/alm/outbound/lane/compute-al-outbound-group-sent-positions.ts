@@ -54,6 +54,12 @@ export interface ALOrderingIndexedSequence {
     readonly msgId: string;
 }
 
+/** The listed lower sequences of a track a wait read, ascending, and the stored rows it found among them. */
+export interface ALOrderingStoredPredecessors {
+    readonly indexed: readonly ALOrderingIndexedSequence[];
+    readonly stored: ReadonlyMap<string, ALStoredOutboundMessage>;
+}
+
 /** The lower sequences of a tracked row's track still to record: those its batch claimed, and the nearest it did not. */
 export interface ALOrderingPendingPredecessors {
     readonly inBatch: readonly number[];

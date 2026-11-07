@@ -14,6 +14,7 @@ import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-obse
 import { toKeyAsString, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { settleAllInOrder } from '../../../resilience/settle-all-in-order.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
+import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
     ALAdmissionReadSession,
     ALAdmissionWorkBackend,
@@ -54,7 +55,10 @@ import {
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
 import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
-import type { ALOrderingIndexedSequence } from '../lane/compute-al-outbound-group-sent-positions.ts';
+import type {
+    ALOrderingIndexedSequence,
+    ALOrderingStoredPredecessors
+} from '../lane/compute-al-outbound-group-sent-positions.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -76,6 +80,7 @@ import {
 } from './al-outbound-canonical-fact-writes.ts';
 import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
+import { toALOutboundOrderingMessageKey } from './al-outbound-ordering-track-keys.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 import type {
     ALOutboundRoomSentFloorChange,
@@ -448,8 +453,14 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /** One track's live ordering index, ascending by sequence, in one list. */
     readonly listOrderingMessages: (trackKey: string) => Promise<readonly ALOrderingIndexedSequence[]>;
 
-    /** The stored rows of the messages, read in one session; a message never stored has none. */
-    readonly readStoredMessages: (msgIds: readonly string[]) => Promise<ReadonlyMap<string, ALStoredOutboundMessage>>;
+    /**
+     * The stored rows of a track's listed sequences in one session, from the highest sequence down to the first
+     * settled one; the sequences below it are not read.
+     */
+    readonly readStoredPredecessorsToSettled: (
+        indexed: readonly ALOrderingIndexedSequence[],
+        nowMs: number
+    ) => Promise<ALOrderingStoredPredecessors>;
 
     /** The message one sequence's index row names and its stored row, in one session. */
     readonly readOrderingPredecessor: (
@@ -706,8 +717,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.listOrderingMessages(session, trackKey));
     }
 
-    async readStoredMessages(msgIds: readonly string[]): Promise<ReadonlyMap<string, ALStoredOutboundMessage>> {
-        return await this.backend.readWithin((session) => this.reads.readStoredMessages(session, msgIds));
+    async readStoredPredecessorsToSettled(
+        indexed: readonly ALOrderingIndexedSequence[],
+        nowMs: number
+    ): Promise<ALOrderingStoredPredecessors> {
+        return await this.backend.readWithin((session) =>
+            this.reads.readStoredPredecessorsToSettled(session, indexed, nowMs)
+        );
     }
 
     async readOrderingPredecessor(
@@ -720,7 +736,27 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     async commitOrderingMessageEnd(
         input: { trackKey: string; seq: number; msgId: string; }
     ): Promise<'deleted' | 'absent' | 'other-message' | 'conflict'> {
-        return await this.mutations.commitOrderingMessageEnd(this.backend, input, this.nowMs());
+        const key = toALOutboundOrderingMessageKey(this.namespace, input.trackKey, input.seq);
+        const writes = this.mutations.computeStateWrites(
+            [{ kind: 'delete-ordering-message', trackKey: input.trackKey, seq: input.seq }],
+            this.nowMs()
+        );
+        try {
+            return await this.backend.write(async (transaction) => {
+                const named = await this.reads.readValue(transaction, key, decodeALAdmissionString);
+                if (named !== input.msgId) {
+                    return named === undefined ? 'absent' : 'other-message';
+                }
+                await this.mutations.writeStateWrites(transaction, writes);
+                return 'deleted';
+            });
+        }
+        catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) {
+                return 'conflict';
+            }
+            throw error;
+        }
     }
 
     async commitOutsideAudience(

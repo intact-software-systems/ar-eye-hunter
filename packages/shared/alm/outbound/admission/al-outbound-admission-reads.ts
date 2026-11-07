@@ -39,7 +39,11 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
-import type { ALOrderingIndexedSequence } from '../lane/compute-al-outbound-group-sent-positions.ts';
+import {
+    isALOutboundRowUnrecorded,
+    type ALOrderingIndexedSequence,
+    type ALOrderingStoredPredecessors
+} from '../lane/compute-al-outbound-group-sent-positions.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
@@ -404,13 +408,31 @@ export class ALOutboundAdmissionReads<TPrepared> {
         }).toSorted((left, right) => left.seq - right.seq);
     }
 
-    /** The stored rows of the messages by id; a message never stored has none. */
-    async readStoredMessages(
+    /**
+     * The stored rows of a track's listed sequences, read from the highest sequence down to the first whose row is
+     * present and settled; the sequences below it are not read. A message never stored has no row.
+     */
+    async readStoredPredecessorsToSettled(
         session: ALAdmissionReadSession,
-        msgIds: readonly string[]
-    ): Promise<ReadonlyMap<string, ALStoredOutboundMessage>> {
-        const stored = await Promise.all(msgIds.map((msgId) => this.readStoredMessage(session, msgId)));
-        return new Map(stored.flatMap((row) => row === undefined ? [] : [[row.msgId, row] as const]));
+        indexed: readonly ALOrderingIndexedSequence[],
+        nowMs: number
+    ): Promise<ALOrderingStoredPredecessors> {
+        const read: ALOrderingIndexedSequence[] = [];
+        const stored = new Map<string, ALStoredOutboundMessage>();
+        for (const sequence of indexed.toSorted((left, right) => right.seq - left.seq)) {
+            read.push(sequence);
+            const row = await this.readStoredMessage(session, sequence.msgId);
+            if (row === undefined) {
+                continue;
+            }
+            stored.set(sequence.msgId, row);
+            // A row the wait authorized and that then recorded had no pending lower sequence left in this build, and an
+            // audience-free row is pending for nobody: below either, no sequence is pending.
+            if (!isALOutboundRowUnrecorded(row, nowMs)) {
+                break;
+            }
+        }
+        return { indexed: read.toReversed(), stored };
     }
 
     /** The message one sequence's index row names, and that message's stored row. */
@@ -679,7 +701,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return { pendingAck, repairAttempt, acks, nacks };
     }
 
-    private async readValue<V>(
+    async readValue<V>(
         session: ALAdmissionReadSession,
         key: string,
         decode: ALAdmissionDecoder<V>

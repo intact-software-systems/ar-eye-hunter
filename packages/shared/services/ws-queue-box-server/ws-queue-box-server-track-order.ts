@@ -23,7 +23,7 @@ export namespace WsQueueBoxServerTrackOrder {
             ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>,
             | 'readStoredMessage'
             | 'listOrderingMessages'
-            | 'readStoredMessages'
+            | 'readStoredPredecessorsToSettled'
             | 'readOrderingPredecessor'
             | 'commitOutsideAudience'
         >;
@@ -73,8 +73,9 @@ export class WsQueueBoxServerTrackOrder {
         if (indexed.length === 0) {
             return { status: 'authorized' };
         }
-        const stored = await admissionStore.readStoredMessages(indexed.map((row) => row.msgId));
-        const pending = toALOrderingPendingPredecessors({ message, indexed, stored, batch, nowMs: clock.nowMs() });
+        const nowMs = clock.nowMs();
+        const predecessors = await admissionStore.readStoredPredecessorsToSettled(indexed, nowMs);
+        const pending = toALOrderingPendingPredecessors({ message, ...predecessors, batch, nowMs });
         if (pending.nearestOutside !== undefined) {
             return this.toHeldAuthority(trackKey, pending.nearestOutside);
         }

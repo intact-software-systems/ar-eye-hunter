@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
@@ -35,7 +35,7 @@ async function writeIndexRow(fixture: IndexFixture, trackKey: string, seq: numbe
     await fixture.backend.write((tx) => tx.set(toALOutboundOrderingMessageKey(NAMESPACE, trackKey, seq), msgId, expiresAtMs));
 }
 
-async function writeStoredRow(fixture: IndexFixture, msgId: string): Promise<void> {
+async function writeStoredRow(fixture: IndexFixture, msgId: string, sentPositions: Readonly<Record<string, number>> | null = { b: 0 }): Promise<void> {
     await fixture.backend.write((tx) =>
         tx.set(toALOutboundSentMessageKey(NAMESPACE, msgId), {
             msgId,
@@ -51,7 +51,7 @@ async function writeStoredRow(fixture: IndexFixture, msgId: string): Promise<voi
             unicastPeerId: null,
             orderingTrackKey: TRACK_KEY,
             orderingSeq: 1,
-            sentPositions: { b: 0 },
+            sentPositions,
             policy: { persist: true, ackTracking: null, retryTracking: null, repairTracking: null, supersedenceTracking: null, admittedAudience: ['b'] },
             creationExpiry: 'creation-expiry'
         }, LIVE_UNTIL_MS)
@@ -79,14 +79,31 @@ describe('the ordering index of one track', () => {
         await expect(fixture.store.listOrderingMessages(TRACK_KEY)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
-    it('reads the stored rows of the listed messages together, leaving out one never stored', async () => {
+    it('reads the listed sequences\' stored rows from the highest down to the first settled one, and none below it', async () => {
         const fixture = createIndexFixture();
-        await writeStoredRow(fixture, 'event-1');
+        await writeStoredRow(fixture, 'event-5');
+        await writeStoredRow(fixture, 'event-6', null);
+        const indexed = [1, 2, 3, 4, 5, 6, 7].map((seq) => ({ seq, msgId: `event-${seq}` }));
+        const read = vi.spyOn(fixture.backend, 'read');
 
-        const stored = await fixture.store.readStoredMessages(['event-1', 'event-2']);
+        const predecessors = await fixture.store.readStoredPredecessorsToSettled(indexed, NOW_MS);
 
-        expect([...stored.keys()]).toEqual(['event-1']);
-        expect(stored.get('event-1')?.sentPositions).toEqual({ b: 0 });
+        expect(predecessors.indexed).toEqual(indexed.slice(4));
+        expect([...predecessors.stored.keys()]).toEqual(['event-6', 'event-5']);
+        expect(read.mock.calls.map(([key]) => key)).toEqual(
+            ['event-7', 'event-6', 'event-5'].map((msgId) => toALOutboundSentMessageKey(NAMESPACE, msgId))
+        );
+    });
+
+    it('reads every listed sequence when none of them has settled', async () => {
+        const fixture = createIndexFixture();
+        await writeStoredRow(fixture, 'event-2', null);
+        const indexed = [1, 2].map((seq) => ({ seq, msgId: `event-${seq}` }));
+
+        const predecessors = await fixture.store.readStoredPredecessorsToSettled(indexed, NOW_MS);
+
+        expect(predecessors.indexed).toEqual(indexed);
+        expect([...predecessors.stored.keys()]).toEqual(['event-2']);
     });
 
     it('reads the message a sequence names and its stored row, and nothing for a sequence no row names', async () => {

@@ -55,12 +55,13 @@ export const reviewedDispositions = Object.freeze([
         maximumMagnitude: 52
     }),
     // Whole-file review: the pair's admission store is the one owner of its read sessions and fenced commits; the
-    // server's own outside-audience commit (S5-R8) reads and commits through them, and its decision lives in control/.
+    // server's own outside-audience commit (S5-R8) and a track's ordering index end (S5-R7) read and commit through
+    // them, and the outside-audience decision lives in control/.
     Object.freeze({
         path: 'packages/shared/alm/outbound/admission/al-outbound-admission-store.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 50
+        maximumMagnitude: 58
     }),
     // Whole-file review: canonical outcome, receipt, event privacy and outbox assembly; scheduling membership policy remains in its existing owner.
     Object.freeze({
