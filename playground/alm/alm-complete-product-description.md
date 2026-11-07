@@ -317,9 +317,10 @@ owner and admin workflows `rooms.grantTopic` and `rooms.revokeTopic`; a granted
 channel's `subscribe(handler)` returns a `RallarTopicSubscription` token
 (`pending`, `active`, `refused`, `lapsed`), counted per tab, room and topic,
 renewed on the heartbeat cadence, re-asserted under the new generation when the
-socket reopens and released at session end (D490, D509). Since S4-ii the
-reopened socket also re-asserts the session's room presence (D506, D531), so
-the reopened session receives granted publications again. **Limit:** the
+socket reopens and released at session end (D490, D509). Since #785 the
+reopened socket also restores the session's presence in the room the page
+selected (D506, D531), so the reopened session receives granted publications
+there again. **Limit:** the
 four-role cells run on the local lane only (D505).
 
 **CURRENT — S3, restricted RTC parity:** a granted room multicast rides RTC,
@@ -882,29 +883,14 @@ cluster positions and the
 outside class cover sessions on the dequeuing instance only; a receiver whose
 entry frame is lost and whose next frame arrives first enters past it.
 
-**CURRENT — S4-ii, reconnect, relays and restart:** a reopened socket
-re-asserts the session's room presence in every room the page entered and has
-not left, under a fresh presence generation and the socket's new connection
-generation, and the server refuses a presence connect naming a connection
-generation none of the session's live sockets holds (`stale-generation`), so a
-reconnect reads as an omission, never loss (D531). A relay re-originates a
-waited child's gap NACK toward the origin, writing no row, and the origin
-repairs that recipient through the relay with the entry floor checked on it
-(D534). A minted sequence continues across a reload of the session's store and
-across its carriers. `rallar.messages.readUsage().ordering` counts the
-connect's `entered`, `omitted`, `witnessed` and `beforeEntry` events; the
-`ordering-position` diagnostic's dimensions are `status` and `carrier`. Under
-`rtc-with-ws-fallback` the WS leg's `admitted` receipt writes a position per
-named recipient, and the room-wide floor keeps only sequences no receipt has
-named (D525). The cells `subscription-ordered-reconnect` (three carriers) and
-`granted-rtc-ordered-relay` (`rtc`) run on the local lane; the relay fixture is
-the blocking proof of re-origination. **Limit:** an `ack: 'none'` ordered track
-behind a relay stalls on a gap until resync or expiry; a recipient the WS leg
-left out still stalls when the dequeue dropped it after route capture, when the
-send asked no logical receipt, or when the `admitted` receipt arrives after the
-`complete` one; a re-assert that ends unchanged waits for the next socket open.
-Producer-row positions, the cross-instance record and outside class, and the
-server's record under `rtc-with-ws-fallback` are later outcomes.
+**CURRENT — S4-ii, reconnect, relays and restart:** a reconnect reads as an
+omission, never loss, a relay re-originates a child's gap NACK toward the
+origin, and a minted sequence continues across a reload; the server refuses a
+presence connect naming a connection generation none of the session's live
+client-state rows holds `stale-generation`, when the session holds any. The
+"As applied (S4-ii)" note under Slice 4 of the
+[addendum](./alm-publication-qos-addendum.md) is the full account, with its
+limits.
 
 ## Deduplication and supersedence
 

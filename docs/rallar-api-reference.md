@@ -1148,13 +1148,16 @@ unsubscribes, the held subscriptions renew on the owner's own timer at the 20 s
 session heartbeat cadence and
 re-subscribe under the new connection generation whenever the socket reopens, a
 tab whose socket was replaced sends nothing, and session end releases them. On
-the same reopen the page re-asserts the session's room presence in every room
-it entered and has not left, under a fresh presence generation and the new
-connection generation, so the reopened session is in the audience again. While
-the session holds a live socket, a presence connect that names a connection
-generation none of its live sockets holds is refused `403 stale-generation`. A room the server answers
-`inactive` twice, or refuses, is forgotten; one whose attempt fails is tried
-again at the next reopen.
+the same reopen the page restores the session's presence in its current room,
+the one it explicitly selected, under a fresh presence generation and the new
+connection generation, so the reopened session is in the audience again; a
+failure that may pass is retried on the same socket with a bounded backoff, and
+a room change waits for the restore's write. A room the page is still a member
+of but has not selected keeps the closed presence until the page enters it
+again. While the session holds a live socket, a presence connect that names a
+connection generation none of its live sockets holds is refused
+`403 stale-generation`, which ends that socket's restore; the next reopen
+starts a new one.
 REST errors become statuses and never throw.
 
 ```ts
@@ -1966,10 +1969,10 @@ inbound diagnostics state every `entered`, `omitted`, `witnessed` and
 `before-entry` as an `ordering-position` event.
 
 A reconnect is an exit and a re-entry: positions are kept per track and
-session, not per connection generation, and the reopened socket re-asserts the
-session's room presence (Subscriptions above), so a session that missed
-sequences while its socket was down reads its next copy as `omitted`, never as
-loss. A recipient behind an RTC relay reports a gap to the relay, which
+session, not per connection generation, and the reopened socket restores the
+session's presence in its current room (Subscriptions above), so a session that
+missed sequences while its socket was down reads its next copy as `omitted`,
+never as loss. A recipient behind an RTC relay reports a gap to the relay, which
 re-originates the NACK toward the origin for that recipient; the origin applies
 the entry rule to the recipient and sends the repair copy through the relay,
 which forwards it down the tree.

@@ -253,15 +253,17 @@ and it has no status list.
   and the `granted-rtc` cells (S2-ii, D505; S3, D521): the cells name each
   role's principal, which a static hosted manifest cannot, so today only the
   local lane runs them.
-- The reopened socket's presence re-assertion limits (S4-ii, D531): an attempt
-  that ends unchanged (a network or 5xx failure, an unreadable generation, or a
-  `stale-generation` a newer open overtook) waits for the next socket open; a
-  re-assert in flight can commit after a presence-only departure forgot the
-  room, so that room briefly carries presence again; a presence read hung to
-  its 15 s deadline reads as an absent session, like an `inactive` answer; and the
-  server compares the connection generation only while the session holds a
-  live client-state row, so a dead-generation connect with no socket open is
-  accepted and cleaned by lease expiry.
+- The reopened socket's presence limits (S4-ii, D531): the page restores
+  presence only in its current, explicitly selected room (#785's
+  `SelectedRoomRecovery`), so a retained room it has not selected keeps the
+  closed presence after a reconnect until the page enters it again; the server
+  compares the connection generation only while the session holds a live
+  client-state row, so a dead-generation connect with no socket open is accepted
+  and cleaned by lease expiry; and the generation decision is read in the
+  AppInbox read and not fenced at commit, so a connect read before its socket
+  closed and committed after that socket's cleanup stays active under the dead
+  generation until lease expiry (an observation of the client-state row at
+  commit, as view-watch makes, would close it).
 - The measured pub/sub operating envelope: subscription and permission churn,
   multi-group producers and slow consumers.
 - The page snapshot read lists each group's publication grants after its three

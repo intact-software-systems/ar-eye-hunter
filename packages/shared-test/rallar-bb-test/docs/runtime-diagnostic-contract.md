@@ -284,10 +284,7 @@ every session the page opens. The event's `data` is the event itself:
   same control reads `not-handled`/`control` whatever the outbound owner answered,
   so it does not report that outbound verdict. `msgId` is the control's own id,
   the join key when both events are present, and `targetMsgId` is the sent message it
-  answers. Its bounded dimensions are `outcome`, `phase` and `nackReason`;
-  `nackOrderingKey`, `targetMsgId` and the free-text `reason` are not. A relay's
-  re-originated gap NACK reads `nackReason: gap` at the origin, like the
-  recipient's own. `outcome` is `committed`, `pending-control` (a conflict retained as
+  answers. `outcome` is `committed`, `pending-control` (a conflict retained as
   `admit-control` work, which the outbound drain replays), `rejected`, or
   `not-handled` (the control's repair authority failed, or a NACK the origin
   leaves to its hop: the WS server's advisory `not-yet-in-sync` NACK on a room
@@ -295,7 +292,10 @@ every session the page opens. The event's `data` is the event itself:
   floor). `reason` is the
   rejection's reasons, or `none` for every other outcome — for an ACK whose
   receipt is gone it reads `AL acknowledgement sender has no pending outbound
-  obligation`. A control the outbound drain replays reports the verdict its
+  obligation`. Its bounded dimensions are `outcome`, `phase` and `nackReason`;
+  `nackOrderingKey`, `targetMsgId` and the free-text `reason` are not. A relay's
+  re-originated gap NACK reads `nackReason: gap` at the origin, like the
+  recipient's own. A control the outbound drain replays reports the verdict its
   replay reaches under the same control id, so a control that read
   `pending-control` reads again, `committed` or `rejected`, once per replay
   (a replay that conflicts again reads `pending-control` again); a replay past
@@ -526,7 +526,7 @@ publication succeed. The event's `data` is the event itself:
   Its bounded dimensions are `status` (four values) and `carrier` (`rtc`,
   `ws`); `workerId`, `trackKey` and the trace are identifiers, and `seq` and
   `priorSeq` are values, never metric labels. The page counts these events by
-  `status` in `stats.rallar.alm.ordering`
+  `status` in `stats.rallar.alm.ordering`.
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
   touched work, the same five fields the outbound topic reports for its own

@@ -758,15 +758,23 @@ reads a gap the RTC origin cannot serve and its track stalls until resync or
 expiry, instead of losing the frame (D525); S4-ii narrows it to three residual
 windows, below.
 
-As applied (S4-ii): a reopened socket re-asserts the session's room presence
-(D506, D531). The page remembers each room it entered and has not left, and on
-every socket open after the first it connects its presence there again under a
-fresh presence generation and the socket's new connection generation; an
-`inactive` answer is retried once, a second one or a refusal forgets the room,
-and a failed read keeps it. The server refuses a connect that names a
-connection generation none of the session's live client-state rows holds
-(`stale-generation`), when the session holds any. A reconnect therefore reads
-as an omission: in `subscription-ordered-reconnect`, which replaces the
+As applied (S4-ii): a reopened socket restores the session's room presence in
+the room the page explicitly selected (D506, D531). The restore is main's
+`SelectedRoomRecovery` (#785): on a reopen it reads the room, and when the
+session is an active member not yet listed under the new connection generation
+it connects its presence there under a fresh presence generation and that
+connection generation, confirms a write whose reply was lost, retries a failure
+that may pass with a bounded backoff on the same socket, and holds a room change
+until its write settled. A retained room the page has not selected keeps the
+closed presence until the page enters it again. #785's `'server'` room-snapshot
+topic reaches a session only on the generation its presence records, so it
+depends on the same restore. S4-ii adds the server side: a presence connect
+that names a connection generation none of the session's live client-state
+rows holds is refused `stale-generation` (403), when the session holds any,
+which ends that socket's restore. The decision is read in the AppInbox read and
+not fenced at commit, so a connect read before its socket closed can commit
+after that socket's cleanup and stay active until lease expiry. A reconnect
+therefore reads as an omission: in `subscription-ordered-reconnect`, which replaces the
 S2-ii reconnect cell, the reopened sibling receives `p5` `omitted` with
 prior 2 on each producer's track, and never `p3` or `p4`, over the three
 carriers. A relay re-originates a waited child's gap NACK toward the origin with
