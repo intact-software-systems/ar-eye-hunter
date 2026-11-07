@@ -446,6 +446,27 @@ describe.each([
         expect((await server.stores.admissionStore.readStoredMessage('s-event-2'))?.sentPositions).toEqual({ a: 1, b: 1, c: 0 });
     });
 
+    it('records a recipient it skipped below its position on a producer row outside its own receipt, and the receipt completes on the others without a retry', async () => {
+        const server = await createOrderedServer({ cluster });
+        await writeProducerRow(server, producerEvent(2), ['b']);
+        await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.b))).toEqual(['s-event-2']);
+
+        await writeProducerRow(server, producerEvent(1), ['b', 'c']);
+        await expect.poll(() => runEngineTicking(server, () => readMsgIds(server.sockets.c))).toEqual(['s-event-1']);
+        await settle(server);
+
+        expect(readFrames(server.sockets.c, 's-event-1')).toEqual([{ ordering: { ...ORDERING, seq: 1, priorSeqByRecipient: {} }, proof: undefined }]);
+        expect(readFrames(server.sockets.b, 's-event-1')).toEqual([]);
+        expect((await server.stores.admissionStore.readReceiptState({ originPeerId: SERVER_ID, msgId: 's-event-1' }))?.outsideAudiencePeerIds)
+            .toEqual(['b']);
+
+        await server.service.acceptIncomingMessage(toReceiverAck(server, 's-event-1', 'c'), 'c');
+        await expect.poll(() => runEngine(server, () => server.stores.admissionStore.readPendingAck({ originPeerId: SERVER_ID, msgId: 's-event-1' })))
+            .toBeUndefined();
+        await settle(server);
+        expect(server.settlements).not.toContainEqual(expect.objectContaining({ kind: 'receipt-exhausted', msgId: 's-event-1' }));
+    });
+
     it('holds a producer row claimed without its track\'s earlier producer row, still unrecorded after a failed re-check, until it records; both deliver in order', async () => {
         const server = await createOrderedServer({ cluster, unreadableOnceMsgId: 's-event-1' });
         // Sequence 1's first dequeue cannot read its audience and retries a millisecond on; sequence 2 is written and
@@ -783,7 +804,12 @@ function readFrames(socket: SimulatedWebSocket, msgId: string): readonly Pick<AL
 }
 
 async function receiveAck(server: OrderedServer, ackedMsgId: string, recipient: string): Promise<void> {
-    const ack = newALAckControlMessage(
+    await server.sockets[recipient]!.receive(JSON.stringify(toReceiverAck(server, ackedMsgId, recipient)));
+}
+
+/** The recipient's receiver ACK of a server row, as its WS client sends it. */
+function toReceiverAck(server: OrderedServer, ackedMsgId: string, recipient: string): ALMessage {
+    return newALAckControlMessage(
         { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: server.clock.nowMs, traceId: 'trace-ws-queue-box-server-ordered-repair' },
         {
             ackedMsgId,
@@ -796,7 +822,6 @@ async function receiveAck(server: OrderedServer, ackedMsgId: string, recipient: 
             observedAtEpochMs: server.clock.nowMs
         }
     );
-    await server.sockets[recipient]!.receive(JSON.stringify(ack));
 }
 
 /** One engine pass, then the observation: the poll that calls it waits for the server's asynchronous sends. */

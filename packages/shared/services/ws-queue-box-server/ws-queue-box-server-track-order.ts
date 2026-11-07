@@ -21,7 +21,11 @@ export namespace WsQueueBoxServerTrackOrder {
     export interface Dependencies {
         readonly admissionStore: Pick<
             ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>,
-            'readStoredMessage' | 'listOrderingMessages' | 'readStoredMessages' | 'readOrderingPredecessor'
+            | 'readStoredMessage'
+            | 'listOrderingMessages'
+            | 'readStoredMessages'
+            | 'readOrderingPredecessor'
+            | 'commitOutsideAudience'
         >;
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly socket: Pick<JsonWebSocketServer, 'connections'>;
@@ -38,6 +42,7 @@ export namespace WsQueueBoxServerTrackOrder {
  * outside the receipt its origin awaits.
  */
 export class WsQueueBoxServerTrackOrder {
+    private static readonly OWN_OUTSIDE_AUDIENCE_ATTEMPTS = 3;
     private readonly dependencies: WsQueueBoxServerTrackOrder.Dependencies;
 
     constructor(dependencies: WsQueueBoxServerTrackOrder.Dependencies) {
@@ -91,21 +96,25 @@ export class WsQueueBoxServerTrackOrder {
 
     /**
      * Records each session the server sent its origin's row nothing outside the audience of the receipt the origin
-     * awaits (S4-R9); the server's own rows and rows no receipt counts recipients of have none to record in. Only a
-     * session connected here is this instance's to judge: its re-check sees every other instance's session as not
-     * here, which is no exclusion, so that session stays expected and its own instance answers for it.
+     * awaits (S4-R9): a relayed row's origin hears it as an outside-audience ACK, and the server's own rows -- its
+     * publications and every producer row it sends -- record it in their own receipt (S5-R8). Rows no receipt counts
+     * recipients of have none to record in. Only a session connected here is this instance's to judge: its re-check
+     * sees every other instance's session as not here, which is no exclusion, so that session stays expected and its
+     * own instance answers for it.
      */
     async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
         const { name, outboundPlanning, socket, ackRelay, clock } = this.dependencies;
         const originPeerId = message.id.senderId;
-        if (
-            originPeerId === name || !isALLogicalReceiptMode(outboundPlanning.resolvePolicy(message).effective.ack.algo)
-        ) {
+        if (!isALLogicalReceiptMode(outboundPlanning.resolvePolicy(message).effective.ack.algo)) {
             return;
         }
         const judged = sessionIds.filter((sessionId) =>
             sessionId !== originPeerId && socket.connections.get(sessionId)?.isOpen === true
         );
+        if (originPeerId === name) {
+            await this.commitOwnOutsideAudience(message, judged);
+            return;
+        }
         for (const recipientPeerId of judged) {
             await ackRelay.writeServerAck(toWsQueueBoxServerOutsideAudienceAck({
                 message,
@@ -115,6 +124,22 @@ export class WsQueueBoxServerTrackOrder {
                 nowMs: clock.nowMs()
             }));
         }
+    }
+
+    /** Each attempt re-reads the receipt; one that ended or was never pending has nobody left to record. */
+    private async commitOwnOutsideAudience(message: ALMessage, recipientPeerIds: readonly string[]): Promise<void> {
+        if (recipientPeerIds.length === 0) {
+            return;
+        }
+        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+        for (let attempt = 0; attempt < WsQueueBoxServerTrackOrder.OWN_OUTSIDE_AUDIENCE_ATTEMPTS; attempt += 1) {
+            if (
+                await this.dependencies.admissionStore.commitOutsideAudience(receipt, recipientPeerIds) !== 'conflict'
+            ) {
+                return;
+            }
+        }
+        console.error('Own receipt outside-audience record kept conflicting', { msgId: message.id.msgId });
     }
 
     private toHeldAuthority(

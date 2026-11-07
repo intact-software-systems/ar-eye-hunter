@@ -224,12 +224,13 @@ Deno.test('two held granted rows for one session reach it in admission order how
     });
 });
 
-Deno.test('a server-producer outbox row skips a subscriber revoked before dequeue and still reaches the others', async () => {
+Deno.test('a server-producer outbox row skips a subscriber revoked before dequeue, never expects it in its own receipt, and completes on the others', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
         // The publish reads the grant once; the revoke commits before the dequeue.
         harness.reads.push(...grantedReads(1), revokedReads());
         const message = feedMessage({ senderId: SERVER_PEER_ID, msgId: 'produced-revoke' });
+        const receipt = { originPeerId: SERVER_PEER_ID, msgId: 'produced-revoke' };
 
         const result = await harness.router.publish({ message, fanout: 'outbox', producerId: PRODUCER });
         await waitFor(() => readDelivered(frames.bob, message) > 0);
@@ -238,6 +239,37 @@ Deno.test('a server-producer outbox row skips a subscriber revoked before dequeu
         assert.equal(result.status, 'queued-outbox');
         assert.equal(readDelivered(frames.bob, message), 1);
         assert.equal(readDelivered(frames.carol, message), 0);
+        const pending = await harness.stores.admissionStore.readReceiptState(receipt);
+        assert.deepEqual(pending?.expectedPeerIds, ['bob']);
+        assert.deepEqual(pending?.outsideAudiencePeerIds, []);
+
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await settle();
+
+        assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
+    });
+});
+
+Deno.test('a server-producer outbox row skips a subscriber revoked before its retry, records it outside its own receipt, and completes on the others', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        // The publish and the first dequeue read the grant; neither subscriber acknowledges, and the revoke commits
+        // before the retry.
+        harness.reads.push(...grantedReads(2), revokedReads());
+        const message = {
+            ...feedMessage({ senderId: SERVER_PEER_ID, msgId: 'produced-retry-revoke' }),
+            qos: { ack: { algo: 'receiver', opts: { timeoutMs: 50 } } }
+        } as const;
+        const receipt = { originPeerId: SERVER_PEER_ID, msgId: 'produced-retry-revoke' };
+
+        await harness.router.publish({ message, fanout: 'outbox', producerId: PRODUCER });
+        await waitFor(async () => (await harness.stores.admissionStore.readReceiptState(receipt))?.outsideAudiencePeerIds.includes('carol') === true);
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await settle();
+
+        assert.equal(readDelivered(frames.carol, message), 1);
+        assert.deepEqual((await harness.stores.admissionStore.readReceiptState(receipt))?.expectedPeerIds, ['bob', 'carol']);
+        assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
     });
 });
 

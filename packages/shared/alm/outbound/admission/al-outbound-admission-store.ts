@@ -53,6 +53,7 @@ import {
     type CreateALOutboundControlAdmissionInput
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
+import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
 import type { ALOrderingIndexedSequence } from '../lane/compute-al-outbound-group-sent-positions.ts';
 import {
     ALOutboundAdmissionEffectStore,
@@ -461,6 +462,16 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         input: { trackKey: string; seq: number; msgId: string; }
     ) => Promise<'deleted' | 'absent' | 'other-message' | 'conflict'>;
 
+    /**
+     * Records recipients the server sent its own message nothing outside the audience of its pending receipt, under the
+     * origin's version fence: `absent` when no receipt is pending (none, or one already complete), `committed` without
+     * a write when every recipient is already outside.
+     */
+    readonly commitOutsideAudience: (
+        receipt: ALOutboundPendingAckRef,
+        recipientPeerIds: readonly string[]
+    ) => Promise<'committed' | 'conflict' | 'absent'>;
+
     /** The receipt state in its own session; only tests read it. */
     readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
@@ -703,6 +714,21 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         input: { trackKey: string; seq: number; msgId: string; }
     ): Promise<'deleted' | 'absent' | 'other-message' | 'conflict'> {
         return await this.mutations.commitOrderingMessageEnd(this.backend, input, this.nowMs());
+    }
+
+    async commitOutsideAudience(
+        receipt: ALOutboundPendingAckRef,
+        recipientPeerIds: readonly string[]
+    ): Promise<'committed' | 'conflict' | 'absent'> {
+        const surface = await this.backend.readWithin(async (session) => ({
+            clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId),
+            pending: await this.reads.readPendingAck(session, receipt),
+            stored: await this.reads.readStoredMessage(session, receipt.msgId)
+        }));
+        return await this.mutations.commitOutsideAudience(
+            this,
+            toALOutboundOutsideAudienceCommit<TPrepared>({ ...surface, receipt, recipientPeerIds })
+        );
     }
 
     async readPendingAck(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {
