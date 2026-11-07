@@ -123,7 +123,7 @@ function loadEnvironment(): void {
 }
 
 function loadEnvFileIfPresent(envUrl: URL): void {
-    const result = config({ path: fileURLToPath(envUrl), quiet: true });
+    const result = config({ path: fileURLToPath(envUrl), quiet: true, override: true });
     if (result.error === undefined) {
         return;
     }
