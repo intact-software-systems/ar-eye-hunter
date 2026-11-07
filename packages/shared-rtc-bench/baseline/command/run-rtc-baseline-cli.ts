@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { writeSync, type Stats } from 'node:fs';
-import { lstat, mkdir, open, readdir, readFile, rename, rm, writeFile, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import { availableParallelism, hostname, totalmem } from 'node:os';
+import { join } from 'node:path';
 
 import { createRtcB05ObservationBunRuntime } from '../observation/rtc-b05-observation-bun-runtime.ts';
 import { createRtcB05ObservationRunner } from '../observation/rtc-b05-observation-runner.ts';
@@ -273,89 +274,55 @@ async function openNodeFile(
     }
 }
 
-async function readLockOwnerPid(lockPath: string): Promise<number | null> {
-    let handle: FileHandle;
-    try {
-        handle = await open(lockPath, 'r');
-    }
-    catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            return null;
-        }
-        translateNodeError(error);
-    }
-    try {
-        const { size } = await handle.stat();
-        if (size === 0 || size > 64) {
-            return null;
-        }
-        const buffer = new Uint8Array(size);
-        const { bytesRead } = await handle.read(buffer, 0, size, 0);
-        const pid = Number(new TextDecoder().decode(buffer.subarray(0, bytesRead)).trim());
-        return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
-    }
-    finally {
-        await handle.close();
-    }
+const RTC_BASELINE_WRITER_LOCK_STALE_MS = 10 * 60_000;
+
+function isAlreadyExists(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'EEXIST';
 }
 
-function isProcessAlive(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-        return true;
-    }
-    catch (error) {
-        return (error as NodeJS.ErrnoException).code === 'EPERM';
-    }
+async function readLockAgeMs(lockDir: string): Promise<number> {
+    const lockStat = await stat(lockDir);
+    return Date.now() - lockStat.mtimeMs;
 }
 
-async function reclaimStaleLock(lockPath: string, ownerPid: number): Promise<void> {
-    const stalePath = `${lockPath}.stale.${crypto.randomUUID()}`;
-    try {
-        await rename(lockPath, stalePath);
-    }
-    catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            // Another reclaimer already won the rename; loop to retry open(lockPath, 'wx').
-            return;
+async function tryAcquireLock(lockDir: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            await mkdir(lockDir); // atomic: exactly one process succeeds
+            await writeFile(join(lockDir, 'owner'), `${process.pid}\n`, 'utf8');
+            return true;
         }
-        translateNodeError(error);
+        catch (error) {
+            if (!isAlreadyExists(error)) {
+                throw error;
+            }
+        }
+        const ageMs = await readLockAgeMs(lockDir);
+        if (ageMs < RTC_BASELINE_WRITER_LOCK_STALE_MS) {
+            return false; // live lock — never touch a fresh lock
+        }
+        try {
+            await rm(lockDir, { recursive: true, force: false }); // one reclaimer wins
+        }
+        catch {
+            // Lost the reclamation race; retry mkdir on the next loop.
+        }
     }
-    // Won the rename. Unlink only after confirming the file still names the dead owner.
-    if ((await readLockOwnerPid(stalePath)) === ownerPid) {
-        await rm(stalePath, { force: true });
-    }
+    return false;
 }
 
 export function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {
     let position = 0;
-    let lockHandle: FileHandle | undefined;
-    const lockPath = `${path}.lock`;
+    let lockHeld = false;
+    const lockDir = `${path}.lock`;
 
-    async function tryAcquireLock(): Promise<boolean> {
-        if (lockHandle !== undefined) {
+    async function acquireOrReclaimLock(): Promise<boolean> {
+        if (lockHeld) {
             return true;
         }
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-            try {
-                const created = await open(lockPath, 'wx');
-                await created.write(String(process.pid));
-                lockHandle = created;
-                return true;
-            }
-            catch (error) {
-                if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-                    translateNodeError(error);
-                }
-                const ownerPid = await readLockOwnerPid(lockPath);
-                if (ownerPid === null || isProcessAlive(ownerPid)) {
-                    return false;
-                }
-                await reclaimStaleLock(lockPath, ownerPid);
-                // Fall through: loop to retry open(lockPath, 'wx'), the strict arbiter.
-            }
-        }
-        return false;
+        const acquired = await tryAcquireLock(lockDir);
+        lockHeld = acquired;
+        return acquired;
     }
 
     return {
@@ -388,16 +355,15 @@ export function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBun
         truncate: (length) => handle.truncate(length),
         sync: () => handle.sync(),
         async lock() {
-            while (!(await tryAcquireLock())) {
+            while (!(await acquireOrReclaimLock())) {
                 await new Promise((resolve) => setTimeout(resolve, 10));
             }
         },
-        tryLock: () => tryAcquireLock(),
+        tryLock: () => acquireOrReclaimLock(),
         async unlock() {
-            if (lockHandle !== undefined) {
-                await lockHandle.close();
-                lockHandle = undefined;
-                await rm(lockPath, { force: true });
+            if (lockHeld) {
+                lockHeld = false;
+                await rm(lockDir, { recursive: true, force: true });
             }
         },
         close: () => handle.close()
