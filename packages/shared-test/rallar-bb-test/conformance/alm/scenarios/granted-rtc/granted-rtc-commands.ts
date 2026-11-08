@@ -68,23 +68,29 @@ interface GrantedRtcRefusalPollInput {
     readonly facts: readonly AlmConformanceVerdictFact[];
 }
 
-/** A further member's permissions on the granted topic, which the owner writes before it grants the sender. */
-export type GrantedRtcMemberGrant = Pick<TopicGrantInput, 'grantee' | 'publish' | 'subscribe'>;
+/** A grant or revoke of a further member's permissions on the granted topic, written before the sender's grant. */
+export type GrantedRtcMemberOperation = Pick<TopicGrantInput, 'operation' | 'grantee' | 'publish' | 'subscribe'>;
+
+/** The sender's permissions; a principal broadcast's sender holds `subscribe` too, which its sibling shares. */
+export type GrantedRtcSenderGrant = Pick<TopicGrantInput, 'publish' | 'subscribe'>;
+
+const PUBLISH_ONLY: GrantedRtcSenderGrant = { publish: true, subscribe: false };
 
 /**
- * The receiver owns the room: it elects itself to receive and grants every further member before it grants the sender
- * `publish`, so the sender's snapshot names the grant only once the receiver can hear it.
+ * The receiver owns the room: it elects itself to receive and writes every further member's grant or revoke before it
+ * grants the sender `senderGrant`, so the sender's snapshot names the grant only once the receiver can hear it.
  */
 export function toGrantedRtcOwnerCommands(
     owner: AlmConformanceStepInput,
-    memberGrants: readonly GrantedRtcMemberGrant[]
+    memberGrants: readonly GrantedRtcMemberOperation[],
+    senderGrant: GrantedRtcSenderGrant = PUBLISH_ONLY
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
         toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
         toSubscribeCommand(owner, 'receiver'),
-        ...memberGrants.map((grant) => toTopicGrantCommand({ ...grant, step: owner, operation: 'grant' })),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: false })
+        ...memberGrants.map((grant) => toTopicGrantCommand({ ...grant, step: owner })),
+        toTopicGrantCommand({ ...senderGrant, step: owner, operation: 'grant', grantee: 'sender' })
     ];
 }
 

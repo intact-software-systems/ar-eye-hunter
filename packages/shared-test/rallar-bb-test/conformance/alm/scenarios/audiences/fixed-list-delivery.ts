@@ -34,7 +34,7 @@ export const fixedListDelivery: AlmConformanceScenarioDefinition = {
             sender,
             ttlMs: NON_EXPIRING_TTL_MS,
             ack: 'all-logical-recipients',
-            audience: { recipientPeer: 'receiver' }
+            audience: { recipientPeers: ['receiver'] }
         }),
         ...toServerReceiptCommands(sender),
         ...toReceiptWindowCommands(sender, { roles: RECEIVER_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })

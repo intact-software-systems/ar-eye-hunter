@@ -167,15 +167,21 @@ that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `purpose`, `publication`, `roomRef`, `scope`, `principalId`,
-`recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`,
-`orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
+`recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason?, traceId, corrId }`: the handle's `traceId`, the
 trace the page minted for this send, and its `corrId`, the send's own `msgId` unless the send named one.
 `orderingKey` and `seq` pass to the product send: a room send that names `orderingKey` without `seq` is sequenced by
 the page's outbound from the track's head, which both carriers of the session share, and a stated `seq` at or below
 that head is refused `unsupported` before any carrier, so a recipe that states sequences states each one above the
 last it sent on that key.
-`recipientPeer` (`receiver`, `recipient-b`) is a fixed audience of one by lane role; the `leader-ack` scenarios'
-`leader-outside-list` cell below states how the page resolves both roles.
+`recipientPeers` (one or two of `receiver`, `recipient-b`, each once) is a fixed audience by lane role; the
+`leader-ack` scenarios' `leader-outside-list` cell below states how the page resolves both roles. A role the page
+cannot resolve fails the send `peerUnresolved`, and two roles that resolve to one session refuse it.
+`recipientPrincipalIds` (1–256 distinct principal ids, `{principal:<role>}` placeholders substituted when the recipe
+is created) is a fixed audience by principal: the page resolves it at send time to the room's live sessions whose
+principal is listed, its own session excluded, and a list no such session answers fails the send before any handle
+opens. A send names at most one of `toPeer`, `recipientPeers`, `recipientPrincipalIds` and `scope: 'principal'`; the
+page refuses two.
 `purpose` (`command`, `notification`, `live`) is the purpose of the typed channel the page opens for the send; absent,
 a send that names `toPeer` opens a `command` channel and any other a `notification` one. `publication`
 (`{ cadenceMs, retainNewest, drain: { messages, bytes } }`, each a positive integer within the product's
@@ -239,9 +245,9 @@ logical algorithm.
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `purpose`, `publication`, `roomRef`,
-`scope`, `principalId`, `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
-`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`
-are each refused beside it, by the control validator and by
+`scope`, `principalId`, `recipientPeers`, `recipientPrincipalIds`, `reliability`, `ack`, `ownership`, `resourceId`,
+`durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and
+`toPeer` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
@@ -435,7 +441,7 @@ polling the API for it is harness load, not evidence.
   'trusted-server'`, `failure.rejection.reason: 'no-leader'`. Neither recipient
   receives it.
 - `leader-outside-list` (`ws` only): the receiver appoints itself and the sender lists
-  `recipientPeer: 'recipient-b'` alone, a list that leaves the leader out; the server
+  `recipientPeers: ['recipient-b']` alone, a list that leaves the leader out; the server
   NACKs the send `no-leader` as above, and neither recipient receives it. The page
   resolves `recipient-b` to the one other live session of another principal that is
   not the room's leader. Both roles read the room's other live sessions of another
@@ -571,9 +577,9 @@ generation answers `not-subscribed`, so the row stays the successor's, which the
 publication then reaches. No hosted manifest carries these cells (S2ii-R3).
 
 The `granted-rtc` conformance scenarios (`scenarios/granted-rtc/`) prove the signed RTC path of
-`room.alm-conformance-granted`. The receiver owns the room: it elects itself to receive and grants every
-further member before it grants the sender `publish`, so the sender's snapshot names the grant only once the
-receiver can hear it. They run in the full scope over `rtc`, where no refusal or lost copy is handed to WS;
+`room.alm-conformance-granted`. The receiver owns the room: it elects itself to receive and writes every
+further member's grant or revoke before it grants the sender, so the sender's snapshot names the grant only once
+the receiver can hear it. They run in the full scope over `rtc`, where no refusal or lost copy is handed to WS;
 `granted-rtc-revoked-publisher` runs over `rtc-with-ws-fallback` as well. Every send states its `ack` and
 reliability. No hosted manifest carries them (D505).
 
@@ -582,6 +588,9 @@ reliability. No hosted manifest carries them (D505).
 - `granted-rtc-receipted-delivered` (two-agent): the sender publishes asking `all-logical-recipients` until one
   copy's receipt expects the receiver alone and it confirms (expected 1, confirmed 1, outside 0, `acknowledged`),
   and the copy arrives over RTC.
+- `granted-rtc-unicast-delivered` (two-agent): the sender's `toPeer: 'receiver'` send asks `ack: 'receiver'` on a
+  `notification` channel, which RTC freezes as a multicast of one; one copy's receipt expects the receiver alone
+  (expected 1, confirmed 1, outside 0), and the copy arrives over RTC.
 - `granted-rtc-missing-proof` (two-agent): a `strip-proof` rewrite deletes each signed frame's proof, the
   receiver drops it `unauthorized: missing-proof`, and the publication is absent.
 - `granted-rtc-publish-refused` (two-agent): the subscribe-only receiver publishes through the `messages.rtc`
@@ -598,6 +607,23 @@ reliability. No hosted manifest carries them (D505).
   grant-narrowed audience freezes it in. The sender publishes until one copy's receipt expects both recipients,
   the receiver confirmed and recipient-b outside the audience, its handle `acknowledged`; recipient-b waits for
   its RTC admission of the copy and then for the publication's absence.
+- `granted-rtc-list-delivered` (three-agent): `recipientPrincipalIds: ['{principal:receiver}']`; recipient-b holds
+  `subscribe` and an election but the list leaves it out (expected 1, confirmed 1, outside 0). Recipient-b asserts
+  the publication's absence and makes no admission assertion, since a tree layout may route it a copy to forward.
+- `granted-rtc-list-non-holder` (three-agent): `recipientPrincipalIds` names the receiver's principal and
+  recipient-b's, but recipient-b holds `publish` alone, so the frozen audience leaves it out silently (expected 1,
+  confirmed 1, outside 0); recipient-b asserts the publication's absence. A grant only adds permissions and the
+  room's three-agent cells share it, so the owner revokes the `subscribe` an earlier cell granted recipient-b before
+  it grants the sender.
+- `granted-rtc-list-lane-roles` (three-agent): `recipientPeers: ['receiver', 'recipient-b']`. The receiver directs
+  the room, so the page resolves the list through the leader rule: `receiver` to the leader, `recipient-b` to the
+  session beside it. The lane starts the sender after both recipients connected, and the sender refreshes its
+  snapshot until it reads the leader active before it publishes; both hold `subscribe` and an election (expected 2,
+  confirmed 2, outside 0), and each copy arrives over RTC. The receiver resigns at its end.
+- `granted-rtc-principal-delivered` (same-principal): `scope: 'principal'`, `principalId: '{auth.clientId}'`. The
+  owner grants the sender's principal `publish` and `subscribe`, so the sender's sibling, elected, receives the copy
+  over RTC and confirms it (expected 1, confirmed 1, outside 0); the receiver, elected but of another principal, is
+  absent from the audience and asserts the publication's absence.
 - `granted-rtc-relay-only` (three-agent): the receiver PUTs `{ topologyKind: 'tree', degreeLimit: 2,
   meshParamK: 2 }` to the room's topology config through `http.request`, so the three pages form a path, and the
   sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
@@ -830,7 +856,7 @@ resources of the one channel (`alm-paced-isolation-resources-{loop.iteration}`):
 
 `paced-isolation-lists` (three agents; one retained, a drain of 8) proves a fixed list is part of the stream. The
 receiver appoints itself the room's director and the sender waits until its own snapshot reads the director active, so
-`recipientPeer: 'receiver'` names the leader among the two sessions of other principals (and `recipient-b` the one
+`recipientPeers: ['receiver']` names the leader among the two sessions of other principals (and `recipient-b` the one
 beside it). Send 0 lists the receiver; send 1 lists the receiver and send 2, on the same resource, lists `recipient-b`,
 so had the lists shared a stream send 2 would have displaced send 1: both end `transport-accepted`, the receiver holds
 seq 0, then seq 1, and no third arrival, and `recipient-b` holds seq 2 alone. The receiver resigns after its window.

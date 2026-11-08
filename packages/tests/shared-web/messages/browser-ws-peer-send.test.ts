@@ -82,7 +82,7 @@ describe('a WS send addressed to one peer (Q11)', () => {
             issues: [{
                 path: '$.peerId',
                 code: 'unsupported',
-                message: 'A peer-addressed typed send takes the ws, rtc or rtc-with-ws-fallback strategy.'
+                message: 'A peer-addressed typed send on a members channel takes the ws, rtc or rtc-with-ws-fallback strategy.'
             }]
         });
     });

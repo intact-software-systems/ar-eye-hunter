@@ -70,7 +70,7 @@ function toPacedFairnessSenderCommands(sender: AlmConformanceStepInput): readonl
                 publication: PACED_FAIRNESS_PUBLICATION,
                 ttlMs: toPublicationTtlMs(LAST_OPPORTUNITY),
                 stream,
-                recipientPeer: undefined
+                recipientPeers: undefined
             })
         ),
         ...ADMISSIONS.flatMap(([index]) =>

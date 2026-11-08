@@ -147,11 +147,15 @@ every session the page opens. The event's `data` is the event itself:
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
   `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
   `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
-  `rtc-handoff-refusal`, `rtc-queued-bytes-high-water`, `publication-staging`
-  or `publication-opportunity` (the last two are described under
-  **Publication stage diagnostics** below)
+  `rtc-handoff-refusal`, `rtc-queued-bytes-high-water`, `track-index-end`,
+  `publication-staging` or `publication-opportunity` (the last two are described under
+  **Publication stage diagnostics** below). `track-index-end` is the WS server's: the
+  index end of a tracked row that ended unrecorded answered other than `deleted`. It
+  carries `msgId`, `trackKey`, `seq` and `outcome` — `absent`, `other-message`,
+  `conflict` (reported once, not retried) or `failed` (the end threw) — and no payload;
+  the row keeps the outcome it had
 - `durationMs`: how long that phase took, on every kind but `commit-phases`,
-  `control-admission`, `receipt-confirmation`, `congestion`, the three `rtc-*` kinds and the two
+  `control-admission`, `receipt-confirmation`, `congestion`, the three `rtc-*` kinds, `track-index-end` and the two
   `publication-*` kinds, which are outcomes, not phases: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
   `readiness-probe` it is not a phase of a commit at all but what that owner's
@@ -163,7 +167,7 @@ every session the page opens. The event's `data` is the event itself:
   guessed at from a duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
   `control-admission` (after a receipt's `phase` or a NACK's two fields), `receipt-confirmation`,
-  `congestion` and `rtc-ack-submission`. `publication-staging` is the one
+  `congestion`, `rtc-ack-submission` and `track-index-end`. `publication-staging` is the one
   message-scoped kind without the pair: it carries the value's `traceId` before
   `atMs` and no `corrId`, and `publication-opportunity` names no message.
   `traceId` is the message's envelope
@@ -213,7 +217,8 @@ every session the page opens. The event's `data` is the event itself:
   the pending-admission probe and the decision; for a single send also the
   effect rows and the canonical pair its commit fences, read in the same
   session). `readOperationCount` counts only the admission reads that go
-  through `ALOutboundAdmissionReads` (`readValue` and `readQueueItem`); the
+  through `ALOutboundAdmissionReads` (its private `readValue`, behind every
+  named read such as `readOrderingMessageId`, and `readQueueItem`); the
   work-store rows the session reads (the effect rows and the canonical pair)
   are timed but not counted. Then come
   `commitDurationMs` and `commitOutcome` for the write transaction —

@@ -203,7 +203,8 @@ describe('ALM conformance hosted lane families', () => {
                 'granted-rtc-missing-proof',
                 'granted-rtc-publish-refused',
                 'granted-rtc-receipted-delivered',
-                'granted-rtc-revoked-publisher'
+                'granted-rtc-revoked-publisher',
+                'granted-rtc-unicast-delivered'
             ].map((key) => `alm-rtc-${key}`),
             'alm-rtc-with-ws-fallback-granted-rtc-revoked-publisher'
         ];

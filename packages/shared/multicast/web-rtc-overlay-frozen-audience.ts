@@ -194,7 +194,7 @@ export function computeRtcLeaderRefusal(
 
 /**
  * A refusal names the targets its sender gave: an audience this plan froze is undone, one its sender gave frozen -- a
- * granted leg's, or a signed stored copy's -- is kept.
+ * signed stored copy's -- is kept.
  */
 function toUnfrozenRoomMessage(msg: ALMessage, original: ALMessage): ALMessage {
     if (resolveALFrozenMulticastAudience(original.targets) !== undefined) {

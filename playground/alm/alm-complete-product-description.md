@@ -204,7 +204,7 @@ server-provided room authority. Diagnostics never grant authority. Browser WS
 receives only server-validated envelopes, and server WS binds new senders to the
 authenticated connection or an explicitly authorized server/system identity.
 ACK/NACK/repair identities must agree with the envelope, target, transport peer,
-and tracked message audience. A granted room multicast over RTC also carries a
+and tracked message audience. A granted publication over RTC also carries a
 signature by its original sender's session, which every relay and receiver
 verifies against its own room snapshot (D512–D515); a members frame carries
 none.
@@ -281,8 +281,9 @@ no granted-topic decision reads the 60 s TTL cache. A failed probe leaves the ro
 to its retry; a step that finds no current room snapshot completes the row with
 no recipients. The receipt never shrinks: a recipient revoked after admission
 stays expected and reads unconfirmed. api-v1 installs its granted topics from
-`grantedWsTopics` (D499). Over RTC a granted topic rides only as a signed room
-multicast (D491; S3 below).
+`grantedWsTopics` (D499). Over RTC a granted topic rides as a signed audience
+its origin freezes: a room multicast, a listed or principal room send or a peer
+send (D491; S3 and S6 below).
 
 **CURRENT — S2-ii, session subscriptions:** holding `subscribe` makes a
 principal eligible; a session receives a granted topic only after it elects to,
@@ -323,10 +324,12 @@ selected (D506, D531), so the reopened session receives granted publications
 there again. **Limit:** the
 four-role cells run on the local lane only (D505).
 
-**CURRENT — S3, restricted RTC parity:** a granted room multicast rides RTC,
-receipted or not, under `rtc` and `rtc-with-ws-fallback`. The origin freezes it
-to the live sessions whose principal holds effective `subscribe` in its cached
-snapshot and signs it once at RTC carrier admission with a detached ECDSA P-256
+**CURRENT — S3 and S6, restricted RTC parity:** a granted room multicast and,
+since S6-i, a granted listed, principal or peer send ride RTC, receipted or not,
+under `rtc` and `rtc-with-ws-fallback`. The origin freezes it to the live
+sessions whose principal holds effective `subscribe` in its cached snapshot,
+narrowed to the list, the principal's sessions or the one peer, a peer send
+riding as a multicast of one, and signs it once at RTC carrier admission with a detached ECDSA P-256
 signature
 ([`ecdsa-p256-signature.ts`](../../packages/shared/signature/ecdsa-p256-signature.ts))
 over the domain-tagged, positional canonical JSON of the envelope's signed
@@ -358,12 +361,15 @@ A stored granted publication is repaired, re-planned and dequeued only while
 the origin's snapshot still grants it `publish`, a revoke ending the handle
 `rejected` `no-publish-grant`, and a responder repairs only toward a frozen
 recipient still holding `subscribe`; nothing re-signs (D519). **Limit:** the
-payload is not confidential from relays (D520); receipts are unsigned; a
-granted unicast, broadcast, narrowed room send or `group-leader` send whose
-director holds no `subscribe` is RTC-`unsupported`, and `ws-then-rtc` sends
-granted messages over WS; after a hand-over the WS server keeps a frozen
-session that never subscribed expected and unconfirmed until the deadline; the
-`granted-rtc` and four-role cells run on the local lane only (D521).
+payload is not confidential from relays (D520); receipts are unsigned; an
+exclusions-only, `world` or exclusive granted send, one whose frozen audience
+passes the room limit of 256, and a `group-leader` send whose director holds no
+`subscribe` are RTC-`unsupported`, and `ws-then-rtc` sends granted messages over
+WS; a named session without `subscribe` is left out silently, so a receipted
+peer send to it completes with zero recipients over RTC where WS answers
+`unauthorized` (D553); after a hand-over the WS server keeps a frozen session
+that never subscribed expected and unconfirmed until the deadline; the
+`granted-rtc` and four-role cells run on the local lane only (D521, D558).
 
 ## Logical audiences
 
@@ -377,8 +383,8 @@ room's authority admits it and the room's router delivers it, and a `receiver` u
 own ACK, aggregated by the server over one member (D53, D71). A client addresses the server itself with a unicast to
 the server peer id `/api/config` names; the server's own ACK is that receipt, meaning the server admitted the
 message, not that the application applied it (D76). **CURRENT — S3c-ii, addressed sends on every carrier:** a typed
-send names one peer with `{ peerId }`; on RTC the unicast travels directly to its addressee and is never relayed,
-and on `rtc-with-ws-fallback` it is handed to WS inside the deadline (D75). A send to the server peer id travels WS
+send names one peer with `{ peerId }`; on RTC the unicast travels directly to its addressee and is never relayed
+(a granted channel's peer send is frozen as a multicast of one and relayed as one, D552), and on `rtc-with-ws-fallback` it is handed to WS inside the deadline (D75). A send to the server peer id travels WS
 only. `ws-then-rtc` does not take a peer (V1).
 
 ### Multicast
@@ -632,8 +638,9 @@ required `access: 'members' | 'granted'`
 ([`rallar-message-contracts.ts`](../../packages/shared-web/browser/messages/rallar-message-contracts.ts));
 the room session's string binding fills `members`, and a `granted` channel names
 its `topicId` (`invalid-access` and `missing-topic-id` otherwise). A granted
-channel's room multicast rides RTC under `rtc` and `rtc-with-ws-fallback` (S3
-below); `ws-then-rtc` sends every granted message over WS, a send RTC cannot
+channel's room multicast, listed or principal send and peer send ride RTC under
+`rtc` and `rtc-with-ws-fallback` (S3 and S6 above); `ws-then-rtc` sends every
+granted message over WS, a send RTC cannot
 carry settles `rejected` `refused`/`unsupported` under `sendRtc` and
 `strategy: 'rtc'` and goes over WS under `rtc-with-ws-fallback`, and calling
 `onRtc` throws, since RTC copies reach `subscribe(handler)` only. Before any

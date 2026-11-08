@@ -2,10 +2,11 @@
 
 Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
 (authorized WS pub/sub, as S2-i and S2-ii), Slice 3 (restricted RTC parity,
-as S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii) and
-Slice 5 (producer-row positions, as S5-i) are implemented and recorded as
-applied in §7; the later outcomes remain a proposed extension, not implemented
-behavior or an adopted change to `docs/product.md`.
+as S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii),
+Slice 5 (producer-row positions, as S5-i) and Slice 6 (granted unicast, list and
+principal broadcast over RTC, as S6-i) are implemented and recorded as applied
+in §7; the later outcomes remain a proposed extension, not implemented behavior
+or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -421,8 +422,10 @@ authorization. Its issuance and verification belong to explicit existing
 auth/session and ALM boundaries; select a proven mechanism rather than invent
 cryptography. Slice 3 (§7) provides it for room multicasts: an ECDSA P-256
 signature by the publishing session, verified at every relay and receiver
-against its own room snapshot. RTC returns unsupported for every other
-restricted send, and an allowed WS strategy uses the validated WS path.
+against its own room snapshot. Slice 6 extends the same proof to a listed or
+principal room broadcast and a room unicast, each sent as the multicast its
+leg admission froze. RTC returns unsupported for an exclusions-only, `world`
+or exclusive send, and an allowed WS strategy uses the validated WS path.
 
 Relays may inspect payload bytes unless a separate confidentiality mechanism
 protects them. Applications requiring subscriber-only byte access use a
@@ -885,16 +888,88 @@ an older instance dequeues an indexed producer row without recording it, and a
 newer instance holds on such a predecessor until its deadline. Decisions
 D538–D550 are in the roadmap, and Slice 5 is complete.
 
+### Slice 6: granted unicast, list and principal broadcast over RTC
+
+Carry on RTC the granted shapes Slice 3 left refused: a granted publication
+whose sender names a fixed list, a room principal or one room peer rides RTC
+under `rtc` and `rtc-with-ws-fallback`, frozen to the grant-narrowed audience
+and signed exactly as a granted room multicast is; a granted unicast is frozen
+as a multicast of one; the RTC room-limit bound is judged in the granted leg
+right after the freeze, so a fallback takes over; and the three copies of the
+shape gate become one predicate in the carrier. Receipts stay unsigned and
+relay-re-originated; signed receipts, an encrypted publication and native key
+custody stay out. It was designed in the Slice 6 design proposal, deleted with
+S6-ii, and lands as S6-i (the RTC shapes, two outbound riders and these
+documents) and S6-ii (one writer for the provenance sidecar, the batched CRDT,
+presence-summary and topology outbox loops and a shared PGlite statement
+recorder).
+
+As applied (S6-i): the carrier's leg admission (`admitLeg`) judges the shape
+the sender gave by one predicate,
+`resolveRtcGrantedPublicationShapeRefusal`: a room multicast, a room broadcast
+naming `recipientPeerIds`, a principal broadcast naming its room and a unicast
+naming its room are carried, and any other granted shape is refused
+`unsupported` with the text `unfrozenAudience` before any freezing work. It
+then reads the snapshot and the `subscribe` holders and keeps the leader and
+signing refusals as before, translates a room unicast into the one-entry listed
+room broadcast of its room (`toRtcGrantedListedLeg`), freezes the leg to the
+listed, principal or addressed sessions that hold `subscribe`, at the
+snapshot's version, and judges the 256-entry room limit on that frozen set
+(`computeRtcFrozenAudienceRefusal`), returning its reason as the leg's refusal.
+On the wire a list, a principal broadcast and a unicast are each a frozen,
+signed multicast that relays forward along the tree and receivers admit
+unchanged; the receipt expects the frozen list, or the one peer. A named
+non-holder is frozen out silently, one rule for every shape, and an audience
+frozen to nobody owns no children (`resolveALOwnedChildPeerIds`): under
+`receiver` the receipt of zero recipients completes at once and nothing is
+sent, and under `ack: 'none'` the plan is an `unroutable`/`no-route` fallback
+verdict, nothing sent. A granted send whose narrowed audience passes 256 is
+refused `unsupported` with the targets its sender gave and handed to the
+fallback; 256 still signs. A stored or `enqueueIfAbsent` copy is judged by the
+targets its sender gave: a proof on a non-multicast original is refused
+`unfrozenAudience`, since only a leg freezes a list, a principal broadcast or a
+unicast before its admission signs it. The dispatch copy of the shape gate and
+the facade's shape clause are deleted: `isBrowserWsOnlySend` keeps an exclusive
+send, and a granted send under `ws-then-rtc`, on WS, so a granted peer, listed,
+principal or room send starts on RTC under `rtc` and `rtc-with-ws-fallback`, a
+granted peer send under `ws-then-rtc` is admitted on WS, and an exclusions-only
+or `world` granted send under `rtc-with-ws-fallback` is refused by the carrier
+and reaches WS. The units pin the shapes, the translation, the fold and the
+fallback verdicts; the relay fixture signs a receipted granted list at its
+origin, a listed holder without an election recorded outside, and an unlisted
+subscriber that relays a copy naming only the list delivers nothing. The
+harness's `messages.send` names a fixed audience by up to two lane roles
+(`recipientPeers`, refused when the two roles resolve to one session) or by
+principal ids (`recipientPrincipalIds`), and the granted publish loop takes
+that audience. Five cells over `rtc`, local full-scope lane only, pass:
+`granted-rtc-unicast-delivered` (two-agent), `granted-rtc-list-delivered` (an
+unlisted, subscribed and elected session receives nothing),
+`granted-rtc-list-non-holder` (the owner revokes recipient-b's `subscribe`
+first, since grants only add and the cells share one room),
+`granted-rtc-list-lane-roles` (the receiver directs the room, so the list
+resolves through the leader rule) and `granted-rtc-principal-delivered`
+(same-principal). The riders: an index end that answers `absent`,
+`other-message` or `conflict`, or throws, is one `track-index-end` outbound
+diagnostic through the runtime diagnostics, `conflict` reported and not
+retried, with no console line; and the outbound admission reads name
+`readOrderingMessageId`, the generic value read private again. Limits: an
+exclusions-only granted room broadcast stays refused `unsupported` on RTC, and
+ordering on a peer send stays refused; receipts are unsigned; a `receiver`
+unicast to a non-holder completes with zero recipients over RTC, where WS
+answers `unauthorized`, and under `rtc` alone an `ack: 'none'` one settles
+`rejected` with `unroutable`/`no-route`; after a hand-over a frozen session that
+never
+subscribes stays expected and unconfirmed on WS; and the cells run on the local
+lane only, with no hosted manifest. Decisions D551–D562 are in the roadmap, and
+Slice 6's first pull request is complete.
+
 ### Later outcomes
 
 - **Restricted RTC beyond room multicast:** an encrypted publication with key
   distribution, rotation and revocation, ACKs that authenticate their logical
-  recipient across relays, granted unicast, fixed-list and broadcast over RTC,
-  and native hosts' publication keys. Granted fixed-list over RTC — a named
-  member subset that is neither one recipient nor the whole room — is the
-  directed delivery an actor's application-paced play needs and is not yet
-  carried. Native publication-key custody outside a browser (a Deno sidecar,
-  a native kit) is the actor's gating dependency for RTC parity.
+  recipient across relays, and native hosts' publication keys. Native
+  publication-key custody outside a browser (a Deno sidecar, a native kit) is
+  the actor's gating dependency for RTC parity.
 - **Ordered subscription history:** a latest-state snapshot with a fenced
   live cursor (the snapshot/live hand-off), and an authorized replay of
   retained history, with no replay to an unauthorized or newly joined
@@ -907,10 +982,9 @@ D538–D550 are in the roadmap, and Slice 5 is complete.
 - **RallarActor integration:** immediate and paced publication on the same
   contract in the host attachment, Unity/Unreal kits, and other native hosts.
   Engine simulation and interest remain application-owned. The actor's ALM
-  dependencies are native publication-key custody and granted fixed-list over
-  RTC (above), a re-examined per-session budget for a multi-group publishing
-  seat (§4.3), and the local attachment trust boundary kept out of ALM's
-  authority (§1).
+  dependencies are native publication-key custody (above), a re-examined
+  per-session budget for a multi-group publishing seat (§4.3), and the local
+  attachment trust boundary kept out of ALM's authority (§1).
 - **Measured operating envelope:** representative multi-group publishers,
   subscription churn, slow consumers, relay depth, mixed WS/RTC, and sustained
   overload with bounded memory and accurate outcome evidence.
@@ -959,6 +1033,18 @@ session enters at its first copy), non-contiguous tracks (`3` then `5` with no
 hold on `4`; the `server-ordered-entry` cell) and the stuck predecessor (`3`
 holds on `1` with `2` unwritten; a predecessor that ends unrecorded or fails for
 good releases its successor through the cleared index, not its deadline).
+
+Slice 6 adds evidence to two rows. **No alternative publication path bypasses
+grants:** a granted list, principal broadcast and unicast over RTC freeze to
+their subscribing sessions before they sign, a listed non-holder left out; the
+browser admits a peer and a listed granted send on RTC carrying its origin's
+proof; a narrowed audience past the room limit is handed to the fallback with
+its sender's targets; and the cells `granted-rtc-list-delivered`,
+`granted-rtc-list-non-holder`, `granted-rtc-list-lane-roles`,
+`granted-rtc-unicast-delivered` and `granted-rtc-principal-delivered` observe
+it on the local lane. **RTC distinguishes origin, recipient, and relay:** the
+relay fixture's unlisted subscriber relays a frozen list it is not named in and
+delivers nothing, while the list's receipt completes at the origin.
 
 Focused shared ALM, browser facade, and server tests run before package
 typechecks/builds. Public exports require API snapshots and bundle-boundary

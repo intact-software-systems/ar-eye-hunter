@@ -70,7 +70,7 @@ interface AlmPublicationSendInput {
     readonly ttlMs: number;
     /** Undefined on the lead's stream; otherwise the suffix of a resource of its own. */
     readonly stream: string | undefined;
-    readonly recipientPeer: BlackBoxRallarRecipientPeer | undefined;
+    readonly recipientPeers: readonly BlackBoxRallarRecipientPeer[] | undefined;
 }
 
 interface AlmPublicationLiveSend {
@@ -80,7 +80,7 @@ interface AlmPublicationLiveSend {
     /** Undefined keeps the live channel's own lifetime. */
     readonly ttlMs: number | undefined;
     readonly resourceId: string;
-    readonly recipientPeer: BlackBoxRallarRecipientPeer | undefined;
+    readonly recipientPeers: readonly BlackBoxRallarRecipientPeer[] | undefined;
 }
 
 interface AlmPublicationVerdictInput {
@@ -109,7 +109,7 @@ export function toPublicationTtlMs(opportunity: number): number {
 export function toPublicationLeadCommands(
     step: AlmConformanceStepInput,
     publication: ALPublicationPolicy,
-    recipientPeer: BlackBoxRallarRecipientPeer | undefined
+    recipientPeers: readonly BlackBoxRallarRecipientPeer[] | undefined
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...(step.input.carrier === 'ws' ? [] : [createStableRtcLayoutWait({
@@ -123,7 +123,7 @@ export function toPublicationLeadCommands(
             publication,
             ttlMs: undefined,
             resourceId: toResourceId(step, undefined),
-            recipientPeer
+            recipientPeers
         }),
         ...toPublicationVerdictCommands({
             step,
@@ -165,7 +165,7 @@ function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackB
                 publication: sends.publication,
                 ttlMs: sends.ttlMs,
                 resourceId: toResourceId(step, stream),
-                recipientPeer: undefined
+                recipientPeers: undefined
             }),
             commandId: toCommandId(step, 'paced-send'),
             handleId: toLoopIterationSendHandleId(step),
@@ -187,7 +187,7 @@ function toLiveSendCommand(send: AlmPublicationLiveSend): RallarBlackBoxTestMess
             resourceId: send.resourceId,
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
             ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
-            ...(send.recipientPeer === undefined ? {} : { recipientPeer: send.recipientPeer })
+            ...(send.recipientPeers === undefined ? {} : { recipientPeers: send.recipientPeers })
         }
     });
     return { ...command, purpose: 'live', publication: send.publication };

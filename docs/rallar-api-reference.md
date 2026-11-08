@@ -1092,11 +1092,18 @@ exactly `{ topicId, typeId?, fanout, serverProducerIds }` (see
 `docs/environment-variables.md`). A
 `room.message<T>('name')` binding fills `members`. Any other value is refused
 `$.access` `invalid-access`, and a granted channel without a `topicId`
-`$.topicId` `missing-topic-id`. A granted channel rides RTC as a room
-multicast, receipted or not, under `rtc` or `rtc-with-ws-fallback`: the sending
-page freezes the publication to the room's live sessions whose principal holds
-effective `subscribe` in its cached snapshot, so the signed targets and a
-receipt's expected recipients are that audience, and signs each frame with the
+`$.topicId` `missing-topic-id`. A granted channel's room multicast, listed or
+principal send and peer send ride RTC, receipted or not, under `rtc` or
+`rtc-with-ws-fallback`: the sending page freezes the publication to the room's
+live sessions whose principal holds effective `subscribe` in its cached
+snapshot, narrowed to the listed sessions, the principal's sessions or the one
+peer, so the signed targets and a receipt's expected recipients are that
+audience; a peer send rides as a frozen multicast of one, relayed through the
+room's tree. A named session without `subscribe` is left out silently, so a
+receipted peer send to such a session reads `acknowledged` with zero
+recipients over RTC, where WS refuses it `unauthorized`; an `ack: 'none'` one
+falls back on `no-route`, and under `rtc` alone it settles `rejected` with
+`unroutable`/`no-route`. The page signs each frame with the
 publication key its session registered on its room presence (see Group Policy
 And State Routes above). Every relay and receiver verifies that signature
 against its own cached room snapshot before it forwards or delivers the frame. A
@@ -1108,10 +1115,11 @@ authority than it, is dropped `not-yet-in-sync` and the hop refreshes its
 snapshot once. A frame is delivered only to a session holding `subscribe` and an
 `active` subscription; a relay needs only membership to forward it. The proof
 authenticates the publisher, never the payload's confidentiality: relays read the
-payload bytes. Every other granted RTC send (a unicast, a `world` or `principal`
-send, one that narrows its room's audience, a `group-leader` send whose director
-holds no `subscribe` on the topic, or one from a page whose key is absent or not
-yet in its snapshot) is refused `unsupported` before admission: `strategy: 'rtc'`
+payload bytes. Every other granted RTC send (an exclusions-only, `world` or
+exclusive send, a `group-leader` send whose director holds no `subscribe` on the
+topic, one whose frozen audience passes the RTC room limit of 256 sessions, or
+one from a page whose key is absent or not yet in its snapshot) is refused
+`unsupported` before admission: `strategy: 'rtc'`
 and `sendRtc` end `rejected` with
 `failure: { kind: 'refused', reason: 'unsupported' }`, and
 `rtc-with-ws-fallback` sends it over WS. A `group-leader` send in a room with no
@@ -1193,7 +1201,7 @@ subscribed is NACKed `no-leader`, and a room unicast to an unsubscribed session
 
 Over RTC the sender sees grants but not subscriptions, so a receipted granted
 send (`ack: 'receiver'`, `'all-logical-recipients'` or `'group-leader'`) expects
-every session it froze. A frozen session whose own snapshot gives its principal
+every session it froze: the room's, the frozen list or the one peer. A frozen session whose own snapshot gives its principal
 no `subscribe`, or whose token is not `active` (a `pending` token included),
 forwards the frame, delivers nothing and answers `not-subscribed` for itself,
 which each relay carries on toward the origin for that one recipient. The receipt

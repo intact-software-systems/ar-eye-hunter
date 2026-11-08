@@ -237,7 +237,12 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
         member: ALOutboundDequeuedAdmission.Member<TPrepared>,
         cause: ALOutboundTrackIndexEndCause<TPrepared>
     ): Promise<void> {
-        await writeALOutboundTrackIndexEnd(this.dependencies.admissionStore, member.effect.canonicalMessage, cause);
+        await writeALOutboundTrackIndexEnd({
+            store: this.dependencies.admissionStore,
+            msg: member.effect.canonicalMessage,
+            cause,
+            diagnostics: this.dependencies.runtime.diagnostics
+        });
     }
 
     /** The gate and the authority wait: an outcome they decide is never a breaker charge. */

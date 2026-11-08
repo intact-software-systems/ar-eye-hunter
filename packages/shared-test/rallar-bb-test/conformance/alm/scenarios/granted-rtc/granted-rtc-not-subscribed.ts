@@ -6,22 +6,15 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import {
-    TOPIC_SUBSCRIPTION_SELECTOR,
-    toUnsubscribeCommands
-} from '../topic-subscription/topic-subscription-commands.ts';
+import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
     toPublicationWait,
     toPublishUntilConfirmedCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
-import {
-    GRANTED_RTC_CARRIERS,
-    toGrantedRtcOwnerCommands,
-    toRtcAdmittedWait,
-    toRtcArrivalWait
-} from './granted-rtc-commands.ts';
+import { GRANTED_RTC_CARRIERS, toRtcAdmittedWait } from './granted-rtc-commands.ts';
+import { RECIPIENT_B_SUBSCRIBES, toConfirmingOwnerCommands } from './granted-rtc-confirming-owner.ts';
 
 /**
  * Recipient-b holds `subscribe` but takes no election, so the sender's grant-narrowed audience freezes it in: its copy
@@ -46,17 +39,10 @@ export const grantedRtcNotSubscribed: AlmConformanceScenarioDefinition = {
             kind: 'publication'
         }),
     toRecipientCommands: (recipient) =>
-        recipient.role === 'receiver' ? toConfirmingOwnerCommands(recipient) : toUnelectedRecipientCommands(recipient)
+        recipient.role === 'receiver'
+            ? toConfirmingOwnerCommands(recipient, [RECIPIENT_B_SUBSCRIBES])
+            : toUnelectedRecipientCommands(recipient)
 };
-
-function toConfirmingOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [
-        ...toGrantedRtcOwnerCommands(owner, [{ grantee: 'recipient-b', publish: false, subscribe: true }]),
-        toRtcArrivalWait(owner),
-        toConfirmedCueWait(owner, 'publication'),
-        ...toUnsubscribeCommands(owner, 'receiver')
-    ];
-}
 
 function toUnelectedRecipientCommands(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [

@@ -377,11 +377,13 @@ export class ALOutboundAdmissionReads<TPrepared> {
         trackKey: string,
         seq: number
     ): Promise<ALOutboundSentMessageSnapshot | undefined> {
-        const key = toALOutboundOrderingMessageKey(this.namespace, trackKey, seq);
-        const msgId = await this.readValue(session, key, decodeALAdmissionString);
+        const msgId = await this.readOrderingMessageId(session, trackKey, seq);
         const sent = msgId ? await this.readSentMessage(session, msgId) : undefined;
         if (sent && (toALOrderingTrackKey(sent.msg) !== trackKey || sent.msg.ordering?.seq !== seq)) {
-            throw new ALAdmissionCorruptionError(key, new TypeError('Ordering index differs from canonical message'));
+            throw new ALAdmissionCorruptionError(
+                toALOutboundOrderingMessageKey(this.namespace, trackKey, seq),
+                new TypeError('Ordering index differs from canonical message')
+            );
         }
         return sent;
     }
@@ -441,8 +443,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         trackKey: string,
         seq: number
     ): Promise<{ msgId: string; stored: ALStoredOutboundMessage | undefined; } | undefined> {
-        const key = toALOutboundOrderingMessageKey(this.namespace, trackKey, seq);
-        const msgId = await this.readValue(session, key, decodeALAdmissionString);
+        const msgId = await this.readOrderingMessageId(session, trackKey, seq);
         return msgId === undefined ? undefined : { msgId, stored: await this.readStoredMessage(session, msgId) };
     }
 
@@ -701,7 +702,20 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return { pendingAck, repairAttempt, acks, nacks };
     }
 
-    async readValue<V>(
+    /** The message one sequence's index row names. */
+    async readOrderingMessageId(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        seq: number
+    ): Promise<string | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundOrderingMessageKey(this.namespace, trackKey, seq),
+            decodeALAdmissionString
+        );
+    }
+
+    private async readValue<V>(
         session: ALAdmissionReadSession,
         key: string,
         decode: ALAdmissionDecoder<V>

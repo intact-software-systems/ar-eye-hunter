@@ -4,6 +4,7 @@ import type {
 } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
+import type { AlmConformanceSendAudience } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import {
     ALM_CONFORMANCE_TOPIC_ID,
@@ -46,6 +47,8 @@ export interface TopicPublicationInput {
     readonly kind: 'publication' | 'probe';
     /** The track the publication rides, whose sequence the page mints; absent, it rides none. */
     readonly orderingKey?: string;
+    /** Absent, every granted session of the room. */
+    readonly audience?: AlmConformanceSendAudience;
 }
 
 interface PayloadWaitInput {
@@ -93,7 +96,12 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
     const receipt = toPollResult({ step, name, index: 2, childId: observe });
     return toPollCommand(step, name, [
         {
-            ...toGrantedSend(step, toPublicationPayload(step, name, publication.kind), publication.orderingKey),
+            ...toGrantedSend({
+                step,
+                payload: toPublicationPayload(step, name, publication.kind),
+                orderingKey: publication.orderingKey,
+                audience: publication.audience
+            }),
             commandId: toCommandId(step, `${name}-send`),
             handleId
         },
@@ -129,7 +137,11 @@ function toConfirmedCue(name: string): string {
 export function toPublishCommands(step: AlmConformanceStepInput, name: string): readonly RallarBlackBoxTestCommand[] {
     const send = toCommandId(step, `${name}-send`);
     return [
-        { ...toGrantedSend(step, toPublicationPayload(step, name, 'publication')), commandId: send, handleId: send },
+        {
+            ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
+            commandId: send,
+            handleId: send
+        },
         toResultFact({
             step,
             name: `${name}-admitted`,
@@ -153,7 +165,11 @@ export function toRejectedPublishCommands(
     const send = toCommandId(step, `${name}-send`);
     const observe = toCommandId(step, `${name}-observe`);
     return [
-        { ...toGrantedSend(step, toPublicationPayload(step, name, 'publication')), commandId: send, handleId: send },
+        {
+            ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
+            commandId: send,
+            handleId: send
+        },
         {
             kind: 'messages.observe',
             commandId: observe,

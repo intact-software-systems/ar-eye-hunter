@@ -387,12 +387,10 @@ export type RallarBlackBoxTestMessagesSendCommand =
         scope?: 'room' | 'world' | 'principal';
         /** With scope `principal`: the principal whose live sessions in the room the send addresses. */
         principalId?: string;
-        /**
-         * A fixed audience of one inside the room, by lane role, resolved by the page at send time among the room's other
-         * live sessions whose principal is not the sender's: `receiver` is the one such session, or the room's leader when
-         * there are several, and `recipient-b` the one that is not the leader. Absent, the send names no list.
-         */
-        recipientPeer?: BlackBoxRallarRecipientPeer;
+        /** A fixed audience by lane role, each resolved by the page as `BlackBoxRallarRecipientPeer` states. */
+        recipientPeers?: readonly BlackBoxRallarRecipientPeer[];
+        /** A fixed audience by principal: the page names those principals' live sessions, its own left out. */
+        recipientPrincipalIds?: readonly string[];
         /** `exclusive` claims the send's resource for the sending session; absent, the send is `shared`. */
         ownership?: ALOwnershipAlgo;
         /** The route's resource, which an exclusive send claims; absent, the product mints a fresh one per send. */

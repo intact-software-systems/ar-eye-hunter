@@ -24,6 +24,7 @@ export type JsonSchema = Readonly<{
     readonly maximum?: number;
     readonly pattern?: string;
     readonly minItems?: number;
+    readonly maxItems?: number;
     readonly examples?: readonly unknown[];
     readonly default?: unknown;
 }>;
@@ -161,6 +162,9 @@ function validateBounds(input: SchemaNodeInput): void {
     }
     if (typeof schema.minItems === 'number' && Array.isArray(value) && value.length < schema.minItems) {
         errors.push({ path, message: `Expected at least ${schema.minItems} item(s).` });
+    }
+    if (typeof schema.maxItems === 'number' && Array.isArray(value) && value.length > schema.maxItems) {
+        errors.push({ path, message: `Expected at most ${schema.maxItems} item(s).` });
     }
 }
 

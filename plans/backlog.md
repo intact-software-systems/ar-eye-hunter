@@ -155,10 +155,6 @@ and it has no status list.
   class `minSnapshotVersion` already has on ordinary room frames; measure it,
   or add a per-room refresh cooldown in `RtcGroupSnapshotRefresh`
   (`packages/shared-web/browser/state-read/rtc-group-snapshot-refresh.ts`).
-- Granted unicast and broadcast over RTC (S3, D518): only a granted room
-  multicast rides RTC; a unicast, a `world` or principal broadcast and a
-  narrowed room send stay `unsupported` there and take WS under every strategy
-  but `rtc`.
 - Publication keys for native hosts (S3, D513): only a browser session
   registers a key, so a native host signs no granted RTC publication.
 - Ordered subscription history (the addendum's later outcome after Slice 4):
@@ -235,10 +231,6 @@ and it has no status list.
   (`readStoredPredecessorsToSettled`), and a client-state principal track can
   list every live event of its process within the command's expiry; neither the
   read count nor the prefix-list size is measured.
-- An observable index end (S5-i, D544): when the write that clears the index
-  row of a tracked row that ended unrecorded fails, it is logged to the console
-  only, and the row's successors wait for its deadline; an outbound
-  diagnostics event would make the failure visible.
 - An admission-time declared publication grant for joiners (D494), with its
   persisted declaration and lifetime rule; today only the creator declares a
   grant at creation, and each joiner is granted explicitly.

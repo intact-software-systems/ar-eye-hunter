@@ -163,7 +163,7 @@ describe('leader-confirms', () => {
                 payload: { marker: 'leader-confirms', carrier }
             });
             expect(findCommand(scenario.sender, 'send-1')).not.toHaveProperty('scope');
-            expect(findCommand(scenario.sender, 'send-1')).not.toHaveProperty('recipientPeer');
+            expect(findCommand(scenario.sender, 'send-1')).not.toHaveProperty('recipientPeers');
             expect(findCommand(scenario.sender, 'assert-receipt-receiptMode-1')).toMatchObject({ expected: 'leader' });
             expect(findCommand(scenario.sender, 'assert-receipt-expectedRecipientPeerIds-count-1')).toMatchObject({ expected: 1 });
             expect(readAlmReceiptRolesEntries(scenario.sender)).toEqual([
@@ -311,7 +311,7 @@ describe('leader-outside-list', () => {
         expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
             kind: 'messages.send',
             ack: 'group-leader',
-            recipientPeer: 'recipient-b',
+            recipientPeers: ['recipient-b'],
             payload: { marker: 'leader-outside-list', carrier: 'ws' }
         });
         expect(toCommandNames(scenario.receiver)).toEqual([

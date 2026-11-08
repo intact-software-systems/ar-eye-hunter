@@ -1,8 +1,14 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { toALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
 import { toALWorkFailureOutcome, type ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundCapturedPolicy } from '../admission/al-outbound-admission-validation.ts';
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundRuntimeDiagnosticsEvent,
+    type ALOutboundRuntimeDiagnosticsSink
+} from '../al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 
 /** How a dequeued row's attempt ended: superseded at its read, failed for good, its commit, or not at all. */
@@ -56,27 +62,46 @@ export function toALOutboundFailedTrackIndexEndCause(error: Error): 'failed' | u
     return toALWorkFailureOutcome(error).status === 'non-retryable' ? 'failed' : undefined;
 }
 
+export interface WriteALOutboundTrackIndexEndInput<TPrepared> {
+    readonly store: Pick<ALOutboundAdmissionStore<TPrepared>, 'readStoredMessage' | 'commitOrderingMessageEnd'>;
+    readonly msg: ALMessage | undefined;
+    readonly cause: ALOutboundTrackIndexEndCause<TPrepared>;
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+}
+
 /**
- * Clears the index row of a tracked row that ended without recording; the end's own failure is logged and settles
- * nothing, so it never changes the row's outcome (successors then wait for the row's deadline, as before the index).
+ * Clears the index row of a tracked row that ended without recording. An end that clears nothing, or fails, is kept
+ * as one `track-index-end` diagnostic and settles nothing, so it never changes the row's outcome (successors then wait
+ * for the row's deadline, as before the index); a `conflict` is reported, not retried.
  */
 export async function writeALOutboundTrackIndexEnd<TPrepared>(
-    store: Pick<ALOutboundAdmissionStore<TPrepared>, 'readStoredMessage' | 'commitOrderingMessageEnd'>,
-    msg: ALMessage | undefined,
-    cause: ALOutboundTrackIndexEndCause<TPrepared>
+    input: WriteALOutboundTrackIndexEndInput<TPrepared>
 ): Promise<void> {
+    const { store, msg, cause } = input;
     const end = toALOutboundTrackIndexEnd(msg, cause);
-    if (end === undefined) {
+    // `msg` is defined whenever `end` is; the check narrows it for the trace.
+    if (msg === undefined || end === undefined) {
         return;
     }
+    const report = (outcome: Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'track-index-end'; }>['outcome']) =>
+        writeALOutboundRuntimeDiagnostic(input.diagnostics, {
+            kind: 'track-index-end',
+            ...end,
+            outcome,
+            ...toALMessageTrace(msg)
+        });
     try {
         const record = toCommittedRecord(cause) ?? await store.readStoredMessage(end.msgId);
-        if (leavesSequencePending(cause, record)) {
-            await store.commitOrderingMessageEnd(end);
+        if (!leavesSequencePending(cause, record)) {
+            return;
+        }
+        const answer = await store.commitOrderingMessageEnd(end);
+        if (answer !== 'deleted') {
+            report(answer);
         }
     }
-    catch (error) {
-        console.error('Outbound track index end failed', { msgId: end.msgId, error });
+    catch {
+        report('failed');
     }
 }
 

@@ -6,7 +6,9 @@ import {
 
 import {
     resolveBlackBoxRallarMessagePeer,
-    resolveBlackBoxRallarRecipientPeer
+    resolveBlackBoxRallarRecipientPeer,
+    resolveBlackBoxRallarRecipientPeers,
+    resolveBlackBoxRallarRecipientPrincipals
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/resolve-black-box-rallar-message-peer.ts';
 
 import { toRoomRosterSession } from './browser-runtime-facade-test-double.ts';
@@ -73,7 +75,7 @@ describe('the lane role a messages.send addresses (C11)', () => {
 describe('the lane role a messages.send lists as its fixed audience', () => {
     const nowMs = Date.now();
     const input = {
-        recipientPeer: 'receiver' as const,
+        role: 'receiver' as const,
         ownSessionId: 'sender-session',
         ownPrincipalId: 'alice',
         leaderSessionId: undefined,
@@ -117,7 +119,7 @@ describe('the lane role a messages.send lists as its fixed audience', () => {
             toRoomRosterSession('receiver-session', { principalId: 'bob' }),
             toRoomRosterSession('recipient-b-session', { principalId: 'carol' })
         ];
-        const recipientB = { ...input, recipientPeer: 'recipient-b' as const, roomSessions };
+        const recipientB = { ...input, role: 'recipient-b' as const, roomSessions };
 
         expect(resolveBlackBoxRallarRecipientPeer({ ...recipientB, leaderSessionId: 'receiver-session' }).right)
             .toBe('recipient-b-session');
@@ -149,5 +151,70 @@ describe('the lane role a messages.send lists as its fixed audience', () => {
                 leaderSessionId: 'sender-session'
             }).right
         ).toBe('receiver-session');
+    });
+});
+
+describe('the principals a messages.send lists as its fixed audience', () => {
+    const nowMs = Date.now();
+    const input = { ownSessionId: 'sender-session', nowMs };
+
+    it('names the live sessions of the listed principals, the sender\'s own left out', () => {
+        const roomSessions = [
+            toRoomRosterSession('sender-session', { principalId: 'p1' }),
+            toRoomRosterSession('sib', { principalId: 'p1' }),
+            toRoomRosterSession('bob', { principalId: 'p2' }),
+            toRoomRosterSession('carol', { principalId: 'p3' })
+        ];
+
+        expect(resolveBlackBoxRallarRecipientPrincipals({ ...input, recipientPrincipalIds: ['p1', 'p2'], roomSessions }).right)
+            .toEqual(['sib', 'bob']);
+    });
+
+    it('answers Left when no listed principal has a live session but the sender\'s', () => {
+        const roomSessions = [
+            toRoomRosterSession('sender-session', { principalId: 'p1' }),
+            toRoomRosterSession('left-session', { principalId: 'p2', status: 'disconnected' }),
+            toRoomRosterSession('carol', { principalId: 'p3' })
+        ];
+
+        expect(resolveBlackBoxRallarRecipientPrincipals({ ...input, recipientPrincipalIds: ['p1', 'p2'], roomSessions }).left)
+            .toBe('no live session of the listed principals is in the room');
+        expect(
+            resolveBlackBoxRallarRecipientPrincipals({ ...input, recipientPrincipalIds: ['p1'], roomSessions: undefined }).left
+        )
+            .toBe('the page holds no snapshot of the room');
+    });
+});
+
+describe('the lane roles a messages.send lists as its fixed audience', () => {
+    const input = {
+        ownSessionId: 'sender-session',
+        ownPrincipalId: 'alice',
+        nowMs: Date.now()
+    };
+    const sender = toRoomRosterSession('sender-session', { principalId: 'alice' });
+    const bob = toRoomRosterSession('bob-session', { principalId: 'bob' });
+
+    it('names one session per role, in role order', () => {
+        const roomSessions = [sender, bob, toRoomRosterSession('carol-session', { principalId: 'carol' })];
+
+        expect(
+            resolveBlackBoxRallarRecipientPeers({
+                ...input,
+                roles: ['recipient-b', 'receiver'],
+                roomSessions,
+                leaderSessionId: 'bob-session'
+            }).right
+        ).toEqual(['carol-session', 'bob-session']);
+    });
+
+    it('answers Left for two roles that name one session, and for a role that names none', () => {
+        const oneOther = { ...input, roomSessions: [sender, bob], leaderSessionId: undefined };
+
+        expect(resolveBlackBoxRallarRecipientPeers({ ...oneOther, roles: ['receiver', 'recipient-b'] }).left)
+            .toBe('receiver and recipient-b name one session: bob-session');
+        expect(
+            resolveBlackBoxRallarRecipientPeers({ ...oneOther, roles: ['receiver'], roomSessions: [sender] }).left
+        ).toBe('receiver names no peer: the room holds 0 other live sessions of another principal, not exactly one');
     });
 });

@@ -26,7 +26,6 @@ import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavai
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
-import { resolveRtcGrantedPublicationShapeRefusal } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -320,7 +319,7 @@ export class BrowserRallarMessageDispatch {
 
     /**
      * A granted delivery names its room. The cached snapshot's publish refusal is advisory and spares either carrier;
-     * without one the server decides (D500). RTC carries it only as the room multicast its origin signs.
+     * without one the server decides (D500).
      */
     private readPublicationRefusal(
         delivery: BrowserRallarMessageDispatch.Delivery
@@ -341,8 +340,7 @@ export class BrowserRallarMessageDispatch {
                 detail: 'The room grants this principal no publish.'
             };
         }
-        const rtcRefusal = delivery.carrier === 'rtc' ? resolveRtcGrantedPublicationShapeRefusal(message) : undefined;
-        return rtcRefusal === undefined ? undefined : { kind: 'refused', reason: 'unsupported', detail: rtcRefusal };
+        return undefined;
     }
 
     private isGrantedDelivery(delivery: BrowserRallarMessageDispatch.Delivery, roomRef: GroupRef | undefined): boolean {

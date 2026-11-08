@@ -23,11 +23,15 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'toPeer (server or receiver) addresses one peer by its lane role, which the page resolves at send time to ' +
             'the WS server\'s peer id or to the one other live session of the room; a role it cannot resolve fails ' +
             'the send and opens no handle. scope (room, world, principal) names the audience; with principal, ' +
-            'principalId names the principal whose live sessions in the room it reaches. recipientPeer (receiver, ' +
-            'recipient-b) names a fixed audience of one inside the room by lane role, which the page resolves at send ' +
-            'time among the room\'s other live sessions whose principal is not the sender\'s: receiver to the one such ' +
-            'session, recipient-b to the one that is not the room\'s leader; a role it cannot resolve fails the send ' +
-            'and opens no handle. ownership (shared, exclusive) passes the send\'s ownership to the product as given; ' +
+            'principalId names the principal whose live sessions in the room it reaches. recipientPeers (receiver, ' +
+            'recipient-b, one or two, each once) names a fixed audience inside the room by lane role, which the page ' +
+            'resolves at send time among the room\'s other live sessions whose principal is not the sender\'s: receiver ' +
+            'to the one such session, or the room\'s leader among several, recipient-b to the one that is not the ' +
+            'leader; a role it cannot resolve fails the send and opens no handle. recipientPrincipalIds names a fixed ' +
+            'audience by principal, which the page resolves at send time to the room\'s live sessions of the listed ' +
+            'principals, its own session excluded; a list no live session answers fails the send. A send names at ' +
+            'most one of toPeer, recipientPeers, recipientPrincipalIds and scope principal. ' +
+            'ownership (shared, exclusive) passes the send\'s ownership to the product as given; ' +
             'resourceId names the route\'s resource, which an exclusive send claims for the sending session; absent, ' +
             'the product mints a fresh resource per send. ' +
             'A replay names only replayOnCarrier (and connection): a ' +

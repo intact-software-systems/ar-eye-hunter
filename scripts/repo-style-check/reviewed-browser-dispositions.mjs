@@ -756,6 +756,13 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // The command envelope record is the untrusted page boundary itself; each decoder in this file narrows one field.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     Object.freeze({
         path:
             'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',

@@ -1,6 +1,6 @@
 import { isLiveRoomSession } from '@shared/api/group-presence/is-live-room-session.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
+import { Either, EitherCollectors } from '@shared/resilience/Either.ts';
 
 import type {
     BlackBoxRallarMessageSendInput,
@@ -17,7 +17,7 @@ export interface ResolveBlackBoxRallarMessagePeerInput {
 }
 
 export interface ResolveBlackBoxRallarRecipientPeerInput {
-    readonly recipientPeer: BlackBoxRallarRecipientPeer;
+    readonly role: BlackBoxRallarRecipientPeer;
     readonly ownSessionId: string | undefined;
     readonly ownPrincipalId: string | undefined;
     /** Undefined while the page holds no snapshot of the room. */
@@ -64,9 +64,58 @@ export function resolveBlackBoxRallarRecipientPeer(
     const others = toOtherLiveSessions(input.roomSessions, input).filter((session) =>
         session.principalId !== input.ownPrincipalId
     );
-    return input.recipientPeer === 'receiver'
+    return input.role === 'receiver'
         ? resolveReceiver(others, input.leaderSessionId)
         : resolveBesideLeader(others, input.leaderSessionId);
+}
+
+export interface ResolveBlackBoxRallarRecipientPeersInput
+    extends Omit<ResolveBlackBoxRallarRecipientPeerInput, 'role'> {
+    readonly roles: readonly BlackBoxRallarRecipientPeer[];
+}
+
+/**
+ * A list by role names one session per role, in role order. Its Left reads after the field name: a role no one session
+ * answers, or two roles that name one session.
+ */
+export function resolveBlackBoxRallarRecipientPeers(
+    input: ResolveBlackBoxRallarRecipientPeersInput
+): Either<string, readonly string[]> {
+    const resolved = input.roles.map((role) =>
+        resolveBlackBoxRallarRecipientPeer({ ...input, role }).mapLeft((detail) => `${role} names no peer: ${detail}`)
+    );
+    const [refusal] = EitherCollectors.toListFoldLefts(resolved);
+    if (refusal !== undefined) {
+        return Either.ofLeft(refusal);
+    }
+    const sessionIds = EitherCollectors.toListFoldRights(resolved);
+    const distinct = new Set(sessionIds);
+    return distinct.size < sessionIds.length
+        ? Either.ofLeft(`${input.roles.join(' and ')} name one session: ${[...distinct].join(', ')}`)
+        : Either.ofRight(sessionIds);
+}
+
+export interface ResolveBlackBoxRallarRecipientPrincipalsInput {
+    readonly recipientPrincipalIds: readonly string[];
+    readonly ownSessionId: string | undefined;
+    /** Undefined while the page holds no snapshot of the room. */
+    readonly roomSessions: readonly GroupPresenceSession[] | undefined;
+    readonly nowMs: number;
+}
+
+/** A list by principal names every other live session of the listed principals, the sender's own principal included. */
+export function resolveBlackBoxRallarRecipientPrincipals(
+    input: ResolveBlackBoxRallarRecipientPrincipalsInput
+): Either<string, readonly string[]> {
+    if (input.roomSessions === undefined) {
+        return Either.ofLeft('the page holds no snapshot of the room');
+    }
+    const sessionIds = toOtherLiveSessions(input.roomSessions, input)
+        .filter((session) => input.recipientPrincipalIds.includes(session.principalId))
+        .map((session) => session.sessionId);
+    return sessionIds.length === 0
+        ? Either.ofLeft('no live session of the listed principals is in the room')
+        : Either.ofRight(sessionIds);
 }
 
 function resolveReceiver(

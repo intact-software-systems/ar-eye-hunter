@@ -33,6 +33,34 @@ export function decodeBlackBoxCommandString(value: unknown): string | undefined 
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+/** Absent, undefined; otherwise 1 to `maxLength` distinct non-empty strings, or `issue`. */
+export function decodeBlackBoxCommandStringList(
+    value: unknown,
+    maxLength: number,
+    issue: string
+): readonly string[] | BlackBoxRallarInputIssue | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const entries = Array.isArray(value) ? value.flatMap((entry) => decodeBlackBoxCommandString(entry) ?? []) : [];
+    const complete = Array.isArray(value) && entries.length === value.length && entries.length <= maxLength;
+    return complete && entries.length > 0 && new Set(entries).size === entries.length ? entries : { message: issue };
+}
+
+/** Absent, undefined; otherwise one or more of `allowed`, each once, or `issue`. */
+export function decodeBlackBoxCommandEnumList<T extends string>(
+    value: unknown,
+    allowed: readonly T[],
+    issue: string
+): readonly T[] | BlackBoxRallarInputIssue | undefined {
+    const entries = decodeBlackBoxCommandStringList(value, allowed.length, issue);
+    if (entries === undefined || 'message' in entries) {
+        return entries;
+    }
+    const known = entries.flatMap((entry) => allowed.filter((candidate) => candidate === entry));
+    return known.length === entries.length ? known : { message: issue };
+}
+
 export function decodeBlackBoxCommandNumber(value: unknown): number | undefined {
     const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : undefined;
     return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;

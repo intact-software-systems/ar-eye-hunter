@@ -449,6 +449,17 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         /** The stage limit a capacity refusal passed; absent on every other outcome, an oversized refusal included. */
         limit?: ALPublicationStageLimit;
     }>
+    | (
+        & Readonly<{
+            kind: 'track-index-end';
+            msgId: string;
+            trackKey: string;
+            seq: number;
+            /** What the end of an unrecorded terminal row's index answered other than `deleted`; `failed` is a thrown end. */
+            outcome: 'absent' | 'other-message' | 'conflict' | 'failed';
+        }>
+        & ALMessageTrace
+    )
     | ALOutboundCongestionDiagnostic;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
