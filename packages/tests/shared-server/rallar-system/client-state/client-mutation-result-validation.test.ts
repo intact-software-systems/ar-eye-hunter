@@ -192,7 +192,7 @@ describe('client mutation result validation', () => {
             outbox: shiftedStateSync
                 .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
                 .map(({ entry, message }) => ({
-                    write: computeWsOutboxInsert({ entry, admissionNamespace: command.facts.wsOutboundAdmissionNamespace }),
+                    write: computeWsOutboxInsert({ entry, admissionNamespace: command.facts.wsOutboundAdmissionNamespace, provenance: null }),
                     message
                 }))
         };

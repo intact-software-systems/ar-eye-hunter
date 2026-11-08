@@ -69,7 +69,11 @@ export function computeClientMutationResult(
     });
     const stateSyncEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
     const outbox = stateSyncEntries.map(({ entry, message }) => ({
-        write: computeWsOutboxInsert({ entry, admissionNamespace: facts.wsOutboundAdmissionNamespace }),
+        write: computeWsOutboxInsert({
+            entry,
+            admissionNamespace: facts.wsOutboundAdmissionNamespace,
+            provenance: null
+        }),
         message
     }));
     const friendsPresence = computeFriendsPresencePublication(command, read, snapshot);

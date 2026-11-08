@@ -27,7 +27,7 @@ interface CreateAppInboxTestTransactionSqlInput {
     readonly runtime: AppInboxTestSqlExecution['runtime'];
 }
 
-interface AppOutboxTrackIndexParameterRow {
+interface AppOutboxSidecarParameterRow {
     readonly namespace: string;
     readonly key: string;
     readonly value: string;
@@ -97,10 +97,10 @@ export function createAppInboxTestDatabaseSql(
 async function executeAppInboxTestSql(
     input: AppInboxTestSqlExecution
 ): Promise<PSqlRows> {
-    if (isAppOutboxTrackIndexedInsert(input.query)) {
-        const indexed = await writeAppOutboxTrackIndexRows(
+    if (isAppOutboxSidecarInsert(input.query)) {
+        const indexed = await writeAppOutboxSidecarRows(
             requireTransactionRuntime(input.runtime),
-            toAppOutboxTrackIndexParameterRows(input.values)
+            toAppOutboxSidecarParameterRows(input.values)
         );
         const outbox = toAppOutboxInsertParameterRows(input.query, input.values)
             .flatMap((values) => insertOutboxEntry(input, toInboxEntry(values)));
@@ -342,25 +342,25 @@ function insertOutboxEntry(input: AppInboxTestSqlExecution, entry: ResourceEntry
     return [toInboxRow(entry)];
 }
 
-/** The one statement that writes ordered WS outbox rows and their track index rows together. */
-export function isAppOutboxTrackIndexedInsert(query: string): boolean {
-    return query.includes('insert into resource_inbox') && query.includes('track_index as');
+/** The one statement that writes WS outbox rows with their track index and proof rows together. */
+export function isAppOutboxSidecarInsert(query: string): boolean {
+    return query.includes('insert into resource_inbox') && query.includes('sidecars as');
 }
 
-/** The track index rows of that statement: its second recordset, after the outbox rows. */
-export function toAppOutboxTrackIndexParameterRows(
+/** The track index and proof rows of that statement: its second recordset, after the outbox rows. */
+export function toAppOutboxSidecarParameterRows(
     values: readonly PSqlParameter[]
-): readonly AppOutboxTrackIndexParameterRow[] {
-    return values[1] as readonly AppOutboxTrackIndexParameterRow[];
+): readonly AppOutboxSidecarParameterRow[] {
+    return values[1] as readonly AppOutboxSidecarParameterRow[];
 }
 
 /**
  * Insert-only, as the statement is: a live row is left as it is and comes back unnamed; `insertIfAbsent` writes an
  * expired one over, one revision past it.
  */
-export async function writeAppOutboxTrackIndexRows(
+export async function writeAppOutboxSidecarRows(
     runtime: Pick<RuntimeStateOptimisticTransactionRepositoryLike, 'insertIfAbsent'>,
-    rows: readonly AppOutboxTrackIndexParameterRow[]
+    rows: readonly AppOutboxSidecarParameterRow[]
 ): Promise<PSqlRows> {
     const written: object[] = [];
     for (const { namespace, key, value, expiresAt } of rows) {

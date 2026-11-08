@@ -3,7 +3,7 @@ import type { ALSessionInvalidationAuthority } from '@shared/alm/outbound/admiss
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { isExactAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { validateWsOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import {
     computeWsOutboxProvenanceRecord,
     WS_OUTBOX_PROVENANCE_NAMESPACE,
@@ -37,8 +37,9 @@ export function computeAuthLogoutProvenance(
         serviceId: message.id.senderId,
         traceId: message.id.traceId
     });
-    if (!isExactAppOutboxInsert(expected, write)) {
-        throw new TypeError('Logout proof differs from the computed invalidation row');
+    const issues = validateWsOutboxInsert({ entry: expected, admissionNamespace: null, provenance: null }, write);
+    if (issues[0]) {
+        throw issues[0].cause;
     }
     const sessionInvalidation: ALSessionInvalidationAuthority = {
         kind: 'auth-session-invalidation',

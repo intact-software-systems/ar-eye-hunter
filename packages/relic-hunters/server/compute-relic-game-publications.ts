@@ -173,7 +173,7 @@ function toRelicGamePublication(
         },
         dequeueAudit: { attempts: 0 }
     };
-    const outbox = computeWsOutboxInsert({ entry, admissionNamespace });
+    const outbox = computeWsOutboxInsert({ entry, admissionNamespace, provenance: null });
     const proof: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
         producerKind: 'room-application',
