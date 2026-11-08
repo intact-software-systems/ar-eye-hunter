@@ -181,30 +181,58 @@ describe('a granted typed channel', () => {
         ]);
     });
 
-    it.each<RallarTypedMessageSendStrategy>(['rtc-with-ws-fallback', 'ws-then-rtc'])(
-        'a peer-addressed send under %s takes WS',
+    it.each<RallarTypedMessageSendStrategy>(['rtc', 'rtc-with-ws-fallback'])(
+        'a peer-addressed send under %s is admitted on RTC carrying its origin\'s proof, frozen to the peer',
         async (strategy) => {
-            setRallarFacadeRoomSnapshots([createRoomSnapshot(PUBLISHER, undefined)]);
+            const crypto = await createAvailablePublicationCryptoFixture();
+            wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
             const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
 
             const handle = await channel.send({ text: 'peer' }, { strategy, peerId: 'b', ack: 'none' });
 
             expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
-            expect(admissions).toMatchObject([{ carrier: 'ws', message: { targets: { mode: 'unicast', toPeerId: 'b' } } }]);
+            expect(admissions).toMatchObject([{
+                carrier: 'rtc',
+                verdict: 'admitted',
+                message: {
+                    targets: { mode: 'multicast', recipientPeerIds: ['b'], snapshotVersion: 3 },
+                    proof: { alg: 'ES256', keyId: crypto.keyPair.keyId }
+                }
+            }]);
         }
     );
 
-    it('a peer-addressed send under rtc settles rejected with refused/unsupported and reaches no carrier', async () => {
+    it('a listed send under rtc-with-ws-fallback is admitted on RTC, not WS', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+
+        const handle = await channel.send(
+            { text: 'listed' },
+            { strategy: 'rtc-with-ws-fallback', recipientPeerIds: ['b'], ack: 'none' }
+        );
+
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        expect(admissions).toMatchObject([{
+            carrier: 'rtc',
+            verdict: 'admitted',
+            message: {
+                targets: { recipientPeerIds: ['b'] },
+                proof: { alg: 'ES256', keyId: crypto.keyPair.keyId }
+            }
+        }]);
+    });
+
+    it('a peer-addressed granted send under ws-then-rtc is admitted on WS only', async () => {
         setRallarFacadeRoomSnapshots([createRoomSnapshot(PUBLISHER, undefined)]);
         const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
 
-        const handle = await channel.send({ text: 'peer' }, { strategy: 'rtc', peerId: 'b', ack: 'none' });
+        const handle = await channel.send({ text: 'peer' }, { strategy: 'ws-then-rtc', peerId: 'b', ack: 'none' });
 
-        expect((await handle.wait()).lifecycle).toMatchObject({
-            state: 'rejected',
-            evidence: { failure: { kind: 'refused', reason: 'unsupported' } }
-        });
-        expect(admissions).toEqual([]);
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        expect(admissions.map(({ carrier, message }) => [carrier, message.route.topicId])).toEqual([
+            ['ws', GRANTED_TOPIC_ID]
+        ]);
     });
 
     it.each<[string, (crypto: AvailablePublicationCrypto) => PublicationCrypto, (crypto: AvailablePublicationCrypto) => Promise<GroupSnapshot>]>([

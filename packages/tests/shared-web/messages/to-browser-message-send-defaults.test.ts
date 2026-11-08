@@ -14,24 +14,25 @@ const MEMBERS: BrowserTypedChannelPolicy = toChannel('members');
 
 describe('isBrowserWsOnlySend', () => {
     it.each<RouteCase>([
-        ['a granted room multicast under rtc', {}, 'rtc', false],
-        ['a granted room multicast under rtc-with-ws-fallback', {}, 'rtc-with-ws-fallback', false],
-        ['a granted room-scoped send under rtc-with-ws-fallback', { scope: 'room' }, 'rtc-with-ws-fallback', false],
-        ['a granted room multicast under ws-then-rtc', {}, 'ws-then-rtc', true],
-        ['a granted peer send under rtc-with-ws-fallback', { peerId: 'b' }, 'rtc-with-ws-fallback', true],
-        ['a granted world send under rtc-with-ws-fallback', { scope: 'world' }, 'rtc-with-ws-fallback', true],
-        ['a granted principal send under rtc-with-ws-fallback', { scope: 'principal', principalId: 'p' }, 'rtc-with-ws-fallback', true],
-        ['a granted send skipping sessions under rtc-with-ws-fallback', { exceptPeerIds: ['c'] }, 'rtc-with-ws-fallback', true],
-        ['a granted listed send under rtc-with-ws-fallback', { recipientPeerIds: ['b'] }, 'rtc-with-ws-fallback', true],
-        ['an exclusive room multicast under rtc-with-ws-fallback', { ownership: 'exclusive' }, 'rtc-with-ws-fallback', true]
+        ['a granted room send under rtc', {}, 'rtc', false],
+        ['a granted room send under rtc-with-ws-fallback', {}, 'rtc-with-ws-fallback', false],
+        ['a granted room send under ws-then-rtc', {}, 'ws-then-rtc', true],
+        ['a granted room send under ws', {}, 'ws', false]
     ])('answers for %s', (_name, send, strategy, expected) => {
         expect(isBrowserWsOnlySend({ send, channel: GRANTED, strategy })).toBe(expected);
     });
 
-    it.each<RallarTypedMessageSendStrategy>(['rtc', 'rtc-with-ws-fallback', 'ws-then-rtc'])(
-        'keeps a members channel\'s shared send off WS-only under %s, whatever its audience',
+    it.each<RallarTypedMessageSendStrategy>(['rtc', 'rtc-with-ws-fallback', 'ws-then-rtc', 'ws'])(
+        'an exclusive send under every strategy: %s',
         (strategy) => {
-            expect(isBrowserWsOnlySend({ send: { peerId: 'b' }, channel: MEMBERS, strategy })).toBe(false);
+            expect(isBrowserWsOnlySend({ send: { ownership: 'exclusive' }, channel: GRANTED, strategy })).toBe(true);
+        }
+    );
+
+    it.each<RallarTypedMessageSendStrategy>(['rtc', 'rtc-with-ws-fallback', 'ws-then-rtc', 'ws'])(
+        'keeps a members channel\'s and a lane\'s shared send off WS-only under %s',
+        (strategy) => {
+            expect(isBrowserWsOnlySend({ send: {}, channel: MEMBERS, strategy })).toBe(false);
             expect(isBrowserWsOnlySend({ send: {}, channel: undefined, strategy })).toBe(false);
         }
     );

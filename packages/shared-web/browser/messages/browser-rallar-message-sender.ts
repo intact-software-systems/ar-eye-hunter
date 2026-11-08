@@ -258,9 +258,9 @@ export class BrowserRallarMessageSender {
 
     /**
      * Only the WS server arbitrates a claim, so an exclusive send, room- or peer-addressed, and a world send go over
-     * WS under every strategy but `rtc`, whose own carrier refuses them as unsupported. A granted channel's room
-     * multicast starts on RTC under `rtc` and `rtc-with-ws-fallback`, receipted or not, and its origin signs it; every
-     * other granted send goes over WS under every strategy but `rtc`.
+     * WS under every strategy but `rtc`, whose own carrier refuses them as unsupported. A granted channel's send, to
+     * the room, a peer, a list or a principal, starts on RTC under `rtc` and `rtc-with-ws-fallback`, receipted or
+     * not, and the carrier freezes and signs it; under `ws-then-rtc` it goes over WS.
      */
     public async sendTyped<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,

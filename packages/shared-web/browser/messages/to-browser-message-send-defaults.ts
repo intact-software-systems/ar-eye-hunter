@@ -4,8 +4,7 @@ import type {
     RallarRoomAudienceInput,
     RallarStorageUnavailablePolicy,
     RallarTypedMessageChannelDefinition,
-    RallarTypedMessageSendStrategy,
-    RallarWsSendInput
+    RallarTypedMessageSendStrategy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
@@ -48,34 +47,18 @@ export function resolveBrowserStorageUnavailablePolicy(
 }
 
 export interface BrowserWsOnlySendInput {
-    readonly send:
-        & Pick<RallarMessageSendBase<never>, 'ownership' | 'qos'>
-        & RallarRoomAudienceInput
-        & Pick<RallarWsSendInput<never>, 'peerId'>;
+    readonly send: Pick<RallarMessageSendBase<never>, 'ownership' | 'qos'>;
     readonly channel: BrowserTypedChannelPolicy | undefined;
     readonly strategy: RallarTypedMessageSendStrategy;
 }
 
 /**
- * Only the WS server arbitrates a claim, so RTC carries no exclusive send. RTC carries a granted publication only
- * as a signed room multicast, the one a strategy that starts on RTC sends there, with or without a receipt.
+ * Only the WS server arbitrates a claim, so RTC carries no exclusive send; a granted channel's sends start on RTC
+ * under `rtc` and `rtc-with-ws-fallback`, whatever their room shape, and stay on WS under `ws-then-rtc` (D519).
  */
 export function isBrowserWsOnlySend(input: BrowserWsOnlySendInput): boolean {
-    if (isExclusiveSendInput(input.send)) {
-        return true;
-    }
-    return resolveBrowserChannelAccess(input.channel) === 'granted' && !isBrowserRtcGrantedPublication(input);
-}
-
-function isBrowserRtcGrantedPublication(input: BrowserWsOnlySendInput): boolean {
-    return (input.strategy === 'rtc' || input.strategy === 'rtc-with-ws-fallback') &&
-        isBrowserRoomMulticastSend(input.send);
-}
-
-/** A send no carrier turns into a broadcast: no peer, no world or principal scope and no narrowed audience. */
-function isBrowserRoomMulticastSend(send: BrowserWsOnlySendInput['send']): boolean {
-    return send.peerId === undefined && send.scope !== 'world' && send.scope !== 'principal' &&
-        !isRallarRoomNarrowedAudience(send);
+    return isExclusiveSendInput(input.send) ||
+        (resolveBrowserChannelAccess(input.channel) === 'granted' && input.strategy === 'ws-then-rtc');
 }
 
 /** A room send that names its exclusions, its principal or its fixed list, which both carriers send as a broadcast. */
