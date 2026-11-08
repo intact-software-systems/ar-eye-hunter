@@ -172,36 +172,16 @@ EOF
 	echo "API-v1 uses the prod profile on this VM's Postgres store ${RALLAR_API_DATABASE_NAME}; deploy and rollout preserve existing data."
 
 	echo "==> Writing systemd services"
-	cat >/etc/systemd/system/rallar-api-v1.service <<EOF
-[Unit]
-Description=Rallar API-v1 controller
-After=network-online.target postgresql.service
-Wants=network-online.target postgresql.service
-ConditionPathExists=!${RALLAR_API_STORE_FAILURE_FILE}
-
-[Service]
-Type=simple
-User=rallar
-Group=rallar
-WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
-EnvironmentFile=/etc/rallar/api-v1.env
-EnvironmentFile=-/etc/rallar/api-v1.secrets.env
-ExecStart=/usr/local/bin/bun run src/main.ts
-Restart=always
-RestartSec=5
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
+	write_rallar_api_replica_units
 
 	echo "==> Writing Caddyfile"
 	write_rallar_role_caddyfile
 
 	echo "==> Preparing the API-v1 Postgres store"
 	systemctl daemon-reload
-	stop_controller_service_for_store_change rallar-api-v1.service "${rallar_api_service_load_state}"
+	for api_replica_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+		stop_controller_service_for_store_change "${api_replica_service}" "$(systemctl show -p LoadState --value "${api_replica_service}")"
+	done
 	if [[ "${RALLAR_API_EXISTING_STORE}" == "1" ]]; then
 		migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_DATABASE_URL}"
 	else
@@ -209,13 +189,17 @@ EOF
 	fi
 
 	echo "==> Starting services"
-	systemctl enable --now rallar-api-v1.service
-	systemctl restart rallar-api-v1.service
+	for api_replica_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+		systemctl enable --now "${api_replica_service}"
+		systemctl restart "${api_replica_service}"
+	done
 	systemctl reload caddy || systemctl restart caddy
 
 	echo "==> Local health checks"
-	curl -fsS http://127.0.0.1:8080/api/config >/dev/null
-	curl -fsS http://127.0.0.1:8080/api/docs >/dev/null
+	for api_replica_port in "${RALLAR_API_REPLICA_PORTS[@]}"; do
+		curl -fsS "http://127.0.0.1:${api_replica_port}/api/config" >/dev/null
+		curl -fsS "http://127.0.0.1:${api_replica_port}/api/docs" >/dev/null
+	done
 	;;
 control)
 	echo "==> Writing environment files"

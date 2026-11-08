@@ -283,8 +283,8 @@ deploy-success | deploy-initial | rollout-success | rollout-metered-preserve | r
 		assert_before 'runuser -u rallar -- bunx prisma migrate deploy' 'systemctl enable --now rallar-api-v1.service'
 		assert_before 'systemctl enable --now rallar-api-v1.service' 'curl -fsS http://127.0.0.1:8080/api/config'
 	else
-		assert_before 'runuser -u rallar -- bunx prisma migrate deploy' 'systemctl start rallar-api-v1.service'
-		assert_before 'systemctl start rallar-api-v1.service' 'curl -fsS http://127.0.0.1:8080/api/config'
+		assert_before 'runuser -u rallar -- bunx prisma migrate deploy' 'systemctl enable --now rallar-api-v1.service'
+		assert_before 'systemctl enable --now rallar-api-v1.service' 'curl -fsS http://127.0.0.1:8080/api/config'
 		assert_before 'curl -fsS http://127.0.0.1:8080/api/config' 'jq -n'
 		[[ -s /fixture/readiness.json ]]
 	fi

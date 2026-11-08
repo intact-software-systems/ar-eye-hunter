@@ -578,6 +578,12 @@ if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
 	install_rallar_api_postgres_server
 fi
 
+if [[ "${RALLAR_CONTROLLER_ROLE}" == "api" ]]; then
+	# Write the replica units before stopping services so the stop phase finds all three.
+	write_rallar_api_replica_units
+	systemctl daemon-reload
+fi
+
 echo "==> Stopping services for publish/start"
 stopped_services=1
 for service in "${services[@]}"; do
@@ -648,7 +654,7 @@ echo "==> Starting services"
 rallar_playwright_operation_stage "rollout-service-start"
 systemctl daemon-reload
 for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
-	systemctl start "${service}"
+	systemctl enable --now "${service}"
 done
 
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
@@ -662,8 +668,10 @@ trap - ERR
 rallar_playwright_operation_stage "rollout-service-health"
 case "${RALLAR_CONTROLLER_ROLE}" in
 api)
-	wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
-	wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
+	for api_replica_port in "${RALLAR_API_REPLICA_PORTS[@]}"; do
+		wait_for_url "API-v1 config ${api_replica_port}" "http://127.0.0.1:${api_replica_port}/api/config"
+		wait_for_url "API-v1 docs ${api_replica_port}" "http://127.0.0.1:${api_replica_port}/api/docs"
+	done
 	;;
 control)
 	wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"

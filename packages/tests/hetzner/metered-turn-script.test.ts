@@ -193,7 +193,7 @@ describe('configure Metered TURN Hetzner script', () => {
 
     it('keeps the optional Metered secret env file wired into future controller deployments', async () => {
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-controller-role.sh'),
             'utf8'
         );
 

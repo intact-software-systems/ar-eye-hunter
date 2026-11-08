@@ -109,7 +109,7 @@ describe('Hetzner SPA public env wiring', () => {
         });
         expect(await readFile(destination, 'utf8')).toBe(
             prefix + `api.example.test {
-\treverse_proxy 127.0.0.1:8080
+\treverse_proxy 127.0.0.1:8080 127.0.0.1:8081 127.0.0.1:8082
 }
 
 spa.example.test {
