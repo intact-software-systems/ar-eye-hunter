@@ -12,7 +12,6 @@ import { installApiHttpMiddleware } from './services/install-api-http-middleware
 import { createApiTimingSink } from './services/timing-service.ts';
 
 config({ path: '.env' });
-config({ path: '.env.local', override: true });
 
 const configuration = await readApiV1Configuration({
     environment: process.env,
