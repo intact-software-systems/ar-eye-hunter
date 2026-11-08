@@ -24,6 +24,41 @@ the Bun runtime against a real deployed backend.
 | `rallar-controller-02`      | 173949546 | `control` | control-server (Bun) + headless workers + Caddy      |
 | `rallar-controller-03`      | 173949684 | `games`   | relic + ar-eye game servers (Bun) + Postgres + Caddy |
 
+## Workflow coverage survey
+
+The repo has 18 workflows. This section states which are already exercised automatically and which
+this plan must run manually, so no gate is left out.
+
+**Automatic on the PR (no manual step needed)** — `branch-release-gate.yml` runs on every PR and
+calls, in turn: `governance-gate.yml`, `release-gate.yml` (unit, tooling, Bun, browser, recipe
+console, and the API black-box recipes — standard 1/2, standard 2/2, cluster — plus the topology
+replay proof), `games-release-gate.yml`, and `alm-conformance-observation.yml` (non-blocking). These
+already run on PR #794 and cover the ephemeral-runner surface.
+
+**Manual in this plan** — the `workflow_dispatch`-only and Hetzner workflows:
+
+| Workflow                                      | Trigger              | Covered in       |
+| --------------------------------------------- | -------------------- | ---------------- |
+| `Deploy Hetzner Controller`                   | dispatch             | Phase 2 Step 2.1 |
+| `Manage Hetzner Headless Browsers`            | dispatch             | Phase 2 Step 2.2 |
+| `Run Hetzner Distributed Recipe`              | dispatch             | Phase 2 Step 2.3 |
+| `Run Hetzner Supported Distributed Manifests` | push main / dispatch | Phase 2 Step 2.4 |
+| `API v1 Medium-Scale Gate`                    | dispatch / PR paths  | Phase 2 Step 2.5 |
+| `API v1 Formation Gate`                       | dispatch / PR paths  | Phase 2 Step 2.6 |
+| `API v1 State-Write PR Measurement`           | label / dispatch     | Phase 2 Step 2.7 |
+| `RTC-B05 / RTC-B06 Performance Observation`   | schedule / dispatch  | Phase 2 Step 2.8 |
+| `Run GitHub Free Distributed Recipe`          | dispatch             | Phase 3          |
+
+**Post-merge (no pre-merge action)** — `deploy.yml` ("Deploy Web + API") fires on `push` to `main`
+and now contains only the (disabled) Cloudflare controls, the release gate, and the ALM conformance
+observation — its Deno Deploy jobs are gone. It runs automatically when #794 merges.
+
+**Optional / non-blocking extras** — `api-v1-black-box.yml` ("API v1 Black-Box") is a
+`workflow_dispatch` re-run of the release-gate black-box lane (Postgres standard + cluster +
+topology-replay) plus an optional pglite-memory backend. The Postgres/topology-replay part is already
+covered automatically by `release-gate.yml`; only the `include_memory` backend is unique. Run it once
+with `include_memory=true` for completeness if pglite-memory parity matters for the Bun build.
+
 ## Phase 1 — Install and verify the three roles on Hetzner
 
 All roles use the controller scripts under `scripts/hosted-rallar/controller/`. On each VM, run as
