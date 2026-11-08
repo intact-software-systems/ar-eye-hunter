@@ -169,7 +169,15 @@ export function createApiWebSocketServeHandlers(
 
 function readWsSessionId(url: string): string | undefined {
     const match = /^\/api\/ws\/([^/]+)$/u.exec(new URL(url).pathname);
-    return match ? decodeURIComponent(match[1]!) : undefined;
+    if (match === null) {
+        return undefined;
+    }
+    try {
+        return decodeURIComponent(match[1]!);
+    }
+    catch {
+        return undefined;
+    }
 }
 
 /** The ticket is consumed by the connect's own transaction; the socket upgrades and registers only after it commits. */

@@ -8,8 +8,7 @@ import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-t
 import { ADMIN_TOKEN, adminHeaders, startControlServer } from './support/control-api-test-server.ts';
 
 // This end-to-end test spawns the shared black-box runner (`scenario-black-box.ts`) under Bun.
-// Skipped here; re-enable once the authenticated release flow is verified under Bun.
-test.skip('explicit authenticated release waits for browser acknowledgement and preserves artifacts', async () => {
+test('explicit authenticated release waits for browser acknowledgement and preserves artifacts', async () => {
     const server = await startControlServer({ RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN, RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN: '1' });
     const identity = { runId: 'release-api', agentId: 'agent' };
     const runtime = createDefaultRallarBlackBoxTestRuntime();

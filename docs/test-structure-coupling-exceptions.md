@@ -2000,9 +2000,9 @@ moved or changed test.
       "id": "repo-style-checker-interface",
       "domain": "Repository style checker interface",
       "owner": "Rallar repository maintainers",
-      "summary": "Dprint remains the sole formatter for repository TypeScript, including Deno-owned applications.",
-      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Deno-owned TypeScript",
-      "coverageRelation": "The executable test reads the actual Deno configurations and excludes fmt settings/tasks, then reads dprint exclusions to ensure those application trees remain covered."
+      "summary": "Dprint remains the sole formatter for repository TypeScript, including Bun-owned applications.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Bun-owned TypeScript",
+      "coverageRelation": "The executable test reads the actual Bun configurations and excludes fmt settings/tasks, then reads dprint exclusions to ensure those application trees remain covered."
     },
     {
       "id": "resource-inbox-reservation-bounded-indexed-read",
@@ -2298,12 +2298,12 @@ moved or changed test.
       "coverageRelation": "The architecture assertion compares the approved executable inventory with the shipped package README, locks the exact baseline grammar and code-derived setup, measured-operation, and timing claims, and independently verifies root Vitest discovery for the package test tree."
     },
     {
-      "id": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "id": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-typechecked-by-the-package",
       "domain": "Shared RTC benchmark diagnostic navigation",
       "owner": "Shared RTC benchmark maintainers",
-      "summary": "Maintained diagnostics remain outside accepted baseline evidence while every diagnostic participates in package Deno checking. Executable assertion: “keeps diagnostics outside accepted baseline catalog and checked by Deno”.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno",
-      "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in Deno checking."
+      "summary": "Maintained diagnostics remain outside accepted baseline evidence while every diagnostic participates in package typechecking. Executable assertion: “keeps diagnostics outside accepted baseline catalog and typechecked by the package”.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and typechecked by the package",
+      "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in package typechecking."
     },
     {
       "id": "shared-web-browser-bundle-boundary",
@@ -2824,9 +2824,9 @@ moved or changed test.
       "id": "typescript-seven-release-boundary",
       "domain": "TypeScript 7 release boundary",
       "owner": "Rallar repository maintainers",
-      "summary": "Release automation checks pinned TypeScript workspaces separately from Deno-owned applications. Executable assertion: “keeps TypeScript and Deno checking as separate release gates”.",
-      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates",
-      "coverageRelation": "The release-boundary test executes the manifest/workflow inspection that keeps npm TypeScript checking separate from Deno checking; this workflow read is its exact release interface."
+      "summary": "Release automation checks pinned TypeScript workspaces separately from Bun-owned applications. Executable assertion: “keeps TypeScript checking as a separate release gate”.",
+      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript checking as a separate release gate",
+      "coverageRelation": "The release-boundary test executes the manifest/workflow inspection that keeps npm TypeScript checking separate from the Bun-owned application gate; this workflow read is its exact release interface."
     },
     {
       "id": "workbench-collection-served-paths",
@@ -6402,12 +6402,12 @@ moved or changed test.
       "id": "test-structure-coupling-0ce4af5c7c62c033",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "production-source-read",
-      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-typechecked-by-the-package",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "Reads the accepted workload catalog so maintained diagnostics cannot silently become accepted baseline evidence producers.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and typechecked by the package"
     },
     {
       "id": "test-structure-coupling-0fae9273cf2213d7",
@@ -6501,12 +6501,12 @@ moved or changed test.
       "id": "test-structure-coupling-df5e57893203b500",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "production-source-read",
-      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-typechecked-by-the-package",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared RTC benchmark maintainers",
-      "rationale": "Reads the package command contract that owns Deno checking for every maintained diagnostic entrypoint.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
+      "rationale": "Reads the package command contract that owns typechecking for every maintained diagnostic entrypoint.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and typechecked by the package"
     },
     {
       "id": "test-structure-coupling-f9dbd26ba9313d16",
@@ -8221,8 +8221,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "Reads the actual Deno configurations to prove they declare no competing fmt settings or task; the same test verifies dprint includes the Deno application trees.",
-      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Deno-owned TypeScript"
+      "rationale": "Reads the actual Bun configurations to prove they declare no competing fmt settings or task; the same test verifies dprint includes the Bun application trees.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Bun-owned TypeScript"
     },
     {
       "id": "test-structure-coupling-3b86bebc02da01e1",
@@ -8254,8 +8254,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "Reads the shared-test manifest’s TypeScript check command and pairs it with the independently executed Deno workflow gate.",
-      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates"
+      "rationale": "Reads the shared-test manifest’s TypeScript check command and pairs it with the independently executed Bun workflow gate.",
+      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript checking as a separate release gate"
     },
     {
       "id": "test-structure-coupling-009dd8ebc09f2356",
