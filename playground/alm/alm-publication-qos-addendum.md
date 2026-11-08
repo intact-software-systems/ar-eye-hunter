@@ -422,8 +422,10 @@ authorization. Its issuance and verification belong to explicit existing
 auth/session and ALM boundaries; select a proven mechanism rather than invent
 cryptography. Slice 3 (§7) provides it for room multicasts: an ECDSA P-256
 signature by the publishing session, verified at every relay and receiver
-against its own room snapshot. RTC returns unsupported for every other
-restricted send, and an allowed WS strategy uses the validated WS path.
+against its own room snapshot. Slice 6 extends the same proof to a listed or
+principal room broadcast and a room unicast, each sent as the multicast its
+leg admission froze. RTC returns unsupported for an exclusions-only, `world`
+or exclusive send, and an allowed WS strategy uses the validated WS path.
 
 Relays may inspect payload bytes unless a separate confidentiality mechanism
 protects them. Applications requiring subscriber-only byte access use a
@@ -898,8 +900,9 @@ shape gate become one predicate in the carrier. Receipts stay unsigned and
 relay-re-originated; signed receipts, an encrypted publication and native key
 custody stay out. It was designed in the Slice 6 design proposal, deleted with
 S6-ii, and lands as S6-i (the RTC shapes, two outbound riders and these
-documents) and S6-ii (one writer for the provenance sidecar and a shared PGlite
-statement recorder).
+documents) and S6-ii (one writer for the provenance sidecar, the batched CRDT,
+presence-summary and topology outbox loops and a shared PGlite statement
+recorder).
 
 As applied (S6-i): the carrier's leg admission (`admitLeg`) judges the shape
 the sender gave by one predicate,
@@ -953,7 +956,8 @@ retried, with no console line; and the outbound admission reads name
 exclusions-only granted room broadcast stays refused `unsupported` on RTC, and
 ordering on a peer send stays refused; receipts are unsigned; a `receiver`
 unicast to a non-holder completes with zero recipients over RTC, where WS
-answers `unauthorized`; after a hand-over a frozen session that never
+answers `unauthorized`, and under `rtc` alone an `ack: 'none'` one settles
+`rejected` with `unroutable`/`no-route`; after a hand-over a frozen session that never
 subscribes stays expected and unconfirmed on WS; and the cells run on the local
 lane only, with no hosted manifest. Decisions D551–D562 are in the roadmap, and
 Slice 6's first pull request is complete.

@@ -1101,7 +1101,9 @@ peer, so the signed targets and a receipt's expected recipients are that
 audience; a peer send rides as a frozen multicast of one, relayed through the
 room's tree. A named session without `subscribe` is left out silently, so a
 receipted peer send to such a session reads `acknowledged` with zero
-recipients over RTC, where WS refuses it `unauthorized`. The page signs each
+recipients over RTC, where WS refuses it `unauthorized`; an `ack: 'none'` one
+falls back on `no-route`, and under `rtc` alone it settles `rejected` with
+`unroutable`/`no-route`. The page signs each
 frame with the
 publication key its session registered on its room presence (see Group Policy
 And State Routes above). Every relay and receiver verifies that signature
