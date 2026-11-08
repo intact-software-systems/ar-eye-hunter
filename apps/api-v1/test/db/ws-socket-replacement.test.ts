@@ -17,7 +17,7 @@ const SNAPSHOT_WAIT_MS = 15_000;
 
 interface NativeSocketPeer {
     readonly socket: JsonWebSocketClient;
-    readonly snapshot: Promise<unknown>;
+    readonly snapshot: Promise<void>;
 }
 
 test('a replaced socket still receives its own connect snapshot', async () => {
@@ -74,12 +74,12 @@ async function connectPeer(baseUrl: string, session: IssuedAuthSession, index: n
         toSocketUrl(baseUrl, session.sessionId, ticket),
         createPassThroughTransportFaultPort()
     );
-    const snapshot = Promise.withResolvers<unknown>();
+    const snapshot = Promise.withResolvers<void>();
     socket.onWebSocketMessageDo('ws-socket-replacement-observer', {
         onMessage: (value) => {
             const message = decodeALMessageValue(value).right;
             if (message?.payload.typeId === 'client-state.snapshot') {
-                snapshot.resolve(value);
+                snapshot.resolve();
             }
             return Promise.resolve();
         }

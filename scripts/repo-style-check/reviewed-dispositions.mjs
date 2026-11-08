@@ -3012,14 +3012,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'createApiWebSocketHandlers',
         maximumMagnitude: 4
     }),
-    // The replacement test observes a raw WS message value and resolves a deferred promise with it; its exact
-    // type is deliberately unknown because the test asserts arrival, not a narrowed payload shape.
-    Object.freeze({
-        path: 'apps/api-v1/test/db/ws-socket-replacement.test.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined,
-        maximumMagnitude: 2
-    }),
     // Bun's ServerWebSocket has no addEventListener; the cluster node bridges it to the shared
     // JsonWebSocketServer connection context with a narrowed unknown→WebSocket cast in open/close.
     Object.freeze({
