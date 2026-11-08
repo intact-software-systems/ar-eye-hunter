@@ -2991,11 +2991,13 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'createApiWebSocketHandlers',
         maximumMagnitude: 2
     }),
+    // Bun's ServerWebSocket has no addEventListener; the cluster node bridges it to the shared
+    // JsonWebSocketServer connection context with a narrowed unknown→WebSocket cast in open/close.
     Object.freeze({
         path: 'apps/ar-eye-hunter-server-v1/test/arena-tournament-cluster-node.ts',
         rule: 'boundary.unknown',
         symbol: undefined,
-        maximumMagnitude: 1
+        maximumMagnitude: 2
     }),
     // Captured route/dependency calls are typed unknown[] and asserted per call; the array never leaves the test.
     Object.freeze({
