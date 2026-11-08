@@ -6,6 +6,7 @@ import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admissio
 import type { ALOutboundCapturedPolicy } from '../admission/al-outbound-admission-validation.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
+    type ALOutboundRuntimeDiagnosticsEvent,
     type ALOutboundRuntimeDiagnosticsSink
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
@@ -78,10 +79,11 @@ export async function writeALOutboundTrackIndexEnd<TPrepared>(
 ): Promise<void> {
     const { store, msg, cause } = input;
     const end = toALOutboundTrackIndexEnd(msg, cause);
+    // `msg` is defined whenever `end` is; the check narrows it for the trace.
     if (msg === undefined || end === undefined) {
         return;
     }
-    const report = (outcome: 'absent' | 'other-message' | 'conflict' | 'failed') =>
+    const report = (outcome: Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'track-index-end'; }>['outcome']) =>
         writeALOutboundRuntimeDiagnostic(input.diagnostics, {
             kind: 'track-index-end',
             ...end,
@@ -90,7 +92,10 @@ export async function writeALOutboundTrackIndexEnd<TPrepared>(
         });
     try {
         const record = toCommittedRecord(cause) ?? await store.readStoredMessage(end.msgId);
-        const answer = leavesSequencePending(cause, record) ? await store.commitOrderingMessageEnd(end) : 'deleted';
+        if (!leavesSequencePending(cause, record)) {
+            return;
+        }
+        const answer = await store.commitOrderingMessageEnd(end);
         if (answer !== 'deleted') {
             report(answer);
         }

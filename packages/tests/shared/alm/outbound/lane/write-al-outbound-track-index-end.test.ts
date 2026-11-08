@@ -4,12 +4,14 @@ import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-co
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import {
     leavesSequencePending,
     toALOutboundFailedTrackIndexEndCause,
     toALOutboundTrackIndexEnd,
-    writeALOutboundTrackIndexEnd
+    writeALOutboundTrackIndexEnd,
+    type ALOutboundTrackIndexEnd
 } from '@shared/alm/outbound/lane/write-al-outbound-track-index-end.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 
@@ -159,19 +161,19 @@ describe('the index end write', () => {
     });
 
     it('reports a store failure of the end as a track-index-end diagnostic, so the row keeps the outcome it had', async () => {
-        const diagnostics = vi.fn();
+        const events: ALOutboundRuntimeDiagnosticsEvent[] = [];
         const store = {
-            readStoredMessage: vi.fn(async () => undefined),
-            commitOrderingMessageEnd: vi.fn(async (): Promise<'deleted'> => {
+            readStoredMessage: async () => undefined,
+            commitOrderingMessageEnd: async (): Promise<'deleted'> => {
                 throw new Error('store down');
-            })
+            }
         };
 
-        await expect(writeALOutboundTrackIndexEnd({ store, msg, cause: 'failed', diagnostics })).resolves.toBeUndefined();
-        expect(diagnostics).toHaveBeenCalledTimes(1);
-        expect(diagnostics).toHaveBeenCalledWith(
+        await expect(writeALOutboundTrackIndexEnd({ store, msg, cause: 'failed', diagnostics: (event) => events.push(event) }))
+            .resolves.toBeUndefined();
+        expect(events).toEqual([
             expect.objectContaining({ kind: 'track-index-end', msgId: msg.id.msgId, trackKey: 'game-1:a:1', seq: 2, outcome: 'failed' })
-        );
+        ]);
     });
 
     it.each([
@@ -180,22 +182,36 @@ describe('the index end write', () => {
         ['conflict' as const, ['conflict']],
         ['deleted' as const, []]
     ])('reports an end answered absent, other-message or conflict once each and never a deleted one: %s', async (answer, outcomes) => {
-        const diagnostics = vi.fn();
-        const store = { readStoredMessage: vi.fn(async () => undefined), commitOrderingMessageEnd: vi.fn(async () => answer) };
+        const events: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const ends: ALOutboundTrackIndexEnd[] = [];
+        const store = {
+            readStoredMessage: async () => undefined,
+            commitOrderingMessageEnd: async (end: ALOutboundTrackIndexEnd) => {
+                ends.push(end);
+                return answer;
+            }
+        };
 
-        await writeALOutboundTrackIndexEnd({ store, msg, cause: 'failed', diagnostics });
+        await writeALOutboundTrackIndexEnd({ store, msg, cause: 'failed', diagnostics: (event) => events.push(event) });
 
-        expect(store.commitOrderingMessageEnd).toHaveBeenCalledTimes(1);
-        expect(diagnostics.mock.calls.map(([event]) => event.outcome)).toEqual(outcomes);
+        expect(ends).toEqual([{ trackKey: 'game-1:a:1', seq: 2, msgId: msg.id.msgId }]);
+        expect(events).toEqual(outcomes.map((outcome) => expect.objectContaining({ kind: 'track-index-end', outcome })));
     });
 
     it('writes no diagnostic for a row without a track', async () => {
-        const diagnostics = vi.fn();
-        const store = { readStoredMessage: vi.fn(async () => undefined), commitOrderingMessageEnd: vi.fn(async () => 'absent' as const) };
+        const events: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const reads: string[] = [];
+        const store = {
+            readStoredMessage: async (msgId: string) => {
+                reads.push(msgId);
+                return undefined;
+            },
+            commitOrderingMessageEnd: async () => 'absent' as const
+        };
 
-        await writeALOutboundTrackIndexEnd({ store, msg: { ...msg, ordering: undefined }, cause: 'failed', diagnostics });
+        await writeALOutboundTrackIndexEnd({ store, msg: { ...msg, ordering: undefined }, cause: 'failed', diagnostics: (event) => events.push(event) });
 
-        expect(diagnostics).not.toHaveBeenCalled();
-        expect(store.readStoredMessage).not.toHaveBeenCalled();
+        expect(events).toEqual([]);
+        expect(reads).toEqual([]);
     });
 });
