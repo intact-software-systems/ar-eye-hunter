@@ -322,8 +322,8 @@ export interface BlackBoxRallarWsSendDiagnostics {
 }
 
 /**
- * A fixed audience of one by lane role, among the room's other live sessions of another principal: `receiver` is the
- * one such session, or the room's leader when there are several, and `recipient-b` the one beside the leader.
+ * One session of a fixed audience by lane role, among the room's other live sessions of another principal: `receiver`
+ * is the one such session, or the room's leader when there are several, and `recipient-b` the one beside the leader.
  */
 export type BlackBoxRallarRecipientPeer = 'receiver' | 'recipient-b';
 
@@ -342,8 +342,10 @@ export interface BlackBoxRallarMessageSendInput {
     readonly scope: 'room' | 'world' | 'principal' | undefined;
     /** With scope `principal`: the principal whose live sessions in the room the send reaches. */
     readonly principalId: string | undefined;
-    /** Absent, the send names no fixed audience. */
-    readonly recipientPeer: BlackBoxRallarRecipientPeer | undefined;
+    /** Absent, the send names no fixed audience by lane role; present, one or two distinct roles. */
+    readonly recipientPeers: readonly BlackBoxRallarRecipientPeer[] | undefined;
+    /** Absent, the send names no fixed audience by principal; present, the room's live sessions of these principals. */
+    readonly recipientPrincipalIds: readonly string[] | undefined;
     /** Absent, the send is `shared`. */
     readonly ownership: ALOwnershipAlgo | undefined;
     /** Absent, the product mints a fresh resource per send. */

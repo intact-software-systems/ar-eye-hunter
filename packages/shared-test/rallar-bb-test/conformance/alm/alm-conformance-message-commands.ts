@@ -45,8 +45,10 @@ interface AlmConformanceSendDelivery {
     /** Absent, the room. */
     readonly scope?: RallarBlackBoxTestMessagesSendCommand['scope'];
     readonly principalId?: string;
-    /** Absent, the send names no fixed audience. */
-    readonly recipientPeer?: RallarBlackBoxTestMessagesSendCommand['recipientPeer'];
+    /** Absent, the send names no fixed audience by lane role. */
+    readonly recipientPeers?: RallarBlackBoxTestMessagesSendCommand['recipientPeers'];
+    /** Absent, the send names no fixed audience by principal. */
+    readonly recipientPrincipalIds?: RallarBlackBoxTestMessagesSendCommand['recipientPrincipalIds'];
     /** Absent, the send is `shared`. */
     readonly ownership?: RallarBlackBoxTestMessagesSendCommand['ownership'];
     /** Absent, the product mints a fresh resource for the send. */

@@ -47,10 +47,15 @@ export interface AlmConformanceReceiptWindow {
     readonly mode: Extract<ALReceiptMode, 'receiver' | 'leader'>;
 }
 
-/** Who a room send reaches inside its room: its principal's other sessions, or the one session a lane role names. */
+/**
+ * Who a room send reaches inside its room: a principal's sessions, the sessions its lane roles name, the live sessions
+ * of the principals it lists, or the receiver alone as an addressed send.
+ */
 export type AlmConformanceSendAudience =
     | Readonly<{ scope: 'principal'; principalId: string; }>
-    | Readonly<{ recipientPeer: NonNullable<RallarBlackBoxTestMessagesSendCommand['recipientPeer']>; }>;
+    | Readonly<{ recipientPeers: NonNullable<RallarBlackBoxTestMessagesSendCommand['recipientPeers']>; }>
+    | Readonly<{ recipientPrincipalIds: NonNullable<RallarBlackBoxTestMessagesSendCommand['recipientPrincipalIds']>; }>
+    | Readonly<{ toPeer: 'receiver'; }>;
 
 interface AlmConformanceAudienceSendInput {
     readonly sender: AlmConformanceStepInput;

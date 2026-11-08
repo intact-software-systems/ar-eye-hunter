@@ -403,8 +403,9 @@ describe('ALM recipe commands', () => {
         };
         const accepted = [
             { ...send, scope: 'principal', principalId: '{auth.clientId}' },
-            { ...send, recipientPeer: 'receiver' },
-            { ...send, recipientPeer: 'recipient-b' },
+            { ...send, recipientPeers: ['receiver'] },
+            { ...send, recipientPeers: ['receiver', 'recipient-b'] },
+            { ...send, recipientPrincipalIds: ['{principal:receiver}'] },
             { ...send, scope: 'world' }
         ];
         for (const command of accepted) {
@@ -415,7 +416,7 @@ describe('ALM recipe commands', () => {
 
         const refused = validateJsonSchema(
             RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-            recipeWithCommand('send-all', { ...send, scope: 'all', recipientPeer: 'sibling' })
+            recipeWithCommand('send-all', { ...send, scope: 'all', recipientPeers: ['sibling'] })
         );
         expect(refused.ok).toBe(false);
         if (!refused.ok) {
@@ -423,15 +424,32 @@ describe('ALM recipe commands', () => {
                 'scope: Expected one of "room", "world", "principal".'
             );
             expect(formatJsonSchemaValidationErrors(refused.errors)).toContain(
-                'recipientPeer: Expected one of "receiver", "recipient-b".'
+                'recipientPeers[0]: Expected one of "receiver", "recipient-b".'
             );
         }
-        const control = validateRallarBlackBoxTestCommand({ ...send, scope: 'all', recipientPeer: 'sibling' });
+        const control = validateRallarBlackBoxTestCommand({ ...send, scope: 'all', recipientPeers: ['sibling'] });
         expect(control.ok).toBe(false);
         if (!control.ok) {
             expect(control.messages).toEqual([
                 'messages.send.scope must be one of room, world, principal.',
-                'messages.send.recipientPeer must be one of receiver, recipient-b.'
+                'messages.send.recipientPeers must list one or two of receiver, recipient-b, each once.'
+            ]);
+        }
+        const oversized = { ...send, recipientPeers: ['receiver', 'recipient-b', 'receiver'], recipientPrincipalIds: [] };
+        const oversizedSchema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-lists', oversized));
+        expect(oversizedSchema.ok).toBe(false);
+        if (!oversizedSchema.ok) {
+            expect(formatJsonSchemaValidationErrors(oversizedSchema.errors)).toContain('recipientPeers: Expected at most 2 item(s).');
+            expect(formatJsonSchemaValidationErrors(oversizedSchema.errors)).toContain(
+                'recipientPrincipalIds: Expected at least 1 item(s).'
+            );
+        }
+        const oversizedControl = validateRallarBlackBoxTestCommand(oversized);
+        expect(oversizedControl.ok).toBe(false);
+        if (!oversizedControl.ok) {
+            expect(oversizedControl.messages).toEqual([
+                'messages.send.recipientPeers must list one or two of receiver, recipient-b, each once.',
+                'messages.send.recipientPrincipalIds must list at least one principal id, each a string.'
             ]);
         }
     });

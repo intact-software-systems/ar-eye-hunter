@@ -32,7 +32,7 @@ export const leaderOutsideList: AlmConformanceScenarioDefinition = {
             sender,
             ttlMs: NON_EXPIRING_TTL_MS,
             ack: 'group-leader',
-            audience: { recipientPeer: 'recipient-b' }
+            audience: { recipientPeers: ['recipient-b'] }
         }),
         ...toNoLeaderVerdictCommands(sender)
     ],

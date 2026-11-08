@@ -774,17 +774,19 @@ it('passes a principal audience as given and a fixed audience by its role, resol
     ]);
 
     await runtime.sendMessage({ ...send, handleId: 'h-principal', scope: 'principal', principalId: 'client-1' });
-    await runtime.sendMessage({ ...send, carrier: 'rtc', handleId: 'h-list', recipientPeer: 'receiver' });
+    await runtime.sendMessage({ ...send, carrier: 'rtc', handleId: 'h-list', recipientPeers: ['receiver'] });
+    await runtime.sendMessage({ ...send, carrier: 'rtc', handleId: 'h-principals', recipientPrincipalIds: ['bob'] });
     await runtime.sendMessage({ ...send, handleId: 'h-world', scope: 'world' });
 
     expect(facade.records.typedSends.map(([, options]) => [options?.scope, options?.principalId, options?.recipientPeerIds]))
         .toEqual([
             ['principal', 'client-1', undefined],
             [undefined, undefined, ['bob-session']],
+            [undefined, undefined, ['bob-session']],
             ['world', undefined, undefined]
         ]);
-    expect(facade.records.typedChannelOpens.slice(-3).map((definition) => definition.purpose))
-        .toEqual(['notification', 'notification', 'notification']);
+    expect(facade.records.typedChannelOpens.slice(-4).map((definition) => definition.purpose))
+        .toEqual(['notification', 'notification', 'notification', 'notification']);
 });
 
 it('fails a fixed audience or a scope the page cannot send with its own failure, before any handle opens', async () => {
@@ -796,13 +798,22 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
     ]);
     const prefix = BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved;
 
-    await expect(runtime.sendMessage({ ...send, handleId: 'h-list', recipientPeer: 'receiver' }))
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-list', recipientPeers: ['receiver'] }))
         .rejects.toThrow(
-            `${prefix}: messages.send.recipientPeer receiver names no peer: the room holds 2 other live sessions of ` +
+            `${prefix}: messages.send.recipientPeers receiver names no peer: the room holds 2 other live sessions of ` +
                 'another principal, not exactly one, and the room names no leader.'
         );
-    await expect(runtime.sendMessage({ ...send, handleId: 'h-role', recipientPeer: 'sibling' }))
-        .rejects.toThrow('messages.send.recipientPeer must be receiver or recipient-b.');
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-role', recipientPeers: ['sibling'] }))
+        .rejects.toThrow('messages.send.recipientPeers must list receiver or recipient-b, each once.');
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-twice', recipientPeers: ['receiver', 'receiver'] }))
+        .rejects.toThrow('messages.send.recipientPeers must list receiver or recipient-b, each once.');
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-principals', recipientPrincipalIds: ['bob', 'bob'] }))
+        .rejects.toThrow('messages.send.recipientPrincipalIds must list distinct principal ids.');
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-two', toPeer: 'receiver', recipientPrincipalIds: ['bob'] }))
+        .rejects.toThrow(
+            'messages.send names toPeer and recipientPrincipalIds; a send names at most one of toPeer, recipientPeers, ' +
+                'recipientPrincipalIds and scope \'principal\'.'
+        );
     await expect(runtime.sendMessage({ ...send, handleId: 'h-all', scope: 'all' }))
         .rejects.toThrow('messages.send.scope must be room, world, or principal.');
     const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-list', carrier: 'ws' } };
@@ -823,17 +834,17 @@ it('lists recipient-b by its role as the one other session of another principal 
     ]);
     facade.behavior.getRoomLeaderSessionId.mockReturnValue('bob-session');
 
-    await runtime.sendMessage({ ...send, handleId: 'h-beside-leader', recipientPeer: 'recipient-b', ack: 'group-leader' });
+    await runtime.sendMessage({ ...send, handleId: 'h-beside-leader', recipientPeers: ['recipient-b'], ack: 'group-leader' });
 
     expect(facade.records.typedSends.map(([, options]) => [options?.ack, options?.recipientPeerIds]))
         .toEqual([['group-leader', ['carol-session']]]);
     // The receiver is the leader there, so the same room lists it beside recipient-b.
-    await runtime.sendMessage({ ...send, handleId: 'h-leader', recipientPeer: 'receiver' });
+    await runtime.sendMessage({ ...send, handleId: 'h-leader', recipientPeers: ['receiver'] });
     expect(facade.records.typedSends.at(-1)?.[1]?.recipientPeerIds).toEqual(['bob-session']);
     facade.behavior.getRoomLeaderSessionId.mockReturnValue(undefined);
-    await expect(runtime.sendMessage({ ...send, handleId: 'h-no-leader', recipientPeer: 'recipient-b' }))
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-no-leader', recipientPeers: ['recipient-b'] }))
         .rejects.toThrow(
-            `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.recipientPeer recipient-b ` +
+            `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.recipientPeers recipient-b ` +
                 'names no peer: the room holds 2 other live sessions of another principal beside its leader, not exactly one.'
         );
 });

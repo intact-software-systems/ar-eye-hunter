@@ -93,7 +93,7 @@ function toReceivedTrackCommands(receiver: AlmConformanceStepInput): readonly Ra
 function toTrackSend(sender: AlmConformanceStepInput, index: number): RallarBlackBoxTestCommand {
     const payload = toPublicationPayload(sender, toPublicationName(index), 'publication');
     return {
-        ...toGrantedSend(sender, payload, sender.scenarioKey),
+        ...toGrantedSend({ step: sender, payload, orderingKey: sender.scenarioKey }),
         commandId: toCommandId(sender, `send-${index}`),
         handleId: toSendHandleId({ ...sender, index })
     };

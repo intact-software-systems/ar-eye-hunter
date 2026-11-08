@@ -17,7 +17,7 @@ export interface ResolveBlackBoxRallarMessagePeerInput {
 }
 
 export interface ResolveBlackBoxRallarRecipientPeerInput {
-    readonly recipientPeer: BlackBoxRallarRecipientPeer;
+    readonly role: BlackBoxRallarRecipientPeer;
     readonly ownSessionId: string | undefined;
     readonly ownPrincipalId: string | undefined;
     /** Undefined while the page holds no snapshot of the room. */
@@ -64,9 +64,32 @@ export function resolveBlackBoxRallarRecipientPeer(
     const others = toOtherLiveSessions(input.roomSessions, input).filter((session) =>
         session.principalId !== input.ownPrincipalId
     );
-    return input.recipientPeer === 'receiver'
+    return input.role === 'receiver'
         ? resolveReceiver(others, input.leaderSessionId)
         : resolveBesideLeader(others, input.leaderSessionId);
+}
+
+export interface ResolveBlackBoxRallarRecipientPrincipalsInput {
+    readonly recipientPrincipalIds: readonly string[];
+    readonly ownSessionId: string | undefined;
+    /** Undefined while the page holds no snapshot of the room. */
+    readonly roomSessions: readonly GroupPresenceSession[] | undefined;
+    readonly nowMs: number;
+}
+
+/** A list by principal names every other live session of the listed principals, the sender's own principal included. */
+export function resolveBlackBoxRallarRecipientPrincipals(
+    input: ResolveBlackBoxRallarRecipientPrincipalsInput
+): Either<string, readonly string[]> {
+    if (input.roomSessions === undefined) {
+        return Either.ofLeft('the page holds no snapshot of the room');
+    }
+    const sessionIds = toOtherLiveSessions(input.roomSessions, input)
+        .filter((session) => input.recipientPrincipalIds.includes(session.principalId))
+        .map((session) => session.sessionId);
+    return sessionIds.length === 0
+        ? Either.ofLeft('no live session of the listed principals is in the room')
+        : Either.ofRight(sessionIds);
 }
 
 function resolveReceiver(

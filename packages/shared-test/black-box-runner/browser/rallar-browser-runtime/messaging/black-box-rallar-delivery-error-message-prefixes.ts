@@ -10,7 +10,10 @@ export const BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES = {
     replayUnavailable: 'Message replay unavailable',
     /** The page has no connected session to submit a raw control from. */
     rawControlUnavailable: 'Raw control submission unavailable',
-    /** A `messages.send.toPeer` or `recipientPeer` role the page could not resolve to exactly one peer. */
+    /**
+     * A `messages.send.toPeer` or `recipientPeers` role the page could not resolve to exactly one peer, or a
+     * `recipientPrincipalIds` list it could resolve to no live session.
+     */
     peerUnresolved: 'Message peer unresolved',
     /** A `messages.reply` naming an arrival of its type the page does not hold among the last 16. */
     replyRequestUnreceived: 'Reply request not received'

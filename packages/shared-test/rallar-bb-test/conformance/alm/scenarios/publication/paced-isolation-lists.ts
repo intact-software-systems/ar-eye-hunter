@@ -73,15 +73,15 @@ export const pacedIsolationLists: AlmConformanceScenarioDefinition = {
 function toPacedIsolationListsSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         toLeaderActivityWait(sender, true),
-        ...toPublicationLeadCommands(sender, PACED_ISOLATION_LISTS_PUBLICATION, 'receiver'),
-        ...LISTED_SENDS.map(([index, recipientPeer]) =>
+        ...toPublicationLeadCommands(sender, PACED_ISOLATION_LISTS_PUBLICATION, ['receiver']),
+        ...LISTED_SENDS.map(([index, role]) =>
             toPublicationSendCommand({
                 step: sender,
                 index,
                 publication: PACED_ISOLATION_LISTS_PUBLICATION,
                 ttlMs: toPublicationTtlMs(1),
                 stream: undefined,
-                recipientPeer
+                recipientPeers: [role]
             })
         ),
         ...LISTED_SENDS.flatMap(([index]) =>

@@ -720,7 +720,13 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         roomRef: recordSchema,
         scope: messagesScopeSchema,
         principalId: stringSchema,
-        recipientPeer: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesRecipientPeer },
+        recipientPeers: {
+            type: 'array',
+            items: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesRecipientPeer },
+            minItems: 1,
+            maxItems: 2
+        },
+        recipientPrincipalIds: { type: 'array', items: { type: 'string' }, minItems: 1 },
         ownership: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesOwnership },
         resourceId: stringSchema,
         reliability: messagesReliabilitySchema,

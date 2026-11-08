@@ -111,7 +111,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'roomRef',
             'scope',
             'principalId',
-            'recipientPeer',
+            'recipientPeers',
+            'recipientPrincipalIds',
             'ownership',
             'resourceId',
             'reliability',
@@ -325,7 +326,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
     /** Roles, not session ids: no session exists when a recipe is written. */
     messagesToPeer: ['server', 'receiver'],
-    /** A role, as `messagesToPeer`: the page resolves it to the one session of a fixed audience. */
+    /** Roles, as `messagesToPeer`: the page resolves each to one session of a fixed audience. */
     messagesRecipientPeer: ['receiver', 'recipient-b'],
     messagesOwnership: ['shared', 'exclusive'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */

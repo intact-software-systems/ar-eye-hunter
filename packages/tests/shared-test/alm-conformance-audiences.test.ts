@@ -138,7 +138,7 @@ describe('principal-delivery', () => {
             reliability: 'at-least-once',
             payload: { marker: 'principal-delivery', carrier }
         });
-        expect(findCommand(scenario.sender, 'send-1')).not.toHaveProperty('recipientPeer');
+        expect(findCommand(scenario.sender, 'send-1')).not.toHaveProperty('recipientPeers');
         expect(readAlmReceiptRolesEntries(scenario.sender)).toEqual([
             { handleId: `alm-${carrier}-principal-delivery-send-1`, confirmed: ['sibling'], unconfirmed: [], outsideAudience: [] }
         ]);
@@ -180,7 +180,7 @@ describe('fixed-list-delivery', () => {
         expect(findCommand(scenario.sender, 'send-1')).toMatchObject({
             kind: 'messages.send',
             carrier,
-            recipientPeer: 'receiver',
+            recipientPeers: ['receiver'],
             ack: 'all-logical-recipients',
             payload: { marker: 'fixed-list-delivery', carrier }
         });

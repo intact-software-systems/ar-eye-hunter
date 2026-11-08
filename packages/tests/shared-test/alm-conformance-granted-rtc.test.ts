@@ -9,11 +9,13 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { ALM_CONFORMANCE_ROLES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import type { AlmConformanceStepInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { toPublishUntilConfirmedCommands } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/topic-subscription-publications.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
@@ -488,5 +490,37 @@ describe('the granted rtc cells', () => {
             expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)
                 .toEqual([expect.objectContaining({ commandId: `${recipe!.recipeId}-overlay-next-hops` })]);
         }
+    });
+});
+
+describe('topic-subscription-publications', () => {
+    const step: AlmConformanceStepInput = {
+        input: toConformanceInput('rtc'),
+        scenarioId: 'granted-rtc-delivered',
+        scenarioKey: 'granted-rtc-delivered',
+        role: 'sender',
+        roles: ['sender', 'receiver'],
+        messageSelector: undefined,
+        connect: undefined
+    };
+    const toLoopSend = (commands: readonly RallarBlackBoxTestCommand[]) =>
+        commands.flatMap((command) => command.kind === 'loop' ? command.commands : [])
+            .find((command) => command.kind === 'messages.send');
+
+    it('publishes until confirmed to the audience it names: a peer as a receipted notification, a principal list as a granted list', () => {
+        const base = { step, name: 'p1', confirmations: 1, outsideAudience: 0, kind: 'publication' as const };
+
+        const toPeer = toLoopSend(toPublishUntilConfirmedCommands({ ...base, audience: { toPeer: 'receiver' } }));
+        expect(toPeer).toMatchObject({ toPeer: 'receiver', ack: 'receiver', purpose: 'notification' });
+
+        const listed = toLoopSend(
+            toPublishUntilConfirmedCommands({ ...base, audience: { recipientPrincipalIds: ['{principal:receiver}'] } })
+        );
+        expect(listed).toMatchObject({
+            recipientPrincipalIds: ['{principal:receiver}'],
+            ack: 'all-logical-recipients'
+        });
+        expect(listed).not.toHaveProperty('toPeer');
+        expect(listed).not.toHaveProperty('purpose');
     });
 });

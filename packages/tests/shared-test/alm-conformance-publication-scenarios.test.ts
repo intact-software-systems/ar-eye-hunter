@@ -630,15 +630,15 @@ describe('paced-isolation-lists', () => {
                 'stats'
             ]);
             expectLead(scenario, carrier, publication);
-            expect(findCommand(sender, 'send-0')).toMatchObject({ recipientPeer: 'receiver' });
+            expect(findCommand(sender, 'send-0')).toMatchObject({ recipientPeers: ['receiver'] });
             expect([1, 2].map((index) => findCommand(sender, `send-${index}`))).toEqual([
                 ['receiver', 1],
                 ['recipient-b', 2]
-            ].map(([recipientPeer, seq]) =>
+            ].map(([role, seq]) =>
                 expect.objectContaining({
                     ...toLiveSend(scenario, carrier, publication),
                     resourceId: 'alm-paced-isolation-lists',
-                    recipientPeer,
+                    recipientPeers: [role],
                     payload: { specimen: 'paced', seq },
                     ttlMs: 4_000
                 })

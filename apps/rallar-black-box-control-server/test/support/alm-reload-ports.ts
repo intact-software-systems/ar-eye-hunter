@@ -787,7 +787,7 @@ export class AlmReloadPorts {
         this.messages.push(message);
         this.handles.set(live.handleId, message);
         const recipients = this.participants.filter(({ role }) => message.recipientRoles.includes(role));
-        const recipientPeerIds = live.recipientPeer === undefined
+        const recipientPeerIds = live.recipientPeers === undefined
             ? undefined
             : recipients.map(({ sessionId }) => sessionId);
         const trace = toPortMessageTrace(message);
@@ -1482,8 +1482,11 @@ function resolvePortRecipientRoles(
         if (role === 'sender' || group.left.has(role)) {
             return false;
         }
-        if (command.toPeer === 'receiver' || command.recipientPeer !== undefined) {
-            return role === (command.toPeer ?? command.recipientPeer);
+        if (command.toPeer === 'receiver') {
+            return role === command.toPeer;
+        }
+        if (command.recipientPeers !== undefined) {
+            return command.recipientPeers.some((recipientRole) => recipientRole === role);
         }
         return command.scope !== 'principal' || participant.principalId === command.principalId;
     }).map((participant) => participant.role);

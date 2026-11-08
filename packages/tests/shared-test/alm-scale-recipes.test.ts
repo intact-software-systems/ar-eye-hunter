@@ -167,7 +167,7 @@ describe('ALM scale recipes', () => {
                     roomRef: GROUP
                 });
                 expect(send).not.toHaveProperty('toPeer');
-                expect(send).not.toHaveProperty('recipientPeer');
+                expect(send).not.toHaveProperty('recipientPeers');
             }
         }
         expect(scale.groupAssertions).toEqual(expect.arrayContaining([

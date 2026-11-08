@@ -120,7 +120,8 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
         ...validateObjectField(command, 'roomRef', path),
         ...validateEnumField({ record: command, key: 'scope', path, allowed: values.messagesScope }),
         ...validateStringField(command, 'principalId', path),
-        ...validateEnumField({ record: command, key: 'recipientPeer', path, allowed: values.messagesRecipientPeer }),
+        ...validateRecipientPeersField(command),
+        ...validateRecipientPrincipalIdsField(command),
         ...validateEnumField({ record: command, key: 'ownership', path, allowed: values.messagesOwnership }),
         ...validateEnumField({ record: command, key: 'reliability', path, allowed: values.messagesReliability }),
         ...validateEnumField({ record: command, key: 'ack', path, allowed: values.messagesAck }),
@@ -264,6 +265,35 @@ function validateMessagesHandleCommand(
     path: RallarBlackBoxTestAlmCommandKind
 ): readonly ControlCommandIssue[] {
     return [...validateStringField(command, 'connection', path), ...validateStringField(command, 'handleId', path)];
+}
+
+function validateRecipientPeersField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const roles = command.recipientPeers;
+    const allowed: readonly unknown[] = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesRecipientPeer;
+    if (roles === undefined) {
+        return [];
+    }
+    return Array.isArray(roles) && roles.length >= 1 && roles.length <= allowed.length &&
+            new Set(roles).size === roles.length && roles.every((role) => allowed.includes(role))
+        ? []
+        : [
+            toControlCommandIssue(
+                `messages.send.recipientPeers must list one or two of ${allowed.join(', ')}, each once.`
+            )
+        ];
+}
+
+function validateRecipientPrincipalIdsField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const principalIds = command.recipientPrincipalIds;
+    if (principalIds === undefined) {
+        return [];
+    }
+    return Array.isArray(principalIds) && principalIds.length >= 1 &&
+            principalIds.every((principalId) => typeof principalId === 'string')
+        ? []
+        : [toControlCommandIssue(
+            'messages.send.recipientPrincipalIds must list at least one principal id, each a string.'
+        )];
 }
 
 function validateDeliveryStateField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
