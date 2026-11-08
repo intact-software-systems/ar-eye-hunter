@@ -2,7 +2,6 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
@@ -65,7 +64,6 @@ export function assertRtcTopologyPublicationOutbox(
     }
 }
 
-/** Each page as it is written, with the proof of the publication audience it was frozen for. */
 export function computeRtcTopologyPublicationOutboxWrites(
     publication: RtcTopologyPublication
 ): readonly AppOutboxInsert[] {
@@ -82,22 +80,13 @@ function toRtcTopologyProvenanceFacts(
     publication: RtcTopologyPublication,
     entry: ResourceEntry
 ): WsOutboxProvenanceFacts {
-    const message = decodePersistedALMessage(entry.resource);
-    const targets = message.targets;
-    if (
-        targets?.mode !== 'broadcast' || targets.scope !== 'room' || !targets.groupRef ||
-        !isSameGroupRef(targets.groupRef, publication.groupRef) || !targets.recipientPeerIds ||
-        targets.recipientPeerIds.some((sessionId) => !publication.recipientSessionIds.includes(sessionId))
-    ) {
-        throw new TypeError('RTC topology page differs from its validated publication audience');
-    }
     return {
-        message,
+        message: decodePersistedALMessage(entry.resource),
         producerKind: 'rtc-topology',
         target: {
             kind: 'scoped-room-broadcast',
             groupRef: publication.groupRef,
-            admittedAudience: targets.recipientPeerIds
+            admittedAudience: publication.recipientSessionIds
         },
         expiresAtMs: entry.audit.expiryTs.epochMilliseconds
     };

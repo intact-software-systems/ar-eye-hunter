@@ -59,7 +59,8 @@ export async function writeRtcTopologyPublicationTransaction(
             }
             await writeAppOutboxInserts(transaction, [
                 ...(computed.promotionWrite === null ? [] : [computed.promotionWrite]),
-                ...computed.connectWrites
+                ...computed.connectWrites,
+                ...(computed.delivery === null ? [] : computed.delivery.outboxWrites)
             ]);
             if (computed.fingerprint) {
                 await options.executionRepository.writeTopologyInputFingerprint(
@@ -68,7 +69,7 @@ export async function writeRtcTopologyPublicationTransaction(
                 );
             }
             if (computed.delivery) {
-                await writePublicationDelivery(
+                await writePublicationDeliveryAppend(
                     transaction,
                     computed.delivery,
                     options.deliveryAppend
@@ -102,12 +103,11 @@ export function computeRtcTopologyPublicationDeliveryWrite(
     };
 }
 
-export async function writePublicationDelivery(
+async function writePublicationDeliveryAppend(
     transaction: PSqlSql,
     computed: RtcTopologyPublicationDeliveryWrite,
     append: RtcTopologyDeliveryAppendPort | undefined
 ): Promise<void> {
-    await writeAppOutboxInserts(transaction, computed.outboxWrites);
     if (!append || computed.deliveryAppend === null) {
         return;
     }

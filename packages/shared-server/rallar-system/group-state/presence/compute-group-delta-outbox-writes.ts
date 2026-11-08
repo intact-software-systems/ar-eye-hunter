@@ -15,7 +15,6 @@ export interface ComputeGroupDeltaOutboxWritesInput {
     readonly activeSessionIds: readonly string[];
 }
 
-/** Each delta row as it is written: a WS row with the proof of the room audience it was computed for, any other row without one. */
 export function computeGroupDeltaOutboxWrites(input: ComputeGroupDeltaOutboxWritesInput): readonly AppOutboxInsert[] {
     const { entries, groupRef, activeSessionIds } = input;
     return entries.map((entry) => {
