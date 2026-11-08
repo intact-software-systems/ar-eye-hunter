@@ -1,6 +1,6 @@
 import { isLiveRoomSession } from '@shared/api/group-presence/is-live-room-session.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
+import { Either, EitherCollectors } from '@shared/resilience/Either.ts';
 
 import type {
     BlackBoxRallarMessageSendInput,
@@ -67,6 +67,32 @@ export function resolveBlackBoxRallarRecipientPeer(
     return input.role === 'receiver'
         ? resolveReceiver(others, input.leaderSessionId)
         : resolveBesideLeader(others, input.leaderSessionId);
+}
+
+export interface ResolveBlackBoxRallarRecipientPeersInput
+    extends Omit<ResolveBlackBoxRallarRecipientPeerInput, 'role'> {
+    readonly roles: readonly BlackBoxRallarRecipientPeer[];
+}
+
+/**
+ * A list by role names one session per role, in role order. Its Left reads after the field name: a role no one session
+ * answers, or two roles that name one session.
+ */
+export function resolveBlackBoxRallarRecipientPeers(
+    input: ResolveBlackBoxRallarRecipientPeersInput
+): Either<string, readonly string[]> {
+    const resolved = input.roles.map((role) =>
+        resolveBlackBoxRallarRecipientPeer({ ...input, role }).mapLeft((detail) => `${role} names no peer: ${detail}`)
+    );
+    const [refusal] = EitherCollectors.toListFoldLefts(resolved);
+    if (refusal !== undefined) {
+        return Either.ofLeft(refusal);
+    }
+    const sessionIds = EitherCollectors.toListFoldRights(resolved);
+    const distinct = new Set(sessionIds);
+    return distinct.size < sessionIds.length
+        ? Either.ofLeft(`${input.roles.join(' and ')} name one session: ${[...distinct].join(', ')}`)
+        : Either.ofRight(sessionIds);
 }
 
 export interface ResolveBlackBoxRallarRecipientPrincipalsInput {

@@ -7,6 +7,7 @@ import {
 import {
     resolveBlackBoxRallarMessagePeer,
     resolveBlackBoxRallarRecipientPeer,
+    resolveBlackBoxRallarRecipientPeers,
     resolveBlackBoxRallarRecipientPrincipals
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/resolve-black-box-rallar-message-peer.ts';
 
@@ -182,5 +183,38 @@ describe('the principals a messages.send lists as its fixed audience', () => {
             resolveBlackBoxRallarRecipientPrincipals({ ...input, recipientPrincipalIds: ['p1'], roomSessions: undefined }).left
         )
             .toBe('the page holds no snapshot of the room');
+    });
+});
+
+describe('the lane roles a messages.send lists as its fixed audience', () => {
+    const input = {
+        ownSessionId: 'sender-session',
+        ownPrincipalId: 'alice',
+        nowMs: Date.now()
+    };
+    const sender = toRoomRosterSession('sender-session', { principalId: 'alice' });
+    const bob = toRoomRosterSession('bob-session', { principalId: 'bob' });
+
+    it('names one session per role, in role order', () => {
+        const roomSessions = [sender, bob, toRoomRosterSession('carol-session', { principalId: 'carol' })];
+
+        expect(
+            resolveBlackBoxRallarRecipientPeers({
+                ...input,
+                roles: ['recipient-b', 'receiver'],
+                roomSessions,
+                leaderSessionId: 'bob-session'
+            }).right
+        ).toEqual(['carol-session', 'bob-session']);
+    });
+
+    it('answers Left for two roles that name one session, and for a role that names none', () => {
+        const oneOther = { ...input, roomSessions: [sender, bob], leaderSessionId: undefined };
+
+        expect(resolveBlackBoxRallarRecipientPeers({ ...oneOther, roles: ['receiver', 'recipient-b'] }).left)
+            .toBe('receiver and recipient-b name one session: bob-session');
+        expect(
+            resolveBlackBoxRallarRecipientPeers({ ...oneOther, roles: ['receiver'], roomSessions: [sender] }).left
+        ).toBe('receiver names no peer: the room holds 0 other live sessions of another principal, not exactly one');
     });
 });

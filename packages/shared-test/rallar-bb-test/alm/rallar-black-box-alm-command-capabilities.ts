@@ -30,7 +30,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'leader; a role it cannot resolve fails the send and opens no handle. recipientPrincipalIds names a fixed ' +
             'audience by principal, which the page resolves at send time to the room\'s live sessions of the listed ' +
             'principals, its own session excluded; a list no live session answers fails the send. A send names at ' +
-            'most one of toPeer, recipientPeers, recipientPrincipalIds and scope principal. ownership (shared, exclusive) passes the send\'s ownership to the product as given; ' +
+            'most one of toPeer, recipientPeers, recipientPrincipalIds and scope principal. ' +
+            'ownership (shared, exclusive) passes the send\'s ownership to the product as given; ' +
             'resourceId names the route\'s resource, which an exclusive send claims for the sending session; absent, ' +
             'the product mints a fresh resource per send. ' +
             'A replay names only replayOnCarrier (and connection): a ' +

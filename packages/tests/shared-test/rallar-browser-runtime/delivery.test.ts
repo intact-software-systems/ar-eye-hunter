@@ -849,6 +849,32 @@ it('lists recipient-b by its role as the one other session of another principal 
         );
 });
 
+it('lists two roles as two sessions in role order, and refuses two roles that name one session before any handle opens', async () => {
+    const runtime = await loadDeliveryRuntime();
+    await runtime.connect(connection);
+    const own = toRoomRosterSession(facade.session.sessionId, { principalId: facade.session.clientId });
+    facade.behavior.getRoomSessions.mockReturnValue([
+        own,
+        toRoomRosterSession('bob-session', { principalId: 'bob' }),
+        toRoomRosterSession('carol-session', { principalId: 'carol' })
+    ]);
+    facade.behavior.getRoomLeaderSessionId.mockReturnValue('bob-session');
+
+    await runtime.sendMessage({ ...send, handleId: 'h-both', recipientPeers: ['recipient-b', 'receiver'] });
+    expect(facade.records.typedSends.at(-1)?.[1]?.recipientPeerIds).toEqual(['carol-session', 'bob-session']);
+
+    // With one other session it is the receiver and, the leader being none of the room, the one beside it too.
+    facade.behavior.getRoomSessions.mockReturnValue([own, toRoomRosterSession('bob-session', { principalId: 'bob' })]);
+    facade.behavior.getRoomLeaderSessionId.mockReturnValue(undefined);
+    const sent = facade.records.typedSends.length;
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-one', recipientPeers: ['receiver', 'recipient-b'] }))
+        .rejects.toThrow(
+            `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.recipientPeers receiver ` +
+                'and recipient-b name one session: bob-session.'
+        );
+    expect(facade.records.typedSends).toHaveLength(sent);
+});
+
 it('projects a group-leader room send on rtc, refused no-leader by the injected middleware double, as rejected with no carrier attempt', async () => {
     const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
