@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { Sql } from 'postgres';
 
-import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import { toServerWsQBoxALRuntimeStoreId } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -120,19 +120,23 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
         diagnosticPhase: input.diagnosticPhase
     });
     const inbox = appInboxDependencies.inboxQueueReader;
+    // Measurement-only: this harness is overlaid onto the merge base too, so it names no export the base lacks and
+    // hands the client config through a variable, which escapes the base's excess-property check on the field it has
+    // no use for (the S5-i state-write comparison the maintainer postponed; never lands on main).
+    const clientConfig = {
+        serviceId,
+        wsOutboundAdmissionNamespace: `${toServerWsQBoxALRuntimeStoreId('default-qbox-server')}:outbound:admission`,
+        disconnectedSessionRetentionMs: defaults.clientSessions.disconnectedRetentionMs,
+        finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
+        timing,
+        options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.client
+    };
     const client = new AppClientInboxService(
         {
             ...appInboxDependencies,
             clientStateService: clientState
         },
-        {
-            serviceId,
-            wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server'),
-            disconnectedSessionRetentionMs: defaults.clientSessions.disconnectedRetentionMs,
-            finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
-            timing,
-            options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.client
-        }
+        clientConfig
     );
     const group = new GroupStateInboxService(
         {
