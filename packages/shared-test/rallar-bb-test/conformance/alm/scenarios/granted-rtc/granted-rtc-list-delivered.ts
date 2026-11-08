@@ -23,7 +23,7 @@ import { RECIPIENT_B_SUBSCRIBES, toConfirmingOwnerCommands } from './granted-rtc
 /**
  * The sender lists the receiver's principal alone. Recipient-b holds `subscribe` and an election, yet the list leaves
  * it out: one copy's receipt expects the receiver, it confirms, and recipient-b delivers nothing. A tree layout may
- * still route recipient-b a copy to forward, so the cell asserts no admission there.
+ * still route recipient-b a copy to forward, so the cell makes no admission assertion there.
  */
 export const grantedRtcListDelivered: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-list-delivered',

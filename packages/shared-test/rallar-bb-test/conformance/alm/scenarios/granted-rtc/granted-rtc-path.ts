@@ -27,7 +27,12 @@ export function toPathOwnerCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toTopologyConfigCommand(owner, 'tree'),
-        ...toGrantedRtcOwnerCommands(owner, [{ grantee: 'recipient-b', publish: true, subscribe: false }]),
+        ...toGrantedRtcOwnerCommands(owner, [{
+            operation: 'grant',
+            grantee: 'recipient-b',
+            publish: true,
+            subscribe: false
+        }]),
         toCueWait(owner, 'ready'),
         ...toCueSendCommands(owner, 'tree'),
         ...received,

@@ -190,7 +190,7 @@ function decodeMessageAudience(
     const recipientPrincipalIds = decodeBlackBoxCommandStringList(
         record.recipientPrincipalIds,
         MAX_RECIPIENT_PRINCIPAL_IDS,
-        'messages.send.recipientPrincipalIds must list distinct principal ids.'
+        'messages.send.recipientPrincipalIds must list 1–256 distinct principal ids.'
     );
     if (isInputIssue(recipientPeers)) {
         return Either.ofLeft(recipientPeers);

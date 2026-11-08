@@ -726,7 +726,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
             minItems: 1,
             maxItems: 2
         },
-        recipientPrincipalIds: { type: 'array', items: { type: 'string' }, minItems: 1 },
+        recipientPrincipalIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 256 },
         ownership: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesOwnership },
         resourceId: stringSchema,
         reliability: messagesReliabilitySchema,

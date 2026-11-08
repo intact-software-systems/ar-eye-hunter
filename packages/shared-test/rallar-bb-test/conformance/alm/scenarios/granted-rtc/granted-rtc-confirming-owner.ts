@@ -11,6 +11,7 @@ import {
 
 /** Recipient-b may receive the granted topic, which only its own election makes it do. */
 export const RECIPIENT_B_SUBSCRIBES: GrantedRtcMemberGrant = {
+    operation: 'grant',
     grantee: 'recipient-b',
     publish: false,
     subscribe: true

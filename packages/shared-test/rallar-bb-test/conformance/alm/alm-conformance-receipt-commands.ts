@@ -62,8 +62,8 @@ interface AlmConformanceAudienceSendInput {
     readonly ttlMs: number;
     /** `all-logical-recipients` asks every session of the frozen audience, `group-leader` the room's leader alone. */
     readonly ack: Extract<RallarBlackBoxTestMessagesSendCommand['ack'], 'all-logical-recipients' | 'group-leader'>;
-    /** Absent, every live session of the room. */
-    readonly audience?: AlmConformanceSendAudience;
+    /** Absent, every live session of the room; a room send, so never an addressed one. */
+    readonly audience?: Exclude<AlmConformanceSendAudience, Readonly<{ toPeer: 'receiver'; }>>;
     /** Absent, the send claims nothing: it is `shared` on a resource the product mints. */
     readonly claim?: AlmConformanceSendClaim;
 }

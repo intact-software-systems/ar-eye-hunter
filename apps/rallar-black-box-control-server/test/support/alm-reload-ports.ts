@@ -1488,6 +1488,9 @@ function resolvePortRecipientRoles(
         if (command.recipientPeers !== undefined) {
             return command.recipientPeers.some((recipientRole) => recipientRole === role);
         }
+        if (command.recipientPrincipalIds !== undefined) {
+            return command.recipientPrincipalIds.includes(participant.principalId);
+        }
         return command.scope !== 'principal' || participant.principalId === command.principalId;
     }).map((participant) => participant.role);
 }

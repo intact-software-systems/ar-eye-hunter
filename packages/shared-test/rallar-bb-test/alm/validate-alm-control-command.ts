@@ -289,12 +289,11 @@ function validateRecipientPrincipalIdsField(command: RallarBlackBoxTestRecord): 
     if (principalIds === undefined) {
         return [];
     }
-    return Array.isArray(principalIds) && principalIds.length >= 1 &&
+    return Array.isArray(principalIds) && principalIds.length >= 1 && principalIds.length <= 256 &&
+            new Set(principalIds).size === principalIds.length &&
             principalIds.every((principalId) => typeof principalId === 'string')
         ? []
-        : [toControlCommandIssue(
-            'messages.send.recipientPrincipalIds must list at least one principal id, each a string.'
-        )];
+        : [toControlCommandIssue('messages.send.recipientPrincipalIds must list 1–256 distinct principal ids.')];
 }
 
 function validateDeliveryStateField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {

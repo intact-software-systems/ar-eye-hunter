@@ -253,12 +253,15 @@ export class BlackBoxRallarDeliveryLedger {
     /** A list by principal or by role; one that names no session, or two roles that name one, fails the send. */
     #resolveRecipientList(list: BlackBoxRallarRecipientListInput): readonly string[] | undefined {
         const { send, roomRef, ...own } = list;
-        if (send.recipientPrincipalIds !== undefined) {
+        const { recipientPrincipalIds } = send;
+        if (recipientPrincipalIds !== undefined) {
             return resolveBlackBoxRallarRecipientPrincipals({
-                ...own,
-                recipientPrincipalIds: send.recipientPrincipalIds
+                recipientPrincipalIds,
+                ownSessionId: own.ownSessionId,
+                roomSessions: own.roomSessions,
+                nowMs: own.nowMs
             }).fold((detail) => {
-                throw toPeerUnresolvedError('recipientPrincipalIds', send.recipientPrincipalIds?.join(', '), detail);
+                throw toPeerUnresolvedError('recipientPrincipalIds', recipientPrincipalIds.join(', '), detail);
             }, (resolved) => resolved);
         }
         if (send.recipientPeers === undefined) {

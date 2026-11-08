@@ -8,7 +8,6 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import {
     TOPIC_SUBSCRIPTION_SELECTOR,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from '../topic-subscription/topic-subscription-commands.ts';
 import {
@@ -23,7 +22,7 @@ import { GRANTED_RTC_CARRIERS, toGrantedRtcOwnerCommands, toRtcArrivalWait } fro
  * The sender lists the receiver's principal and recipient-b's, but recipient-b holds `publish` alone, so the frozen
  * audience leaves it out silently: one copy's receipt expects the receiver, it confirms, nobody ends outside the
  * audience, and recipient-b delivers nothing. A grant only adds permissions and the room's three-agent cells share
- * it, so the owner revokes the `subscribe` an earlier cell granted recipient-b.
+ * it, so the owner revokes the `subscribe` an earlier cell granted recipient-b before it grants the sender.
  */
 export const grantedRtcListNonHolder: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-list-non-holder',
@@ -51,14 +50,10 @@ export const grantedRtcListNonHolder: AlmConformanceScenarioDefinition = {
 
 function toNonHolderOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(owner, [{ grantee: 'recipient-b', publish: true, subscribe: false }]),
-        toTopicGrantCommand({
-            step: owner,
-            operation: 'revoke',
-            grantee: 'recipient-b',
-            publish: false,
-            subscribe: true
-        }),
+        ...toGrantedRtcOwnerCommands(owner, [
+            { operation: 'grant', grantee: 'recipient-b', publish: true, subscribe: false },
+            { operation: 'revoke', grantee: 'recipient-b', publish: false, subscribe: true }
+        ]),
         toRtcArrivalWait(owner),
         toConfirmedCueWait(owner, 'publication'),
         ...toUnsubscribeCommands(owner, 'receiver')

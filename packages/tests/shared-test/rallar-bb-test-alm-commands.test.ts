@@ -449,9 +449,27 @@ describe('ALM recipe commands', () => {
         if (!oversizedControl.ok) {
             expect(oversizedControl.messages).toEqual([
                 'messages.send.recipientPeers must list one or two of receiver, recipient-b, each once.',
-                'messages.send.recipientPrincipalIds must list at least one principal id, each a string.'
+                'messages.send.recipientPrincipalIds must list 1–256 distinct principal ids.'
             ]);
         }
+        const tooMany = { ...send, recipientPrincipalIds: Array.from({ length: 257 }, (_, index) => `principal-${index}`) };
+        const tooManySchema = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-many', tooMany));
+        expect(tooManySchema.ok).toBe(false);
+        if (!tooManySchema.ok) {
+            expect(formatJsonSchemaValidationErrors(tooManySchema.errors)).toContain(
+                'recipientPrincipalIds: Expected at most 256 item(s).'
+            );
+        }
+        for (const command of [tooMany, { ...send, recipientPrincipalIds: ['bob', 'bob'] }]) {
+            const control = validateRallarBlackBoxTestCommand(command);
+            expect(control.ok).toBe(false);
+            if (!control.ok) {
+                expect(control.messages).toEqual(['messages.send.recipientPrincipalIds must list 1–256 distinct principal ids.']);
+            }
+        }
+        const atBound = { ...send, recipientPrincipalIds: Array.from({ length: 256 }, (_, index) => `principal-${index}`) };
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-bound', atBound)).ok).toBe(true);
+        expect(validateRallarBlackBoxTestCommand(atBound).ok).toBe(true);
     });
 
     it('accepts an exclusive claim on a named resource on messages.send, and refuses an unknown ownership and a claim beside a replay', () => {

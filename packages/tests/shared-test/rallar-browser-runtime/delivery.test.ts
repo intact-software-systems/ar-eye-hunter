@@ -808,7 +808,10 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
     await expect(runtime.sendMessage({ ...send, handleId: 'h-twice', recipientPeers: ['receiver', 'receiver'] }))
         .rejects.toThrow('messages.send.recipientPeers must list receiver or recipient-b, each once.');
     await expect(runtime.sendMessage({ ...send, handleId: 'h-principals', recipientPrincipalIds: ['bob', 'bob'] }))
-        .rejects.toThrow('messages.send.recipientPrincipalIds must list distinct principal ids.');
+        .rejects.toThrow('messages.send.recipientPrincipalIds must list 1–256 distinct principal ids.');
+    const tooMany = Array.from({ length: 257 }, (_, index) => `principal-${index}`);
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-many', recipientPrincipalIds: tooMany }))
+        .rejects.toThrow('messages.send.recipientPrincipalIds must list 1–256 distinct principal ids.');
     await expect(runtime.sendMessage({ ...send, handleId: 'h-two', toPeer: 'receiver', recipientPrincipalIds: ['bob'] }))
         .rejects.toThrow(
             'messages.send names toPeer and recipientPrincipalIds; a send names at most one of toPeer, recipientPeers, ' +
