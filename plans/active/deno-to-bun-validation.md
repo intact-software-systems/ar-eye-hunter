@@ -231,9 +231,20 @@ Record evidence for each of these; the PR is not released to `main` until all ar
    `hetzner-control` mode).
 8. No workflow log contains a `deno` invocation or a `Deno.*` runtime error.
 
+## Main-only and cross-runtime items (run post-merge, not on the branch)
+
+- `Run Hetzner Supported Distributed Manifests` has no `ref` input — it resolves `github.sha` and
+  fires on `push` to `main`, so it is a post-merge gate, not a branch gate.
+- `API v1 State-Write PR Measurement` `comparison` mode's own frozen-environment guard
+  (`apps/api-v1/package.json` + `tsconfig.json` are new) refuses to A/B-compare a Deno base against
+  a Bun candidate. The `diagnostic` mode proves the Bun state-write path produces a valid
+  measurement, but a regression comparison across the runtime boundary is not meaningful.
+
 ## Follow-up (out of scope here)
 
 - Deleting the three Deno Deploy apps and their Postgres databases (out-of-band; see PR #794 body).
 - Wiring `RALLAR_CONTROLLER_ROLE` per-host into the deploy workflows via per-role `HETZNER_HOST_*`
-  secrets — a separate follow-up PR, not this validation run.
+  secrets — a separate follow-up PR, not this validation run. The distributed-recipe and headless
+  workflows currently target a single `HETZNER_HOST` (fsn1-01) and run their workers there, which
+  relies on cross-host DNS to reach the control server on 02.
 - The pre-existing Postgres integration failures tracked in #797 and the flaky CRDT test in #795.
