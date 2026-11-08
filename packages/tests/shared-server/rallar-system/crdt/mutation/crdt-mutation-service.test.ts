@@ -40,7 +40,12 @@ describe('CRDT mutation service', () => {
         const repository = new PSqlCrdtMutationRepository(
             {
                 sql: transaction,
-                authorize: () => Promise.resolve({ allowed: true, code: 'allowed', publicationAuthority: null })
+                authorize: () =>
+                    Promise.resolve({
+                        allowed: true,
+                        code: 'allowed',
+                        publicationAuthority: { recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, admittedAudience: ['session-1'] }
+                    })
             },
             { policies: [] }
         );
@@ -279,7 +284,7 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
             snapshot: null,
             authorized: true,
             authorizationCode: 'allowed',
-            publicationAuthority: null,
+            publicationAuthority: { recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, admittedAudience: ['session-1'] },
             featureDecision: {
                 allowed: true,
                 code: 'allowed',

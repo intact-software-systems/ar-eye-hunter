@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { writeCrdtOutboxProvenance } from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
 import { writeGroupDeltaProvenance } from '@shared-server/rallar-system/group-state/presence/group-delta-provenance.ts';
 import { writeRtcTopologyOutboxProvenance } from '@shared-server/rallar-system/topology/publication/rtc-topology-outbox-provenance.ts';
 import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
@@ -28,7 +27,6 @@ interface Proof {
 /** Each WS-outbox producer's proof writer, as its transaction calls it with one proof. */
 const PROOF_WRITERS: readonly (readonly [string, (transaction: PSqlSql, proof: Proof) => Promise<void>])[] = [
     ['group delta', async (transaction, proof) => await writeGroupDeltaProvenance(transaction, [proof])],
-    ['CRDT', async (transaction, proof) => await writeCrdtOutboxProvenance(transaction, [proof])],
     ['RTC topology', async (transaction, proof) => await writeRtcTopologyOutboxProvenance(transaction, [proof])]
 ];
 

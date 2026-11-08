@@ -5,7 +5,6 @@ import {
     type AppInboxCompletionComputed,
     type AppInboxCompletionFacts
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
-import { validateComputedProjection } from '../../computed-data-validation.ts';
 import { computeCrdtMutation, type ComputeCrdtMutationInput } from '../mutation/compute-crdt-mutation.ts';
 import type {
     CrdtMutationComputed,
@@ -13,10 +12,6 @@ import type {
     CrdtMutationValidationIssue
 } from '../mutation/crdt-mutation-contracts.ts';
 import { validateCrdtMutation } from '../mutation/validate-crdt-mutation.ts';
-import {
-    computeCrdtOutboxProvenance,
-    type CrdtOutboxProvenanceInsert
-} from '../persistence/crdt-outbox-provenance.ts';
 
 interface CrdtInboxMutationRead extends ComputeCrdtMutationInput {
     readonly completionFacts: AppInboxCompletionFacts;
@@ -25,7 +20,6 @@ interface CrdtInboxMutationRead extends ComputeCrdtMutationInput {
 interface CrdtInboxMutationComputed {
     readonly mutation: CrdtMutationComputed;
     readonly completion: AppInboxCompletionComputed<CrdtMutationResult>;
-    readonly provenanceWrites: readonly CrdtOutboxProvenanceInsert[];
 }
 
 export function computeCrdtInboxMutation(read: CrdtInboxMutationRead): CrdtInboxMutationComputed {
@@ -35,7 +29,7 @@ export function computeCrdtInboxMutation(read: CrdtInboxMutationRead): CrdtInbox
         durableResult: mutation.result,
         status: EntityStatus.COMPLETED
     });
-    return { mutation, completion, provenanceWrites: computeCrdtOutboxProvenance(mutation) };
+    return { mutation, completion };
 }
 
 export function validateCrdtInboxMutation(
@@ -58,12 +52,6 @@ export function validateCrdtInboxMutation(
             code: 'completion-invalid',
             message: issue.message
         }))
-    );
-    const expectedMutation = computeCrdtMutation(read);
-    const expectedProvenance = computeCrdtOutboxProvenance(expectedMutation);
-    issues.push(
-        ...validateComputedProjection(expectedProvenance, computed.provenanceWrites, 'computed.provenanceWrites')
-            .map((issue) => ({ code: 'provenance-invalid', message: issue.message }))
     );
     return issues;
 }

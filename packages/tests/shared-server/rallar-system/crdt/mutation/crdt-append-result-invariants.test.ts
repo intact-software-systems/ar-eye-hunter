@@ -421,7 +421,7 @@ function emptyRead() {
         snapshot: null,
         authorized: true,
         authorizationCode: 'allowed',
-        publicationAuthority: null,
+        publicationAuthority: { recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, admittedAudience: ['session-99'] },
         featureDecision: {
             allowed: true,
             code: 'allowed' as const,

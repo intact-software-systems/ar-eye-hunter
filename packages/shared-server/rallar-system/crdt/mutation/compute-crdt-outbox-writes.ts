@@ -7,66 +7,71 @@ import {
     RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
     RALLAR_CRDT_UPDATE_TYPE_ID
 } from '@shared/crdt/mod.ts';
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
-    computeWsOutboxProvenanceRecord,
-    WS_OUTBOX_PROVENANCE_NAMESPACE,
-    type WsOutboxProvenance
-} from '../../websocket/outbox/ws-outbox-provenance.ts';
+    computeAppOutboxInsert,
+    computeWsOutboxInsert,
+    type AppOutboxInsert
+} from '../../app-outbox/app-outbox-insert.ts';
+import type { WsOutboxProvenance } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import type {
     CrdtAppendCommand,
-    CrdtMutationComputed,
-    CrdtMutationPublicationAuthority
-} from '../mutation/crdt-mutation-contracts.ts';
+    CrdtMutationCommand,
+    CrdtMutationPublicationAuthority,
+    CrdtMutationRead
+} from './crdt-mutation-contracts.ts';
 
-export interface CrdtOutboxProvenanceInsert {
-    readonly queueKey: Key;
-    readonly key: string;
-    readonly value: string;
-    readonly expiresAt: string;
+export interface ComputeCrdtOutboxWritesInput {
+    readonly command: CrdtMutationCommand;
+    readonly read: CrdtMutationRead;
+    readonly entries: readonly ResourceEntry[];
 }
 
-export function computeCrdtOutboxProvenance(
-    mutation: CrdtMutationComputed
-): readonly CrdtOutboxProvenanceInsert[] {
-    const wsWrites = mutation.outboxWrites.filter((write) => write.entry.typeId === EnqueuedType.WS_OUTBOX);
-    if (wsWrites.length === 0) {
-        return [];
-    }
-    const authority = mutation.read.publicationAuthority;
-    if (mutation.command.operation !== 'append' || authority === null) {
+/** Each outbox row as it is written: a WS row with the proof of its authorized append, any other row without one. */
+export function computeCrdtOutboxWrites(input: ComputeCrdtOutboxWritesInput): readonly AppOutboxInsert[] {
+    const { command, read, entries } = input;
+    return entries.map((entry) => {
+        if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
+            return computeAppOutboxInsert(entry);
+        }
+        const { append, authority } = requireCrdtPublicationAuthority(command, read);
+        const message = decodePersistedALMessage(entry.resource);
+        return computeWsOutboxInsert({
+            entry,
+            admissionNamespace: null,
+            provenance: {
+                message,
+                producerKind: 'crdt',
+                target: toCrdtOutboxProvenanceTarget(append, message, authority),
+                expiresAtMs: entry.audit.expiryTs.epochMilliseconds
+            }
+        });
+    });
+}
+
+interface CrdtPublicationAuthority {
+    readonly append: CrdtAppendCommand;
+    readonly authority: CrdtMutationPublicationAuthority;
+}
+
+function requireCrdtPublicationAuthority(
+    command: CrdtMutationCommand,
+    read: CrdtMutationRead
+): CrdtPublicationAuthority {
+    const authority = read.publicationAuthority;
+    if (command.operation !== 'append' || authority === null) {
         throw new TypeError('CRDT WS publication requires the authorized append scope and audience');
     }
-    const document = mutation.command.document;
+    const document = command.document;
     if (
         authority.recipientScope.applicationId !== document.applicationId ||
         authority.recipientScope.workspaceId !== (document.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) ||
-        !authority.admittedAudience.includes(mutation.command.actor.sessionId)
+        !authority.admittedAudience.includes(command.actor.sessionId)
     ) {
         throw new TypeError('CRDT publication authority differs from the authorized document or actor session');
     }
-
-    const proofs: CrdtOutboxProvenanceInsert[] = [];
-    for (const write of wsWrites) {
-        const message = decodePersistedALMessage(write.entry.resource);
-        const record = computeWsOutboxProvenanceRecord({
-            producerKind: 'crdt',
-            entry: write.entry,
-            message,
-            expiresAtMs: write.entry.audit.expiryTs.epochMilliseconds,
-            target: toCrdtOutboxProvenanceTarget(mutation.command, message, authority)
-        });
-        proofs.push({
-            queueKey: write.entry.key,
-            key: record.key,
-            value: record.value,
-            expiresAt: write.expiresAt
-        });
-    }
-    return proofs;
+    return { append: command, authority };
 }
 
 function toCrdtOutboxProvenanceTarget(
@@ -117,26 +122,4 @@ function toCrdtOutboxProvenanceTarget(
         return { kind: 'scoped-world-broadcast', scope: authority.recipientScope };
     }
     throw new TypeError('CRDT fanout target differs from its authorized document');
-}
-
-export async function writeCrdtOutboxProvenance(
-    transaction: PSqlSql,
-    proofs: readonly CrdtOutboxProvenanceInsert[]
-): Promise<void> {
-    for (const proof of proofs) {
-        const rows = await transaction<readonly { revision: number | string; }[]>`
-            insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
-            values (${WS_OUTBOX_PROVENANCE_NAMESPACE}, ${proof.key}, ${proof.value}, ${proof.expiresAt}, now(), 0)
-            on conflict (store_namespace, store_key) do update
-                set store_value = excluded.store_value,
-                    expire_at_ts = excluded.expire_at_ts,
-                    updated_ts = now(),
-                    revision = runtime_state_store.revision + 1
-                where runtime_state_store.expire_at_ts <= now()
-            returning revision
-        `;
-        if (rows.length !== 1) {
-            throw new ResourceInboxInvariantCorruptionError(proof.queueKey, 'CRDT provenance collision');
-        }
-    }
 }

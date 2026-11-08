@@ -17,14 +17,13 @@ import {
     type CrdtMutationService
 } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
-    computeCrdtOutboxProvenance,
-    writeCrdtOutboxProvenance
-} from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
-import {
     PSqlCrdtMutationRepository,
     writePSqlCrdtMutation
 } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
-import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import {
+    WS_OUTBOX_PROVENANCE_NAMESPACE,
+    WsOutboxProvenanceReader
+} from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -130,12 +129,8 @@ Deno.test('committed CRDT append reply carries scoped producer authority for deq
         const computed = await computeValidatedWrite(service, input);
         const reply = computed.outboxWrites[0]?.entry;
         assert.ok(reply);
-        const proofs = computeCrdtOutboxProvenance(computed);
 
-        await sql.begin(async (transaction) => {
-            await writePSqlCrdtMutation(transaction, computed);
-            await writeCrdtOutboxProvenance(transaction, proofs);
-        });
+        await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
 
         const reader = new WsOutboxProvenanceReader({
             repository: new PSqlRuntimeStateRepository(sql),
@@ -205,13 +200,12 @@ for (const scope of ['room', 'principal', 'app'] as const) {
                     document
                 });
                 const computed = await computeValidatedWrite(service, input);
-                const proofs = computeCrdtOutboxProvenance(computed);
-                await sql.begin(async (transaction) => {
-                    await writePSqlCrdtMutation(transaction, computed);
-                    if (proofState === 'present') {
-                        await writeCrdtOutboxProvenance(transaction, proofs);
-                    }
-                });
+                await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
+                if (proofState === 'missing') {
+                    await sql`
+                        delete from runtime_state_store where store_namespace = ${WS_OUTBOX_PROVENANCE_NAMESPACE}
+                    `;
+                }
                 const rows = await sql<ResourceInboxRow[]>`
                     select * from resource_inbox where ri_type_id = 'WS_OUTBOX'
                     and ri_resource::jsonb->'payload'->>'typeId' = 'rallar.crdt.update.v1'

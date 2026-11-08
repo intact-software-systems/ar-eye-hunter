@@ -5,7 +5,7 @@ import {
 } from '@shared/crdt/mod.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { writeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { writeAppOutboxInserts } from '../../app-outbox/app-outbox-insert.ts';
 import { CrdtMutationConflictError } from '../mutation/crdt-mutation-contracts.ts';
 import {
     type CrdtDocumentWrite,
@@ -121,7 +121,7 @@ export async function writePSqlCrdtMutation(
     if (computed.outcome === 'write') {
         await writeCrdtMutationRows(transaction, computed);
     }
-    await writeCrdtOutbox(transaction, computed.outboxWrites);
+    await writeAppOutboxInserts(transaction, computed.outboxWrites);
     return computed.result;
 }
 
@@ -140,15 +140,6 @@ async function writeCrdtMutationRows(
     }
     if (computed.snapshotWrite) {
         await insertSnapshot(sql, computed.snapshotWrite);
-    }
-}
-
-async function writeCrdtOutbox(
-    transaction: PSqlSql,
-    writes: readonly AppOutboxInsert[]
-): Promise<void> {
-    for (const write of writes) {
-        await writeAppOutboxInsert(transaction, write);
     }
 }
 
