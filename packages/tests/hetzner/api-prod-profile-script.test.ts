@@ -477,7 +477,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
 
         const calls = (await readStubLog(stubDirectory)).trim().split('\n');
         expect(calls.includes('systemctl start rallar-api-v1.service')).toBe(startsApi);
-        expect(calls).toContain('systemctl start rallar-black-box-control.service');
+        expect(calls).not.toContain('systemctl start rallar-black-box-control.service');
         expect(stderr.includes('::error::')).toBe(storeFailed);
     });
 

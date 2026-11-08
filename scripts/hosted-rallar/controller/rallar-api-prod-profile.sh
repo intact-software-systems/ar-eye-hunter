@@ -11,6 +11,18 @@ RALLAR_API_SECRET_FILE="${RALLAR_API_SECRET_FILE:-/etc/rallar/api-v1.secrets.env
 RALLAR_CONTROL_ENV_FILE="${RALLAR_CONTROL_ENV_FILE:-/etc/rallar/control-server.env}"
 RALLAR_API_DATABASE_URL_PATTERN="^postgres://${RALLAR_API_DATABASE_ROLE}:([0-9a-f]{64})@127\.0\.0\.1:5432/${RALLAR_API_DATABASE_NAME}$"
 
+# Re-points the shared Postgres store helpers at a named role/database/failure-file triple so the
+# same provision/migrate/read functions serve the API-v1 store and each game-server store.
+select_rallar_postgres_store() {
+	local role="$1"
+	local name="$2"
+	local failure_file="$3"
+	RALLAR_API_DATABASE_ROLE="${role}"
+	RALLAR_API_DATABASE_NAME="${name}"
+	RALLAR_API_STORE_FAILURE_FILE="${failure_file}"
+	RALLAR_API_DATABASE_URL_PATTERN="^postgres://${role}:([0-9a-f]{64})@127\.0\.0\.1:5432/${name}$"
+}
+
 install_rallar_api_postgres_server() {
 	if [[ "$(dpkg-query -W -f='${db:Status-Status}' postgresql 2>/dev/null || true)" != "installed" ]]; then
 		echo "==> Installing PostgreSQL from the Ubuntu archive"

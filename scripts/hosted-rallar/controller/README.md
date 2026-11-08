@@ -1,45 +1,97 @@
 # Rallar Hetzner Controller Scripts
 
-These scripts configure the Iteration 2 controller VM on Ubuntu 24.04 LTS.
+These scripts configure the Hetzner controller fleet on Ubuntu 24.04 LTS. The
+fleet is split into three single-role servers; each server runs the same script
+tree and selects its surface with `RALLAR_CONTROLLER_ROLE` (`api`, `control`, or
+`games`, defaulting to `api`).
 
-Run them as `root` on `rallar-controller-fsn1-01`.
+Run every script as `root`.
+
+## Server Roles and DNS
+
+| Server                             | Role      | Services                                                       | Postgres              |
+| ---------------------------------- | --------- | -------------------------------------------------------------- | --------------------- |
+| `rallar-controller-fsn1-01` (fsn1) | `api`     | api-v1 (Bun) + Caddy                                           | local `rallar_api_v1` |
+| `rallar-controller-02` (hel1)      | `control` | control-server (Bun) + headless browser workers + Caddy        | none                  |
+| `rallar-controller-03` (hel1)      | `games`   | relic-hunter-server-v1 + ar-eye-hunter-server-v1 (Bun) + Caddy | local game stores     |
+
+Intended DNS records (documented here; live DNS is not managed by these
+scripts):
+
+| Host                           | Role    | Backend                                  |
+| ------------------------------ | ------- | ---------------------------------------- |
+| `api.rallar.intactss.com`      | api     | `127.0.0.1:8080`                         |
+| `blackbox.rallar.intactss.com` | api     | static SPA (`/var/www/rallar-black-box`) |
+| `control.rallar.intactss.com`  | control | `127.0.0.1:5180`                         |
+| `relic.rallar.intactss.com`    | games   | `127.0.0.1:8090`                         |
+| `ar-eye.rallar.intactss.com`   | games   | `127.0.0.1:8091`                         |
+
+Each role's script set reads `RALLAR_CONTROLLER_ROLE` from the environment.
+Every script defaults to `api`, so an unset role on the api server preserves the
+pre-split behaviour. Set it explicitly on the other two servers (for example in
+the root shell profile or before each invocation):
+
+```sh
+export RALLAR_CONTROLLER_ROLE=control   # on rallar-controller-02
+export RALLAR_CONTROLLER_ROLE=games     # on rallar-controller-03
+```
+
+Role responsibilities:
+
+- **api** — installs Postgres, writes `api-v1.env`, builds and serves the
+  black-box SPA (and its `black-box-spa.env` audit), applies Prisma migrations,
+  preserves public `RALLAR_BLACK_BOX_*` settings, and writes the
+  deployment-readiness stamp. It no longer writes `control-server.env` or the
+  control-server unit.
+- **control** — writes `control-server.env`, installs the control-server and
+  headless-worker units, and serves `control.*`. It runs no Postgres and applies
+  no Prisma migrations. The control-server operator token secret must match the
+  api server's `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`; supply it explicitly or
+  copy it from the api server.
+- **games** — installs Postgres, writes `relic-hunter-server-v1.env` and
+  `ar-eye-hunter-server-v1.env`, installs both game-server units, applies
+  Prisma migrations per game store, and serves the two game hosts.
 
 ## Copy Scripts To The VM
 
-From your local machine:
+Copy the script tree to each server, then SSH in. Replace the host for the role
+you are provisioning:
 
 ```sh
-ssh root@api.rallar.intactss.com 'rm -rf ~/rallar-controller && mkdir -p ~/rallar-controller'
-scp -r scripts/hosted-rallar/controller/. root@api.rallar.intactss.com:~/rallar-controller/
+for host in api.rallar.intactss.com control.rallar.intactss.com relic.rallar.intactss.com; do
+  ssh root@"${host}" 'rm -rf ~/rallar-controller && mkdir -p ~/rallar-controller'
+  scp -r scripts/hosted-rallar/controller/. root@"${host}":~/rallar-controller/
+done
 ```
 
-Then SSH to the VM:
+Then on each server:
 
 ```sh
-ssh root@api.rallar.intactss.com
+ssh root@<host>
 cd ~/rallar-controller
 chmod +x *.sh
 ln -sf ~/rallar-controller/15-logs.sh /usr/local/bin/rallar-logs
+export RALLAR_CONTROLLER_ROLE=<api|control|games>
 ```
 
 ## Run Order
 
-Install base runtime dependencies (Node.js, Bun, Caddy, and the Ubuntu
-`postgresql` server for API-v1):
+Install base runtime dependencies (Node.js, Bun, Caddy, and — only for the
+`api` and `games` roles — the Ubuntu `postgresql` server):
 
 ```sh
 ./01-install-runtime.sh
 ```
 
-Deploy the repo, configure env files, install systemd units, build the SPA, and
-configure Caddy:
+Deploy the repo, configure the role's env files, install the role's systemd
+units, build the SPA on `api`, and configure the role's Caddy:
 
 ```sh
 ./02-deploy-controller.sh
 ```
 
 Enable Metered TURN for production WebRTC without putting the API key in Git or
-shell history:
+shell history (api role):
 
 ```sh
 ./13-configure-metered-turn.sh
@@ -55,14 +107,15 @@ same simple unquoted assignment format.
 `02-deploy-controller.sh` also references this optional secret file so future
 redeploys keep Metered enabled when the file exists.
 
-Run public smoke checks:
+Run public smoke checks (api checks the API, control checks the control server
+and SPA, games checks the two game servers):
 
 ```sh
 ./03-smoke-controller.sh
 ```
 
 Run a distributed recipe manifest against connected headless browsers and export
-artifacts:
+artifacts (control role):
 
 ```sh
 RALLAR_DISTRIBUTED_MANIFEST_PATH=/tmp/manifest.json \
@@ -85,7 +138,7 @@ Preservation includes the application and workspace. Split topology
 prepare/run operations compare the stable source-manifest hash rather than the
 run-specific materialized-manifest hash.
 
-Stop the Rallar API/control services:
+Stop the role's services:
 
 ```sh
 ./04-stop-controller.sh
@@ -103,7 +156,7 @@ Restart them:
 ./06-restart-controller.sh
 ```
 
-Show service status, memory, and recent logs:
+Show the role's service status, memory, and recent logs:
 
 ```sh
 ./07-status-controller.sh
@@ -217,11 +270,14 @@ Stop, restart, or inspect headless browser workers:
 ./12-status-headless-workers.sh
 ```
 
-By default, the stop/start/restart scripts manage only:
+The stop/start/restart/rollout scripts manage only the services their role
+installs:
 
 ```text
-rallar-api-v1.service
-rallar-black-box-control.service
+api     rallar-api-v1.service
+control rallar-black-box-control.service
+games   rallar-relic-hunter-server-v1.service
+        rallar-ar-eye-hunter-server-v1.service
 ```
 
 Caddy is left running so HTTPS/static SPA stays available. To include Caddy:
@@ -233,15 +289,21 @@ RALLAR_INCLUDE_CADDY=1 ./06-restart-controller.sh
 RALLAR_INCLUDE_CADDY=1 ./08-rollout-controller.sh
 ```
 
+The headless worker (`rallar-black-box-headless-worker.service`) is installed by
+the control role's deploy but started and stopped only through the dedicated
+`09`/`10`/`11`/`12` headless-worker scripts.
+
 Important: these scripts stop or start services on the VM. They do not stop
 Hetzner billing. Delete the VM if you want billing to stop.
 
-Also note that API-v1 uses the `prod` profile on a PostgreSQL server on the
-same VM (database `rallar_api_v1`). Stopping, restarting, deploying, and
-rolling out keep existing API data. `02-deploy-controller.sh` provisions a store
-only when its controller environment, role, and database are all absent. Both
-deploy and rollout apply Prisma migrations before the API starts. Control-server
-snapshots are persisted under `/var/lib/rallar-black-box-control`.
+Also note that the `api` and `games` roles use the `prod` profile on a
+PostgreSQL server on the same VM (database `rallar_api_v1` on api; one store
+per game server on games). Stopping, restarting, deploying, and rolling out keep
+existing data. `02-deploy-controller.sh` provisions a store only when its role's
+environment, database role, and database are all absent. Both deploy and rollout
+apply Prisma migrations before a DB-bearing service starts. Control-server
+snapshots are persisted under `/var/lib/rallar-black-box-control` on the control
+server.
 
 The default controller deployment uses local ICE unless Metered TURN is
 configured. Do not treat it as the hardened `prod-hardened` profile. For
@@ -257,24 +319,27 @@ and the checkout.
 It performs:
 
 ```text
-1. Verify root, validate persisted public settings when preservation is enabled,
-   then check required commands, effective existing-store configuration,
-   and a clean git checkout before changing the selected ref.
+1. Verify root, validate persisted public settings when preservation is enabled
+   (api role), then check required commands, effective existing-store
+   configuration (api/games), and a clean git checkout before changing the
+   selected ref.
 2. Fetch origin and check out RALLAR_REPO_REF, default main; a full commit SHA is
    checked out detached, while a branch follows its current remote head.
 3. Run npm ci.
-4. Build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
-5. Install the Ubuntu `postgresql` server if it is absent and keep it enabled.
-6. Stop rallar-api-v1.service and rallar-black-box-control.service.
-7. Publish static SPA files to /var/www/rallar-black-box.
-8. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
-9. Refresh API-v1 and control-server browser origin policy.
-10. Retain the validated database, credentials, and operator allowlist, and run
-    `bunx prisma migrate deploy` in
-    `apps/api-v1` as the `rallar` user.
-11. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
-    and run local/public health checks.
-12. Print service status and recent logs.
+4. On api: build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
+5. On api/games: install the Ubuntu `postgresql` server if absent and keep it
+   enabled.
+6. Stop the role's services.
+7. On api: publish static SPA files to /var/www/rallar-black-box.
+8. On api: write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
+9. On api: refresh API-v1 browser origin policy; on control: refresh
+   control-server browser origin policy.
+10. On api/games: retain the validated databases, credentials, and operator
+    allowlist, and run `bunx prisma migrate deploy` in `apps/api-v1` as the
+    `rallar` user (api) or per game store (games).
+11. Refresh the role's Caddy reverse-proxy config, start the role's services,
+    reload Caddy, and run the role's local/public health checks.
+12. Print the role's service status and recent logs.
 ```
 
 The script refuses a dirty checkout before selecting the requested remote
@@ -1051,12 +1116,19 @@ control run ID rather than the template ID in the checked-in manifest.
 The deploy script defaults to:
 
 ```text
+RALLAR_CONTROLLER_ROLE=api
 RALLAR_REPO_URL=https://github.com/intact-software-systems/ar-eye-hunter.git
 RALLAR_REPO_REF=main
 RALLAR_CHECKOUT_DIR=/opt/rallar/ar-eye-hunter
 RALLAR_API_HOST=api.rallar.intactss.com
 RALLAR_CONTROL_HOST=control.rallar.intactss.com
 RALLAR_BLACKBOX_HOST=blackbox.rallar.intactss.com
+RALLAR_RELIC_HOST=relic.rallar.intactss.com
+RALLAR_AR_EYE_HOST=ar-eye.rallar.intactss.com
+RALLAR_RELIC_PORT=8090
+RALLAR_AR_EYE_PORT=8091
+RALLAR_RELIC_DATABASE_NAME=relic_hunter_v1
+RALLAR_AR_EYE_DATABASE_NAME=ar_eye_hunter_v1
 RALLAR_API_CORS_ORIGINS=https://blackbox.rallar.intactss.com,https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev
 RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://blackbox.rallar.intactss.com
 RALLAR_CONTROL_HTTP_URL=https://control.rallar.intactss.com
@@ -1121,53 +1193,73 @@ on the Hetzner VM at:
 Main app paths:
 
 ```text
-API-v1 server:
+API-v1 server (api):
   /opt/rallar/ar-eye-hunter/apps/api-v1
 
-Black-box control server:
+Black-box control server (control):
   /opt/rallar/ar-eye-hunter/apps/rallar-black-box-control-server
 
-SPA source:
+Relic Hunter server (games):
+  /opt/rallar/ar-eye-hunter/apps/relic-hunter-server-v1
+
+AR Eye Hunter server (games):
+  /opt/rallar/ar-eye-hunter/apps/ar-eye-hunter-server-v1
+
+SPA source (api):
   /opt/rallar/ar-eye-hunter/apps/rallar-black-box
 
-Built/static SPA served by Caddy:
+Built/static SPA served by Caddy (api):
   /var/www/rallar-black-box
 ```
 
 Runtime config:
 
 ```text
-API env:
+API env (api):
   /etc/rallar/api-v1.env
 
-Control server env:
+Control server env (control):
   /etc/rallar/control-server.env
 
-Caddy config:
+SPA public audit (api):
+  /etc/rallar/black-box-spa.env
+
+Relic Hunter env (games):
+  /etc/rallar/relic-hunter-server-v1.env
+
+AR Eye Hunter env (games):
+  /etc/rallar/ar-eye-hunter-server-v1.env
+
+Caddy config (per role):
   /etc/caddy/Caddyfile
 ```
 
-Systemd services:
+Systemd services (per role):
 
 ```text
-/etc/systemd/system/rallar-api-v1.service
-/etc/systemd/system/rallar-black-box-control.service
+api     /etc/systemd/system/rallar-api-v1.service
+control /etc/systemd/system/rallar-black-box-control.service
+        /etc/systemd/system/rallar-black-box-headless-worker.service
+games   /etc/systemd/system/rallar-relic-hunter-server-v1.service
+        /etc/systemd/system/rallar-ar-eye-hunter-server-v1.service
 ```
 
 Data and cache:
 
 ```text
-Control server persisted runs:
+Control server persisted runs (control):
   /var/lib/rallar-black-box-control
 ```
 
 Useful inspection commands on the VM:
 
 ```sh
-systemctl cat rallar-api-v1
-systemctl cat rallar-black-box-control
+systemctl cat rallar-api-v1                       # api
+systemctl cat rallar-black-box-control            # control
+systemctl cat rallar-relic-hunter-server-v1       # games
+systemctl cat rallar-ar-eye-hunter-server-v1      # games
 ls -la /opt/rallar/ar-eye-hunter
-ls -la /var/www/rallar-black-box
+ls -la /var/www/rallar-black-box                  # api
 ```
 
 ## Useful Status Commands

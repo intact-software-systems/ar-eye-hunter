@@ -403,7 +403,7 @@ describe('Hetzner controller contracts and effects', () => {
 
         expect(stdout).toContain('wroteApiTimingEnvironment=true');
         expect(await readFile(envFile, 'utf8')).toBe(expected);
-        expect(await readFile(rolloutScriptPath, 'utf8')).toContain('\nwrite_api_timing_environment\n');
+        expect(await readFile(rolloutScriptPath, 'utf8')).toContain('\twrite_api_timing_environment\n');
     });
 
     it('installs latest Bun but enforces 1.4.4 as the minimum Hetzner runtime version', async () => {

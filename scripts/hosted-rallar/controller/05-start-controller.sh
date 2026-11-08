@@ -6,6 +6,10 @@ if [[ "$(id -u)" != "0" ]]; then
 	exit 1
 fi
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-controller-role.sh"
+apply_rallar_controller_role
+
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 
 wait_for_url() {
@@ -28,19 +32,30 @@ wait_for_url() {
 	return 1
 }
 
-echo "Starting Rallar controller services"
-systemctl start rallar-api-v1.service
-systemctl start rallar-black-box-control.service
+echo "Starting Rallar controller services (role ${RALLAR_CONTROLLER_ROLE})"
+for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+	systemctl start "${service}"
+done
 
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
 	systemctl start caddy.service
 fi
 
-wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
-wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
+case "${RALLAR_CONTROLLER_ROLE}" in
+api)
+	wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
+	;;
+control)
+	wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
+	;;
+games)
+	wait_for_url "Relic Hunter config" "http://127.0.0.1:${RALLAR_RELIC_PORT}/api/config"
+	wait_for_url "AR Eye Hunter config" "http://127.0.0.1:${RALLAR_AR_EYE_PORT}/api/config"
+	;;
+esac
 
 echo
-for service in rallar-api-v1.service rallar-black-box-control.service caddy.service; do
+for service in "${RALLAR_ROLE_APP_SERVICES[@]}" caddy.service; do
 	printf "  %s: " "${service}"
 	systemctl is-active "${service}" || true
 done

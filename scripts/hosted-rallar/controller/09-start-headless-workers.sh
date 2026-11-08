@@ -132,37 +132,7 @@ validate_worker_env() {
 }
 
 write_systemd_service() {
-	local npm_bin
-	npm_bin="$(command -v npm)"
-
-	cat >/etc/systemd/system/${SERVICE_NAME} <<EOF_SERVICE
-[Unit]
-Description=Rallar Black Box headless browser worker
-After=network-online.target rallar-api-v1.service rallar-black-box-control.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=rallar
-Group=rallar
-WorkingDirectory=${RALLAR_CHECKOUT_DIR}
-Environment=CI=1
-Environment=HOME=/opt/rallar
-EnvironmentFile=${ENV_FILE}
-ExecStart=${npm_bin} --workspace rallar-black-box run worker:headless
-Restart=on-failure
-RestartSec=5
-KillSignal=SIGTERM
-KillMode=control-group
-TimeoutStopSec=45
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF_SERVICE
-
-	systemctl daemon-reload
-	systemctl enable "${SERVICE_NAME}" >/dev/null
+	write_rallar_headless_worker_unit "${SERVICE_NAME}" "${ENV_FILE}" "${RALLAR_CHECKOUT_DIR}"
 }
 
 control_run_snapshot_url() {

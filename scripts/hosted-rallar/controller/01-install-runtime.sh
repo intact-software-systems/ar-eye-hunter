@@ -6,6 +6,8 @@ RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"
 source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-apt-sources.sh"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
+source "${SCRIPT_DIR}/rallar-controller-role.sh"
+apply_rallar_controller_role
 
 RALLAR_APT_PROFILE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rallar-apt-profiles.XXXXXX")"
 trap 'rm -rf -- "${RALLAR_APT_PROFILE_DIR}"' EXIT
@@ -74,8 +76,12 @@ write_rallar_apt_profile caddy "${caddy_apt_config}"
 env APT_CONFIG="${caddy_apt_config}" apt update
 env APT_CONFIG="${caddy_apt_config}" apt install -y caddy
 
-echo "==> Installing the API-v1 PostgreSQL server"
-install_rallar_api_postgres_server
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	echo "==> Installing the PostgreSQL server for role ${RALLAR_CONTROLLER_ROLE}"
+	install_rallar_api_postgres_server
+else
+	echo "==> Skipping the PostgreSQL server (role ${RALLAR_CONTROLLER_ROLE} does not use Postgres)"
+fi
 
 echo "==> Creating Rallar service user and directories"
 if ! id rallar >/dev/null 2>&1; then
@@ -92,6 +98,8 @@ node -v
 npm -v
 bun --version
 caddy version
-psql --version
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	psql --version
+fi
 
 echo "Runtime installation complete."

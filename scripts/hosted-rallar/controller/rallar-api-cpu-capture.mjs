@@ -40,6 +40,9 @@ const cleanupFiles = [
     'rallar-apt-sources.sh',
     'rallar-api-effective-env.sh',
     'rallar-bun-runtime.sh',
+    'rallar-controller-role.sh',
+    'rallar-games-prod-profile.sh',
+    'rallar-headless-worker-env.sh',
     'rallar-public-spa-env.sh',
     'rallar-playwright-install.sh',
     'rallar-deployment-readiness.sh'

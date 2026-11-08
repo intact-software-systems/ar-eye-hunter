@@ -9,6 +9,19 @@ RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-
 RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 RALLAR_DEPLOYMENT_READINESS_PATH="${RALLAR_DEPLOYMENT_READINESS_PATH:-/var/lib/rallar-black-box-control/deployment-readiness.json}"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -r "${SCRIPT_DIR}/rallar-controller-role.sh" ]]; then
+	source "${SCRIPT_DIR}/rallar-controller-role.sh"
+fi
+if declare -F apply_rallar_controller_role >/dev/null 2>&1; then
+	apply_rallar_controller_role
+else
+	# Streamed over SSH stdin without sibling scripts; the inspect path hardcodes its own services.
+	RALLAR_CONTROLLER_ROLE="api"
+	RALLAR_ROLE_HAS_POSTGRES=1
+	RALLAR_ROLE_APP_SERVICES=(rallar-api-v1.service)
+fi
+
 inspect_fail() {
 	echo "Hosted inspect could not obtain required nonsecret evidence: $1." >&2
 	return 1
@@ -317,37 +330,56 @@ if [[ "${1:-}" == "--inspect" ]]; then
 fi
 
 echo "==> Service status"
-systemctl status rallar-api-v1.service --no-pager || true
-systemctl status rallar-black-box-control.service --no-pager || true
-systemctl status postgresql.service --no-pager || true
+for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+	systemctl status "${service}" --no-pager || true
+done
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	systemctl status postgresql.service --no-pager || true
+fi
 systemctl status caddy.service --no-pager || true
 
 echo
-echo "==> API-v1 configuration profile"
-api_profile=""
-if [[ -r "${RALLAR_API_ENV_FILE}" ]]; then
-	api_profile="$(grep -E '^RALLAR_API_CONFIGURATION_PROFILE=' "${RALLAR_API_ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
-fi
-if [[ -z "${api_profile}" ]]; then
-	echo "RALLAR_API_CONFIGURATION_PROFILE not found in ${RALLAR_API_ENV_FILE}"
-elif [[ "${api_profile}" == "prod" ]]; then
-	echo "RALLAR_API_CONFIGURATION_PROFILE=prod on this VM's Postgres; rollouts preserve the store."
-else
-	echo "WARNING: RALLAR_API_CONFIGURATION_PROFILE=${api_profile}; the controller runs the prod profile on this VM's Postgres. Run 08-rollout-controller.sh to apply it."
-fi
+echo "==> Configuration profile"
+case "${RALLAR_CONTROLLER_ROLE}" in
+api)
+	api_profile=""
+	if [[ -r "${RALLAR_API_ENV_FILE}" ]]; then
+		api_profile="$(grep -E '^RALLAR_API_CONFIGURATION_PROFILE=' "${RALLAR_API_ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
+	fi
+	if [[ -z "${api_profile}" ]]; then
+		echo "RALLAR_API_CONFIGURATION_PROFILE not found in ${RALLAR_API_ENV_FILE}"
+	elif [[ "${api_profile}" == "prod" ]]; then
+		echo "RALLAR_API_CONFIGURATION_PROFILE=prod on this VM's Postgres; rollouts preserve the store."
+	else
+		echo "WARNING: RALLAR_API_CONFIGURATION_PROFILE=${api_profile}; the controller runs the prod profile on this VM's Postgres. Run 08-rollout-controller.sh to apply it."
+	fi
+	;;
+games)
+	for env_file in "${RALLAR_RELIC_ENV_FILE}" "${RALLAR_AR_EYE_ENV_FILE}"; do
+		game_profile=""
+		if [[ -r "${env_file}" ]]; then
+			game_profile="$(grep -E '^RALLAR_API_CONFIGURATION_PROFILE=' "${env_file}" | tail -n 1 | cut -d= -f2- || true)"
+		fi
+		printf '%s: %s\n' "$(basename "${env_file}")" "${game_profile:-<missing>}"
+	done
+	;;
+esac
 
-if [[ -e "${RALLAR_API_STORE_FAILURE_FILE}" ]]; then
-	echo "ERROR: $(cat "${RALLAR_API_STORE_FAILURE_FILE}")"
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+		failure_file="$(rallar_role_service_failure_file "${service}" || true)"
+		if [[ -n "${failure_file}" && -e "${failure_file}" ]]; then
+			echo "ERROR: $(cat "${failure_file}")"
+		fi
+	done
 fi
 
 echo
 echo "==> Memory"
 free -h
 
-echo
-echo "==> Recent API-v1 logs"
-journalctl -u rallar-api-v1.service -n 40 --no-pager || true
-
-echo
-echo "==> Recent control-server logs"
-journalctl -u rallar-black-box-control.service -n 40 --no-pager || true
+for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+	echo
+	echo "==> Recent ${service} logs"
+	journalctl -u "${service}" -n 40 --no-pager || true
+done
