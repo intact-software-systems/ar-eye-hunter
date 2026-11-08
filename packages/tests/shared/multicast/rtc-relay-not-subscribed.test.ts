@@ -481,6 +481,59 @@ describe('a receipted granted send its own RTC origin signs', () => {
             complete: true
         });
     });
+
+    it('signs a receipted granted list at its origin, a listed holder without an election recorded outside, an unlisted subscriber receiving nothing', async () => {
+        const chain = await createRelayChain(['a', 'b', 'c', 'd'], {
+            a: PUBLISH_ONLY,
+            b: SUBSCRIBE_ONLY,
+            c: SUBSCRIBE_ONLY,
+            d: SUBSCRIBE_ONLY
+        });
+        const origin = createRtcOriginOverlayFixture({
+            snapshot: chain.snapshot,
+            nextHopPeerIds: ['b', 'c', 'd'],
+            grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
+            publicationCrypto: chain.keys.a
+        });
+        const listed = createChainHop(chain, { selfPeerId: 'b', neighbourPeerIds: ['a'], topicSubscriptions: ACTIVE_TOKEN });
+        const unelected = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['a'] });
+        const unlisted = createChainHop(chain, { selfPeerId: 'd', neighbourPeerIds: ['a'], topicSubscriptions: ACTIVE_TOKEN });
+        const message: ALMessage = {
+            ...newALMulticastMessage(
+                'a',
+                { topicId: PUBLICATION_TOPIC_ID, resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
+                ORIGIN_ROOM,
+                'room.granted-feed.v1',
+                { text: 'feed' },
+                { ack: 'receiver', reliability: 'at-least-once', ttlMs: 30_000, traceId: 'trace-origin-signed-list' }
+            ),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ORIGIN_ROOM, recipientPeerIds: ['b', 'c'] }
+        };
+
+        const admitted = await origin.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(0);
+        await listed.receive(origin.channels.b!.sent[0]!, 'a');
+        await unelected.receive(origin.channels.c!.sent[0]!, 'a');
+        // Relaying is distinct from delivery: the unlisted subscriber is still an overlay next hop.
+        await unlisted.receive(origin.channels.d!.sent[0]!, 'a');
+        for (const control of [...await listed.readSent('a'), ...await unelected.readSent('a')]) {
+            await origin.manager.acceptControlMessage(control);
+        }
+
+        expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+        expect(admitted.message.targets).toMatchObject({ mode: 'multicast', recipientPeerIds: ['b', 'c'], snapshotVersion: 3 });
+        expect(admitted.message.proof).toBeDefined();
+        expect(listed.delivered.map((delivered) => delivered.id.msgId)).toEqual([message.id.msgId]);
+        expect(unelected.delivered).toEqual([]);
+        expect(origin.channels.d!.sent.map((relayed) => relayed.targets)).toMatchObject([{ recipientPeerIds: ['b', 'c'] }]);
+        expect(unlisted.delivered).toEqual([]);
+        expect(toDeliveryReceiptStatement(origin.settlements)).toEqual({
+            expected: ['b', 'c'],
+            confirmed: ['b'],
+            outside: ['c'],
+            complete: true
+        });
+    });
 });
 
 /** A receipted granted frame as the origin `a` signs it. */
