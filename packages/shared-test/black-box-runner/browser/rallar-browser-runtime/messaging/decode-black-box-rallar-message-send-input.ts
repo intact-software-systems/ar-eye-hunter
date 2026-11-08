@@ -7,18 +7,20 @@ import type {
     BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageReplayTarget,
     BlackBoxRallarMessageSendInput,
-    BlackBoxRallarMessageSnapshotFloor
+    BlackBoxRallarMessageSnapshotFloor,
+    BlackBoxRallarRecipientPeer
 } from '../black-box-rallar-operation-contracts.ts';
 import {
+    decodeBlackBoxCommandEnumList,
     decodeBlackBoxCommandNumber,
     decodeBlackBoxCommandRouting,
     decodeBlackBoxCommandString,
+    decodeBlackBoxCommandStringList,
     isBlackBoxCommandRecord,
     isRallarMessagePayload,
     type BlackBoxRallarCommandRecord,
     type BlackBoxRallarInputIssue
 } from '../decode-black-box-rallar-command-input.ts';
-import { decodeBlackBoxRallarMessageAudience } from './decode-black-box-rallar-message-audience.ts';
 import {
     decodeBlackBoxRallarMessageChannel,
     type BlackBoxRallarMessageChannel
@@ -32,6 +34,11 @@ type MessageSendIdentity = Pick<
 type MessageSendOptions = Pick<
     BlackBoxRallarMessageSendInput,
     'roomRef' | 'scope' | 'reliability' | 'ack' | 'durability' | 'onStorageUnavailable' | 'minSnapshotVersion' | 'qos'
+>;
+
+type MessageSendAudience = Pick<
+    BlackBoxRallarMessageSendInput,
+    'toPeer' | 'principalId' | 'recipientPeers' | 'recipientPrincipalIds'
 >;
 
 /** Everything an ordinary send names but the channel it opens. */
@@ -50,6 +57,17 @@ const ON_STORAGE_UNAVAILABLE: readonly NonNullable<BlackBoxRallarMessageSendInpu
     'volatile'
 ];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
+const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['toPeer']>[] = [
+    'server',
+    'receiver'
+];
+const MESSAGE_RECIPIENT_PEER_ROLES: readonly BlackBoxRallarRecipientPeer[] = [
+    'receiver',
+    'recipient-b'
+];
+const MAX_RECIPIENT_PRINCIPAL_IDS = 256;
+/** The audiences a send may name, at most one of them; `scope` counts only as `principal`. */
+const AUDIENCE_FIELDS = ['toPeer', 'recipientPeers', 'recipientPrincipalIds', 'scope'] as const;
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
 const REPLAY_REFUSED_FIELDS = [
     'carrier',
@@ -135,7 +153,7 @@ function decodeMessageSendFields(
     if (isInputIssue(ownership)) {
         return Either.ofLeft(ownership);
     }
-    return decodeBlackBoxRallarMessageAudience(value).flatMap(
+    return decodeMessageAudience(value).flatMap(
         (issue) => Either.ofLeft(issue),
         (peer) =>
             decodeMessageSendIdentity(value).flatMap(
@@ -155,6 +173,46 @@ function decodeMessageSendFields(
                     }))
             )
     );
+}
+
+function decodeMessageAudience(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendAudience> {
+    const toPeer = MESSAGE_PEER_ROLES.find((role) => role === record.toPeer);
+    if (record.toPeer !== undefined && toPeer === undefined) {
+        return Either.ofLeft({ message: 'messages.send.toPeer must be server or receiver.' });
+    }
+    const recipientPeers = decodeBlackBoxCommandEnumList(
+        record.recipientPeers,
+        MESSAGE_RECIPIENT_PEER_ROLES,
+        'messages.send.recipientPeers must list receiver or recipient-b, each once.'
+    );
+    const recipientPrincipalIds = decodeBlackBoxCommandStringList(
+        record.recipientPrincipalIds,
+        MAX_RECIPIENT_PRINCIPAL_IDS,
+        'messages.send.recipientPrincipalIds must list distinct principal ids.'
+    );
+    if (isInputIssue(recipientPeers)) {
+        return Either.ofLeft(recipientPeers);
+    }
+    if (isInputIssue(recipientPrincipalIds)) {
+        return Either.ofLeft(recipientPrincipalIds);
+    }
+    const named = AUDIENCE_FIELDS.filter((field) =>
+        field === 'scope' ? record.scope === 'principal' : record[field] !== undefined
+    );
+    return named.length > 1
+        ? Either.ofLeft({
+            message:
+                `messages.send names ${named.join(' and ')}; a send names at most one of toPeer, recipientPeers, ` +
+                'recipientPrincipalIds and scope \'principal\'.'
+        })
+        : Either.ofRight({
+            toPeer,
+            principalId: decodeBlackBoxCommandString(record.principalId),
+            recipientPeers,
+            recipientPrincipalIds
+        });
 }
 
 function decodeMessageSendIdentity(
