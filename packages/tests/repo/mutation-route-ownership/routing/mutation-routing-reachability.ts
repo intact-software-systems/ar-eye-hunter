@@ -155,6 +155,11 @@ function findRegisteredHandlers({
     if (item.transport === 'MAINTENANCE') {
         return findMaintenanceHandlers({ item, program });
     }
+    if (item.transport === 'WS_UPGRADE') {
+        // The Bun fetch-boundary upgrade is a named function (`upgradeApiWebSocket`) that carries
+        // both the connect and disconnect handoffs; no Hono route registration exists anymore.
+        return findFunctionLikes(program, item.registrationMarker);
+    }
     if (item.transport === 'WS_LIFECYCLE') {
         const registration = findCall(program, 'onWebsocketCallbacksDo', () => true);
         const callbacks = registration &&

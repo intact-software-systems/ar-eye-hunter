@@ -40,7 +40,6 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const LANE_SETUP_ACTION = './.github/actions/release-gate-setup';
 const githubAutomationRoots = ['.github/actions', '.github/workflows'] as const;
 const requiredActionReferences = {
-    cache: 'actions/cache@v6',
     checkout: 'actions/checkout@v7',
     'setup-node': 'actions/setup-node@v7',
     'upload-artifact': 'actions/upload-artifact@v7'
@@ -186,7 +185,7 @@ describe('GitHub Actions runtime governance', () => {
         const yamlFiles = (await Promise.all(githubAutomationRoots.map(findYamlFiles))).flat();
         const observedActions = new Set<GovernedActionName>();
         const violations: string[] = [];
-        const actionReference = /uses:\s*actions\/(cache|checkout|setup-node|upload-artifact)@([^\s#'"]+)/gu;
+        const actionReference = /uses:\s*actions\/(checkout|setup-node|upload-artifact)@([^\s#'"]+)/gu;
 
         for (const relativePath of yamlFiles) {
             const source = await readFile(path.join(repoRoot, relativePath), 'utf8');

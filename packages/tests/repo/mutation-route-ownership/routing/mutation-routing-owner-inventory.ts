@@ -1,5 +1,5 @@
 export interface MutationRouteInventoryRow {
-    readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'MAINTENANCE';
+    readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'WS_UPGRADE' | 'MAINTENANCE';
     readonly entrypoint: string;
     readonly type: string;
     readonly source: string;
@@ -157,11 +157,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         dispatchSource: 'clientInbox'
     },
     {
-        transport: 'HTTP',
+        transport: 'WS_UPGRADE',
         entrypoint: 'GET /api/ws/:sessionId upgrade',
         type: 'CLIENT_AUTHORISED_WS_CONNECT',
         source: 'webSocketRoutes',
-        registrationMarker: '\'/api/ws/:sessionId\'',
+        registrationMarker: 'upgradeApiWebSocket',
         enqueueSource: 'webSocketRoutes',
         enqueueMarker: 'writeAuthorisedWsClientConnect',
         ownerSource: 'clientHandler',
@@ -170,11 +170,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         dispatchSource: 'clientInbox'
     },
     {
-        transport: 'HTTP',
+        transport: 'WS_UPGRADE',
         entrypoint: 'GET /api/ws/:sessionId upgrade',
         type: 'CLIENT_AUTHORISED_WS_DISCONNECT',
         source: 'webSocketRoutes',
-        registrationMarker: '\'/api/ws/:sessionId\'',
+        registrationMarker: 'upgradeApiWebSocket',
         enqueueSource: 'webSocketRoutes',
         enqueueMarker: 'enqueueAuthorisedWsClientDisconnect',
         ownerSource: 'clientHandler',

@@ -11,7 +11,7 @@ import { MUTATION_ROUTE_INVENTORY_ROWS } from './mutation-routing-owner-inventor
 import { findMutationRouteReachabilityIssues } from './mutation-routing-reachability.ts';
 
 export interface MutationRouteInventoryEntry {
-    readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'MAINTENANCE';
+    readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'WS_UPGRADE' | 'MAINTENANCE';
     readonly entrypoint: string;
     readonly type: AppInboxType;
     readonly owner: string;
