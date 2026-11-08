@@ -1,13 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     EntityStatus,
     isKeysEqual,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+
+import { computeWsOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import type { WsOutboxProvenanceFacts } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import { materializeRtcOverlayTopologyMessages } from '../planning/materialize-rtc-overlay-topology-messages.ts';
 import { assertRtcTopologyPublication } from './decode-rtc-topology-publication.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
@@ -61,8 +65,40 @@ export function assertRtcTopologyPublicationOutbox(
     }
 }
 
+/** Each page as it is written, with the proof of the publication audience it was frozen for. */
 export function computeRtcTopologyPublicationOutboxWrites(
     publication: RtcTopologyPublication
 ): readonly AppOutboxInsert[] {
-    return computeRtcTopologyPublicationOutbox(publication).map(computeAppOutboxInsert);
+    return computeRtcTopologyPublicationOutbox(publication).map((entry) =>
+        computeWsOutboxInsert({
+            entry,
+            admissionNamespace: null,
+            provenance: toRtcTopologyProvenanceFacts(publication, entry)
+        })
+    );
+}
+
+function toRtcTopologyProvenanceFacts(
+    publication: RtcTopologyPublication,
+    entry: ResourceEntry
+): WsOutboxProvenanceFacts {
+    const message = decodePersistedALMessage(entry.resource);
+    const targets = message.targets;
+    if (
+        targets?.mode !== 'broadcast' || targets.scope !== 'room' || !targets.groupRef ||
+        !isSameGroupRef(targets.groupRef, publication.groupRef) || !targets.recipientPeerIds ||
+        targets.recipientPeerIds.some((sessionId) => !publication.recipientSessionIds.includes(sessionId))
+    ) {
+        throw new TypeError('RTC topology page differs from its validated publication audience');
+    }
+    return {
+        message,
+        producerKind: 'rtc-topology',
+        target: {
+            kind: 'scoped-room-broadcast',
+            groupRef: publication.groupRef,
+            admittedAudience: targets.recipientPeerIds
+        },
+        expiresAtMs: entry.audit.expiryTs.epochMilliseconds
+    };
 }

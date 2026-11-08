@@ -5,7 +5,7 @@ import {
     onTestFinished
 } from 'vitest';
 
-import { computeRtcTopologyOutboxProvenance } from '@shared-server/rallar-system/topology/publication/rtc-topology-outbox-provenance.ts';
+import { computeRtcTopologyPublicationOutboxWrites } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import { computeRtcTopologyPublicationDeliveryWrite } from '@shared-server/rallar-system/topology/replay/work/write-rtc-topology-publication-transaction.ts';
 import {
     computeWsOutboxProvenanceDigest,
@@ -32,30 +32,12 @@ import {
 describe('RTC topology producer provenance', () => {
     it('refuses a page audience or scope that differs from the accepted publication', () => {
         const publication = createPublication(createTopologySnapshot(createGroupRef(), 1), 'work-proof');
-        const delivery = computeRtcTopologyPublicationDeliveryWrite(publication, undefined);
-        for (const defect of ['audience', 'scope'] as const) {
-            const changed = delivery.outboxWrites.map((write) => {
-                const message = decodePersistedALMessage(write.entry.resource);
-                if (message.targets?.mode !== 'broadcast') {
-                    throw new Error('Expected a topology broadcast');
-                }
-                return {
-                    ...write,
-                    entry: {
-                        ...write.entry,
-                        resource: JSON.stringify({
-                            ...message,
-                            targets: {
-                                ...message.targets,
-                                ...(defect === 'audience'
-                                    ? { recipientPeerIds: ['session-late'] }
-                                    : { groupRef: { ...publication.groupRef, workspaceId: 'other' } })
-                            }
-                        })
-                    }
-                };
-            });
-            expect(() => computeRtcTopologyOutboxProvenance(publication, changed)).toThrow('differs from its publication');
+        const defects = [
+            [{ ...publication, recipientSessionIds: ['session-late'] }, 'RTC topology publication winner is internally inconsistent'],
+            [{ ...publication, groupRef: { ...publication.groupRef, workspaceId: 'other' } }, 'RTC topology snapshot groupRef differs from storage scope']
+        ] as const;
+        for (const [changedPublication, refusal] of defects) {
+            expect(() => computeRtcTopologyPublicationOutboxWrites(changedPublication)).toThrow(new TypeError(refusal));
         }
     });
 
@@ -70,7 +52,7 @@ describe('RTC topology producer provenance', () => {
             };
             const computed = computeRtcTopologyPublicationDeliveryWrite(publication, undefined);
             const repository = new FakeRuntimeStateRepository();
-            for (const proof of computed.provenanceWrites) {
+            for (const proof of computed.outboxWrites.map(({ provenance }) => provenance!)) {
                 if (recipient === 'missing-proof') {
                     continue;
                 }

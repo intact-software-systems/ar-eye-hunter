@@ -98,10 +98,10 @@ describe('group presence delta producer provenance', () => {
                 [{ traceId: 'trace-group-delta-provenance', work, reservation: { key: producer.entry.key, expectedAttempts: 1 } }],
                 producer.now
             )).right ?? [];
-            const row = producer.worker.compute(toSummaryExpansion(work, read!)).downstreamOutboxWrites[0]!.entry;
+            const proof = producer.worker.compute(toSummaryExpansion(work, read!)).downstreamOutboxWrites[0]!.provenance!;
             await producer.repository.upsert({
                 namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
-                key: toWsOutboxProvenanceKey(row.key),
+                key: proof.key,
                 value: 'existing-proof',
                 expireAtTimestamp: producer.now + 60_000
             });

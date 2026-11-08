@@ -16,7 +16,7 @@ import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgre
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { writeAppOutboxInserts } from '../../app-outbox/app-outbox-insert.ts';
 import {
     readIsObservedCoalescedSuccessorStored,
     writeCoalescedAppOutboxWork
@@ -62,11 +62,6 @@ import {
     type GroupPresenceSummaryWorkItem
 } from './compute-group-presence-summary-page.ts';
 import type { GroupPresenceSummaryRead } from './compute-group-presence-summary.ts';
-import {
-    computeGroupDeltaProvenance,
-    writeGroupDeltaProvenance,
-    type GroupDeltaProvenanceInsert
-} from './group-delta-provenance.ts';
 import {
     claimPendingGroupPresenceSummaryWork,
     releaseUnexpandedGroupPresenceSummaryWork,
@@ -307,9 +302,7 @@ export class GroupPresenceSummaryWork {
         if (computed.summaryWrite !== null) {
             await writePresenceSummary(transaction, computed.summaryWrite);
         }
-        for (const outboxWrite of computed.downstreamOutboxWrites) {
-            await writeAppOutboxInsert(transaction, outboxWrite);
-        }
+        await writeAppOutboxInserts(transaction, computed.downstreamOutboxWrites);
         if (
             replanWrite.write === 'coalesced' &&
             await writeCoalescedAppOutboxWork(transaction, replanWrite.work) !== 'written'
@@ -474,7 +467,6 @@ export class GroupPresenceSummaryWork {
         if ('code' in pageWrite) {
             return pageWrite;
         }
-        const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
         const outcome = await timeRallarAsync(
             this.options.timing,
             toGroupPresenceSummaryTimingEvent({
@@ -483,7 +475,7 @@ export class GroupPresenceSummaryWork {
                 serviceId: this.options.serviceId,
                 details: effectDetails
             }),
-            async () => await this.writeExpansion(database, pageWrite, proofs)
+            async () => await this.writeExpansion(database, pageWrite)
         );
         if (outcome === 'written') {
             this.finishWrittenExpansion(expansions, coalesced);
@@ -532,16 +524,14 @@ export class GroupPresenceSummaryWork {
         this.recordFormationMetrics(coalesced);
     }
 
-    /** One transaction for the summary, its deltas, their proofs and every reservation finish; a lost summary write rolls all back. */
+    /** One transaction for the summary, its deltas with their proofs and every reservation finish; a lost summary write rolls all back. */
     private async writeExpansion(
         database: PSqlSql,
-        pageWrite: GroupPresenceSummaryPageWrite,
-        proofs: readonly GroupDeltaProvenanceInsert[]
+        pageWrite: GroupPresenceSummaryPageWrite
     ): Promise<GroupPresenceSummaryWriteOutcome> {
         try {
             await runInPSqlTransaction(database, async (transaction) => {
                 await this.write(transaction, pageWrite);
-                await writeGroupDeltaProvenance(transaction, proofs);
                 for (const reservationFinish of pageWrite.reservationFinishes) {
                     if (!await writeResourceInboxReservationFinish(transaction, reservationFinish)) {
                         throw new Error('Presence-summary reservation changed before commit');
