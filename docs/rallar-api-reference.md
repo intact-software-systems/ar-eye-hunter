@@ -1103,8 +1103,7 @@ room's tree. A named session without `subscribe` is left out silently, so a
 receipted peer send to such a session reads `acknowledged` with zero
 recipients over RTC, where WS refuses it `unauthorized`; an `ack: 'none'` one
 falls back on `no-route`, and under `rtc` alone it settles `rejected` with
-`unroutable`/`no-route`. The page signs each
-frame with the
+`unroutable`/`no-route`. The page signs each frame with the
 publication key its session registered on its room presence (see Group Policy
 And State Routes above). Every relay and receiver verifies that signature
 against its own cached room snapshot before it forwards or delivers the frame. A

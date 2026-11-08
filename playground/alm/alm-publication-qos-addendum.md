@@ -957,7 +957,8 @@ exclusions-only granted room broadcast stays refused `unsupported` on RTC, and
 ordering on a peer send stays refused; receipts are unsigned; a `receiver`
 unicast to a non-holder completes with zero recipients over RTC, where WS
 answers `unauthorized`, and under `rtc` alone an `ack: 'none'` one settles
-`rejected` with `unroutable`/`no-route`; after a hand-over a frozen session that never
+`rejected` with `unroutable`/`no-route`; after a hand-over a frozen session that
+never
 subscribes stays expected and unconfirmed on WS; and the cells run on the local
 lane only, with no hosted manifest. Decisions D551–D562 are in the roadmap, and
 Slice 6's first pull request is complete.

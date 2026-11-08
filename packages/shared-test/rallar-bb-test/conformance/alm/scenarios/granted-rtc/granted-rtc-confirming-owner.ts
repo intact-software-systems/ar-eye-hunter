@@ -6,11 +6,11 @@ import { toConfirmedCueWait } from '../topic-subscription/topic-subscription-pub
 import {
     toGrantedRtcOwnerCommands,
     toRtcArrivalWait,
-    type GrantedRtcMemberGrant
+    type GrantedRtcMemberOperation
 } from './granted-rtc-commands.ts';
 
 /** Recipient-b may receive the granted topic, which only its own election makes it do. */
-export const RECIPIENT_B_SUBSCRIBES: GrantedRtcMemberGrant = {
+export const RECIPIENT_B_SUBSCRIBES: GrantedRtcMemberOperation = {
     operation: 'grant',
     grantee: 'recipient-b',
     publish: false,
@@ -23,7 +23,7 @@ export const RECIPIENT_B_SUBSCRIBES: GrantedRtcMemberGrant = {
  */
 export function toConfirmingOwnerCommands(
     owner: AlmConformanceStepInput,
-    memberGrants: readonly GrantedRtcMemberGrant[]
+    memberGrants: readonly GrantedRtcMemberOperation[]
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toGrantedRtcOwnerCommands(owner, memberGrants),

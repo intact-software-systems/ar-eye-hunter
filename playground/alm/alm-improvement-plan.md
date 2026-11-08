@@ -1922,8 +1922,7 @@ batched CRDT, presence-summary and topology outbox loops and the shared PGlite s
   pins are blocking; five `granted-rtc` cells over `rtc` are observed evidence on the local lane, through a harness
   audience of lane roles or principal ids. The `track-index-end` outbound diagnostic and `readOrderingMessageId` ride
   S6-i; the provenance writer, the batched CRDT, presence-summary and topology outbox loops and the PGlite statement
-  recorder are S6-ii. The addendum's "As applied (S6-i)" under
-  Slice 6 states the limits.
+  recorder are S6-ii. The addendum's "As applied (S6-i)" under Slice 6 states the limits.
 
 ## Conformance lane
 
@@ -2647,7 +2646,8 @@ numbers continue from D563.
   Slice 5 design proposal is deleted and git history is the archive. The `browser/rallar.ts` budget is 298 KiB
   (measured under 298 at the final head) and the headless agent budget 394 KiB (measured 393.02). Release 12 is
   complete.
-- 2026-11-08 (Release 13 S6-i delivered; S6-ii pending): Slice 6, granted unicast, list and principal broadcast over
+- 2026-11-08 (Release 13 S6-i delivered; S6-ii pending: the provenance writer, the batched outbox loops and the PGlite
+  statement recorder): Slice 6, granted unicast, list and principal broadcast over
   RTC, chosen by the maintainer from a candidate survey of the addendum's later outcomes; decisions D551–D562 under the
   rulings S6-R1–S6-R12, with "As applied (S6-i)" notes on D518, D519, D521 and D523; the addendum's "As applied
   (S6-i)" under Slice 6 is the full account. Shipped: one shape predicate in the granted carrier, a granted list,

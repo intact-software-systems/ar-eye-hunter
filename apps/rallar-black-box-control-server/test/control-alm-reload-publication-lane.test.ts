@@ -140,7 +140,6 @@ Deno.test('a live send from a sender that left the group is refused by the trust
     assertEquals(readStagingOutcomes(ports, fenced), []);
 });
 
-/** A ws live send on one stream, one value retained, whose lane opens one opportunity per cadence. */
 Deno.test('a send naming recipientPrincipalIds addresses only the participants of the listed principals', async () => {
     const ports = new AlmReloadPorts(true, [
         ...PARTICIPANTS,
@@ -163,6 +162,7 @@ Deno.test('a send naming recipientPrincipalIds addresses only the participants o
     assertEquals(ports.messages.map((message) => message.recipientRoles), [['recipient-b']]);
 });
 
+/** A ws live send on one stream, one value retained, whose lane opens one opportunity per cadence. */
 function toLiveSend(seq: number): RallarBlackBoxTestCommand {
     return {
         kind: 'messages.send',

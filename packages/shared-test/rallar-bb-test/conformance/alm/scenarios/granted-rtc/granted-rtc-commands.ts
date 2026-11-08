@@ -69,7 +69,7 @@ interface GrantedRtcRefusalPollInput {
 }
 
 /** A grant or revoke of a further member's permissions on the granted topic, written before the sender's grant. */
-export type GrantedRtcMemberGrant = Pick<TopicGrantInput, 'operation' | 'grantee' | 'publish' | 'subscribe'>;
+export type GrantedRtcMemberOperation = Pick<TopicGrantInput, 'operation' | 'grantee' | 'publish' | 'subscribe'>;
 
 /** The sender's permissions; a principal broadcast's sender holds `subscribe` too, which its sibling shares. */
 export type GrantedRtcSenderGrant = Pick<TopicGrantInput, 'publish' | 'subscribe'>;
@@ -82,7 +82,7 @@ const PUBLISH_ONLY: GrantedRtcSenderGrant = { publish: true, subscribe: false };
  */
 export function toGrantedRtcOwnerCommands(
     owner: AlmConformanceStepInput,
-    memberGrants: readonly GrantedRtcMemberGrant[],
+    memberGrants: readonly GrantedRtcMemberOperation[],
     senderGrant: GrantedRtcSenderGrant = PUBLISH_ONLY
 ): readonly RallarBlackBoxTestCommand[] {
     return [
