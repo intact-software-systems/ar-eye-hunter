@@ -15,11 +15,11 @@ roles. The existing Node + npm frontend and `packages/**` Vitest surface is unto
   `packages/**`.
 - **Topology (split by role)** across the three servers:
 
-  | Server | Role | Storage |
-  | --- | --- | --- |
-  | `rallar-controller-fsn1-01` (fsn1) | API-v1 | local production Postgres |
-  | `rallar-controller-02` (hel1) | control server + headless workers | control snapshots |
-  | `rallar-controller-03` (hel1) | `relic-hunter-server-v1` + `ar-eye-hunter-server-v1` | local games Postgres |
+  | Server                             | Role                                                 | Storage                   |
+  | ---------------------------------- | ---------------------------------------------------- | ------------------------- |
+  | `rallar-controller-fsn1-01` (fsn1) | API-v1                                               | local production Postgres |
+  | `rallar-controller-02` (hel1)      | control server + headless workers                    | control snapshots         |
+  | `rallar-controller-03` (hel1)      | `relic-hunter-server-v1` + `ar-eye-hunter-server-v1` | local games Postgres      |
 
 - **Data**: fresh start. Deno Deploy Postgres data is not retained.
 - **`ar-eye-hunter-server-v1`**: migrate to Bun **and** deploy to 03.
@@ -105,23 +105,23 @@ Hybrid, in two phases:
 
 ### Conversion rules
 
-| Deno | Bun / Node replacement |
-| --- | --- |
-| `Deno.serve(handler)` | `Bun.serve({ fetch, websocket })` |
-| `Deno.upgradeWebSocket` | `Bun.serve` `websocket` handlers (or `node:ws`) |
-| `Deno.env.get(k)` | `process.env[k]` |
-| `Deno.Command` / `Deno.spawn` | `Bun.spawn` / `node:child_process` |
-| `Deno.readTextFile` / `writeTextFile` / `mkdir` / `stat` | `node:fs/promises` |
-| `Deno.exit` / `Deno.args` / `Deno.cwd` | `process.exit` / `process.argv` / `process.cwd()` |
-| `deno test` | `bun test` (`Deno.test` → `bun:test`) |
-| `deno check` | `bunx tsc --noEmit` |
-| `deno lint` | `bunx eslint` |
-| `deno run npm:vitest` | `vitest` / `bunx vitest` |
-| `deno task <x>` | npm script / `bun run <x>` |
-| `--unstable-temporal` | `@js-temporal/polyfill` (existing dep) |
-| `jsr:` import map | npm package + tsconfig `paths` |
-| `deno.json` | `package.json` (npm workspace) + tsconfig |
-| `--allow-*` flags | removed (no permission model) |
+| Deno                                                     | Bun / Node replacement                            |
+| -------------------------------------------------------- | ------------------------------------------------- |
+| `Deno.serve(handler)`                                    | `Bun.serve({ fetch, websocket })`                 |
+| `Deno.upgradeWebSocket`                                  | `Bun.serve` `websocket` handlers (or `node:ws`)   |
+| `Deno.env.get(k)`                                        | `process.env[k]`                                  |
+| `Deno.Command` / `Deno.spawn`                            | `Bun.spawn` / `node:child_process`                |
+| `Deno.readTextFile` / `writeTextFile` / `mkdir` / `stat` | `node:fs/promises`                                |
+| `Deno.exit` / `Deno.args` / `Deno.cwd`                   | `process.exit` / `process.argv` / `process.cwd()` |
+| `deno test`                                              | `bun test` (`Deno.test` → `bun:test`)             |
+| `deno check`                                             | `bunx tsc --noEmit`                               |
+| `deno lint`                                              | `bunx eslint`                                     |
+| `deno run npm:vitest`                                    | `vitest` / `bunx vitest`                          |
+| `deno task <x>`                                          | npm script / `bun run <x>`                        |
+| `--unstable-temporal`                                    | `@js-temporal/polyfill` (existing dep)            |
+| `jsr:` import map                                        | npm package + tsconfig `paths`                    |
+| `deno.json`                                              | `package.json` (npm workspace) + tsconfig         |
+| `--allow-*` flags                                        | removed (no permission model)                     |
 
 `jsr:` → npm mapping: `hono` → `hono`, `@std/assert` → `@std/assert`, `@std/path` → `@std/path`,
 `@std/dotenv` → `@std/dotenv`, `@std/yaml` → `@std/yaml`, `@std/expect` → `@std/expect`; BDD
@@ -192,7 +192,7 @@ Owner: `apps/api-v1`, `apps/relic-hunter-server-v1`, `packages/shared-test/black
 5. Remove the `deno-deploy-preflight`, `deploy-api`, `deploy-control-server`, and `deploy-relic-api`
    jobs from `deploy.yml`; update/remove the coupled tests (`packages/tests/hetzner/deploy-release-gate.test.ts`,
    `deploy-stale-main-guard.test.ts`), and remove `scripts/deploy/verify-deno-deploy-api-configuration.mjs`
-   + `packages/tests/hetzner/deno-deploy-api-configuration.test.ts`. Update `docs/production-deployment.md`.
+   - `packages/tests/hetzner/deno-deploy-api-configuration.test.ts`. Update `docs/production-deployment.md`.
 
 Acceptance: `npm run test:ci` (now Bun-backed) passes; Release Gate and Games Release Gate run without
 Deno; `deploy.yml` no longer references Deno Deploy. Deno Deploy apps remain live as fallback.

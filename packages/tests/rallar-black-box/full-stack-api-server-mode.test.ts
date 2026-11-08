@@ -356,7 +356,7 @@ describe('rallar-black-box full-stack API server mode', () => {
                 environment: selectedEnvironment,
                 admittedRtcCaseId: admittedAttempt?.locator.caseId ?? null
             });
-            const commandPrefix = server.command.slice(0, server.command.indexOf('deno run'));
+            const commandPrefix = server.command.slice(0, server.command.indexOf('bun run'));
             const configurationProbe = `
             import { readFile } from "node:fs/promises";
             import { readApiV1Configuration } from "./apps/api-v1/src/configuration/read-api-v1-configuration.ts";
@@ -699,7 +699,7 @@ function startFullStackApiCaptureConfigProbe(
         const wrapper = api.command.includes('run-full-stack-api-with-timing.ts');
         process.stdout.write(JSON.stringify({
             wrapper,
-            direct: !wrapper && /(?:^|\s)deno\s+run/.test(api.command),
+            direct: !wrapper && /(?:^|\s)bun\s+run/.test(api.command),
             timingLogs: timing === null ? null : timing[1] === 'true',
             appInboxPhaseTiming: phase === null ? null : phase[1] === 'true',
             reuseExistingServer: api.reuseExistingServer,

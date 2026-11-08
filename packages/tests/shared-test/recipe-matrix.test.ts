@@ -79,9 +79,8 @@ const strictDebtPath = path.join(runnerRoot, 'preflight/strict-expectation-debt.
 function readStrictExpectationFindings(recipeRelativePath: string): number {
     // The runner prefixes its `-c` argument with './', so an absolute path
     // becomes './/Users/...' and cannot be opened. Pass repo-relative paths.
-    const result = spawnSync('deno', [
+    const result = spawnSync('bun', [
         'run',
-        '-A',
         'packages/shared-test/black-box-runner/scenario-black-box.ts',
         '-c',
         path.posix.join('packages/shared-test/black-box-runner', recipeRelativePath),
@@ -190,7 +189,7 @@ describe('black-box runner recipe matrix', () => {
     });
 
     it('offers an offline validation profile that lists recipes without live preflight gates', () => {
-        const result = spawnSync('deno', ['run', '-A', path.join(runnerRoot, 'recipe-matrix.mts'), '--profile=validation', '--list'], {
+        const result = spawnSync('bun', ['run', path.join(runnerRoot, 'recipe-matrix.mts'), '--profile=validation', '--list'], {
             cwd: repoRoot,
             encoding: 'utf8'
         });

@@ -193,9 +193,7 @@ function createStateWriteDomainServices(
         serviceId,
         finishedRetentionMs: defaults.appInbox.finishedRetentionMs,
         timing,
-        // deno-lint-ignore require-await -- The benchmark supplies the asynchronous layout-read port.
         readPlannedLayoutRow: async () => null,
-        // deno-lint-ignore require-await -- The benchmark supplies the asynchronous layout-read port.
         readAcceptedLayoutRow: async () => null
     });
     const clientState = createClientStateService({ runtimeRepository, clientStateEventStore, serviceId, timing });

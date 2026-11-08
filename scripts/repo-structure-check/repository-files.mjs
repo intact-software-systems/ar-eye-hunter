@@ -14,7 +14,6 @@ export const authoredCodeRoots = Object.freeze([
 ]);
 export const generatedDirectoryExclusions = Object.freeze([
     '.cache',
-    '.deno',
     '.git',
     '.next',
     '.nx',
@@ -42,7 +41,7 @@ export const toolMandatedFileExclusions = Object.freeze([
     'prisma.config',
     'vite.config',
     'vitest.config',
-    'vitest.deno.config',
+    'vitest.bun.config',
     'vitest.postgres-integration.config'
 ]);
 

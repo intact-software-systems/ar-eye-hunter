@@ -7,7 +7,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
     describe,
     expect,
@@ -23,7 +22,6 @@ const LAUNCH_DATABASE_URL = 'postgres://fixture-launch:fixture@127.0.0.1:1/fixtu
 const FILE_DATABASE_URL = 'postgres://fixture-file:fixture@127.0.0.1:1/fixture-file';
 const METERED_ENVIRONMENT_NAMES = ['METERED_APP_NAME', 'METERED_API_KEY', 'METERED_REGION'];
 const FIXTURE_METERED_LINES = ['METERED_APP_NAME=fixture-app', 'METERED_API_KEY=fixture-key', 'METERED_REGION=global'];
-const API_DENO_CONFIG = 'apps/api-v1/deno.json';
 const API_ENTRY_POINT = 'apps/api-v1/src/main.ts';
 const repositoryRoot = new URL('../../../', import.meta.url);
 
@@ -142,11 +140,9 @@ async function readPostgresApiLaunchObservation(input: PostgresApiLaunchInput): 
 }
 
 function toProbeCommand(command: string, probePath: string): string {
-    expect(command).toContain(`--config ${API_DENO_CONFIG} `);
+    expect(command).toContain(`bun run ${API_ENTRY_POINT}`);
     expect(command.endsWith(` ${API_ENTRY_POINT}`)).toBe(true);
-    return command
-        .replace(`--config ${API_DENO_CONFIG} `, `--config ${fileURLToPath(new URL(API_DENO_CONFIG, repositoryRoot))} `)
-        .replace(` ${API_ENTRY_POINT}`, ` ${probePath}`);
+    return command.replace(` ${API_ENTRY_POINT}`, ` ${probePath}`);
 }
 
 function toInheritedEnvironment(): NodeJS.ProcessEnv {

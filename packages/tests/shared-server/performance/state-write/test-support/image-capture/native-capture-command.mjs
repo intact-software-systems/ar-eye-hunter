@@ -29,7 +29,7 @@ else if (command === 'ps') {
     console.log(decoded.processesText);
 }
 else {
-    const version = command === 'deno' ? 'deno 2.9.5\nv8 15.0\ntypescript 6.0' : command === 'npm' ? '11.20' : '';
+    const version = command === 'bun' ? 'bun 1.4.4' : command === 'npm' ? '11.20' : '';
     console.log(version);
 }
 

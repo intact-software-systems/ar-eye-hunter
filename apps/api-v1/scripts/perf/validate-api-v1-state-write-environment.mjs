@@ -40,9 +40,7 @@ export const ENVIRONMENT_FIELDS = [
     'host_architecture',
     'node',
     'npm',
-    'deno',
-    'deno_v8',
-    'deno_typescript',
+    'bun',
     'docker',
     'docker_compose',
     'fresh_container',
@@ -105,9 +103,7 @@ const NONEMPTY_FIELDS = [
     'host_architecture',
     'node',
     'npm',
-    'deno',
-    'deno_v8',
-    'deno_typescript',
+    'bun',
     'docker',
     'docker_compose'
 ];

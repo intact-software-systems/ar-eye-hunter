@@ -15,7 +15,6 @@ const repositoryRoot = path.resolve(__dirname, '../../..');
 const expectedTypeScriptVersion = '7.0.2';
 const ignoredDirectoryNames = new Set([
     '.claude',
-    '.deno',
     '.git',
     '.pnpm-store',
     '.superpowers',

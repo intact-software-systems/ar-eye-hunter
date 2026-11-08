@@ -1,4 +1,4 @@
-// shared-server intentionally excludes ambient Node types. Node and Deno both provide this
+// shared-server intentionally excludes ambient Node types. Node and Bun both provide this
 // runtime API, which lets canonical identity hashing stay synchronous inside pure compute phases.
 declare module 'node:crypto' {
     export interface Sha256Hash {

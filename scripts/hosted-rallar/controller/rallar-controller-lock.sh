@@ -9,7 +9,10 @@ rallar_lock_controller() {
 		flock -n 9 || return 1
 	else
 		exec 9>"${root}/controller.lock"
-		flock -n 9 || { echo 'Controller mutation/capture already in progress.' >&2; return 1; }
+		flock -n 9 || {
+			echo 'Controller mutation/capture already in progress.' >&2
+			return 1
+		}
 		export RALLAR_CONTROLLER_LOCK_HELD=1
 	fi
 	if [[ -f "${root}/active" && "${RALLAR_API_CAPTURE_OWNER:-}" != "$(cat "${root}/active")" ]]; then

@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import {
     readRuntimeStateEntriesByPrefix,
     RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
@@ -60,16 +62,16 @@ interface BenchResult {
     readonly sizeLabel: string;
     readonly run: number;
     readonly durationMs: number;
-    readonly memoryBefore: Deno.MemoryUsage;
-    readonly memoryAfter: Deno.MemoryUsage;
+    readonly memoryBefore: NodeJS.MemoryUsage;
+    readonly memoryAfter: NodeJS.MemoryUsage;
     readonly details: BenchDetails;
 }
 
-const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
+const OUT = process.argv.slice(2).find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
     'tmp/perf/results/runtime-validation-bench.json';
-const MODE = Deno.args.find((arg) => arg.startsWith('--mode='))?.slice('--mode='.length) ??
+const MODE = process.argv.slice(2).find((arg) => arg.startsWith('--mode='))?.slice('--mode='.length) ??
     'full';
-const RUNS = Number(Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ?? '3');
+const RUNS = Number(process.argv.slice(2).find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ?? '3');
 
 const gc = () => {
     readOptionalGarbageCollector(globalThis)?.();
@@ -86,9 +88,9 @@ function readOptionalGarbageCollector(runtime: typeof globalThis): (() => void) 
     return () => garbageCollector();
 }
 
-function memory(): Deno.MemoryUsage {
+function memory(): NodeJS.MemoryUsage {
     gc();
-    return Deno.memoryUsage();
+    return process.memoryUsage();
 }
 
 async function measure<TResult>(input: MeasureInput<TResult>): Promise<BenchResult> {
@@ -1052,13 +1054,13 @@ async function main(): Promise<void> {
 
     const payload = {
         generatedAt: new Date().toISOString(),
-        commandArgs: Deno.args,
+        commandArgs: process.argv.slice(2),
         mode: MODE,
         runs: RUNS,
-        deno: Deno.version,
+        bun: process.versions.bun,
         results
     };
-    await Deno.writeTextFile(OUT, JSON.stringify(payload, null, 2));
+    await writeFile(OUT, JSON.stringify(payload, null, 2));
     console.log(`Wrote ${results.length} benchmark results to ${OUT}`);
 }
 

@@ -29,7 +29,7 @@ describe('RTC topology publication mutation phases', () => {
             /\.begin\s*\(/,
             /\b(?:Date|Temporal)\b/,
             /random/i,
-            /(?:Deno|process)\.env/,
+            /process\.env/,
             /computeMutationCommandDigest/,
             /recordRallarTiming|performance\.now/,
             /\b(?:async|await)\b/
@@ -52,7 +52,7 @@ describe('RTC topology publication mutation phases', () => {
 
         const contractSource = readFileSync(publicationContractUrl, 'utf8');
         expect(contractSource).not.toMatch(
-            /\.begin\s*\(|\b(?:async|await)\b|\b(?:Date|Temporal)\b|performance\.now|(?:Deno|process)\.env/
+            /\.begin\s*\(|\b(?:async|await)\b|\b(?:Date|Temporal)\b|performance\.now|process\.env/
         );
         expect(contractSource).not.toMatch(/\/repositories\//);
         const mutationSource = readFileSync(

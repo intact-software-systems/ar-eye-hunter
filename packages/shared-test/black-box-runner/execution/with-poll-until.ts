@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 const SUCCESS = 'SUCCESS';

@@ -343,7 +343,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         expect(checkout.with?.ref).toBe('${{ github.sha }}');
         expect(findStep(local, 'Setup local toolchains')).toMatchObject({
             uses: './.github/actions/release-gate-setup',
-            with: { deno: 'true', playwright: 'true' }
+            with: { bun: 'true', playwright: 'true' }
         });
     });
 
@@ -492,7 +492,7 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
                 diskAvailableBytes: expect.any(Number),
                 os: expect.objectContaining({ platform: expect.any(String), release: expect.any(String), version: expect.any(String) }),
                 node: expect.stringMatching(/^v[0-9]+/),
-                deno: expect.stringMatching(/^deno [0-9]+/),
+                bun: expect.stringMatching(/^[0-9]+\.[0-9]+\.[0-9]+/),
                 chromium: expect.stringMatching(/^[A-Za-z ]+[0-9]+/)
             }));
             if (

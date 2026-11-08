@@ -259,7 +259,7 @@ npx vitest run packages/tests/shared-server/rallar-system/topology
 npx vitest run packages/tests/shared-server/runtime-state
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 npm run typecheck:tests
-cd apps/api-v1 && deno task check
+cd apps/api-v1 && bunx tsc -p tsconfig.json --noEmit
 npm run check:repo-style -- --root packages/shared-server
 npm run check:repo-structure -- --base origin/main
 npm run test:repo-governance

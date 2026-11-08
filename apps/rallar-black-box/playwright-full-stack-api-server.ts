@@ -253,7 +253,6 @@ export async function evaluateFullStackConfiguredServiceEvidence(
 export function createFullStackApiProfileEnvironment(): Readonly<Record<string, string>> {
     const grantedTopics = [{ topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, fanout: 'outbox', serverProducerIds: [] }];
     return {
-        DENO_NO_PACKAGE_JSON: '1',
         RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
         RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON: '[]',
         RALLAR_LOGIN_USER_RATE_LIMIT: '100',
@@ -311,7 +310,7 @@ function createMemoryApiCommand({ apiBaseUrl, spaBaseUrl, apiInvocation, iceRequ
         portFromBaseUrl(apiBaseUrl)
     } ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${toFullStackApiProfileEnvBlock()} RALLAR_ICE_RATE_LIMIT_REQUESTS=${iceRequests} ${apiInvocation} run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${toFullStackApiProfileEnvBlock()} RALLAR_ICE_RATE_LIMIT_REQUESTS=${iceRequests} ${apiInvocation} run apps/api-v1/src/main.ts`;
 }
 
 function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, apiInvocation: string): string {
@@ -319,7 +318,7 @@ function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, apiInv
         toShellValue(createFullStackSpaCorsOrigins(spaBaseUrl))
     } PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${apiInvocation} run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${apiInvocation} run apps/api-v1/src/main.ts`;
 }
 
 function toFullStackApiInvocation(
@@ -328,13 +327,13 @@ function toFullStackApiInvocation(
     appInboxPhaseTiming: boolean
 ): string {
     if (directory === undefined) {
-        return 'deno';
+        return 'bun';
     }
     if (mode !== 'memory' || !path.isAbsolute(directory)) {
         throw new Error('Setup timing capture requires the local memory API and an absolute recorder directory.');
     }
     const quotedDirectory = toShellValue(directory);
-    return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=${appInboxPhaseTiming} node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- deno`;
+    return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=${appInboxPhaseTiming} node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- bun`;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

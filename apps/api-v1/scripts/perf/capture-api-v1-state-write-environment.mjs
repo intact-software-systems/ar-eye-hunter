@@ -237,13 +237,10 @@ async function readPsql({ options, sql }) {
 }
 
 async function readToolchainRecord() {
-    const deno = await readCommandOutput({ command: 'deno', argumentsInput: ['--version'] });
     return {
         node: process.versions.node,
         npm: await readCommandOutput({ command: 'npm', argumentsInput: ['--version'] }),
-        deno: toDenoComponent({ versionText: deno, name: 'deno' }),
-        deno_v8: toDenoComponent({ versionText: deno, name: 'v8' }),
-        deno_typescript: toDenoComponent({ versionText: deno, name: 'typescript' }),
+        bun: await readCommandOutput({ command: 'bun', argumentsInput: ['--version'] }),
         docker: await readCommandOutput({
             command: 'docker',
             argumentsInput: ['version', '--format', '{{.Server.Version}}']
@@ -253,11 +250,6 @@ async function readToolchainRecord() {
             argumentsInput: ['compose', 'version', '--short']
         })
     };
-}
-
-function toDenoComponent({ versionText, name }) {
-    const line = versionText.split('\n').find((value) => value.startsWith(`${name} `));
-    return line === undefined ? '' : line.slice(name.length + 1).split(' ')[0];
 }
 
 async function readOverlapRecord({ container }) {

@@ -1,5 +1,4 @@
 // rallar-rtc-provider.ts
-// deno-lint-ignore-file no-explicit-any
 import {
     createRtcProviderFromClientFactory,
     type RtcClient,

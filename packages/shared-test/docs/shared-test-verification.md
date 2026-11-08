@@ -1,6 +1,6 @@
 # Shared-test Verification
 
-This package mixes TypeScript modules, Deno CLIs, Playwright-backed providers,
+This package mixes TypeScript modules, Bun CLIs, Playwright-backed providers,
 and live-service recipes. Keep the checks explicit so local and CI runs do not
 silently skip the wrong layer.
 
@@ -24,9 +24,9 @@ npm run bb:matrix:quick
 
 `npm run check` runs:
 
-- `check:ts`: TypeScript check for package `.ts` and `.d.ts` files.
-- `check:deno`: Deno check for the scenario CLI, recipe matrix runner, and
-  browser live-validation wrapper, plus the artifact reader.
+- `check:ts`: TypeScript check for the package `.ts`/`.d.ts` sources and the `.mts`
+  CLI entry points (scenario CLI, recipe matrix runner, browser live-validation
+  wrapper, and artifact reader).
 
 ## Recipe Matrix
 

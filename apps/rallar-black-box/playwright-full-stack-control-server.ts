@@ -27,7 +27,7 @@ export function createFullStackControlWebServer(
         input.baseUrl ?? readFullStackControlBaseUrl()
     );
     return {
-        command: `cd ../rallar-black-box-control-server && PORT=${portFromBaseUrl(baseUrl)} deno task start`,
+        command: `cd ../rallar-black-box-control-server && PORT=${portFromBaseUrl(baseUrl)} bun run src/main.ts`,
         url: `${baseUrl}/health`,
         reuseExistingServer: input.reuseExistingServer ?? true,
         timeout: 60_000

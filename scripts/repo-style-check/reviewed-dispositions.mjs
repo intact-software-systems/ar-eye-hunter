@@ -711,13 +711,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'asNodes',
         maximumMagnitude: 1
     }),
-    // Canonical filesystem JSON must be a record with a record imports member;
-    // every target is checked as a string before the import mapping leaves.
-    Object.freeze({
-        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readNativeReceiptDenoImports'
-    }),
     // The caught boundary preserves an original Error's identity and otherwise
     // normalizes through String into Error; no raw exception feeds domain policy.
     Object.freeze({

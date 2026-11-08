@@ -14,7 +14,7 @@ The expensive findings are request-path scans the current checkers do not look f
 2. A non-idempotent client mutation range-scans every membership row in the workspace. An idempotent replay loads that principal's entire event history to find one event id.
 3. Every CRDT mutation, including append, computes `sum(octet_length(snapshot_envelope)) over ()` and then `limit 1`. PostgreSQL evaluates the window before `LIMIT`, so every snapshot body for the document is measured to return one row.
 
-Style debt a checker can already see, and that is worth gating for new code: 134 product functions over the 60-line standard, two CRDT files over the 1,200-line backstop, and one graph file at cognitive load 404. `function.length` is specified in the repo standard and is not implemented in the checker. `dprint` and `deno lint` are not steps in Release Gate.
+Style debt a checker can already see, and that is worth gating for new code: 134 product functions over the 60-line standard, two CRDT files over the 1,200-line backstop, and one graph file at cognitive load 404. `function.length` is specified in the repo standard and is not implemented in the checker. `dprint` and `bun lint` are not steps in Release Gate.
 
 ## Hot path map
 
@@ -45,7 +45,7 @@ Admin CRDT operations that are not `append` call `readCompleteUpdateHistory` (`p
 
 ## What the checkers already do
 
-Release Gate (`checks` job) runs navigation report (exit 0), changed-range style, test reachability, `tsc`, app builds, and `deno check`. It does not run `deno lint` or `dprint`.
+Release Gate (`checks` job) runs navigation report (exit 0), changed-range style, test reachability, `tsc`, app builds, and `bunx tsc -p tsconfig.json --noEmit`. It does not run `bun lint` or `dprint`.
 
 Governance gate runs, and fails the workflow when the command exits non-zero:
 
@@ -73,7 +73,7 @@ Cognitive load, same 1,574 product files: refactor ≥330: 1. Review ≥110: 9. 
 
 Function length is not a checker rule. Across those product files the signature extractor found 6,298 functions, 539 over 40 lines, 134 over 60. The standard already says over 60 must be split or registered. The changed-range gate cannot block it until the checker emits `function.length`.
 
-`as any` / `: any` did not appear in `packages/shared`, `shared-server`, `shared-graph`, `relic-hunters`, or `apps/api-v1/src`. The one `any` hit in `shared-web` is a comment. `as unknown as` in product code is three branded-id casts in `packages/shared/api/rallar-validation.ts`. No `eval` or `new Function`. No empty `catch {}`. No `process.env` or `Deno.env.get` in `apps/api-v1/src` or the product packages outside `packages/shared-test`.
+`as any` / `: any` did not appear in `packages/shared`, `shared-server`, `shared-graph`, `relic-hunters`, or `apps/api-v1/src`. The one `any` hit in `shared-web` is a comment. `as unknown as` in product code is three branded-id casts in `packages/shared/api/rallar-validation.ts`. No `eval` or `new Function`. No empty `catch {}`. No `process.env` or `Bun.env.get` in `apps/api-v1/src` or the product packages outside `packages/shared-test`.
 
 `console.*` is widespread in `packages/shared`, `shared-server`, `shared-web`, and `apps/api-v1/src`. It is the current logger. A ban would be a logging-port decision, not a lint flip.
 
@@ -85,11 +85,11 @@ Add these:
 
 1. **`function.length` inside `scripts/repo-style-check`.** The thresholds already exist (warn >40, review >50, fail-the-standard >60). Emit the rule the same way `file.length` is emitted. The changed-range gate then rejects new or worsened functions without failing the repo on the existing 134. Exempt a function whose body is one template-literal SQL statement, or the guarded-batch writer becomes a permanent exception the day it is touched.
 2. **`npm run format:check` on the static lane.** `dprint` is the only formatter and no workflow invokes it. Run it once on `main` first. If the tree is dirty, a formatting commit belongs in `.git-blame-ignore-revs` before the check becomes blocking.
-3. **`deno lint` beside `deno task check` for the Deno apps.** Root `deno.json` already includes `apps/api-v1` with the recommended tag. Release Gate runs `deno check` only. Deno was not installed in this environment, so the current lint result is uncaptured. Run it before making the step blocking.
+3. **`bun lint` beside `bunx tsc -p tsconfig.json --noEmit` for the Bun apps.** Root `tsconfig.json` already includes `apps/api-v1` with the recommended tag. Release Gate runs `bunx tsc -p tsconfig.json --noEmit` only. Bun was not installed in this environment, so the current lint result is uncaptured. Run it before making the step blocking.
 4. **A narrow SQL shape check** next to the transaction-write checker, for authored `sql` templates under `packages/**` and `apps/api-v1/src/**`:
    - Window aggregate (`over ()`) in the same statement level as `limit`. The two CRDT snapshot queries are the current hits.
    - `findAllEntries(` and `listAll*Sessions` / `readAllPSql*EventRows` referenced from a mutation `read` function. Allow the expiry sweep and admin list pages that already have a paged twin.
-5. **`process.env` / `Deno.env.get` outside an allowlist** of composition roots, test support, and `packages/shared-test`. Product code is already clean, so the check protects the boundary the standard describes.
+5. **`process.env` / `Bun.env.get` outside an allowlist** of composition roots, test support, and `packages/shared-test`. Product code is already clean, so the check protects the boundary the standard describes.
 
 Leave these as warnings or human review:
 
@@ -136,7 +136,7 @@ Acceptance: the three SQL shapes are gone; focused repository tests cover the ne
 
 1. Emit `function.length` from `scripts/repo-style-check`, with the SQL-template exemption, and cover it in `packages/tests/repo/repo-style-changed-check.test.ts`. Existing functions stay warning-only. New or worsened ones fail `check:repo-style:changed`.
 2. Run `npm run format:check` locally. If it is clean, add it to the Release Gate `checks` job. If it is not, format in one commit listed in `.git-blame-ignore-revs`, then add the check.
-3. Run `deno lint` in `apps/api-v1`. If it is clean, call it from the existing Deno check step.
+3. Run `bun lint` in `apps/api-v1`. If it is clean, call it from the existing Bun check step.
 4. Add the window-plus-`limit` SQL rule beside `check:transaction-writes`, with the two CRDT queries as the fixture that fails before the fix and passes after slice A.
 
 Out of this plan: a repo-wide split of CRDT files, `prune-graph.ts`, or route registrars. Touched-file closure already requires that when those files change. A campaign to delete `console.*` or to fail the build on all 528 `boundary.unknown` rows is not worth the noise.

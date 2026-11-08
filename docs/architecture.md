@@ -252,7 +252,7 @@ lifetime, active-browser refresh, single-flight reads, cancellation, immutable p
 exact retry. Their adapters own protocol/account/scope validation and refusal messages. Account
 replacement or disposal fences late responses. `PartyPanel`, `MatchmakingPanel` and `RoomMovePanel`
 in `packages/shared-react` subscribe to one party owner per game UI; React never enters shared-web,
-shared-server or Deno dependencies. Existing entry and game owners retain admission and gameplay
+shared-server or Bun dependencies. Existing entry and game owners retain admission and gameplay
 start authority.
 
 ## Private friends and invitations

@@ -345,7 +345,7 @@ function getWithManagedApiServerPlans(): WithManagedApiServerPlans | undefined {
 function toLifecycleInput(): Parameters<WithManagedApiServerPlans>[0] {
     return {
         plans,
-        serverCommand: ['deno', 'run', 'api-v1.ts'],
+        serverCommand: ['bun', 'run', 'api-v1.ts'],
         repoRootPath: '/repo',
         artifactDir: '/artifacts'
     };

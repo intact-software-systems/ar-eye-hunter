@@ -57,7 +57,10 @@ resolve_rallar_api_database_url() {
 validate_rallar_api_existing_store_configuration() {
 	local env_file="$1"
 	local auth_secret operator_secret operator_client_ids control_operator_secret
-	[[ -f "${env_file}" && -r "${env_file}" ]] || { echo "Missing readable controller API environment." >&2; return 1; }
+	[[ -f "${env_file}" && -r "${env_file}" ]] || {
+		echo "Missing readable controller API environment." >&2
+		return 1
+	}
 	read_rallar_api_database_url "${env_file}" >/dev/null || return 1
 	auth_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_AUTH_CREDENTIAL_SECRET)" || return 1
 	operator_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)" || return 1
@@ -181,11 +184,12 @@ EOF_SQL
 
 require_rallar_api_absent_store() {
 	local existing
-	existing="$(write_rallar_api_postgres_sql <<EOF_SQL
+	existing="$(
+		write_rallar_api_postgres_sql <<EOF_SQL
 SELECT (SELECT count(*) FROM pg_roles WHERE rolname = '${RALLAR_API_DATABASE_ROLE}') || '|' ||
        (SELECT count(*) FROM pg_database WHERE datname = '${RALLAR_API_DATABASE_NAME}');
 EOF_SQL
-)" || return 1
+	)" || return 1
 	if [[ "${existing}" != "0|0" ]]; then
 		echo "Controller database or role already exists; refusing initial provisioning." >&2
 		return 1

@@ -28,8 +28,8 @@ async function runScenarioCli(args: string[], env: Record<string, string | undef
 }> {
     return new Promise((resolve, reject) => {
         const child = spawn(
-            'deno',
-            ['run', '-A', scenarioCliPath, ...args],
+            'bun',
+            ['run', scenarioCliPath, ...args],
             {
                 stdio: ['ignore', 'pipe', 'pipe'],
                 env: {

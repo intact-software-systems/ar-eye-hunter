@@ -11,10 +11,10 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const manifestPaths = [
     'package.json',
     'packages/shared-test/package.json',
-    'deno.json',
-    'apps/api-v1/deno.json',
-    'apps/rallar-black-box-control-server/deno.json',
-    'apps/relic-hunter-server-v1/deno.json'
+    'apps/api-v1/package.json',
+    'apps/rallar-black-box-control-server/package.json',
+    'apps/relic-hunter-server-v1/package.json',
+    'apps/ar-eye-hunter-server-v1/package.json'
 ] as const;
 const repositoryPath = /^(?:packages|apps|tests|scripts|docs|examples|\.github)\/[\w./@-]+$/u;
 

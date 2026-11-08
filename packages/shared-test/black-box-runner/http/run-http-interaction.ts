@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { Either } from '../../../shared/resilience/Either.ts';
 import { toError } from '../../../shared/resilience/to-error.ts';
 

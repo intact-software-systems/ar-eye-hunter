@@ -197,7 +197,7 @@ interface ScenarioCliResult {
 
 function runScenarioCli(configPath: string): Promise<ScenarioCliResult> {
     return new Promise((resolve, reject) => {
-        const child = spawn('deno', ['run', '-A', scenarioCliPath, '--workingDirectory', path.dirname(configPath), '--config', path.basename(configPath)], {
+        const child = spawn('bun', ['run', scenarioCliPath, '--workingDirectory', path.dirname(configPath), '--config', path.basename(configPath)], {
             stdio: ['ignore', 'pipe', 'pipe'],
             timeout: 15_000
         });

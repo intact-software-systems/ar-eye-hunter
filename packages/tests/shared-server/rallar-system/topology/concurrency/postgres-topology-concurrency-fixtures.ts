@@ -72,9 +72,6 @@ export interface TopologyWorkerTrace {
     readonly attempts?: readonly PersistedAppInboxAttempt[];
 }
 
-const ROOT_DENO_CONFIG_PATH = fileURLToPath(
-    new URL('../../../../../../deno.json', import.meta.url)
-);
 const APP_INBOX_WORKER_PATH = fileURLToPath(
     new URL('./postgres-topology-app-inbox-worker.ts', import.meta.url)
 );
@@ -216,15 +213,9 @@ function spawnWorker<Output>(
     input: object
 ): Promise<Output> {
     const child = spawn(
-        process.env.DENO_BIN ?? 'deno',
+        process.env.BUN_BIN ?? 'bun',
         [
             'run',
-            '-A',
-            '--unstable-temporal',
-            '--node-modules-dir=none',
-            '--no-lock',
-            '--config',
-            ROOT_DENO_CONFIG_PATH,
             workerPath
         ],
         {

@@ -4,13 +4,13 @@ import type {
     ControlHeartbeatEnvelope,
     ControlResultEnvelope
 } from './control-protocol.ts';
+import type { ControlRunCompletion } from './control/control-run-completion.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunState,
     RallarBlackBoxDistributedTargetResolution
 } from './distributed-run.ts';
-import type { ControlRunCompletion } from './control/control-run-completion.ts';
 import type { RallarBlackBoxDistributedRunRollup } from './distributed/distributed-run-rollup.ts';
 import type {
     ControlFleetAgentRunOutcome,

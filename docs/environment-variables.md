@@ -8,7 +8,7 @@ Last reviewed: 2026-08-28.
 
 ## Conventions
 
-- Deno server apps read environment variables at runtime through `Deno.env`.
+- Bun server apps read environment variables at runtime through `process.env`.
 - Vite browser apps read variables through `import.meta.env`. Those values are
   embedded into the browser bundle and are public. Do not put production secrets
   in `VITE_*`, `API_*`, or any prefix exposed by a Vite app.
@@ -44,8 +44,8 @@ files that local runs load, or set `RALLAR_ICE_MODE=metered` for that run.
 
 ## apps/api-v1
 
-API-v1 is a Deno/Hono server. `src/main.ts` imports
-`jsr:@std/dotenv/load`, so `.env` in the current working directory is loaded
+API-v1 is a Bun/Hono server. `src/main.ts` imports `config` from
+`dotenv`, so `.env` in the current working directory is loaded
 when the app starts. The root `dev:rallar:api` and `start:rallar:api` scripts additionally pass
 `--env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env`.
 The full-stack Playwright Postgres API loads no env files: it requires `DATABASE_URL` in the launching
@@ -242,7 +242,7 @@ While timing logs are on, the API also writes one `api-process` `heap-sample` ti
 
 | Script                                                  | Variables set by script                                                                                                                                                                                       |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cd apps/api-v1 && deno task start:memory`              | `RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory`.                                                                                                                                                            |
+| `npm run start:rallar:api:memory`                       | `RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory`.                                                                                                                                                            |
 | `npm run dev:rallar:api` and `npm run start:rallar:api` | Local CORS origins plus app and root env files; selector absence chooses `dev`.                                                                                                                               |
 | `npm run start:rallar:api:memory`                       | `prod-in-memory` plus the Rallar Black Box local CORS origins. Loads no env files, so `RALLAR_AUTH_CREDENTIAL_SECRET` (≥32 characters) and `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` must come from the shell. |
 
@@ -302,7 +302,7 @@ the internal server on port 8090.
 
 ## apps/relic-hunter-server-v1
 
-This is a Deno/Hono server for the Relic Hunters game. It explicitly attempts
+This is a Bun/Hono server for the Relic Hunters game. It explicitly attempts
 to load:
 
 1. `apps/relic-hunter-server-v1/.env`
@@ -596,7 +596,7 @@ variables. It reads the same browser runtime bootstrap keys listed under
 
 ## apps/rallar-black-box-control-server
 
-This is a Deno control server. It does not load an env file by itself; set
+This is a Bun control server. It does not load an env file by itself; set
 variables in the shell or through the parent script/process.
 
 | Variable                                        | Required | Default                           | Usage                                                                                                                                                                                                                                                                                     |

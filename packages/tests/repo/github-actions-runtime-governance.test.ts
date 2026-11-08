@@ -103,7 +103,7 @@ describe('GitHub Actions runtime governance', () => {
         expect(steps[navigationIndex]).not.toHaveProperty('continue-on-error');
     });
 
-    it('installs Bun through the shared setup action without a Deno cache step', async () => {
+    it('installs Bun through the shared setup action without a separate cache step', async () => {
         const releaseGate = await readYaml<WorkflowDocument>('.github/workflows/release-gate.yml');
         const setup = await readYaml<ActionDocument>('.github/actions/release-gate-setup/action.yml');
         const setupBunStep = setup.runs.steps.find((step) => step.uses === 'oven-sh/setup-bun@v2');

@@ -11,9 +11,8 @@ test('Relic HTTP commands preserve identity, replay, round progression and room 
     test.skip(process.env.RELIC_HUNTERS_FULL_STACK !== '1', 'Requires the real embedded Relic server on port 8090.');
     const artifacts = testInfo.outputPath('relic-http-recipe');
     // The full-stack config owns the actual API lifecycle; this runs the reusable black-box contract against it.
-    await promisify(execFile)('deno', [
+    await promisify(execFile)('bun', [
         'run',
-        '-A',
         'packages/shared-test/black-box-runner/scenario-black-box.ts',
         '-c',
         'apps/relic-hunter-server-v1/test/recipes/relic-game-idempotency.json',

@@ -1,10 +1,10 @@
 # apps/api-v1/Dockerfile
-FROM denoland/deno:alpine
+FROM oven/bun:alpine
 
 WORKDIR /app
 COPY . .
 
-RUN deno cache src/main.ts
+RUN bun install
 
 EXPOSE 8000
-CMD ["run", "--allow-net", "src/main.ts"]
+CMD ["bun", "run", "src/main.ts"]

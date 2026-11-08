@@ -7,8 +7,8 @@ import { releaseControlResults } from '@shared-test/rallar-bb-test/result-releas
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { ADMIN_TOKEN, adminHeaders, startControlServer } from './support/control-api-test-server.ts';
 
-// This end-to-end test spawns the shared black-box runner (`scenario-black-box.ts`), which is still a Deno script
-// until the black-box runner migration lands. Skipped here; re-enable once that runner runs under Bun.
+// This end-to-end test spawns the shared black-box runner (`scenario-black-box.ts`) under Bun.
+// Skipped here; re-enable once the authenticated release flow is verified under Bun.
 test.skip('explicit authenticated release waits for browser acknowledgement and preserves artifacts', async () => {
     const server = await startControlServer({ RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN, RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN: '1' });
     const identity = { runId: 'release-api', agentId: 'agent' };

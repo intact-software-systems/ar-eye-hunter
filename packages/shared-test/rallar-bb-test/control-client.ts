@@ -92,7 +92,7 @@ export type RallarBlackBoxControlSocketEventType = 'open' | 'message' | 'close' 
 export interface RallarBlackBoxControlSocketEvent {
     /** Absent on open, close and error events. */
     readonly data?: string | ArrayBuffer | Blob;
-    /** Absent unless an error event carries a message, as Deno and ws socket errors do; browser error events carry none. */
+    /** Absent unless an error event carries a message, as Bun and ws socket errors do; browser error events carry none. */
     readonly message?: string;
 }
 
