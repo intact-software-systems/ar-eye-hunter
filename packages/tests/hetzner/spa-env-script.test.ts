@@ -97,7 +97,7 @@ describe('Hetzner SPA public env wiring', () => {
         await writeFile(caddy, '#!/usr/bin/env bash\nexit 0\n');
         await chmod(caddy, 0o755);
         const destination = path.join(fixture, 'Caddyfile');
-        await execFileAsync('bash', ['-c', `source '${roleHelper}'\napply_rallar_controller_role\nwrite_rallar_role_caddyfile`], {
+        await execFileAsync('bash', ['-c', 'source "$1"\napply_rallar_controller_role\nwrite_rallar_role_caddyfile', 'bash', roleHelper], {
             env: {
                 PATH: `${fixture}:${process.env.PATH}`,
                 RALLAR_CADDYFILE: destination,
@@ -153,7 +153,7 @@ ar-eye.example.test {
         await writeFile(caddy, '#!/usr/bin/env bash\nexit 0\n');
         await chmod(caddy, 0o755);
         const destination = path.join(fixture, 'Caddyfile');
-        await execFileAsync('bash', ['-c', `source '${roleHelper}'\napply_rallar_controller_role\nwrite_rallar_role_caddyfile`], {
+        await execFileAsync('bash', ['-c', 'source "$1"\napply_rallar_controller_role\nwrite_rallar_role_caddyfile', 'bash', roleHelper], {
             env: {
                 PATH: `${fixture}:${process.env.PATH}`,
                 RALLAR_CADDYFILE: destination,
