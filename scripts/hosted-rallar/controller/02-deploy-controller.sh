@@ -70,6 +70,8 @@ stop_controller_service_for_store_change() {
 }
 
 echo "==> Deploying ${RALLAR_REPO_URL} ref ${RALLAR_REPO_REF} for role ${RALLAR_CONTROLLER_ROLE}"
+# Re-runs operate on a checkout the first deploy chowned to the rallar user; allow git to trust it.
+git config --global --add safe.directory "${RALLAR_CHECKOUT_DIR}"
 if [[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
 	git -C "${RALLAR_CHECKOUT_DIR}" fetch --prune origin
 else
