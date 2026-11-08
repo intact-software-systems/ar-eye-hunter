@@ -1,25 +1,28 @@
 # Deno → Bun branch verification plan
 
 Validation gate that runs **before** `claude/deno-to-bun-migration-plan` (PR #794) merges to `main`.
-It proves the Bun build behaves on the real Hetzner fleet and that the re-wired GitHub workflows still
-deploy, smoke, and run distributed recipes correctly. It changes no product code — it is the runbook
-for the pre-merge verification plus the resulting evidence.
+It proves the Bun build behaves on the real Hetzner fleet, that the re-wired GitHub workflows still
+deploy, smoke, and run distributed recipes correctly, and that the scalability and performance gates
+hold. It changes no product code — it is the runbook for the pre-merge verification plus the
+resulting evidence.
 
 ## Why before merge
 
 The Deno → Bun migration retires Deno Deploy and moves server hosting onto three Hetzner servers,
 split by role. CI already proves the code builds and passes its gates in ephemeral runners; this plan
-proves the two things CI cannot: (1) the role-split scripts install a Bun runtime and start all three
-server roles on real VMs, and (2) the `workflow_dispatch` Hetzner workflows — which only run against a
-live controller, not on PR CI — still work when they are the only deployment path left.
+proves the things CI cannot: (1) the role-split scripts install a Bun runtime and start all three
+server roles on real VMs; (2) the `workflow_dispatch` Hetzner workflows — which only run against a
+live controller, not on PR CI — still work when they are the only deployment path left; and (3) the
+scalability/performance gates and the cross-provider GitHub Free distributed recipe still hold under
+the Bun runtime against a real deployed backend.
 
 ## Servers
 
-| Server | id | Role | Runs |
-| --- | --- | --- | --- |
-| `rallar-controller-fsn1-01` | 135672086 | `api` | api-v1 (Bun) + Postgres + Caddy |
-| `rallar-controller-02` | 173949546 | `control` | control-server (Bun) + headless workers + Caddy |
-| `rallar-controller-03` | 173949684 | `games` | relic + ar-eye game servers (Bun) + Postgres + Caddy |
+| Server                      | id        | Role      | Runs                                                 |
+| --------------------------- | --------- | --------- | ---------------------------------------------------- |
+| `rallar-controller-fsn1-01` | 135672086 | `api`     | api-v1 (Bun) + Postgres + Caddy                      |
+| `rallar-controller-02`      | 173949546 | `control` | control-server (Bun) + headless workers + Caddy      |
+| `rallar-controller-03`      | 173949684 | `games`   | relic + ar-eye game servers (Bun) + Postgres + Caddy |
 
 ## Phase 1 — Install and verify the three roles on Hetzner
 
@@ -105,7 +108,79 @@ Since it fires on `push` to `main` and `workflow_dispatch`, dispatch it manually
 to prove the same five manifests (`01-health`, `02-composite-evidence`, `03-rtc-smoke`,
 `04-provider-parity`, `05a-rtc-realtime-stability`) pass on the Bun build before merge.
 
-## Phase 3 — Acceptance
+### Step 2.5 — API v1 Medium-Scale Gate
+
+`api-v1-medium-scale-gate.yml` (also runs on PR CI). Dispatch with the branch ref to prove the Bun
+runner executes the unchanged medium-scale profile against a live Postgres service container.
+
+- `workflow_dispatch`, ref = branch tip.
+- Confirms 100 independently authenticated clients / five groups / three Bun API processes pass.
+
+### Step 2.6 — API v1 Formation Gate
+
+`api-v1-formation-gate.yml`. Dispatch with the branch ref to prove the formation-large profile —
+large-room group formation under the Bun server — still converges.
+
+### Step 2.7 — API v1 State-Write PR Measurement (scalability / performance)
+
+`api-v1-state-write-pr-measurement.yml` is the authoritative hosted state-write comparison gate. It
+runs base vs candidate and fails on a regression. Dispatch with `ref` = the branch tip and `mode`
+`comparison` (plus, separately, `mode=diagnostic` for the bounded-timeline view). This is the one
+perf gate that must be read as blocking — a regression here is a merge blocker, not informational.
+
+### Step 2.8 — RTC performance observations (B05 / B06)
+
+- `rtc-performance-observation.yml` (RTC-B05) and `rtc-b06-performance-observation.yml` (RTC-B06)
+  both fire on `workflow_dispatch` and use the Bun runtime. Dispatch each once to confirm the Bun
+  benchmark/observation tooling still captures and publishes a valid observation.
+
+### Step 2.9 — Local perf smoke (fast, pre-fleet)
+
+Before spending hosted cycles, run the local perf entry points under Bun to catch obvious regressions:
+
+```sh
+npm run perf:api-v1:state-write          # API state-write concurrency benchmark
+npm run perf:rtc-baseline -- --help      # RTC baseline CLI loads under Bun
+npm run perf:rtc-topology:delivery-log -- --help
+npm run perf:rtc-topology:replay-drain -- --help
+```
+
+## Phase 3 — Run GitHub Free Distributed Recipe against the real Hetzner backend
+
+This is the high-fidelity distributed test: **GitHub-hosted headless browsers** (up to 50 agents)
+driving a **real Bun control server + API deployed on Hetzner**, over the public `wss://`/`https://`
+endpoints. It proves cross-provider agent→Hetzner connectivity and the Bun control plane under the
+same topology the main-branch distributed gate uses.
+
+Prerequisite: Phase 1 (all three roles) and Phase 2 Step 2.2 (headless workers) are already green, so
+the control server on 02 and the API on fsn1-01 are live.
+
+Dispatch `github-free-distributed-recipe.yml`:
+
+```text
+execution_mode: hetzner-control
+manifest_path: apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json
+target_agent_count: 50
+agents_per_job: 3
+max_parallel_jobs: 17
+rollout_control_plane: preserve-public-settings
+room_id: hetzner-headless-room
+application_id: rallar-server
+workspace_id: default
+control_url: wss://control.rallar.intactss.com/control
+control_http_url: https://control.rallar.intactss.com
+api_base_url: https://api.rallar.intactss.com
+spa_url: https://blackbox.rallar.intactss.com
+register_before_login: true
+```
+
+Acceptance:
+
+- All 50 GitHub-hosted agents connect to the Hetzner control server and complete the run.
+- The distributed run reaches its terminal state with no group assertions failing.
+- `analysis/performance.md` is produced and shows the expected principal-tree delivery profile.
+
+## Phase 4 — Acceptance
 
 Record evidence for each of these; the PR is not released to `main` until all are met:
 
@@ -115,7 +190,11 @@ Record evidence for each of these; the PR is not released to `main` until all ar
    status) both succeed with `ref` = the branch tip.
 4. `Run Hetzner Distributed Recipe` succeeds on the branch tip.
 5. `Run Hetzner Supported Distributed Manifests` passes the supported manifest set.
-6. No workflow log contains a `deno` invocation or a `Deno.*` runtime error.
+6. **Scalability/performance gates pass**: `API v1 Medium-Scale Gate` and `API v1 Formation Gate`
+   succeed, and `API v1 State-Write PR Measurement` (`comparison`) reports no regression.
+7. **`Run GitHub Free Distributed Recipe` passes** against the real Hetzner backend (50 agents,
+   `hetzner-control` mode).
+8. No workflow log contains a `deno` invocation or a `Deno.*` runtime error.
 
 ## Follow-up (out of scope here)
 
