@@ -138,7 +138,7 @@ test('a live send from a sender that left the group is refused by the trusted se
     expect(readStagingOutcomes(ports, fenced)).toEqual([]);
 });
 
-Deno.test('a send naming recipientPrincipalIds addresses only the participants of the listed principals', async () => {
+test('a send naming recipientPrincipalIds addresses only the participants of the listed principals', async () => {
     const ports = new AlmReloadPorts(true, [
         ...PARTICIPANTS,
         { role: 'recipient-b', sessionId: 'recipient-b-stored-session', principalId: 'recipient-b-principal' }
