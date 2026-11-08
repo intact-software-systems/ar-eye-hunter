@@ -247,7 +247,9 @@ function requireManagedApiEnvironmentValue(
 }
 
 export function toApiV1ServerCommand(_options: ApiV1BlackBoxOptions): readonly string[] {
-    return ['bun', 'run', API_ENTRYPOINT];
+    // The managed server's child environment is minimal and omits PATH, so resolve the runtime by
+    // absolute path rather than the literal `bun` (Bun.spawn does not inject a default PATH).
+    return [process.execPath, 'run', API_ENTRYPOINT];
 }
 
 function toRecipeMatrixCommand(
