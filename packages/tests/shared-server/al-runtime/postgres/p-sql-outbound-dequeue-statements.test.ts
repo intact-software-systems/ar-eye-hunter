@@ -52,6 +52,7 @@ import {
     createPSqlAdmissionTestStorage,
     type PSqlAdmissionTestStorage
 } from './create-p-sql-admission-test-storage.ts';
+import { recordPGliteStatements, type RecordedPGliteStatements } from './record-p-glite-statements.ts';
 
 interface PGliteStatementCounts {
     readonly autocommit: number;
@@ -70,7 +71,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         await runOutboundWorkTask(runtime);
         const row = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage('dequeued'), 'outbox', Temporal.Now.instant());
         await outbox.enqueue(row);
-        const counts = countPGliteStatements(storage.sql.raw);
+        const recorded = recordPGliteStatements(storage.sql.raw);
+        const counts = () => toPGliteStatementCounts(recorded);
         const readKeys = recordQueueRowReads();
 
         await runOutboundWorkTask(runtime);
@@ -110,7 +112,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
             supersedenceGroups.push(messages.length);
             return await readMessageSupersedence(messages);
         });
-        const counts = countPGliteStatements(storage.sql.raw);
+        const recorded = recordPGliteStatements(storage.sql.raw);
+        const counts = () => toPGliteStatementCounts(recorded);
 
         await runOutboundWorkTask(runtime);
         await runOutboundWorkTask(runtime);
@@ -129,7 +132,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
     // identity rows, then the proofs.
     it('reads the WS authority and supersedence of a dequeued group in one statement per store and round', async () => {
         const storage = await createPSqlAdmissionTestStorage();
-        const counts = countPGliteStatements(storage.sql.raw);
+        const recorded = recordPGliteStatements(storage.sql.raw);
+        const counts = () => toPGliteStatementCounts(recorded);
         const phases: Record<string, PGliteStatementCounts> = {};
         const lane = createWsDequeueLane(storage, (observation) => {
             if (observation.kind === 'admission-stage') {
@@ -157,7 +161,8 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
     // an own-work row per message).
     it('commits a dequeued WS group in one statement per kind of write', async () => {
         const storage = await createPSqlAdmissionTestStorage();
-        const counts = countPGliteStatements(storage.sql.raw);
+        const recorded = recordPGliteStatements(storage.sql.raw);
+        const counts = () => toPGliteStatementCounts(recorded);
         const phases: Record<string, PGliteStatementCounts> = {};
         const lane = createWsDequeueLane(storage, (observation) => {
             if (observation.kind === 'admission-stage') {
@@ -413,28 +418,11 @@ function recordQueueRowReads(): () => readonly string[] {
     return () => keys;
 }
 
-/** Every statement the PGlite instance runs, outside a transaction and inside one, with each transaction counted once. */
-function countPGliteStatements(raw: PSqlAdmissionTestStorage['sql']['raw']): () => PGliteStatementCounts {
-    let autocommit = 0;
-    let transactions = 0;
-    let inTransaction = 0;
-    const query = raw.query.bind(raw);
-    const transaction = raw.transaction.bind(raw);
-    vi.spyOn(raw, 'query').mockImplementation((...args: Parameters<typeof raw.query>) => {
-        autocommit += 1;
-        return query(...args);
-    });
-    vi.spyOn(raw, 'transaction').mockImplementation((callback) => {
-        transactions += 1;
-        return transaction((tx) => {
-            const txQuery = tx.query.bind(tx);
-            return callback(Object.assign(Object.create(tx), {
-                query: (...args: Parameters<typeof tx.query>) => {
-                    inTransaction += 1;
-                    return txQuery(...args);
-                }
-            }));
-        });
-    });
-    return () => ({ autocommit, transactions, inTransaction });
+function toPGliteStatementCounts(recorded: RecordedPGliteStatements): PGliteStatementCounts {
+    const statements = recorded.statements();
+    return {
+        autocommit: statements.filter(({ scope }) => scope === 'autocommit').length,
+        transactions: recorded.transactions(),
+        inTransaction: statements.filter(({ scope }) => scope === 'transaction').length
+    };
 }

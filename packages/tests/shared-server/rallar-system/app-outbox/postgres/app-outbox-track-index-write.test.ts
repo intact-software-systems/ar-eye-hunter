@@ -15,6 +15,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PGliteSql } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { recordPGliteStatements } from '../../../al-runtime/postgres/record-p-glite-statements.ts';
 import { createResourceInboxTestStorage, recordResourceInboxStatements } from '../../../queuebox/resource-inbox-test-storage.ts';
 import { createTrackIndexTestEntry, toTrackIndexTestMessage, TRACK_INDEX_NAMESPACE } from '../app-outbox-track-index-fixture.ts';
 
@@ -48,21 +49,8 @@ function countInTransactionStatements(sql: PSqlSql): (() => number) | undefined 
     if (!('raw' in sql)) {
         return undefined;
     }
-    const raw = (sql as PGliteSql).raw;
-    let inTransaction = 0;
-    const transaction = raw.transaction.bind(raw);
-    vi.spyOn(raw, 'transaction').mockImplementation((callback) =>
-        transaction((tx) => {
-            const txQuery = tx.query.bind(tx);
-            return callback(Object.assign(Object.create(tx), {
-                query: (...args: Parameters<typeof tx.query>) => {
-                    inTransaction += 1;
-                    return txQuery(...args);
-                }
-            }));
-        })
-    );
-    return () => inTransaction;
+    const recorded = recordPGliteStatements((sql as PGliteSql).raw);
+    return () => recorded.statements().filter(({ scope }) => scope === 'transaction').length;
 }
 
 async function readTrackIndexRow(sql: PSqlSql, row: AppOutboxTrackIndexRow): Promise<StoredTrackIndexRow | undefined> {

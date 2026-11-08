@@ -8,7 +8,6 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
-import type { PSqlParameter } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
@@ -17,7 +16,8 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
-import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
+import { createPSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
+import { recordPGliteStatements } from './record-p-glite-statements.ts';
 
 describe('AL admission persistence-ready queue work', () => {
     afterEach(() => vi.restoreAllMocks());
@@ -161,7 +161,8 @@ describe('AL admission persistence-ready queue work', () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
         await backend.write(async (write) => await write.set('version', 0));
-        const statements = recordPGliteTransactionStatements(sql.raw);
+        const recorded = recordPGliteStatements(sql.raw);
+        const statements = () => recorded.statements().filter(({ scope }) => scope === 'transaction');
 
         await backend.write(async (write) => {
             await write.set('effect:a', 'a');
@@ -216,7 +217,8 @@ describe('AL admission persistence-ready queue work', () => {
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
         const claimed = await claimEntries(backend, ['held-1', 'held-2', 'held-3']);
         const inserted = ['new-1', 'new-2', 'new-3'].map(createEntryOf);
-        const statements = recordPGliteTransactionStatements(sql.raw);
+        const recorded = recordPGliteStatements(sql.raw);
+        const statements = () => recorded.statements().filter(({ scope }) => scope === 'transaction');
 
         await backend.write(async (write) => {
             await Promise.all(claimed.map((entry) => write.readClaimedWork(entry)));
@@ -291,29 +293,6 @@ describe('AL admission persistence-ready queue work', () => {
         expect(await backend.read('admitted:second', (value) => value)).toBe('second');
     });
 });
-
-interface PGliteTransactionStatement {
-    readonly query: string;
-    readonly params: readonly PSqlParameter[];
-}
-
-/** Every statement PGlite runs inside a transaction, with its parameters, in the order it ran. */
-function recordPGliteTransactionStatements(raw: PSqlAdmissionTestStorage['sql']['raw']): () => readonly PGliteTransactionStatement[] {
-    const statements: PGliteTransactionStatement[] = [];
-    const transaction = raw.transaction.bind(raw);
-    vi.spyOn(raw, 'transaction').mockImplementation((callback) =>
-        transaction((tx) => {
-            const txQuery = tx.query.bind(tx);
-            return callback(Object.assign(Object.create(tx), {
-                query: (...args: Parameters<typeof tx.query>) => {
-                    statements.push({ query: args[0], params: args[1] ?? [] });
-                    return txQuery(...args);
-                }
-            }));
-        })
-    );
-    return () => statements;
-}
 
 function toStatementKind(query: string): string {
     if (query.includes('runtime_state_store')) {
