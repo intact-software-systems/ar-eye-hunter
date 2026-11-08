@@ -145,10 +145,13 @@ jobs:
           output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
           mkdir -p "$output"
           npm ci > "$output/install.log" 2>&1
+          # bun build takes one entry point without --outdir; check each diagnostic entry separately.
           bun build --no-bundle \
             apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
-            apps/api-v1/scripts/perf/state-write/run-state-write-diagnostic.ts \
             > "$output/candidate-native-check.log" 2>&1
+          bun build --no-bundle \
+            apps/api-v1/scripts/perf/state-write/run-state-write-diagnostic.ts \
+            >> "$output/candidate-native-check.log" 2>&1
 
       - name: Capture the selected measurement
         id: measurement
