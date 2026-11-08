@@ -269,12 +269,13 @@ function validateMessagesHandleCommand(
 
 function validateRecipientPeersField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const roles = command.recipientPeers;
-    const allowed: readonly unknown[] = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesRecipientPeer;
+    const allowed: readonly string[] = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesRecipientPeer;
     if (roles === undefined) {
         return [];
     }
     return Array.isArray(roles) && roles.length >= 1 && roles.length <= allowed.length &&
-            new Set(roles).size === roles.length && roles.every((role) => allowed.includes(role))
+            new Set(roles).size === roles.length &&
+            roles.every((role) => typeof role === 'string' && allowed.includes(role))
         ? []
         : [
             toControlCommandIssue(
