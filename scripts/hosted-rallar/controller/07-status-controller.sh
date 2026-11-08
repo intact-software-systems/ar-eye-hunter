@@ -9,7 +9,7 @@ RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-
 RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 RALLAR_DEPLOYMENT_READINESS_PATH="${RALLAR_DEPLOYMENT_READINESS_PATH:-/var/lib/rallar-black-box-control/deployment-readiness.json}"
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-}")" && pwd)"
 if [[ -r "${SCRIPT_DIR}/rallar-controller-role.sh" ]]; then
 	source "${SCRIPT_DIR}/rallar-controller-role.sh"
 fi
@@ -318,11 +318,11 @@ inspect_hosted_controller() {
 if [[ "${1:-}" == "--inspect" ]]; then
 	if ! declare -F read_rallar_api_effective_env_value >/dev/null; then
 		# Normal local invocation; the workflow streams this same reader before this script.
-		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-}")" && pwd)"
 		source "${SCRIPT_DIR}/rallar-api-effective-env.sh"
 	fi
 	if ! declare -F read_rallar_public_spa_settings >/dev/null; then
-		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-}")" && pwd)"
 		source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 	fi
 	inspect_hosted_controller
