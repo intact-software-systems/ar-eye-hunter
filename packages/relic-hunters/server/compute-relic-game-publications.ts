@@ -2,27 +2,16 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { RelicTournamentParticipation } from '../src/relic-tournament-participation.ts';
 import { relicMutationPlayerId } from './relic-tournament.ts';
 
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
     computeWsOutboxInsert,
     type AppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
-import {
-    computeWsOutboxProvenanceDigest,
-    toWsOutboxProvenanceKey,
-    WS_OUTBOX_PROVENANCE_NAMESPACE,
-    type WsOutboxProvenance
-} from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import type { WsOutboxProvenance } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
-import {
-    EntityStatus,
-    type Key,
-    type ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     RELIC_TOPICS,
     RELIC_TYPES,
@@ -41,13 +30,6 @@ import { toRelicRoundTransitionEvent } from './to-relic-round-transition-event.t
 
 const RELIC_SNAPSHOT_TTL_MS = 15_000;
 const RELIC_EVENT_TTL_MS = 60_000;
-
-export interface RelicGamePublicationProvenance {
-    readonly queueKey: Key;
-    readonly key: string;
-    readonly value: string;
-    readonly expiresAt: string;
-}
 
 interface RelicGamePublicationInput {
     readonly read: RelicGameMutationService.Attempt;
@@ -70,24 +52,11 @@ interface RelicGameNotification {
 
 export interface RelicGamePublications {
     readonly outboxWrites: readonly AppOutboxInsert[];
-    readonly provenance: readonly RelicGamePublicationProvenance[];
-}
-
-interface RelicGamePublication {
-    readonly outbox: AppOutboxInsert;
-    readonly provenance: RelicGamePublicationProvenance;
 }
 
 /** Domain transitions have one position each: a round starts at 1 and resolves at 2; finish enters the next epoch. */
 export function computeRelicGamePublications(input: RelicGamePublicationInput): RelicGamePublications {
-    const outboxWrites: AppOutboxInsert[] = [];
-    const provenance: RelicGamePublicationProvenance[] = [];
-    for (const notification of toNotifications(input)) {
-        const publication = toRelicGamePublication(input, notification);
-        outboxWrites.push(publication.outbox);
-        provenance.push(publication.provenance);
-    }
-    return { outboxWrites, provenance };
+    return { outboxWrites: toNotifications(input).map((notification) => toRelicGamePublication(input, notification)) };
 }
 
 /** Captures the eligible sessions from the same read used for the mutation decision. */
@@ -149,13 +118,12 @@ function toRelicGameMessage(
     } satisfies ALMessage;
 }
 
-/** Encodes the final outbox row and its independently checked producer provenance before transaction entry. */
+/** Encodes the final outbox row with the proof of its admitted audience before transaction entry. */
 function toRelicGamePublication(
     input: RelicGamePublicationInput,
     notification: RelicGameNotification
-): RelicGamePublication {
+): AppOutboxInsert {
     const { read, admissionNamespace } = input;
-    const ref = toRelicRoomGroupRef(read.ingress.command.gameId);
     const audience = toRelicGameAudience(read, notification);
     const message = toRelicGameMessage(read, notification, audience);
     const createdTs = Temporal.Instant.fromEpochMilliseconds(message.id.ts).toZonedDateTimeISO('UTC').toPlainDateTime();
@@ -173,56 +141,36 @@ function toRelicGamePublication(
         },
         dequeueAudit: { attempts: 0 }
     };
-    const outbox = computeWsOutboxInsert({ entry, admissionNamespace, provenance: null });
-    const proof: Omit<WsOutboxProvenance, 'digest'> = {
-        version: 1,
-        producerKind: 'room-application',
-        queueKey: entry.key,
-        typeId: entry.typeId,
-        messageId: message.id.msgId,
-        senderId: message.id.senderId,
-        expiresAtMs,
-        target: notification.principalId === null
-            ? {
-                kind: 'scoped-room-broadcast',
-                groupRef: ref,
-                admittedAudience: audience
-            }
-            : {
-                kind: 'scoped-principal-broadcast',
-                principalRef: {
-                    applicationId: ref.applicationId,
-                    workspaceId: ref.workspaceId,
-                    principalId: notification.principalId
-                },
-                admittedAudience: audience
-            }
-    };
-    return {
-        outbox,
+    return computeWsOutboxInsert({
+        entry,
+        admissionNamespace,
         provenance: {
-            queueKey: entry.key,
-            key: toWsOutboxProvenanceKey(entry.key),
-            expiresAt: outbox.expiresAt,
-            value: JSON.stringify({ ...proof, digest: computeWsOutboxProvenanceDigest(entry, proof) })
+            message,
+            producerKind: 'room-application',
+            target: toRelicGameProvenanceTarget(read, notification, audience),
+            expiresAtMs
         }
-    };
+    });
 }
 
-export async function writeRelicGameProvenance(
-    transaction: PSqlSql,
-    proofs: readonly RelicGamePublicationProvenance[]
-): Promise<void> {
-    for (const proof of proofs) {
-        const rows = await transaction<{ revision: number; }[]>`
-            insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
-            values (${WS_OUTBOX_PROVENANCE_NAMESPACE}, ${proof.key}, ${proof.value}, ${proof.expiresAt}::timestamptz, now(), 0)
-            on conflict (store_namespace, store_key) do nothing returning revision
-        `;
-        if (rows.length !== 1) {
-            throw new ResourceInboxInvariantCorruptionError(proof.queueKey, 'Relic publication provenance collision');
-        }
+function toRelicGameProvenanceTarget(
+    read: RelicGameMutationService.Attempt,
+    notification: RelicGameNotification,
+    audience: readonly string[]
+): WsOutboxProvenance['target'] {
+    const ref = toRelicRoomGroupRef(read.ingress.command.gameId);
+    if (notification.principalId === null) {
+        return { kind: 'scoped-room-broadcast', groupRef: ref, admittedAudience: audience };
     }
+    return {
+        kind: 'scoped-principal-broadcast',
+        principalRef: {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            principalId: notification.principalId
+        },
+        admittedAudience: audience
+    };
 }
 
 function toNotifications(input: RelicGamePublicationInput): readonly RelicGameNotification[] {

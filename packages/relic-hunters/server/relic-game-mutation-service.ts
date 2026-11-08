@@ -80,11 +80,7 @@ import {
     toRelicTournamentParticipation
 } from './relic-tournament.ts';
 
-import {
-    computeRelicGamePublications,
-    writeRelicGameProvenance,
-    type RelicGamePublicationProvenance
-} from './compute-relic-game-publications.ts';
+import { computeRelicGamePublications } from './compute-relic-game-publications.ts';
 
 const relicScope = toRelicRoomGroupRef('scope');
 export const RELIC_ROOM_DATA_BINDING: RoomOwnedAppData.Binding = {
@@ -182,7 +178,6 @@ export namespace RelicGameMutationService {
         readonly save: RoomOwnedAppData.Write | null;
         readonly tournamentWrite: TournamentResultRepository.Write | null;
         readonly outboxWrites: readonly AppOutboxInsert[];
-        readonly provenance: readonly RelicGamePublicationProvenance[];
     }
 
     export interface Dependencies {
@@ -381,7 +376,6 @@ export class RelicGameMutationService {
         if (computed.tournamentWrite !== null) {
             await writeTournamentGame(transaction, computed.tournamentWrite);
         }
-        await writeRelicGameProvenance(transaction, computed.provenance);
         await writeAppOutboxInserts(transaction, computed.outboxWrites);
     }
 }
@@ -497,8 +491,7 @@ function computeRelicGameMutation(
             guard,
             save: null,
             tournamentWrite: null,
-            outboxWrites: [],
-            provenance: []
+            outboxWrites: []
         };
     }
     const scheduledStartRefusal = scheduledRelicStartRefusal(read);
@@ -552,8 +545,7 @@ function computeRelicGameTransitionResult(
             guard: null,
             save: null,
             tournamentWrite: null,
-            outboxWrites: [],
-            provenance: []
+            outboxWrites: []
         };
     }
     const tournament = computeRelicTournamentChange(read, next);
@@ -733,8 +725,7 @@ function refused(
         guard: null,
         save: null,
         tournamentWrite: null,
-        outboxWrites: [],
-        provenance: []
+        outboxWrites: []
     };
 }
 
