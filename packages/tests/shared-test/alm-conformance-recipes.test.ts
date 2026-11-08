@@ -102,15 +102,22 @@ const GRANTED_RTC_TWO_AGENT_KEYS = [
     'granted-rtc-missing-proof',
     'granted-rtc-publish-refused',
     'granted-rtc-receipted-delivered',
-    'granted-rtc-revoked-publisher'
+    'granted-rtc-revoked-publisher',
+    'granted-rtc-unicast-delivered'
 ] as const;
 
 const GRANTED_RTC_THREE_AGENT_KEYS = [
     'granted-rtc-forged-sender',
     'granted-rtc-not-subscribed',
+    'granted-rtc-list-delivered',
+    'granted-rtc-list-non-holder',
+    'granted-rtc-list-lane-roles',
     'granted-rtc-relay-only',
     'granted-rtc-ordered-relay'
 ] as const;
+
+/** The granted principal broadcast runs on the same-principal family, beside the audience cells. */
+const GRANTED_RTC_PRINCIPAL_KEY = 'granted-rtc-principal-delivered';
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
 
@@ -366,7 +373,9 @@ describe('alm-conformance recipe family', () => {
                     ...[...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier], ...MEMBERSHIP_FENCE_KEYS_BY_CARRIER[carrier]].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
-                    ...AUDIENCE_KEYS.flatMap((key) => ['sender', 'receiver', 'sibling'].map((role) => `alm-${carrier}-${key}-${role}`)),
+                    ...[...AUDIENCE_KEYS, ...(carrier === 'rtc' ? [GRANTED_RTC_PRINCIPAL_KEY] : [])].flatMap((key) =>
+                        ['sender', 'receiver', 'sibling'].map((role) => `alm-${carrier}-${key}-${role}`)
+                    ),
                     ...[
                         ...LEADER_ACK_KEYS_BY_CARRIER[carrier],
                         ...CLAIM_KEYS_BY_CARRIER[carrier],
@@ -410,6 +419,7 @@ describe('alm-conformance recipe family', () => {
                 const twoPages = ['durable-takeover', 'flush-on-hide', 'subscription-successor'].includes(scenario.scenarioId);
                 const fourRoles = FOUR_ROLE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 const twoSessions = fourRoles || scenario.scenarioId === 'server-ordered-entry' ||
+                    scenario.scenarioId === GRANTED_RTC_PRINCIPAL_KEY ||
                     AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
@@ -774,7 +784,7 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             // The granted rtc cells.
-            ...[...GRANTED_RTC_TWO_AGENT_KEYS, ...GRANTED_RTC_THREE_AGENT_KEYS].map(() => ['full']),
+            ...[...GRANTED_RTC_TWO_AGENT_KEYS, GRANTED_RTC_PRINCIPAL_KEY, ...GRANTED_RTC_THREE_AGENT_KEYS].map(() => ['full']),
             // The topic subscription cells, now that a receipted granted send rides rtc.
             ...FOUR_ROLE_KEYS.map(() => ['full'])
         ]);

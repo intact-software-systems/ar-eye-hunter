@@ -1,19 +1,8 @@
-import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
-
-import {
-    FULL_TAGS,
-    type AlmConformanceScenarioDefinition,
-    type AlmConformanceStepInput
-} from '../../alm-conformance-scenario-definition.ts';
-import {
-    TOPIC_SUBSCRIPTION_SELECTOR,
-    toUnsubscribeCommands
-} from '../topic-subscription/topic-subscription-commands.ts';
-import {
-    toConfirmedCueWait,
-    toPublishUntilConfirmedCommands
-} from '../topic-subscription/topic-subscription-publications.ts';
-import { GRANTED_RTC_CARRIERS, toGrantedRtcOwnerCommands, toRtcArrivalWait } from './granted-rtc-commands.ts';
+import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
+import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
+import { toPublishUntilConfirmedCommands } from '../topic-subscription/topic-subscription-publications.ts';
+import { GRANTED_RTC_CARRIERS } from './granted-rtc-commands.ts';
+import { toConfirmingOwnerCommands } from './granted-rtc-confirming-owner.ts';
 
 /**
  * A receipted granted publication rides RTC: the sender publishes asking every logical recipient until the receipt of
@@ -36,14 +25,5 @@ export const grantedRtcReceiptedDelivered: AlmConformanceScenarioDefinition = {
             outsideAudience: 0,
             kind: 'publication'
         }),
-    toRecipientCommands: toConfirmingReceiverCommands
+    toRecipientCommands: (receiver) => toConfirmingOwnerCommands(receiver, [])
 };
-
-function toConfirmingReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [
-        ...toGrantedRtcOwnerCommands(receiver, []),
-        toRtcArrivalWait(receiver),
-        toConfirmedCueWait(receiver, 'publication'),
-        ...toUnsubscribeCommands(receiver, 'receiver')
-    ];
-}

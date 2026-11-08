@@ -80,7 +80,8 @@ describe('ALM run on an agent per role', () => {
                 ...(carrier === 'ws' ? ['server-ordered-entry'] : []),
                 'principal-delivery',
                 'fixed-list-delivery',
-                'world-routing'
+                'world-routing',
+                ...(carrier === 'rtc' ? ['granted-rtc-principal-delivered'] : [])
             ]);
             expect(samePrincipal.every((scenario) => scenario.sibling !== undefined && scenario.recipientB === undefined), carrier)
                 .toBe(true);

@@ -152,8 +152,13 @@ describe('the granted rtc cells', () => {
                 ['granted-rtc-publish-refused', 'two-agent'],
                 ['granted-rtc-receipted-delivered', 'two-agent'],
                 ['granted-rtc-revoked-publisher', 'two-agent'],
+                ['granted-rtc-unicast-delivered', 'two-agent'],
+                ['granted-rtc-principal-delivered', 'same-principal'],
                 ['granted-rtc-forged-sender', 'three-agent'],
                 ['granted-rtc-not-subscribed', 'three-agent'],
+                ['granted-rtc-list-delivered', 'three-agent'],
+                ['granted-rtc-list-non-holder', 'three-agent'],
+                ['granted-rtc-list-lane-roles', 'three-agent'],
                 ['granted-rtc-relay-only', 'three-agent'],
                 ['granted-rtc-ordered-relay', 'three-agent']
             ],
@@ -189,6 +194,9 @@ describe('the granted rtc cells', () => {
             'granted-rtc-publish-refused',
             'granted-rtc-receipted-delivered',
             'granted-rtc-revoked-publisher',
+            'granted-rtc-unicast-delivered',
+            // The same-principal cell grants the sender's principal, which its sibling shares.
+            'granted-rtc-principal-delivered',
             // The topic subscription cells that grant only the sender's principal and the receiver's.
             'subscription-token-count',
             'subscription-revoke-disconnected'
@@ -234,11 +242,74 @@ describe('the granted rtc cells', () => {
             ['granted-rtc-publish-refused', [`rtc.send ${unreceipted}`]],
             ['granted-rtc-receipted-delivered', [`messages.send ${receipted}`]],
             ['granted-rtc-revoked-publisher', [`messages.send ${receipted}`]],
+            ['granted-rtc-unicast-delivered', ['messages.send receiver/at-least-once']],
+            ['granted-rtc-principal-delivered', [`messages.send ${receipted}`]],
             ['granted-rtc-forged-sender', [`messages.send ${unreceipted}`]],
             ['granted-rtc-not-subscribed', [`messages.send ${receipted}`]],
+            ['granted-rtc-list-delivered', [`messages.send ${receipted}`]],
+            ['granted-rtc-list-non-holder', [`messages.send ${receipted}`]],
+            ['granted-rtc-list-lane-roles', [`messages.send ${receipted}`]],
             ['granted-rtc-relay-only', [`messages.send ${unreceipted}`]],
             ['granted-rtc-ordered-relay', [`messages.send ${receipted}`]]
         ]);
+    });
+
+    it('names its audience on the granted send: the unicast cell toPeer receiver with ack receiver, the list cells their principal or lane-role lists, the principal cell its own principal', () => {
+        const audiences = Object.fromEntries([
+            'granted-rtc-unicast-delivered',
+            'granted-rtc-list-delivered',
+            'granted-rtc-list-non-holder',
+            'granted-rtc-list-lane-roles',
+            'granted-rtc-principal-delivered'
+        ].map((scenarioId) => {
+            const sends = toFlatCommands(toGrantedRtcScenario(scenarioId).sender).flatMap((command) =>
+                command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.topicId === GRANTED_TOPIC_ID
+                    ? [{
+                        ack: command.ack,
+                        purpose: command.purpose,
+                        toPeer: command.toPeer,
+                        scope: command.scope,
+                        principalId: command.principalId,
+                        recipientPeers: command.recipientPeers,
+                        recipientPrincipalIds: command.recipientPrincipalIds
+                    }]
+                    : []
+            );
+            return [scenarioId, sends];
+        }));
+        const absent = {
+            purpose: undefined,
+            toPeer: undefined,
+            scope: undefined,
+            principalId: undefined,
+            recipientPeers: undefined,
+            recipientPrincipalIds: undefined
+        };
+
+        expect(audiences).toEqual({
+            'granted-rtc-unicast-delivered': [{ ...absent, ack: 'receiver', purpose: 'notification', toPeer: 'receiver' }],
+            'granted-rtc-list-delivered': [{
+                ...absent,
+                ack: 'all-logical-recipients',
+                recipientPrincipalIds: [CONFORMANCE_PRINCIPAL_IDS.receiver]
+            }],
+            'granted-rtc-list-non-holder': [{
+                ...absent,
+                ack: 'all-logical-recipients',
+                recipientPrincipalIds: [CONFORMANCE_PRINCIPAL_IDS.receiver, CONFORMANCE_PRINCIPAL_IDS['recipient-b']]
+            }],
+            'granted-rtc-list-lane-roles': [{
+                ...absent,
+                ack: 'all-logical-recipients',
+                recipientPeers: ['receiver', 'recipient-b']
+            }],
+            'granted-rtc-principal-delivered': [{
+                ...absent,
+                ack: 'all-logical-recipients',
+                scope: 'principal',
+                principalId: '{auth.clientId}'
+            }]
+        });
     });
 
     it('delivers a publication the owner granted and its own election heard over rtc', () => {

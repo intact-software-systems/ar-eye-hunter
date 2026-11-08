@@ -71,20 +71,26 @@ interface GrantedRtcRefusalPollInput {
 /** A further member's permissions on the granted topic, which the owner writes before it grants the sender. */
 export type GrantedRtcMemberGrant = Pick<TopicGrantInput, 'grantee' | 'publish' | 'subscribe'>;
 
+/** The sender's permissions; a principal broadcast's sender holds `subscribe` too, which its sibling shares. */
+export type GrantedRtcSenderGrant = Pick<TopicGrantInput, 'publish' | 'subscribe'>;
+
+const PUBLISH_ONLY: GrantedRtcSenderGrant = { publish: true, subscribe: false };
+
 /**
  * The receiver owns the room: it elects itself to receive and grants every further member before it grants the sender
- * `publish`, so the sender's snapshot names the grant only once the receiver can hear it.
+ * `senderGrant`, so the sender's snapshot names the grant only once the receiver can hear it.
  */
 export function toGrantedRtcOwnerCommands(
     owner: AlmConformanceStepInput,
-    memberGrants: readonly GrantedRtcMemberGrant[]
+    memberGrants: readonly GrantedRtcMemberGrant[],
+    senderGrant: GrantedRtcSenderGrant = PUBLISH_ONLY
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
         toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
         toSubscribeCommand(owner, 'receiver'),
         ...memberGrants.map((grant) => toTopicGrantCommand({ ...grant, step: owner, operation: 'grant' })),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: false })
+        toTopicGrantCommand({ ...senderGrant, step: owner, operation: 'grant', grantee: 'sender' })
     ];
 }
 

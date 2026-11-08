@@ -60,13 +60,18 @@ import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbou
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
 import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-delivered.ts';
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
+import { grantedRtcListDelivered } from './scenarios/granted-rtc/granted-rtc-list-delivered.ts';
+import { grantedRtcListLaneRoles } from './scenarios/granted-rtc/granted-rtc-list-lane-roles.ts';
+import { grantedRtcListNonHolder } from './scenarios/granted-rtc/granted-rtc-list-non-holder.ts';
 import { grantedRtcMissingProof } from './scenarios/granted-rtc/granted-rtc-missing-proof.ts';
 import { grantedRtcNotSubscribed } from './scenarios/granted-rtc/granted-rtc-not-subscribed.ts';
 import { grantedRtcOrderedRelay } from './scenarios/granted-rtc/granted-rtc-ordered-relay.ts';
+import { grantedRtcPrincipalDelivered } from './scenarios/granted-rtc/granted-rtc-principal-delivered.ts';
 import { grantedRtcPublishRefused } from './scenarios/granted-rtc/granted-rtc-publish-refused.ts';
 import { grantedRtcReceiptedDelivered } from './scenarios/granted-rtc/granted-rtc-receipted-delivered.ts';
 import { grantedRtcRelayOnly } from './scenarios/granted-rtc/granted-rtc-relay-only.ts';
 import { grantedRtcRevokedPublisher } from './scenarios/granted-rtc/granted-rtc-revoked-publisher.ts';
+import { grantedRtcUnicastDelivered } from './scenarios/granted-rtc/granted-rtc-unicast-delivered.ts';
 import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
 import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
 import { noLeaderRefused } from './scenarios/leader-ack/no-leader-refused.ts';
@@ -230,6 +235,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcPublishRefused,
     grantedRtcReceiptedDelivered,
     grantedRtcRevokedPublisher,
+    grantedRtcUnicastDelivered,
     backpressureHandsOver,
     backpressureRefused,
     backpressureDeferred,
@@ -243,6 +249,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     principalDelivery,
     fixedListDelivery,
     worldRouting,
+    grantedRtcPrincipalDelivered,
     leaderConfirms,
     noLeaderRefused,
     leaderOutsideList,
@@ -261,6 +268,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     subscriptionSuccessor,
     grantedRtcForgedSender,
     grantedRtcNotSubscribed,
+    grantedRtcListDelivered,
+    grantedRtcListNonHolder,
+    grantedRtcListLaneRoles,
     // The room's three-agent cells share it, and these two reshape its topology until each one's own last step.
     grantedRtcRelayOnly,
     grantedRtcOrderedRelay

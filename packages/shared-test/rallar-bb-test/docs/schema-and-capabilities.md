@@ -586,6 +586,9 @@ reliability. No hosted manifest carries them (D505).
 - `granted-rtc-receipted-delivered` (two-agent): the sender publishes asking `all-logical-recipients` until one
   copy's receipt expects the receiver alone and it confirms (expected 1, confirmed 1, outside 0, `acknowledged`),
   and the copy arrives over RTC.
+- `granted-rtc-unicast-delivered` (two-agent): the sender's `toPeer: 'receiver'` send asks `ack: 'receiver'` on a
+  `notification` channel, which RTC freezes as a multicast of one; one copy's receipt expects the receiver alone
+  (expected 1, confirmed 1, outside 0), and the copy arrives over RTC.
 - `granted-rtc-missing-proof` (two-agent): a `strip-proof` rewrite deletes each signed frame's proof, the
   receiver drops it `unauthorized: missing-proof`, and the publication is absent.
 - `granted-rtc-publish-refused` (two-agent): the subscribe-only receiver publishes through the `messages.rtc`
@@ -602,6 +605,21 @@ reliability. No hosted manifest carries them (D505).
   grant-narrowed audience freezes it in. The sender publishes until one copy's receipt expects both recipients,
   the receiver confirmed and recipient-b outside the audience, its handle `acknowledged`; recipient-b waits for
   its RTC admission of the copy and then for the publication's absence.
+- `granted-rtc-list-delivered` (three-agent): `recipientPrincipalIds: ['{principal:receiver}']`; recipient-b holds
+  `subscribe` and an election but the list leaves it out (expected 1, confirmed 1, outside 0). Recipient-b asserts
+  the publication's absence and no admission, since a tree layout may route it a copy to forward.
+- `granted-rtc-list-non-holder` (three-agent): `recipientPrincipalIds` names the receiver's principal and
+  recipient-b's, but recipient-b holds `publish` alone, so the frozen audience leaves it out silently (expected 1,
+  confirmed 1, outside 0); recipient-b asserts the publication's absence. A grant only adds permissions and the
+  room's three-agent cells share it, so the owner also revokes the `subscribe` an earlier cell granted recipient-b.
+- `granted-rtc-list-lane-roles` (three-agent): `recipientPeers: ['receiver', 'recipient-b']`, which the page
+  resolves through the leader rule; both hold `subscribe` and an election (expected 2, confirmed 2, outside 0), and
+  each copy arrives over RTC. A role the page cannot resolve fails the send `peerUnresolved`, and two roles that
+  resolve to one session refuse it.
+- `granted-rtc-principal-delivered` (same-principal): `scope: 'principal'`, `principalId: '{auth.clientId}'`. The
+  owner grants the sender's principal `publish` and `subscribe`, so the sender's sibling, elected, receives the copy
+  over RTC and confirms it (expected 1, confirmed 1, outside 0); the receiver, elected but of another principal, is
+  absent from the audience and asserts the publication's absence.
 - `granted-rtc-relay-only` (three-agent): the receiver PUTs `{ topologyKind: 'tree', degreeLimit: 2,
   meshParamK: 2 }` to the room's topology config through `http.request`, so the three pages form a path, and the
   sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
