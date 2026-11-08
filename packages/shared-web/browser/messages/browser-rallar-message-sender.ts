@@ -275,7 +275,7 @@ export class BrowserRallarMessageSender {
                 ? throwMessageValidationIssue(
                     '$.peerId',
                     'unsupported',
-                    'A peer-addressed typed send takes the ws, rtc or rtc-with-ws-fallback strategy.'
+                    'A peer-addressed typed send on a members channel takes the ws, rtc or rtc-with-ws-fallback strategy.'
                 )
                 : await this.sendRtcPeer({ send: input, peerId: input.peerId, strategy }, channel);
         }

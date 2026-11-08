@@ -482,7 +482,7 @@ describe('a receipted granted send its own RTC origin signs', () => {
         });
     });
 
-    it('signs a receipted granted list at its origin, a listed holder without an election recorded outside, an unlisted subscriber receiving nothing', async () => {
+    it('signs a receipted granted list at its origin, a listed holder without an election recorded outside, an unlisted subscriber delivering nothing', async () => {
         const chain = await createRelayChain(['a', 'b', 'c', 'd'], {
             a: PUBLISH_ONLY,
             b: SUBSCRIBE_ONLY,
@@ -525,7 +525,7 @@ describe('a receipted granted send its own RTC origin signs', () => {
         expect(admitted.message.proof).toBeDefined();
         expect(listed.delivered.map((delivered) => delivered.id.msgId)).toEqual([message.id.msgId]);
         expect(unelected.delivered).toEqual([]);
-        expect(origin.channels.d!.sent.map((relayed) => relayed.targets)).toMatchObject([{ recipientPeerIds: ['b', 'c'] }]);
+        expect(origin.channels.d!.sent.map((relayed) => relayed.targets)).toMatchObject([{ mode: 'multicast', recipientPeerIds: ['b', 'c'] }]);
         expect(unlisted.delivered).toEqual([]);
         expect(toDeliveryReceiptStatement(origin.settlements)).toEqual({
             expected: ['b', 'c'],

@@ -5,8 +5,7 @@ import {
     newALPrincipalBroadcastMessage,
     newALUnicastMessage,
     type ALAckMode,
-    type ALMessage,
-    type ALTargets
+    type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import {
@@ -208,11 +207,14 @@ describe('the RTC origin of a granted publication', () => {
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b'] });
     });
 
-    it('admits a granted unicast to a non-holder as a complete receipt of zero recipients', async () => {
+    it.each<[string, Readonly<Record<string, GroupPublicationTopicPermissions>> | undefined, string]>([
+        ['a non-holder', { b: PUBLISH_ONLY }, 'b'],
+        ['its own sender', undefined, 'a']
+    ])('admits a granted unicast to %s as a complete receipt of zero recipients', async (_name, grants, toPeerId) => {
         const crypto = await createAvailablePublicationCryptoFixture();
-        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, { b: PUBLISH_ONLY }));
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, grants));
 
-        const admitted = await enqueueLegAndDrain(fixture, createGrantedUnicast(), 'hand-over');
+        const admitted = await enqueueLegAndDrain(fixture, createGrantedUnicast('receiver', toPeerId), 'hand-over');
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(admitted.message.targets).toEqual(toOriginFrozenTargets([], 3));
@@ -307,14 +309,12 @@ describe('the RTC origin of a granted publication', () => {
         }
     });
 
-    it.each<[string, Partial<Extract<ALTargets, { mode: 'broadcast'; }>>]>([
-        ['its exclusions', { exceptPeerIds: ['c'] }]
-    ])('refuses a granted room broadcast naming %s alone as an audience its origin cannot freeze before it is frozen or signed', async (_name, audience) => {
+    it('refuses a granted room broadcast naming its exclusions alone as an audience its origin cannot freeze before it is frozen or signed', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
         const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
         const message: ALMessage = {
             ...createGrantedMulticast('none'),
-            targets: { mode: 'broadcast', scope: 'room', groupRef: ORIGIN_ROOM, ...audience }
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ORIGIN_ROOM, exceptPeerIds: ['c'] }
         };
 
         const refused = await enqueueLegAndDrain(fixture, message, 'hand-over');
@@ -621,9 +621,9 @@ function toSubscribedRoomSnapshot(crypto: AvailablePublicationCrypto, sessionCou
     });
 }
 
-/** A granted unicast to `b` in the origin room, asking a receipt unless `ack` says otherwise. */
-function createGrantedUnicast(ack: 'none' | 'receiver' = 'receiver'): ALMessage {
-    return newALUnicastMessage('a', GRANTED_ROUTE, 'b', 'room.granted-feed.v1', { text: 'feed' }, {
+/** A granted unicast to `toPeerId` (`b` unless named) in the origin room, asking a receipt unless `ack` says otherwise. */
+function createGrantedUnicast(ack: 'none' | 'receiver' = 'receiver', toPeerId = 'b'): ALMessage {
+    return newALUnicastMessage('a', GRANTED_ROUTE, toPeerId, 'room.granted-feed.v1', { text: 'feed' }, {
         ack,
         groupRef: ORIGIN_ROOM,
         ttlMs: 30_000

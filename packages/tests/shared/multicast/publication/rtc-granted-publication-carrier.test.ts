@@ -77,7 +77,7 @@ describe('RtcGrantedPublicationCarrier', () => {
         expect(admitted.left).toBe(RTC_GRANTED_PUBLICATION_REFUSALS.unfrozenAudience);
     });
 
-    it('passes an unfrozen leg of a pending room authority through the room-limit judgement unchanged', async () => {
+    it('passes an unfrozen leg of an expired room authority through the room-limit judgement unchanged', async () => {
         const crypto = await createAvailablePublicationCryptoFixture();
         const keyed = createKeyedSnapshot(crypto);
         const expired: GroupSnapshot = { ...keyed, group: { ...keyed.group, expiresAtEpochMs: Date.now() - 1 } };

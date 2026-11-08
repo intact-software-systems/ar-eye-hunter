@@ -223,6 +223,23 @@ describe('a granted typed channel', () => {
         }]);
     });
 
+    it('an exclusions-only send under rtc-with-ws-fallback is refused by the RTC carrier and admitted on WS', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        wireRtcOverlay(crypto, createRoomSnapshot(PUBLISHER, crypto));
+        const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
+
+        const handle = await channel.send(
+            { text: 'exclusions' },
+            { strategy: 'rtc-with-ws-fallback', exceptPeerIds: ['c'], ack: 'none' }
+        );
+
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('queued');
+        expect(admissions.map(({ carrier, verdict, message }) => [carrier, verdict, message.id.msgId])).toEqual([
+            ['rtc', 'refused', handle.msgId],
+            ['ws', 'admitted', handle.msgId]
+        ]);
+    });
+
     it('a peer-addressed granted send under ws-then-rtc is admitted on WS only', async () => {
         setRallarFacadeRoomSnapshots([createRoomSnapshot(PUBLISHER, undefined)]);
         const channel = createRallarTestFacade().messages.room<FeedItem>(toGrantedDefinition());
