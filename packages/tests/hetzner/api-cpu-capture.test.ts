@@ -143,14 +143,14 @@ it('retains native JSON GC lines verbatim without repairing their payload or nat
     context.onTestFinished(() => fixture.dispose());
     fixture.capture.begin();
     const gc = [
-        '2026-10-19T05:34:03+00:00 host deno[124]: [124:0x5d67ec466000:0] 240 ms: GC: {"pause":4.108,"gc":"s","stack":true}',
-        '2026-10-19T05:34:03+00:00 host deno[124]: 781 ms: GC: {"pause":5.854,"gc":"s"}',
-        '2026-10-19T05:34:05+00:00 host deno[124]: [124:0x5d67ec466000:0] 2411 ms: GC: {"pause":21.338,"during_sweeping":fals{"type":"rallar.timing"}'
+        '2026-10-19T05:34:03+00:00 host bun[124]: [124:0x5d67ec466000:0] 240 ms: GC: {"pause":4.108,"gc":"s","stack":true}',
+        '2026-10-19T05:34:03+00:00 host bun[124]: 781 ms: GC: {"pause":5.854,"gc":"s"}',
+        '2026-10-19T05:34:05+00:00 host bun[124]: [124:0x5d67ec466000:0] 2411 ms: GC: {"pause":21.338,"during_sweeping":fals{"type":"rallar.timing"}'
     ];
     fixture.captureJournal = [
-        '2026-10-19T05:34:03+00:00 host deno[124]: [124:0x5d67ec466000:0] 240 ms: Memory pool: Removed pages: 0',
+        '2026-10-19T05:34:03+00:00 host bun[124]: [124:0x5d67ec466000:0] 240 ms: Memory pool: Removed pages: 0',
         ...gc,
-        '2026-10-19T05:34:03+00:00 host deno[999]: [999:0xabc:0] 240 ms: GC: {"pause":1,"gc":"s"}',
+        '2026-10-19T05:34:03+00:00 host bun[999]: [999:0xabc:0] 240 ms: GC: {"pause":1,"gc":"s"}',
         ''
     ].join('\n');
     expect(fixture.capture.finish('shell-exit', 0)).toBe(true);
@@ -394,13 +394,10 @@ it('runs the capability probe in owned accessible storage with an isolated child
         'env',
         '-i',
         `HOME=${fixture.capture.evidence}`,
-        `DENO_DIR=${fixture.capture.directory}/deno-cache`,
         'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
         'NO_COLOR=1',
-        '/usr/local/bin/deno',
+        '/usr/local/bin/bun',
         'run',
-        '--no-config',
-        '--allow-all',
         path.join(fixture.capture.tooling, 'rallar-api-inspector.mjs'),
         'probe',
         path.join(fixture.capture.evidence, 'preflight-probe')
@@ -413,10 +410,10 @@ it('runs the capability probe in owned accessible storage with an isolated child
         capability: {
             step: 'inspector-probe',
             serviceUser: 'rallar',
-            executable: '/usr/local/bin/deno',
+            executable: '/usr/local/bin/bun',
             workingDirectory: fixture.capture.evidence,
-            cacheDirectory: `${fixture.capture.directory}/deno-cache`,
-            runtimeVersion: 'deno 2.9.5\nv8 15.0',
+            cacheDirectory: `${fixture.capture.directory}/bun-cache`,
+            runtimeVersion: '1.4.4',
             timeoutSeconds: 30,
             outputByteLimit: 65536
         }
@@ -461,8 +458,8 @@ it('isolates capability subprocess cwd and environment and refuses oversized dia
     context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
     const output = runControllerCommand(
         process.execPath,
-        ['-e', 'console.log(JSON.stringify({cwd:process.cwd(),secret:process.env.RALLAR_API_SECRET,cache:process.env.DENO_DIR}))'],
-        { environment: { RALLAR_API_SECRET: 'must-not-inherit', DENO_DIR: '/root/private-cache' }, capabilityDirectory: directory }
+        ['-e', 'console.log(JSON.stringify({cwd:process.cwd(),secret:process.env.RALLAR_API_SECRET,cache:process.env.CACHE_DIR}))'],
+        { environment: { RALLAR_API_SECRET: 'must-not-inherit', CACHE_DIR: '/root/private-cache' }, capabilityDirectory: directory }
     );
     expect(JSON.parse(output)).toEqual({ cwd: await realpath(directory) });
     expect(() =>

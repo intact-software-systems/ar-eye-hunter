@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"
-source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
+RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"
+source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-apt-sources.sh"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
 
@@ -57,11 +57,11 @@ write_rallar_apt_profile nodesource "${nodesource_apt_config}"
 env APT_CONFIG="${nodesource_apt_config}" apt update
 env APT_CONFIG="${nodesource_apt_config}" apt install -y nodejs
 
-echo "==> Installing Deno >= ${RALLAR_MIN_DENO_VERSION} into /usr/local/bin"
-export DENO_INSTALL=/usr/local
-curl -fsSL https://deno.land/install.sh | sh
+echo "==> Installing Bun >= ${RALLAR_MIN_BUN_VERSION} into /usr/local/bin"
+export BUN_INSTALL=/usr/local
+curl -fsSL https://bun.sh/install | bash
 hash -r
-require_rallar_min_deno_version
+require_rallar_min_bun_version
 
 echo "==> Installing Caddy from the official stable apt repository"
 curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" |
@@ -84,14 +84,13 @@ fi
 
 install -d -m 0755 -o rallar -g rallar /opt/rallar
 install -d -m 0700 -o root -g root /etc/rallar
-install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
 install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
 install -d -m 0755 -o caddy -g caddy /var/www/rallar-black-box
 
 echo "==> Versions"
 node -v
 npm -v
-deno --version
+bun --version
 caddy version
 psql --version
 

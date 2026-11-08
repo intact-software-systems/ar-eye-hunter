@@ -73,7 +73,7 @@ export class ApiCpuCaptureFixture {
             if (args.includes('probe') && this.failAt === 'preflight') {
                 throw new Error('Linux capability probe failed');
             }
-            return args.includes('--version') ? 'deno 2.9.5\nv8 15.0\n' : '';
+            return args.includes('--version') ? '1.4.4\n' : '';
         }
         if (program === 'timeout') {
             return this.runScript(args.slice(6), environment);
@@ -94,10 +94,10 @@ export class ApiCpuCaptureFixture {
             return this.source;
         }
         if (program === 'readlink') {
-            return '/usr/local/bin/deno';
+            return '/usr/local/bin/bun';
         }
         if (program === 'cat') {
-            return '/usr/local/bin/deno\0run\0--allow-net\0/opt/api/main.ts\0';
+            return '/usr/local/bin/bun\0run\0src/main.ts\0';
         }
         if (program === 'systemd-run' && args.some((arg) => arg.endsWith('-inspector'))) {
             this.startInspector(args.at(-1));
@@ -129,7 +129,7 @@ export class ApiCpuCaptureFixture {
             if (this.failAt === 'export') {
                 throw new Error('Journal export failed');
             }
-            return this.captureJournal ?? `2026-10-19 deno[${this.pid}]: [${this.pid}:0xabc:0] 40 ms: GC: {"pause":1.0,"gc":"s"}\n`;
+            return this.captureJournal ?? `2026-10-19 bun[${this.pid}]: [${this.pid}:0xabc:0] 40 ms: GC: {"pause":1.0,"gc":"s"}\n`;
         }
         return '';
     }
@@ -173,7 +173,7 @@ export class ApiCpuCaptureFixture {
             return 'rallar';
         }
         if (args.includes('--property=ExecStart')) {
-            return '{ path=/usr/local/bin/deno ; argv[]=/usr/local/bin/deno run --allow-net /opt/api/main.ts ; }';
+            return '{ path=/usr/local/bin/bun ; argv[]=/usr/local/bin/bun run src/main.ts ; }';
         }
         if (args[0] === 'show' && args.at(-1).endsWith('-inspector.service')) {
             if (this.inspectorStopped && this.failAt === 'inspector-failed-during-stop') {

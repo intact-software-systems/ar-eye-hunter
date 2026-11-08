@@ -1,8 +1,10 @@
 // This client owns one inspector connection; a lost process is never replaced.
+import { mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const clockExpression =
-    '({epochMs:Date.now(),monotonicMs:performance.now(),timeOriginMs:performance.timeOrigin,pid:Deno.pid})';
+    '({epochMs:Date.now(),monotonicMs:performance.now(),timeOriginMs:performance.timeOrigin,pid:process.pid})';
 
 class ApiInspector {
     constructor(socket, pid) {
@@ -201,7 +203,7 @@ async function captureApiProfile(directory, target) {
         }
         clocks.stop = { before: await inspector.readClock() };
         const stopped = await inspector.request('Profiler.stop');
-        await Deno.writeTextFile(`${directory}/api.cpuprofile`, JSON.stringify(stopped.profile));
+        await writeFile(`${directory}/api.cpuprofile`, JSON.stringify(stopped.profile));
         clocks.stop.after = await inspector.readClock();
         const issues = validateApiCpuProfile(stopped.profile);
         if (issues.length) {
@@ -283,37 +285,37 @@ function readHostClock() {
 }
 async function fileExists(file) {
     try {
-        await Deno.stat(file);
+        await stat(file);
         return true;
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if (error?.code === 'ENOENT') {
             return false;
         }
         throw error;
     }
 }
 async function writeJson(file, value) {
-    await Deno.writeTextFile(`${file}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
-    await Deno.rename(`${file}.tmp`, file);
+    await writeFile(`${file}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
+    await rename(`${file}.tmp`, file);
 }
 
 async function probeApiInspector(directory) {
-    await Deno.mkdir(directory, { recursive: true });
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 });
-    const port = listener.addr.port;
-    listener.close();
+    await mkdir(directory, { recursive: true });
+    const port = await reserveLoopbackPort();
     const launch = readHostClock();
     let child;
-    let streams;
+    let stdoutHandle;
+    let stderrHandle;
     let stopTimer;
     let outcome = null;
     let failure;
     try {
         const started = await startProbeProcess(directory, port);
         child = started.child;
-        streams = started.streams;
-        stopTimer = setTimeout(() => Deno.writeTextFile(`${directory}/stop`, '').catch(() => {}), 500);
+        stdoutHandle = started.stdoutHandle;
+        stderrHandle = started.stderrHandle;
+        stopTimer = setTimeout(() => writeFile(`${directory}/stop`, '').catch(() => {}), 500);
         await captureApiProfile(directory, {
             pid: child.pid,
             endpoint: `http://127.0.0.1:${port}`,
@@ -327,14 +329,14 @@ async function probeApiInspector(directory) {
     finally {
         clearTimeout(stopTimer);
         if (child) {
-            const stopped = await stopProbeProcess(child, streams);
+            const stopped = await stopProbeProcess(child, stdoutHandle, stderrHandle);
             outcome = stopped.outcome;
             failure ??= stopped.failure;
         }
         try {
             await writeJson(`${directory}/probe.json`, {
                 pid: child?.pid ?? null,
-                runtime: Deno.version,
+                runtime: process.versions,
                 launch,
                 reaped: outcome !== null,
                 outcome,
@@ -351,72 +353,79 @@ async function probeApiInspector(directory) {
     }
 }
 
+function reserveLoopbackPort() {
+    return new Promise((resolve, reject) => {
+        const server = createServer();
+        server.unref();
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            const address = server.address();
+            if (address === null || typeof address === 'string') {
+                server.close();
+                reject(new Error('Loopback port reservation failed'));
+                return;
+            }
+            server.close(() => resolve(address.port));
+        });
+    });
+}
+
 async function startProbeProcess(directory, port) {
-    let stdout;
-    let stderr;
+    let stdoutHandle;
+    let stderrHandle;
     try {
         // Output setup must succeed before creating the process this probe owns.
-        stdout = await Deno.open(`${directory}/stdout.log`, { create: true, write: true });
-        stderr = await Deno.open(`${directory}/stderr.log`, { create: true, write: true });
-        const child = new Deno.Command(Deno.execPath(), {
-            args: [
-                'eval',
-                '--no-config',
+        stdoutHandle = await open(`${directory}/stdout.log`, 'wx');
+        stderrHandle = await open(`${directory}/stderr.log`, 'wx');
+        const child = Bun.spawn({
+            cmd: [
+                process.execPath,
                 `--inspect=127.0.0.1:${port}`,
-                '--v8-flags=--trace-gc-nvp',
+                '-e',
                 'setInterval(() => {}, 20)'
             ],
-            stdout: 'piped',
-            stderr: 'piped'
-        }).spawn();
-        const streams = Promise.allSettled([
-            child.stdout.pipeTo(stdout.writable),
-            child.stderr.pipeTo(stderr.writable)
-        ]);
-        return { child, streams };
+            stdout: stdoutHandle.fd,
+            stderr: stderrHandle.fd
+        });
+        return { child, stdoutHandle, stderrHandle };
     }
     catch (error) {
-        stdout?.close();
-        stderr?.close();
+        await stdoutHandle?.close();
+        await stderrHandle?.close();
         throw error;
     }
 }
 
-async function stopProbeProcess(child, streams) {
+async function stopProbeProcess(child, stdoutHandle, stderrHandle) {
     let failure;
     const kill = (signal) => {
         try {
             child.kill(signal);
         }
         catch (error) {
-            if (!(error instanceof Deno.errors.NotFound)) {
-                failure ??= error;
-            }
+            failure ??= error;
         }
     };
     kill('SIGTERM');
     const forceStop = setTimeout(() => kill('SIGKILL'), 1000);
     try {
-        const outcome = await child.status;
-        for (const result of await streams) {
-            if (result.status === 'rejected') {
-                failure ??= result.reason;
-            }
-        }
+        const outcome = await child.exited;
         return { outcome, failure };
     }
     finally {
         clearTimeout(forceStop);
+        await stdoutHandle?.close();
+        await stderrHandle?.close();
     }
 }
 
 if (import.meta.main) {
-    const [operation, directory] = Deno.args;
+    const [operation, directory] = process.argv.slice(2);
     if (operation === 'probe') {
         await probeApiInspector(directory);
     }
     else if (operation === 'capture') {
-        await captureApiProfile(directory, JSON.parse(await Deno.readTextFile(`${directory}/target.json`)));
+        await captureApiProfile(directory, JSON.parse(await readFile(`${directory}/target.json`, 'utf8')));
     }
     else {
         throw new Error('Expected probe or capture');

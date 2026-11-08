@@ -24,7 +24,7 @@ ln -sf ~/rallar-controller/15-logs.sh /usr/local/bin/rallar-logs
 
 ## Run Order
 
-Install base runtime dependencies (Node.js, Deno, Caddy, and the Ubuntu
+Install base runtime dependencies (Node.js, Bun, Caddy, and the Ubuntu
 `postgresql` server for API-v1):
 
 ```sh
@@ -263,19 +263,18 @@ It performs:
 2. Fetch origin and check out RALLAR_REPO_REF, default main; a full commit SHA is
    checked out detached, while a branch follows its current remote head.
 3. Run npm ci.
-4. Warm Deno caches for API-v1 and the control server.
-5. Build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
-6. Install the Ubuntu `postgresql` server if it is absent and keep it enabled.
-7. Stop rallar-api-v1.service and rallar-black-box-control.service.
-8. Publish static SPA files to /var/www/rallar-black-box.
-9. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
-10. Refresh API-v1 and control-server browser origin policy.
-11. Retain the validated database, credentials, and operator allowlist, and run
-    `deno task prisma migrate deploy` in
+4. Build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
+5. Install the Ubuntu `postgresql` server if it is absent and keep it enabled.
+6. Stop rallar-api-v1.service and rallar-black-box-control.service.
+7. Publish static SPA files to /var/www/rallar-black-box.
+8. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
+9. Refresh API-v1 and control-server browser origin policy.
+10. Retain the validated database, credentials, and operator allowlist, and run
+    `bunx prisma migrate deploy` in
     `apps/api-v1` as the `rallar` user.
-12. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
+11. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
     and run local/public health checks.
-13. Print service status and recent logs.
+12. Print service status and recent logs.
 ```
 
 The script refuses a dirty checkout before selecting the requested remote
@@ -1158,9 +1157,6 @@ Systemd services:
 Data and cache:
 
 ```text
-Deno cache:
-  /var/lib/rallar-deno
-
 Control server persisted runs:
   /var/lib/rallar-black-box-control
 ```
@@ -1220,7 +1216,7 @@ ls -l /var/lib/rallar-black-box-control/control-snapshot.json
 
 - `Reached heap limit` or `JavaScript heap out of memory` in the journal: V8's
   own limit stopped the process.
-- `Killed process <pid> (deno)` in `dmesg`: the kernel OOM killer chose it; API-v1
+- `Killed process <pid> (bun)` in `dmesg`: the kernel OOM killer chose it; API-v1
   and Caddy share the VM, so check which process it killed.
 - A rising `NRestarts`: systemd restarted the service (`Restart=always`,
   `RestartSec=5`); each restart restores the snapshot and forgets open barriers.

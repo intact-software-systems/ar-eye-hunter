@@ -190,31 +190,6 @@ describe('Hetzner controller contracts and effects', () => {
         expect(script).toContain('($ordinal >= $start and $ordinal <= $end)');
     });
 
-    it('repairs known Deno lockfile drift before the controlled rollout dirty checkout guard', async (context) => {
-        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-lock-drift-'));
-        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
-        const checkoutDir = path.join(tmp, 'checkout');
-        const denoLock = path.join(checkoutDir, 'apps/api-v1/deno.lock');
-        await mkdir(path.dirname(denoLock), { recursive: true });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['init'], options: { cwd: checkoutDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['config', 'user.email', 'test@example.com'], options: { cwd: checkoutDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['config', 'user.name', 'Test User'], options: { cwd: checkoutDir } });
-        await writeFile(denoLock, 'clean\n');
-        await runOwnedTestProcess(context, { executable: 'git', args: ['add', 'apps/api-v1/deno.lock'], options: { cwd: checkoutDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['commit', '-m', 'seed deno lock'], options: { cwd: checkoutDir } });
-        await writeFile(denoLock, 'dirty\n');
-        const { stdout } = await runControllerSelfTest(context, {
-            scriptPath: rolloutScriptPath,
-            environment: {
-                RALLAR_CHECKOUT_DIR: checkoutDir,
-                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'repair-known-drift'
-            }
-        });
-
-        expect(stdout).toContain('repairedKnownDenoLockDrift=true');
-        await expect(readFile(denoLock, 'utf8')).resolves.toBe('clean\n');
-    });
-
     it('cleans rollout transient disk pressure before installing dependencies', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-cleanup-'));
         context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
@@ -369,27 +344,6 @@ describe('Hetzner controller contracts and effects', () => {
         expect(stdout).toContain('checkoutBranch=feature');
     });
 
-    it('warms Deno caches without mutating checked-in lockfiles', async () => {
-        const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
-            'utf8'
-        );
-        const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
-            'utf8'
-        );
-
-        for (const script of [deployScript, rolloutScript]) {
-            expect(script).toContain(
-                'deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json"'
-            );
-            expect(script).toContain(
-                'deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json"'
-            );
-            expect(script).not.toContain('deno cache --config "${RALLAR_CHECKOUT_DIR}');
-        }
-    });
-
     it('deploys the hosted API with timing and AppInbox phase timing logs only when server timing is selected, and keeps them through the rollout env sanitizer', async (context) => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
@@ -452,7 +406,7 @@ describe('Hetzner controller contracts and effects', () => {
         expect(await readFile(rolloutScriptPath, 'utf8')).toContain('\nwrite_api_timing_environment\n');
     });
 
-    it('installs latest Deno but enforces 2.9.0 as the minimum Hetzner runtime version', async () => {
+    it('installs latest Bun but enforces 1.4.4 as the minimum Hetzner runtime version', async () => {
         const installScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/01-install-runtime.sh'),
             'utf8'
@@ -466,16 +420,16 @@ describe('Hetzner controller contracts and effects', () => {
             'utf8'
         );
 
-        expect(installScript).toContain('source "${SCRIPT_DIR}/rallar-deno-runtime.sh"');
-        expect(installScript).toContain('RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"');
-        expect(installScript).toContain('curl -fsSL https://deno.land/install.sh | sh');
-        expect(installScript).toContain('require_rallar_min_deno_version');
-        expect(installScript).not.toContain('sh -s "v${RALLAR_MIN_DENO_VERSION}"');
-        expect(installScript).not.toContain('sh -s v2.9.0');
+        expect(installScript).toContain('source "${SCRIPT_DIR}/rallar-bun-runtime.sh"');
+        expect(installScript).toContain('RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"');
+        expect(installScript).toContain('curl -fsSL https://bun.sh/install | bash');
+        expect(installScript).toContain('require_rallar_min_bun_version');
+        expect(installScript).not.toContain('sh -s "v${RALLAR_MIN_BUN_VERSION}"');
+        expect(installScript).not.toContain('sh -s v1.4.4');
 
         for (const script of [deployScript, rolloutScript]) {
-            expect(script).toContain('source "${SCRIPT_DIR}/rallar-deno-runtime.sh"');
-            expect(script).toMatch(/require_command deno[\s\S]*require_rallar_min_deno_version/);
+            expect(script).toContain('source "${SCRIPT_DIR}/rallar-bun-runtime.sh"');
+            expect(script).toMatch(/require_command bun[\s\S]*require_rallar_min_bun_version/);
         }
     });
 
@@ -521,30 +475,30 @@ describe('Hetzner controller contracts and effects', () => {
         expect(caddyConfig).toContain('Acquire::Retries "3";');
     });
 
-    it('accepts newer Deno versions while rejecting versions below the Hetzner minimum', async (context) => {
-        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-deno-runtime.sh');
+    it('accepts newer Bun versions while rejecting versions below the Hetzner minimum', async (context) => {
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-bun-runtime.sh');
 
         const { stdout } = await runControllerSelfTest(context, {
             scriptPath: scriptPath,
             environment: {
-                RALLAR_DENO_RUNTIME_SELF_TEST: 'version-check',
-                RALLAR_DENO_SELF_TEST_VERSION: '2.10.0',
-                RALLAR_MIN_DENO_VERSION: '2.9.0'
+                RALLAR_BUN_RUNTIME_SELF_TEST: 'version-check',
+                RALLAR_BUN_SELF_TEST_VERSION: '1.5.0',
+                RALLAR_MIN_BUN_VERSION: '1.4.4'
             }
         });
-        expect(stdout).toContain('denoVersionOk=true');
+        expect(stdout).toContain('bunVersionOk=true');
 
         await expect(
             runControllerSelfTest(context, {
                 scriptPath: scriptPath,
                 environment: {
-                    RALLAR_DENO_RUNTIME_SELF_TEST: 'version-check',
-                    RALLAR_DENO_SELF_TEST_VERSION: '2.8.2',
-                    RALLAR_MIN_DENO_VERSION: '2.9.0'
+                    RALLAR_BUN_RUNTIME_SELF_TEST: 'version-check',
+                    RALLAR_BUN_SELF_TEST_VERSION: '1.2.0',
+                    RALLAR_MIN_BUN_VERSION: '1.4.4'
                 }
             })
         ).rejects.toMatchObject({
-            stderr: expect.stringContaining('Deno 2.9.0 or newer required; found 2.8.2')
+            stderr: expect.stringContaining('Bun 1.4.4 or newer required; found 1.2.0')
         });
     });
 

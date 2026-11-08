@@ -134,17 +134,6 @@ cleanup_rollout_disk_pressure() {
 	print_rollout_disk_summary "after rollout cleanup"
 }
 
-is_known_rollout_generated_lockfile() {
-	case "$1" in
-	apps/api-v1/deno.lock | apps/rallar-black-box-control-server/deno.lock)
-		return 0
-		;;
-	*)
-		return 1
-		;;
-	esac
-}
-
 is_full_git_sha() {
 	[[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
 }
@@ -162,31 +151,6 @@ update_rollout_checkout() {
 	# A branch may have been rewritten since the last rollout (a rebased PR branch), so the checkout
 	# follows the remote branch exactly instead of fast-forwarding a diverged local one.
 	git -C "${checkout_dir}" checkout -B "${repo_ref}" "origin/${repo_ref}"
-}
-
-repair_known_rollout_generated_checkout_changes() {
-	local checkout_dir="$1"
-	local status line state file repaired_files=()
-
-	status="$(git -C "${checkout_dir}" status --porcelain)"
-	[[ -z "${status}" ]] && return 0
-
-	while IFS= read -r line; do
-		[[ -z "${line}" ]] && continue
-		state="${line:0:2}"
-		file="${line:3}"
-		if [[ "${state}" == " M" ]] && is_known_rollout_generated_lockfile "${file}"; then
-			repaired_files+=("${file}")
-			continue
-		fi
-		return 0
-	done <<<"${status}"
-
-	[[ "${#repaired_files[@]}" -gt 0 ]] || return 0
-
-	echo "Repairing rollout-generated Deno lockfile drift before controlled rollout:"
-	printf "  %s\n" "${repaired_files[@]}"
-	git -C "${checkout_dir}" checkout -- "${repaired_files[@]}"
 }
 
 sanitize_api_environment_file() {
@@ -380,14 +344,6 @@ run_rollout_self_test() {
 		printf 'checkoutHead=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse HEAD)"
 		printf 'checkoutBranch=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" symbolic-ref --short -q HEAD || echo HEAD)"
 		;;
-	repair-known-drift)
-		repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
-		if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
-			git -C "${RALLAR_CHECKOUT_DIR}" status --short >&2
-			return 1
-		fi
-		echo "repairedKnownDenoLockDrift=true"
-		;;
 	cleanup-disk-pressure)
 		cleanup_rollout_disk_pressure
 		echo "cleanedRolloutDiskPressure=true"
@@ -435,7 +391,7 @@ fi
 
 source "${SCRIPT_DIR}/rallar-controller-lock.sh"
 rallar_lock_controller
-source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
+source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 source "${SCRIPT_DIR}/rallar-deployment-readiness.sh"
@@ -555,8 +511,8 @@ update_control_allowed_origins() {
 
 require_command git
 require_command npm
-require_command deno
-require_rallar_min_deno_version
+require_command bun
+require_rallar_min_bun_version
 require_command rsync
 require_command curl
 require_command openssl
@@ -570,8 +526,6 @@ fi
 validate_rallar_api_existing_store_configuration "${RALLAR_API_ENV_FILE}"
 require_writable_api_diagnostic_configuration
 operator_token_ttl_ms="$(resolve_operator_token_ttl_ms)"
-
-repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
 
 if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
 	echo "Checkout has local changes; refusing controlled rollout:" >&2
@@ -605,17 +559,6 @@ rallar_playwright_operation_stage "rollout-npm-dependencies"
 runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 cleanup_rollout_npm_transients
 print_rollout_disk_summary "after npm dependency cleanup"
-
-configure_rallar_deno_environment /etc/systemd/system
-
-echo "==> Warming Deno caches"
-rallar_playwright_operation_stage "rollout-deno-cache"
-runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
-	"${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
-runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
-	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
 	install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"

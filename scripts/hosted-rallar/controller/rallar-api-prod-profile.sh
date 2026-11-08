@@ -149,9 +149,8 @@ migrate_rallar_api_postgres_store() {
 
 	echo "==> Applying API-v1 Prisma migrations"
 	if ! (
-		cd / &&
-			DATABASE_URL="${database_url}" runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task \
-				--config "${checkout_dir}/apps/api-v1/deno.json" prisma migrate deploy
+		cd "${checkout_dir}/apps/api-v1" &&
+			DATABASE_URL="${database_url}" runuser -u rallar -- bunx prisma migrate deploy
 	); then
 		write_rallar_api_store_failure migrations
 		return 1

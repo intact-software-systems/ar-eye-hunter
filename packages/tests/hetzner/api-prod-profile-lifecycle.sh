@@ -34,7 +34,7 @@ if [[ "${1:-}" != --inside ]]; then
 	exit 0
 fi
 
-mkdir -p /fixture/bin /fixture/checkout/.git /fixture/playwright/active /etc/rallar /etc/systemd/system /var/www/rallar-black-box
+mkdir -p /fixture/bin /fixture/checkout/.git /fixture/checkout/apps/api-v1 /fixture/playwright/active /etc/rallar /etc/systemd/system /var/www/rallar-black-box
 useradd -M rallar
 useradd -M caddy
 printf '{"packages":{"node_modules/playwright":{"version":"1.0.0"}}}\n' >/fixture/checkout/package-lock.json
@@ -116,12 +116,12 @@ case "${name}" in
 esac
 EOF
 chmod 0755 /fixture/bin/record-command
-for command in systemctl runuser git dpkg-query curl jq npm deno rsync caddy chown free journalctl; do
+for command in systemctl runuser git dpkg-query curl jq npm bun rsync caddy chown free journalctl; do
 	ln -s record-command "/fixture/bin/${command}"
 done
 
 export PATH="/fixture/bin:${PATH}"
-export RALLAR_DENO_SELF_TEST_VERSION=2.9.0
+export RALLAR_BUN_SELF_TEST_VERSION=1.4.4
 export RALLAR_CHECKOUT_DIR=/fixture/checkout
 export RALLAR_API_ENV_FILE=/etc/rallar/api-v1.env
 export RALLAR_API_SECRET_FILE=/etc/rallar/api-v1.secrets.env
@@ -275,15 +275,15 @@ deploy-success | deploy-initial | rollout-success | rollout-metered-preserve | r
 		[[ "${commands}" != *'systemctl stop rallar-api-v1.service'* ]]
 		assert_before 'systemctl show -p ActiveState --value rallar-api-v1.service' 'postgres-sql create-role'
 	else
-		assert_before 'systemctl stop rallar-api-v1.service' 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task'
-		assert_before 'systemctl stop rallar-black-box-control.service' 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task'
+		assert_before 'systemctl stop rallar-api-v1.service' 'runuser -u rallar -- bunx prisma migrate deploy'
+		assert_before 'systemctl stop rallar-black-box-control.service' 'runuser -u rallar -- bunx prisma migrate deploy'
 	fi
 	if [[ "${TEST_SCENARIO}" == deploy-success || "${TEST_SCENARIO}" == deploy-initial ]]; then
 		grep -Fq 'ConditionPathExists=!/etc/rallar/api-v1.store-failure' /etc/systemd/system/rallar-api-v1.service
-		assert_before 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task' 'systemctl enable --now rallar-api-v1.service'
+		assert_before 'runuser -u rallar -- bunx prisma migrate deploy' 'systemctl enable --now rallar-api-v1.service'
 		assert_before 'systemctl enable --now rallar-api-v1.service' 'curl -fsS http://127.0.0.1:8080/api/config'
 	else
-		assert_before 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task' 'systemctl start rallar-api-v1.service'
+		assert_before 'runuser -u rallar -- bunx prisma migrate deploy' 'systemctl start rallar-api-v1.service'
 		assert_before 'systemctl start rallar-api-v1.service' 'curl -fsS http://127.0.0.1:8080/api/config'
 		assert_before 'curl -fsS http://127.0.0.1:8080/api/config' 'jq -n'
 		[[ -s /fixture/readiness.json ]]

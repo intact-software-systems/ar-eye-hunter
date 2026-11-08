@@ -39,7 +39,7 @@ const cleanupFiles = [
     'rallar-api-prod-profile.sh',
     'rallar-apt-sources.sh',
     'rallar-api-effective-env.sh',
-    'rallar-deno-runtime.sh',
+    'rallar-bun-runtime.sh',
     'rallar-public-spa-env.sh',
     'rallar-playwright-install.sh',
     'rallar-deployment-readiness.sh'
@@ -199,7 +199,7 @@ export class ApiCpuCapture {
     }
 
     probeInspector() {
-        const cacheDirectory = path.join(this.directory, 'deno-cache');
+        const cacheDirectory = path.join(this.directory, 'bun-cache');
         mkdirSync(cacheDirectory, { mode: 0o700 });
         this.run('chown', ['-R', 'rallar:rallar', this.evidence, cacheDirectory]);
         this.state.capability = {
@@ -215,23 +215,20 @@ export class ApiCpuCapture {
         this.state.capability.runtimeVersion = this.runInspectorCapability('runtime-version', ['--version']).trim();
         this.runInspectorCapability('inspector-probe', [
             'run',
-            '--no-config',
-            '--allow-all',
             path.join(this.tooling, 'rallar-api-inspector.mjs'),
             'probe',
             path.join(this.evidence, 'preflight-probe')
         ]);
         this.runInspectorCapability('loopback-port', [
-            'eval',
-            '--no-config',
-            'const socket=Deno.listen({hostname:"127.0.0.1",port:9229});socket.close();'
+            '-e',
+            'const server=Bun.serve({hostname:"127.0.0.1",port:9229,fetch:()=>new Response()});server.stop();'
         ]);
     }
 
     runInspectorCapability(step, args) {
         this.state.capability.step = step;
         this.writeState();
-        // GNU timeout owns the complete probe process group, including the temporary Deno child.
+        // GNU timeout owns the complete probe process group, including the temporary Bun child.
         return this.commands.run(
             'timeout',
             [
@@ -244,7 +241,6 @@ export class ApiCpuCapture {
                 'env',
                 '-i',
                 `HOME=${this.evidence}`,
-                `DENO_DIR=${this.state.capability.cacheDirectory}`,
                 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                 'NO_COLOR=1',
                 this.state.launchArguments[0],
@@ -292,7 +288,7 @@ export class ApiCpuCapture {
 
     startProfile() {
         const args = [...this.state.launchArguments];
-        args.splice(2, 0, '--inspect=127.0.0.1:9229', '--v8-flags=--trace-gc-nvp');
+        args.splice(2, 0, '--inspect=127.0.0.1:9229');
         this.state.overrideContents = `# Owned by ${this.configuration.id}\n[Service]\nExecStart=\nExecStart=${
             args.join(' ')
         }\n`;
@@ -329,13 +325,10 @@ export class ApiCpuCapture {
             `--unit=rallar-${this.configuration.id}-inspector`,
             '--property=User=rallar',
             `--property=WorkingDirectory=${this.evidence}`,
-            `--setenv=DENO_DIR=${this.state.capability.cacheDirectory}`,
             `--property=RuntimeMaxSec=${this.configuration.remainingSeconds}s`,
             '--property=KillMode=control-group',
             this.state.launchArguments[0],
             'run',
-            '--no-config',
-            '--allow-all',
             path.join(this.tooling, 'rallar-api-inspector.mjs'),
             'capture',
             this.state.segment

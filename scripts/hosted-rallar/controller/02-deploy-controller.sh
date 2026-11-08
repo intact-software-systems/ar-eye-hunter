@@ -9,7 +9,7 @@ fi
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-controller-lock.sh"
 rallar_lock_controller
-source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
+source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
@@ -38,8 +38,8 @@ require_command() {
 
 require_command git
 require_command npm
-require_command deno
-require_rallar_min_deno_version
+require_command bun
+require_rallar_min_bun_version
 require_command caddy
 require_command openssl
 require_command curl
@@ -58,16 +58,6 @@ chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 echo "==> Installing npm dependencies"
 runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
-
-configure_rallar_deno_environment /etc/systemd/system
-
-echo "==> Warming Deno caches"
-runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
-	"${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
-runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
-	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
 	install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
@@ -104,7 +94,6 @@ chown -R caddy:caddy /var/www/rallar-black-box
 echo "==> Writing environment files"
 install -d -m 0700 -o root -g root /etc/rallar
 install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
-install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
 write_rallar_black_box_spa_env_file
 
 if [[ "${RALLAR_API_EXISTING_STORE}" == "1" ]]; then
@@ -200,10 +189,9 @@ Type=simple
 User=rallar
 Group=rallar
 WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
-Environment=DENO_DIR=/var/lib/rallar-deno
 EnvironmentFile=/etc/rallar/api-v1.env
 EnvironmentFile=-/etc/rallar/api-v1.secrets.env
-ExecStart=/usr/local/bin/deno run --config ${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json --allow-net --allow-env --allow-read ${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts
+ExecStart=/usr/local/bin/bun run src/main.ts
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -224,9 +212,8 @@ Type=simple
 User=rallar
 Group=rallar
 WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server
-Environment=DENO_DIR=/var/lib/rallar-deno
 EnvironmentFile=/etc/rallar/control-server.env
-ExecStart=/usr/local/bin/deno run --config ${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json --allow-net --allow-env --allow-read --allow-write ${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts
+ExecStart=/usr/local/bin/bun run src/main.ts
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
