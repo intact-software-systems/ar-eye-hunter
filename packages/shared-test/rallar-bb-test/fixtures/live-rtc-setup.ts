@@ -4,6 +4,15 @@ export const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.c
 
 export const RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS = 5_000;
 
+/**
+ * Budget for the idempotent ensure-group + ensure-member HTTP mutation pair. Distributed
+ * runs race dozens of agents onto the same group at once; the AppInbox completion wait
+ * can legitimately take several seconds under that contention, so the command timeout
+ * must clear the per-poll ceiling (completionWait.maxRetryIntervalMs) with margin rather
+ * than sit at the same 5s as the RTC connect margin.
+ */
+export const RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS = 15_000;
+
 export interface RallarBlackBoxLiveRecipeOptions {
     readonly group?: RallarBlackBoxDistributedGroupRef;
     readonly apiBaseUrl?: string;

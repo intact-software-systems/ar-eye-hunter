@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { createRallarBlackBoxRtcSmokeRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
@@ -27,6 +28,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         const setup = recipe.commands.filter((command) => command.kind === 'http.request');
 
         expect(setup[0]).toMatchObject({
+            timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
             request: {
                 body: { kind: 'room' }
             },
@@ -35,6 +37,7 @@ describe('rallar-bb-test recipe fixtures', () => {
             }
         });
         expect(setup[1]).toMatchObject({
+            timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
             response: {
                 acceptedStatusCodes: [200, 201]
             }
