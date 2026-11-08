@@ -16,6 +16,7 @@ import type { PublicationCrypto } from '../../signature/publication-crypto.ts';
 import { readRtcGroupSnapshotByRef } from '../read-rtc-outbound-observation.ts';
 import { toRtcPublicationHandlingPlan, type RtcRoomSnapshotAdmission } from '../rtc-room-snapshot-admission.ts';
 import { toRtcOutboundMessage } from '../to-rtc-outbound-message.ts';
+import { computeRtcFrozenAudienceRefusal } from '../web-rtc-overlay-frozen-audience.ts';
 import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';
 import {
     computeRtcGrantedPublicationRefusal,
@@ -35,9 +36,11 @@ import {
     signRtcPublication,
     type RtcPublicationSigningFailure
 } from './sign-rtc-publication.ts';
+import { toRtcGrantedListedLeg } from './to-rtc-granted-listed-leg.ts';
 
 /**
- * Why a granted leg is not signed: a shape RTC cannot carry (not a room multicast), or its origin could not sign it.
+ * Why a granted leg is not signed: a shape RTC cannot carry (an audience its origin does not freeze), or its origin
+ * could not sign it.
  */
 type RtcGrantedLegRefusal = Readonly<{ kind: 'unsupported-shape'; message: string; }> | RtcPublicationSigningFailure;
 
@@ -93,10 +96,12 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * A granted leg is refused for the shape its sender gave before any freezing work, then for a `group-leader` leg
-     * whose leader holds no `subscribe`, then when its origin cannot sign at all; else it is frozen to the live
-     * sessions whose principal holds `subscribe` on its topic as `toAdmittedMessage` carries it. Its admission signs
-     * that narrowed audience (`signAdmitted`). Left: the refusal's detail, which a fallback carrier takes over.
+     * A granted leg -- a room multicast, a listed or principal room broadcast, or a room unicast -- is refused for the
+     * shape its sender gave before any freezing work, then for a `group-leader` leg whose leader holds no `subscribe`,
+     * then when its origin cannot sign at all; else a unicast is listed as a broadcast of one and the leg is frozen to
+     * the live sessions whose principal holds `subscribe` on its topic as `toAdmittedMessage` carries it, then refused
+     * when that frozen audience passes the RTC room limit. Its admission signs that narrowed audience (`signAdmitted`).
+     * Left: the refusal's detail, which a fallback carrier takes over.
      */
     admitLeg(
         msg: ALMessage,
@@ -122,9 +127,14 @@ export class RtcGrantedPublicationCarrier {
             selfSessionId,
             nowEpochMs
         });
-        return signingRefusal === undefined
-            ? Either.ofRight(toAdmittedMessage(msg, subscribeHolders))
-            : Either.ofLeft(toRtcGrantedLegRefusalDetail(signingRefusal));
+        if (signingRefusal !== undefined) {
+            return Either.ofLeft(toRtcGrantedLegRefusalDetail(signingRefusal));
+        }
+        const admitted = toAdmittedMessage(toRtcGrantedListedLeg(msg), subscribeHolders);
+        return computeRtcFrozenAudienceRefusal(admitted, msg).fold(
+            (refusal) => Either.ofLeft(refusal.dropReason ?? ''),
+            () => Either.ofRight(admitted)
+        );
     }
 
     /**
@@ -261,8 +271,8 @@ export class RtcGrantedPublicationCarrier {
     }
 
     /**
-     * The origin carries a granted publication only as a room multicast, re-sends a stored one only signed and only
-     * while it holds `publish`; any other message passes.
+     * The origin carries a granted publication only as a room multicast, a listed or principal room broadcast, or a
+     * room unicast, re-sends a stored one only signed and only while it holds `publish`; any other message passes.
      */
     computeOriginRefusal(
         input: RtcGrantedPublicationRefusalInput

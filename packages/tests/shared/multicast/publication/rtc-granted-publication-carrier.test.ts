@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import type {
@@ -9,14 +9,21 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 import { RtcGrantedPublicationCarrier } from '@shared/multicast/publication/rtc-granted-publication-carrier.ts';
 import { toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../signature/publication-crypto-fixtures.ts';
+import {
+    createAvailablePublicationCryptoFixture,
+    UNAVAILABLE_PUBLICATION_CRYPTO,
+    type AvailablePublicationCrypto
+} from '../../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from '../rtc-granted-topic-reader-fixtures.ts';
+import { ORIGIN_ROOM, toOriginFrozenTargets } from '../rtc-origin-overlay-fixture.ts';
 import {
     createFrozenGrantedMulticast,
     createPublicationRoomSnapshot,
@@ -37,17 +44,52 @@ const GRANTED = createFrozenGrantedMulticast({
     snapshotVersion: 3
 });
 
+const GRANTED_UNICAST = newALUnicastMessage('a', GRANTED.route, 'b', GRANTED.payload.typeId, {}, { ack: 'none', groupRef: ORIGIN_ROOM });
+
+const GRANTED_LIST = newALBroadcastMessage('a', GRANTED.route, 'room', GRANTED.payload.typeId, {}, {
+    ack: 'none',
+    groupRef: ORIGIN_ROOM,
+    recipientPeerIds: ['b', 'c']
+});
+
 const MEMBERS: ALMessage = { ...GRANTED, route: { ...GRANTED.route, topicId: 'room.chat' } };
 
 describe('RtcGrantedPublicationCarrier', () => {
-    it('refuses a granted leg for the shape its sender gave before it asks for the admitted message', () => {
+    it('admits a granted unicast and a granted list leg for the shape its sender gave', async () => {
+        const carrier = createKeyedCarrier(await createAvailablePublicationCryptoFixture());
+
+        expect(carrier.admitLeg(GRANTED_UNICAST, (leg) => leg).right?.targets).toEqual({
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: ORIGIN_ROOM,
+            recipientPeerIds: ['b']
+        });
+        expect(carrier.admitLeg(GRANTED_LIST, (leg) => leg).right).toBe(GRANTED_LIST);
+    });
+
+    it('refuses a granted leg naming no room before it asks for the admitted message', () => {
         const unicast = newALUnicastMessage('a', GRANTED.route, 'b', GRANTED.payload.typeId, {});
 
         const admitted = createKeylessCarrier().admitLeg(unicast, () => {
             throw new Error('A shape refusal admits nothing.');
         });
 
-        expect(admitted.left).toBe(RTC_GRANTED_PUBLICATION_REFUSALS.notMulticast);
+        expect(admitted.left).toBe(RTC_GRANTED_PUBLICATION_REFUSALS.unfrozenAudience);
+    });
+
+    it('passes an unfrozen leg of a pending room authority through the room-limit judgement unchanged', async () => {
+        const carrier = createKeyedCarrier(await createAvailablePublicationCryptoFixture());
+
+        expect(carrier.admitLeg(GRANTED_LIST, (leg) => leg).right).toBe(GRANTED_LIST);
+    });
+
+    it('refuses a granted leg whose frozen audience passes the RTC room limit as unsupported after the freeze', async () => {
+        const carrier = createKeyedCarrier(await createAvailablePublicationCryptoFixture());
+        const recipientPeerIds = Array.from({ length: 257 }, (_, index) => `s${index}`);
+
+        const admitted = carrier.admitLeg(GRANTED_LIST, (leg) => ({ ...leg, targets: toOriginFrozenTargets(recipientPeerIds, 3) }));
+
+        expect(admitted.left).toEqual('RTC room multicast audience of 257 recipients exceeds the RTC room limit of 256');
     });
 
     it('refuses a leg its origin could not sign before it asks for the admitted message, naming the failure first', () => {
@@ -167,6 +209,23 @@ describe('a granted publication\'s repair a relay asks for a recipient below it 
 });
 
 function createKeylessCarrier(snapshot?: GroupSnapshot): RtcGrantedPublicationCarrier {
+    return createCarrier(UNAVAILABLE_PUBLICATION_CRYPTO, snapshot);
+}
+
+/** A carrier that can sign: its room of `a`, `b` and `c` attests `a`'s page key, and `b` and `c` may subscribe. */
+function createKeyedCarrier(crypto: AvailablePublicationCrypto): RtcGrantedPublicationCarrier {
+    return createCarrier(
+        crypto,
+        createPublicationRoomSnapshot({
+            sessionIds: ['a', 'b', 'c'],
+            snapshotVersion: 3,
+            keys: { a: toGroupPresencePublicationKey(crypto)! },
+            grants: { a: PUBLISH_ONLY, b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }
+        })
+    );
+}
+
+function createCarrier(publicationCrypto: PublicationCrypto, snapshot: GroupSnapshot | undefined): RtcGrantedPublicationCarrier {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     if (snapshot !== undefined) {
         groupCache.accept(snapshot.group.groupId, snapshot);
@@ -174,7 +233,7 @@ function createKeylessCarrier(snapshot?: GroupSnapshot): RtcGrantedPublicationCa
     return new RtcGrantedPublicationCarrier({
         groupCache,
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
-        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationCrypto,
         publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
         selfPrincipalId: 'a',
