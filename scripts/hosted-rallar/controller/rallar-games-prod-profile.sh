@@ -43,6 +43,7 @@ write_rallar_game_server_env_file() {
 	local auth_secret="$6"
 	local operator_token_secret="$7"
 	local operator_client_ids="$8"
+	local bindings_json="$9"
 
 	install -d -m 0700 -o root -g root "$(dirname "${env_file}")"
 	cat >"${env_file}" <<EOF
@@ -56,6 +57,7 @@ RALLAR_WS_BASE_URL=wss://${host}
 RALLAR_AUTH_CREDENTIAL_SECRET=${auth_secret}
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=${operator_token_secret}
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=${operator_client_ids}
+RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON=${bindings_json}
 EOF
 	chmod 0600 "${env_file}"
 }
@@ -106,6 +108,7 @@ write_rallar_game_server_surface() {
 	local role="$7"
 	local name="$8"
 	local cors_origins="$9"
+	local bindings_json="${10}"
 
 	local database_url auth_secret existing_auth operator_token_secret operator_client_ids
 	local existing_operator_token existing_operator_ids
@@ -127,7 +130,7 @@ write_rallar_game_server_surface() {
 	fi
 	operator_token_secret="${existing_operator_token:-${RALLAR_GAME_OPERATOR_TOKEN_SECRET:-$(openssl rand -hex 32)}}"
 	operator_client_ids="${existing_operator_ids:-${RALLAR_GAME_OPERATOR_CLIENT_IDS:-hosted-operator-$(openssl rand -hex 8)}}"
-	write_rallar_game_server_env_file "${env_file}" "${host}" "${port}" "${cors_origins}" "${database_url}" "${auth_secret}" "${operator_token_secret}" "${operator_client_ids}"
+	write_rallar_game_server_env_file "${env_file}" "${host}" "${port}" "${cors_origins}" "${database_url}" "${auth_secret}" "${operator_token_secret}" "${operator_client_ids}" "${bindings_json}"
 	write_rallar_game_server_unit "${service}" "${app_dir}" "${env_file}" "${failure_file}" "${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}" "Rallar ${service%%.service} game server"
 }
 

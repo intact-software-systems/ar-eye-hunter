@@ -318,11 +318,13 @@ games)
 	write_rallar_game_server_surface \
 		"${RALLAR_RELIC_APP_DIR}" "${RALLAR_RELIC_SERVICE}" "${RALLAR_RELIC_ENV_FILE}" "${RALLAR_RELIC_STORE_FAILURE_FILE}" \
 		"${RALLAR_RELIC_HOST}" "${RALLAR_RELIC_PORT}" "${RALLAR_RELIC_DATABASE_ROLE}" "${RALLAR_RELIC_DATABASE_NAME}" \
-		"${RALLAR_RELIC_CORS_ORIGINS}"
+		"${RALLAR_RELIC_CORS_ORIGINS}" \
+		'[{"applicationId":"rallar-server","workspaceId":"default","namespace":"relic-hunter-v1","storeName":"relic-hunter-games"}]'
 	write_rallar_game_server_surface \
 		"${RALLAR_AR_EYE_APP_DIR}" "${RALLAR_AR_EYE_SERVICE}" "${RALLAR_AR_EYE_ENV_FILE}" "${RALLAR_AR_EYE_STORE_FAILURE_FILE}" \
 		"${RALLAR_AR_EYE_HOST}" "${RALLAR_AR_EYE_PORT}" "${RALLAR_AR_EYE_DATABASE_ROLE}" "${RALLAR_AR_EYE_DATABASE_NAME}" \
-		"${RALLAR_AR_EYE_CORS_ORIGINS}"
+		"${RALLAR_AR_EYE_CORS_ORIGINS}" \
+		'[{"applicationId":"ar-eye-hunter","workspaceId":"default","namespace":"app:ar-eye","storeName":"tournament-arenas"}]'
 
 	echo "==> Writing Caddyfile"
 	write_rallar_role_caddyfile
