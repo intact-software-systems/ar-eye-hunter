@@ -1,12 +1,12 @@
 # ALM publication QoS and pub/sub addendum
 
 Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
-(authorized WS pub/sub, as S2-i and S2-ii), Slice 3 (restricted RTC parity,
-as S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii),
-Slice 5 (producer-row positions, as S5-i) and Slice 6 (granted unicast, list and
-principal broadcast over RTC, as S6-i) are implemented and recorded as applied
-in §7; the later outcomes remain a proposed extension, not implemented behavior
-or an adopted change to `docs/product.md`.
+(authorized WS pub/sub, as S2-i and S2-ii), Slice 3 (restricted RTC parity, as
+S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii), Slice
+5 (producer-row positions, as S5-i) and Slice 6 (granted unicast, list and
+principal broadcast over RTC, as S6-i and S6-ii) are implemented and recorded as
+applied in §7; the later outcomes remain a proposed extension, not implemented
+behavior or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -898,11 +898,11 @@ as a multicast of one; the RTC room-limit bound is judged in the granted leg
 right after the freeze, so a fallback takes over; and the three copies of the
 shape gate become one predicate in the carrier. Receipts stay unsigned and
 relay-re-originated; signed receipts, an encrypted publication and native key
-custody stay out. It was designed in the Slice 6 design proposal, deleted with
-S6-ii, and lands as S6-i (the RTC shapes, two outbound riders and these
-documents) and S6-ii (one writer for the provenance sidecar, the batched CRDT,
-presence-summary and topology outbox loops and a shared PGlite statement
-recorder).
+custody stay out. It was designed in the Slice 6 design proposal, which is
+deleted (git history is the archive), and landed as S6-i (the RTC shapes, two
+outbound riders and these documents) and S6-ii (one writer for the provenance
+sidecar, the batched CRDT, presence-summary and topology outbox loops and a
+shared PGlite statement recorder).
 
 As applied (S6-i): the carrier's leg admission (`admitLeg`) judges the shape
 the sender gave by one predicate,
@@ -962,6 +962,35 @@ never
 subscribes stays expected and unconfirmed on WS; and the cells run on the local
 lane only, with no hosted manifest. Decisions D551–D562 are in the roadmap, and
 Slice 6's first pull request is complete.
+
+As applied (S6-ii): the producer's proof is the outbox row's second sidecar row.
+`AppOutboxInsert` carries a required `provenance` beside `trackIndex`, `null`
+unless the row is proved; `computeWsOutboxInsert` derives it in compute from the
+producer's facts (the message, the producer kind, the authorised target and the
+expiry) through `computeWsOutboxProvenanceRecord`, still the one value encoding,
+and `writeAppOutboxInserts` writes rows, index rows and proofs in the one
+`sidecars` CTE. `validateWsOutboxInsert` replaces `isExactAppOutboxInsert` and
+runs outside the write: it reports a re-keyed, re-valued, re-expired or missing
+proof and a facts expiry the row does not carry. One conflict rule holds for
+every proof, absent-or-expired, the index row's: a live proof under the key, or
+a batch naming one key twice, rolls the transaction back as corruption, and an
+expired one is written over at revision 1. Relic is aligned; its former
+`do nothing` would have refused that replay. Auth logout, client state, CRDT,
+the presence summary, topology and Relic lost their six raw proof writers, and
+the authorised connect its proof effect: the connect is one tracked insert
+returning seven rows (three outbox rows, the event's index row and three proofs)
+within the unchanged in-transaction bound of five. The CRDT, presence-summary
+and topology commits went from 2N statements (N outbox rows and N proofs) to
+one, and a publishing topology commit (promotion, connects and delivery pages)
+is one outbox statement. The CRDT publication-authority check now runs in every
+CRDT compute. The shared raw-PGlite recorder `recordPGliteStatements` replaced
+four private statement spies, their assertions unchanged. The state-write
+measurement of S6-ii's own counters is guidance, reported in its pull request,
+and the medium-scale gate ran unweakened. Limits: the view-invalidation
+producers keep their guarded batch, where an unapplied proof is a retried
+conflict (a backlog line), and the singular `writeAppOutboxInsert` stays as a
+one-line delegate for five callers outside the slice. Decisions D563–D567 are in
+the roadmap, and Slice 6 is complete.
 
 ### Later outcomes
 
@@ -1041,10 +1070,12 @@ browser admits a peer and a listed granted send on RTC carrying its origin's
 proof; a narrowed audience past the room limit is handed to the fallback with
 its sender's targets; and the cells `granted-rtc-list-delivered`,
 `granted-rtc-list-non-holder`, `granted-rtc-list-lane-roles`,
-`granted-rtc-unicast-delivered` and `granted-rtc-principal-delivered` observe
-it on the local lane. **RTC distinguishes origin, recipient, and relay:** the
-relay fixture's unlisted subscriber relays a frozen list it is not named in and
-delivers nothing, while the list's receipt completes at the origin.
+`granted-rtc-unicast-delivered` and `granted-rtc-principal-delivered` observe it
+on the local lane; and every proof of the six producer paths S6-ii folded is
+written in its row's own outbox statement, so a producer row and the proof its
+dequeue checks commit together. **RTC distinguishes origin, recipient, and
+relay:** the relay fixture's unlisted subscriber relays a frozen list it is not
+named in and delivers nothing, while the list's receipt completes at the origin.
 
 Focused shared ALM, browser facade, and server tests run before package
 typechecks/builds. Public exports require API snapshots and bundle-boundary

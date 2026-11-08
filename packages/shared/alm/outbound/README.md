@@ -788,8 +788,10 @@ The wire `targets.groupRef` scopes every row that names a group (D101): its capt
 ([`resolveALOutboundScopeAuthority`](./admission/al-outbound-scope-authority.ts)), a row that stores one is corrupt,
 and a room unicast's or a direct room row's send checks the recipient's connection against the group's scope. A
 stored recipient scope remains only on rows that name no group: a unicast whose producer proved a scope, a principal
-target, a principal or world broadcast. A raw `WS_OUTBOX` row without producer provenance fails closed, and a
-unicast `router.publish` that names no group and carries no scope returns `failed` (D103).
+target, a principal or world broadcast. A raw `WS_OUTBOX` row without producer provenance fails closed, the producer's
+proof is written in its row's own outbox statement, absent-or-expired, as the index row is (the view-invalidation
+producers keep their guarded batch), and a unicast `router.publish` that names no group and carries no scope returns
+`failed` (D103).
 
 The reserved account-wide view notice uses a separate
 [`accountView`](./admission/al-outbound-scope-authority.ts) authority: version and
