@@ -104,36 +104,41 @@ export async function upgradeApiWebSocket(
 export function createApiWebSocketHandlers(
     socketServer: JsonWebSocketServer
 ): Bun.WebSocketHandler<ApiWebSocketConnectionData> {
-    const readConnection = (data: ApiWebSocketConnectionData): ConnectionContext | undefined =>
-        socketServer.connections.get(data.sessionId);
+    // A session id maps to at most one live socket, but a Bun server socket is its own instance. A
+    // replaced socket's close must dispatch to its own context so it never evicts the replacement:
+    // dispatchConnectionClose deletes only when the map still points at that context.
+    const connectionBySocket = new WeakMap<WebSocket, ConnectionContext>();
     return {
         open(ws) {
+            const socket = ws as unknown as WebSocket;
             const connection = new ConnectionContext({
                 id: ws.data.sessionId,
-                socket: ws as unknown as WebSocket,
+                socket,
                 generationId: ws.data.generationId,
                 generationStartedAtEpochMs: ws.data.generationStartedAtEpochMs
             });
+            connectionBySocket.set(socket, connection);
             socketServer.registerConnection(connection);
             socketServer.handleConnectionOpen(connection);
         },
         message(ws, data) {
-            const connection = readConnection(ws.data);
+            const connection = connectionBySocket.get(ws as unknown as WebSocket);
             if (connection !== undefined) {
                 void socketServer.handleConnectionMessage(connection, data);
             }
         },
         close(ws, code, reason) {
-            const connection = readConnection(ws.data) ?? new ConnectionContext({
+            const socket = ws as unknown as WebSocket;
+            const connection = connectionBySocket.get(socket) ?? new ConnectionContext({
                 id: ws.data.sessionId,
-                socket: ws as unknown as WebSocket,
+                socket,
                 generationId: ws.data.generationId,
                 generationStartedAtEpochMs: ws.data.generationStartedAtEpochMs
             });
             socketServer.handleConnectionClose(connection, code, reason);
         },
         error(error, ws) {
-            const connection = readConnection(ws.data);
+            const connection = connectionBySocket.get(ws as unknown as WebSocket);
             if (connection !== undefined) {
                 socketServer.handleConnectionError(connection, error);
             }
