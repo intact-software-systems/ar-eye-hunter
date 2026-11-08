@@ -12,7 +12,7 @@ slice's first task; the C7 riders ride). Rulings taken 2026-11-08: the maintaine
 S6-R12 on (a) as builder calls open to the maintainer's override (`.superpowers/sdd/slice-6/s6-planning-rulings.md`). Two resolve a survey conflict against a survey (S6-R1 against A's Q2.2 (a); S6-R2 against
 A's Q2.1 (a) and against B's implementation of Q-B1 (a)). Slice 6 lands as two pull requests (S6-R11 as ruled): S6-i, the RTC shapes with the two outbound riders and the
 documents, and S6-ii, the provenance writer and the PGlite statement-count helper. Decisions are
-D551… in the roadmap's decision record, entered at the close; this file is deleted with it.
+D551… in the roadmap's decision record, entered at the close; this file is deleted at S6-ii's close (§10.5).
 
 ## 1. The problem and the scope
 
@@ -458,3 +458,139 @@ API recipe is added; hosted manifests unchanged (D505).
 - **Harness list resolver (S6-R8).** A list by principal role is new `black-box-runner` surface: the decoder
   (`decode-black-box-rallar-message-send-input.ts:59-62`) and the ledger (`:239-248`) both change. **6a's verdict** is
   not yet read; a comparison straddling #794's toolchain change is re-dispatched from a pre-#794 ref (C §11).
+
+## 10. S6-ii design: one writer for the provenance sidecar, the batched outbox loops, the PGlite statement recorder
+
+From survey D (`.superpowers/sdd/slice-6/survey-provenance-and-spy.md`), re-checked at `46cb23c13`. `AOI` =
+`packages/shared-server/rallar-system/app-outbox/app-outbox-insert.ts`, `ATI` = `.../app-outbox-track-index.ts`, `PV`
+= `.../websocket/outbox/ws-outbox-provenance.ts`.
+
+### 10.1 Rulings (taken 2026-11-08)
+
+- **S6ii-R1 → (a), a second sidecar row on `AppOutboxInsert`, in the one existing CTE.** The index insert is already
+  the proof's SQL (`ATI:60-73` against `auth-logout-provenance.ts:77-87`): same columns, conflict clause and revision
+  bump, so a proof is one more recordset row, matched on `store_key` (the namespaces differ). The exact-shape check is
+  **validate** — pure recomputation and exact comparison, a verdict, never a value — and never inside the write; the
+  write's first statement is the operation's own conditional guard, then the one CTE inserts what compute produced.
+- **S6ii-R2 → (a), the six raw inserts and the authorised-connect batch effect fold.** The ~10 view-invalidation
+  producers stay on their guarded batch (`guarded-view-publication.ts:42-67`), where an unapplied proof is a retried
+  `RuntimeStateWriteConflictError` (:58-66); that class (Q-D3) becomes a backlog line, not a behaviour change here.
+- **S6ii-R3 → (a), one conflict rule, absent-or-expired.** Relic's `do nothing` (`compute-relic-game-publications.ts:220`,
+  #708 beside V1d's #698, _(inferred)_ an accident) makes an expired proof a non-retryable corruption; D541's rule.
+- **S6ii-R4 → (b), the CRDT, presence-summary and topology per-row loops batch into one shared insert per commit**
+  (`psql-crdt-mutation-repository.ts:150-152`, `group-presence-summary-worker.ts:310-312`,
+  `write-rtc-topology-publication-transaction.ts:119-121`), so their 2N statements become 1, not N.
+- **S6ii-R5 (controller) → Q-D6 (a), a raw-PGlite `recordPGliteStatements`** beside
+  `create-p-sql-admission-test-storage.ts`, replacing the four private copies: it sees autocommit `raw.query`,
+  `raw.exec` and BEGIN/COMMIT, which the `PSqlSql` wrappers cannot. The two existing recorders stay for their own
+  subjects. It lands as S6-ii's first commit, before the pins move.
+
+### 10.2 Contracts, sketched
+
+```ts
+// app-outbox/app-outbox-sidecar.ts (new): AppOutboxTrackIndexRow renamed, no alias; ATI:60-73's SQL moved unchanged
+export interface AppOutboxSidecarRow {
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: string;
+    readonly expiresAt: string;
+}
+export function toAppOutboxSidecarInsert(rows: readonly AppOutboxSidecarRow[]): PSqlFragment;
+// AOI: both required, null unless the row is ordered / proved; compute encodes the proof (PV:76-94), expiry as a pg timestamp
+export interface AppOutboxInsert {
+    /* …as today… */ readonly trackIndex: AppOutboxSidecarRow | null;
+    readonly provenance: AppOutboxSidecarRow | null;
+}
+export interface ComputeWsOutboxInsertInput {
+    readonly entry: ResourceEntry;
+    readonly admissionNamespace: string;
+    readonly provenance: WsOutboxProvenanceFacts | null;
+}
+export interface WsOutboxProvenanceFacts { // PV: ComputeWsOutboxProvenanceRecordInput less `entry`; the producer's authorised target
+    readonly message: ALMessage;
+    readonly producerKind: WsOutboxProvenance['producerKind'];
+    readonly target: WsOutboxProvenance['target'];
+    readonly expiresAtMs: number;
+}
+export function computeWsOutboxInsert(input: ComputeWsOutboxInsertInput): AppOutboxInsert;
+// AOI: replaces isExactAppOutboxInsert (AOI:95-135); its one caller (auth-logout-provenance.ts:40) stops checking in compute
+export function validateWsOutboxInsert(
+    expected: ComputeWsOutboxInsertInput,
+    candidate: AppOutboxInsert
+): readonly ComputedDataValidationIssue[];
+//   every issue: row, index, proof key/value/expiry, proof expiry ≠ row expiry (the reader's PV:197); `expected` re-derived by
+//   the producer's validate: Relic (relic-game-mutation-service.ts:362-371, its projection now spans outboxWrites[].provenance),
+//   auth (auth-inbox-handler.ts:67), client-state (client-state-inbox-handler.ts:293-352), CRDT (app-crdt-inbox-service.ts:286),
+//   presence (group-presence-summary-worker.ts:288-292); topology gains one before runInPSqlTransaction
+//   (write-rtc-topology-publication-transaction.ts:59; none there today, inferred none upstream)
+// AOI writeAppOutboxInserts(transaction, computed), signature unchanged; one recordset of trackIndex ∪ provenance rows:
+//   with outbox as (insert … returning …), sidecars as (toAppOutboxSidecarInsert(rows)) select … union all select … store_key
+// Batched loops (S6ii-R4), after each guard, one call per commit: writeAppOutboxInserts(transaction, writes) for CRDT's
+//   writeCrdtOutbox, the presence page's downstreamOutboxWrites, the topology computed.outboxWrites. Deleted: the six
+//   write*Provenance, toClientSnapshotProvenanceEffect, requireClientSnapshotProvenanceApplied
+// packages/tests/shared-server/al-runtime/postgres/record-p-glite-statements.ts (new; caller owns vi.restoreAllMocks())
+export interface RecordedPGliteStatement {
+    readonly scope: 'autocommit' | 'exec' | 'transaction';
+    readonly query: string;
+    readonly params: readonly PSqlParameter[];
+}
+export interface RecordedPGliteStatements {
+    statements(): readonly RecordedPGliteStatement[];
+    transactions(): number;
+}
+export function recordPGliteStatements(raw: PGliteSql['raw']): RecordedPGliteStatements;
+```
+
+### 10.3 Dataflow and failure vocabulary
+
+`read` → `compute` (proof facts, value, digest, expiry string; `PV:76-94`) → `validate` (recompute, compare; an
+issue throws before any transaction, as `auth-inbox-handler.ts:67-69` and `app-crdt-inbox-service.ts:286-289` do) →
+transaction: the operation's own guard first (Relic `writeObservedGroupAuthority` :375, the client runtime batch
+`write-client-mutation.ts:70-85`, the CRDT mutation, the presence summary CAS :305, the topology mutation :61), then
+the one outbox CTE; Relic's proof moves from before its outbox insert (:384-385) into it.
+
+| Case                                     | Outcome                                                                                                                                                                                                           |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| guard refuses                            | the operation's own conflict (`RuntimeStateWriteConflictError`, `GroupPresenceSummaryWriteConflictError`); AppInbox retries with fresh reads, the workers replan                                                  |
+| validate issue                           | thrown before the transaction, as today; nothing written                                                                                                                                                          |
+| two rows in one batch name one proof key | `ResourceInboxInvariantCorruptionError` 'App outbox batch names one provenance row twice', before any statement                                                                                                   |
+| live proof row under the key (collision) | the CTE returns no `store_key` for it → `ResourceInboxInvariantCorruptionError` 'App outbox provenance did not create exactly one row'; the transaction rolls back, not retried (a retry recomputes the same key) |
+| expired proof row under the key          | written over, `revision + 1`, Relic included; the reader then admits the new proof (`PV:186-203`)                                                                                                                 |
+| view-invalidation proof not applied      | unchanged: a retried `RuntimeStateWriteConflictError` (`guarded-view-publication.ts:58-66`)                                                                                                                       |
+
+**`check:transaction-writes`** (`analyze-transaction-writes.mjs:44-55`). Every stored value is encoded in compute —
+the proof's `JSON.stringify` and digest (`PV:91`), its expiry string, the index's `msgId` (`ATI:51`); the recordset
+is a plain `.map` of precomputed strings as `::jsonb` (`ATI:61-65`); the duplicate check is a `Set`, no `sort`. The
+reader does not change: namespace, key, value bytes and expiry stay as stored today (`PV:186-209`).
+
+### 10.4 Proof and gates
+
+- **RED → GREEN** (survey D §5): (1) `app-outbox-track-index-write.test.ts` gains an unordered WS row with a proof as
+  one CTE statement, a live proof rolling everything back, an expired proof written over at revision 1, and a
+  duplicate proof key refused before any statement; (2) `validateWsOutboxInsert` reports a proof whose digest, key or
+  expiry does not bind its row; (3) `provenance-expired-row-replacement.test.ts:31-40` becomes one shared-writer case
+  per producer and **gains Relic** (RED today on `do nothing`); (4) the producer pins move: CRDT atomicity
+  (`crdt-app-inbox-atomicity.test.ts:21,137,212`, `crdt-inbox-completion.test.ts:8,201`), topology
+  (`pglite-rtc-topology-ws-outbox.test.ts:224,254`), connect (`pglite-authorised-ws-connect-write.test.ts:305`), Relic
+  (`relic-game-mutation.test.ts:175,181-183`).
+- **The connect pin.** `authorised-ws-connect-statements.test.ts:97` `rowCount` 4 → 4 + the connect proofs, since the
+  proofs leave the guarded batch for the tracked insert; the in-transaction bound `≤5` (:92) holds _(inferred)_.
+- **The recorder.** The four copies go, assertions unchanged (survey D §6 table); the coupling entries
+  `alm-work-release-batch-one-transaction` and `client-snapshot-provenance-single-page-build`
+  (`docs/test-structure-coupling-exceptions.md:556-569`, :224-235) are re-checked.
+- **Gates.** `test:api-v1:black-box:postgres:medium-scale` is **doctrine-required** (AppInbox mutation paths), never
+  weakened; Postgres integration (survey D §4's five suites), `check:transaction-writes`, the games gate (Relic),
+  `test:unit` (both roots), `typecheck`, `typecheck:tests`, changed style, coupling, test reachability.
+- **State-write measurement of S6-ii's own** (profile-instance, baseline control first): `sql.statements` expected to
+  fall by one per client-snapshot proof per commit _(inferred; measured)_; `rowsRead` level; `serializedResultBytes`
+  and the `writeMs`/`outboxSqlMs` split may move (`create-instrumented-state-write-sql.ts:162-189`). Any counter
+  outside ±5 % carries a recorded reason in the PR body; the effect contract does not move.
+
+### 10.5 Documents at S6-ii's close
+
+- Backlog: delete the provenance line (B:226-230); add one line for the view-invalidation retried-conflict class
+  (Q-D3: a live view-proof collision is a replayed `changeId` that retries into the same key). Roadmap: D-rows for
+  S6ii-R1–R5 after S6-i's; "As applied (S6-ii)" on D541 (R:568), the proof now its second sidecar row.
+- Addendum: "As applied (S6-ii)" in the Slice 6 section S6-i writes (S6-R12). Outbound README (:785): the producer
+  proof is written in the producer's own outbox statement, absent-or-expired.
+- This proposal is deleted at S6-ii's close (S6-R12's and §6's "this file deleted" move here).
