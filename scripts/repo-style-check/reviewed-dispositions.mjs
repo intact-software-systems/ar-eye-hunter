@@ -47,6 +47,27 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'asNodes',
         maximumMagnitude: 1
     }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-inventory.ts',
+        rule: 'boundary.unknown',
+        symbol: 'someNode',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-inventory.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNode',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-inventory.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNodes',
+        maximumMagnitude: 1
+    }),
     // Whole-file review: bounded all-or-none admission keeps staged group, roster and reservation predecessors visible together.
     Object.freeze({
         path: 'packages/shared-server/rallar-system/group-state/move/compute-group-move-admission.ts',
