@@ -107,7 +107,10 @@ function computeAppOutboxRow(entry: ResourceEntry): Omit<AppOutboxInsert, 'track
     };
 }
 
-/** A proof expiry the row does not carry is the one issue; otherwise the candidate is recomputed from its producer's facts and compared exactly, every difference one issue. */
+/**
+ * A proof expiry the row does not carry is the one issue; otherwise the candidate is recomputed from its
+ * producer's facts and compared exactly, every difference one issue.
+ */
 export function validateWsOutboxInsert(
     expected: ComputeWsOutboxInsertInput,
     candidate: AppOutboxInsert
