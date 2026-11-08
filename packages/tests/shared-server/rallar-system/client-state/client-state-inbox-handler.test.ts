@@ -198,7 +198,11 @@ describe('ClientStateInboxHandler phases', () => {
         clearTimeout(sentinel);
 
         expect(sentinelFired).toBe(false);
-        expect(computed.outcome === 'completed' ? computed.sidecarWrites.length : 0).toBeGreaterThan(0);
+        expect(
+            computed.outcome === 'completed'
+                ? computed.writes.flatMap((write) => write.persistence.outboxWrites).filter(({ provenance }) => provenance !== null).length
+                : 0
+        ).toBeGreaterThan(0);
     });
 
     it.each(

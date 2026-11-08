@@ -184,7 +184,9 @@ function logoutTamperCases() {
             label: 'raw logout outbox',
             command,
             read,
-            computed: withRecomputedPersistence(computed, { logoutOutbox: { ...logoutOutbox, resource: '{"tampered":true}' } })
+            computed: withRecomputedPersistence(computed, {
+                logoutOutbox: { ...logoutOutbox, resource: logoutOutbox.resource.replace('auth-logout:', 'forged-logout:') }
+            })
         },
         {
             label: 'persistence conflict',

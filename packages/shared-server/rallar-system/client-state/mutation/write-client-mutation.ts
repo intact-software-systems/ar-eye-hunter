@@ -7,11 +7,6 @@ import { writeAppOutboxInserts } from '../../app-outbox/app-outbox-insert.ts';
 import { ClientStateEventCollisionError } from '../../state-events/client-state-event-store.ts';
 import type { ClientStateEventCollisionRow } from '../../state-events/postgres/client-state-event-row-codec.ts';
 import { writeGuardedViewPublicationStorage } from '../../websocket/outbox/guarded-view-publication.ts';
-import {
-    requireClientSnapshotProvenanceApplied,
-    toClientSnapshotProvenanceEffectId,
-    type ClientSnapshotProvenanceInsert
-} from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationReceipt } from '../persistence/client-state-persistence-contracts.ts';
 import type {
     ClientMutationComputedWrite,
@@ -32,7 +27,7 @@ export async function writeClientMutation(
             await writeGuardedViewPublicationStorage(transaction, computed.viewPublication.storage);
         }
         if (computed.viewWatchCleanup !== null) {
-            await writeClientRuntimeBatch(transaction, computed.viewWatchCleanup, []);
+            await writeClientRuntimeBatch(transaction, computed.viewWatchCleanup);
         }
     }
     return await writeClientMutationRecords(transaction, computed);
@@ -63,25 +58,15 @@ export async function writeClientMutationRecords(
     return computed.receipt;
 }
 
-/**
- * Every runtime row of a transaction in one statement: a stale guard or effect rolls the transaction back as a
- * conflict, and a snapshot proof that collides is the corruption its standalone insert reports.
- */
+/** Every runtime row of a transaction in one statement: a stale guard or effect rolls the transaction back as a conflict. */
 export async function writeClientRuntimeBatch(
     transaction: PSqlSql,
-    batch: RuntimeStateGuardedBatchWrite,
-    provenance: readonly ClientSnapshotProvenanceInsert[]
+    batch: RuntimeStateGuardedBatchWrite
 ): Promise<void> {
     const result = await writeRuntimeStateGuardedBatch(transaction, batch);
-    const isConflict = result.guard.status === 'conflict' ||
-        result.effects.some((effect) =>
-            effect.status !== 'applied' &&
-            !provenance.some((insert) => effect.effectId === toClientSnapshotProvenanceEffectId(insert))
-        );
-    if (isConflict) {
+    if (result.guard.status === 'conflict' || result.effects.some((effect) => effect.status !== 'applied')) {
         throw new RuntimeStateWriteConflictError();
     }
-    requireClientSnapshotProvenanceApplied(result.effects, provenance);
 }
 
 async function writeRuntimeState(

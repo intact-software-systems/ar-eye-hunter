@@ -1,10 +1,16 @@
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+
+import { validateWsOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import type {
     AuthMutationCommand,
     AuthMutationComputed,
+    AuthMutationFacts,
     AuthMutationRead,
     IssueAuthSessionCommand,
     LogoutAuthSessionCommand
 } from '../auth-mutation-contracts.ts';
+import { toAuthLogoutOutbox } from '../compute/to-auth-logout-outbox.ts';
+import { toAuthLogoutProvenanceFacts } from '../compute/to-auth-logout-provenance-facts.ts';
 import {
     equalAuthJson,
     toAuthMutationTypeValidationIssue,
@@ -19,7 +25,15 @@ interface ValidateAuthSessionMutationInput {
     readonly kind: AuthSessionMutationCommand['kind'];
     readonly command: AuthSessionMutationCommand;
     readonly read: AuthMutationRead;
+    readonly facts: AuthMutationFacts;
     readonly computed: AuthMutationComputed;
+}
+
+interface ValidateLogoutAuthSessionInput {
+    readonly command: LogoutAuthSessionCommand;
+    readonly read: Extract<AuthMutationRead, { kind: 'logout-session'; }>;
+    readonly computed: AuthMutationComputed;
+    readonly facts: AuthMutationFacts;
 }
 
 export function validateAuthSessionMutation(
@@ -33,10 +47,12 @@ export function validateAuthSessionMutation(
                 validation.computed
             );
         case 'logout-session':
-            return validateLogoutAuthSession(
-                validation.command as LogoutAuthSessionCommand,
-                validation.read as Extract<AuthMutationRead, { kind: 'logout-session'; }>
-            );
+            return validateLogoutAuthSession({
+                command: validation.command as LogoutAuthSessionCommand,
+                read: validation.read as Extract<AuthMutationRead, { kind: 'logout-session'; }>,
+                computed: validation.computed,
+                facts: validation.facts
+            });
     }
 }
 
@@ -65,14 +81,12 @@ function validateIssueAuthSession(
     return issues;
 }
 
-function validateLogoutAuthSession(
-    command: LogoutAuthSessionCommand,
-    read: Extract<AuthMutationRead, { kind: 'logout-session'; }>
-): readonly AuthMutationValidationIssue[] {
+function validateLogoutAuthSession(input: ValidateLogoutAuthSessionInput): readonly AuthMutationValidationIssue[] {
+    const { command, read, computed, facts } = input;
     if (read.bySession === null && read.byToken === null) {
         return [];
     }
-    const issues: AuthMutationValidationIssue[] = [];
+    const issues: AuthMutationValidationIssue[] = [...validateLogoutOutbox(command, computed, facts)];
     if (
         !read.bySession ||
         !read.byToken ||
@@ -94,4 +108,23 @@ function validateLogoutAuthSession(
         issues.push(toAuthMutationValidationIssue('read.bySession', 'Auth logout authority differs', 403));
     }
     return issues;
+}
+
+function validateLogoutOutbox(
+    command: LogoutAuthSessionCommand,
+    computed: AuthMutationComputed,
+    facts: AuthMutationFacts
+): readonly AuthMutationValidationIssue[] {
+    const candidate = computed.persistence.logoutOutbox;
+    if (candidate === null) {
+        return [];
+    }
+    const entry = toAuthLogoutOutbox(command, facts);
+    const expected = {
+        entry,
+        admissionNamespace: null,
+        provenance: toAuthLogoutProvenanceFacts(command, decodePersistedALMessage(entry.resource))
+    };
+    return validateWsOutboxInsert(expected, candidate)
+        .map((issue) => toAuthMutationTypeValidationIssue(issue.path, issue.message));
 }

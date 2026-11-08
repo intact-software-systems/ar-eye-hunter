@@ -1,7 +1,8 @@
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { encodeRuntimeStateJsonValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { computeWsOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import {
     AGENT_SESSION_TICKETS_NAMESPACE,
     AUTH_SESSIONS_BY_SESSION_NAMESPACE,
@@ -22,6 +23,7 @@ import type {
     AuthPersistenceOperation,
     AuthSessionEntries
 } from '../auth-mutation-contracts.ts';
+import { toAuthLogoutProvenanceFacts } from './to-auth-logout-provenance-facts.ts';
 
 export function computeAuthPersistence(
     computed: AuthMutationDomainComputed,
@@ -164,9 +166,15 @@ function computeLogoutOutbox(
         return null;
     }
     const read = requireAuthRead(computed, kind);
-    return read.bySession !== null && read.byToken !== null
-        ? computeAppOutboxInsert(computed.logoutOutbox)
-        : null;
+    if (read.bySession === null || read.byToken === null) {
+        return null;
+    }
+    const entry = computed.logoutOutbox;
+    return computeWsOutboxInsert({
+        entry,
+        admissionNamespace: null,
+        provenance: toAuthLogoutProvenanceFacts(authCommand(computed, kind), decodePersistedALMessage(entry.resource))
+    });
 }
 
 function requireAuthRead<Kind extends AuthMutationRead['kind']>(

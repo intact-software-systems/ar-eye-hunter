@@ -267,7 +267,7 @@ describe('client mutation operation validation', () => {
         ).toThrow(/outbox/);
     });
 
-    it('rejects missing, duplicated, wrong-scope and wrong-recipient snapshot proof writes before transaction entry', () => {
+    it('rejects missing, wrong-scope, wrong-recipient, wrong-slot and wrong-expiry snapshot proofs before transaction entry', () => {
         const command = connectCommand();
         const input = {
             command,
@@ -279,38 +279,33 @@ describe('client mutation operation validation', () => {
         if (computed.outcome !== 'completed') {
             throw new Error('Expected a completed mutation');
         }
-        const proofs = computed.sidecarWrites;
-        const proof = proofs.find((candidate) => JSON.parse(candidate.value).target.kind === 'scoped-unicast');
-        if (!proof) {
+        const [write] = computed.writes;
+        const index =
+            write?.persistence.outboxWrites.findIndex(({ provenance }) =>
+                provenance !== null && JSON.parse(provenance.value).target.kind === 'scoped-unicast'
+            ) ?? -1;
+        const proof = write?.persistence.outboxWrites[index]?.provenance;
+        if (write === undefined || !proof) {
             throw new Error('Expected a frozen unicast snapshot proof');
         }
         const variants = [
-            proofs.filter((candidate) => candidate !== proof),
-            [...proofs, proof],
-            proofs.map((candidate) =>
-                candidate === proof
-                    ? { ...proof, value: proof.value.replace('workspace-1', 'wrong-workspace') }
-                    : candidate
-            ),
-            proofs.map((candidate) =>
-                candidate === proof
-                    ? { ...proof, value: proof.value.replaceAll('session-1', 'late-session') }
-                    : candidate
-            ),
-            proofs.map((candidate) => candidate === proof ? { ...proof, key: 'wrong-slot' } : candidate),
-            proofs.map((candidate) =>
-                candidate === proof
-                    ? { ...proof, expiresAt: '1970-01-01T00:00:01Z' }
-                    : candidate
-            )
+            null,
+            { ...proof, value: proof.value.replace('workspace-1', 'wrong-workspace') },
+            { ...proof, value: proof.value.replaceAll('session-1', 'late-session') },
+            { ...proof, key: 'wrong-slot' },
+            { ...proof, expiresAt: '1970-01-01T00:00:01Z' }
         ];
-        for (const sidecarWrites of variants) {
-            expect(() => assertClientMutationOperation({ ...input, computed: { ...computed, sidecarWrites } }))
-                .toThrow(/sidecarWrites/);
+        for (const provenance of variants) {
+            const outboxWrites = write.persistence.outboxWrites.map((candidate, candidateIndex) =>
+                candidateIndex === index ? { ...candidate, provenance } : candidate
+            );
+            const writes = [{ ...write, persistence: { ...write.persistence, outboxWrites } }];
+            expect(() => assertClientMutationOperation({ ...input, computed: { ...computed, writes } }))
+                .toThrow(/outboxWrites\.\d+\.provenance/);
         }
     });
 
-    it('retains no sidecar writes when a fresh inbox delivery replays a durable client command', () => {
+    it('retains no writes when a fresh inbox delivery replays a durable client command', () => {
         const command = connectCommand();
         const connected = requireWrite(computeClientMutation({ command, read: emptyRead(command) }));
         if (connected.idempotency === null) {
@@ -324,7 +319,7 @@ describe('client mutation operation validation', () => {
         };
         const computed = computeClientMutationOperation(input);
         assertClientMutationOperation({ ...input, computed });
-        expect(computed).toMatchObject({ outcome: 'completed', mutation: { outcome: 'replay' }, writes: [], sidecarWrites: [] });
+        expect(computed).toMatchObject({ outcome: 'completed', mutation: { outcome: 'replay' }, writes: [] });
     });
 
     it('rejects a changed prepared payload at the operation projection', () => {

@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { writeAuthLogoutProvenance } from '@shared-server/rallar-system/auth/mutation/compute/auth-logout-provenance.ts';
-import { writeClientSnapshotProvenance } from '@shared-server/rallar-system/client-state/persistence/client-snapshot-provenance.ts';
 import { writeCrdtOutboxProvenance } from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
 import { writeGroupDeltaProvenance } from '@shared-server/rallar-system/group-state/presence/group-delta-provenance.ts';
 import { writeRtcTopologyOutboxProvenance } from '@shared-server/rallar-system/topology/publication/rtc-topology-outbox-provenance.ts';
@@ -30,13 +28,8 @@ interface Proof {
 /** Each WS-outbox producer's proof writer, as its transaction calls it with one proof. */
 const PROOF_WRITERS: readonly (readonly [string, (transaction: PSqlSql, proof: Proof) => Promise<void>])[] = [
     ['group delta', async (transaction, proof) => await writeGroupDeltaProvenance(transaction, [proof])],
-    [
-        'client snapshot',
-        async (transaction, proof) => await writeClientSnapshotProvenance(transaction, [{ ...proof, namespace: WS_OUTBOX_PROVENANCE_NAMESPACE }])
-    ],
     ['CRDT', async (transaction, proof) => await writeCrdtOutboxProvenance(transaction, [proof])],
-    ['RTC topology', async (transaction, proof) => await writeRtcTopologyOutboxProvenance(transaction, [proof])],
-    ['auth logout', async (transaction, proof) => await writeAuthLogoutProvenance(transaction, proof)]
+    ['RTC topology', async (transaction, proof) => await writeRtcTopologyOutboxProvenance(transaction, [proof])]
 ];
 
 describe.each(PROOF_WRITERS)('Postgres %s provenance proof over an expired row', (_producer, writeProof) => {

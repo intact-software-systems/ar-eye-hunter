@@ -43,7 +43,6 @@ import {
     writeClientMutationRecords,
     writeClientRuntimeBatch
 } from '../mutation/write-client-mutation.ts';
-import { writeClientSnapshotProvenance } from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -360,7 +359,7 @@ export class ClientStateInboxHandler {
         return computed;
     }
 
-    /** The connect's guarded batch is its first write: the ticket, lifecycle, client and proof rows in one statement. */
+    /** The connect's guarded batch is its first write: the ticket, lifecycle and client rows in one statement. */
     private async writeAuthorisedConnectMutation(
         context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
         computed: Extract<AuthorisedWsConnectOperationComputed, { outcome: 'completed'; }>
@@ -372,7 +371,7 @@ export class ClientStateInboxHandler {
                     context,
                     computed.completion,
                     async (transaction) => {
-                        await writeClientRuntimeBatch(transaction, computed.runtimeBatch, computed.sidecarWrites);
+                        await writeClientRuntimeBatch(transaction, computed.runtimeBatch);
                         for (const mutation of computed.writes) {
                             await requireClientMutationObservationsCurrent(transaction, mutation);
                             await writeClientMutationRecords(transaction, mutation);
@@ -400,7 +399,6 @@ export class ClientStateInboxHandler {
                         for (const mutation of computed.writes) {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
-                        await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
                     }
                 )
         );
@@ -420,7 +418,6 @@ export class ClientStateInboxHandler {
                         for (const mutation of computed.writes) {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
-                        await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
                         await writeGuardedViewPublication(transaction, computed.viewPublication);
                         if (computed.successorWrite !== null) {
                             await this.dependencies.expiryContinuationWriter.write(

@@ -56,10 +56,6 @@ import type {
 import { computeClientExpirySequence } from '../mutation/compute/compute-client-expiry-sequence.ts';
 import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationInvariants } from '../mutation/result-validation/assert-client-mutation.ts';
-import {
-    computeClientSnapshotProvenance,
-    type ClientSnapshotProvenanceInsert
-} from '../persistence/client-snapshot-provenance.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
@@ -94,7 +90,6 @@ export type ClientMutationOperationComputed =
         durableResult: ClientStateWritten;
         completion: AppInboxCompletionComputed<ClientStateWritten>;
         writes: readonly ClientMutationComputedWrite[];
-        sidecarWrites: readonly ClientSnapshotProvenanceInsert[];
         committedSnapshots: readonly ClientSnapshot[];
     }>;
 
@@ -104,7 +99,7 @@ export type AuthorisedWsConnectOperationComputed =
         & Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
         & {
             ticketConsumption: AuthWsTicketConsumption;
-            /** The ticket, lifecycle, client and proof rows, all written by this one statement. */
+            /** The ticket, lifecycle and client rows, all written by this one statement. */
             runtimeBatch: RuntimeStateGuardedBatchWrite;
         }
     >
@@ -142,7 +137,6 @@ export type ExpiredSessionsOperationComputed =
         durableResult: readonly ClientStateWritten[];
         completion: AppInboxCompletionComputed<readonly ClientStateWritten[]>;
         writes: readonly ClientMutationComputedWrite[];
-        sidecarWrites: readonly ClientSnapshotProvenanceInsert[];
         committedSnapshots: readonly ClientSnapshot[];
         successorWrite: AppOutboxInsert | null;
         viewPublication: GuardedViewPublication | null;
@@ -249,7 +243,6 @@ export function computeClientMutationOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
-        sidecarWrites: computeClientSnapshotProvenance(mutation),
         committedSnapshots: [mutation.snapshot]
     };
 }
@@ -295,7 +288,6 @@ export function computeAuthorisedWsConnectOperation(
     );
     const durableResult = toClientStateWritten(mutation);
     const writes = requiresClientWrite(mutation) ? [mutation] : [];
-    const sidecarWrites = computeClientSnapshotProvenance(mutation);
     return {
         outcome: 'completed',
         mutation,
@@ -303,14 +295,12 @@ export function computeAuthorisedWsConnectOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes,
-        sidecarWrites,
         committedSnapshots: [mutation.snapshot],
         ticketConsumption,
         runtimeBatch: computeAuthorisedWsConnectRuntimeBatch({
             ticketConsumption,
             lifecycleComputed,
-            writes,
-            sidecarWrites
+            writes
         })
     };
 }
@@ -430,7 +420,6 @@ export function computeExpiredSessionsOperation(
         viewPublication: combineGuardedViewPublications(
             applied.map((mutation) => mutation.viewPublication)
         ),
-        sidecarWrites: completedMutations.flatMap(computeClientSnapshotProvenance),
         committedSnapshots: applied.map((mutation) => mutation.snapshot),
         successorWrite: computeExpiredSessionSuccessorWrite(input)
     };

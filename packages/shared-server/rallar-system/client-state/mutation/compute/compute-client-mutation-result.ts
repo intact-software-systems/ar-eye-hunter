@@ -33,6 +33,7 @@ import type {
 } from '../client-mutation-contracts.ts';
 import { toClientMutationActor } from './compute-client-mutation-state.ts';
 import { computeClientPersistence } from './compute-client-persistence.ts';
+import { toClientSnapshotProvenanceFacts } from './to-client-snapshot-provenance-facts.ts';
 
 export type AppliedClientMutationInput = Readonly<{
     command: ClientMutationCommand;
@@ -72,7 +73,12 @@ export function computeClientMutationResult(
         write: computeWsOutboxInsert({
             entry,
             admissionNamespace: facts.wsOutboundAdmissionNamespace,
-            provenance: null
+            provenance: toClientSnapshotProvenanceFacts({
+                message,
+                principalRef: snapshot.principal,
+                principalAudienceSessionIds,
+                expiresAtMs: entry.audit.expiryTs.epochMilliseconds
+            })
         }),
         message
     }));

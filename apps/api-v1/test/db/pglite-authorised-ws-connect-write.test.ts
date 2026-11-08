@@ -5,6 +5,11 @@ import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postg
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import {
+    computeWsOutboxInsert,
+    writeAppOutboxInserts,
+    type AppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { WS_AUTH_TICKETS_NAMESPACE } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
@@ -13,10 +18,6 @@ import { createClientStateService } from '@shared-server/rallar-system/client-st
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import { writeClientRuntimeBatch } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
-import {
-    toClientSnapshotProvenanceEffect,
-    type ClientSnapshotProvenanceInsert
-} from '@shared-server/rallar-system/client-state/persistence/client-snapshot-provenance.ts';
 import { CLIENT_STATE_PRINCIPALS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
@@ -25,10 +26,15 @@ import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-sta
 import type { RuntimeStateGuardedBatchEffect } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import {
+    createTrackIndexTestEntry,
+    toTrackIndexTestMessage
+} from '../../../../packages/tests/shared-server/rallar-system/app-outbox/app-outbox-track-index-fixture.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -282,44 +288,64 @@ Deno.test('a superseded connect whose ticket was spent after its read rolls back
     });
 });
 
-const PROOF: ClientSnapshotProvenanceInsert = {
-    queueKey: { topicId: 'ws-outbox', resourceId: 'proof-page', contextId: 'player' },
-    namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
-    key: 'proof-page',
-    value: '{"proof":true}',
-    expiresAt: '2100-01-01T00:00:00Z'
-};
-
-async function writeProofBatch(sql: PGliteSql, effects: readonly RuntimeStateGuardedBatchEffect[]): Promise<void> {
-    await sql.begin(async (transaction) =>
-        await writeClientRuntimeBatch(
-            transaction,
-            computeRuntimeStateGuardedBatchWrite({
-                guard: {
-                    operation: 'insert',
-                    namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
-                    key: 'proof-principal',
-                    value: '{}',
-                    expireAtTimestamp: FUTURE_MS
-                },
-                effects: [toClientSnapshotProvenanceEffect(PROOF), ...effects]
-            }),
-            [PROOF]
-        )
-    );
+async function writeConnectBatch(
+    sql: PGliteSql,
+    effects: readonly RuntimeStateGuardedBatchEffect[],
+    outboxWrites: readonly AppOutboxInsert[]
+): Promise<void> {
+    const batch = computeRuntimeStateGuardedBatchWrite({
+        guard: {
+            operation: 'insert',
+            namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
+            key: 'proof-principal',
+            value: '{}',
+            expireAtTimestamp: FUTURE_MS
+        },
+        effects
+    });
+    await sql.begin(async (transaction) => {
+        await writeClientRuntimeBatch(transaction, batch);
+        await writeAppOutboxInserts(transaction, outboxWrites);
+    });
 }
 
-Deno.test('a snapshot proof that collides inside the batch is the corruption its standalone insert reports, and a conflict takes precedence', async () => {
+Deno.test('a live proof under a connect row\'s key rolls the connect\'s guarded batch back as a corruption, and a conflict takes precedence', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
-        await runtime.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key: PROOF.key, value: 'an earlier proof', expireAtTimestamp: FUTURE_MS });
+        const entry = createTrackIndexTestEntry({
+            typeId: EnqueuedType.WS_OUTBOX,
+            resourceId: 'proof-page',
+            seq: undefined,
+            expiresAt: Temporal.Instant.fromEpochMilliseconds(FUTURE_MS)
+        });
+        const row = computeWsOutboxInsert({
+            entry,
+            admissionNamespace: null,
+            provenance: {
+                message: toTrackIndexTestMessage(entry),
+                producerKind: 'state-sync',
+                target: {
+                    kind: 'scoped-unicast',
+                    peerId: 'player',
+                    scope: { applicationId: 'app-1', workspaceId: 'default' },
+                    admittedAudience: ['player']
+                },
+                expiresAtMs: entry.audit.expiryTs.epochMilliseconds
+            }
+        });
+        await runtime.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key: row.provenance!.key, value: 'an earlier proof', expireAtTimestamp: FUTURE_MS });
 
         await assert.rejects(
-            writeProofBatch(sql, []),
+            writeConnectBatch(sql, [], [row]),
             (error) => error instanceof ResourceInboxInvariantCorruptionError && error.message.includes('provenance')
         );
+        assert.equal(await runtime.findEntry(CLIENT_STATE_PRINCIPALS_NAMESPACE, 'proof-principal'), undefined);
+        const [outboxRows] = await sql<{ count: string; }[]>`
+            select count(*)::text as count from resource_inbox where ri_resource_id = ${row.entry.key.resourceId}
+        `;
+        assert.equal(outboxRows?.count, '0');
         await assert.rejects(
-            writeProofBatch(sql, [{
+            writeConnectBatch(sql, [{
                 effectId: 'stale',
                 operation: 'update',
                 namespace: 'client-state:sessions',
@@ -327,7 +353,7 @@ Deno.test('a snapshot proof that collides inside the batch is the corruption its
                 expectedRevision: 3,
                 value: '{}',
                 expireAtTimestamp: FUTURE_MS
-            }]),
+            }], [row]),
             RuntimeStateWriteConflictError
         );
         assert.equal(await runtime.findEntry(CLIENT_STATE_PRINCIPALS_NAMESPACE, 'proof-principal'), undefined);
