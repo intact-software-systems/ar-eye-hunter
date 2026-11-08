@@ -972,21 +972,22 @@ and `writeAppOutboxInserts` writes rows, index rows and proofs in the one
 `sidecars` CTE. `validateWsOutboxInsert` replaces `isExactAppOutboxInsert` and
 runs outside the write: it reports a re-keyed, re-valued, re-expired or missing
 proof and a facts expiry the row does not carry. One conflict rule holds for
-every proof, absent-or-expired, the index row's: a live proof under the key, or
-a batch naming one key twice, rolls the transaction back as corruption, and an
-expired one is written over at revision 1. Relic is aligned; its former
-`do nothing` would have refused that replay. Auth logout, client state, CRDT,
-the presence summary, topology and Relic lost their six raw proof writers, and
-the authorised connect its proof effect: the connect is one tracked insert
-returning seven rows (three outbox rows, the event's index row and three proofs)
-within the unchanged in-transaction bound of five. The CRDT, presence-summary
-and topology commits went from 2N statements (N outbox rows and N proofs) to
-one, and a publishing topology commit (promotion, connects and delivery pages)
-is one outbox statement. The CRDT publication-authority check now runs in every
-CRDT compute. The shared raw-PGlite recorder `recordPGliteStatements` replaced
-four private statement spies, their assertions unchanged. The state-write
-measurement of S6-ii's own counters is guidance, reported in its pull request,
-and the medium-scale gate ran unweakened. Limits: the view-invalidation
+every proof, absent-or-expired, the index row's: a live proof under the key
+rolls the transaction back as corruption, an expired one is written over at
+revision 1, and a batch naming one key twice is refused before any statement,
+with the same corruption error. Relic is aligned; its former `do nothing` would
+have refused that replay. Auth logout, client state, CRDT, the presence summary,
+topology and Relic lost their six raw proof writers, and the authorised connect
+its proof effect: the connect is one tracked insert returning seven rows (three
+outbox rows, the event's index row and three proofs) within the unchanged
+in-transaction bound of five. The CRDT, presence-summary and topology commits
+went from 2N statements (N outbox rows and N proofs) to one, and a publishing
+topology commit (promotion, connects and delivery pages) is one outbox
+statement. The CRDT publication-authority check now runs in every CRDT compute.
+The shared raw-PGlite recorder `recordPGliteStatements` replaced four private
+statement spies, their assertions unchanged. The state-write measurement of
+S6-ii's own counters is guidance, reported in its pull request, and the
+medium-scale gate passed in CI on every head. Limits: the view-invalidation
 producers keep their guarded batch, where an unapplied proof is a retried
 conflict (a backlog line), and the singular `writeAppOutboxInsert` stays as a
 one-line delegate for five callers outside the slice. Decisions D563–D567 are in

@@ -1935,9 +1935,10 @@ statement recorder.
 the row's second sidecar row, derived in compute from the producer's facts, checked by `validateWsOutboxInsert`
 outside the write, and written in the one `sidecars` CTE beside the track index. One conflict rule holds for every
 proof, absent-or-expired, with Relic aligned. Auth logout, client state, CRDT, the presence summary, topology and
-Relic lost their raw writers, and the connect its proof effect; one proof statement per proved row is folded on every
-path, and the CRDT, presence-summary and topology commits went from 2N statements to 1. The shared raw-PGlite
-recorder `recordPGliteStatements` replaced four private copies. The medium-scale gate ran unweakened, and the
+Relic lost their raw writers, and the connect its proof effect; on those six producer paths and the connect batch one
+proof statement per proved row is folded, while the ~10 view-invalidation producers keep their guarded batch, and the
+CRDT, presence-summary and topology commits went from 2N statements to 1. The shared raw-PGlite recorder
+`recordPGliteStatements` replaced four private copies. The medium-scale gate passed in CI on every head, and the
 state-write measurement of S6-ii's own is guidance, reported in the pull request.
 
 ## Conformance lane
