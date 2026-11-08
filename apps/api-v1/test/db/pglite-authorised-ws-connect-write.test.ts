@@ -333,7 +333,10 @@ Deno.test('a live proof under a connect row\'s key rolls the connect\'s guarded 
                 expiresAtMs: entry.audit.expiryTs.epochMilliseconds
             }
         });
-        await runtime.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key: row.provenance!.key, value: 'an earlier proof', expireAtTimestamp: FUTURE_MS });
+        if (row.provenance === null) {
+            assert.fail('The proved connect row computes no proof row');
+        }
+        await runtime.upsert({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE, key: row.provenance.key, value: 'an earlier proof', expireAtTimestamp: FUTURE_MS });
 
         await assert.rejects(
             writeConnectBatch(sql, [], [row]),

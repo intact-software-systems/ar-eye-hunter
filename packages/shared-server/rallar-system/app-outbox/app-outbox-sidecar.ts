@@ -25,5 +25,5 @@ export function toAppOutboxSidecarInsert(rows: readonly AppOutboxSidecarRow[]): 
                 updated_ts = now(),
                 revision = runtime_state_store.revision + 1
             where runtime_state_store.expire_at_ts <= now()
-        returning store_key`;
+        returning store_namespace, store_key`;
 }

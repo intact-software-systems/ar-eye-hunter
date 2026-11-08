@@ -85,36 +85,41 @@ const PRODUCERS: readonly (readonly [string, ToProducerFacts])[] = [
     ]
 ];
 
-describe.each(PRODUCERS)('Postgres %s proof through the shared outbox writer over an expired row', (_producer, toProducerFacts) => {
-    postgresIt('writes a proof over an expired row and proof, one revision past it, and still refuses a live one', async () => {
-        await withProofSql(async (sql, runId) => {
-            const entry = createTrackIndexTestEntry({
-                typeId: EnqueuedType.WS_OUTBOX,
-                resourceId: `provenance-${runId}`,
-                seq: undefined,
-                expiresAt: Temporal.Now.instant().add({ minutes: 10 })
+describe.each(PRODUCERS)(
+    'Postgres %s proof facts, hand-built per producer kind, prove the shared outbox writer\'s expired-row rule',
+    (_producer, toProducerFacts) => {
+        postgresIt('writes a proof over an expired row and proof, one revision past it, and still refuses a live one', async () => {
+            await withProofSql(async (sql, runId) => {
+                const entry = createTrackIndexTestEntry({
+                    typeId: EnqueuedType.WS_OUTBOX,
+                    resourceId: `provenance-${runId}`,
+                    seq: undefined,
+                    expiresAt: Temporal.Now.instant().add({ minutes: 10 })
+                });
+                const proofKey = toWsOutboxProvenanceKey(entry.key);
+                const first = toInsert(entry, toProducerFacts);
+                await writeProved(sql, first);
+                await expireOutboxRow(sql, entry);
+                await sql`update runtime_state_store set expire_at_ts = now() - interval '1 minute' where store_key = ${proofKey}`;
+
+                const replayEntry = { ...entry, audit: { ...entry.audit, createdTs: entry.audit.createdTs.add({ seconds: 1 }) } };
+                const replay = toInsert(replayEntry, toProducerFacts);
+                await writeProved(sql, replay);
+                expect(await readProof(sql, proofKey)).toEqual({ value: replay.provenance?.value, revision: 1 });
+                expect(replay.provenance?.value).not.toBe(first.provenance?.value);
+
+                const live = writeProved(sql, toInsert(entry, toProducerFacts));
+                await expect(live).rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
+                await expect(live).rejects.toThrow('App outbox insert did not create exactly one row');
+
+                await expireOutboxRow(sql, entry);
+                await expect(writeProved(sql, toInsert(entry, toProducerFacts)))
+                    .rejects.toThrow('App outbox provenance did not create exactly one row');
+                expect(await readProof(sql, proofKey)).toEqual({ value: replay.provenance?.value, revision: 1 });
             });
-            const proofKey = toWsOutboxProvenanceKey(entry.key);
-            await writeProved(sql, toInsert(entry, toProducerFacts));
-            await expireOutboxRow(sql, entry);
-            await sql`update runtime_state_store set expire_at_ts = now() - interval '1 minute' where store_key = ${proofKey}`;
-
-            const replayEntry = { ...entry, audit: { ...entry.audit, createdTs: entry.audit.createdTs.add({ seconds: 1 }) } };
-            const replay = toInsert(replayEntry, toProducerFacts);
-            await writeProved(sql, replay);
-            expect(await readProof(sql, proofKey)).toEqual({ value: replay.provenance?.value, revision: 1 });
-
-            const live = writeProved(sql, toInsert(entry, toProducerFacts));
-            await expect(live).rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
-            await expect(live).rejects.toThrow('App outbox insert did not create exactly one row');
-
-            await expireOutboxRow(sql, entry);
-            await expect(writeProved(sql, toInsert(entry, toProducerFacts)))
-                .rejects.toThrow('App outbox provenance did not create exactly one row');
-            expect(await readProof(sql, proofKey)).toEqual({ value: replay.provenance?.value, revision: 1 });
-        });
-    }, 60_000);
-});
+        }, 60_000);
+    }
+);
 
 function toFacts(
     entry: ResourceEntry,

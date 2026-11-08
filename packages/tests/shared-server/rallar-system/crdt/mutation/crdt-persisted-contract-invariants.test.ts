@@ -218,7 +218,7 @@ async function appendCommand() {
         capturedAtEpochMs: 2_000,
         expireAtEpochMs: 62_000,
         document: DOCUMENT,
-        responseAudience: { ...audience(), kind: 'principal' as const },
+        responseAudience: { ...audience(), kind: 'principal' as const, topicId: 'crdt.app' },
         authorizationScope: 'principal',
         update: update()
     });

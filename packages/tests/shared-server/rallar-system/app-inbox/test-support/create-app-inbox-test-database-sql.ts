@@ -104,7 +104,7 @@ async function executeAppInboxTestSql(
         );
         const outbox = toAppOutboxInsertParameterRows(input.query, input.values)
             .flatMap((values) => insertOutboxEntry(input, toInboxEntry(values)));
-        return [...outbox.map((row) => ({ ...row, store_key: null })), ...indexed];
+        return [...outbox.map((row) => ({ ...row, store_namespace: null, store_key: null })), ...indexed];
     }
     const runtimeStateResult = await executeRuntimeStateSql(input);
     if (runtimeStateResult) {
@@ -366,7 +366,7 @@ export async function writeAppOutboxSidecarRows(
     for (const { namespace, key, value, expiresAt } of rows) {
         const result = await runtime.insertIfAbsent({ namespace, key, value, expireAtTimestamp: Date.parse(expiresAt) });
         if (result.status === 'applied') {
-            written.push({ ri_resource_id: null, ri_topic_id: null, fk_ext_bank_id: null, store_key: key });
+            written.push({ ri_resource_id: null, ri_topic_id: null, fk_ext_bank_id: null, store_namespace: namespace, store_key: key });
         }
     }
     return written;

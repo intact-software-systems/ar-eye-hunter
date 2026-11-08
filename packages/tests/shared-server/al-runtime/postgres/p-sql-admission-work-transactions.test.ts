@@ -162,7 +162,6 @@ describe('AL admission persistence-ready queue work', () => {
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
         await backend.write(async (write) => await write.set('version', 0));
         const recorded = recordPGliteStatements(sql.raw);
-        const statements = () => recorded.statements().filter(({ scope }) => scope === 'transaction');
 
         await backend.write(async (write) => {
             await write.set('effect:a', 'a');
@@ -170,9 +169,9 @@ describe('AL admission persistence-ready queue work', () => {
             await write.set('effect:b', 'b');
         });
 
-        const stateWrites = statements().filter(({ query }) => query.includes('runtime_state_store'));
+        const stateWrites = recorded.inTransaction().filter(({ query }) => query.includes('runtime_state_store'));
         expect(stateWrites).toHaveLength(1);
-        expect(statements()[0]).toBe(stateWrites[0]);
+        expect(recorded.inTransaction()[0]).toBe(stateWrites[0]);
         expect(stateWrites[0]!.params[0]).toMatchObject({ operation: 'update', key: 'version', expectedRevision: 0 });
         expect(await backend.read('version', (value) => value)).toBe(1);
         expect(await backend.read('effect:a', (value) => value)).toBe('a');
@@ -218,7 +217,6 @@ describe('AL admission persistence-ready queue work', () => {
         const claimed = await claimEntries(backend, ['held-1', 'held-2', 'held-3']);
         const inserted = ['new-1', 'new-2', 'new-3'].map(createEntryOf);
         const recorded = recordPGliteStatements(sql.raw);
-        const statements = () => recorded.statements().filter(({ scope }) => scope === 'transaction');
 
         await backend.write(async (write) => {
             await Promise.all(claimed.map((entry) => write.readClaimedWork(entry)));
@@ -227,7 +225,7 @@ describe('AL admission persistence-ready queue work', () => {
             inserted.forEach((entry) => write.writeWork(entry));
         });
 
-        expect(statements().map(({ query }) => toStatementKind(query))).toEqual(['state', 'hold', 'insert']);
+        expect(recorded.inTransaction().map(({ query }) => toStatementKind(query))).toEqual(['state', 'hold', 'insert']);
         for (const entry of inserted) {
             expect(await backend.workQueue.getItem(entry.key)).toMatchObject({ resource: 'computed message' });
         }

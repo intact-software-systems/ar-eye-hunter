@@ -63,6 +63,7 @@ interface CrdtMutationRollbackCountsRow {
     readonly documents: string;
     readonly updates: string;
     readonly outbox: string;
+    readonly proofs: string;
     readonly results: string;
 }
 
@@ -217,10 +218,13 @@ for (const stage of FAILURE_STAGES) {
           (select count(*) from crdt_updates)::text as updates,
           (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox,
           (select count(*)
+            from runtime_state_store
+            where store_namespace = 'ws-outbox-provenance')::text as proofs,
+          (select count(*)
             from resource_inbox_results
             where ris_topic_id = 'app-inbox.crdt-state')::text as results
       `;
-            assert.deepEqual(domain, { documents: '0', updates: '0', outbox: '0', results: '0' });
+            assert.deepEqual(domain, { documents: '0', updates: '0', outbox: '0', proofs: '0', results: '0' });
         });
     });
 }

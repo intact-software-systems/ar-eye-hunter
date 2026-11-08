@@ -423,6 +423,6 @@ function toPGliteStatementCounts(recorded: RecordedPGliteStatements): PGliteStat
     return {
         autocommit: statements.filter(({ scope }) => scope === 'autocommit').length,
         transactions: recorded.transactions(),
-        inTransaction: statements.filter(({ scope }) => scope === 'transaction').length
+        inTransaction: recorded.inTransaction().length
     };
 }

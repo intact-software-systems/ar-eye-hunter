@@ -136,6 +136,13 @@ describe('the provenance row of a proved WS outbox row', () => {
             .toThrow(new TypeError('An ordered WS outbox row needs its admission namespace'));
     });
 
+    it('refuses a proof whose expiry differs from its row', () => {
+        const input = toProvedInput(createEntry(EnqueuedType.WS_OUTBOX, 2));
+
+        expect(() => computeWsOutboxInsert({ ...input, provenance: { ...input.provenance!, expiresAtMs: input.provenance!.expiresAtMs + 1 } }))
+            .toThrow(new TypeError('A WS outbox proof expires with its row'));
+    });
+
     it('validates a proved row by recomputation: a re-keyed, re-valued, re-expired or missing proof row, a re-keyed index row and a row expiry the facts do not name are each one issue', () => {
         const input = toProvedInput(createEntry(EnqueuedType.WS_OUTBOX, 2));
         const computed = computeWsOutboxInsert(input);
@@ -162,7 +169,7 @@ describe('the provenance row of a proved WS outbox row', () => {
             ...input,
             provenance: { ...input.provenance!, expiresAtMs: input.provenance!.expiresAtMs + 1 }
         };
-        const issues = validateWsOutboxInsert(reExpired, computeWsOutboxInsert(reExpired));
+        const issues = validateWsOutboxInsert(reExpired, computed);
         expect(issues).toHaveLength(1);
         expect(issues[0]!.path).toBe('wsOutbox.provenance.expiresAtMs');
         expect(issues[0]!.message).toBe('wsOutbox.provenance.expiresAtMs differs from the row expiry');

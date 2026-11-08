@@ -983,9 +983,15 @@ function executeResourceInboxQuery(
 ): PSqlRows {
     if (isAppOutboxSidecarInsert(query)) {
         const outbox = insertResourceInboxTestRows(rows, readInsertRowsParameter(values[0]))
-            .map((row) => ({ ...row, store_key: null }));
-        const indexed = (values[1] as readonly { readonly key: string; }[])
-            .map(({ key }) => ({ ri_resource_id: null, ri_topic_id: null, fk_ext_bank_id: null, store_key: key }));
+            .map((row) => ({ ...row, store_namespace: null, store_key: null }));
+        const indexed = (values[1] as readonly { readonly namespace: string; readonly key: string; }[])
+            .map(({ namespace, key }) => ({
+                ri_resource_id: null,
+                ri_topic_id: null,
+                fk_ext_bank_id: null,
+                store_namespace: namespace,
+                store_key: key
+            }));
         return [...outbox, ...indexed];
     }
     if (query.startsWith('insert into resource_inbox') && query.includes('jsonb_to_recordset')) {

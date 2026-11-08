@@ -1,7 +1,11 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 
-import type { WsOutboxProvenanceFacts } from '../../../websocket/outbox/ws-outbox-provenance.ts';
+import type {
+    WsOutboxProvenanceFacts,
+    WsOutboxScopedPrincipalBroadcastTarget,
+    WsOutboxScopedUnicastTarget
+} from '../../../websocket/outbox/ws-outbox-provenance.ts';
 
 export interface ToClientSnapshotProvenanceFactsInput {
     readonly message: ALMessage;
@@ -33,23 +37,34 @@ export function toClientSnapshotProvenanceFacts(
         producerKind: 'state-sync',
         expiresAtMs,
         target: targets.mode === 'unicast'
-            ? {
-                kind: 'scoped-unicast',
-                peerId: targets.toPeerId,
-                scope: {
-                    applicationId: principalRef.applicationId,
-                    workspaceId: principalRef.workspaceId
-                },
-                admittedAudience: [targets.toPeerId]
-            }
-            : {
-                kind: 'scoped-principal-broadcast',
-                principalRef: {
-                    applicationId: principalRef.applicationId,
-                    workspaceId: principalRef.workspaceId,
-                    principalId: principalRef.principalId
-                },
-                admittedAudience: principalAudienceSessionIds
-            }
+            ? toScopedUnicastTarget(targets.toPeerId, principalRef)
+            : toScopedPrincipalBroadcastTarget(principalRef, principalAudienceSessionIds)
+    };
+}
+
+function toScopedUnicastTarget(peerId: string, principalRef: ClientPrincipalRef): WsOutboxScopedUnicastTarget {
+    return {
+        kind: 'scoped-unicast',
+        peerId,
+        scope: {
+            applicationId: principalRef.applicationId,
+            workspaceId: principalRef.workspaceId
+        },
+        admittedAudience: [peerId]
+    };
+}
+
+function toScopedPrincipalBroadcastTarget(
+    principalRef: ClientPrincipalRef,
+    principalAudienceSessionIds: readonly string[]
+): WsOutboxScopedPrincipalBroadcastTarget {
+    return {
+        kind: 'scoped-principal-broadcast',
+        principalRef: {
+            applicationId: principalRef.applicationId,
+            workspaceId: principalRef.workspaceId,
+            principalId: principalRef.principalId
+        },
+        admittedAudience: principalAudienceSessionIds
     };
 }

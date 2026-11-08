@@ -28,7 +28,6 @@ export interface ComputeCrdtOutboxWritesInput {
     readonly entries: readonly ResourceEntry[];
 }
 
-/** Each outbox row as it is written: a WS row with the proof of its authorized append, any other row without one. */
 export function computeCrdtOutboxWrites(input: ComputeCrdtOutboxWritesInput): readonly AppOutboxInsert[] {
     const { command, read, entries } = input;
     return entries.map((entry) => {

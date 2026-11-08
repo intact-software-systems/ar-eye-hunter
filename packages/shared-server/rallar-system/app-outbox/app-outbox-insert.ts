@@ -56,19 +56,6 @@ export function computeWsOutboxInsert(input: ComputeWsOutboxInsertInput): AppOut
     };
 }
 
-interface AppOutboxInsertedRow {
-    readonly ri_resource_id: string;
-    readonly ri_topic_id: string;
-    readonly fk_ext_bank_id: string;
-}
-
-interface AppOutboxSidecarWrittenRow {
-    readonly ri_resource_id: string | null;
-    readonly ri_topic_id: string | null;
-    readonly fk_ext_bank_id: string | null;
-    readonly store_key: string | null;
-}
-
 export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
     if (isOrderedWsOutboxEntry(entry)) {
         throw new TypeError('An ordered WS outbox row is computed by computeWsOutboxInsert');
@@ -93,6 +80,9 @@ function toWsOutboxProvenanceSidecarRow(
     facts: WsOutboxProvenanceFacts,
     expiresAt: string
 ): AppOutboxSidecarRow {
+    if (facts.expiresAtMs !== entry.audit.expiryTs.epochMilliseconds) {
+        throw new TypeError('A WS outbox proof expires with its row');
+    }
     const record = computeWsOutboxProvenanceRecord({ entry, ...facts });
     return { namespace: record.namespace, key: record.key, value: record.value, expiresAt };
 }
@@ -122,15 +112,14 @@ export function validateWsOutboxInsert(
     expected: ComputeWsOutboxInsertInput,
     candidate: AppOutboxInsert
 ): readonly ComputedDataValidationIssue[] {
-    const issues = validateComputedProjection(computeWsOutboxInsert(expected), candidate, 'wsOutbox');
     if (
-        expected.provenance === null ||
-        expected.provenance.expiresAtMs === expected.entry.audit.expiryTs.epochMilliseconds
+        expected.provenance !== null &&
+        expected.provenance.expiresAtMs !== expected.entry.audit.expiryTs.epochMilliseconds
     ) {
-        return issues;
+        const message = 'wsOutbox.provenance.expiresAtMs differs from the row expiry';
+        return [{ path: 'wsOutbox.provenance.expiresAtMs', message, cause: new TypeError(message) }];
     }
-    const message = 'wsOutbox.provenance.expiresAtMs differs from the row expiry';
-    return [...issues, { path: 'wsOutbox.provenance.expiresAtMs', message, cause: new TypeError(message) }];
+    return validateComputedProjection(computeWsOutboxInsert(expected), candidate, 'wsOutbox');
 }
 
 export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void> {
@@ -158,21 +147,14 @@ export async function writeAppOutboxInserts(
     }
     requireDistinctSidecarKeys(computed);
     const written = await insertAppOutboxRowsWithSidecars(transaction, computed, sidecars);
-    requireAppOutboxRowsInserted(computed, written.filter(({ store_key }) => store_key === null));
-    const stored = new Set(written.map(({ store_key }) => store_key));
-    requireSidecarsInserted(
-        computed,
-        ({ trackIndex }) => trackIndex,
-        stored,
-        'App outbox track index did not create exactly one row'
-    );
-    requireSidecarsInserted(
-        computed,
-        ({ provenance }) => provenance,
-        stored,
-        'App outbox provenance did not create exactly one row'
-    );
+    requireAppOutboxRowsInserted(computed, toAppOutboxInsertedRows(written));
+    requireSidecarsInserted(computed, toStoredSidecarIdentities(written));
 }
+
+const SIDECAR_REFUSALS = [
+    ['trackIndex', 'App outbox track index did not create exactly one row'],
+    ['provenance', 'App outbox provenance did not create exactly one row']
+] as const;
 
 function requireDistinctSidecarKeys(computed: readonly AppOutboxInsert[]): void {
     const trackIndexKeys = new Set<string>();
@@ -199,24 +181,41 @@ function requireDistinctSidecarKeys(computed: readonly AppOutboxInsert[]): void 
     }
 }
 
-function requireSidecarsInserted(
-    computed: readonly AppOutboxInsert[],
-    sidecarOf: (insert: AppOutboxInsert) => AppOutboxSidecarRow | null,
-    stored: ReadonlySet<string | null>,
-    reason: string
-): void {
-    const missing = computed.find((insert) => {
-        const sidecar = sidecarOf(insert);
-        return sidecar !== null && !stored.has(sidecar.key);
-    });
-    if (missing !== undefined) {
-        throw new ResourceInboxInvariantCorruptionError(missing.entry.key, reason);
+function requireSidecarsInserted(computed: readonly AppOutboxInsert[], stored: ReadonlySet<string>): void {
+    for (const [field, reason] of SIDECAR_REFUSALS) {
+        const missing = computed.find((insert) => {
+            const sidecar = insert[field];
+            return sidecar !== null && !stored.has(toSidecarIdentity(sidecar.namespace, sidecar.key));
+        });
+        if (missing !== undefined) {
+            throw new ResourceInboxInvariantCorruptionError(missing.entry.key, reason);
+        }
     }
+}
+
+function toSidecarIdentity(namespace: string, key: string): string {
+    return `${namespace}\u0000${key}`;
+}
+
+function toStoredSidecarIdentities(written: readonly AppOutboxSidecarWrittenRow[]): ReadonlySet<string> {
+    return new Set(
+        written.flatMap(({ store_namespace, store_key }) =>
+            store_namespace === null || store_key === null ? [] : [toSidecarIdentity(store_namespace, store_key)]
+        )
+    );
+}
+
+function toAppOutboxInsertedRows(written: readonly AppOutboxSidecarWrittenRow[]): readonly AppOutboxInsertedRow[] {
+    return written.flatMap(({ ri_resource_id, ri_topic_id, fk_ext_bank_id, store_key }) =>
+        store_key === null && ri_resource_id !== null && ri_topic_id !== null && fk_ext_bank_id !== null
+            ? [{ ri_resource_id, ri_topic_id, fk_ext_bank_id }]
+            : []
+    );
 }
 
 function requireAppOutboxRowsInserted(
     computed: readonly AppOutboxInsert[],
-    inserted: readonly Omit<AppOutboxSidecarWrittenRow, 'store_key'>[]
+    inserted: readonly AppOutboxInsertedRow[]
 ): void {
     if (inserted.length !== computed.length) {
         const missing = computed.find(({ entry: { key } }) =>
@@ -243,6 +242,20 @@ export async function writeAppOutboxInsertIfAbsent(transaction: PSqlSql, compute
     return (await insertAppOutboxRows(transaction, [computed])).length === 1;
 }
 
+interface AppOutboxInsertedRow {
+    readonly ri_resource_id: string;
+    readonly ri_topic_id: string;
+    readonly fk_ext_bank_id: string;
+}
+
+interface AppOutboxSidecarWrittenRow {
+    readonly ri_resource_id: string | null;
+    readonly ri_topic_id: string | null;
+    readonly fk_ext_bank_id: string | null;
+    readonly store_namespace: string | null;
+    readonly store_key: string | null;
+}
+
 async function insertAppOutboxRows(
     transaction: PSqlSql,
     computed: readonly AppOutboxInsert[]
@@ -264,9 +277,10 @@ async function insertAppOutboxRowsWithSidecars(
             ${REPLACE_EXPIRED_RESOURCE_INBOX_ROW}
             returning ri_resource_id, ri_topic_id, fk_ext_bank_id
         ), sidecars as (${toAppOutboxSidecarInsert(sidecars)})
-        select ri_resource_id, ri_topic_id, fk_ext_bank_id, null::text as store_key from outbox
+        select ri_resource_id, ri_topic_id, fk_ext_bank_id, null::text as store_namespace, null::text as store_key
+        from outbox
         union all
-        select null, null, null, store_key from sidecars
+        select null, null, null, store_namespace, store_key from sidecars
     `;
     return await transaction<readonly AppOutboxSidecarWrittenRow[]>(...statement.toStatement());
 }

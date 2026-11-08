@@ -106,7 +106,7 @@ export function restoreClientStateTestOutbox(
 async function executeClientStateTestSql(input: ClientStateTestSqlInput): Promise<PSqlRows> {
     if (isAppOutboxSidecarInsert(input.query)) {
         const indexed = await writeAppOutboxSidecarRows(input.runtime, toAppOutboxSidecarParameterRows(input.values));
-        return [...insertClientStateTestOutbox(input).map((row) => ({ ...row, store_key: null })), ...indexed];
+        return [...insertClientStateTestOutbox(input).map((row) => ({ ...row, store_namespace: null, store_key: null })), ...indexed];
     }
     if (
         input.query.includes('insert into runtime_state_store') &&

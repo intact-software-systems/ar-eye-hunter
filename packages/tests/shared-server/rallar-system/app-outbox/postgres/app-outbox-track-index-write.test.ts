@@ -71,7 +71,7 @@ function countInTransactionStatements(sql: PSqlSql): (() => number) | undefined 
         return undefined;
     }
     const recorded = recordPGliteStatements((sql as PGliteSql).raw);
-    return () => recorded.statements().filter(({ scope }) => scope === 'transaction').length;
+    return () => recorded.inTransaction().length;
 }
 
 async function readSidecarRow(sql: PSqlSql, row: AppOutboxSidecarRow): Promise<StoredSidecarRow | undefined> {
@@ -228,8 +228,9 @@ describe('the app outbox writer with a track index row', () => {
         const computed = computeProved(undefined);
         await seedSidecarRow(sql, computed.provenance, '{"other":true}', true);
 
-        await expect(sql.begin((tx) => writeAppOutboxInserts(tx, [computed])))
-            .rejects.toThrow(ResourceInboxInvariantCorruptionError);
+        const write = sql.begin((tx) => writeAppOutboxInserts(tx, [computed]));
+        await expect(write).rejects.toThrow(ResourceInboxInvariantCorruptionError);
+        await expect(write).rejects.toThrow('App outbox provenance did not create exactly one row');
 
         const stored = await readSidecarRow(sql, computed.provenance);
         expect(stored?.store_value).toBe('{"other":true}');
@@ -255,8 +256,9 @@ describe('the app outbox writer with a track index row', () => {
         const twin = { ...computed, entry: { ...computed.entry, resource: '{"other":true}' } };
         const recorded: string[] = [];
 
-        await expect(recordResourceInboxStatements(sql, recorded).begin((tx) => writeAppOutboxInserts(tx, [computed, twin])))
-            .rejects.toThrow(ResourceInboxInvariantCorruptionError);
+        const write = recordResourceInboxStatements(sql, recorded).begin((tx) => writeAppOutboxInserts(tx, [computed, twin]));
+        await expect(write).rejects.toThrow(ResourceInboxInvariantCorruptionError);
+        await expect(write).rejects.toThrow('App outbox batch names one provenance row twice');
 
         expect(recorded).toEqual(['begin']);
         expect(await readSidecarRow(sql, computed.provenance)).toBeUndefined();

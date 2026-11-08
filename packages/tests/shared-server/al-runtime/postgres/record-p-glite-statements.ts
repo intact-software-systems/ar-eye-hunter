@@ -13,6 +13,8 @@ export interface RecordedPGliteStatement {
 export interface RecordedPGliteStatements {
     /** Every statement the PGlite instance ran, in order; the BEGIN and COMMIT of a transaction are not among them. */
     statements(): readonly RecordedPGliteStatement[];
+    /** The statements run inside a transaction, in order. */
+    inTransaction(): readonly RecordedPGliteStatement[];
     /** How many transactions the PGlite instance opened. */
     transactions(): number;
 }
@@ -47,5 +49,9 @@ export function recordPGliteStatements(raw: PGliteSql['raw']): RecordedPGliteSta
             }));
         });
     });
-    return { statements: () => statements, transactions: () => transactions };
+    return {
+        statements: () => statements,
+        inTransaction: () => statements.filter(({ scope }) => scope === 'transaction'),
+        transactions: () => transactions
+    };
 }
