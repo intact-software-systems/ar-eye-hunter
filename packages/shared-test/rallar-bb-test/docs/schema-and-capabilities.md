@@ -612,10 +612,12 @@ reliability. No hosted manifest carries them (D505).
   recipient-b's, but recipient-b holds `publish` alone, so the frozen audience leaves it out silently (expected 1,
   confirmed 1, outside 0); recipient-b asserts the publication's absence. A grant only adds permissions and the
   room's three-agent cells share it, so the owner also revokes the `subscribe` an earlier cell granted recipient-b.
-- `granted-rtc-list-lane-roles` (three-agent): `recipientPeers: ['receiver', 'recipient-b']`, which the page
-  resolves through the leader rule; both hold `subscribe` and an election (expected 2, confirmed 2, outside 0), and
-  each copy arrives over RTC. A role the page cannot resolve fails the send `peerUnresolved`, and two roles that
-  resolve to one session refuse it.
+- `granted-rtc-list-lane-roles` (three-agent): `recipientPeers: ['receiver', 'recipient-b']`. The receiver directs
+  the room, so the page resolves the list through the leader rule: `receiver` to the leader, `recipient-b` to the
+  session beside it. The lane starts the sender after both recipients connected, and the sender refreshes
+  its snapshot until it reads the leader active before it publishes; both hold `subscribe` and an election (expected 2, confirmed 2, outside 0), and each copy arrives over
+  RTC. The receiver resigns at its end. A role the page cannot resolve fails the send `peerUnresolved`, and two
+  roles that resolve to one session refuse it.
 - `granted-rtc-principal-delivered` (same-principal): `scope: 'principal'`, `principalId: '{auth.clientId}'`. The
   owner grants the sender's principal `publish` and `subscribe`, so the sender's sibling, elected, receives the copy
   over RTC and confirms it (expected 1, confirmed 1, outside 0); the receiver, elected but of another principal, is

@@ -7,6 +7,11 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import {
+    toDirectorAppointCommand,
+    toDirectorResignCommand,
+    toLeaderActivityWait
+} from '../leader-ack/leader-ack-commands.ts';
+import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toUnsubscribeCommands
@@ -20,9 +25,12 @@ import { GRANTED_RTC_CARRIERS, toRtcArrivalWait } from './granted-rtc-commands.t
 import { RECIPIENT_B_SUBSCRIBES, toConfirmingOwnerCommands } from './granted-rtc-confirming-owner.ts';
 
 /**
- * The sender lists its two recipients by lane role, which the page resolves to their sessions through the leader rule.
- * Both hold `subscribe` and an election, so one copy's receipt expects both, both confirm, and nobody ends outside the
- * audience.
+ * The sender lists its two recipients by lane role. The receiver directs the room, so the page resolves the list
+ * through the leader rule: `receiver` to the room's leader and `recipient-b` to the session beside it. The lane starts
+ * the sender after both recipients connected, and the sender refreshes its snapshot until it reads the leader active,
+ * so its first send finds both live sessions and the leader. Both hold `subscribe` and an election, so one copy's
+ * receipt expects both, both confirm, and nobody ends outside the audience. The receiver resigns at its end, so the
+ * next cell finds the room without a director.
  */
 export const grantedRtcListLaneRoles: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-list-lane-roles',
@@ -33,20 +41,28 @@ export const grantedRtcListLaneRoles: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
-    toSenderCommands: (sender) =>
-        toPublishUntilConfirmedCommands({
+    toSenderCommands: (sender) => [
+        toLeaderActivityWait(sender, true),
+        ...toPublishUntilConfirmedCommands({
             step: sender,
             name: 'publication',
             confirmations: 2,
             outsideAudience: 0,
             kind: 'publication',
             audience: { recipientPeers: ['receiver', 'recipient-b'] }
-        }),
+        })
+    ],
     toRecipientCommands: (recipient) =>
-        recipient.role === 'receiver'
-            ? toConfirmingOwnerCommands(recipient, [RECIPIENT_B_SUBSCRIBES])
-            : toListedSubscriberCommands(recipient)
+        recipient.role === 'receiver' ? toDirectingOwnerCommands(recipient) : toListedSubscriberCommands(recipient)
 };
+
+function toDirectingOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toDirectorAppointCommand(owner),
+        ...toConfirmingOwnerCommands(owner, [RECIPIENT_B_SUBSCRIBES]),
+        toDirectorResignCommand(owner)
+    ];
+}
 
 function toListedSubscriberCommands(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
