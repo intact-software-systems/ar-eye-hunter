@@ -323,28 +323,8 @@ resolve_operator_token_ttl_ms() {
 	printf '%s' "${ttl}"
 }
 
-restore_api_diagnostic_configuration() {
-	local key value
-	[[ "${RALLAR_API_CAPTURE_OWNER:-}" == api-* ]] || return 1
-	jq -e '
-	  keys == (["RALLAR_TIMING_LOGS", "RALLAR_APP_INBOX_PHASE_TIMING", "RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT",
-	    "RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE", "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE", "RALLAR_RTC_TOPOLOGY_MESH_PARAM_K"] | sort) and
-	  all(to_entries[]; .key as $key | .value |
-	    if .present == false then .value == null and .source == null
-	    else .present == true and .source == "environment" and
-	      (if $key == "RALLAR_TIMING_LOGS" then .value == "0" or .value == "1"
-	       elif $key == "RALLAR_APP_INBOX_PHASE_TIMING" then .value == "true" or .value == "false"
-	       else .value | test("^[1-9][0-9]*$") end) end)' "${RALLAR_API_RESTORE_CONFIGURATION}" >/dev/null
-	while IFS=$'\t' read -r key value; do
-		update_env_value "${RALLAR_API_ENV_FILE}" "${key}" "${value}"
-	done < <(jq -r 'to_entries[] | [.key, (.value.value // "")] | @tsv' "${RALLAR_API_RESTORE_CONFIGURATION}")
-}
-
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
-	restore-api-diagnostics)
-		restore_api_diagnostic_configuration
-		;;
 	checkout-ref)
 		update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 		printf 'checkoutHead=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse HEAD)"
@@ -633,9 +613,6 @@ if [[ "${RALLAR_CONTROLLER_ROLE}" == "api" ]]; then
 
 	echo "==> Writing API timing env"
 	write_api_timing_environment
-	if [[ -n "${RALLAR_API_RESTORE_CONFIGURATION:-}" ]]; then
-		restore_api_diagnostic_configuration
-	fi
 
 	echo "==> Ensuring black-box operator token broker secret"
 	ensure_operator_token_secret "${operator_token_ttl_ms}"

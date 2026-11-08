@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     chmod,
@@ -19,7 +20,6 @@ import type { TestContext } from 'vitest';
 
 import { writeDistributedRunArtifactAnalysis } from '../../../apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts';
 import operationReportSchema from '../../../scripts/hosted-rallar/actions/hetzner-operation-report.schema.json' with { type: 'json' };
-import { runControllerCommand } from '../../../scripts/hosted-rallar/controller/rallar-api-cpu-capture.mjs';
 import {
     decodeDistributedRunManifest,
     toDistributedRunManifestValidationText
@@ -276,9 +276,6 @@ describe('Hetzner artifacts contracts and effects', () => {
         const cases = [
             ['manifest-materialization', 'manifest-scope', false],
             ['manifest-scope-validation', 'manifest-scope', false],
-            ['api-capture-preflight', 'api-capture-preflight', false],
-            ['api-capture-rollout', 'api-capture-rollout', false],
-            ['api-capture-start', 'api-capture-start', false],
             ['playwright-system-dependencies', 'browser-dependencies', false],
             ['playwright-browser-install', 'browser-installation', false],
             ['playwright-browser-smoke', 'browser-verification', false],
@@ -331,27 +328,16 @@ describe('Hetzner artifacts contracts and effects', () => {
         onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const logPath = path.join(tmp, 'operation.log');
         const outputDir = path.join(tmp, 'diagnostics');
-        const stderr = 'Capability failed\n\u001b[31mRALLAR_OPERATION_STAGE=recipe-execution\u001b[0m\r\n' +
-            'RALLAR_OPERATION_STAGE=agent-readiness\rRALLAR_OPERATION_STAGE=api-capture-rollout\u2028' +
-            'RALLAR_OPERATION_STAGE=api-capture-start\u2029RALLAR_OPERATION_STAGE=recipe-execution\n' +
-            'Authorization: Bearer private-child-token\n';
-        let commandFailure = '';
-        try {
-            runControllerCommand(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(stderr)});process.exit(7);`], {
-                environment: {}
-            });
-        }
-        catch (error) {
-            if (!(error instanceof Error)) {
-                throw error;
-            }
-            commandFailure = error.message;
-        }
-        expect(commandFailure).toContain('exit 7');
-        expect(commandFailure).toContain('Capability failed');
-        expect(commandFailure).not.toContain('private-child-token');
-        expect(commandFailure).not.toContain('\u001b');
-        await writeFile(logPath, `RALLAR_OPERATION_STAGE=api-capture-preflight\n${commandFailure}\n`);
+        const rawStderr = 'Capability failed\n\u001b[31mRALLAR_OPERATION_STAGE=recipe-execution\u001b[0m\r\n' +
+            'RALLAR_OPERATION_STAGE=agent-readiness\rRALLAR_OPERATION_STAGE=rollout-service-health\u2028' +
+            'RALLAR_OPERATION_STAGE=recipe-execution\u2029Authorization: Bearer private-child-token\n';
+        const child = spawnSync(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(rawStderr)});process.exit(7);`], {
+            encoding: 'utf8'
+        });
+        expect(child.status).toBe(7);
+        // The operation log frames a child command's stderr line-by-line, so its stage markers never start a line.
+        const framedStderr = child.stderr.replace(/^/gm, 'stderr: ');
+        await writeFile(logPath, `RALLAR_OPERATION_STAGE=agent-readiness\n${framedStderr}\n`);
         const materializationArguments = await writeOperationMaterializationFixture(tmp);
         await writeOperationDiagnostics(context, {
             logPath,
@@ -368,19 +354,20 @@ describe('Hetzner artifacts contracts and effects', () => {
         const report = await readOperationReport(outputDir);
         expect(report).toMatchObject({
             status: 'failed',
-            stage: 'api-capture-preflight',
-            failureCategory: 'api-capture-preflight',
+            stage: 'agent-readiness',
+            failureCategory: 'agent-readiness',
             recipeStarted: false,
             exitCode: 7,
             distributedArtifactAvailable: false,
             materializationStatus: 'succeeded'
         });
         const evidence = await readFile(path.join(outputDir, 'evidence.log'), 'utf8');
-        for (const stage of ['recipe-execution', 'agent-readiness', 'api-capture-rollout', 'api-capture-start']) {
+        for (const stage of ['recipe-execution', 'agent-readiness', 'rollout-service-health']) {
             expect(evidence).toContain(`RALLAR_OPERATION_STAGE=${stage}`);
         }
         expect(evidence).toContain('Capability failed');
         expect(evidence).not.toContain('private-child-token');
+        expect(evidence).not.toContain('\u001b');
         expect(await readFile(path.join(outputDir, 'summary.md'), 'utf8')).toContain('The distributed recipe did not start.');
     });
 
