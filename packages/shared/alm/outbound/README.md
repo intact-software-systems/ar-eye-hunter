@@ -594,7 +594,16 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   ([`computeGrantedSubscribeHolders`](../../multicast/publication/compute-granted-subscribe-holders.ts), passed as
   `subscribeHolders`; `null` for any other send) when the leg is admitted (`admitLeg`), before its first admission
   signs it (`signAdmitted`, after that admission's read stamped it), so the signed targets and the receipt
-  row's expected set are the narrowed audience, receipted or not. A granted `group-leader` send whose room's director
+  row's expected set are the narrowed audience, receipted or not. A granted room multicast, a listed room broadcast,
+  a principal broadcast naming its room and a room unicast are narrowed at that one freeze; the unicast is first
+  translated into the one-entry listed room broadcast of its room
+  ([`toRtcGrantedListedLeg`](../../multicast/publication/to-rtc-granted-listed-leg.ts)), so it rides as a frozen,
+  signed multicast of one. A named session without `subscribe` is frozen out silently, and an audience frozen to
+  nobody owns no children: under `receiver` its receipt of zero recipients completes at once, and under `none` the
+  plan drops `no-route`, a fallback trigger. Any other granted shape (an exclusions-only room broadcast, `world`, a
+  roomless principal) is refused before freezing as `refused/unsupported`
+  ([`resolveRtcGrantedPublicationShapeRefusal`](../../multicast/publication/compute-rtc-granted-publication-refusal.ts)).
+  A granted `group-leader` send whose room's director
   holds no `subscribe` is refused before freezing as `refused/unsupported`, which a fallback carrier takes over
   ([`resolveRtcGrantedLeaderRefusal`](../../multicast/publication/compute-rtc-granted-publication-refusal.ts)); a
   room without a director, or one the sender directs, keeps `refused/no-leader` as any room send does.
@@ -624,10 +633,7 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   `refused/unsupported`, naming the bound, in every ack mode and before anything is persisted or sent
   (`computeRtcFrozenAudienceRefusal`). That is the refusal a fallback takes over: `rtc-with-ws-fallback`
   delivers over WS, whose audience travels off the wire (below), and `rtc` alone settles `rejected`
-  with the typed reason. A granted publication is the exception: its leg admission freezes the audience
-  before that refusal runs, and the refusal keeps an audience its sender gave frozen, so past the bound the
-  message fails its own envelope decode (`AL collection exceeds the entry limit`), the send ends `failed`
-  and no carrier takes it over.
+  with the typed reason. A granted leg judges the bound right after its freeze, so a fallback takes over.
 - The WS server freezes a room message at its admission stamp from the sessions it authorizes,
   narrowed for a principal broadcast that names its room to that principal's sessions (the group
   snapshot's `activeSessions[].principalId`), for a room broadcast that carries
@@ -988,7 +994,8 @@ telemetry that no conformance scenario holds or asserts on.
 Since S3c-ii a typed send names one peer on every strategy but `ws-then-rtc`: `send(payload, { peerId })`. The
 envelope is one unicast that names its room (`targets.groupRef`, `route.contextId` the room id), built by
 [`createBrowserUnicastMessage`](../../../shared-web/browser/messages/create-browser-unicast-message.ts). The RTC
-carrier plans it to the addressee directly and never relays it. Its receipt is the addressee's own ACK. On
+carrier plans it to the addressee directly and never relays it. Its receipt is the addressee's own ACK. A granted
+peer send is frozen in the granted leg as a multicast of one and relayed, receipted and repaired as one. On
 `rtc-with-ws-fallback` the same envelope is re-admitted on WS when the RTC leg states a retryable outcome inside the
 deadline (D63): the addressee is not in the ready set (`no-route`); the addressee is connected but is not the
 origin's overlay next hop, is missing from the room's active sessions, or the room is in a carrier gap (three
