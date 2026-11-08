@@ -1387,14 +1387,6 @@ moved or changed test.
       "coverageRelation": "Reads the canonical source fixture before independently injecting three executable scope violations; the real child stderr must identify each violation."
     },
     {
-      "id": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
-      "domain": "Controlled controller lockfile repair",
-      "owner": "Rallar operations maintainers",
-      "summary": "The controlled rollout child restores the exact clean lockfile bytes before reporting its dirty-checkout guard outcome.",
-      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard",
-      "coverageRelation": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes."
-    },
-    {
       "id": "indexeddb-invalid-schema-no-open",
       "domain": "IndexedDB schema admission",
       "owner": "Rallar shared maintainers",
@@ -1722,14 +1714,6 @@ moved or changed test.
       "summary": "CRDT reservation construction remains connected to canonical durable AppInbox command materialization. Executable assertion: “rejects a CRDT reservation builder disconnected from command materialization”.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#rejects a CRDT reservation builder disconnected from command materialization",
       "coverageRelation": "The test replaces the actual CRDT administrative route command-materialization call and executes the mutation-route inventory validator; reading that production route is the executable input that proves reservation construction cannot bypass canonical durable AppInbox command materialization."
-    },
-    {
-      "id": "package-dependency-direction-import-map",
-      "domain": "Package dependency direction",
-      "owner": "Rallar platform maintainers",
-      "summary": "The api-v1 Deno import map advertises no browser or test-only package to application source. Executable assertion: “keeps the api-v1 Deno import map free of browser and test-only packages”.",
-      "semanticCoverage": "packages/tests/repo/package-dependency-direction.test.ts#keeps the api-v1 Deno import map free of browser and test-only packages",
-      "coverageRelation": "The import-direction suite executes the layering rule over every package source file; this config read covers the one surface that grants resolution before any import exists."
     },
     {
       "id": "queue-pubsub-admission-read-failure-no-send",
@@ -4124,8 +4108,8 @@ moved or changed test.
       "domain": "RTC-B06 observation configuration and source provenance",
       "owner": "Shared RTC benchmark maintainers",
       "summary": "The existing RTC-B06 observation reports the finite default/all-scenarios/retention policies and SHA256 fingerprints of the actual configuration and fixture owners used by the current source tree.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation",
-      "coverageRelation": "The test runs createRtcBaselineDenoObservation with real repository-file hashing, checks emitted requests 20/20/101 and the 60000ms windows, and independently hashes the actual configuration, command, evidence, producer and fixture files to compare with observation sourceHashes. Expectations follow current bytes rather than a pinned source snapshot."
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-bun-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation",
+      "coverageRelation": "The test runs createRtcBaselineBunObservation with real repository-file hashing, checks emitted requests 20/20/101 and the 60000ms windows, and independently hashes the actual configuration, command, evidence, producer and fixture files to compare with observation sourceHashes. Expectations follow current bytes rather than a pinned source snapshot."
     },
     {
       "id": "resource-inbox-guarded-winner-materialization",
@@ -6503,17 +6487,6 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
     },
     {
-      "id": "test-structure-coupling-a7aa023b12bd5a52",
-      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared RTC benchmark maintainers",
-      "rationale": "Requires each named maintained diagnostic entrypoint to remain in the package Deno check command while remaining absent from accepted evidence.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
-    },
-    {
       "id": "test-structure-coupling-d3a4973be65d4f48",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "symbol-assertion",
@@ -7073,17 +7046,6 @@ moved or changed test.
       "owner": "Rallar operations maintainers",
       "rationale": "Reads the checked-in original fifteen-agent JSON bytes before CLI execution; its fixed digest and later exact byte comparison bind the actual workload without depending on implementation text.",
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
-    },
-    {
-      "id": "test-structure-coupling-03bcfb46477d3a40",
-      "path": "packages/tests/hetzner/controller-deployment.test.ts",
-      "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar operations maintainers",
-      "rationale": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes.",
-      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
     },
     {
       "id": "test-structure-coupling-f27c417734abdf55",
@@ -8250,17 +8212,6 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Reads the live auth registration expression that the test makes opaque before executing the analyzer and requiring unknown registration semantics to fail closed.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate"
-    },
-    {
-      "id": "test-structure-coupling-7c0d79d76311c223",
-      "path": "packages/tests/repo/package-dependency-direction.test.ts",
-      "kind": "production-source-read",
-      "contract": "package-dependency-direction-import-map",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar platform maintainers",
-      "rationale": "Reads the api-v1 Deno import map so a browser or test-only mapping cannot be reintroduced ahead of any import that would use it.",
-      "semanticCoverage": "packages/tests/repo/package-dependency-direction.test.ts#keeps the api-v1 Deno import map free of browser and test-only packages"
     },
     {
       "id": "test-structure-coupling-b7b21332a0365fdf",
@@ -10991,15 +10942,15 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the dependency-free finite ICE fixture data, without opening runner imports"
     },
     {
-      "id": "test-structure-coupling-ac5e6841bb61346d",
-      "path": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts",
+      "id": "test-structure-coupling-cfabc651926a9fd3",
+      "path": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-bun-runtime.test.ts",
       "kind": "production-source-read",
       "contract": "rtc-b06-current-configuration-source-provenance",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "The independent read of each current configuration owner supplies the expected SHA256 for the emitted observation artifact. It catches missing, stale or substituted provenance even when policy values agree; changing source bytes remains valid when the observation records their current fingerprint.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation"
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-bun-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation"
     },
     {
       "id": "test-structure-coupling-513f1333780dca6a",
