@@ -157,7 +157,7 @@ test('a send naming recipientPrincipalIds addresses only the participants of the
         })
     );
 
-    assertEquals(ports.messages.map((message) => message.recipientRoles), [['recipient-b']]);
+    expect(ports.messages.map((message) => message.recipientRoles)).toEqual([['recipient-b']]);
 });
 
 /** A ws live send on one stream, one value retained, whose lane opens one opportunity per cadence. */
