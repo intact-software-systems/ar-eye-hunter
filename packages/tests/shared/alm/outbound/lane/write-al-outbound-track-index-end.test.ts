@@ -138,7 +138,7 @@ describe('the index end write', () => {
     it('clears the sequence a row ended without recording, reading the stored row its commit did not write', async () => {
         const store = { readStoredMessage: vi.fn(async () => undefined), commitOrderingMessageEnd: vi.fn(async () => 'deleted' as const) };
 
-        await writeALOutboundTrackIndexEnd(store, msg, committed({ kind: 'failed', detail: 'broken' }));
+        await writeALOutboundTrackIndexEnd({ store, msg, cause: committed({ kind: 'failed', detail: 'broken' }), diagnostics: undefined });
 
         expect(store.readStoredMessage).toHaveBeenCalledWith(msg.id.msgId);
         expect(store.commitOrderingMessageEnd).toHaveBeenCalledWith({ trackKey: 'game-1:a:1', seq: 2, msgId: msg.id.msgId });
@@ -147,14 +147,19 @@ describe('the index end write', () => {
     it('keeps the sequence of a row its own commit recorded, without a read', async () => {
         const store = { readStoredMessage: vi.fn(async () => undefined), commitOrderingMessageEnd: vi.fn(async () => 'deleted' as const) };
 
-        await writeALOutboundTrackIndexEnd(store, msg, committed(ADMITTED, { sentPositions: { b: 1 }, policy: POLICY }));
+        await writeALOutboundTrackIndexEnd({
+            store,
+            msg,
+            cause: committed(ADMITTED, { sentPositions: { b: 1 }, policy: POLICY }),
+            diagnostics: undefined
+        });
 
         expect(store.readStoredMessage).not.toHaveBeenCalled();
         expect(store.commitOrderingMessageEnd).not.toHaveBeenCalled();
     });
 
-    it('settles a store failure of the end as a logged value, so the row keeps the outcome it had', async () => {
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    it('reports a store failure of the end as a track-index-end diagnostic, so the row keeps the outcome it had', async () => {
+        const diagnostics = vi.fn();
         const store = {
             readStoredMessage: vi.fn(async () => undefined),
             commitOrderingMessageEnd: vi.fn(async (): Promise<'deleted'> => {
@@ -162,8 +167,35 @@ describe('the index end write', () => {
             })
         };
 
-        await expect(writeALOutboundTrackIndexEnd(store, msg, 'failed')).resolves.toBeUndefined();
-        expect(consoleError).toHaveBeenCalledWith('Outbound track index end failed', expect.objectContaining({ msgId: msg.id.msgId }));
-        consoleError.mockRestore();
+        await expect(writeALOutboundTrackIndexEnd({ store, msg, cause: 'failed', diagnostics })).resolves.toBeUndefined();
+        expect(diagnostics).toHaveBeenCalledTimes(1);
+        expect(diagnostics).toHaveBeenCalledWith(
+            expect.objectContaining({ kind: 'track-index-end', msgId: msg.id.msgId, trackKey: 'game-1:a:1', seq: 2, outcome: 'failed' })
+        );
+    });
+
+    it.each([
+        ['absent' as const, ['absent']],
+        ['other-message' as const, ['other-message']],
+        ['conflict' as const, ['conflict']],
+        ['deleted' as const, []]
+    ])('reports an end answered absent, other-message or conflict once each and never a deleted one: %s', async (answer, outcomes) => {
+        const diagnostics = vi.fn();
+        const store = { readStoredMessage: vi.fn(async () => undefined), commitOrderingMessageEnd: vi.fn(async () => answer) };
+
+        await writeALOutboundTrackIndexEnd({ store, msg, cause: 'failed', diagnostics });
+
+        expect(store.commitOrderingMessageEnd).toHaveBeenCalledTimes(1);
+        expect(diagnostics.mock.calls.map(([event]) => event.outcome)).toEqual(outcomes);
+    });
+
+    it('writes no diagnostic for a row without a track', async () => {
+        const diagnostics = vi.fn();
+        const store = { readStoredMessage: vi.fn(async () => undefined), commitOrderingMessageEnd: vi.fn(async () => 'absent' as const) };
+
+        await writeALOutboundTrackIndexEnd({ store, msg: { ...msg, ordering: undefined }, cause: 'failed', diagnostics });
+
+        expect(diagnostics).not.toHaveBeenCalled();
+        expect(store.readStoredMessage).not.toHaveBeenCalled();
     });
 });

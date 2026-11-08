@@ -48,6 +48,7 @@ const ADMITTED_AUDIENCE = ['a', 'b'];
 const REPAIR_ATTEMPT_HINT = /:repair-hint:[^:]+:b:[^:]+:([0-9,-]+):/;
 
 type ControlAdmission = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'control-admission'; }>;
+type TrackIndexEnd = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'track-index-end'; }>;
 
 interface OrderedServer {
     readonly service: WsQueueBoxServerService;
@@ -55,6 +56,7 @@ interface OrderedServer {
     readonly sockets: Readonly<Record<string, SimulatedWebSocket>>;
     readonly clock: { nowMs: number; };
     readonly controlAdmissions: ControlAdmission[];
+    readonly trackIndexEnds: TrackIndexEnd[];
     readonly settlements: ALDeliverySettlement[];
     /** The member count of each dequeue group that committed under one fence. */
     readonly groupCommits: number[];
@@ -531,9 +533,8 @@ describe.each([
         expect(await server.stores.admissionStore.listOrderingMessages(TRACK_KEY)).toEqual([{ seq: 2, msgId: 's-event-2' }]);
     });
 
-    it('keeps a failed row\'s outcome when its index end cannot be written', async () => {
+    it('keeps a failed row\'s outcome and reports its unwritten index end as a diagnostic', async () => {
         const server = await createOrderedServer({ cluster });
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         vi.spyOn(server.stores.admissionStore, 'commitOrderingMessageEnd').mockRejectedValue(new Error('Index end unavailable'));
         await writeProducerRow(server, producerEvent(1), ['b'], { provenanceFailure: 'corrupt' });
 
@@ -541,7 +542,7 @@ describe.each([
             await runEngineTicking(server, () => undefined);
             return (await server.outbox.getItem(producerEvent(1).route))?.status;
         }).toBe(EntityStatus.NON_RETRYABLE);
-        expect(consoleError).toHaveBeenCalledWith('Outbound track index end failed', expect.objectContaining({ msgId: 's-event-1' }));
+        expect(server.trackIndexEnds).toEqual([expect.objectContaining({ kind: 'track-index-end', msgId: 's-event-1', outcome: 'failed' })]);
     });
 
     it('never waits for a sequence nobody wrote: 3 then 5 deliver in order with no hold on 4', async () => {
@@ -574,6 +575,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     }
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const controlAdmissions: ControlAdmission[] = [];
+    const trackIndexEnds: TrackIndexEnd[] = [];
     const settlements: ALDeliverySettlement[] = [];
     const groupCommits: number[] = [];
     const orderedDispatches: string[] = [];
@@ -622,6 +624,9 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
             if (event.kind === 'control-admission') {
                 controlAdmissions.push(event);
             }
+            if (event.kind === 'track-index-end') {
+                trackIndexEnds.push(event);
+            }
         },
         outboundSettlements: (settlement) => settlements.push(settlement),
         dequeueTiming: (observation) => {
@@ -649,6 +654,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
         sockets,
         clock,
         controlAdmissions,
+        trackIndexEnds,
         settlements,
         groupCommits,
         orderedDispatches,

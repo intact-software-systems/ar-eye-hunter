@@ -14,7 +14,6 @@ import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-obse
 import { toKeyAsString, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { settleAllInOrder } from '../../../resilience/settle-all-in-order.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
-import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
     ALAdmissionReadSession,
     ALAdmissionWorkBackend,
@@ -80,7 +79,6 @@ import {
 } from './al-outbound-canonical-fact-writes.ts';
 import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
-import { toALOutboundOrderingMessageKey } from './al-outbound-ordering-track-keys.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 import type {
     ALOutboundRoomSentFloorChange,
@@ -736,14 +734,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     async commitOrderingMessageEnd(
         input: { trackKey: string; seq: number; msgId: string; }
     ): Promise<'deleted' | 'absent' | 'other-message' | 'conflict'> {
-        const key = toALOutboundOrderingMessageKey(this.namespace, input.trackKey, input.seq);
         const writes = this.mutations.computeStateWrites(
             [{ kind: 'delete-ordering-message', trackKey: input.trackKey, seq: input.seq }],
             this.nowMs()
         );
         try {
             return await this.backend.write(async (transaction) => {
-                const named = await this.reads.readValue(transaction, key, decodeALAdmissionString);
+                const named = await this.reads.readOrderingMessageId(transaction, input.trackKey, input.seq);
                 if (named !== input.msgId) {
                     return named === undefined ? 'absent' : 'other-message';
                 }
