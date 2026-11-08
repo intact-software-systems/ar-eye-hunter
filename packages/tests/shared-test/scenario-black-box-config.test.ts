@@ -99,7 +99,7 @@ async function tryStartHeaderEchoServer(): Promise<{ baseUrl: string; close: () 
     }
     catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown; }).code)
+            ? String(error.code)
             : '';
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;

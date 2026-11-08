@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createRtcBaselineBunFilePort } from '../../../baseline/runtime/rtc-baseline-bun-file-port.ts';
+import { createRtcBaselineBunFilePort } from '../../../baseline/runtime/create-rtc-baseline-bun-file-port.ts';
 import type { RtcBaselineBunFile, RtcBaselineBunPort } from '../../../baseline/runtime/rtc-baseline-bun-port.ts';
 
 class AlreadyExists extends Error {}

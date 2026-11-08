@@ -9,7 +9,7 @@ import type {
 } from '../contracts/rtc-baseline-contracts.ts';
 import type { RtcBaselineFilePort } from '../evidence/rtc-baseline-file-port.ts';
 import type { RtcBaselineWriterLockRuntime } from '../evidence/rtc-baseline-writer-lock.ts';
-import { createRtcBaselineBunFilePort } from './rtc-baseline-bun-file-port.ts';
+import { createRtcBaselineBunFilePort } from './create-rtc-baseline-bun-file-port.ts';
 import type { RtcBaselineBunPort } from './rtc-baseline-bun-port.ts';
 export type { RtcBaselineBunPort } from './rtc-baseline-bun-port.ts';
 

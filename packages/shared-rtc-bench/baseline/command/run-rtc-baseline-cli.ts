@@ -19,7 +19,11 @@ import {
     type RtcPerformanceObservationCliDependencies
 } from '../observation/rtc-performance-observation-cli.ts';
 import { createBunRtcBaselineAdapters } from '../runtime/rtc-baseline-bun-adapters.ts';
-import type { RtcBaselineBunFile, RtcBaselineBunPort } from '../runtime/rtc-baseline-bun-port.ts';
+import type {
+    RtcBaselineBunFile,
+    RtcBaselineBunFileInfo,
+    RtcBaselineBunPort
+} from '../runtime/rtc-baseline-bun-port.ts';
 import { createRtcBaselineBunRuntime } from '../runtime/rtc-baseline-bun-runtime.ts';
 import {
     resolveRtcBaselineCaptureAdmission,
@@ -240,7 +244,7 @@ async function translateError<Value>(operation: () => Promise<Value>): Promise<V
     }
 }
 
-function toFileInfo(stat: Stats) {
+function toFileInfo(stat: Stats): RtcBaselineBunFileInfo {
     return {
         isFile: stat.isFile(),
         isDirectory: stat.isDirectory(),

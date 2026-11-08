@@ -1,4 +1,4 @@
-interface RtcBaselineBunFileInfo {
+export interface RtcBaselineBunFileInfo {
     isFile: boolean;
     isDirectory: boolean;
     isSymlink: boolean;
