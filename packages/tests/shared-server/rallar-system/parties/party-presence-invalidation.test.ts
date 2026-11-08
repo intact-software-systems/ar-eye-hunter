@@ -39,6 +39,7 @@ import type { ResourceInboxTestStorage } from '../../queuebox/resource-inbox-tes
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { putAuthorisedWsTestTicket } from '../client-state/authorised-ws-test-ticket.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../client-state/client-state-test-runtime.ts';
 import {
     createRuntime,
     ref,
@@ -94,6 +95,7 @@ async function presenceFixture(storage: ResourceInboxTestStorage): Promise<Party
                 nowEpochMs: party.clock.now,
                 expireAtEpochMs: party.clock.now + 60000,
                 serviceId: 'presence-test',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 traceId: 'presence-test-trace',
                 eventId: input.commandId,
                 attemptCount: 1,
@@ -301,7 +303,12 @@ describe('party views follow semantic client presence', () => {
                 resourceInboxResultsRepository: new ResourceInboxResultsRepository(storage.sql),
                 database: storage.sql,
                 clientStateService: fixture.clients
-            }, { serviceId: 'presence-test', finishedRetentionMs: 60000, disconnectedSessionRetentionMs: 600000 });
+            }, {
+                serviceId: 'presence-test',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
+                finishedRetentionMs: 60000,
+                disconnectedSessionRetentionMs: 600000
+            });
             const entry = await service.enqueueExpiredSessions(fixture.party.clock.now);
             await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience(0));
             expect((await entries.entries.findByKey(entry.key))?.status).toBe(EntityStatus.COMPLETED);
@@ -386,7 +393,12 @@ describe('party views follow semantic client presence', () => {
                 resourceInboxResultsRepository: new ResourceInboxResultsRepository(storage.sql),
                 database: storage.sql,
                 clientStateService: fixture.clients
-            }, { serviceId: 'presence-test', finishedRetentionMs: 60000, disconnectedSessionRetentionMs: 600000 });
+            }, {
+                serviceId: 'presence-test',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
+                finishedRetentionMs: 60000,
+                disconnectedSessionRetentionMs: 600000
+            });
             const session = fixture.party.sessions[0]!;
             const ticketDigest = await putAuthorisedWsTestTicket(fixture.party.auth, session);
             for (const generationId of ['generation-new', 'generation-replay']) {

@@ -23,6 +23,7 @@ import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server
 
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
@@ -117,6 +118,7 @@ async function preparePGliteClientEvent(
             traceId: 'trace-pglite-client-event-collision-test-runtime',
             nowEpochMs,
             serviceId: 'pglite-client-service',
+            wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId,
             attemptCount: 1,
             expireAtEpochMs: FUTURE_MS,

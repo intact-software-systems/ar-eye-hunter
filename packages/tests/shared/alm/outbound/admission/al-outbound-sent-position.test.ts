@@ -12,8 +12,10 @@ import {
 } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
+    decodeALOutboundOrderingMessageKey,
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
+    toALOutboundOrderingTrackPrefix,
     toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
@@ -58,6 +60,36 @@ describe('the sent-position row key', () => {
 
     it('keeps a track and a recipient apart whatever characters they hold', () => {
         expect(toALOutboundSentPositionKey(NAMESPACE, 'track:b', 'c')).not.toBe(toALOutboundSentPositionKey(NAMESPACE, 'track', 'b:c'));
+    });
+});
+
+describe('the ordering-message key family of one track', () => {
+    it('names every sequence of one track and none of a track sharing its prefix', () => {
+        const prefix = toALOutboundOrderingTrackPrefix(NAMESPACE, 'game-1:a:1');
+
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-1:a:1', 1).startsWith(prefix)).toBe(true);
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-1:a:1', 12).startsWith(prefix)).toBe(true);
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-10:a:1', 1).startsWith(prefix)).toBe(false);
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-1:a:10', 1).startsWith(prefix)).toBe(false);
+    });
+
+    it('keeps a track whose key holds a quote and a comma apart from its neighbour', () => {
+        const prefix = toALOutboundOrderingTrackPrefix(NAMESPACE, 'game-"1",a:1');
+
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-"1",a:1', 3).startsWith(prefix)).toBe(true);
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-"1"', 3).startsWith(prefix)).toBe(false);
+        expect(toALOutboundOrderingMessageKey(NAMESPACE, 'game-"1",a:10', 3).startsWith(prefix)).toBe(false);
+    });
+
+    it('decodes the track and the sequence a key names, and nothing from a key of another family', () => {
+        const key = toALOutboundOrderingMessageKey(NAMESPACE, TRACK_KEY, 7);
+
+        expect(decodeALOutboundOrderingMessageKey(NAMESPACE, key)).toEqual({ trackKey: TRACK_KEY, seq: 7 });
+        expect(decodeALOutboundOrderingMessageKey('other', key)).toBeUndefined();
+        expect(decodeALOutboundOrderingMessageKey(NAMESPACE, toALOutboundOrderingHeadKey(NAMESPACE, TRACK_KEY))).toBeUndefined();
+        expect(decodeALOutboundOrderingMessageKey(NAMESPACE, `${NAMESPACE}:ordering-message:["track"]`)).toBeUndefined();
+        expect(decodeALOutboundOrderingMessageKey(NAMESPACE, `${NAMESPACE}:ordering-message:["track","1"]`)).toBeUndefined();
+        expect(decodeALOutboundOrderingMessageKey(NAMESPACE, `${NAMESPACE}:ordering-message:["track",1`)).toBeUndefined();
     });
 });
 

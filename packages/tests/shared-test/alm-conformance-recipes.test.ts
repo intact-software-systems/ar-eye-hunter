@@ -222,6 +222,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
+        'server-ordered-entry',
         'capacity',
         'capacity-age',
         'capacity-tracks',
@@ -309,6 +310,14 @@ const SCENARIO_KEYS_BY_CARRIER = {
     ]
 } as const;
 
+/** The roles of a cell the carrier list interleaves among the two-role cells. */
+function toInterleavedRoles(key: string): readonly string[] {
+    if (key === 'paced-isolation-lists') {
+        return ['sender', 'receiver', 'recipient-b'];
+    }
+    return key === 'server-ordered-entry' ? ['sender', 'receiver', 'sibling'] : ['sender', 'receiver'];
+}
+
 function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
     return scenarios.flatMap((scenario) => [
         scenario.sender,
@@ -351,11 +360,9 @@ describe('alm-conformance recipe family', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
                 .toEqual([
-                    // The paced list-isolation cell sits among the paced cells, the one of them with a second recipient.
-                    ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) =>
-                        (key === 'paced-isolation-lists' ? ['sender', 'receiver', 'recipient-b'] : ['sender', 'receiver'])
-                            .map((role) => `alm-${carrier}-${key}-${role}`)
-                    ),
+                    // The paced list-isolation cell sits among the paced cells, the one of them with a second recipient;
+                    // the server-ordered entry cell sits beside the server-originated one, with the principal's sibling.
+                    ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => toInterleavedRoles(key).map((role) => `alm-${carrier}-${key}-${role}`)),
                     ...[...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier], ...MEMBERSHIP_FENCE_KEYS_BY_CARRIER[carrier]].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     ),
@@ -402,7 +409,8 @@ describe('alm-conformance recipe family', () => {
                 const threeRoles = threeAgentIds.includes(scenario.scenarioId);
                 const twoPages = ['durable-takeover', 'flush-on-hide', 'subscription-successor'].includes(scenario.scenarioId);
                 const fourRoles = FOUR_ROLE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
-                const twoSessions = fourRoles || AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
+                const twoSessions = fourRoles || scenario.scenarioId === 'server-ordered-entry' ||
+                    AUDIENCE_KEYS.some((scenarioId) => scenarioId === scenario.scenarioId);
                 expect(scenario.roles, scenario.scenarioKey).toEqual(
                     threeRoles
                         ? ['sender', 'receiver', 'recipient-b']

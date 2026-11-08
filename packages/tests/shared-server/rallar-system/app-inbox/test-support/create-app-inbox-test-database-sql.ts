@@ -4,6 +4,7 @@ import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import type { ResourceInboxEntryInsertRow } from '@shared-server/queuebox/postgres/resource-inbox-entry-insert-values.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { RuntimeStateOptimisticTransactionRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { validateAuthoritativeClientEvent, validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
@@ -24,6 +25,13 @@ interface CreateAppInboxTestTransactionSqlInput {
     readonly state: AppInboxTestDatabaseState;
     readonly pending: AppInboxTestPendingWrites;
     readonly runtime: AppInboxTestSqlExecution['runtime'];
+}
+
+interface AppOutboxTrackIndexParameterRow {
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: string;
+    readonly expiresAt: string;
 }
 
 interface ResourceInboxResultDatabaseRow {
@@ -89,6 +97,15 @@ export function createAppInboxTestDatabaseSql(
 async function executeAppInboxTestSql(
     input: AppInboxTestSqlExecution
 ): Promise<PSqlRows> {
+    if (isAppOutboxTrackIndexedInsert(input.query)) {
+        const indexed = await writeAppOutboxTrackIndexRows(
+            requireTransactionRuntime(input.runtime),
+            toAppOutboxTrackIndexParameterRows(input.values)
+        );
+        const outbox = toAppOutboxInsertParameterRows(input.query, input.values)
+            .flatMap((values) => insertOutboxEntry(input, toInboxEntry(values)));
+        return [...outbox.map((row) => ({ ...row, store_key: null })), ...indexed];
+    }
     const runtimeStateResult = await executeRuntimeStateSql(input);
     if (runtimeStateResult) {
         return runtimeStateResult;
@@ -323,6 +340,36 @@ function insertOutboxEntry(input: AppInboxTestSqlExecution, entry: ResourceEntry
     }
     input.pending.outbox.set(key, entry);
     return [toInboxRow(entry)];
+}
+
+/** The one statement that writes ordered WS outbox rows and their track index rows together. */
+export function isAppOutboxTrackIndexedInsert(query: string): boolean {
+    return query.includes('insert into resource_inbox') && query.includes('track_index as');
+}
+
+/** The track index rows of that statement: its second recordset, after the outbox rows. */
+export function toAppOutboxTrackIndexParameterRows(
+    values: readonly PSqlParameter[]
+): readonly AppOutboxTrackIndexParameterRow[] {
+    return values[1] as readonly AppOutboxTrackIndexParameterRow[];
+}
+
+/**
+ * Insert-only, as the statement is: a live row is left as it is and comes back unnamed; `insertIfAbsent` writes an
+ * expired one over, one revision past it.
+ */
+export async function writeAppOutboxTrackIndexRows(
+    runtime: Pick<RuntimeStateOptimisticTransactionRepositoryLike, 'insertIfAbsent'>,
+    rows: readonly AppOutboxTrackIndexParameterRow[]
+): Promise<PSqlRows> {
+    const written: object[] = [];
+    for (const { namespace, key, value, expiresAt } of rows) {
+        const result = await runtime.insertIfAbsent({ namespace, key, value, expireAtTimestamp: Date.parse(expiresAt) });
+        if (result.status === 'applied') {
+            written.push({ ri_resource_id: null, ri_topic_id: null, fk_ext_bank_id: null, store_key: key });
+        }
+    }
+    return written;
 }
 
 /** The positional values of each row an outbox insert writes: one row, or every row of the multi-row form. */

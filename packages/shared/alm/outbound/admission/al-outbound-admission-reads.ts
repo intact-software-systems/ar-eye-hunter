@@ -39,6 +39,11 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import {
+    isALOutboundRowUnrecorded,
+    type ALOrderingIndexedSequence,
+    type ALOrderingStoredPredecessors
+} from '../lane/compute-al-outbound-group-sent-positions.ts';
 import { toALOutboundSendEffectId } from '../to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fingerprint.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
@@ -73,8 +78,10 @@ import {
 } from './al-outbound-admission-validation.ts';
 import type { ALOutboundCapturedPolicyTimingInvocation } from './al-outbound-captured-policy-timing.ts';
 import {
+    decodeALOutboundOrderingMessageKey,
     toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
+    toALOutboundOrderingTrackPrefix,
     toALOutboundRoomSentFloorKey,
     toALOutboundSentPositionKey
 } from './al-outbound-ordering-track-keys.ts';
@@ -379,6 +386,66 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return sent;
     }
 
+    /** One track's live index rows, ascending; a key under its prefix that names no sequence of it is corrupt. */
+    async listOrderingMessages(
+        session: ALAdmissionReadSession,
+        trackKey: string
+    ): Promise<readonly ALOrderingIndexedSequence[]> {
+        this.readOperationCount += 1;
+        const rows = await session.list(
+            toALOutboundOrderingTrackPrefix(this.namespace, trackKey),
+            decodeALAdmissionString
+        );
+        return rows.map(({ key, value }) => {
+            const position = decodeALOutboundOrderingMessageKey(this.namespace, key);
+            if (position?.trackKey !== trackKey) {
+                throw new ALAdmissionCorruptionError(
+                    key,
+                    new TypeError('Ordering index key names no sequence of its track')
+                );
+            }
+            return { seq: position.seq, msgId: value };
+        }).toSorted((left, right) => left.seq - right.seq);
+    }
+
+    /**
+     * The stored rows of a track's listed sequences, read from the highest sequence down to the first whose row is
+     * present and settled; the sequences below it are not read. A message never stored has no row.
+     */
+    async readStoredPredecessorsToSettled(
+        session: ALAdmissionReadSession,
+        indexed: readonly ALOrderingIndexedSequence[],
+        nowMs: number
+    ): Promise<ALOrderingStoredPredecessors> {
+        const read: ALOrderingIndexedSequence[] = [];
+        const stored = new Map<string, ALStoredOutboundMessage>();
+        for (const sequence of indexed.toSorted((left, right) => right.seq - left.seq)) {
+            read.push(sequence);
+            const row = await this.readStoredMessage(session, sequence.msgId);
+            if (row === undefined) {
+                continue;
+            }
+            stored.set(sequence.msgId, row);
+            // A stored row exists only after a dispatch that passed the full wait in this build, so whatever kind it
+            // settled as (recorded, admitted to no audience, expired, non-persist) no sequence below it is pending.
+            if (!isALOutboundRowUnrecorded(row, nowMs)) {
+                break;
+            }
+        }
+        return { indexed: read.toReversed(), stored };
+    }
+
+    /** The message one sequence's index row names, and that message's stored row. */
+    async readOrderingPredecessor(
+        session: ALAdmissionReadSession,
+        trackKey: string,
+        seq: number
+    ): Promise<{ msgId: string; stored: ALStoredOutboundMessage | undefined; } | undefined> {
+        const key = toALOutboundOrderingMessageKey(this.namespace, trackKey, seq);
+        const msgId = await this.readValue(session, key, decodeALAdmissionString);
+        return msgId === undefined ? undefined : { msgId, stored: await this.readStoredMessage(session, msgId) };
+    }
+
     async readPendingAck(
         session: ALAdmissionReadSession,
         receipt: ALOutboundPendingAckRef
@@ -634,7 +701,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return { pendingAck, repairAttempt, acks, nacks };
     }
 
-    private async readValue<V>(
+    async readValue<V>(
         session: ALAdmissionReadSession,
         key: string,
         decode: ALAdmissionDecoder<V>

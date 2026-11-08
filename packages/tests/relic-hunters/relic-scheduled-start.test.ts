@@ -6,7 +6,7 @@ import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 describe('scheduled Relic authority', () => {
     it('refuses an early start and evaluates a queued command with the fresh attempt clock', async () => {
-        const fixture = await createGameFixture('scheduled-expedition', 30_000);
+        const fixture = await createGameFixture('scheduled-expedition', { scheduledStartOffsetMs: 30_000 });
         try {
             await connectGameSession(fixture, fixture.owner);
             const initial = requireRelicCommandApplied(applyRelicCommand(createRelicGame(fixture.ref.groupId, fixture.ref.groupId, fixture.nowEpochMs), {

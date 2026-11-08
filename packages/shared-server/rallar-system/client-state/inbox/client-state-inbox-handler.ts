@@ -102,6 +102,7 @@ export namespace ClientStateInboxHandler {
         readonly mutationTiming: ClientStateMutationTiming;
         readonly wakeQueue?: () => void;
         readonly serviceId: string;
+        readonly wsOutboundAdmissionNamespace: string;
         readonly disconnectedSessionRetentionMs: number;
         /** How long a command's idempotency record and state-sync outbox rows stay after it was enqueued. */
         readonly finishedRetentionMs: number;
@@ -537,12 +538,13 @@ function toClientMutationPersistedFacts(
     commandId: string,
     dependencies: Pick<
         ClientStateInboxHandler.Input,
-        'serviceId' | 'disconnectedSessionRetentionMs' | 'finishedRetentionMs'
+        'serviceId' | 'wsOutboundAdmissionNamespace' | 'disconnectedSessionRetentionMs' | 'finishedRetentionMs'
     >
 ): Omit<ClientMutationPersistedFacts, 'commandHash'> {
     return {
         nowEpochMs: context.message.id.ts,
         serviceId: dependencies.serviceId,
+        wsOutboundAdmissionNamespace: dependencies.wsOutboundAdmissionNamespace,
         // The enqueue instant makes the event one per execution: a request executed again after its retention window.
         eventId: `client-event:${
             JSON.stringify([

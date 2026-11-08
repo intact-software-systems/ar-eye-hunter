@@ -344,7 +344,7 @@ describe('outbound admission verdict', () => {
         });
         const commitInput = {
             msg: message,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner,
             intent: 'enqueue' as const,
             phase: 'immediate' as const,
@@ -376,7 +376,7 @@ describe('outbound admission verdict', () => {
 
         const first = await admission.commit({
             msg: newer,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: toPlan(newer),
             intent: 'enqueue',
             phase: 'immediate',
@@ -386,7 +386,7 @@ describe('outbound admission verdict', () => {
         expect(first.committed).toBe(true);
         const second = await admission.commit({
             msg: older,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: toPlan(older),
             intent: 'enqueue',
             phase: 'immediate',
@@ -448,7 +448,7 @@ function toSupersedingCommit(
 ): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
     return {
         msg,
-        followsBatchPredecessor: false,
+        batchPredecessorSeqs: [],
         planner: () => ({
             msg,
             dropReasonCode: undefined,

@@ -681,7 +681,7 @@ function toALWorkCompletedKeys(releases: readonly ALWorkRelease[]): ReadonlySet<
 }
 
 /** The one place a thrown claim becomes an outcome; the caught value is normalized before it. */
-function toALWorkFailureOutcome(error: Error): ALWorkOutcome {
+export function toALWorkFailureOutcome(error: Error): ALWorkOutcome {
     return error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException
         ? { status: 'non-retryable' }
         : { status: 'retry' };

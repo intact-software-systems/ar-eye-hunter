@@ -14,6 +14,7 @@ import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-obse
 import { toKeyAsString, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { settleAllInOrder } from '../../../resilience/settle-all-in-order.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
+import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
     ALAdmissionReadSession,
     ALAdmissionWorkBackend,
@@ -53,6 +54,11 @@ import {
     type CreateALOutboundControlAdmissionInput
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
+import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
+import type {
+    ALOrderingIndexedSequence,
+    ALOrderingStoredPredecessors
+} from '../lane/compute-al-outbound-group-sent-positions.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -74,6 +80,7 @@ import {
 } from './al-outbound-canonical-fact-writes.ts';
 import type { ALOutboundCapturedPolicyTiming } from './al-outbound-captured-policy-timing.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
+import { toALOutboundOrderingMessageKey } from './al-outbound-ordering-track-keys.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 import type {
     ALOutboundRoomSentFloorChange,
@@ -443,6 +450,39 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         seq: number
     ) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
+    /** One track's live ordering index, ascending by sequence, in one list. */
+    readonly listOrderingMessages: (trackKey: string) => Promise<readonly ALOrderingIndexedSequence[]>;
+
+    /**
+     * The stored rows of a track's listed sequences in one session, from the highest sequence down to the first
+     * settled one; the sequences below it are not read.
+     */
+    readonly readStoredPredecessorsToSettled: (
+        indexed: readonly ALOrderingIndexedSequence[],
+        nowMs: number
+    ) => Promise<ALOrderingStoredPredecessors>;
+
+    /** The message one sequence's index row names and its stored row, in one session. */
+    readonly readOrderingPredecessor: (
+        trackKey: string,
+        seq: number
+    ) => Promise<{ msgId: string; stored: ALStoredOutboundMessage | undefined; } | undefined>;
+
+    /** Removes one sequence's index row only while it still names the message that ended unrecorded. */
+    readonly commitOrderingMessageEnd: (
+        input: { trackKey: string; seq: number; msgId: string; }
+    ) => Promise<'deleted' | 'absent' | 'other-message' | 'conflict'>;
+
+    /**
+     * Records recipients the server sent its own message nothing outside the audience of its pending receipt, under the
+     * origin's version fence: `absent` when no receipt is pending (none, or one already complete), `committed` without
+     * a write when every recipient is already outside.
+     */
+    readonly commitOutsideAudience: (
+        receipt: ALOutboundPendingAckRef,
+        recipientPeerIds: readonly string[]
+    ) => Promise<'committed' | 'conflict' | 'absent'>;
+
     /** The receipt state in its own session; only tests read it. */
     readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
@@ -503,6 +543,13 @@ export function createVolatileALOutboundAdmissionStore<TPrepared>(
 interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly durability: ALStoreDurability;
 }
+
+/** A message that expired before its receipt's outside class was written has no receipt left to record in. */
+const OUTSIDE_AUDIENCE_COMMIT_RESULTS = {
+    committed: 'committed',
+    conflict: 'conflict',
+    expired: 'absent'
+} as const satisfies Record<'committed' | 'conflict' | 'expired', 'committed' | 'conflict' | 'absent'>;
 
 class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdmissionStore<TPrepared> {
     readonly namespace: string;
@@ -664,6 +711,68 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {
         return await this.backend.readWithin((session) => this.reads.readSentMessageByOrdering(session, trackKey, seq));
+    }
+
+    async listOrderingMessages(trackKey: string): Promise<readonly ALOrderingIndexedSequence[]> {
+        return await this.backend.readWithin((session) => this.reads.listOrderingMessages(session, trackKey));
+    }
+
+    async readStoredPredecessorsToSettled(
+        indexed: readonly ALOrderingIndexedSequence[],
+        nowMs: number
+    ): Promise<ALOrderingStoredPredecessors> {
+        return await this.backend.readWithin((session) =>
+            this.reads.readStoredPredecessorsToSettled(session, indexed, nowMs)
+        );
+    }
+
+    async readOrderingPredecessor(
+        trackKey: string,
+        seq: number
+    ): Promise<{ msgId: string; stored: ALStoredOutboundMessage | undefined; } | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readOrderingPredecessor(session, trackKey, seq));
+    }
+
+    async commitOrderingMessageEnd(
+        input: { trackKey: string; seq: number; msgId: string; }
+    ): Promise<'deleted' | 'absent' | 'other-message' | 'conflict'> {
+        const key = toALOutboundOrderingMessageKey(this.namespace, input.trackKey, input.seq);
+        const writes = this.mutations.computeStateWrites(
+            [{ kind: 'delete-ordering-message', trackKey: input.trackKey, seq: input.seq }],
+            this.nowMs()
+        );
+        try {
+            return await this.backend.write(async (transaction) => {
+                const named = await this.reads.readValue(transaction, key, decodeALAdmissionString);
+                if (named !== input.msgId) {
+                    return named === undefined ? 'absent' : 'other-message';
+                }
+                await this.mutations.writeStateWrites(transaction, writes);
+                return 'deleted';
+            });
+        }
+        catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) {
+                return 'conflict';
+            }
+            throw error;
+        }
+    }
+
+    async commitOutsideAudience(
+        receipt: ALOutboundPendingAckRef,
+        recipientPeerIds: readonly string[]
+    ): Promise<'committed' | 'conflict' | 'absent'> {
+        const surface = await this.backend.readWithin(async (session) => ({
+            clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId),
+            pending: await this.reads.readPendingAck(session, receipt),
+            stored: await this.reads.readStoredMessage(session, receipt.msgId)
+        }));
+        const commit = toALOutboundOutsideAudienceCommit<TPrepared>({ ...surface, receipt, recipientPeerIds });
+        if (commit.status !== 'write') {
+            return commit.status;
+        }
+        return OUTSIDE_AUDIENCE_COMMIT_RESULTS[await this.commitBundle(commit.bundle)];
     }
 
     async readPendingAck(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {

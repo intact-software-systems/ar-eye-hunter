@@ -259,6 +259,7 @@ export type ClientAuthorisedWsConnectRead = Readonly<{
 export type ClientMutationFacts = Readonly<{
     nowEpochMs: number;
     serviceId: string;
+    wsOutboundAdmissionNamespace: string;
     eventId: string;
     commandHash: string;
     attemptCount: number;

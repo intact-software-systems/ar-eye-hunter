@@ -558,6 +558,8 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   readiness and publish `p5`, which the sibling receives with `ordering-position` `omitted` prior `2` per track and
   without `p3` or `p4`. The sibling holds its election until both producers' `p5` loops end, and no producer
   dispatches a repair or admits a gap NACK about the cell's tracks.
+- `server-ordered-entry` (`ws`, same-principal, full): a principal's second session reads its first client-state event
+  as `entered`, prior 0, on the server's producer track.
 
 `subscription-successor` runs in the `same-context` family over `ws` alone: the harness holds one RTC peer per
 session, so over `rtc` and `rtc-with-ws-fallback` its successor page would wait for RTC readiness while the owner page

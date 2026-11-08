@@ -12,6 +12,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { createApiV1MutationRuntime, type ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import { withPGliteSql } from '../db/pglite-auth-test-harness.ts';
 
 const REF = { applicationId: 'inventory', workspaceId: 'warehouse', groupId: 'stock-room' };
@@ -129,6 +130,7 @@ function createRetentionRuntime(database: PSqlSql, now: () => number): ApiV1Muta
     return createApiV1MutationRuntime({
         database,
         serviceId: 'api-only-retention',
+        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         authCredentialSecret: 'retention-test-secret-at-least-32-characters',
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: now,

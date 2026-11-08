@@ -73,11 +73,15 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
-    it('selects exactly the audience scenarios for the same-principal family on every carrier, each with a sibling', () => {
+    it('selects exactly the audience scenarios and, over ws, the server-ordered entry cell for the same-principal family, each with a sibling', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const samePrincipal = toScenarios(carrier).filter((scenario) => scenario.laneFamily === 'same-principal');
-            expect(samePrincipal.map((scenario) => scenario.scenarioKey), carrier)
-                .toEqual(['principal-delivery', 'fixed-list-delivery', 'world-routing']);
+            expect(samePrincipal.map((scenario) => scenario.scenarioKey), carrier).toEqual([
+                ...(carrier === 'ws' ? ['server-ordered-entry'] : []),
+                'principal-delivery',
+                'fixed-list-delivery',
+                'world-routing'
+            ]);
             expect(samePrincipal.every((scenario) => scenario.sibling !== undefined && scenario.recipientB === undefined), carrier)
                 .toBe(true);
         }

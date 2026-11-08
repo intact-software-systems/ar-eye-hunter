@@ -55,6 +55,7 @@ export type ALOutboundAdmissionMutation =
     | Readonly<
         { kind: 'set-ordering-message'; trackKey: string; seq: number; msgId: string; expireAtTimestamp: number; }
     >
+    | Readonly<{ kind: 'delete-ordering-message'; trackKey: string; seq: number; }>
     | Readonly<{
         kind: 'set-ordering-head';
         trackKey: string;
@@ -356,6 +357,7 @@ export class ALOutboundAdmissionMutations {
             case 'set-repair-attempt':
             case 'set-pending-ack':
                 return this.computeReceiptWrite(mutation, nowMs);
+            case 'delete-ordering-message':
             case 'delete-sent-message':
             case 'delete-pending-ack':
             case 'delete-repair-attempt':
@@ -457,12 +459,17 @@ export class ALOutboundAdmissionMutations {
     }
 
     private toDeletedMutationKey(
-        mutation: Extract<
-            ALOutboundAdmissionMutation,
-            { kind: 'delete-sent-message' | 'delete-pending-ack' | 'delete-repair-attempt'; }
-        >
+        mutation: Extract<ALOutboundAdmissionMutation, {
+            kind:
+                | 'delete-ordering-message'
+                | 'delete-sent-message'
+                | 'delete-pending-ack'
+                | 'delete-repair-attempt';
+        }>
     ): string {
         switch (mutation.kind) {
+            case 'delete-ordering-message':
+                return toALOutboundOrderingMessageKey(this.namespace, mutation.trackKey, mutation.seq);
             case 'delete-sent-message':
                 return toALOutboundSentMessageKey(this.namespace, mutation.msgId);
             case 'delete-pending-ack':

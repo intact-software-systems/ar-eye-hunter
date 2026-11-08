@@ -30,6 +30,7 @@ import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-
 import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-completed-app-inbox-result.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from './authorised-ws-test-ticket.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const CONNECT_TRACE_ID = 'trace-app-client-inbox-authorised-ws';
@@ -457,6 +458,7 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: SERVICE_ID,
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );

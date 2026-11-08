@@ -5,7 +5,7 @@ import { relicMutationPlayerId } from './relic-tournament.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
-    computeAppOutboxInsert,
+    computeWsOutboxInsert,
     type AppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protocol/compute-sha256-canonical-json.ts';
@@ -51,6 +51,7 @@ export interface RelicGamePublicationProvenance {
 
 interface RelicGamePublicationInput {
     readonly read: RelicGameMutationService.Attempt;
+    readonly admissionNamespace: string;
     readonly participation: RelicTournamentParticipation | null;
     readonly previous: RelicGameState | null;
     readonly next: RelicGameState | null;
@@ -82,7 +83,7 @@ export function computeRelicGamePublications(input: RelicGamePublicationInput): 
     const outboxWrites: AppOutboxInsert[] = [];
     const provenance: RelicGamePublicationProvenance[] = [];
     for (const notification of toNotifications(input)) {
-        const publication = toRelicGamePublication(input.read, notification);
+        const publication = toRelicGamePublication(input, notification);
         outboxWrites.push(publication.outbox);
         provenance.push(publication.provenance);
     }
@@ -150,9 +151,10 @@ function toRelicGameMessage(
 
 /** Encodes the final outbox row and its independently checked producer provenance before transaction entry. */
 function toRelicGamePublication(
-    read: RelicGameMutationService.Attempt,
+    input: RelicGamePublicationInput,
     notification: RelicGameNotification
 ): RelicGamePublication {
+    const { read, admissionNamespace } = input;
     const ref = toRelicRoomGroupRef(read.ingress.command.gameId);
     const audience = toRelicGameAudience(read, notification);
     const message = toRelicGameMessage(read, notification, audience);
@@ -171,7 +173,7 @@ function toRelicGamePublication(
         },
         dequeueAudit: { attempts: 0 }
     };
-    const outbox = computeAppOutboxInsert(entry);
+    const outbox = computeWsOutboxInsert({ entry, admissionNamespace });
     const proof: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
         producerKind: 'room-application',

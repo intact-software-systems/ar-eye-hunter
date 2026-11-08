@@ -19,6 +19,7 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../client-state/client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../client-state/test-disconnected-session-retention.ts';
 
 const TEST_SERVICE_ID = 'rallar-middleware-test';
@@ -189,6 +190,7 @@ export function createRallarMiddlewareTestRuntime(
                 {
                     finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: TEST_SERVICE_ID,
+                    wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                     disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
                     wakeOwningQueue: factoryInput.wakeQueueEngine
                 }

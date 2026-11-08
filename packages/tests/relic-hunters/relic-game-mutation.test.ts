@@ -14,7 +14,8 @@ import {
     connectGameSession,
     createGameFixture,
     prepareGameWrite,
-    RELIC_FIXTURE_TRACE_ID
+    RELIC_FIXTURE_TRACE_ID,
+    RELIC_FIXTURE_WS_OUTBOUND_ADMISSION_NAMESPACE
 } from './relic-game-database-fixture.ts';
 
 describe('Relic authoritative save mutations', () => {
@@ -376,6 +377,45 @@ describe('Relic authoritative save mutations', () => {
             expect(current?.submittedPlayerIds).toEqual([fixture.guest.sessionId]);
             expect(current?.players).toHaveLength(3);
             expect(current?.phase).toBe('planning');
+        }
+        finally {
+            await fixture.storage.close();
+        }
+    });
+
+    it('computes a track index for a round transition and none for a snapshot or a hunter event', async () => {
+        const fixture = await createJoinedContinuityFixture();
+        try {
+            const started = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'start-indexed',
+                move: { protocolVersion: RELIC_PROTOCOL_VERSION, gameId: fixture.ref.groupId, kind: 'start-expedition', username: fixture.owner.username }
+            }, null);
+            await fixture.storage.sql.begin((transaction) => fixture.service.write(transaction, started.computed));
+            const submitted = await prepareGameWrite(fixture, {
+                ...fixture.command,
+                operation: 'command',
+                requestId: 'submit-indexed',
+                move: {
+                    protocolVersion: RELIC_PROTOCOL_VERSION,
+                    gameId: fixture.ref.groupId,
+                    kind: 'submit-action',
+                    username: fixture.owner.username,
+                    action: { kind: 'search' }
+                }
+            }, null);
+            const trackIndexByType = [...started.computed.outboxWrites, ...submitted.computed.outboxWrites].map((write) => [
+                decodePersistedALMessage(write.entry.resource).payload.typeId,
+                write.trackIndex === null ? null : write.trackIndex.namespace
+            ]);
+
+            expect(trackIndexByType).toEqual([
+                ['relic.snapshot.v1', null],
+                ['relic.event.v1', RELIC_FIXTURE_WS_OUTBOUND_ADMISSION_NAMESPACE],
+                ['relic.snapshot.v1', null],
+                ['relic.hunter.v1', null]
+            ]);
         }
         finally {
             await fixture.storage.close();

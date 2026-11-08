@@ -148,16 +148,16 @@ describe('readALOutboundDequeueWait', () => {
     )('leaves a $status authority to the planner and states nothing', async (authority) => {
         const hold = createHold([authority]);
 
-        expect(await hold.read()).toEqual({ kind: 'passed', followsBatchPredecessor: false });
+        expect(await hold.read()).toEqual({ kind: 'passed', batchPredecessorSeqs: [] });
         expect(hold.settlements).toEqual([]);
     });
 
     it('passes a row its carrier admits behind its batch predecessor on to the planner, marked so', async () => {
-        const hold = createHold([{ status: 'follows-batch-predecessor' }]);
+        const hold = createHold([{ status: 'follows-batch-predecessor', seqs: [1, 2] }]);
 
         const front = await hold.read();
 
-        expect(front).toEqual({ kind: 'passed', followsBatchPredecessor: true });
+        expect(front).toEqual({ kind: 'passed', batchPredecessorSeqs: [1, 2] });
         expect(toALOutboundDequeueFrontOutcome(front)).toBe('ready');
         expect(hold.settlements).toEqual([]);
     });
@@ -174,7 +174,7 @@ describe('readALOutboundDequeueWait', () => {
                 clock: { nowMs: () => Date.now() },
                 signal: new AbortController().signal
             })
-        ).toEqual({ kind: 'passed', followsBatchPredecessor: false });
+        ).toEqual({ kind: 'passed', batchPredecessorSeqs: [] });
         expect(settlements).toEqual([]);
     });
 });

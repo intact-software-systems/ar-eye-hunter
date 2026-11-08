@@ -24,6 +24,7 @@ import {
     validAuthoritySession,
     validPrincipalCommand
 } from './client-mutation-validation-test-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 describe('client mutation validation', () => {
@@ -90,6 +91,22 @@ describe('client mutation validation', () => {
                     input: {}
                 }),
             'Client mutation authority expiry must follow issuance'
+        );
+    });
+
+    it('refuses facts that name no WS outbound admission namespace', () => {
+        const command = validPrincipalCommand();
+        const facts = Object.fromEntries(
+            Object.entries(command.facts).filter(([key]) => key !== 'wsOutboundAdmissionNamespace')
+        );
+
+        expectRejected(
+            () => assertClientMutationCommand({ ...command, facts }),
+            'Client mutation facts.wsOutboundAdmissionNamespace is required'
+        );
+        expectRejected(
+            () => assertClientMutationCommand({ ...command, facts: { ...command.facts, wsOutboundAdmissionNamespace: '' } }),
+            'Client mutation facts.wsOutboundAdmissionNamespace must be a non-empty string'
         );
     });
 
@@ -163,6 +180,7 @@ function validFacts(): ClientMutationFacts {
         traceId: 'trace-client-mutation-validation',
         nowEpochMs: 1_000,
         serviceId: 'client-state',
+        wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         eventId: 'event-1',
         commandHash: `sha256:${'0'.repeat(64)}`,
         attemptCount: 1,

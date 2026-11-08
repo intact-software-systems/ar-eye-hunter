@@ -90,6 +90,7 @@ import {
     readAfterWrite,
     requireWrite
 } from './client-mutation-compute-test-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const NOW_EPOCH_MS = 1_000;
@@ -612,6 +613,7 @@ function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixt
         },
         wakeQueue: () => actions.push('wake'),
         serviceId: SERVICE_ID,
+        wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     });
     return {

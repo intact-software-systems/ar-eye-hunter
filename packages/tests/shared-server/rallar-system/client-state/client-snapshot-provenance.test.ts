@@ -62,6 +62,7 @@ import {
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
 import { connectCommand, emptyRead } from './client-mutation-compute-test-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 vi.mock('@shared/api/state-snapshot-page.ts', async (importOriginal) => {
@@ -546,6 +547,7 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
     }, {
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'producer-server',
+        wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     });
     return { repository, database, service, reader, state, clientState, now: Date.now() };

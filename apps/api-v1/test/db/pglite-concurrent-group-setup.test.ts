@@ -26,6 +26,7 @@ import { registerGroupStateRoutes } from '../../src/group-state/register-group-s
 import { toApiMutationRouteFailure } from '../../src/routes/api-mutation-route-failure.ts';
 import { createGroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -148,6 +149,7 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
     return createApiV1MutationRuntime({
         database: sql,
         serviceId: 'pglite-ordinary-setup',
+        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         authCredentialSecret: 'group-setup-test-secret'.repeat(2),
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: Date.now,

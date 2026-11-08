@@ -31,6 +31,7 @@ import {
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -56,6 +57,7 @@ function createClientInboxServiceForRegistration(): AppClientInboxService {
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'client-registration-service',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );
@@ -102,6 +104,7 @@ describe('AppClientInbox mutation processing', () => {
                 {
                     finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                     serviceId: 'server-12345678',
+                    wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                     disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
                 }
             );
@@ -157,6 +160,7 @@ function createMutationProcessingHarness(): MutationProcessingHarness {
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         )

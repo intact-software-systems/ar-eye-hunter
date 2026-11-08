@@ -2,6 +2,7 @@ import {
     toALRuntimeStoreId,
     type ALRuntimeStoreId
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import { toALOutboundAdmissionNamespace } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
@@ -71,7 +72,7 @@ export function toBrowserSessionALRuntimeWorkNamespaces(
     return [
         `${toBrowserALRuntimeNamespace(toBrowserSessionALInboundRuntimeStoreId(sessionId))}:inbound:admission`,
         ...toBrowserSessionALOutboundStoreIds(sessionId).map((storeId) =>
-            `${toBrowserALRuntimeNamespace(storeId)}:outbound:admission`
+            toALOutboundAdmissionNamespace(toBrowserALRuntimeNamespace(storeId))
         )
     ];
 }

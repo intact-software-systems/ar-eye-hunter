@@ -54,6 +54,15 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 52
     }),
+    // Whole-file review: the pair's admission store is the one owner of its read sessions and fenced commits; the
+    // server's own outside-audience commit (S5-R8) and a track's ordering index end (S5-R7) read and commit through
+    // them, and the outside-audience decision lives in control/.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/admission/al-outbound-admission-store.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 58
+    }),
     // Whole-file review: canonical outcome, receipt, event privacy and outbox assembly; scheduling membership policy remains in its existing owner.
     Object.freeze({
         path: 'packages/shared-server/rallar-system/group-state/mutation/group-mutation-result.ts',
@@ -554,6 +563,14 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/resilience',
         rule: 'layout.directory-density',
         symbol: 'resilience',
+        maximumMagnitude: 22
+    }),
+    // One owner per concern of the WS server (dequeue authority, live delivery, track order, receipts, ...) beside the
+    // `scope/` subfolder of per-recipient functions; 22 is the current count.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server',
+        rule: 'layout.directory-density',
+        symbol: 'ws-queue-box-server',
         maximumMagnitude: 22
     }),
     // Caught-value boundaries: thrown values reach these callbacks, retry predicates and the abort helpers;
@@ -1186,6 +1203,14 @@ export const reviewedDispositions = Object.freeze([
         rule: 'layout.directory-density',
         symbol: 'black-box-runner',
         maximumMagnitude: 22
+    }),
+    // One ALM conformance cell per file, each named for its scenario id and listed in the catalogue; the families with
+    // several cells already own subfolders, and the server-origin cells stay beside each other at the root.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/scenarios',
+        rule: 'layout.directory-density',
+        symbol: 'scenarios',
+        maximumMagnitude: 21
     }),
     // The receipt validator accepts raw artifact input before narrowing its
     // fields. Its malformed-artifact test deliberately crosses that same
@@ -2220,12 +2245,15 @@ export const reviewedDispositions = Object.freeze([
     }),
     // The decision reads of one dispatch stay together: the one read that also asks
     // whether a repair attempt's sends are already committed keeps the budget charge
-    // under the same sender fence as the plan it charges for.
+    // under the same sender fence as the plan it charges for, and the ordering-index
+    // reads of the track wait (the track's listed sequences, the stored predecessors
+    // down to the first settled one, the one predecessor a held row re-checks) read
+    // the same keys the dispatch commits; 65 is the count at the Slice 5 close.
     Object.freeze({
         path: 'packages/shared/alm/outbound/admission/al-outbound-admission-reads.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 50
+        maximumMagnitude: 65
     }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',

@@ -2,6 +2,7 @@ import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
     resolveServerWsQBoxALOutboundRuntimeStores,
+    toServerWsQBoxALOutboundAdmissionNamespace,
     toServerWsQBoxALRuntimeStoreId
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
@@ -394,6 +395,7 @@ function toMutationRuntimeInput(
         appInboxCompletionNotices,
         database: input.database,
         serviceId: input.serviceId,
+        wsOutboundAdmissionNamespace: toServerWsQBoxALOutboundAdmissionNamespace(input.wsRuntimeName),
         authCredentialSecret: input.authCredentialSecret,
         maxConcurrentPasswordDerivations: input.maxConcurrentPasswordDerivations,
         nowEpochMs: input.nowEpochMs,

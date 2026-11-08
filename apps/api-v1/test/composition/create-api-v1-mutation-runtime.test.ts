@@ -20,6 +20,7 @@ import {
     type ApiV1MutationRuntime
 } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
     const databaseProbe = createDatabaseProbe();
@@ -50,6 +51,7 @@ function createProbedMutationRuntime(database: PSqlSql): ApiV1MutationRuntime {
     return createApiV1MutationRuntime({
         database,
         serviceId: 'api-test',
+        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         authCredentialSecret: 'a'.repeat(32),
         maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => 1_000,

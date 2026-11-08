@@ -27,7 +27,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
-import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { computeAppOutboxInsert, computeWsOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationResult } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-result.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
@@ -191,7 +191,10 @@ describe('client mutation result validation', () => {
             stateSync: shiftedStateSync,
             outbox: shiftedStateSync
                 .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
-                .map(({ entry, message }) => ({ write: computeAppOutboxInsert(entry), message }))
+                .map(({ entry, message }) => ({
+                    write: computeWsOutboxInsert({ entry, admissionNamespace: command.facts.wsOutboundAdmissionNamespace }),
+                    message
+                }))
         };
 
         expect(() =>

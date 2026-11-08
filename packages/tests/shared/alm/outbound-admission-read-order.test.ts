@@ -68,7 +68,7 @@ describe('outbound admission observation order', () => {
         });
         const pending = stale.commit({
             msg: message,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
@@ -87,7 +87,7 @@ describe('outbound admission observation order', () => {
         await captured.promise;
         const won = await winner.commit({
             msg: message,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
@@ -148,7 +148,7 @@ describe('outbound admission observation order', () => {
         });
         await admission.commit({
             msg: message,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
@@ -219,7 +219,7 @@ describe('outbound admission observation order', () => {
         });
         await admission.commit({
             msg: message,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',

@@ -35,6 +35,7 @@ import {
 } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-diagnostic-projection.ts';
 import { createBenchmarkAuthSession } from '../../../../../apps/api-v1/scripts/perf/state-write/state-write-workload.ts';
 import { TestResourceInbox } from '../../rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../../rallar-system/client-state/client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const profile = {
@@ -219,6 +220,7 @@ describe('state-write diagnostic projection', () => {
                 traceId: 'trace-state-write-diagnostic-projection',
                 nowEpochMs: session.issuedAtEpochMs,
                 serviceId: 'PRIVATE-worker-b',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 eventId: 'PRIVATE-read-event',
                 attemptCount: 1,
                 expireAtEpochMs: session.expiresAtEpochMs,

@@ -5,6 +5,7 @@ import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-
 import type { Key, ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { BoundedConcurrencyAdmission } from '../../../resilience/bounded-concurrency-admission.ts';
 import { settleAllInOrder } from '../../../resilience/settle-all-in-order.ts';
+import { toError } from '../../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult, ALWorkBatchDiagnostics } from '../../work/al-work-handler.ts';
@@ -30,6 +31,7 @@ import {
 } from './compute-al-outbound-group-sent-positions.ts';
 import {
     readALOutboundDequeueWait,
+    toALOutboundBatchPredecessorSeqs,
     toALOutboundDequeueFrontOutcome,
     type ALOutboundDequeueFront
 } from './read-al-outbound-dequeue-wait.ts';
@@ -39,6 +41,12 @@ import {
     type ALOutboundClaimAttemptSettlement,
     type ALOutboundClaimObservation
 } from './settle-al-outbound-claim.ts';
+import {
+    resolveALOutboundCompletedTrackIndexEndCause,
+    toALOutboundFailedTrackIndexEndCause,
+    writeALOutboundTrackIndexEnd,
+    type ALOutboundTrackIndexEndCause
+} from './write-al-outbound-track-index-end.ts';
 
 /** How many rows of one dequeued batch read their gate and authority wait at once. */
 const AL_OUTBOUND_DEQUEUED_FRONT_CONCURRENCY = 2;
@@ -206,13 +214,30 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
                 : await this.chargeDequeued(() =>
                     this.finishDequeuedAdmission({ member, read: batch.reads[index]!, commits: batch.commits, index })
                 );
+            await this.writeTrackIndexEnd(
+                member,
+                await resolveALOutboundCompletedTrackIndexEndCause({
+                    outcome,
+                    read: batch.reads[index]!,
+                    commits: batch.commits,
+                    index
+                })
+            );
             this.recordTiming(member, 'admission-end', outcome.status);
             return outcome;
         }
         catch (error) {
             this.recordTiming(member, 'admission-end', 'error');
+            await this.writeTrackIndexEnd(member, toALOutboundFailedTrackIndexEndCause(toError(error)));
             throw error;
         }
+    }
+
+    private async writeTrackIndexEnd(
+        member: ALOutboundDequeuedAdmission.Member<TPrepared>,
+        cause: ALOutboundTrackIndexEndCause<TPrepared>
+    ): Promise<void> {
+        await writeALOutboundTrackIndexEnd(this.dependencies.admissionStore, member.effect.canonicalMessage, cause);
     }
 
     /** The gate and the authority wait: an outcome they decide is never a breaker charge. */
@@ -279,7 +304,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
             this.readDequeuedDispatch({
                 member,
                 msg,
-                followsBatchPredecessor: front.followsBatchPredecessor,
+                batchPredecessorSeqs: front.batchPredecessorSeqs,
                 superseded: readMemberSupersedence(supersedence, position)
             })
         ]));
@@ -297,7 +322,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
     private async readDequeuedDispatch(
         input: ALOutboundDequeuedReadInput<TPrepared>
     ): Promise<ALOutboundDequeuedRead<TPrepared>> {
-        const { member, msg, followsBatchPredecessor, superseded } = input;
+        const { member, msg, batchPredecessorSeqs, superseded } = input;
         const { effect, evidence } = member;
         evidence?.recordStage('dequeue-authority');
         const dequeueAuthority = this.readDequeuedAuthority(member, msg).then((authority) => {
@@ -320,7 +345,7 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
             dispatch: {
                 msg,
                 dequeueAuthority: await dequeueAuthority,
-                followsBatchPredecessor,
+                batchPredecessorSeqs,
                 planner: runtime.planDequeuedMessage,
                 intent: 'dequeue',
                 phase: 'dequeue',
@@ -500,7 +525,7 @@ type ALOutboundDequeuedRead<TPrepared> =
 interface ALOutboundDequeuedReadInput<TPrepared> {
     readonly member: ALOutboundDequeuedAdmission.Member<TPrepared>;
     readonly msg: ALMessage;
-    readonly followsBatchPredecessor: boolean;
+    readonly batchPredecessorSeqs: readonly number[];
     readonly superseded: Promise<boolean>;
 }
 
@@ -532,9 +557,8 @@ function toALOutboundFinishOrder<TPrepared>(
     return toALOutboundFollowerOrder(members.map((_member, index) => index), (index) => {
         const msg = members[index]!.effect.canonicalMessage;
         const front = fronts[index]!;
-        const followsBatchPredecessor = front.status === 'fulfilled' && front.value.kind === 'passed' &&
-            front.value.followsBatchPredecessor;
-        return msg === undefined ? undefined : { msg, followsBatchPredecessor };
+        const batchPredecessorSeqs = toALOutboundBatchPredecessorSeqs(front);
+        return msg === undefined ? undefined : { msg, batchPredecessorSeqs };
     });
 }
 

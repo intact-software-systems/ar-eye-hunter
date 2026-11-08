@@ -173,23 +173,12 @@ and it has no status list.
   minted sequence's continuation across a reload is proven over the reopened
   IndexedDB store (`rtc-durable-owner-recovery.test.ts`), not by an
   `agent.reload` on the lane.
-- Positions for rows a producer writes straight to the outbox (a later outcome
-  after S4-ii, D533): Relic's round transitions and state-sync record no
-  positions, since nothing indexes such a row's `(track, seq)` before its own
-  dequeue; a track index written in the producer's transaction would let the
-  dequeue wait and the record cover them, and generalize the wait beyond the
-  immediate predecessor (D524).
 - Cross-instance positions and outside class (a later outcome after S4-ii,
   D524, D532): in a cluster the dequeuing instance records positions and the
   outside class only for the sessions connected to it, so a session on another
   instance carries no entry and one that another instance's re-check drops
   after the dequeue reads loss until its repair or receipt retry; a merge of
   positions into the sent row under its own fenced write would close it.
-- An outside class for the server's own publications (S4-i, D532): a recipient
-  of a server publication that the dequeue re-check drops or the WS server
-  skips below its position stays expected and unconfirmed, and each retry skips
-  it again, since the outbound pending receipt has no server-authored outside
-  vocabulary.
 - A recorded witnessed position (S4-i, D528): a session that witnesses while
   its own deliveries are pending and then becomes a recipient again resyncs its
   next delivered copy.
@@ -217,10 +206,6 @@ and it has no status list.
   which writes no rows (its sequence stays pending until folded or expired).
   Full closure needs a hold for the receipt and a receipt field that states the
   audience the dequeue recorded, a protocol change.
-- A stuck predecessor on a WS track (S4-i, D524): an admitted row that ends
-  without recording (dropped at dequeue, a non-retryable corruption, superseded
-  or cancelled) holds its track's later rows at dequeue until its own deadline,
-  and a one-track burst drains one held row at a time.
 - `buffered-track-drains` over `ws` (S4-i, D535): the WS server's gap NACK at
   each later frame spends the held frame's one retransmit, so the cell runs over
   `rtc` only; a per-gap rather than per-frame repair budget would restore it.
@@ -238,6 +223,22 @@ and it has no status list.
   `admitted` receipt writes up to 256 shared position rows per receipted send
   (S4-ii); none is measured. `readUsage().ordering` counts position events and
   is not this measurement.
+- One writer for the producer provenance sidecar (S5-i, D541): the
+  `ws-outbox-provenance` rows are written by six raw inserts with differing
+  conflict rules and a guarded-batch path, beside the shared outbox insert that
+  now writes the track index; folding them behind one writer, as the index is,
+  is its own owner.
+- The measured cost of server-side ordered sends (S5-i, D539, D544): every
+  tracked WS dequeue that has not recorded lists its track's index and reads
+  the listed predecessors' stored rows as one session of point reads, from the
+  highest sequence down to the first settled one
+  (`readStoredPredecessorsToSettled`), and a client-state principal track can
+  list every live event of its process within the command's expiry; neither the
+  read count nor the prefix-list size is measured.
+- An observable index end (S5-i, D544): when the write that clears the index
+  row of a tracked row that ended unrecorded fails, it is logged to the console
+  only, and the row's successors wait for its deadline; an outbound
+  diagnostics event would make the failure visible.
 - An admission-time declared publication grant for joiners (D494), with its
   persisted declaration and lifetime rule; today only the creator declares a
   grant at creation, and each joiner is granted explicitly.

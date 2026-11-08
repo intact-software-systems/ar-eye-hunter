@@ -35,6 +35,7 @@ import {
     type ALStorageResetEvent
 } from './open-indexed-db-admission-database.ts';
 
+import { toALOutboundAdmissionNamespace } from './outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
     createVolatileALOutboundAdmissionStore,
@@ -264,7 +265,7 @@ function toIndexedDbALOutboundRuntimeStores<TPrepared>(
         storageHealth: input.storageHealth,
         admissionStore: createALOutboundAdmissionStore({
             nowMs: input.nowMs,
-            namespace: `${input.namespace}:outbound:admission`,
+            namespace: toALOutboundAdmissionNamespace(input.namespace),
             canonicalScope: input.canonicalScope ?? input.namespace,
             orderingHeadNamespace: input.orderingHeadNamespace,
             backend,
@@ -404,7 +405,7 @@ function toInMemoryALOutboundAdmissionStoreInput<TPrepared>(
 ): CreateALOutboundAdmissionStoreInput<TPrepared> {
     return {
         nowMs: input.nowMs,
-        namespace: `${input.namespace}:outbound:admission`,
+        namespace: toALOutboundAdmissionNamespace(input.namespace),
         canonicalScope: input.canonicalScope ?? input.namespace,
         orderingHeadNamespace: input.orderingHeadNamespace,
         backend,

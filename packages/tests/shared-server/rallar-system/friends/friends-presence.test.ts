@@ -35,6 +35,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { expect, it, vi } from 'vitest';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../client-state/client-state-test-runtime.ts';
 import {
     createRuntime,
     ref,
@@ -94,6 +95,7 @@ async function preparePresence(party: PartyServiceFixture, clients: ClientStateS
             nowEpochMs: party.clock.now,
             expireAtEpochMs: party.clock.now + 60000,
             serviceId: 'friends-presence-test',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             traceId: 'friends-presence-trace',
             eventId: input.commandId,
             attemptCount: 1,
@@ -455,7 +457,12 @@ function createExpiryInbox(storage: ResourceInboxTestStorage, test: FriendsPrese
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(storage.sql),
         database: storage.sql,
         clientStateService: test.clients
-    }, { serviceId: 'friends-presence-test', finishedRetentionMs: 60000, disconnectedSessionRetentionMs: 600000 });
+    }, {
+        serviceId: 'friends-presence-test',
+        wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
+        finishedRetentionMs: 60000,
+        disconnectedSessionRetentionMs: 600000
+    });
     return { service, reader, entries };
 }
 

@@ -339,13 +339,27 @@ once, and the rest of the group commits without it. After the commit the dispatc
 under the policy its commit wrote.
 
 The carrier's dequeued-admission authority (`readDequeuedAdmissionAuthority`) reads with the sequences the batch
-claimed. A tracked row may answer `follows-batch-predecessor`: its carrier admits it only behind its predecessor on
-the track (`seq − 1`), which the same batch claimed. Such a row commits in its predecessor's group, whose positions
-chain in sequence order, and after it when the group's members commit alone. When the predecessor reaches no commit
-ahead of it, the row is left to the next pass as `not-ready`, uncharged. The WS server answers so for a row that
-records positions; a row whose predecessor is outside the batch and unrecorded is `held`: the authority names the one
-read that releases it (the predecessor's sent row), and the claim's 50 ms re-check reads that row alone rather than
-the whole authority. Either way a track's positions are written in sequence order.
+claimed. A tracked row may answer `follows-batch-predecessor` with the predecessors it follows
+(`batchPredecessorSeqs`): its carrier admits it only behind those sequences of its track, which the same batch
+claimed. Such a row commits in its predecessors' group, whose positions chain in sequence order, and after them when
+the group's members commit alone. When one of them reaches no commit ahead of it, the row is left to the next pass as
+`not-ready`, uncharged. The WS server's track-order owner
+([`ws-queue-box-server-track-order.ts`](../../services/ws-queue-box-server/ws-queue-box-server-track-order.ts)) answers
+for a tracked row past `seq 1` that has not recorded: it lists the track's ordering index once and reads the listed
+lower sequences' stored rows in one session, from the highest sequence down to the first settled one
+(`readStoredPredecessorsToSettled`), and a lower sequence is pending while its stored row is absent (a producer row
+before its first dequeue) or still has to record (`toALOrderingPendingPredecessors`). The row follows every pending
+one its batch claimed, is `held` on the nearest one its batch did not, and passes with none, so a sequence nobody
+indexed, and one recorded, expired or admitted to no audience, holds nothing. A held row's authority names the one read
+that releases it (that predecessor's index row and stored row), and the claim's 50 ms re-check reads that alone rather
+than the whole authority: it releases once the predecessor records, names another message or its index row is gone.
+A tracked row whose dequeue reaches a terminal outcome (completed, superseded, refused, or failed non-retryably)
+without recording deletes its own index row (`delete-ordering-message`, guarded on its `msgId`,
+[`write-al-outbound-track-index-end.ts`](./lane/write-al-outbound-track-index-end.ts)), which releases its successors;
+a deferred, pending or `no-route` outcome keeps it while the row retries, and a row that recorded keeps it for repair,
+as does a delivered row that positioned nobody (no durable audience), since no successor waits on it.
+The end write's own failure is logged and leaves the successors to the row's deadline. Either way a track's positions
+are written in sequence order.
 Each row's after-admission effect then runs in the same follower
 order, so a recipient receives the rows of a track that one batch admits in sequence order.
 
@@ -833,8 +847,10 @@ sessions, the last settlement kind and whether the receipt ran out (D61, D73).
 **Server-minted sequences.** A message the WS server publishes itself that names `ordering.orderingKey` (and
 an `epoch`) without a `seq` asks the server's outbound for the sequence (D150). The server's planner marks the plan
 `mintsSequence` only at admission (`phase: 'immediate'`) and only when the message's `senderId` is the server's own
-peer id; a relayed browser send that carries a key and no `seq` passes through unsequenced, as it came, and so does a
-row a producer wrote straight to the outbox. An
+peer id; a relayed browser send that carries a key and no `seq` passes through unsequenced, as it came. A row a
+producer wrote straight to the outbox carries its producer's `seq` and is never minted, but its producer writes the
+track's ordering index row (`toALOutboundOrderingMessageKey` in this admission's namespace, valued with its `msgId`)
+in its own transaction, and it records positions at its first dequeue like any other tracked row. An
 admission of a marked plan that finds no sent row for the `msgId` reads the track's ordering-head row
 (`toALOutboundOrderingHeadKey(namespace, trackKey)`, the track named by `toALSequenceMintTrackKey`: key, sender and
 epoch, as `toALOrderingTrackKey` names it once the `seq` exists) in the session that reads the sender version, and
@@ -902,9 +918,13 @@ record or a proof is refused; a retained request, an admitted copy and a canonic
 the request without what its admission added (`toALOutboundRequestComparableMessage`: a minted sequence, and the record
 and the proof the request did not carry).
 
-On WS the server records at the first dequeue of a tracked row its own outbound admitted -- a relayed browser-origin
-row or its own publication; a row a producer wrote straight to the outbox records nothing -- for the audience the
-dequeue re-check narrowed, less the sender, and an immediate (live-only) send records nothing. The read records
+On WS the server records at the first dequeue of a tracked row -- a relayed browser-origin row, its own publication,
+or a row a producer wrote straight to the outbox, each under its own sender version -- for the audience the dequeue
+re-check narrowed, less the sender; a row admitted to no audience (account-view and world rows) and an immediate
+(live-only) send record nothing. On the server's own rows (its publications and every producer row it sends under its
+peer id) a recipient the WS server skipped below its position, or a session the dequeue re-check dropped, is recorded
+in `outsideAudiencePeerIds` of the server's own pending receipt through one fenced commit
+(`ALOutboundAdmissionStore.commitOutsideAudience`); on a relayed row the origin hears it as an outside-audience ACK. The read records
 whenever the stored row holds no positions yet, and stamps nothing on the stored canonical: the full priors live on
 the sent row (`ALStoredOutboundMessage.sentPositions`, `null` when nothing was recorded, which a row written before
 reads as) and on every `send-prepared` payload, and the WS server derives each recipient's copy from them

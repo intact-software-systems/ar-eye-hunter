@@ -21,6 +21,7 @@ import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tes
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const SESSION = {
@@ -79,6 +80,7 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     }, {
         finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
         serviceId: 'ticket-binding',
+        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
         timing: undefined,
         options: {

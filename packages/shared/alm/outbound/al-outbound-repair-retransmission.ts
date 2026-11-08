@@ -116,7 +116,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
 
         await this.dependencies.dispatchAdmission.commit({
             msg: sent.msg,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: this.dependencies.planOutgoingMessage,
             intent: 'repair',
             phase: 'immediate',
@@ -294,7 +294,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         // repair has its own policy and must not suppress or charge this retry.
         await this.dependencies.dispatchAdmission.commit({
             msg,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: () => retryPlan,
             intent: 'repair',
             phase: 'immediate',
@@ -319,7 +319,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
     private async commitRepairPlan(repair: ALOutboundCommitRepairInput<TPrepared>): Promise<void> {
         const { computed } = await this.dependencies.dispatchAdmission.commit({
             msg: repair.msg,
-            followsBatchPredecessor: false,
+            batchPredecessorSeqs: [],
             planner: () => repair.plan,
             intent: 'repair',
             phase: 'immediate',

@@ -92,6 +92,7 @@ export type AlmConformanceScenarioId =
     | 'reply-timeout-late'
     | 'reply-undelivered'
     | 'server-command'
+    | 'server-ordered-entry'
     | 'server-originated'
     | 'storage-unavailable'
     | 'subscription-delivery'

@@ -3,10 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundAdmissionMutation } from '@shared/alm/outbound/admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundCommitBundle, ALOutboundSentPositions } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     computeALOutboundGroupChainedReads,
-    isALOrderingPredecessorInBatch,
     toALOrderingBatchSequences,
+    toALOrderingPendingPredecessors,
     toALOutboundFollowerOrder,
     toALOutboundGroupPositionWrites,
     toALOutboundLeftBehindPredecessors,
@@ -110,15 +111,20 @@ describe('the sent positions of one commit group', () => {
 
 describe('the rows of a dequeued batch that follow their predecessor on the track', () => {
     it('leaves a follower whose predecessor the batch did not admit, and its own follower with it', () => {
-        const dispatches = [follower(4), follower(3), leader(1), follower(5)];
+        const dispatches = [follower(4, [3]), follower(3, [2]), leader(1), follower(5, [4])];
 
         expect([...toALOutboundLeftBehindPredecessors(dispatches)].map(toSeq)).toEqual([3, 4, 5]);
     });
 
     it('keeps a follower whose predecessor the batch admits ahead of it, whatever order they were claimed in', () => {
-        const dispatches = [follower(3), follower(2), leader(1)];
+        const dispatches = [follower(3, [2]), follower(2, [1]), leader(1)];
 
         expect(toALOutboundLeftBehindPredecessors(dispatches)).toEqual(new Set());
+    });
+
+    it('leaves a follower of two pending sequences when only the first is admitted ahead of it, and keeps it behind both', () => {
+        expect([...toALOutboundLeftBehindPredecessors([follower(3, [1, 2]), leader(1)])].map(toSeq)).toEqual([3]);
+        expect(toALOutboundLeftBehindPredecessors([follower(3, [1, 2]), leader(1), leader(2)])).toEqual(new Set());
     });
 
     it('never leaves a row that does not follow its predecessor, admitted or not', () => {
@@ -126,9 +132,9 @@ describe('the rows of a dequeued batch that follow their predecessor on the trac
     });
 
     it('orders a track that holds a follower by ascending sequence in the places it holds, leaving other rows where they are', () => {
-        const untracked = { msg: { ...message(0), ordering: undefined }, followsBatchPredecessor: false };
-        const otherTrack = { msg: { ...message(5), ordering: { orderingKey: 'game-2', epoch: 1, seq: 5 } }, followsBatchPredecessor: false };
-        const rows = [follower(3), untracked, otherTrack, leader(1), follower(2)];
+        const untracked = { msg: { ...message(0), ordering: undefined }, batchPredecessorSeqs: [] };
+        const otherTrack = { msg: { ...message(5), ordering: { orderingKey: 'game-2', epoch: 1, seq: 5 } }, batchPredecessorSeqs: [] };
+        const rows = [follower(3, [2]), untracked, otherTrack, leader(1), follower(2, [1])];
 
         expect(toALOutboundFollowerOrder(rows, (row) => row)).toEqual([rows[3], untracked, otherTrack, rows[4], rows[0]]);
     });
@@ -140,47 +146,98 @@ describe('the rows of a dequeued batch that follow their predecessor on the trac
     });
 
     it('keeps a row without a message in its place among a track it orders', () => {
-        const rows = [follower(2), undefined, leader(1)];
+        const rows = [follower(2, [1]), undefined, leader(1)];
 
         expect(toALOutboundFollowerOrder(rows, (row) => row)).toEqual([rows[2], undefined, rows[0]]);
     });
 });
 
-function follower(seq: number): Readonly<{ msg: ALMessage; followsBatchPredecessor: boolean; }> {
-    return { msg: message(seq), followsBatchPredecessor: true };
+function follower(seq: number, batchPredecessorSeqs: readonly number[]): Readonly<{ msg: ALMessage; batchPredecessorSeqs: readonly number[]; }> {
+    return { msg: message(seq), batchPredecessorSeqs };
 }
 
-function leader(seq: number): Readonly<{ msg: ALMessage; followsBatchPredecessor: boolean; }> {
-    return { msg: message(seq), followsBatchPredecessor: false };
+function leader(seq: number): Readonly<{ msg: ALMessage; batchPredecessorSeqs: readonly number[]; }> {
+    return { msg: message(seq), batchPredecessorSeqs: [] };
 }
 
 function toSeq(dispatch: Readonly<{ msg: ALMessage; }>): number | undefined {
     return dispatch.msg.ordering?.seq;
 }
 
-describe('the predecessor a dequeued batch claimed beside a tracked row', () => {
-    const batch = toALOrderingBatchSequences([trackedMessage('game-1', 1), trackedMessage('game-1', 2), trackedMessage('game-2', 7)]);
+describe('the pending indexed predecessors of a tracked row', () => {
+    const NOW_MS = 1_700_000_000_000;
+    const indexed = [1, 2, 3, 4, 5, 6, 7].map((seq) => ({ seq, msgId: `event-${seq}` }));
+    const stored = new Map([
+        ['event-2', storedRow('event-2', { sentPositions: null })],
+        ['event-3', storedRow('event-3', { sentPositions: { b: 2 } })],
+        ['event-4', storedRow('event-4', { sentPositions: null, expiresAtMs: NOW_MS })],
+        ['event-5', storedRow('event-5', { sentPositions: null, admittedAudience: undefined })],
+        ['event-7', storedRow('event-7', { sentPositions: null })]
+    ]);
 
-    it('collects the sequences the batch claimed by track', () => {
-        expect(batch).toEqual(new Map([['game-1:a:1', new Set([1, 2])], ['game-2:a:1', new Set([7])]]));
+    it('counts a sequence with no stored row and an unrecorded one as pending; a recorded, expired or audience-free one holds nothing', () => {
+        const pending = toALOrderingPendingPredecessors({ message: trackedMessage('game-1', 6), indexed, stored, batch: new Map(), nowMs: NOW_MS });
+
+        expect(pending).toEqual({ inBatch: [], nearestOutside: { seq: 2, msgId: 'event-2' } });
     });
 
-    it('finds the row one sequence before on the same track', () => {
-        expect(isALOrderingPredecessorInBatch(trackedMessage('game-1', 3), batch)).toBe(true);
+    it('ignores every listed sequence at or above the row\'s own', () => {
+        const pending = toALOrderingPendingPredecessors({ message: trackedMessage('game-1', 2), indexed, stored, batch: new Map(), nowMs: NOW_MS });
+
+        expect(pending).toEqual({ inBatch: [], nearestOutside: { seq: 1, msgId: 'event-1' } });
     });
 
-    it('finds no predecessor the batch claimed on another track, or further back than one sequence', () => {
-        expect(isALOrderingPredecessorInBatch(trackedMessage('game-2', 9), batch)).toBe(false);
-        expect(isALOrderingPredecessorInBatch(trackedMessage('game-3', 2), batch)).toBe(false);
+    it('lists the pending sequences the batch claimed ascending, and the highest it did not claim as the nearest outside', () => {
+        const batch = toALOrderingBatchSequences([trackedMessage('game-1', 2), trackedMessage('game-1', 1)]);
+
+        expect(toALOrderingPendingPredecessors({ message: trackedMessage('game-1', 6), indexed: indexed.toReversed(), stored, batch, nowMs: NOW_MS }))
+            .toEqual({ inBatch: [1, 2], nearestOutside: undefined });
+        expect(toALOrderingPendingPredecessors({ message: trackedMessage('game-1', 9), indexed, stored, batch, nowMs: NOW_MS }))
+            .toEqual({ inBatch: [1, 2], nearestOutside: { seq: 7, msgId: 'event-7' } });
     });
 
     it('finds none for an untracked row, which claims no sequence either, as an absent message claims none', () => {
         const untracked = { ...trackedMessage('game-1', 2), ordering: undefined };
 
-        expect(isALOrderingPredecessorInBatch(untracked, batch)).toBe(false);
+        expect(toALOrderingPendingPredecessors({ message: untracked, indexed, stored, batch: new Map(), nowMs: NOW_MS }))
+            .toEqual({ inBatch: [], nearestOutside: undefined });
         expect(toALOrderingBatchSequences([untracked, undefined])).toEqual(new Map());
     });
 });
+
+/** A sent row admitted to `b` unless named otherwise, live until a minute past `1_700_000_000_000` unless named. */
+function storedRow(
+    msgId: string,
+    options: Readonly<{ sentPositions: Readonly<Record<string, number>> | null; expiresAtMs?: number; admittedAudience?: readonly string[]; }>
+): ALStoredOutboundMessage {
+    const admittedAudience = 'admittedAudience' in options ? options.admittedAudience : ['b'];
+    return {
+        msgId,
+        reference: {
+            key: { topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'scope', contextId: msgId },
+            typeId: 'AL_OUTBOUND_MESSAGE',
+            scope: 'scope',
+            msgId,
+            senderId: 'a',
+            identity: msgId,
+            expiresAtMs: options.expiresAtMs ?? 1_700_000_060_000
+        },
+        supersedenceKey: undefined,
+        unicastPeerId: null,
+        orderingTrackKey: 'game-1:a:1',
+        orderingSeq: Number(msgId.replace('event-', '')),
+        sentPositions: options.sentPositions,
+        policy: {
+            persist: true,
+            ackTracking: null,
+            retryTracking: null,
+            repairTracking: null,
+            supersedenceTracking: null,
+            ...(admittedAudience === undefined ? {} : { admittedAudience })
+        },
+        creationExpiry: 'creation-expiry'
+    };
+}
 
 function trackedMessage(orderingKey: string, seq: number): ALMessage {
     const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };

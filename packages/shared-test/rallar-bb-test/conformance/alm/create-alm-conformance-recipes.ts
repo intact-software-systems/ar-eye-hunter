@@ -96,6 +96,7 @@ import { replyFirstWins } from './scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from './scenarios/reply/reply-timeout-late.ts';
 import { replyUndelivered } from './scenarios/reply/reply-undelivered.ts';
 import { serverCommand } from './scenarios/server-command.ts';
+import { serverOrderedEntry } from './scenarios/server-ordered-entry.ts';
 import { serverOriginated } from './scenarios/server-originated.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { subscriptionDelivery } from './scenarios/topic-subscription/subscription-delivery.ts';
@@ -209,6 +210,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     unicastFallback,
     serverCommand,
     serverOriginated,
+    serverOrderedEntry,
     capacity,
     capacityAge,
     capacityTracks,

@@ -54,6 +54,7 @@ import { toGroupAppInboxStorageCommandId } from './postgres-group-app-inbox-muta
 import { toPSqlSql } from './postgres-sql-adapter.ts';
 
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../../../rallar-system/client-state/client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../rallar-system/client-state/test-disconnected-session-retention.ts';
 
 interface WorkerBarrier {
@@ -327,6 +328,7 @@ async function runClientMutation(
             traceId: 'trace-postgres-expiry-worker',
             nowEpochMs: input.atEpochMs,
             serviceId: `postgres-state-worker-${Deno.pid}`,
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: `postgres-client-event:${requestId}`,
             attemptCount: entry.dequeueAudit.attempts,
             expireAtEpochMs: Number(entry.audit.expiryTs.epochMilliseconds),

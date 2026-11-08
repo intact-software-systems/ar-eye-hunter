@@ -15,6 +15,7 @@ import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-syst
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { emptyRead, requireWrite } from './client-mutation-compute-test-fixtures.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -66,6 +67,7 @@ const TIMED_COMMAND: ClientMutationCommand = {
         traceId: 'trace-client-state-service-timing',
         nowEpochMs: 1_000,
         serviceId: 'client-timing-service',
+        wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         eventId: 'event-timed',
         commandHash: `sha256:${'a'.repeat(64)}`,
         attemptCount: 1,

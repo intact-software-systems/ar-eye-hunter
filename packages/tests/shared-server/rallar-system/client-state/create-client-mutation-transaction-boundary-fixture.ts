@@ -31,6 +31,7 @@ import { TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-re
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createAutoAuthorizingClientStateService } from './app-client-inbox-mutation-test-harness.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
@@ -46,7 +47,11 @@ interface ClientMutationTransactionBoundaryFixture {
     readonly context: AppInboxMessageContext<ClientStateWritten>;
     readonly handler: ClientStateInboxHandler;
     readonly observedSnapshots: ClientSnapshot[];
+    /** The committed outbox rows, by queue identity. */
+    readonly outboxEntries: ReadonlyMap<string, ResourceEntry>;
     readonly results: TestResourceInboxResults;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly serviceId: string;
     /** The mutation timing lines, recorded only with `recordMutationTiming`. */
     readonly timing: RallarTimingEvent[];
 }
@@ -108,9 +113,21 @@ export async function createClientMutationTransactionBoundaryFixture(
                 : undefined
         },
         serviceId: 'client-inbox-service',
+        wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
         disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
     });
-    return { actions, computedSnapshots, context, handler, observedSnapshots, results, timing };
+    return {
+        actions,
+        computedSnapshots,
+        context,
+        handler,
+        observedSnapshots,
+        outboxEntries: database.outboxEntries,
+        results,
+        runtimeRepository,
+        serviceId: 'client-inbox-service',
+        timing
+    };
 }
 
 interface ObservedMutationEffects {

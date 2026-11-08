@@ -10,6 +10,7 @@ import { computeClientMutation } from '@shared-server/rallar-system/client-state
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
+import { isAppOutboxTrackIndexedInsert } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 
 describe('client mutation write purity', () => {
@@ -60,7 +61,10 @@ describe('client mutation write purity', () => {
     });
 });
 
-/** Applies every statement: a runtime row returns its revision and each outbox row returns its identity. */
+/**
+ * Applies every statement: a runtime row returns its revision, each outbox row returns its identity, and each track
+ * index row written beside the outbox rows returns its key.
+ */
 function appliedSql(): PSqlSql {
     const sql = (
         stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
@@ -70,11 +74,22 @@ function appliedSql(): PSqlSql {
             return Promise.resolve([{ revision: 0 }]);
         }
         const rows = values[0] as readonly ResourceInboxEntryInsertRow[];
-        return Promise.resolve(rows.map((row) => ({
+        const outbox = rows.map((row) => ({
             ri_resource_id: row.resourceId,
             ri_topic_id: row.topicId,
-            fk_ext_bank_id: row.contextId
-        })));
+            fk_ext_bank_id: row.contextId,
+            store_key: null
+        }));
+        if (!isAppOutboxTrackIndexedInsert(stringsOrValues.join('').toLowerCase())) {
+            return Promise.resolve(outbox);
+        }
+        const indexed = (values[1] as readonly { readonly key: string; }[]).map(({ key }) => ({
+            ri_resource_id: null,
+            ri_topic_id: null,
+            fk_ext_bank_id: null,
+            store_key: key
+        }));
+        return Promise.resolve([...outbox, ...indexed]);
     };
     return sql as PSqlSql;
 }

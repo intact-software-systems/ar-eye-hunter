@@ -19,7 +19,12 @@ import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-trans
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import type { ResourceInboxEntryInsertRow } from '@shared-server/queuebox/postgres/resource-inbox-entry-insert-values.ts';
 import type { ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
-import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import {
+    computeAppOutboxInsert,
+    computeOrderedWsOutboxInsert,
+    computeWsOutboxInsert,
+    writeAppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     writeCoalescedAppOutboxWork,
     type ComputedCoalescedAppOutboxWork
@@ -56,9 +61,11 @@ import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/w
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { drainEngine } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+import { isAppOutboxTrackIndexedInsert } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { createGroupDeltaProducer, readCommittedGroupDelta } from '../group-state/presence/group-delta-producer-fixture.ts';
 import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
+import { TRACK_INDEX_NAMESPACE } from './app-outbox-track-index-fixture.ts';
 
 const CREATED_AT_EPOCH_MS = 1_800_000_000_000;
 const EXPIRE_AT_EPOCH_MS = 1_800_000_060_000;
@@ -204,7 +211,7 @@ describe('direct resource outbox writes', () => {
             ...computeClientStateSyncEntries(client, 'server-1').map(({ entry }) => entry),
             ...computeGroupStateSyncEntries(group, 'server-1')
         ];
-        const writes = entries.map(computeAppOutboxInsert);
+        const writes = entries.map((entry) => computeWsOutboxInsert({ entry, admissionNamespace: TRACK_INDEX_NAMESPACE }));
         await runInPSqlTransaction(database.sql, async (transaction) => {
             for (const write of writes) {
                 await writeAppOutboxInsert(transaction, write);
@@ -268,7 +275,7 @@ describe('direct resource outbox writes', () => {
             payload: { typeId: 'client-state.event' }
         });
         const database = createResourceInboxDatabase();
-        const write = computeAppOutboxInsert(entry);
+        const write = computeOrderedWsOutboxInsert({ entry, admissionNamespace: TRACK_INDEX_NAMESPACE });
         await runInPSqlTransaction(database.sql, async (transaction) => {
             await writeAppOutboxInsert(transaction, write);
         });
@@ -975,6 +982,13 @@ function executeResourceInboxQuery(
     query: string,
     values: readonly PSqlParameter[]
 ): PSqlRows {
+    if (isAppOutboxTrackIndexedInsert(query)) {
+        const outbox = insertResourceInboxTestRows(rows, readInsertRowsParameter(values[0]))
+            .map((row) => ({ ...row, store_key: null }));
+        const indexed = (values[1] as readonly { readonly key: string; }[])
+            .map(({ key }) => ({ ri_resource_id: null, ri_topic_id: null, fk_ext_bank_id: null, store_key: key }));
+        return [...outbox, ...indexed];
+    }
     if (query.startsWith('insert into resource_inbox') && query.includes('jsonb_to_recordset')) {
         return insertResourceInboxTestRows(rows, readInsertRowsParameter(values[0]));
     }

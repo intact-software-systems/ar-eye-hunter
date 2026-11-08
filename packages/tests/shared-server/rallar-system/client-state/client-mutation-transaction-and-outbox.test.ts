@@ -10,6 +10,8 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -25,6 +27,7 @@ import {
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
 import { createRollbackHarness, processRollbackMutation } from './client-mutation-rollback-test-harness.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -68,6 +71,52 @@ describe('client mutation transaction and outbox', () => {
         expect(harness.observedSnapshots).toHaveLength(1);
         expect(harness.observedSnapshots[0]).toEqual(harness.computedSnapshots[0]);
         expect(result.result?.snapshot).toEqual(harness.computedSnapshots[0]);
+    });
+
+    it('writes the principal event\'s track index beside its outbox row in the mutation\'s transaction, and nothing on a rolled-back attempt', async () => {
+        const harness = await createClientMutationTransactionBoundaryFixture();
+
+        const result = await harness.handler.processCommand(
+            harness.context,
+            toUpsertClientPrincipalMutationInput({
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
+                    username: 'alice',
+                    actorPrincipalId: 'alice',
+                    actorSessionId: 'alice-session',
+                    requestId: 'client-track-index'
+                },
+                defaultCommandId: 'client-track-index'
+            })
+        );
+
+        const event = result.result.event;
+        if (event === null) {
+            throw new Error('Expected the applied principal event');
+        }
+        const published = [...harness.outboxEntries.values()].map((entry) => decodePersistedALMessage(entry.resource));
+        const eventMessage = published.find((message) => message.ordering !== undefined);
+        if (eventMessage === undefined) {
+            throw new Error('Expected the ordered principal event row');
+        }
+        const key = eventMessage.route;
+        const indexKey = toALOutboundOrderingMessageKey(
+            TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
+            `${key.contextId}:${harness.serviceId}:0`,
+            event.snapshotVersion
+        );
+        expect((await harness.runtimeRepository.findEntry(TEST_WS_OUTBOUND_ADMISSION_NAMESPACE, indexKey))?.value)
+            .toBe(JSON.stringify(eventMessage.id.msgId));
+        // A snapshot page names no ordering, so the event's row is the only one the mutation indexed.
+        expect(published.filter((message) => message.ordering === undefined).length).toBeGreaterThan(0);
+        expect((await harness.runtimeRepository.findAllEntries(TEST_WS_OUTBOUND_ADMISSION_NAMESPACE)).map(({ key }) => key))
+            .toEqual([indexKey]);
+
+        const rollback = await createRollbackHarness();
+        await processRollbackMutation(rollback);
+        expect(rollback.rollbackAssertions()).toBe(1);
+        expect(await rollback.runtimeRepository.findAllEntries(TEST_WS_OUTBOUND_ADMISSION_NAMESPACE)).toEqual([]);
     });
 
     it('does not observe a snapshot when transaction finalization rejects', async () => {
@@ -195,6 +244,7 @@ function createRetryHarness(): RetryHarness {
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
                 timing: (event) => {
                     if (

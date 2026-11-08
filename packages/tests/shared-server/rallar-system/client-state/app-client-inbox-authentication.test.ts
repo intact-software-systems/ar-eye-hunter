@@ -38,6 +38,7 @@ import {
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
+import { TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from './client-state-test-runtime.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from './test-disconnected-session-retention.ts';
 
@@ -164,6 +165,7 @@ describe('AppClientInbox authentication', () => {
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         );
@@ -236,6 +238,7 @@ describe('AppClientInbox authentication', () => {
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         );
@@ -307,6 +310,7 @@ describe('AppClientInbox authentication', () => {
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         );
@@ -361,6 +365,7 @@ describe('AppClientInbox authentication', () => {
                 traceId: 'trace-app-client-inbox-authentication',
                 nowEpochMs: Date.now(),
                 serviceId: 'server-12345678',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 eventId: 'direct-mallory-targets-alice-event',
                 attemptCount: 1,
                 expireAtEpochMs: Date.now() + 60_000,
@@ -403,6 +408,7 @@ describe('AppClientInbox authentication', () => {
             {
                 finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
                 serviceId: 'server-12345678',
+                wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                 disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
             }
         );
@@ -528,6 +534,7 @@ async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Pro
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'server-12345678',
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS
         }
     );

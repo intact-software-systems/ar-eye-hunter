@@ -1,3 +1,4 @@
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import {
@@ -44,6 +45,9 @@ import {
     getClientStateTestOutbox,
     restoreClientStateTestOutbox
 } from './client-state-test-transaction.ts';
+
+/** The WS outbound admission namespace every client-state test producer indexes its ordered rows under. */
+export const TEST_WS_OUTBOUND_ADMISSION_NAMESPACE = toServerWsQBoxALOutboundAdmissionNamespace('test-qbox-server');
 
 const TEST_AUTH_ISSUED_AT_EPOCH_MS = 0;
 const TEST_AUTH_EXPIRES_AT_EPOCH_MS = 253_402_300_799_000;
@@ -164,6 +168,7 @@ async function prepareClientStateTestMutation(
             traceId: 'trace-client-state-test-runtime',
             nowEpochMs: context.nowEpochMs(),
             serviceId: context.serviceId,
+            wsOutboundAdmissionNamespace: TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             eventId: `test-client-event:${input.commandId}:${context.nextSequence()}`,
             attemptCount: attempt,
             expireAtEpochMs: TEST_AUTH_EXPIRES_AT_EPOCH_MS,

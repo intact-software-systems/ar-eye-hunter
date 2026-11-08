@@ -81,6 +81,7 @@ export namespace AppClientInboxService {
 
     export interface Config {
         readonly serviceId: string;
+        readonly wsOutboundAdmissionNamespace: string;
         readonly finishedRetentionMs: number;
         /** How long a session that ended keeps its row before the runtime-state expiry sweep removes it. */
         readonly disconnectedSessionRetentionMs: number;
@@ -139,6 +140,7 @@ export class AppClientInboxService {
             mutationTiming: { sink: config.timing, serviceId: config.serviceId },
             wakeQueue: config.wakeOwningQueue,
             serviceId: config.serviceId,
+            wsOutboundAdmissionNamespace: config.wsOutboundAdmissionNamespace,
             disconnectedSessionRetentionMs: config.disconnectedSessionRetentionMs,
             finishedRetentionMs: config.finishedRetentionMs
         });

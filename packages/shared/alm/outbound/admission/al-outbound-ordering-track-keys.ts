@@ -25,3 +25,43 @@ export function toALOutboundRoomSentFloorKey(namespace: string, trackKey: string
 export function toALOutboundOrderingMessageKey(namespace: string, trackKey: string, seq: number): string {
     return `${namespace}:ordering-message:${JSON.stringify([trackKey, seq])}`;
 }
+
+/** The start every `ordering-message` key of one track shares and no key of another track does. */
+export function toALOutboundOrderingTrackPrefix(namespace: string, trackKey: string): string {
+    return `${namespace}:ordering-message:${JSON.stringify([trackKey]).slice(0, -1)},`;
+}
+
+export interface ALOutboundOrderingPosition {
+    readonly trackKey: string;
+    readonly seq: number;
+}
+
+/** The track and sequence an `ordering-message` key names; undefined for a key of another family or namespace. */
+export function decodeALOutboundOrderingMessageKey(
+    namespace: string,
+    key: string
+): ALOutboundOrderingPosition | undefined {
+    const family = `${namespace}:ordering-message:`;
+    if (!key.startsWith(family)) {
+        return undefined;
+    }
+    const position = toOrderingMessagePosition(key.slice(family.length));
+    return position !== undefined && toALOutboundOrderingMessageKey(namespace, position.trackKey, position.seq) === key
+        ? position
+        : undefined;
+}
+
+function toOrderingMessagePosition(tupleText: string): ALOutboundOrderingPosition | undefined {
+    try {
+        return decodeOrderingMessageTuple(JSON.parse(tupleText));
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function decodeOrderingMessageTuple(value: unknown): ALOutboundOrderingPosition | undefined {
+    return Array.isArray(value) && value.length === 2 && typeof value[0] === 'string' && typeof value[1] === 'number'
+        ? { trackKey: value[0], seq: value[1] }
+        : undefined;
+}

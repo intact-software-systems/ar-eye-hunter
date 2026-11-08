@@ -1,3 +1,4 @@
+import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { TournamentResultRepository } from '@shared-server/rallar-system/tournaments/tournament-result-repository.ts';
 import { expect } from 'vitest';
 
@@ -24,7 +25,16 @@ import {
 /** The trace every prepared Relic attempt carries, as its queued command's envelope would. */
 export const RELIC_FIXTURE_TRACE_ID = 'trace-relic-game-database-fixture';
 
-export async function createGameFixture(gameId = 'expedition-1', scheduledStartOffsetMs: number | null = null) {
+/** The admission namespace of the one WS runtime both apps compose, `default-qbox-server`. */
+export const RELIC_FIXTURE_WS_OUTBOUND_ADMISSION_NAMESPACE = toServerWsQBoxALOutboundAdmissionNamespace('default-qbox-server');
+
+export interface RelicGameFixtureOptions {
+    readonly scheduledStartOffsetMs?: number;
+    readonly wsOutboundAdmissionNamespace?: string;
+}
+
+export async function createGameFixture(gameId = 'expedition-1', options: RelicGameFixtureOptions = {}) {
+    const { scheduledStartOffsetMs } = options;
     const fixture = await createRetentionDatabaseFixture();
     const ref = toRelicRoomGroupRef(gameId);
     const { computed } = await prepareMutation(
@@ -40,7 +50,7 @@ export async function createGameFixture(gameId = 'expedition-1', scheduledStartO
                 kind: 'room',
                 joinMode: 'open',
                 maxSpectators: 16,
-                ...(scheduledStartOffsetMs === null ? {} : { maxMembers: 4, scheduledStartAtEpochMs: fixture.nowEpochMs + scheduledStartOffsetMs }),
+                ...(scheduledStartOffsetMs === undefined ? {} : { maxMembers: 4, scheduledStartAtEpochMs: fixture.nowEpochMs + scheduledStartOffsetMs }),
                 createdByPrincipalId: 'owner',
                 actorPrincipalId: 'owner',
                 retention: { mode: 'temporary', reconnectGraceMs: 600_000 }
@@ -54,7 +64,10 @@ export async function createGameFixture(gameId = 'expedition-1', scheduledStartO
         sessions: new AuthSessionPersistence(fixture.runtime),
         data,
         tournaments: new TournamentResultRepository(fixture.runtime)
-    }, { now: () => fixture.nowEpochMs });
+    }, {
+        now: () => fixture.nowEpochMs,
+        wsOutboundAdmissionNamespace: options.wsOutboundAdmissionNamespace ?? RELIC_FIXTURE_WS_OUTBOUND_ADMISSION_NAMESPACE
+    });
     const command = {
         operation: 'ensure',
         gameId: ref.groupId,

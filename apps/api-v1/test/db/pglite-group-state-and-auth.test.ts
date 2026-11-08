@@ -41,6 +41,7 @@ import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import {
     readPGliteAppInboxFailure,
     waitForPGliteQueueRow
@@ -744,6 +745,7 @@ Deno.test(
                         traceId: 'trace-pglite-group-state-and-auth',
                         nowEpochMs: 2_000,
                         serviceId: 'pglite-client-service',
+                        wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
                         eventId: `${commandId}-event`,
                         attemptCount: 1,
                         expireAtEpochMs: FUTURE_MS,

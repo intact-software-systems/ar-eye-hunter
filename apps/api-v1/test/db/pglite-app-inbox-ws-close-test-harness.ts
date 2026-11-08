@@ -35,6 +35,7 @@ import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-ser
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
+import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import { waitForPGliteFirstRetryEligibility } from './pglite-app-inbox-test-runtime.ts';
 import { FUTURE_MS } from './pglite-auth-test-harness.ts';
 
@@ -220,6 +221,7 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
         {
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,
             serviceId: 'pglite-close-test',
+            wsOutboundAdmissionNamespace: API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE,
             disconnectedSessionRetentionMs: TEST_DISCONNECTED_SESSION_RETENTION_MS,
             timing: undefined,
             options: input.options
