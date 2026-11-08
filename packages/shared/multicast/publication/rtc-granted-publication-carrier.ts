@@ -272,7 +272,8 @@ export class RtcGrantedPublicationCarrier {
 
     /**
      * The origin carries a granted publication only as a room multicast, a listed or principal room broadcast, or a
-     * room unicast, re-sends a stored one only signed and only while it holds `publish`; any other message passes.
+     * room unicast, re-sends a stored one only signed, only as the multicast its leg admission froze and only while it
+     * holds `publish`; any other message passes.
      */
     computeOriginRefusal(
         input: RtcGrantedPublicationRefusalInput

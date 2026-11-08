@@ -14,7 +14,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 import { RtcGrantedPublicationCarrier } from '@shared/multicast/publication/rtc-granted-publication-carrier.ts';
-import { toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import {
@@ -78,9 +78,21 @@ describe('RtcGrantedPublicationCarrier', () => {
     });
 
     it('passes an unfrozen leg of a pending room authority through the room-limit judgement unchanged', async () => {
-        const carrier = createKeyedCarrier(await createAvailablePublicationCryptoFixture());
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const keyed = createKeyedSnapshot(crypto);
+        const expired: GroupSnapshot = { ...keyed, group: { ...keyed.group, expiresAtEpochMs: Date.now() - 1 } };
+        const admission = computeRtcRoomSnapshotAdmission({
+            message: GRANTED_LIST,
+            snapshot: expired,
+            overlay: undefined,
+            selfPeerId: 'a',
+            fromPeerId: undefined,
+            recipientPeerId: undefined,
+            nowMs: Date.now()
+        });
 
-        expect(carrier.admitLeg(GRANTED_LIST, (leg) => leg).right).toBe(GRANTED_LIST);
+        expect(admission.kind).not.toBe('authorized');
+        expect(createCarrier(crypto, expired).admitLeg(GRANTED_LIST, (leg) => leg).right).toBe(GRANTED_LIST);
     });
 
     it('refuses a granted leg whose frozen audience passes the RTC room limit as unsupported after the freeze', async () => {
@@ -214,15 +226,16 @@ function createKeylessCarrier(snapshot?: GroupSnapshot): RtcGrantedPublicationCa
 
 /** A carrier that can sign: its room of `a`, `b` and `c` attests `a`'s page key, and `b` and `c` may subscribe. */
 function createKeyedCarrier(crypto: AvailablePublicationCrypto): RtcGrantedPublicationCarrier {
-    return createCarrier(
-        crypto,
-        createPublicationRoomSnapshot({
-            sessionIds: ['a', 'b', 'c'],
-            snapshotVersion: 3,
-            keys: { a: toGroupPresencePublicationKey(crypto)! },
-            grants: { a: PUBLISH_ONLY, b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }
-        })
-    );
+    return createCarrier(crypto, createKeyedSnapshot(crypto));
+}
+
+function createKeyedSnapshot(crypto: AvailablePublicationCrypto): GroupSnapshot {
+    return createPublicationRoomSnapshot({
+        sessionIds: ['a', 'b', 'c'],
+        snapshotVersion: 3,
+        keys: { a: toGroupPresencePublicationKey(crypto)! },
+        grants: { a: PUBLISH_ONLY, b: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY }
+    });
 }
 
 function createCarrier(publicationCrypto: PublicationCrypto, snapshot: GroupSnapshot | undefined): RtcGrantedPublicationCarrier {

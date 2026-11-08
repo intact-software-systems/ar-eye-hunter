@@ -216,13 +216,22 @@ describe('the RTC origin of a granted publication', () => {
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
         expect(admitted.message.targets).toEqual(toOriginFrozenTargets([], 3));
-        // The origin floods an audience frozen to no one to every neighbour (resolveALOwnedChildPeerIds); no copy names a recipient.
-        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent].map((sent) => sent.targets))
-            .toEqual([toOriginFrozenTargets([], 3), toOriginFrozenTargets([], 3)]);
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
             expectedRecipientPeerIds: [],
             complete: true
         });
+    });
+
+    it('refuses a granted unicast to a non-holder asking no receipt as no-route, the refusal a fallback takes over', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto, { b: PUBLISH_ONLY }));
+
+        const refused = await enqueueLegAndDrain(fixture, createGrantedUnicast('none'), 'hand-over');
+
+        expect(refused.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+        expect(isALDeliveryAdmissionFallbackVerdict(refused.verdict)).toBe(true);
+        expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
     });
 
     it('freezes a granted principal broadcast in its room to that principal\'s subscribing sessions', async () => {
@@ -476,6 +485,30 @@ describe('the ordering record of a granted publication its RTC origin signs', ()
             expect(carried.proof).toEqual(stored.proof);
         }
     });
+
+    it('re-sends a stored granted list from its frozen signed copy without re-signing', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const fixture = createGrantedFixture(crypto, toKeyedSnapshot(crypto));
+        fixture.overlays.delete('room');
+        const list: ALMessage = {
+            ...toFeedFrame(createDurableGrantedMulticast(), 1),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ORIGIN_ROOM, recipientPeerIds: ['b'] }
+        };
+
+        const held = await enqueueLegAndDrain(fixture, list, 'hold');
+        const stored = await readStoredMessage(fixture, held.entries[0]!);
+        // The stage planner is the manager's own; element access reaches it without widening its type.
+        const replanned = fixture.manager['planOutgoingMessage'](stored, 'replan');
+        fixture.overlays.accept('room', createOriginOverlay(['b', 'c']));
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(held.verdict, held.reason).toMatchObject({ kind: 'admitted', durable: true });
+        expect(stored.targets).toEqual(toOriginFrozenTargets(['b'], 3));
+        expect((await verifyProof(crypto, stored)).left).toBeUndefined();
+        expect(replanned.dropReasonCode, replanned.dropReason).toBeUndefined();
+        expect(replanned.msg).toEqual(stored);
+        expect(fixture.channels.b!.sent.map((sent) => [sent.targets, sent.proof])).toEqual([[stored.targets, stored.proof]]);
+    });
 });
 
 describe('signRtcPublication', () => {
@@ -588,10 +621,10 @@ function toSubscribedRoomSnapshot(crypto: AvailablePublicationCrypto, sessionCou
     });
 }
 
-/** A granted unicast to `b` in the origin room, asking a receipt. */
-function createGrantedUnicast(): ALMessage {
+/** A granted unicast to `b` in the origin room, asking a receipt unless `ack` says otherwise. */
+function createGrantedUnicast(ack: 'none' | 'receiver' = 'receiver'): ALMessage {
     return newALUnicastMessage('a', GRANTED_ROUTE, 'b', 'room.granted-feed.v1', { text: 'feed' }, {
-        ack: 'receiver',
+        ack,
         groupRef: ORIGIN_ROOM,
         ttlMs: 30_000
     });

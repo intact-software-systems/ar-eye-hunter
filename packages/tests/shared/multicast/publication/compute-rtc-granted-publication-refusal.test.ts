@@ -76,6 +76,13 @@ describe('computeRtcGrantedPublicationRefusal', () => {
         }
     });
 
+    it('refuses a first admission\'s list carrying a proof, which only a leg freezes', () => {
+        const message = { ...createRoomBroadcast(), proof: PROOF };
+
+        expect(computeRtcGrantedPublicationRefusal({ carried: message, original: message, storedSend: false }).left)
+            .toMatchObject({ msg: message, dropReason: RTC_GRANTED_PUBLICATION_REFUSALS.unfrozenAudience, dropReasonCode: 'unsupported' });
+    });
+
     it('judges and names the refused message by the targets its sender gave, not the multicast they froze to', () => {
         const original = createExclusionsBroadcast();
         const frozen: ALMessage = { ...original, targets: toOriginFrozenTargets(['b'], 3) };

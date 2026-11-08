@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALOwnedChildPeerIds } from '@shared/al-contracts/resolve-al-owned-child-peer-ids.ts';
 
@@ -24,6 +24,15 @@ describe('the children a peer owns for a multicast frozen to its recipients', ()
 
     it('keeps none when this peer is the only recipient, since nothing below it is one', () => {
         expect(resolveRelayChildren(['r'])).toEqual([]);
+    });
+
+    it('keeps none for an audience frozen to nobody, with or without an accepted layout', () => {
+        expect(resolveRelayChildren([])).toEqual([]);
+        expect(resolveALOwnedChildPeerIds(createFrozenMulticast([]), {
+            nowMs: 0,
+            selfPeerId: 'r',
+            overlayNeighborPeerIds: TREE.r
+        })).toEqual([]);
     });
 
     it('keeps every child when it is no recipient and its layout puts every recipient behind its sender', () => {
@@ -75,6 +84,14 @@ describe('the children a peer owns for a multicast frozen to its recipients', ()
             overlayNeighborPeerIds: cyclic.r,
             overlayNextHopsBySessionId: cyclic
         })).toEqual(['a', 'b']);
+    });
+});
+
+describe('the child a peer owns for a unicast', () => {
+    it('keeps the unicast\'s immediate peer, whatever the frozen audience rule', () => {
+        const unicast = newALUnicastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, 'b', 'chat.v1', {});
+
+        expect(resolveALOwnedChildPeerIds(unicast, { nowMs: 0, selfPeerId: 'r', overlayNeighborPeerIds: TREE.r })).toEqual(['b']);
     });
 });
 
