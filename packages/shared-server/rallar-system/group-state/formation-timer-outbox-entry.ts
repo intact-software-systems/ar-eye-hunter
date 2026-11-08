@@ -6,7 +6,13 @@ import {
 
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { requireEpoch, requireExactKeys, requireOneOf, requireRecord, requireString } from '@shared/api/exact-object-decoding.ts';
+import {
+    requireEpoch,
+    requireExactKeys,
+    requireOneOf,
+    requireRecord,
+    requireString
+} from '@shared/api/exact-object-decoding.ts';
 import { computeFormationRetryBackoffMs } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import { toStageTriggerTimerDelayMs } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -117,7 +123,11 @@ export function decodeFormationTimerWork(resource: string): GroupFormationTimerW
         decodeJsonWireValue(JSON.parse(payloadResource), 'Formation timer work payload'),
         'Formation timer work payload'
     );
-    requireExactKeys(parsed, ['kind', 'groupRef', 'formationEpoch', 'groupSnapshotVersion', 'notBeforeEpochMs'], 'Formation timer work payload');
+    requireExactKeys(
+        parsed,
+        ['kind', 'groupRef', 'formationEpoch', 'groupSnapshotVersion', 'notBeforeEpochMs'],
+        'Formation timer work payload'
+    );
     const groupRef = requireRecord(parsed.groupRef, 'Formation timer group identity');
     requireExactKeys(groupRef, ['applicationId', 'workspaceId', 'groupId'], 'Formation timer group identity');
     requireString(groupRef.applicationId, 'Formation timer application id');
