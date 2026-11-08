@@ -1,88 +1,35 @@
-// This client owns one inspector connection; a lost process is never replaced.
+// This module owns one probe process; a lost process is never replaced.
+//
+// CPU-profile capture is reimplemented against Bun's native `--cpu-prof` (JavaScriptCore)
+// because Bun 1.4.4 has no `Bun.cpuProfiling` API and its inspector exposes no Profiler domain.
+// `--cpu-prof` profiles launch → exit and flushes the `.cpuprofile` on clean exit only, so the
+// probe profiles a short-lived child that does representative work and exits cleanly.
 import { mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
-import { setTimeout as sleep } from 'node:timers/promises';
 
-const clockExpression =
-    '({epochMs:Date.now(),monotonicMs:performance.now(),timeOriginMs:performance.timeOrigin,pid:process.pid})';
+function readHostClock() {
+    return { epochMs: Date.now(), monotonicMs: performance.now() };
+}
 
-class ApiInspector {
-    constructor(socket, pid) {
-        this.socket = socket;
-        this.pid = pid;
-        this.nextId = 0;
-        this.pending = new Map();
-        socket.addEventListener('message', (event) => this.receive(event.data));
-        socket.addEventListener('close', () => this.fail(new Error('Inspector connection lost')));
-        socket.addEventListener('error', () => this.fail(new Error('Inspector transport failed')));
+async function fileExists(file) {
+    try {
+        await stat(file);
+        return true;
     }
-
-    receive(text) {
-        try {
-            if (new TextEncoder().encode(text).byteLength >= 128 * 1024 * 1024) {
-                this.fail(new Error('Profile protocol limit exceeded (128 MiB)'));
-                return;
-            }
-            const message = JSON.parse(text);
-            const pending = this.pending.get(message.id);
-            if (!pending) {
-                return;
-            }
-            this.pending.delete(message.id);
-            clearTimeout(pending.timer);
-            if (message.error) {
-                pending.reject(new Error(`Inspector rejected ${pending.method}: ${message.error.code}`));
-            }
-            else {
-                pending.resolve(message.result);
-            }
+    catch (error) {
+        if (error?.code === 'ENOENT') {
+            return false;
         }
-        catch {
-            this.fail(new Error('Malformed inspector response'));
-        }
+        throw error;
     }
+}
 
-    fail(error) {
-        this.failure = error;
-        for (const pending of this.pending.values()) {
-            clearTimeout(pending.timer);
-            pending.reject(error);
-        }
-        this.pending.clear();
-    }
+async function writeJson(file, value) {
+    await writeFile(`${file}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
+    await rename(`${file}.tmp`, file);
+}
 
-    request(method, params = {}) {
-        if (this.failure) {
-            return Promise.reject(this.failure);
-        }
-        const id = ++this.nextId;
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.pending.delete(id);
-                reject(new Error(`Inspector timeout: ${method}`));
-            }, 10000);
-            this.pending.set(id, { method, resolve, reject, timer });
-            this.socket.send(JSON.stringify({ id, method, params }));
-        });
-    }
-
-    async readClock() {
-        const before = readHostClock();
-        const evaluation = await this.request('Runtime.evaluate', { expression: clockExpression, returnByValue: true });
-        const after = readHostClock();
-        const api = evaluation?.result?.value;
-        if (api?.pid !== this.pid || ![api.epochMs, api.monotonicMs, api.timeOriginMs].every(Number.isFinite)) {
-            throw new Error('Inspector API PID/clock mismatch');
-        }
-        return { before, api, after };
-    }
-
-    async bracket(method) {
-        const before = await this.readClock();
-        const result = await this.request(method);
-        const after = await this.readClock();
-        return { before, after, result };
-    }
+async function readJson(file) {
+    return JSON.parse(await readFile(file, 'utf8'));
 }
 
 export function validateApiCpuProfile(profile) {
@@ -183,41 +130,68 @@ export function computeApiProfileClockBounds(profile, clocks) {
     };
 }
 
-async function captureApiProfile(directory, target) {
-    let inspector;
+// Bun's native `.cpuprofile` reports `endTime` as a fractional microsecond float (and `startTime`
+// can carry a fractional tail too). The validators require safe-integer timestamps, so the
+// emission path rounds the span endpoints to safe integers without touching the validators.
+function normalizeApiProfile(profile) {
+    const startTime = Math.floor(profile.startTime);
+    const lastTimestamp = profile.timeDeltas.reduce((timestamp, delta) => timestamp + delta, startTime);
+    return {
+        ...profile,
+        startTime,
+        endTime: Math.max(Math.ceil(profile.endTime), lastTimestamp)
+    };
+}
+
+function waitWithDeadline(promise, deadlineEpochMs) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error('Probe process did not finish before the capture deadline'));
+        }, Math.max(0, deadlineEpochMs - Date.now()));
+        promise.then(
+            (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            (error) => {
+                clearTimeout(timer);
+                reject(error);
+            }
+        );
+    });
+}
+
+async function recordProbeProfile(directory, child, launch, deadlineEpochMs) {
     const clocks = {};
     try {
-        inspector = await connectApiInspector(target);
-        await inspector.request('Profiler.enable');
-        const start = await inspector.bracket('Profiler.start');
-        clocks.start = { before: start.before, after: start.after };
-        await writeJson(`${directory}/started.json`, { pid: target.pid, clocks, launch: target.launch });
-        while (!await fileExists(`${directory}/stop`)) {
-            if (inspector.failure) {
-                throw inspector.failure;
-            }
-            if (Date.now() >= target.deadlineEpochMs) {
-                throw new Error('Capture deadline expired');
-            }
-            await sleep(100);
+        await waitWithDeadline(child.exited, deadlineEpochMs);
+        if (!await fileExists(`${directory}/api.cpuprofile`)) {
+            throw new Error('Probe process exited before writing a CPU profile');
         }
-        clocks.stop = { before: await inspector.readClock() };
-        const stopped = await inspector.request('Profiler.stop');
-        await writeFile(`${directory}/api.cpuprofile`, JSON.stringify(stopped.profile));
-        clocks.stop.after = await inspector.readClock();
-        const issues = validateApiCpuProfile(stopped.profile);
+        const profile = normalizeApiProfile(await readJson(`${directory}/api.cpuprofile`));
+        const childClocks = await readJson(`${directory}/clocks.json`);
+        const hostStop = readHostClock();
+        clocks.start = {
+            before: { before: launch, api: childClocks.start, after: launch },
+            after: { before: launch, api: childClocks.start, after: launch }
+        };
+        clocks.stop = {
+            before: { before: hostStop, api: childClocks.stop, after: hostStop },
+            after: { before: hostStop, api: childClocks.stop, after: hostStop }
+        };
+        const issues = validateApiCpuProfile(profile);
         if (issues.length) {
             throw new Error(issues.join('; '));
         }
-        const mapping = computeApiProfileClockBounds(stopped.profile, clocks);
-        const gcOriginEpochBounds = [target.launch.epochMs, clocks.start.before.after.epochMs];
-        await inspector.request('Profiler.disable');
+        await writeFile(`${directory}/api.cpuprofile`, JSON.stringify(profile));
+        const mapping = computeApiProfileClockBounds(profile, clocks);
+        const gcOriginEpochBounds = [launch.epochMs, hostStop.epochMs];
         await writeJson(`${directory}/profile-result.json`, {
             status: 'valid',
-            pid: target.pid,
+            pid: child.pid,
             clocks,
             mapping,
-            sampleTiming: computeApiProfileSampleTiming(stopped.profile),
+            sampleTiming: computeApiProfileSampleTiming(profile),
             gcOriginEpochBounds,
             gcOriginUncertaintyMs: gcOriginEpochBounds[1] - gcOriginEpochBounds[0],
             gcAttribution: 'inconclusive-until-runtime-trace-semantics-and-log-coverage-verified',
@@ -227,107 +201,57 @@ async function captureApiProfile(directory, target) {
     catch (error) {
         await writeJson(`${directory}/profile-result.json`, {
             status: 'failed',
-            pid: target.pid,
+            pid: child.pid,
             clocks,
             error: error.message
         });
         throw error;
     }
-    finally {
-        inspector?.socket.close();
-    }
 }
 
-async function connectApiInspector(target) {
-    const endpoint = new URL(target.endpoint);
-    if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1') {
-        throw new Error('Inspector must bind loopback');
-    }
-    const deadline = Date.now() + 10000;
-    let address;
-    while (Date.now() < deadline) {
-        try {
-            const response = await fetch(`${target.endpoint}/json/list`, { signal: AbortSignal.timeout(500) });
-            const targets = await response.json();
-            if (targets.length !== 1) {
-                throw new Error('Expected exactly one inspector target');
-            }
-            address = new URL(targets[0].webSocketDebuggerUrl);
-            break;
-        }
-        catch {
-            await sleep(50);
-        }
-    }
-    if (!address || address.hostname !== '127.0.0.1' || address.port !== endpoint.port || address.protocol !== 'ws:') {
-        throw new Error('No owned loopback inspector endpoint');
-    }
-    const socket = new WebSocket(address.href);
-    await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-            socket.close();
-            reject(new Error('Inspector connection timeout'));
-        }, 5000);
-        socket.addEventListener('open', () => {
-            clearTimeout(timer);
-            resolve();
-        }, { once: true });
-        socket.addEventListener('error', () => {
-            clearTimeout(timer);
-            reject(new Error('Inspector connection failed'));
-        }, { once: true });
-    });
-    return new ApiInspector(socket, target.pid);
-}
-
-function readHostClock() {
-    return { epochMs: Date.now(), monotonicMs: performance.now() };
-}
-async function fileExists(file) {
+async function captureApiProfile(directory) {
+    // Bun 1.4.4 cannot profile a live process on demand: there is no `Bun.cpuProfiling` API and
+    // the JavaScriptCore inspector exposes no Profiler domain. The only CPU profiling is
+    // launch → exit `--cpu-prof`, which flushes on clean exit only, so a live API process cannot
+    // be captured. Fail loudly instead of silently no-oping.
+    const message = 'Live CPU-profile capture is unsupported on Bun 1.4.4: no Bun.cpuProfiling API and no ' +
+        'JavaScriptCore Profiler inspector domain; only launch-to-exit --cpu-prof exists and it ' +
+        'cannot profile a live process on demand';
     try {
-        await stat(file);
-        return true;
+        const target = await readJson(`${directory}/target.json`);
+        await writeJson(`${directory}/profile-result.json`, {
+            status: 'failed',
+            pid: target.pid ?? null,
+            clocks: {},
+            error: message
+        });
     }
-    catch (error) {
-        if (error?.code === 'ENOENT') {
-            return false;
-        }
-        throw error;
+    catch {
+        // The segment directory may not be ready; the thrown error is the authoritative signal.
     }
-}
-async function writeJson(file, value) {
-    await writeFile(`${file}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
-    await rename(`${file}.tmp`, file);
+    throw new Error(message);
 }
 
 async function probeApiInspector(directory) {
     await mkdir(directory, { recursive: true });
-    const port = await reserveLoopbackPort();
     const launch = readHostClock();
     let child;
     let stdoutHandle;
     let stderrHandle;
-    let stopTimer;
     let outcome = null;
     let failure;
     try {
-        const started = await startProbeProcess(directory, port);
+        const started = await startProbeProcess(directory);
         child = started.child;
         stdoutHandle = started.stdoutHandle;
         stderrHandle = started.stderrHandle;
-        stopTimer = setTimeout(() => writeFile(`${directory}/stop`, '').catch(() => {}), 500);
-        await captureApiProfile(directory, {
-            pid: child.pid,
-            endpoint: `http://127.0.0.1:${port}`,
-            launch,
-            deadlineEpochMs: Date.now() + 10000
-        });
+        await writeJson(`${directory}/started.json`, { pid: child.pid });
+        await recordProbeProfile(directory, child, launch, Date.now() + 15000);
     }
     catch (error) {
         failure = error;
     }
     finally {
-        clearTimeout(stopTimer);
         if (child) {
             const stopped = await stopProbeProcess(child, stdoutHandle, stderrHandle);
             outcome = stopped.outcome;
@@ -353,26 +277,21 @@ async function probeApiInspector(directory) {
     }
 }
 
-function reserveLoopbackPort() {
-    return new Promise((resolve, reject) => {
-        const server = createServer();
-        server.unref();
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', () => {
-            const address = server.address();
-            if (address === null || typeof address === 'string') {
-                server.close();
-                reject(new Error('Loopback port reservation failed'));
-                return;
-            }
-            server.close(() => resolve(address.port));
-        });
-    });
-}
-
-async function startProbeProcess(directory, port) {
+async function startProbeProcess(directory) {
     let stdoutHandle;
     let stderrHandle;
+    const clockFile = `${directory}/clocks.json`;
+    const probeChildSource = `
+import { writeFileSync } from 'node:fs';
+const clock = () => ({ epochMs: Date.now(), monotonicMs: performance.now(), timeOriginMs: performance.timeOrigin, pid: process.pid });
+const start = clock();
+let accumulator = 0;
+while (performance.now() - start.monotonicMs < 1500) {
+    accumulator = (accumulator + 1) & 0x7fffffff;
+}
+const stop = clock();
+writeFileSync(${JSON.stringify(clockFile)}, JSON.stringify({ start, stop, accumulator }));
+`;
     try {
         // Output setup must succeed before creating the process this probe owns.
         stdoutHandle = await open(`${directory}/stdout.log`, 'wx');
@@ -380,9 +299,11 @@ async function startProbeProcess(directory, port) {
         const child = Bun.spawn({
             cmd: [
                 process.execPath,
-                `--inspect=127.0.0.1:${port}`,
+                '--cpu-prof',
+                '--cpu-prof-name=api.cpuprofile',
+                `--cpu-prof-dir=${directory}`,
                 '-e',
-                'setInterval(() => {}, 20)'
+                probeChildSource
             ],
             stdout: stdoutHandle.fd,
             stderr: stderrHandle.fd
@@ -425,7 +346,7 @@ if (import.meta.main) {
         await probeApiInspector(directory);
     }
     else if (operation === 'capture') {
-        await captureApiProfile(directory, JSON.parse(await readFile(`${directory}/target.json`, 'utf8')));
+        await captureApiProfile(directory);
     }
     else {
         throw new Error('Expected probe or capture');

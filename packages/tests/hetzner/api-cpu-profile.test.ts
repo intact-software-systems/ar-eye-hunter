@@ -13,9 +13,9 @@ import { toError } from '../../shared/resilience/to-error.ts';
 
 import { runOwnedTestProcess } from './owned-test-process.ts';
 
-// The V8 CPU-profiling probe depends on V8's CDP `Profiler` domain and `--v8-flags`, which Bun's
-// JavaScriptCore inspector does not provide. Revisit before re-enabling these probe round-trips.
-it.skip('returns a valid same-binary inspector profile before terminating and reaping the probe', async (context) => {
+// The probe now captures a real Bun (JavaScriptCore) `.cpuprofile` via launch → exit `--cpu-prof`,
+// so the round-trip probe exercises the actual emission path rather than a CDP `Profiler` domain.
+it('returns a valid same-binary Bun CPU profile before terminating and reaping the probe', async (context) => {
     const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-profile-'));
     context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
     await runOwnedTestProcess(context, {
@@ -87,7 +87,7 @@ it.for(['stdout.log', 'stderr.log'])('fails probe output setup at %s without lea
     await expect(readFile(path.join(directory, 'api.cpuprofile'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
-it.skip('reaps a probe that exits during capture while preserving the original inspector failure', async (context) => {
+it('reaps a probe that exits during capture while preserving the original profile failure', async (context) => {
     const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-probe-exit-'));
     context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
     const execution = runOwnedTestProcess(context, {
@@ -116,7 +116,7 @@ it.skip('reaps a probe that exits during capture while preserving the original i
     const probe = JSON.parse(await readFile(path.join(directory, 'probe.json'), 'utf8'));
     const result = JSON.parse(await readFile(path.join(directory, 'profile-result.json'), 'utf8'));
     expect(probe).toMatchObject({ pid, reaped: true, error: result.error });
-    expect(probe.error).toMatch(/Inspector.*(connection|transport)/i);
+    expect(probe.error).toMatch(/exited before writing a CPU profile/i);
     expect(probe.error).not.toContain('already terminated');
     expect(() => process.kill(pid, 0)).toThrow();
 });
