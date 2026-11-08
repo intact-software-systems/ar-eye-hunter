@@ -218,18 +218,24 @@ inspect_services() {
 	local api_state control_state postgres_state caddy_state headless_state
 	local api_process control_process headless_process services processes
 	api_state="$(inspect_service_state rallar-api-v1.service)" || return 1
-	control_state="$(inspect_service_state rallar-black-box-control.service)" || return 1
 	postgres_state="$(inspect_service_state postgresql.service)" || return 1
 	caddy_state="$(inspect_service_state caddy.service)" || return 1
-	headless_state="$(inspect_service_state rallar-black-box-headless-worker.service)" || return 1
+	control_state='not-local'
+	headless_state='not-local'
+	api_process="$(inspect_service_process rallar-api-v1.service)" || return 1
+	control_process='"not-local"'
+	headless_process='"not-local"'
+	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'control' ]]; then
+		control_state="$(inspect_service_state rallar-black-box-control.service)" || return 1
+		headless_state="$(inspect_service_state rallar-black-box-headless-worker.service)" || return 1
+		control_process="$(inspect_service_process rallar-black-box-control.service)" || return 1
+		headless_process="$(inspect_service_process rallar-black-box-headless-worker.service)" || return 1
+	fi
 	services="$(jq -cn \
 		--arg api "${api_state}" --arg control "${control_state}" \
 		--arg postgres "${postgres_state}" --arg caddy "${caddy_state}" \
 		--arg headless "${headless_state}" \
 		'{api: $api, control: $control, postgres: $postgres, caddy: $caddy, headless: $headless}')" || return 1
-	api_process="$(inspect_service_process rallar-api-v1.service)" || return 1
-	control_process="$(inspect_service_process rallar-black-box-control.service)" || return 1
-	headless_process="$(inspect_service_process rallar-black-box-headless-worker.service)" || return 1
 	processes="$(jq -cn --argjson api "${api_process}" --argjson control "${control_process}" \
 		--argjson headless "${headless_process}" '{api: $api, control: $control, headless: $headless}')" || return 1
 	jq -cn --argjson services "${services}" --argjson processes "${processes}" '{services: $services, processes: $processes}'
@@ -262,18 +268,30 @@ inspect_activity() {
 }
 
 inspect_health() {
-	local operator_settings="$1" api_loopback control_loopback api_public control_public
+	local operator_settings="$1"
+	local api_loopback control_loopback api_public control_public
 	local api_base_url control_url control_host control_scheme
-	api_loopback="$(inspect_health_code http://127.0.0.1:8080/api/config)" || return 1
-	control_loopback="$(inspect_health_code http://127.0.0.1:5180/health)" || return 1
-	api_base_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_API_BASE_URL.value')" || return 1
-	control_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_BLACK_BOX_CONTROL_URL.value')" || return 1
-	control_scheme=https
-	if [[ "${control_url}" == ws://* ]]; then control_scheme=http; fi
-	control_host="${control_url#*://}"
-	control_host="${control_host%%/*}"
-	api_public="$(inspect_health_code "${api_base_url%/}/api/config")" || return 1
-	control_public="$(inspect_health_code "${control_scheme}://${control_host}/health")" || return 1
+	case "${RALLAR_CONTROLLER_ROLE}" in
+	control)
+		api_loopback='not-local'
+		control_loopback="$(inspect_health_code http://127.0.0.1:5180/health)" || return 1
+		control_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_BLACK_BOX_CONTROL_URL.value // empty')" || return 1
+		control_scheme=https
+		if [[ "${control_url}" == ws://* ]]; then control_scheme=http; fi
+		control_host="${control_url#*://}"
+		control_host="${control_host%%/*}"
+		control_public="$(inspect_health_code "${control_scheme}://${control_host}/health")" || return 1
+		api_public='not-configured'
+		;;
+	*)
+		# The api role (and the games role once its hosts are wired) probes its own api-v1 surface.
+		api_loopback="$(inspect_health_code http://127.0.0.1:8080/api/config)" || return 1
+		api_base_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_API_BASE_URL.value')" || return 1
+		api_public="$(inspect_health_code "${api_base_url%/}/api/config")" || return 1
+		control_loopback='not-local'
+		control_public='not-configured'
+		;;
+	esac
 	jq -cn \
 		--arg apiLoopback "${api_loopback}" --arg controlLoopback "${control_loopback}" \
 		--arg apiPublic "${api_public}" --arg controlPublic "${control_public}" \
@@ -294,13 +312,17 @@ inspect_hosted_controller() {
 		return 1
 	}
 	source_state="$(inspect_source_state)" || return 1
-	readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
-		select(.deployedCommit | test("^[0-9a-f]{40}$")) |
-		select(all(.apiHealthStatus, .controlHealthStatus, .publicHealthStatus; . == "passed" or . == "failed"))' \
-		"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || {
-		inspect_fail "readiness"
-		return 1
-	}
+	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'control' ]]; then
+		readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
+			select(.deployedCommit | test("^[0-9a-f]{40}$")) |
+			select(all(.apiHealthStatus, .controlHealthStatus, .publicHealthStatus; . == "passed" or . == "failed"))' \
+			"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || {
+			inspect_fail "readiness"
+			return 1
+		}
+	else
+		readiness='{"deployedCommit":null,"note":"deployment-readiness is a control-host marker"}'
+	fi
 	database="$(inspect_database)" || return 1
 	services="$(inspect_services)" || return 1
 	activity="$(inspect_activity)" || return 1
