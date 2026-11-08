@@ -462,7 +462,7 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(Object.keys(workflow.on.workflow_dispatch?.inputs ?? {})).toHaveLength(25);
         expect(workflow.on.workflow_dispatch?.inputs?.execution_mode).toMatchObject({
             default: 'hetzner-control',
-            options: ['hetzner-control', 'all-local']
+            options: ['hetzner-control', 'all-local', 'all-local-postgres']
         });
         for (const job of ['prepare-hetzner', 'operator']) {
             expect(workflow.jobs[job].with).not.toHaveProperty('capture_api_cpu_gc');

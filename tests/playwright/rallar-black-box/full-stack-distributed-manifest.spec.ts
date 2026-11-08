@@ -105,7 +105,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
         await writeProvenance(artifactDir, source, selection.participantCount);
         expect(process.env.CI).toBe('1');
         expect(process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS).toBe('1');
-        expect(process.env.RALLAR_BLACK_BOX_API_MODE).toBe('memory');
+        expect(['memory', 'postgres']).toContain(process.env.RALLAR_BLACK_BOX_API_MODE);
         expect(process.env.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE).toBe(String(selection.meshMinSize));
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS).toBe('unbounded');
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS).toBe('unbounded');
