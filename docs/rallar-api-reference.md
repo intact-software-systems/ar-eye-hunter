@@ -1994,30 +1994,32 @@ re-originates the NACK toward the origin for that recipient; the origin applies
 the entry rule to the recipient and sends the repair copy through the relay,
 which forwards it down the tree.
 
-**Limits:** a live-only send records no positions; in a cluster positions are recorded only for sessions connected to the
-dequeuing instance; a receiver whose entry frame is lost and whose next frame
-arrives first enters past it, and the lost frame, arriving later, answers
-`before-entry` on a recorded frozen copy, while a live-only hand-over copy
-carries no record and is dropped silently (`ordering-rejected`, no NACK), and
-over plain `ws` it is dropped `stale` with no NACK and stays unconfirmed,
-repaired by nothing; under `rtc-with-ws-fallback` a server copy whose record
-meets the receiver's position can be read as an omission while the RTC frame for
-an earlier sequence is in flight, since the server's record does not count the
-RTC origin's sends, and that frame then arrives stale; under the same mode a
-recipient the WS server left out of a WS-leg send reads a gap the RTC origin
-cannot serve, and its track stalls until resync or the track expires, instead
-of a silent loss, in three cases the receipt does not cover: the server's
-dequeue dropped the session after the route captured the audience the receipt
-names, the send asked no logical receipt (its sequence stays a floor for every
-recipient until the track's row expires), or the `admitted` receipt arrived
-after the `complete` one; a relay re-originates a gap NACK only for a receipted
-send, so an `ack: 'none'` ordered track behind a relay stalls until resync or
-expiry, and two recipients reporting one gap through one relay are two repair
-requests at the origin; a predecessor whose dequeue keeps answering deferred
-or pending keeps its index row, so if it never returns the rows after it on its
-track wait for its deadline, as they do when the write that clears an ended
-predecessor's index row fails. A cross-instance record and outside class and a
-server record that counts the RTC origin's sends are later outcomes.
+**Limits:** a live-only send records no positions; in a cluster the dequeue
+records every captured session with a live connection generation anywhere, and a
+session whose socket closed before its close committed, or whose lease lapsed
+before the 60 s sweep, is judged at the receipt retry; a receiver whose entry
+frame is lost and whose next frame arrives first enters past it, and the lost
+frame, arriving later, answers `before-entry` on a recorded frozen copy, while a
+live-only hand-over copy carries no record and is dropped silently
+(`ordering-rejected`, no NACK), and over plain `ws` it is dropped `stale` with
+no NACK and stays unconfirmed, repaired by nothing; under `rtc-with-ws-fallback`
+a server copy whose record meets the receiver's position can be read as an
+omission while the RTC frame for an earlier sequence is in flight, since the
+server's record does not count the RTC origin's sends, and that frame then
+arrives stale; under the same mode a recipient the WS server left out of a
+WS-leg send reads a gap the RTC origin cannot serve, and its track stalls until
+resync or the track expires, instead of a silent loss, in three cases the
+receipt does not cover: the server's dequeue dropped the session after the route
+captured the audience the receipt names, the send asked no logical receipt (its
+sequence stays a floor for every recipient until the track's row expires), or
+the `admitted` receipt arrived after the `complete` one; a relay re-originates a
+gap NACK only for a receipted send, so an `ack: 'none'` ordered track behind a
+relay stalls until resync or expiry, and two recipients reporting one gap
+through one relay are two repair requests at the origin; a predecessor whose
+dequeue keeps answering deferred or pending keeps its index row, so if it never
+returns the rows after it on its track wait for its deadline, as they do when
+the write that clears an ended predecessor's index row fails. A server record
+that counts the RTC origin's sends is a later outcome.
 
 The missing sequence releases the buffered ones in order. Each release runs
 once its predecessor is delivered, and a batch that delivers one runs the
@@ -2108,9 +2110,8 @@ restart. Publishing the same `msgId` again keeps the sequence it was first
 given, and a server publication that states its own `seq` keeps it. Like a
 relayed browser row, an `outbox` publication records each recipient's position
 at its first dequeue, and its copies carry their recipient's entry; a recipient
-skipped below its position, or dropped by the dequeue re-check, stays expected
-and unconfirmed in the receipt of a server publication, which records no
-outside class of its own.
+skipped below its position, or dropped by the dequeue re-check, is recorded
+outside the server's own pending receipt (S5-i, D545).
 
 The server repairs its own publications from its sent copies. A WS client admits
 every server frame as the trusted server's, orders a server track like any other

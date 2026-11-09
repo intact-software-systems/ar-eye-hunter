@@ -347,11 +347,12 @@ the group's members commit alone. When one of them reaches no commit ahead of it
 ([`ws-queue-box-server-track-order.ts`](../../services/ws-queue-box-server/ws-queue-box-server-track-order.ts)) answers
 for a tracked row past `seq 1` that has not recorded: it lists the track's ordering index once and reads the listed
 lower sequences' stored rows in one session, from the highest sequence down to the first settled one
-(`readStoredPredecessorsToSettled`; measured in S7-i on Postgres: the prefix list returns N rows at depth N, the
-row's own index row included, and the front makes 3 point reads with every predecessor settled, 4 with the nearest
-unstored and N + 1 with none stored, one statement each), and a lower sequence is pending while its stored row is
-absent (a producer row before its first dequeue) or still has to record (`toALOrderingPendingPredecessors`). The
-row follows every pending
+(`readStoredPredecessorsToSettled`; measured in S7-i on Postgres: past `seq 1` the prefix list returns N rows at depth
+N, the row's own index row included, and the front makes 3 point reads with every predecessor settled, 4 with the
+nearest unstored and N + 1 with none stored, one statement each; the completing dequeue's durable re-check reads outside
+this front: at least two statements on a room row, the current snapshot then the authority batch, and an unmeasured pair
+on a principal row), and a lower sequence is pending while its stored row is absent (a producer row before its first
+dequeue) or still has to record (`toALOrderingPendingPredecessors`). The row follows every pending
 one its batch claimed, is `held` on the nearest one its batch did not, and passes with none, so a sequence nobody
 indexed, and one recorded, expired or admitted to no audience, holds nothing. A held row's authority names the one read
 that releases it (that predecessor's index row and stored row), and the claim's 50 ms re-check reads that alone rather
@@ -934,12 +935,14 @@ or a row a producer wrote straight to the outbox, each under its own sender vers
 re-check narrowed, less the sender; a row admitted to no audience (account-view and world rows) and an immediate
 (live-only) send record nothing. The dequeue and the receipt retry re-check the captured audience
 against durable presence (the WS server's `durable` filter): a session with no live connection generation anywhere is
-dropped and judged outside whatever this instance's sockets hold. At send each instance re-checks against its own open
-sockets (`local`), and the cluster bridge reports the captured sessions that re-check dropped beside the recipients it
-skipped below their position, judged only when the session's socket here is open; a session live nowhere is left to the
-retry's durable re-check. On the server's own rows (its publications and every producer row it sends under its
-peer id) a recipient the WS server skipped below its position, or a session a re-check dropped, is recorded
-in `outsideAudiencePeerIds` of the server's own pending receipt through one fenced commit
+dropped and judged outside whatever this instance's sockets hold; a principal row judges only the principal's own
+sessions and keeps a co-member's, and a row naming neither a room nor a principal keeps its captured audience (the
+addendum's Slice 7 limits). A receipt retry records outside only the drops it still waits on. At send each instance
+re-checks against its own open sockets (`local`), and the cluster bridge reports the captured sessions that re-check
+dropped beside the recipients it skipped below their position, judged only when the session's socket here is open; a
+session live nowhere is left to the retry's durable re-check. On the server's own rows (its publications and every
+producer row it sends under its peer id) a recipient the WS server skipped below its position, or a session a re-check
+dropped, is recorded in `outsideAudiencePeerIds` of the server's own pending receipt through one fenced commit
 (`ALOutboundAdmissionStore.commitOutsideAudience`), tried three times on a lost fence and then reported as one
 `outside-audience-commit` outbound diagnostic; on a relayed row the origin hears it as an outside-audience ACK. The
 read records

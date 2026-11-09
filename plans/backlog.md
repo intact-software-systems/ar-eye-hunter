@@ -235,19 +235,23 @@ and it has no status list.
   through the guarded batch (`guarded-view-publication.ts:58-66`); corruption
   would be the honest answer, a behaviour change for ~10 producers.
 - What 6b leaves unmeasured of server-side ordered sends (S5-i, D539, D544;
-  S7-i, D571): the 6b probe counts the tracked WS dequeue on room rows (the
-  prefix list returns N rows at depth N, the front makes 3, 4 or N + 1 point
-  reads, and the durable re-check adds one statement per dequeue); the
-  principal row's read shape (`readPrincipalSessions`: the principal row and
-  every stored session row), the bytes read under real client-state rows, and
-  the hosted regime are unmeasured.
+  S7-i, D571): the 6b probe counts the tracked WS dequeue on room rows (past
+  `seq 1` the prefix list returns N rows at depth N, the front makes 3, 4 or N +
+  1 point reads, and the durable re-check's authority batch adds one statement
+  over a constant room snapshot); the current-snapshot read production issues
+  before that batch (one statement while the cache keeps the snapshot, so a room
+  row gains at least two), the principal row's read shape
+  (`readPrincipalSessions`: the principal row and every stored session row), the
+  bytes read under real client-state rows, and the hosted regime are unmeasured.
 - An admission-time declared publication grant for joiners (D494), with its
   persisted declaration and lifetime rule; today only the creator declares a
   grant at creation, and each joiner is granted explicitly.
 - The dispatch re-check for `members` topics (D498): an outbox row of a
-  `members` topic is narrowed only by the socket and scope eligibility filter at
-  dequeue, so a member who left or was banned after admission can still receive
-  it, as before S2-i.
+  `members` topic is judged at the dequeue against the room's live session
+  generations (S7-i), not re-admitted on membership. Leave and ban clear the
+  member's presence admission and enqueue the presence summary's recompute, so a
+  member who left or was banned after admission can still receive the row while
+  its session stays in the room's presence, until that recompute lands.
 - A `publicationVersion` grants-only floor on the group row (D484), if browsers
   need to wait for a grant the way `rosterVersion` lets them wait for a roster.
 - Batched subscription renewal (S2-ii, D489), if the per-subscription renew
