@@ -28,11 +28,10 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
-
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 import {
@@ -45,8 +44,10 @@ const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.ski
 
 type PredecessorState = 'all-settled' | 'nearest-unstored' | 'none-stored';
 
+type TrackedDequeueCellLabel = PredecessorState | 'non-contiguous';
+
 interface TrackedDequeueCell {
-    readonly label: string;
+    readonly label: TrackedDequeueCellLabel;
     readonly state: PredecessorState;
     /** Every row's sequence on the track, ascending; the last is the measured row. */
     readonly seqs: readonly number[];
@@ -54,13 +55,18 @@ interface TrackedDequeueCell {
 
 interface TrackedDequeueCellReport {
     readonly depth: number;
-    readonly state: string;
+    readonly state: TrackedDequeueCellLabel;
     readonly listRowCount: number;
     readonly frontReads: number;
     readonly frontStatements: number;
     readonly holds: number;
     readonly dequeueStatements: number;
-    readonly recheckStatements: number;
+    /**
+     * The statements of the durable re-check's authority batch read over a constant room snapshot. Production's
+     * re-check reads the current snapshot first (one statement while the cache keeps it, more when it is probed), and
+     * a principal row reads the principal row and its session rows instead; neither is measured here.
+     */
+    readonly authorityBatchStatements: number;
     readonly frontMs: number;
 }
 
@@ -82,7 +88,7 @@ describe('Postgres tracked WS dequeue statements', () => {
         postgresIt(`reports the dequeue cost of a tracked row at depth ${cell.seqs.length}, ${cell.label}`, async () => {
             const storage = await createResourceInboxTestStorage('ws_tracked', 4);
             try {
-                const { report, recheckCalls } = await measureTrackedDequeue(storage.sql, cell);
+                const { report, authorityBatchCalls } = await measureTrackedDequeue(storage.sql, cell);
                 console.info(`6b-cell ${JSON.stringify(report)}`);
                 // The track's prefix list returns the measured row's own index row beside its predecessors'.
                 expect(report.listRowCount).toBe(cell.seqs.length === 1 ? 0 : cell.seqs.length);
@@ -93,9 +99,9 @@ describe('Postgres tracked WS dequeue statements', () => {
                 else {
                     expect(report.holds).toBeGreaterThanOrEqual(1);
                 }
-                // Durable presence judges the non-frozen row once, in one batch statement.
-                expect(recheckCalls).toBe(1);
-                expect(report.recheckStatements).toBe(1);
+                // Durable presence judges the non-frozen row once; its authority batch read is one statement.
+                expect(authorityBatchCalls).toBe(1);
+                expect(report.authorityBatchStatements).toBe(1);
             }
             finally {
                 await storage.close();
@@ -122,7 +128,7 @@ const GROUP = { ...WS_SCOPE, groupId: 'room' };
 
 interface TrackedDequeueMeasurement {
     readonly report: TrackedDequeueCellReport;
-    readonly recheckCalls: number;
+    readonly authorityBatchCalls: number;
 }
 
 /** Writes the cell's predecessors, then dequeues its last row and reports what that dequeue cost. */
@@ -141,12 +147,16 @@ async function measureTrackedDequeue(sql: PSqlSql, cell: TrackedDequeueCell): Pr
 
         lane.probe.measure(measured.message.id.msgId, () => writeTrackIndexEnds(lane.stores, trackKey, unstored));
         await writeTrackedRows(lane, [measured], 'queued');
-        await expect.poll(() => lane.probe.completed(), { timeout: 60_000 }).toBe(true);
+        await expect.poll(() => lane.probe.state(), { timeout: 60_000 }).not.toBe('pending');
         await lane.probe.released();
-        const recheck = lane.recheck();
+        expect(lane.probe.state()).toBe('completed');
+        const authorityBatch = lane.authorityBatch.counts();
         return {
-            report: { ...toCellReport(cell, lane.probe.admissions(), log.statements), recheckStatements: recheck.statements },
-            recheckCalls: recheck.calls
+            report: {
+                ...toCellReport(cell, lane.probe.admissions(), log.statements),
+                authorityBatchStatements: authorityBatch.statements
+            },
+            authorityBatchCalls: authorityBatch.calls
         };
     }
     finally {
@@ -210,8 +220,10 @@ async function writeTrackedRows(
     );
     await lane.sql.begin(async (transaction) => {
         await writeAppOutboxInserts(transaction, inserts);
-        for (const { message } of kept === 'index-only' ? rows : []) {
-            await transaction`delete from resource_inbox where ri_resource_id = ${message.id.msgId}`;
+        if (kept === 'index-only') {
+            for (const { message } of rows) {
+                await transaction`delete from resource_inbox where ri_resource_id = ${message.id.msgId}`;
+            }
         }
     });
     if (kept === 'queued') {
@@ -267,12 +279,16 @@ interface StageMark {
 /** One dequeue of the measured row, from its `admission-start`. */
 type AdmissionMarks = StageMark[];
 
+/** A release that failed ends the wait at once, so its own error is reported instead of a completion timeout. */
+type TrackedDequeueProbeState = 'pending' | 'completed' | 'release-failed';
+
 interface TrackedDequeueProbe {
     readonly sink: ALOutboundDequeuedAdmission.TimingSink;
     /** Measures the row `msgId` from its next dequeue on; `release` runs once, at its first held front. */
     measure(msgId: string, release: () => Promise<void>): void;
     isMeasured(msgId: string): boolean;
-    completed(): boolean;
+    state(): TrackedDequeueProbeState;
+    /** Waits for the release, if one started, and throws its error if it failed. */
     released(): Promise<void>;
     admissions(): readonly AdmissionMarks[];
 }
@@ -287,7 +303,8 @@ const MEASURED_STAGES: ReadonlySet<ALOutboundDequeuedAdmission.TimingStage> = ne
 function createTrackedDequeueProbe(log: PostgresStatementLog, readReadCount: () => number): TrackedDequeueProbe {
     const admissions: AdmissionMarks[] = [];
     let measured: Readonly<{ msgId: string; release: () => Promise<void>; }> | undefined;
-    let release: Promise<void> | undefined;
+    let releasing: Promise<void> | undefined;
+    let releaseFailure: { readonly error: unknown; } | undefined;
     let completed = false;
     return {
         sink: (observation) => {
@@ -313,16 +330,23 @@ function createTrackedDequeueProbe(log: PostgresStatementLog, readReadCount: () 
                 admissions.push([]);
             }
             admissions.at(-1)?.push(mark);
-            if (mark.stage === 'pending-authority-read-end' && mark.outcome !== 'ready' && release === undefined) {
-                release = measured.release();
+            if (mark.stage === 'pending-authority-read-end' && mark.outcome !== 'ready' && releasing === undefined) {
+                releasing = measured.release().catch((error: unknown) => {
+                    releaseFailure = { error };
+                });
             }
         },
-        measure: (msgId, onHeld) => {
-            measured = { msgId, release: onHeld };
+        measure: (msgId, release) => {
+            measured = { msgId, release };
         },
         isMeasured: (msgId) => msgId === measured?.msgId,
-        completed: () => completed,
-        released: async () => await release,
+        state: () => (releaseFailure !== undefined ? 'release-failed' : completed ? 'completed' : 'pending'),
+        released: async () => {
+            await releasing;
+            if (releaseFailure !== undefined) {
+                throw releaseFailure.error;
+            }
+        },
         admissions: () => admissions
     };
 }
@@ -337,7 +361,7 @@ function toCellReport(
     cell: TrackedDequeueCell,
     admissions: readonly AdmissionMarks[],
     statements: readonly RecordedPostgresStatement[]
-): Omit<TrackedDequeueCellReport, 'recheckStatements'> {
+): Omit<TrackedDequeueCellReport, 'authorityBatchStatements'> {
     const first = admissions[0]!;
     const completing = admissions.at(-1)!;
     const frontStart = toStageMark(first, 'admission-start');
@@ -369,8 +393,7 @@ interface TrackedDequeueLane {
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly engine: InboxOutboxEngine;
     readonly probe: TrackedDequeueProbe;
-    /** The measured row's durable re-checks and the statements they issued. */
-    recheck(): Readonly<{ calls: number; statements: number; }>;
+    readonly authorityBatch: MeasuredAuthorityBatchRead;
     dispose(): Promise<void>;
 }
 
@@ -399,46 +422,55 @@ const ROOM_SNAPSHOT: GroupSnapshot = {
     publicationGrants: []
 };
 
+interface MeasuredAuthorityBatchRead {
+    readonly filter: WsCapturedRecipientEligibilityFilter;
+    /** The measured row's authority batch reads and the statements they issued. */
+    counts(): Readonly<{ calls: number; statements: number; }>;
+}
+
+/**
+ * The durable filter's authority batch read over the constant `ROOM_SNAPSHOT`, for the measured row only. It measures
+ * the read's cost, not its verdict: the candidates pass unchanged. Production reads the current snapshot before this
+ * batch, and a principal row reads the principal row and its session rows instead; neither is issued here.
+ */
+function createMeasuredAuthorityBatchRead(
+    repository: PSqlRuntimeStateRepository,
+    probe: TrackedDequeueProbe,
+    log: PostgresStatementLog
+): MeasuredAuthorityBatchRead {
+    const counts = { calls: 0, statements: 0 };
+    return {
+        filter: async ({ message, candidateSessionIds }) => {
+            if (!probe.isMeasured(message.id.msgId)) {
+                return candidateSessionIds;
+            }
+            const before = log.statements.length;
+            await readGroupTopicSubscriptionAuthority(repository, {
+                snapshot: ROOM_SNAPSHOT,
+                topicId: message.route.topicId,
+                observedAtEpochMs: Date.now()
+            });
+            counts.calls += 1;
+            counts.statements += log.statements.length - before;
+            return candidateSessionIds;
+        },
+        counts: () => counts
+    };
+}
+
 /** A running WS server whose outbound lane, producer proofs and cluster NOTIFYs all run on one recorded client. */
 function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStatementLog): TrackedDequeueLane {
     const repository = new PSqlRuntimeStateRepository(sql);
     const storesNamespace = `ws-tracked-dequeue-${runId}`;
-    const stores = createPSqlALOutboundRuntimeStores({
-        repository,
-        namespace: storesNamespace,
-        nowMs: Date.now,
-        orderingTrackTtlMs: 60_000,
-        supersedenceTrackTtlMs: 60_000,
-        retention: undefined,
-        decodePrepared: decodeWsQueueBoxServerPreparedMessage
-    });
+    const stores = createTrackedDequeueStores(repository, storesNamespace);
     const proofs = new WsOutboxProvenanceReader({ repository, nowMs: Date.now, readPrincipalSessionIds: async () => [] });
-    const socket = new JsonWebSocketServer();
-    const native = new TestWebSocket('ws://peer');
-    native.open();
-    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
     const engine = new InboxOutboxEngine();
     const probe = createTrackedDequeueProbe(log, () => stores.admissionStore.getReadOperationCount());
-    const recheck = { calls: 0, statements: 0 };
-    // The probe measures the durable read's cost, not its verdict: the candidates pass unchanged.
-    const durable: WsCapturedRecipientEligibilityFilter = async ({ message, candidateSessionIds }) => {
-        if (!probe.isMeasured(message.id.msgId)) {
-            return candidateSessionIds;
-        }
-        const before = log.statements.length;
-        await readGroupTopicSubscriptionAuthority(repository, {
-            snapshot: ROOM_SNAPSHOT,
-            topicId: message.route.topicId,
-            observedAtEpochMs: Date.now()
-        });
-        recheck.calls += 1;
-        recheck.statements += log.statements.length - before;
-        return candidateSessionIds;
-    };
+    const authorityBatch = createMeasuredAuthorityBatchRead(repository, probe, log);
     const service = createDefaultWsQueueBoxServerService({
         name: 'server',
         inboundVolatileStores: undefined,
-        socket,
+        socket: createPeerSocketServer(),
         outbox: stores.workQueue,
         outboundStores: stores,
         queueEngine: engine,
@@ -446,8 +478,53 @@ function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStat
         targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
         readAuthenticatedConnectionScope: () => ({ scope: WS_SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance: (message, entry) => proofs.readProducerProvenance(message, entry),
-        capturedRecipientEligibilityFilters: { durable, local: async ({ candidateSessionIds }) => candidateSessionIds }
+        capturedRecipientEligibilityFilters: { durable: authorityBatch.filter, local: async ({ candidateSessionIds }) => candidateSessionIds }
     });
+    installNotifyBridge(service, sql, runId);
+    engine.start();
+    return {
+        sql,
+        admissionNamespace: toALOutboundAdmissionNamespace(storesNamespace),
+        stores,
+        engine,
+        probe,
+        authorityBatch,
+        dispose: async () => {
+            await Promise.all([service.dispose(), engine.stop()]);
+        }
+    };
+}
+
+function createTrackedDequeueStores(
+    repository: PSqlRuntimeStateRepository,
+    namespace: string
+): ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage> {
+    return createPSqlALOutboundRuntimeStores({
+        repository,
+        namespace,
+        nowMs: Date.now,
+        orderingTrackTtlMs: 60_000,
+        supersedenceTrackTtlMs: 60_000,
+        retention: undefined,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
+}
+
+/** One open socket, for `peer`. */
+function createPeerSocketServer(): JsonWebSocketServer {
+    const socket = new JsonWebSocketServer();
+    const native = new TestWebSocket('ws://peer');
+    native.open();
+    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    return socket;
+}
+
+/** The cluster bridge publishes on the recorded client, so its NOTIFYs count; nothing subscribes. */
+function installNotifyBridge(
+    service: WsQueueBoxServerService,
+    sql: PSqlSql,
+    runId: string
+): void {
     void installQueueBoxPubSubBridge({
         wsQBoxServerService: service,
         channel: 'ws-tracked-dequeue-statements',
@@ -459,16 +536,4 @@ function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStat
             subscribe: async () => undefined
         }
     });
-    engine.start();
-    return {
-        sql,
-        admissionNamespace: toALOutboundAdmissionNamespace(storesNamespace),
-        stores,
-        engine,
-        probe,
-        recheck: () => recheck,
-        dispose: async () => {
-            await Promise.all([service.dispose(), engine.stop()]);
-        }
-    };
 }
