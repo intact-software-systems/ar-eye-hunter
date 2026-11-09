@@ -77,7 +77,10 @@ export namespace WsQueueBoxServerDequeueAuthority {
     export interface Dependencies {
         readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
-        /** Says whether a row reaches only its frozen audience, which each send then re-checks (a granted topic). */
+        /**
+         * Says whether a row reaches only its frozen audience (a granted topic): the one row a send re-checks against
+         * this instance's sockets, and the one row that sends nobody when no filters are wired.
+         */
         readonly targetResolution: Pick<WsQueueBoxServerTargetResolution, 'requiresFrozenAudience'>;
         readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
     }

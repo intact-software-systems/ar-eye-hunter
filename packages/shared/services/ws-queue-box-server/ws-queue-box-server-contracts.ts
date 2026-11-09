@@ -104,8 +104,8 @@ export interface CapturedWsRecipientEligibilityInputDto {
 }
 
 /**
- * The per-attempt re-check of a captured audience (D498): the candidates still eligible as of one durable read. It
- * rejects when the read fails or finds no room, so the row is kept for its retry.
+ * The per-attempt re-check of a captured audience (D498): the candidates still eligible as of one read of the presence
+ * it judges by. It rejects when the read fails or finds no room, so the row is kept for its retry.
  */
 export type WsCapturedRecipientEligibilityFilter = (
     input: CapturedWsRecipientEligibilityInputDto

@@ -119,7 +119,11 @@ export namespace WsQueueBoxServerOutboundPlanning {
     export interface RecipientResolution {
         readonly resolveRecipients: boolean;
         readonly representNoCurrentRecipient: boolean;
-        /** A dequeue reaching nobody here still sends: its publisher or its judged audience decides who it reaches. */
+        /**
+         * A dequeue that reaches nobody here completes with no send planned: its publisher sends it, or its audience was
+         * judged at the dequeue, so the instance holding a recipient's socket, the awaited-connection hold or the
+         * receipt retry decides who it reaches.
+         */
         readonly audienceJudgedAtSend: boolean;
         /** The audience the message was admitted or frozen to: never a session that joined after it (D24, D43). */
         readonly audience: readonly string[] | undefined;

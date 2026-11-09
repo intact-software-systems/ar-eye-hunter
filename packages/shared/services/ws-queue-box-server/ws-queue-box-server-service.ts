@@ -33,6 +33,7 @@ import {
     ALOutboundMessageRuntime,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
+    type ALOutboundRepairRequest,
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundRuntimeStores,
     type ALOutboundSettledSendResult
@@ -465,7 +466,11 @@ export class WsQueueBoxServerService {
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: async (message, request) => {
                 const audience = await this.dequeueAuthority.readCurrentAudience(message, request, 'durable');
-                await this.trackOrder.writeOutsideAudience(message, audience.dropped, 'durable');
+                await this.trackOrder.writeOutsideAudience(
+                    message,
+                    toRepairOutsideDrops(audience.dropped, request),
+                    'durable'
+                );
                 return this.outboundPlanning.planRepairMessage(message, {
                     ...request,
                     admittedAudience: audience.eligible
@@ -1101,4 +1106,16 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         publishRelayedAck: input.publishRelayedAck,
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });
+}
+
+/**
+ * A receipt retry records outside only the drops it still waits on: a recipient that confirmed is answered, and its
+ * outside answer would be one more fenced write that changes no class. Any other repair names no unconfirmed set.
+ */
+function toRepairOutsideDrops(dropped: readonly string[], request: ALOutboundRepairRequest): readonly string[] {
+    if (request.trigger !== 'ack-timeout') {
+        return dropped;
+    }
+    const unconfirmed = new Set(request.failedPeerIds);
+    return dropped.filter((peerId) => unconfirmed.has(peerId));
 }

@@ -562,61 +562,70 @@ async function sendToCapturedLocalTargets(
             new TypeError('Captured WS recipient authority differs from the publication target')
         );
     }
-    const eligible = await readCapturedEligibleSessionIds(input, options);
+    const eligibility = await readCapturedSendEligibility(input, options);
     const result = options.wsQBoxServerService.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
         message,
         key: entry.key,
         policy,
-        eligibleSessionIds: eligible,
+        eligibleSessionIds: eligibility.eligibleSessionIds,
         sentPositions: input.sentPositions
     }));
     await options.wsQBoxServerService.writeOutsideAudience(
         message,
-        [...result.belowPositionPeerIds, ...toCapturedSendDrops(policy, eligible, options)],
+        [...result.belowPositionPeerIds, ...toCapturedSendDrops(policy, eligibility)],
         'open-here'
     );
     return result;
 }
 
-/** With no re-check wired a send declares no exclusion: its captured sessions stay expected, none is dropped. */
+/**
+ * The captured sessions a local send may address; undefined leaves the send to resolve the row's targets. Only a
+ * re-check judges, so only a re-checked send drops the captured sessions it did not keep.
+ */
+type CapturedSendEligibility =
+    | Readonly<{ rechecked: true; eligibleSessionIds: readonly string[]; }>
+    | Readonly<{ rechecked: false; eligibleSessionIds: readonly string[] | undefined; }>;
+
+/** A send that no re-check judged declares no exclusion: its captured sessions stay expected, none is dropped. */
 function toCapturedSendDrops(
     policy: SendToCapturedLocalTargetsInput['policy'],
-    eligible: readonly string[] | undefined,
-    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'filterEligibleCapturedSessionIds'>
+    eligibility: CapturedSendEligibility
 ): readonly string[] {
-    if (eligible === undefined || options.filterEligibleCapturedSessionIds === undefined) {
+    if (!eligibility.rechecked) {
         return [];
     }
-    return (policy?.admittedAudience ?? []).filter((sessionId) => !eligible.includes(sessionId));
+    const eligible = new Set(eligibility.eligibleSessionIds);
+    return (policy?.admittedAudience ?? []).filter((sessionId) => !eligible.has(sessionId));
 }
 
 /**
- * The captured sessions a local send may address: re-checked for a scoped row and a frozen-audience row, nobody for a
- * frozen-audience row with no re-check wired; undefined leaves the send to resolve the row's targets.
+ * Re-checked for a scoped row and a frozen-audience row; nobody, unjudged, for a frozen-audience row with no re-check
+ * wired; any other row is left to resolve its targets.
  */
-async function readCapturedEligibleSessionIds(
+async function readCapturedSendEligibility(
     { message, entry, policy }: SendToCapturedLocalTargetsInput,
     options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
-): Promise<readonly string[] | undefined> {
+): Promise<CapturedSendEligibility> {
     const captured = policy?.admittedAudience;
     const frozen = options.wsQBoxServerService.requiresFrozenAudience(message);
     if (captured === undefined || policy?.sessionInvalidation !== undefined) {
-        return undefined;
+        return { rechecked: false, eligibleSessionIds: undefined };
     }
     if (!frozen && !isWsQueueBoxServerCapturedSessionRow(message, entry.key)) {
-        return undefined;
+        return { rechecked: false, eligibleSessionIds: undefined };
     }
     const filter = options.filterEligibleCapturedSessionIds;
     if (filter === undefined) {
-        return frozen ? [] : undefined;
+        return { rechecked: false, eligibleSessionIds: frozen ? [] : undefined };
     }
-    return await readWsQueueBoxServerEligibleAudience({
+    const eligibleSessionIds = await readWsQueueBoxServerEligibleAudience({
         message,
         admittedAudience: captured,
         admittedConnectionGenerationIds: policy?.admittedConnectionGenerationIds,
         provenScope: policy?.recipientScope,
         filterEligibleCapturedSessionIds: filter
     });
+    return { rechecked: true, eligibleSessionIds };
 }
 
 async function resolveResourceEntryFromPubSubMessage(

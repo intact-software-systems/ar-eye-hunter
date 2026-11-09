@@ -639,6 +639,32 @@ Deno.test('a captured session live at the dequeue and live nowhere at the retry 
     });
 });
 
+Deno.test('a receipt retry records outside only the recipients it still waits on, never one that confirmed', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = addAudience(harness.server);
+        // The publish and the first dequeue read both subscribers live; Bob confirms, Carol does not, and neither has a
+        // live generation at the retry.
+        harness.reads.push(
+            ...grantedReads(2),
+            () => Promise.resolve(withoutLiveGeneration(withoutLiveGeneration(createAuthority(GRANTS), 'bob'), 'carol'))
+        );
+        const message = {
+            ...feedMessage({ senderId: SERVER_PEER_ID, msgId: 'retry-after-confirm' }),
+            qos: { ack: { algo: 'receiver', opts: { timeoutMs: 200 } } }
+        } as const;
+        const receipt = { originPeerId: SERVER_PEER_ID, msgId: 'retry-after-confirm' };
+
+        await harness.router.publish({ message, fanout: 'outbox', producerId: PRODUCER });
+        await waitFor(() => readDelivered(frames.bob, message) > 0);
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await waitFor(async () => (await harness.stores.admissionStore.readReceiptState(receipt))?.outsideAudiencePeerIds.includes('carol') === true);
+        await settle();
+
+        assert.deepEqual((await harness.stores.admissionStore.readReceiptState(receipt))?.outsideAudiencePeerIds, ['carol']);
+        assert.equal(await harness.stores.admissionStore.readPendingAck(receipt), undefined);
+    });
+});
+
 Deno.test('a members-topic outbox row is narrowed by the durable filter only', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
