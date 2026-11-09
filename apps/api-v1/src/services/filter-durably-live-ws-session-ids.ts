@@ -1,3 +1,4 @@
+import type { PrincipalSessionIds } from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { readALPrincipalBroadcastTarget } from '@shared/al-contracts/read-al-principal-broadcast-target.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
@@ -9,16 +10,17 @@ import {
 
 export interface FilterDurablyLiveWsSessionIdsInput
     extends Omit<FilterGrantedWsRecipientSessionIdsInput, 'durableEligibleSessionIds'> {
-    /** The principal's live session rows, or `undefined` when the principal is not active in the scope. */
-    readonly readPrincipalLiveSessionIds: (ref: ClientPrincipalRef) => Promise<readonly string[] | undefined>;
+    /** The principal's own session rows and the live ones, or `undefined` when the principal is not active in the scope. */
+    readonly readPrincipalSessions: (ref: ClientPrincipalRef) => Promise<PrincipalSessionIds | undefined>;
 }
 
 /**
  * The dequeue's half of the D498 re-check: the candidates with a live connection generation anywhere, in candidate
  * order; the local half is the socket filter at send. A granted row keeps the candidates whose live subscription
  * asserts the generation it captured; a room row the candidates the room's live generations name, nobody when the room
- * has no current snapshot; a principal row the principal's live sessions. A row naming neither keeps its candidates:
- * no durable fact names its sessions, so the send filter and the retry decide.
+ * has no current snapshot; a principal row the principal's live sessions, every other candidate kept (a co-member's
+ * session, which no durable fact of the row names), nobody when the principal is not active in the scope. A row naming
+ * neither keeps its candidates: no durable fact names its sessions, so the send filter and the retry decide.
  */
 export async function filterDurablyLiveWsSessionIds(
     input: FilterDurablyLiveWsSessionIdsInput
@@ -36,8 +38,13 @@ export async function filterDurablyLiveWsSessionIds(
     }
     const principalRef = readALPrincipalBroadcastTarget(message);
     if (principalRef !== undefined) {
-        const live = new Set(await input.readPrincipalLiveSessionIds(principalRef));
-        return candidateSessionIds.filter((sessionId) => live.has(sessionId));
+        const sessions = await input.readPrincipalSessions(principalRef);
+        if (sessions === undefined) {
+            return [];
+        }
+        const own = new Set(sessions.sessionIds);
+        const live = new Set(sessions.liveSessionIds);
+        return candidateSessionIds.filter((sessionId) => !own.has(sessionId) || live.has(sessionId));
     }
     return candidateSessionIds;
 }

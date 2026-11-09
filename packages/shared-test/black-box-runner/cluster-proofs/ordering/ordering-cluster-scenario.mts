@@ -9,7 +9,13 @@ import type {
     ManagedApiServerLifecycleControls,
     ManagedApiServerPlan
 } from '../../managed-api/with-managed-api-server-plans.mts';
-import { ApiV1RtcTopologyProofApi, type ProofSession } from '../../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import {
+    ApiV1RtcTopologyProofApi,
+    requireRecord,
+    requireString,
+    type ProofJsonObject,
+    type ProofSession
+} from '../../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import { waitForProofCondition } from '../cluster-proof-socket.mts';
 import { OrderingProofPostgres } from './ordering-proof-postgres.mts';
 import { OrderingProofSocket } from './ordering-proof-socket.mts';
@@ -97,11 +103,11 @@ export class OrderingClusterScenario {
         this.#phase = 'track-1-remote-receiver-entry';
         const first = await this.#assertTrack1Entry(parties);
         this.#phase = 'track-2-remote-receivers-recorded';
-        const msg1 = await this.#assertTrack2Recorded(parties);
+        const recorded = await this.#assertTrack2Recorded(parties);
         this.#phase = 'closed-receiver';
         await this.#closeReceiver(parties);
         this.#phase = 'track-2-outside-by-retry-and-omission';
-        const track2 = await this.#assertTrack2Completed(parties, msg1);
+        const track2 = await this.#assertTrack2Completed(parties, recorded);
         this.#phase = 'track-1-in-order-after-close';
         const secondSeq = await this.#assertTrack1InOrder(parties);
         return {
@@ -220,12 +226,12 @@ export class OrderingClusterScenario {
             requestId,
             body: { topicId: GRANTED_FEED, connectionGenerationId: party.generationId }
         });
-        assertEquals(outcome.outcome, 'subscribed');
+        assertEquals(requireString(outcome.outcome, 'subscribe outcome'), 'subscribed');
     }
 
     /** The principal upsert on the secondary reaches both of Alice's other instances' sessions from the primary's dequeue. */
     async #assertTrack1Entry(parties: Parties): Promise<Omit<Track1Evidence, 'secondSeq'>> {
-        const { c, r, x } = parties;
+        const { c, r, x, s } = parties;
         const secondary = this.#input.plans[1]!.baseUrl;
         const requestId = await this.#upsertPrincipal({ ...c.session, apiBaseUrl: secondary }, 'ordering-1');
         const first = await this.#waitForPrincipalFrame(r, requestId);
@@ -234,7 +240,9 @@ export class OrderingClusterScenario {
         const copies = [
             { party: c, frame: await this.#waitForPrincipalFrame(c, requestId) },
             { party: r, frame: first },
-            { party: x, frame: await this.#waitForPrincipalFrame(x, requestId) }
+            { party: x, frame: await this.#waitForPrincipalFrame(x, requestId) },
+            // Bob shares the room with full visibility, so Alice's principal event addresses his session too.
+            { party: s, frame: await this.#waitForPrincipalFrame(s, requestId) }
         ];
         for (const { party, frame } of copies) {
             assertInOrderOnTrack(party, frame, `${party.session.label} enters the principal track in order`);
@@ -244,13 +252,13 @@ export class OrderingClusterScenario {
         assertEquals(
             sentPositions,
             Object.fromEntries(copies.map(({ party, frame }) => [party.session.sessionId, readPriorSeq(party, frame)])),
-            'The record names every live session of the principal at its prior position, the remote ones included'
+            'The record names every live session of the audience at its prior position, the remote ones and the co-member included'
         );
         return { msgId: first.id.msgId, orderingKey: first.ordering!.orderingKey!, firstSeq, sentPositions };
     }
 
     /** The frozen granted row records both sessions live on the secondary although the primary holds no socket of them. */
-    async #assertTrack2Recorded(parties: Parties): Promise<ALMessage> {
+    async #assertTrack2Recorded(parties: Parties): Promise<RecordedMessage> {
         const { c, r, x } = parties;
         const msg1 = this.#newFeedMessage(c, [r, x], 1);
         c.socket.send(msg1);
@@ -262,12 +270,13 @@ export class OrderingClusterScenario {
         );
         await r.socket.waitForFrame((frame) => frame.id.msgId === msg1.id.msgId);
         await x.socket.waitForFrame((frame) => frame.id.msgId === msg1.id.msgId);
+        const sentPositions = await this.#database.readSentPositions(msg1.id.msgId);
         assertEquals(
-            await this.#database.readSentPositions(msg1.id.msgId),
+            sentPositions,
             { [r.session.sessionId]: 0, [x.session.sessionId]: 0 },
             'A frozen row records the sessions live on another instance'
         );
-        return msg1;
+        return { message: msg1, sentPositions };
     }
 
     /** `x` closes after its dequeue and never acknowledges; the close commits through AppInbox. */
@@ -283,7 +292,8 @@ export class OrderingClusterScenario {
         }, 'the closed receiver is live nowhere');
     }
 
-    async #assertTrack2Completed(parties: Parties, msg1: ALMessage): Promise<Track2Evidence> {
+    async #assertTrack2Completed(parties: Parties, recorded: RecordedMessage): Promise<Track2Evidence> {
+        const msg1 = recorded.message;
         const { c, r, s, x } = parties;
         const ackedAt = Date.now();
         r.socket.sendAck(msg1, r.session.sessionId);
@@ -311,7 +321,7 @@ export class OrderingClusterScenario {
         );
         return {
             msgIds: [msg1.id.msgId, msg2.id.msgId, msg3.id.msgId],
-            sentPositions: { [r.session.sessionId]: 0, [x.session.sessionId]: 0 },
+            sentPositions: recorded.sentPositions,
             receipt: {
                 confirmed: complete.confirmedRecipientPeerIds,
                 outside: complete.outsideAudienceRecipientPeerIds,
@@ -386,7 +396,7 @@ export class OrderingClusterScenario {
         return parseAuthoritativeClientSnapshot(await response.text(), this.#scope);
     }
 
-    async #mutate(session: ProofSession, path: string, request: MutationRequest): Promise<Record<string, unknown>> {
+    async #mutate(session: ProofSession, path: string, request: MutationRequest): Promise<ProofJsonObject> {
         const response = await fetch(`${session.apiBaseUrl}${this.#scopePath}${path}`, {
             method: request.method,
             headers: { ...authHeaders(session), 'Content-Type': 'application/json', 'x-request-id': request.requestId },
@@ -394,7 +404,7 @@ export class OrderingClusterScenario {
         });
         const body = await response.text();
         assertEquals(response.status, 200, `${request.method} ${path} applies through AppInbox: ${body}`);
-        return JSON.parse(body);
+        return requireRecord(JSON.parse(body), `${request.method} ${path} response`);
     }
 
     #newRequestId(): string {
@@ -420,6 +430,11 @@ interface MutationRequest {
     readonly method: 'POST' | 'PUT';
     readonly requestId: string;
     readonly body: object;
+}
+
+interface RecordedMessage {
+    readonly message: ALMessage;
+    readonly sentPositions: Readonly<Record<string, number>> | null;
 }
 
 interface Track1Evidence {

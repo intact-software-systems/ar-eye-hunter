@@ -54,18 +54,27 @@ Deno.test('a principal row keeps the principal\'s live sessions', async () => {
     const message = principalMessage();
     const live = await filterDurablyLiveWsSessionIds({
         ...durableInput(message, ['s1', 's3']),
-        readPrincipalLiveSessionIds: (ref: ClientPrincipalRef) => {
+        readPrincipalSessions: (ref: ClientPrincipalRef) => {
             assert.deepEqual(ref, PRINCIPAL);
-            return Promise.resolve(['s1', 's2']);
+            return Promise.resolve({ sessionIds: ['s1', 's2', 's3'], liveSessionIds: ['s1', 's2'] });
         }
     });
     const absent = await filterDurablyLiveWsSessionIds({
         ...durableInput(message, ['s1', 's3']),
-        readPrincipalLiveSessionIds: () => Promise.resolve(undefined)
+        readPrincipalSessions: () => Promise.resolve(undefined)
     });
 
     assert.deepEqual(live, ['s1']);
     assert.deepEqual(absent, []);
+});
+
+Deno.test('a principal row keeps a co-member\'s session it has no durable fact for and drops the principal\'s own session that is not live', async () => {
+    const eligible = await filterDurablyLiveWsSessionIds({
+        ...durableInput(principalMessage(), ['own-live', 'own-dead', 'comember']),
+        readPrincipalSessions: () => Promise.resolve({ sessionIds: ['own-live', 'own-dead'], liveSessionIds: ['own-live'] })
+    });
+
+    assert.deepEqual(eligible, ['own-live', 'comember']);
 });
 
 Deno.test('a row naming no group and no principal keeps its candidates', async () => {
@@ -89,7 +98,7 @@ function durableInput(message: ALMessage, candidateSessionIds: readonly string[]
         grantedTopics,
         serverPeerId: SERVER_PEER_ID,
         readPublicationAuthority: () => Promise.reject(new Error('this row reads no publication authority')),
-        readPrincipalLiveSessionIds: () => Promise.reject(new Error('this row reads no principal sessions')),
+        readPrincipalSessions: () => Promise.reject(new Error('this row reads no principal sessions')),
         nowEpochMs: Date.now()
     };
 }

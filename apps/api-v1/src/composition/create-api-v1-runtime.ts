@@ -53,7 +53,11 @@ import { TournamentViewWatch } from '@shared-server/rallar-system/tournaments/to
 import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
 import { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
-import { readPrincipalSessionIds } from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
+import {
+    readPrincipalSessionIds,
+    readPrincipalSessions,
+    type PrincipalSessionReader
+} from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
 import type { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
@@ -62,7 +66,6 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -481,16 +484,15 @@ function createWsDeliveryAuthority(
     | 'capturedRecipientEligibilityFilters'
 > {
     const { mutation } = input;
-    const readPrincipalLiveSessionIds = (ref: ClientPrincipalRef) =>
-        readPrincipalSessionIds(ref, {
-            readClientSnapshot: async (principalRef) =>
-                (await mutation.clientsRepository.readPrincipalSnapshot(principalRef))?.snapshot,
-            nowEpochMs: input.nowEpochMs
-        });
+    const principalSessionReader: PrincipalSessionReader = {
+        readClientSnapshot: async (principalRef) =>
+            (await mutation.clientsRepository.readPrincipalSnapshot(principalRef))?.snapshot,
+        nowEpochMs: input.nowEpochMs
+    };
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
         repository: mutation.runtimeStateRepository,
         nowMs: input.nowEpochMs,
-        readPrincipalSessionIds: readPrincipalLiveSessionIds
+        readPrincipalSessionIds: (ref) => readPrincipalSessionIds(ref, principalSessionReader)
     });
     return {
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
@@ -504,7 +506,7 @@ function createWsDeliveryAuthority(
             serverPeerId: input.wsRuntimeName,
             readPublicationAuthority: (ref, topicId) =>
                 mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
-            readPrincipalLiveSessionIds,
+            readPrincipalSessions: (ref) => readPrincipalSessions(ref, principalSessionReader),
             nowEpochMs: input.nowEpochMs
         })
     };

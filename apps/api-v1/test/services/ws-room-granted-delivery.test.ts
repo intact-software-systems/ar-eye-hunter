@@ -719,7 +719,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                     grantedTopics,
                     serverPeerId: SERVER_PEER_ID,
                     readPublicationAuthority: readRecheckRoom,
-                    readPrincipalLiveSessionIds: () => Promise.resolve(undefined),
+                    readPrincipalSessions: () => Promise.resolve(undefined),
                     nowEpochMs: Date.now()
                 }),
             local: recheck

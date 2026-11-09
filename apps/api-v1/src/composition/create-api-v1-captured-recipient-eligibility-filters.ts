@@ -14,7 +14,7 @@ export interface CreateApiV1CapturedRecipientEligibilityFiltersInput {
     readonly grantedTopics: WsGrantedTopicSet;
     readonly serverPeerId: string;
     readonly readPublicationAuthority: FilterDurablyLiveWsSessionIdsInput['readPublicationAuthority'];
-    readonly readPrincipalLiveSessionIds: FilterDurablyLiveWsSessionIdsInput['readPrincipalLiveSessionIds'];
+    readonly readPrincipalSessions: FilterDurablyLiveWsSessionIdsInput['readPrincipalSessions'];
     readonly nowEpochMs: () => number;
 }
 
@@ -22,7 +22,7 @@ export interface CreateApiV1CapturedRecipientEligibilityFiltersInput {
 export function createApiV1CapturedRecipientEligibilityFilters(
     input: CreateApiV1CapturedRecipientEligibilityFiltersInput
 ): WsCapturedRecipientEligibilityFilters {
-    const { socketServer, grantedTopics, serverPeerId, readPublicationAuthority, readPrincipalLiveSessionIds } = input;
+    const { socketServer, grantedTopics, serverPeerId, readPublicationAuthority, readPrincipalSessions } = input;
     return {
         durable: async (captured) =>
             await filterDurablyLiveWsSessionIds({
@@ -30,7 +30,7 @@ export function createApiV1CapturedRecipientEligibilityFilters(
                 grantedTopics,
                 serverPeerId,
                 readPublicationAuthority,
-                readPrincipalLiveSessionIds,
+                readPrincipalSessions,
                 nowEpochMs: input.nowEpochMs()
             }),
         local: async (captured) =>
