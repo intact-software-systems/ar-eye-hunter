@@ -23,6 +23,7 @@ import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-o
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
@@ -304,7 +305,7 @@ function createTrackedDequeueProbe(log: PostgresStatementLog, readReadCount: () 
     const admissions: AdmissionMarks[] = [];
     let measured: Readonly<{ msgId: string; release: () => Promise<void>; }> | undefined;
     let releasing: Promise<void> | undefined;
-    let releaseFailure: { readonly error: unknown; } | undefined;
+    let releaseFailure: Error | undefined;
     let completed = false;
     return {
         sink: (observation) => {
@@ -331,8 +332,8 @@ function createTrackedDequeueProbe(log: PostgresStatementLog, readReadCount: () 
             }
             admissions.at(-1)?.push(mark);
             if (mark.stage === 'pending-authority-read-end' && mark.outcome !== 'ready' && releasing === undefined) {
-                releasing = measured.release().catch((error: unknown) => {
-                    releaseFailure = { error };
+                releasing = measured.release().catch((error) => {
+                    releaseFailure = toError(error);
                 });
             }
         },
@@ -344,7 +345,7 @@ function createTrackedDequeueProbe(log: PostgresStatementLog, readReadCount: () 
         released: async () => {
             await releasing;
             if (releaseFailure !== undefined) {
-                throw releaseFailure.error;
+                throw releaseFailure;
             }
         },
         admissions: () => admissions
