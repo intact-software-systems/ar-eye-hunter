@@ -53,7 +53,11 @@ import { TournamentViewWatch } from '@shared-server/rallar-system/tournaments/to
 import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
 import { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
-import { readPrincipalSessionIds } from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
+import {
+    readPrincipalSessionIds,
+    readPrincipalSessions,
+    type PrincipalSessionReader
+} from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
 import type { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
@@ -96,11 +100,7 @@ import {
     createApiStateSnapshotReadSelectors,
     type ApiStateSnapshotReadSelectors
 } from '../services/create-api-state-snapshot-read-selectors.ts';
-import {
-    filterEligibleDurableWsSessionIds,
-    filterEligibleLiveWsSessionIds
-} from '../services/filter-eligible-live-ws-session-ids.ts';
-import { filterGrantedWsRecipientSessionIds } from '../services/filter-granted-ws-recipient-session-ids.ts';
+import { filterEligibleLiveWsSessionIds } from '../services/filter-eligible-live-ws-session-ids.ts';
 import {
     runRuntimeStateExpiryStartupBarrier,
     type RuntimeStateExpiryStartupGeneration
@@ -108,6 +108,7 @@ import {
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import { requireApiV1Runtime, type ApiV1Runtime } from './api-v1-runtime.ts';
 import { createApiV1AppInbox } from './create-api-v1-app-inbox.ts';
+import { createApiV1CapturedRecipientEligibilityFilters } from './create-api-v1-captured-recipient-eligibility-filters.ts';
 import {
     createApiV1MutationRuntime,
     type ApiV1MutationRuntime,
@@ -480,18 +481,18 @@ function createWsDeliveryAuthority(
     | 'findGroupSnapshotByRef'
     | 'findClientSnapshotByRef'
     | 'grantedTopics'
-    | 'filterEligibleCapturedSessionIds'
+    | 'capturedRecipientEligibilityFilters'
 > {
     const { mutation } = input;
+    const principalSessionReader: PrincipalSessionReader = {
+        readClientSnapshot: async (principalRef) =>
+            (await mutation.clientsRepository.readPrincipalSnapshot(principalRef))?.snapshot,
+        nowEpochMs: input.nowEpochMs
+    };
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
         repository: mutation.runtimeStateRepository,
         nowMs: input.nowEpochMs,
-        readPrincipalSessionIds: (ref) =>
-            readPrincipalSessionIds(ref, {
-                readClientSnapshot: async (principalRef) =>
-                    (await mutation.clientsRepository.readPrincipalSnapshot(principalRef))?.snapshot,
-                nowEpochMs: input.nowEpochMs
-            })
+        readPrincipalSessionIds: (ref) => readPrincipalSessionIds(ref, principalSessionReader)
     });
     return {
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
@@ -499,20 +500,21 @@ function createWsDeliveryAuthority(
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         grantedTopics: input.grantedTopics,
-        filterEligibleCapturedSessionIds: async (captured) =>
-            await filterGrantedWsRecipientSessionIds({
-                ...captured,
-                durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
-                    ...captured,
-                    socketServer: mutation.webSocketServer,
-                    nowMs: input.nowEpochMs()
+        capturedRecipientEligibilityFilters: createApiV1CapturedRecipientEligibilityFilters({
+            socketServer: mutation.webSocketServer,
+            grantedTopics: input.grantedTopics,
+            serverPeerId: input.wsRuntimeName,
+            readPublicationAuthority: (ref, topicId) =>
+                mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
+            readPrincipalSessions: (ref) =>
+                readPrincipalSessions(ref, {
+                    findPrincipal: (principalRef) => mutation.clientsRepository.findPrincipal(principalRef),
+                    listSessionsForPrincipal: (principalRef) =>
+                        mutation.clientsRepository.listSessionsForPrincipal(principalRef),
+                    nowEpochMs: input.nowEpochMs
                 }),
-                grantedTopics: input.grantedTopics,
-                serverPeerId: input.wsRuntimeName,
-                readPublicationAuthority: (ref, topicId) =>
-                    mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
-                nowEpochMs: input.nowEpochMs()
-            })
+            nowEpochMs: input.nowEpochMs
+        })
     };
 }
 

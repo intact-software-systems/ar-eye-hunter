@@ -4,7 +4,7 @@ import {
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { assert, assertEquals } from '@std/assert';
 import postgres from 'postgres';
-import { waitForProofCondition } from './view-push-proof-socket.mts';
+import { waitForProofCondition } from '../cluster-proof-socket.mts';
 
 /** Owns the isolated test database connection and exact listener fault, never an API administration hook. */
 export class ViewPushProofPostgres {

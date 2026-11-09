@@ -33,6 +33,7 @@ import {
     ALOutboundMessageRuntime,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
+    type ALOutboundRepairRequest,
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundRuntimeStores,
     type ALOutboundSettledSendResult
@@ -69,7 +70,7 @@ import { toWsQueueBoxServerRecipientCopy } from './scope/to-ws-queue-box-server-
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
-    type WsCapturedRecipientEligibilityFilter,
+    type WsCapturedRecipientEligibilityFilters,
     type WsDeliveryDiagnosticsSink,
     type WsOutboxDeliveryOutcome,
     type WsServerInboundAuthorizer,
@@ -103,7 +104,7 @@ import {
     type WsQueueBoxServerReceiptSocketFacts
 } from './ws-queue-box-server-receipt-observation.ts';
 import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
-import { WsQueueBoxServerTrackOrder } from './ws-queue-box-server-track-order.ts';
+import { WsQueueBoxServerTrackOrder, type WsOutsideAudienceJudgement } from './ws-queue-box-server-track-order.ts';
 
 interface WsQueueBoxServerPreparedRecipientInput {
     readonly prepared: Extract<
@@ -138,8 +139,11 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider?: ALQosInputProvider;
         readonly targetResolver?: WsServerTargetResolver;
         readonly readProducerProvenance?: WsOutboxProducerProvenanceReader;
-        /** Re-checks a frozen-audience row's captured sessions at each dequeue, repair and awaited send (D498). */
-        readonly filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter;
+        /**
+         * The per-attempt re-checks of captured audiences (D498): the durable one judges every row at each dequeue and
+         * repair, the local one a frozen row's awaited send.
+         */
+        readonly capturedRecipientEligibilityFilters?: WsCapturedRecipientEligibilityFilters;
         readonly inboundStores?: ALInboundRuntimeStores;
         /** The memory pair a volatile message is admitted and delivered from; `undefined`, every message takes `inboundStores`. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
@@ -209,7 +213,7 @@ export namespace WsQueueBoxServerService {
         readonly qosProvider: ALQosInputProvider;
         readonly targetResolver: WsServerTargetResolver;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
-        readonly filterEligibleCapturedSessionIds: WsCapturedRecipientEligibilityFilter | undefined;
+        readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
@@ -294,7 +298,7 @@ export class WsQueueBoxServerService {
             admissionStore: this.admissionStore,
             readProducerProvenance: dependencies.readProducerProvenance,
             targetResolution: this.targetResolution,
-            filterEligibleCapturedSessionIds: dependencies.filterEligibleCapturedSessionIds
+            capturedRecipientEligibilityFilters: dependencies.capturedRecipientEligibilityFilters
         });
         this.outboundRuntime = this.createOutboundRuntime(dependencies);
         const receiptRouting = this.createReceiptRouting(dependencies);
@@ -375,7 +379,8 @@ export class WsQueueBoxServerService {
             ackRelay: this.ackRelay,
             outboundPlanning: this.outboundPlanning,
             name: this.name,
-            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId
+            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId,
+            diagnostics: dependencies.outboundDiagnostics
         });
     }
 
@@ -448,7 +453,7 @@ export class WsQueueBoxServerService {
                 await this.trackOrder.readTrackOrderAuthority(message, batch),
             readDequeueAuthority: async (message, entry) => {
                 const read = await this.dequeueAuthority.readDequeueAuthority(message, entry);
-                await this.trackOrder.writeOutsideAudience(message, read.dropped);
+                await this.trackOrder.writeOutsideAudience(message, read.dropped, 'durable');
                 return read.authority;
             },
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
@@ -460,8 +465,12 @@ export class WsQueueBoxServerService {
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: async (message, request) => {
-                const audience = await this.dequeueAuthority.readCurrentAudience(message, request);
-                await this.trackOrder.writeOutsideAudience(message, audience.dropped);
+                const audience = await this.dequeueAuthority.readCurrentAudience(message, request, 'durable');
+                await this.trackOrder.writeOutsideAudience(
+                    message,
+                    toRepairOutsideDrops(audience.dropped, request),
+                    'durable'
+                );
                 return this.outboundPlanning.planRepairMessage(message, {
                     ...request,
                     admittedAudience: audience.eligible
@@ -867,8 +876,8 @@ export class WsQueueBoxServerService {
     private async sendHeldRow(
         { message, entry, policy, sentPositions }: WsQueueBoxServerService.HeldRowSend
     ): Promise<void> {
-        const audience = await this.dequeueAuthority.readCurrentAudience(message, policy);
-        await this.trackOrder.writeOutsideAudience(message, audience.dropped);
+        const audience = await this.dequeueAuthority.readCurrentAudience(message, policy, 'local');
+        await this.trackOrder.writeOutsideAudience(message, audience.dropped, 'open-here');
         const sent = this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
             message,
             key: entry.key,
@@ -876,7 +885,7 @@ export class WsQueueBoxServerService {
             eligibleSessionIds: undefined,
             sentPositions
         }));
-        await this.trackOrder.writeOutsideAudience(message, sent.belowPositionPeerIds);
+        await this.trackOrder.writeOutsideAudience(message, sent.belowPositionPeerIds, 'open-here');
     }
 
     /** The cluster bridge reads the positions each published row's live copies take their entries from. */
@@ -884,8 +893,12 @@ export class WsQueueBoxServerService {
         return await this.trackOrder.readSentPositions(message);
     }
 
-    async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
-        await this.trackOrder.writeOutsideAudience(message, sessionIds);
+    async writeOutsideAudience(
+        message: ALMessage,
+        sessionIds: readonly string[],
+        judgement: WsOutsideAudienceJudgement
+    ): Promise<void> {
+        await this.trackOrder.writeOutsideAudience(message, sessionIds, judgement);
     }
 
     private async sendPreparedMessage(
@@ -943,7 +956,7 @@ export class WsQueueBoxServerService {
             sentPositions: lifecycle.sentPositions
         });
         if (copy.right === undefined) {
-            await this.trackOrder.writeOutsideAudience(canonical, [prepared.peerId]);
+            await this.trackOrder.writeOutsideAudience(canonical, [prepared.peerId], 'open-here');
             return { status: 'no-targets', submissionAttempted: false, reason: 'A later row of the track reached it' };
         }
         return this.sendRecipientCopy({ prepared, lifecycle, message: copy.right });
@@ -1064,7 +1077,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, input.qosProvider),
         targetResolver: input.targetResolver ?? { requiresFrozenAudience: () => false },
         readProducerProvenance: input.readProducerProvenance,
-        filterEligibleCapturedSessionIds: input.filterEligibleCapturedSessionIds,
+        capturedRecipientEligibilityFilters: input.capturedRecipientEligibilityFilters,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             volatileStores: input.inboundVolatileStores,
@@ -1093,4 +1106,16 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         publishRelayedAck: input.publishRelayedAck,
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });
+}
+
+/**
+ * A receipt retry records outside only the drops it still waits on: a recipient that confirmed is answered, and its
+ * outside answer would be one more fenced write that changes no class. Any other repair names no unconfirmed set.
+ */
+function toRepairOutsideDrops(dropped: readonly string[], request: ALOutboundRepairRequest): readonly string[] {
+    if (request.trigger !== 'ack-timeout') {
+        return dropped;
+    }
+    const unconfirmed = new Set(request.failedPeerIds);
+    return dropped.filter((peerId) => unconfirmed.has(peerId));
 }

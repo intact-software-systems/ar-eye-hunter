@@ -10,8 +10,9 @@ import type {
     ManagedApiServerPlan
 } from '../../managed-api/with-managed-api-server-plans.mts';
 import { ApiV1RtcTopologyProofApi, type ProofSession } from '../../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import { waitForProofCondition } from '../cluster-proof-socket.mts';
 import { ViewPushProofPostgres } from './view-push-proof-postgres.mts';
-import { ViewPushProofSocket, waitForProofCondition } from './view-push-proof-socket.mts';
+import { ViewPushProofSocket } from './view-push-proof-socket.mts';
 
 export namespace ViewPushClusterScenario {
     export interface Input {

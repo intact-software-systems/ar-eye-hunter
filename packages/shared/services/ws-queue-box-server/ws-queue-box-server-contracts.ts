@@ -104,12 +104,25 @@ export interface CapturedWsRecipientEligibilityInputDto {
 }
 
 /**
- * The per-attempt re-check of a captured audience (D498): the candidates still eligible as of one durable read. It
- * rejects when the read fails or finds no room, so the row is kept for its retry.
+ * The per-attempt re-check of a captured audience (D498): the candidates still eligible as of one read of the presence
+ * it judges by. It rejects when the read fails or finds no room, so the row is kept for its retry.
  */
 export type WsCapturedRecipientEligibilityFilter = (
     input: CapturedWsRecipientEligibilityInputDto
 ) => Promise<readonly string[]>;
+
+/** Which presence judges a captured audience: durable presence anywhere, or this instance's open sockets. */
+export type WsCapturedPresence = 'durable' | 'local';
+
+export interface WsCapturedRecipientEligibilityFilters {
+    /**
+     * The candidates with a live connection generation anywhere, and for a granted row a live subscription at the
+     * captured generation.
+     */
+    readonly durable: WsCapturedRecipientEligibilityFilter;
+    /** The candidates whose socket on this instance is open and scope-eligible. */
+    readonly local: WsCapturedRecipientEligibilityFilter;
+}
 
 export type WsOutboxDeliveryOutcome =
     | Readonly<{

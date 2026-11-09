@@ -12,7 +12,7 @@ import {
     isWsQueueBoxServerProducerRow,
     validateWsQueueBoxServerProducerAuthority
 } from './scope/validate-ws-queue-box-server-producer-authority.ts';
-import type { WsCapturedRecipientEligibilityFilter } from './ws-queue-box-server-contracts.ts';
+import type { WsCapturedPresence, WsCapturedRecipientEligibilityFilters } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
@@ -77,9 +77,12 @@ export namespace WsQueueBoxServerDequeueAuthority {
     export interface Dependencies {
         readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
-        /** Says whether a row reaches only its frozen audience, which each attempt then re-checks (a granted topic). */
+        /**
+         * Says whether a row reaches only its frozen audience (a granted topic): the one row a send re-checks against
+         * this instance's sockets, and the one row that sends nobody when no filters are wired.
+         */
         readonly targetResolution: Pick<WsQueueBoxServerTargetResolution, 'requiresFrozenAudience'>;
-        readonly filterEligibleCapturedSessionIds: WsCapturedRecipientEligibilityFilter | undefined;
+        readonly capturedRecipientEligibilityFilters: WsCapturedRecipientEligibilityFilters | undefined;
     }
 
     export type AudienceAuthority = Pick<
@@ -125,7 +128,7 @@ export class WsQueueBoxServerDequeueAuthority {
         const facts = await admissionStore.readDequeueAdmissionFacts(message, entry);
         if (facts.sentAdmission) {
             const policy = await this.readCapturedPolicy(message, entry, undefined);
-            const audience = await this.readCurrentAudience(message, policy);
+            const audience = await this.readCurrentAudience(message, policy, 'durable');
             return {
                 authority: {
                     admittedAudience: audience.eligible,
@@ -147,38 +150,41 @@ export class WsQueueBoxServerDequeueAuthority {
         if (validateWsQueueBoxServerProducerAuthority(message, authority, entry.key).length > 0) {
             throw toDequeueCorruption(entry, 'Producer authority differs from final WS target');
         }
-        const audience = await this.readCurrentAudience(message, authority);
+        const audience = await this.readCurrentAudience(message, authority, 'durable');
         return { authority: { ...authority, admittedAudience: audience.eligible }, dropped: audience.dropped };
     }
 
     /**
-     * The row's admitted audience as this attempt finds it (D498): a frozen-audience row's sessions the re-check still
-     * finds eligible, rejecting when the re-check cannot read so the row waits for its retry, and nobody when no
-     * re-check is wired; any other row's as captured. A session the re-check drops is sent nothing, and its caller
-     * records it outside the audience of the receipt its admission wrote (S4-R9). A composition with no re-check
-     * declares no exclusion: its sessions stay expected.
+     * The row's admitted audience as this attempt finds it (D498): durable presence judges every captured row at the
+     * dequeue and the retry; this instance's sockets judge a frozen-audience row at a send, where any other row keeps
+     * its captured audience. A re-check that cannot read rejects, so the row waits for its retry. With no filters
+     * wired a frozen row sends nobody and any other row keeps its captured audience: a composition with no filters
+     * declares no exclusion, its sessions stay expected. A session the re-check drops is sent nothing, and its caller
+     * records it outside the audience of the receipt its admission wrote (S4-R9).
      */
     async readCurrentAudience(
         message: ALMessage,
-        authority: WsQueueBoxServerDequeueAuthority.AudienceAuthority
+        authority: WsQueueBoxServerDequeueAuthority.AudienceAuthority,
+        presence: WsCapturedPresence
     ): Promise<WsQueueBoxServerDequeueAuthority.CurrentAudience> {
-        const { targetResolution, filterEligibleCapturedSessionIds } = this.dependencies;
+        const { targetResolution, capturedRecipientEligibilityFilters } = this.dependencies;
         const admittedAudience = authority.admittedAudience;
-        if (
-            admittedAudience === undefined || authority.sessionInvalidation !== undefined ||
-            !targetResolution.requiresFrozenAudience(message)
-        ) {
+        if (admittedAudience === undefined || authority.sessionInvalidation !== undefined) {
             return { eligible: admittedAudience, dropped: [] };
         }
-        if (filterEligibleCapturedSessionIds === undefined) {
-            return { eligible: [], dropped: [] };
+        const frozen = targetResolution.requiresFrozenAudience(message);
+        if (capturedRecipientEligibilityFilters === undefined) {
+            return { eligible: frozen ? [] : admittedAudience, dropped: [] };
+        }
+        if (!frozen && presence === 'local') {
+            return { eligible: admittedAudience, dropped: [] };
         }
         const eligible = await readWsQueueBoxServerEligibleAudience({
             message,
             admittedAudience,
             admittedConnectionGenerationIds: authority.admittedConnectionGenerationIds,
             provenScope: authority.recipientScope,
-            filterEligibleCapturedSessionIds
+            filterEligibleCapturedSessionIds: capturedRecipientEligibilityFilters[presence]
         });
         return { eligible, dropped: admittedAudience.filter((sessionId) => !eligible.includes(sessionId)) };
     }

@@ -3,9 +3,10 @@
 Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
 (authorized WS pub/sub, as S2-i and S2-ii), Slice 3 (restricted RTC parity, as
 S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii), Slice
-5 (producer-row positions, as S5-i) and Slice 6 (granted unicast, list and
-principal broadcast over RTC, as S6-i and S6-ii) are implemented and recorded as
-applied in §7; the later outcomes remain a proposed extension, not implemented
+5 (producer-row positions, as S5-i), Slice 6 (granted unicast, list and
+principal broadcast over RTC, as S6-i and S6-ii) and Slice 7 (cross-instance
+positions and outside class, as S7-i) are implemented and recorded as applied in
+§7; the later outcomes remain a proposed extension, not implemented
 behavior or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
@@ -993,6 +994,115 @@ conflict (a backlog line), and the singular `writeAppOutboxInsert` stays as a
 one-line delegate for five callers outside the slice. Decisions D563–D567 are in
 the roadmap, and Slice 6 is complete.
 
+### Slice 7: cross-instance positions and outside class
+
+Judge every captured session of a WS outbox row from durable presence, not from
+the dequeuing instance's sockets. The premise is corrected: the Slice 4 and
+Slice 5 limits said that in a cluster positions and the outside class cover the
+sessions on the dequeuing instance only, but the record gap was real for granted
+(frozen-audience) rows only, since every other row records its whole captured
+audience, and the receipt gap was real for every receipted server row,
+single-instance included: a captured session closed everywhere was judged
+outside by no instance, so its receipt stayed unconfirmed until its deadline. A
+session with a live connection generation anywhere stays eligible, is recorded
+and expected, and is sent by whichever instance holds its socket; one with none
+is dropped and recorded outside (a principal row's co-member sessions excepted,
+below); the local-socket filter applies only at send, on every instance. No
+merge write, row kind, mutation, key family or wire field
+is added. It was designed in the Slice 7 design proposal, now deleted (git
+history is the archive), from the candidates survey and three surveys at
+`2279d4f3b`, and lands as S7-i (the 6b probe, the mechanism, the ordering
+cluster proof and these documents, server-only) and S7-ii (the riders:
+`buffered-track-drains` over `ws`, the admin-audience append refused at decode
+and a `vi`-free statement recorder).
+
+As applied (S7-i): the WS server's one re-check dependency became two named
+filters, `capturedRecipientEligibilityFilters: { durable; local }`, and
+`readCurrentAudience` takes the presence that judges: `'durable'` from the
+dequeue hook and from the receipt retry's repair plan, `'local'` from the held
+send. With no filters wired a frozen row sends nobody and any other row keeps
+its audience; `'local'` re-checks frozen rows only. api-v1 builds `durable` from
+`filterDurablyLiveWsSessionIds` over its existing durable reads: a granted row
+keeps the candidates whose live subscription asserts the generation it
+captured; a room row the candidates the room's publication authority names in
+`liveSessionGenerations`, nobody when the room has no current snapshot or the
+read answers for another room; a principal row, through `readPrincipalSessions`
+over the principal row and every stored session row of the principal
+(`listSessionsForPrincipal`), the principal's own sessions that are live, none
+while the principal is not active, and every candidate that is not one of its
+stored sessions (a co-member's), and every candidate when no principal row
+exists; a row naming neither a room nor a principal keeps its candidates, since
+no durable fact names its sessions. `local` stays the socket and grant filter,
+at the WS server's sends and at the bridge. `writeOutsideAudience` takes the
+judgement: `'durable'` (a dequeue or retry drop) records every listed session
+whatever the local socket says, and `'open-here'` (a send-time drop or a skip
+below its position) only a session whose socket here is open; a receipt retry
+records outside only the drops it still waits on, never a recipient that
+confirmed. The bridge's `sendToCapturedLocalTargets` reports
+`captured − eligible` beside the skips, judged open-here; an unscoped row, or
+one with no re-check wired, reports only its skips. A dequeue whose captured
+audience was judged and resolves to no socket on this instance plans a send to
+nobody here (`audienceJudgedAtSend`), not `no-route`; the awaited-connection
+hold or the retry decides. Three lost fences on an own-row outside commit are
+one `outside-audience-commit` outbound diagnostic,
+`{ msgId, recipientPeerIds, attempts, outcome: 'conflict' }` plus the message
+trace, through the runtime diagnostics and with no console line; an `absent`
+answer is the commit's normal one and a thrown commit propagates so the retry
+re-judges, so neither is written. The 6b probe
+(`ws-tracked-dequeue-statements.test.ts`, on Postgres) counted the tracked
+dequeue before and after: the front is unchanged (past `seq 1` the prefix list
+returns N rows at depth N, the row's own index row included, and
+`readStoredPredecessorsToSettled` makes 3, 4 or N + 1 sequential point reads
+with every predecessor settled, the nearest unstored or none stored), and the
+completing dequeue gains the durable read, measured as its one authority batch
+statement over a constant room snapshot; production reads the current snapshot
+before that batch (one statement while the cache keeps it, more when it is
+probed), so a room row gains at least two statements, and a principal row's
+principal and session-row reads are unmeasured. The ordering cluster proof
+(`npm run test:api-v1:black-box:postgres:ordering`, a `postgres-integration`
+step beside view push) runs three api-v1 processes on one database with the
+dequeuer on plan 0. On the client-state principal track a receiver on plan 1
+enters at its first copy and reads the next event in order, and the row's
+`sentPositions` names the control session, the receiver, a session about to
+close and a co-member's session. On a granted room topic the receiver is
+recorded on a frozen row though connected to another instance; the closing
+session, captured live and closed durably before it ACKs, is judged outside by
+the receipt retry's durable re-check, and the relayed receipt completes with the
+receiver confirmed and it outside; and the receiver's omitted copy reads
+`omitted`, not a gap. The api-v1 units read a session live on another instance
+expected and recorded, one live nowhere outside at the dequeue with the receipt
+completing on the other recipient, and one live at the dequeue and gone at the
+retry outside after it. This supersedes the Slice 4 and Slice 5 cluster limit
+and the Slice 5 three-fence limit: positions and the outside class no longer
+cover the dequeuing instance's sessions only, and after three lost fences the
+recipient is named in a diagnostic before it waits for the retry. Limits: the
+cluster proof proves the record and entry half on client-state principal events
+and a granted room topic, and the outside judgement on the receipt-retry path,
+because the only way to hold the dequeuer holds every AppInbox mutation too; the
+dequeue-time judgement of a session connected nowhere is proved by the api-v1
+units, and the server-own receipt half is not proved by the cluster proof, since
+principal events carry no receipt; the proof's granted half is browser-origin. A
+principal row keeps co-member sessions unjudged, since no durable fact of the
+row names their liveness (a durable session-to-principal fact would close it);
+an inactive principal's row drops the principal's own sessions and keeps the
+co-members'; a closed own session is judged dead until its row is purged, at the
+earlier of its logical expiry plus 24 h and its disconnection plus
+`clientSessions.disconnectedRetentionMs` (7 days by default), and kept as
+unjudged after it, the harmless direction. A room row whose room has no current
+snapshot sends nobody. A dequeue with a judged audience and no socket here sends
+to nobody here, so an unreceipted principal event to a session that connects
+later on a single instance is not retried; the former `no-route` retry held such
+a row only when that session was its sole unresolved recipient. A session judged
+outside at the dequeue is not resent when it reconnects before the receipt's
+deadline (a Relic transition event, say): it reads the sequence as omitted, and
+the product's snapshot publication covers its state. The window, a socket closed
+whose AppInbox close has not committed and a lease lapsed before the 60 s
+presence sweep, is judged at the retry; a send-time drop
+of a session live nowhere waits for the retry; after three lost fences the
+recipient waits for the retry; the presence sweep is 60 s and not configurable;
+and the riders land in S7-ii. Decisions D568–D578 are in the roadmap; Slice 7
+completes with S7-ii.
+
 ### Later outcomes
 
 - **Restricted RTC beyond room multicast:** an encrypted publication with key
@@ -1017,7 +1127,9 @@ the roadmap, and Slice 6 is complete.
   attachment trust boundary kept out of ALM's authority (§1).
 - **Measured operating envelope:** representative multi-group publishers,
   subscription churn, slow consumers, relay depth, mixed WS/RTC, and sustained
-  overload with bounded memory and accurate outcome evidence.
+  overload with bounded memory and accurate outcome evidence; server-side
+  ordered sends are measured by the 6b probe on room rows (counts in the Release 14
+  record; the principal path is unmeasured).
 
 Full adoption requires those outcomes relevant to the advertised mode. A
 temporary typed refusal during staged delivery is not evidence that the whole
@@ -1077,6 +1189,25 @@ written in its row's own outbox statement, so a producer row and the proof its
 dequeue checks commit together. **RTC distinguishes origin, recipient, and
 relay:** the relay fixture's unlisted subscriber relays a frozen list it is not
 named in and delivers nothing, while the list's receipt completes at the origin.
+
+Slice 7 adds evidence to two rows. **Revocation and receipts preserve truthful
+outcomes:** the dequeue authority's fixture drops a captured session no durable
+filter finds live, whatever this instance's sockets hold, and keeps a non-frozen
+row's audience with no filter wired; the track-order fixture records a durable
+drop outside with no socket open here, needs the open socket for an open-here
+drop, and turns three conflicts into one `outside-audience-commit` diagnostic
+with no console line; the bridge suite reports the captured sessions its
+send-time re-check dropped beside the skips, open-here; the api-v1 units read a
+session live nowhere outside at the dequeue, the receipt completing on the other
+recipient, and one gone by the retry outside after it; and the ordering cluster
+proof's closed session is outside the relayed receipt, which completes.
+**Ordered entry and exclusions do not leak or invent history:** the ordering
+cluster proof's receiver on another instance than the dequeuer is recorded and
+enters at its first copy on the principal track and on a frozen granted row,
+and its omitted granted copy reads `omitted`, not a gap; the 6b probe's counts
+on Postgres show the dequeue's front unchanged and the durable read added (its
+authority batch measured; the snapshot read before it and the principal path
+not).
 
 Focused shared ALM, browser facade, and server tests run before package
 typechecks/builds. Public exports require API snapshots and bundle-boundary

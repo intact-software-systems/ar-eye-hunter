@@ -1,8 +1,13 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundMessageRuntime,
+    type ALOutboundRuntimeDiagnosticsSink
+} from '../../alm/outbound/al-outbound-message-runtime.ts';
 import {
     isALOutboundRowUnrecorded,
     toALOrderingPendingPredecessors,
@@ -33,8 +38,12 @@ export namespace WsQueueBoxServerTrackOrder {
         readonly outboundPlanning: Pick<WsQueueBoxServerOutboundPlanning, 'resolvePolicy'>;
         readonly name: string;
         readonly newControlId: () => string;
+        readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     }
 }
+
+/** How an outside-audience drop was judged: from durable presence, or against this instance's open sockets. */
+export type WsOutsideAudienceJudgement = 'durable' | 'open-here';
 
 /**
  * Keeps a WS track's recorded positions in sequence order: a dequeued row waits for the lower sequences of its track
@@ -100,18 +109,25 @@ export class WsQueueBoxServerTrackOrder {
      * Records each session the server sent its origin's row nothing outside the audience of the receipt the origin
      * awaits (S4-R9): a relayed row's origin hears it as an outside-audience ACK, and the server's own rows -- its
      * publications and every producer row it sends -- record it in their own receipt (S5-R8). Rows no receipt counts
-     * recipients of have none to record in. Only a session connected here is this instance's to judge: its re-check
-     * sees every other instance's session as not here, which is no exclusion, so that session stays expected and its
-     * own instance answers for it.
+     * recipients of have none to record in. A dequeue or retry drop is judged from durable presence and recorded
+     * whatever this instance's sockets hold; a send-time drop or skip is judged only for a session whose socket here is
+     * open -- a session live elsewhere is its own instance's to send, one live nowhere is the retry's to judge. For a
+     * server-own row at its dequeue the receipt is not yet written, so the commit answers `absent` and the dropped
+     * session is simply never expected (D545); for a relayed row the outside ACK is written at once.
      */
-    async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
+    async writeOutsideAudience(
+        message: ALMessage,
+        sessionIds: readonly string[],
+        judgement: WsOutsideAudienceJudgement
+    ): Promise<void> {
         const { name, outboundPlanning, socket, ackRelay, clock } = this.dependencies;
         const originPeerId = message.id.senderId;
         if (!isALLogicalReceiptMode(outboundPlanning.resolvePolicy(message).effective.ack.algo)) {
             return;
         }
         const judged = sessionIds.filter((sessionId) =>
-            sessionId !== originPeerId && socket.connections.get(sessionId)?.isOpen === true
+            sessionId !== originPeerId &&
+            (judgement === 'durable' || socket.connections.get(sessionId)?.isOpen === true)
         );
         if (originPeerId === name) {
             await this.commitOwnOutsideAudience(message, judged);
@@ -141,7 +157,14 @@ export class WsQueueBoxServerTrackOrder {
                 return;
             }
         }
-        console.error('Own receipt outside-audience record kept conflicting', { msgId: message.id.msgId });
+        writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
+            kind: 'outside-audience-commit',
+            msgId: message.id.msgId,
+            recipientPeerIds,
+            attempts: WsQueueBoxServerTrackOrder.OWN_OUTSIDE_AUDIENCE_ATTEMPTS,
+            outcome: 'conflict',
+            ...toALMessageTrace(message)
+        });
     }
 
     private toHeldAuthority(

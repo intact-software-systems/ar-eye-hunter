@@ -169,12 +169,23 @@ and it has no status list.
   minted sequence's continuation across a reload is proven over the reopened
   IndexedDB store (`rtc-durable-owner-recovery.test.ts`), not by an
   `agent.reload` on the lane.
-- Cross-instance positions and outside class (a later outcome after S4-ii,
-  D524, D532): in a cluster the dequeuing instance records positions and the
-  outside class only for the sessions connected to it, so a session on another
-  instance carries no entry and one that another instance's re-check drops
-  after the dequeue reads loss until its repair or receipt retry; a merge of
-  positions into the sent row under its own fenced write would close it.
+- The window of the durable judgement (S7-i, D568, D569; cross-instance
+  positions and the outside class are closed by S7-i): a session whose socket
+  closed before its AppInbox close committed, or whose lease lapsed before the
+  60 s sweep, is expected one retry longer; a send-time drop of a session live
+  nowhere waits for the retry.
+- Co-member liveness on principal rows (S7-i, D568): a client-state principal
+  row's audience includes full-visibility co-members' sessions, and its durable
+  judgement keeps them unjudged, since no durable fact of the row names a
+  session that is not the principal's own; a dead co-member session stays
+  recorded and expected on the row (harmless on an `ack: 'none'` event). A
+  durable session-to-principal fact would let the dequeue judge it.
+- Two unwired cluster proofs (Q-B9, Slice 7): the group-delta and auth-logout
+  cluster proofs (`packages/shared-test/package.json:14-15`) run in no gate.
+- A granted `receiver` RTC unicast to a non-holder (S6-i, D553) reads
+  `acknowledged` with zero recipients over RTC, where WS reads `unauthorized`.
+- A frozen session that never subscribes after a hand-over (S6-i) stays
+  expected and unconfirmed on WS.
 - A recorded witnessed position (S4-i, D528): a session that witnesses while
   its own deliveries are pending and then becomes a recipient again resyncs its
   next delivered copy.
@@ -223,20 +234,24 @@ and it has no status list.
   view-proof collision is a replayed `changeId` that retries into the same key
   through the guarded batch (`guarded-view-publication.ts:58-66`); corruption
   would be the honest answer, a behaviour change for ~10 producers.
-- The measured cost of server-side ordered sends (S5-i, D539, D544): every
-  tracked WS dequeue that has not recorded lists its track's index and reads
-  the listed predecessors' stored rows as one session of point reads, from the
-  highest sequence down to the first settled one
-  (`readStoredPredecessorsToSettled`), and a client-state principal track can
-  list every live event of its process within the command's expiry; neither the
-  read count nor the prefix-list size is measured.
+- What 6b leaves unmeasured of server-side ordered sends (S5-i, D539, D544;
+  S7-i, D571): the 6b probe counts the tracked WS dequeue on room rows (past
+  `seq 1` the prefix list returns N rows at depth N, the front makes 3, 4 or N +
+  1 point reads, and the durable re-check's authority batch adds one statement
+  over a constant room snapshot); the current-snapshot read production issues
+  before that batch (one statement while the cache keeps the snapshot, so a room
+  row gains at least two), the principal row's read shape
+  (`readPrincipalSessions`: the principal row and every stored session row), the
+  bytes read under real client-state rows, and the hosted regime are unmeasured.
 - An admission-time declared publication grant for joiners (D494), with its
   persisted declaration and lifetime rule; today only the creator declares a
   grant at creation, and each joiner is granted explicitly.
 - The dispatch re-check for `members` topics (D498): an outbox row of a
-  `members` topic is narrowed only by the socket and scope eligibility filter at
-  dequeue, so a member who left or was banned after admission can still receive
-  it, as before S2-i.
+  `members` topic is judged at the dequeue against the room's live session
+  generations (S7-i), not re-admitted on membership. Leave and ban clear the
+  member's presence admission and enqueue the presence summary's recompute, so a
+  member who left or was banned after admission can still receive the row while
+  its session stays in the room's presence, until that recompute lands.
 - A `publicationVersion` grants-only floor on the group row (D484), if browsers
   need to wait for a grant the way `rosterVersion` lets them wait for a roster.
 - Batched subscription renewal (S2-ii, D489), if the per-subscription renew

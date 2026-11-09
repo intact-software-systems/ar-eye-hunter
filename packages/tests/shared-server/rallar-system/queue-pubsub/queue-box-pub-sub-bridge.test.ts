@@ -40,6 +40,7 @@ import type {
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerReceiptObservation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+import type { WsOutsideAudienceJudgement } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
 import { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -1128,6 +1129,91 @@ describe('QueueBoxPubSubBridge', () => {
     });
 });
 
+describe('the send-time drops of a remote send', () => {
+    it('reports the captured sessions its re-check dropped beside the skips', async () => {
+        const bridge = createBridge();
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const outsideWrites: NonNullable<CreateTestQueueBoxPubSubWsServiceInput['outsideWrites']> = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                readAudience: async () => ['a', 'b', 'c'],
+                requiresFrozenAudience: () => true,
+                sendToTargetsWithResult: (message) => ({ ...sentLiveResult(message), belowPositionPeerIds: ['a'] }),
+                outsideWrites
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: async () => ['a']
+        });
+
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(outsideWrites).toEqual([{
+            msgId: decodePersistedALMessage(entry.resource).id.msgId,
+            sessionIds: ['a', 'b', 'c'],
+            judgement: 'open-here'
+        }]);
+    });
+
+    it('reports no drop for a frozen-audience row with no re-check wired, whose sessions stay expected', async () => {
+        const bridge = createBridge();
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const outsideWrites: NonNullable<CreateTestQueueBoxPubSubWsServiceInput['outsideWrites']> = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                readAudience: async () => ['a', 'b'],
+                requiresFrozenAudience: () => true,
+                outsideWrites
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local'
+        });
+
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(outsideWrites).toEqual([{
+            msgId: decodePersistedALMessage(entry.resource).id.msgId,
+            sessionIds: [],
+            judgement: 'open-here'
+        }]);
+    });
+
+    it('reports only the skips for a row whose send resolves its own targets', async () => {
+        const bridge = createBridge();
+        const entry = createWsOutboxEntry();
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const outsideWrites: NonNullable<CreateTestQueueBoxPubSubWsServiceInput['outsideWrites']> = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                readAudience: () => Promise.resolve(undefined),
+                sendToTargetsWithResult: (message) => ({ ...sentLiveResult(message), belowPositionPeerIds: ['a'] }),
+                outsideWrites
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local'
+        });
+
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(outsideWrites).toEqual([{
+            msgId: decodePersistedALMessage(entry.resource).id.msgId,
+            sessionIds: ['a'],
+            judgement: 'open-here'
+        }]);
+    });
+});
+
 describe('the captured audience of a cluster publication', () => {
     interface CapturedAudienceCase {
         readonly name: string;
@@ -1391,6 +1477,7 @@ interface CreateTestQueueBoxPubSubWsServiceInput {
     ) => WsServerLiveSendResult;
     /** Whether the row reaches only its frozen audience (a granted topic); none does by default. */
     readonly requiresFrozenAudience?: (message: ALMessage) => boolean;
+    readonly outsideWrites?: { msgId: string; sessionIds: readonly string[]; judgement: WsOutsideAudienceJudgement; }[];
 }
 
 function createTestQueueBoxPubSubWsService(
@@ -1405,7 +1492,10 @@ function createTestQueueBoxPubSubWsService(
         },
         requiresFrozenAudience: (message) => input.requiresFrozenAudience?.(message) ?? false,
         readSentPositions: () => Promise.resolve(null),
-        writeOutsideAudience: () => Promise.resolve(),
+        writeOutsideAudience: (message, sessionIds, judgement) => {
+            input.outsideWrites?.push({ msgId: message.id.msgId, sessionIds, judgement });
+            return Promise.resolve();
+        },
         sendToTargetsWithResult(send) {
             input.sends?.push(send);
             const { message, recipientSessionIds, admittedPeerIds } = send;

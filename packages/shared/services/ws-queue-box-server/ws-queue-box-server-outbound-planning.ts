@@ -119,7 +119,12 @@ export namespace WsQueueBoxServerOutboundPlanning {
     export interface RecipientResolution {
         readonly resolveRecipients: boolean;
         readonly representNoCurrentRecipient: boolean;
-        readonly allowClusterRecipients: boolean;
+        /**
+         * A dequeue that reaches nobody here completes with no send planned: its publisher sends it, or its audience was
+         * judged at the dequeue, so the instance holding a recipient's socket, the awaited-connection hold or the
+         * receipt retry decides who it reaches.
+         */
+        readonly audienceJudgedAtSend: boolean;
         /** The audience the message was admitted or frozen to: never a session that joined after it (D24, D43). */
         readonly audience: readonly string[] | undefined;
         readonly capturedSessions: boolean;
@@ -225,7 +230,8 @@ export class WsQueueBoxServerOutboundPlanning {
         return {
             resolveRecipients,
             representNoCurrentRecipient: phase === 'dequeue',
-            allowClusterRecipients: phase === 'dequeue' && request.clusterPublisherRegistered,
+            audienceJudgedAtSend: phase === 'dequeue' &&
+                (request.clusterPublisherRegistered || request.admittedAudience !== undefined),
             audience,
             capturedSessions: this.readsCapturedSessions(message, request)
         };
@@ -359,7 +365,7 @@ export class WsQueueBoxServerOutboundPlanning {
                 topicId: message.route.topicId
             });
         }
-        return resolution.allowClusterRecipients
+        return resolution.audienceJudgedAtSend
             ? Either.ofRight([])
             : Either.ofLeft(toNoResolvedRecipientsReason(targets.mode, message.id.msgId));
     }
