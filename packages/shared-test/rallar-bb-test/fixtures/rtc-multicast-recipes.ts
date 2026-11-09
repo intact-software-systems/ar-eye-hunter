@@ -154,7 +154,13 @@ function messagesRtcConnectCommand(
         workspaceId: options.group.workspaceId,
         roomRef,
         transport: 'messages.rtc',
-        rallar: { ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR },
+        rallar: {
+            ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR,
+            // The browser SDK connect (WS + RTC establishment) defaults to a 10s socket timeout when
+            // rallar.timeoutMs is absent; a 50-agent room exceeds that, so the connect shares the
+            // readiness budget instead of failing at the SDK default.
+            timeoutMs: readinessTimeoutMs
+        },
         timeoutMs: readinessTimeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS,
         readiness: {
             minReadyPeers: options.minReadyPeers,
