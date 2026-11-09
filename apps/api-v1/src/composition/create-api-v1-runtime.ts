@@ -62,10 +62,10 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import type {
@@ -97,11 +97,7 @@ import {
     createApiStateSnapshotReadSelectors,
     type ApiStateSnapshotReadSelectors
 } from '../services/create-api-state-snapshot-read-selectors.ts';
-import {
-    filterEligibleDurableWsSessionIds,
-    filterEligibleLiveWsSessionIds
-} from '../services/filter-eligible-live-ws-session-ids.ts';
-import { filterGrantedWsRecipientSessionIds } from '../services/filter-granted-ws-recipient-session-ids.ts';
+import { filterEligibleLiveWsSessionIds } from '../services/filter-eligible-live-ws-session-ids.ts';
 import {
     runRuntimeStateExpiryStartupBarrier,
     type RuntimeStateExpiryStartupGeneration
@@ -109,6 +105,7 @@ import {
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import { requireApiV1Runtime, type ApiV1Runtime } from './api-v1-runtime.ts';
 import { createApiV1AppInbox } from './create-api-v1-app-inbox.ts';
+import { createApiV1CapturedRecipientEligibilityFilters } from './create-api-v1-captured-recipient-eligibility-filters.ts';
 import {
     createApiV1MutationRuntime,
     type ApiV1MutationRuntime,
@@ -484,37 +481,32 @@ function createWsDeliveryAuthority(
     | 'capturedRecipientEligibilityFilters'
 > {
     const { mutation } = input;
+    const readPrincipalLiveSessionIds = (ref: ClientPrincipalRef) =>
+        readPrincipalSessionIds(ref, {
+            readClientSnapshot: async (principalRef) =>
+                (await mutation.clientsRepository.readPrincipalSnapshot(principalRef))?.snapshot,
+            nowEpochMs: input.nowEpochMs
+        });
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
         repository: mutation.runtimeStateRepository,
         nowMs: input.nowEpochMs,
-        readPrincipalSessionIds: (ref) =>
-            readPrincipalSessionIds(ref, {
-                readClientSnapshot: async (principalRef) =>
-                    (await mutation.clientsRepository.readPrincipalSnapshot(principalRef))?.snapshot,
-                nowEpochMs: input.nowEpochMs
-            })
+        readPrincipalSessionIds: readPrincipalLiveSessionIds
     });
-    const recheck: WsCapturedRecipientEligibilityFilter = async (captured) =>
-        await filterGrantedWsRecipientSessionIds({
-            ...captured,
-            durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
-                ...captured,
-                socketServer: mutation.webSocketServer,
-                nowMs: input.nowEpochMs()
-            }),
-            grantedTopics: input.grantedTopics,
-            serverPeerId: input.wsRuntimeName,
-            readPublicationAuthority: (ref, topicId) =>
-                mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
-            nowEpochMs: input.nowEpochMs()
-        });
     return {
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
         readWsOutboxProducerProvenance: (message, entry) => wsOutboxProvenance.readProducerProvenance(message, entry),
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         grantedTopics: input.grantedTopics,
-        capturedRecipientEligibilityFilters: { durable: recheck, local: recheck }
+        capturedRecipientEligibilityFilters: createApiV1CapturedRecipientEligibilityFilters({
+            socketServer: mutation.webSocketServer,
+            grantedTopics: input.grantedTopics,
+            serverPeerId: input.wsRuntimeName,
+            readPublicationAuthority: (ref, topicId) =>
+                mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
+            readPrincipalLiveSessionIds,
+            nowEpochMs: input.nowEpochMs
+        })
     };
 }
 

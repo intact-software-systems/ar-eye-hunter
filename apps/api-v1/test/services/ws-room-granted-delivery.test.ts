@@ -36,6 +36,7 @@ import { createTestGroup } from '../../../../packages/tests/create-test-group.ts
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import { API_V1_LIVE_WS_NOTICE_CHANNEL, createApiV1LiveWsNoticeTransport } from '../../src/db/api-v1-live-ws-notice-transport.ts';
 import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
+import { filterDurablyLiveWsSessionIds } from '../../src/services/filter-durably-live-ws-session-ids.ts';
 import { filterGrantedWsRecipientSessionIds } from '../../src/services/filter-granted-ws-recipient-session-ids.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
 
@@ -321,6 +322,8 @@ Deno.test('a run of granted rows for a missing room does not stop a members row\
             (await Promise.all(granted.map((message) => readRelayRows(harness, message))))
                 .every((rows) => rows[0]?.status === EntityStatus.COMPLETED)
         );
+        // The room is back for the members row, whose dequeue reads the room's live generations.
+        harness.recheckRead = undefined;
         const members = feedMessage({ senderId: 'alice', msgId: 'members-after-missing-room', topicId: MEMBERS_TOPIC });
 
         await harness.service.acceptIncomingMessage(members, 'alice');
@@ -580,11 +583,12 @@ Deno.test('an unsubscribe the re-check finds records the dropped session outside
     });
 });
 
-Deno.test('a subscribed session connected to another instance is never recorded outside by this instance', async () => {
+Deno.test('a subscribed session live on another instance is expected and recorded by the dequeue, never judged outside by this instance', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
-        // Carol's live session is on another instance: this instance's re-check finds no socket of hers, which excludes nothing.
+        // Carol's live session is on another instance: the room's live generations carry hers, this instance has no socket of hers.
         const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
-        const message = feedMessage({ senderId: 'alice', msgId: 'receipted-elsewhere' });
+        // A tracked row, so the dequeue records each recipient's position on the track.
+        const message = { ...feedMessage({ senderId: 'alice', msgId: 'receipted-elsewhere' }), ordering: { orderingKey: FEED, epoch: 1, seq: 1 } };
 
         await harness.service.acceptIncomingMessage(message, 'alice');
         await waitFor(() => readDelivered(frames.bob, message) > 0);
@@ -595,6 +599,7 @@ Deno.test('a subscribed session connected to another instance is never recorded 
         assert.deepEqual(receipts[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
         assert.equal(receipts.some((receipt) => receipt.phase === 'complete'), false);
         assert.equal(receipts.some((receipt) => receipt.outsideAudienceRecipientPeerIds.includes('carol')), false);
+        assert.deepEqual((await harness.stores.admissionStore.readStoredMessage(message.id.msgId))?.sentPositions, { bob: 0, carol: 0 });
     });
 });
 
@@ -610,8 +615,8 @@ Deno.test('a members-topic outbox row is narrowed by the durable filter only', a
 
         assert.equal(readDelivered(frames.bob, message), 1);
         assert.equal(readDelivered(frames.carol, message), 1);
-        // Admission, dispatch and route read the room; the dequeue re-checks no grant.
-        assert.equal(harness.readCount(), 3);
+        // Admission, dispatch and route read the room; the dequeue reads the room's live generations once.
+        assert.equal(harness.readCount(), 4);
     });
 });
 
@@ -671,7 +676,18 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                 ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => createSnapshot(GRANTS), grantedTopics }),
-        capturedRecipientEligibilityFilters: input.withoutRecheck === true ? undefined : { durable: recheck, local: recheck }
+        capturedRecipientEligibilityFilters: input.withoutRecheck === true ? undefined : {
+            durable: (captured) =>
+                filterDurablyLiveWsSessionIds({
+                    ...captured,
+                    grantedTopics,
+                    serverPeerId: SERVER_PEER_ID,
+                    readPublicationAuthority: readRecheckRoom,
+                    readPrincipalLiveSessionIds: () => Promise.resolve(undefined),
+                    nowEpochMs: Date.now()
+                }),
+            local: recheck
+        }
     });
     const router = new RallarServerWsRouter(service, {
         grantedTopics,
