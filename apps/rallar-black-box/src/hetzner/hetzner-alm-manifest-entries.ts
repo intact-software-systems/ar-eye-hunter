@@ -87,7 +87,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // The checkpoint tier's lane evidence is local and the hosted full read's; manifest 18 keeps its recorded cells.
     { scenarioKey: 'checkpoint-recovery', carriers: ALM_CONFORMANCE_CARRIERS },
     { scenarioKey: 'checkpoint-lag', carriers: ALM_CONFORMANCE_CARRIERS },
-    // The range repair cells' lane evidence is local and the hosted full read's too; manifest 18 stays as recorded.
+    // The range repair cells' lane evidence is local and the hosted full read's too; manifests 18 and 22 stay as recorded.
     { scenarioKey: 'ordering-gap-repair', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
     { scenarioKey: 'repair-exhausted', carriers: ALM_CONFORMANCE_CARRIERS },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.

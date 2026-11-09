@@ -23,6 +23,8 @@ const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 const REPAIR_SCENARIO_IDS = ['ordering-gap-repair', 'repair-exhausted'] as const;
 
 type Carrier = (typeof ALM_CONFORMANCE_CARRIERS)[number];
+/** The exhausted repair runs where each receiver orders the track itself and so is a requester of its own. */
+const RTC_CARRIERS: readonly Carrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 type RepairScenarioId = (typeof REPAIR_SCENARIO_IDS)[number] | 'ordering-resync';
 
 function findScenario(
@@ -98,16 +100,22 @@ function toHeldSecondSendNames(carrier: Carrier): readonly string[] {
 
 describe('ordering repair conformance scenarios', () => {
     it.each(ALM_CONFORMANCE_CARRIERS)(
-        'catalogs the exhausted repair over %s, and the gap repair where one hop carries the track, in the full tag only',
+        'catalogs the exhausted repair over %s where each receiver orders the track, and the gap repair where one hop carries it, in the full tag only',
         (carrier) => {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier))
                 .filter((scenario) => (REPAIR_SCENARIO_IDS as readonly string[]).includes(scenario.scenarioId));
             const gapRepair = { scenarioId: 'ordering-gap-repair', laneFamily: 'two-agent', roles: ['sender', 'receiver'], tags: ['full'] };
+            const exhaustedRepair = {
+                scenarioId: 'repair-exhausted',
+                laneFamily: 'three-agent',
+                roles: ['sender', 'receiver', 'recipient-b'],
+                tags: ['full']
+            };
 
             expect(scenarios.map(({ scenarioId, laneFamily, roles, tags }) => ({ scenarioId, laneFamily, roles, tags })))
                 .toEqual([
                     ...(ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.includes(carrier) ? [gapRepair] : []),
-                    { scenarioId: 'repair-exhausted', laneFamily: 'two-agent', roles: ['sender', 'receiver'], tags: ['full'] }
+                    ...(carrier === 'ws' ? [] : [exhaustedRepair])
                 ]);
         }
     );
@@ -292,8 +300,8 @@ describe('repair-exhausted', () => {
         });
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('keeps the %s hold through a second gap report and reads the exhausted handle', (carrier) => {
-        const { sender, receiver } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
+    it.each(RTC_CARRIERS)('keeps the %s hold through both receivers\' gap reports and reads the exhausted handle', (carrier) => {
+        const { sender, receiver, recipientB } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
 
         expect(toCommandNames(sender)).toEqual([
             'ensure-group',
@@ -309,14 +317,18 @@ describe('repair-exhausted', () => {
             'assert-repair-exhausted-2',
             'stats'
         ]);
-        expect(toCommandNames(receiver)).toEqual([
-            'ensure-group',
-            'ensure-member',
-            'connect',
-            'received-1',
-            'received-2',
-            'stats'
-        ]);
+        // Both receivers run the same commands: the second one's report of the held gap is another attempt identity.
+        expect(recipientB).toBeDefined();
+        for (const recipient of [receiver, recipientB!]) {
+            expect(toCommandNames(recipient)).toEqual([
+                'ensure-group',
+                'ensure-member',
+                'connect',
+                'received-1',
+                'received-2',
+                'stats'
+            ]);
+        }
         expect(
             sender.commands.filter((command) => command.kind === 'fault.inject' && command.carrier !== 'product-socket' && command.remaining === 0).map((
                 command
@@ -325,7 +337,7 @@ describe('repair-exhausted', () => {
             .toEqual(toHoldNames(carrier, 'release').map((name) => `alm-${carrier}-repair-exhausted-sender-${name}`));
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('reads the %s second send skipped as repair-exhausted on its handle', (carrier) => {
+    it.each(RTC_CARRIERS)('reads the %s second send skipped as repair-exhausted on its handle', (carrier) => {
         const { sender } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
         const observation = `resultCache.alm-${carrier}-repair-exhausted-sender-observe-failed-2.value`;
 
@@ -355,11 +367,14 @@ describe('repair-exhausted', () => {
         });
     });
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('proves the %s receiver delivered the first send only', (carrier) => {
-        const { receiver } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
+    it.each(RTC_CARRIERS)('proves both %s receivers delivered the first send only', (carrier) => {
+        const { receiver, recipientB } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
 
-        expect(findCommand(receiver, 'received-1')).toMatchObject({ kind: 'messages.received', count: 1, absent: false });
-        expect(findCommand(receiver, 'received-2')).toMatchObject({ kind: 'messages.received', count: 2, absent: true });
+        expect(recipientB).toBeDefined();
+        for (const recipient of [receiver, recipientB!]) {
+            expect(findCommand(recipient, 'received-1')).toMatchObject({ kind: 'messages.received', count: 1, absent: false });
+            expect(findCommand(recipient, 'received-2')).toMatchObject({ kind: 'messages.received', count: 2, absent: true });
+        }
     });
 });
 

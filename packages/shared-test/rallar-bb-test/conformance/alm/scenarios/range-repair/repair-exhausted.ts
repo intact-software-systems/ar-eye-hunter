@@ -1,37 +1,44 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
 import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toHeldSecondSendCommands, toOrderedSendCommands } from '../../alm-conformance-ordering-commands.ts';
 import { toSingleArrivalReceiverCommands } from '../../alm-conformance-receiver-commands.ts';
+import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 
+const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
+
 /**
  * A repair budget that runs out ends on the handle: the sender's second frame stays held through every
- * retransmission, the gap is reported again by a fourth send, and once the retransmits reach the message's
- * `maxRepairs` the sender settles it `skipped` with reason `repair-exhausted`. The receiver delivered the first send
- * only: the third and fourth wait for a second that never arrives.
+ * retransmission, and each receiver orders the track itself and reports the gap once the third frame arrives. The
+ * first report spends the message's one retransmit; the second receiver's report is another attempt identity and
+ * finds it spent, so the sender settles the second frame `skipped` with reason `repair-exhausted`. Both receivers
+ * delivered the first send only: the third and fourth wait for a second that never arrives. Over `ws` the server
+ * orders the track and is the one requester of its gaps, so a held frame's repeated reports are one attempt: the
+ * sender never states exhaustion there and the frame arrives on the hold's release, so the cell runs over the RTC
+ * carriers.
  */
 export const repairExhausted: AlmConformanceScenarioDefinition = {
     scenarioId: 'repair-exhausted',
     scenarioKey: 'repair-exhausted',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_CARRIERS,
-    roles: ['sender', 'receiver'],
-    laneFamily: 'two-agent',
+    carriers: RTC_CARRIERS,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
+    laneFamily: 'three-agent',
     toSenderCommands: toRepairExhaustedSenderCommands,
     toRecipientCommands: toSingleArrivalReceiverCommands
 };
 
 /**
- * The fourth send reports the gap once more. One arrival raises one hint, whatever controls it sends, so the
- * third send's report spent the budget of one retransmit and the fourth's finds it spent. The hold is never
- * released: a late second frame would reach the receiver inside its absence window.
+ * Each receiver reports the gap again once the fourth frame arrives. A later report names its requester's first
+ * attempt and charges nothing (D573), so it states nothing more. The hold is never released: a late second frame
+ * would reach a receiver inside its absence window.
  */
 function toRepairExhaustedSenderCommands(
     sender: AlmConformanceStepInput

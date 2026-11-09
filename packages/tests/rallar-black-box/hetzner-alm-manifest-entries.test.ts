@@ -174,13 +174,13 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells, the exhausted repair and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, and the reply and the server-originated cells where they run', () => {
+    it('withholds exactly the named cells: both checkpoint cells and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, and the reply and the server-originated cells where they run', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair, volatile
         // bound, congestion and fairness cells keep manifest 18 as recorded.
         const withheld = [
             ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-                ['checkpoint-recovery', 'checkpoint-lag', 'repair-exhausted', 'capacity-age', 'capacity-tracks'].map((
+                ['checkpoint-recovery', 'checkpoint-lag', 'capacity-age', 'capacity-tracks'].map((
                     key
                 ) => `alm-${carrier}-${key}`)
             ),
@@ -219,7 +219,7 @@ describe('ALM conformance hosted lane families', () => {
         ]);
     });
 
-    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader, claim, reply and paced list-isolation cells wherever they run', () => {
+    it('carries the three-agent family in the 3-agent entry, withholding the membership fence, leader, claim, reply, paced list-isolation and exhausted repair cells wherever they run', () => {
         const withheld = [
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.flatMap((carrier) => ['fenced-delivery', 'fenced-catch-up'].map((key) => `alm-${carrier}-${key}`)),
             'alm-ws-fenced-rejection',
@@ -233,7 +233,9 @@ describe('ALM conformance hosted lane families', () => {
             'alm-rtc-claim-refused-on-rtc',
             'alm-ws-reply-first-wins',
             // A hosted run proves the paced send shape on three agents first (D481).
-            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-paced-isolation-lists`)
+            ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-paced-isolation-lists`),
+            // The exhausted repair's lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
+            ...ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws').map((carrier) => `alm-${carrier}-repair-exhausted`)
         ];
         const defined = toFamilyCells(['three-agent']);
 
