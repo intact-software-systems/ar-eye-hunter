@@ -45,8 +45,11 @@ const TRACK_KEY = 'game-1:server:1';
 const A_TRACK_KEY = 'game-1:a:1';
 /** `a` and `b` were in the room when the events were published; `c` joined afterwards. */
 const ADMITTED_AUDIENCE = ['a', 'b'];
-/** A retransmit's attempt id names the repair hint that asked for it: requester `b`, then the hint's ranges. */
-const REPAIR_ATTEMPT_HINT = /:repair-hint:[^:]+:b:[^:]+:([0-9,-]+):/;
+/**
+ * A ranged retransmit's attempt id names its gap: the requester, the track (still encoded once the send id is decoded)
+ * and the sequence.
+ */
+const REPAIR_GAP_ATTEMPT = /:repair-gap:([^:]+):[^:]+:([0-9]+):/;
 
 type ControlAdmission = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'control-admission'; }>;
 type TrackIndexEnd = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'track-index-end'; }>;
@@ -100,12 +103,6 @@ interface NackInput {
     readonly trackKey?: string;
 }
 
-/** The retransmits one repair hint produced, in the order they were sent. */
-interface RepairPage {
-    readonly hint: string;
-    readonly seqs: readonly number[];
-}
-
 describe('the WS server repairs its own ordered publication', () => {
     it('sequences its keyed publications 1, 2, 3 for the audience it admitted them to', async () => {
         const server = await createOrderedServer();
@@ -148,12 +145,9 @@ describe('the WS server repairs its own ordered publication', () => {
         // its ACK timeout, and more than one pass goes through them before the repair rows are reached.
         await expect.poll(async () => {
             server.clock.nowMs += CLOCK_STEP_MS;
-            return await runEngine(server, () => readRepairPages(server).flatMap((page) => page.seqs).length);
+            return await runEngine(server, () => readServedRepairSeqs(server, 'b').length);
         }, { timeout: 5_000 }).toBe(34);
-        expect(readRepairPages(server)).toEqual([
-            { hint: '1-34', seqs: toSeqs(1, 32) },
-            { hint: '33-34', seqs: [33, 34] }
-        ]);
+        expect(readServedRepairSeqs(server, 'b')).toEqual(toSeqs(1, 34));
         expect(readSeqs(server.sockets.b).slice(35, 35 + 34)).toEqual(toSeqs(1, 34));
         expect(readSeqs(server.sockets.a)).toEqual(toSeqs(1, 35));
     });
@@ -190,7 +184,8 @@ describe('the WS server repairs its own ordered publication', () => {
         expect(readSeqs(server.sockets.b)).toEqual([1, 2, 3, 2]);
         expect(readSeqs(server.sockets.a)).toEqual([1, 2, 3]);
         expect(readRepairExhaustedMsgIds(server)).toEqual(['event-2']);
-        expect(readRepairPages(server)).toEqual([{ hint: '2-2', seqs: [2] }]);
+        expect(readServedRepairSeqs(server, 'b')).toEqual([2]);
+        expect(readServedRepairSeqs(server, 'c')).toEqual([]);
     });
 
     it('retransmits nothing for a gap NACK that arrives after the message deadline', async () => {
@@ -931,26 +926,14 @@ function readRepairExhaustedMsgIds(server: OrderedServer): readonly string[] {
         .map((settlement) => settlement.msgId);
 }
 
-/** The sent retransmits grouped by the repair hint that asked for them, in the order they were sent. */
-function readRepairPages(server: OrderedServer): readonly RepairPage[] {
-    const pages: RepairPage[] = [];
-    for (const settlement of server.settlements) {
-        const hint = settlement.kind === 'attempt-settled' && settlement.outcome === 'sent'
-            ? REPAIR_ATTEMPT_HINT.exec(decodeURIComponent(settlement.attemptId))?.[1]
-            : undefined;
-        if (hint === undefined) {
-            continue;
-        }
-        const seq = Number(settlement.msgId.replace('event-', ''));
-        const last = pages.at(-1);
-        if (last?.hint === hint) {
-            pages[pages.length - 1] = { hint, seqs: [...last.seqs, seq] };
-        }
-        else {
-            pages.push({ hint, seqs: [seq] });
-        }
-    }
-    return pages;
+/** The sequences ranged repair served the requester, by their gap attempt identity, in the order they were sent. */
+function readServedRepairSeqs(server: OrderedServer, requester: string): readonly number[] {
+    return server.settlements.flatMap((settlement) => {
+        const gap = settlement.kind === 'attempt-settled' && settlement.outcome === 'sent'
+            ? REPAIR_GAP_ATTEMPT.exec(decodeURIComponent(settlement.attemptId))
+            : null;
+        return gap?.[1] === requester ? [Number(gap[2])] : [];
+    });
 }
 
 function toSeqs(from: number, to: number): readonly number[] {
