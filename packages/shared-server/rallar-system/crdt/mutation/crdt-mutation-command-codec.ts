@@ -51,6 +51,9 @@ export function decodeCrdtMutationCommand(value: unknown): CrdtMutationCommand {
         if (toRallarCrdtDocumentKey(update.document) !== toRallarCrdtDocumentKey(document)) {
             throw new TypeError('CRDT update document differs');
         }
+        if (common.responseAudience.kind === 'admin') {
+            throw new TypeError('CRDT append refuses an admin response audience');
+        }
         const authorizationScope = requireOneOf(
             command.authorizationScope,
             ['room', 'principal', 'app', 'custom'] as const,

@@ -57,6 +57,49 @@ describe('CRDT mutation exact nested codecs', () => {
         ).rejects.toThrow(/payload|batch|fields|exact/i);
     });
 
+    it('refuses an admin response audience on append', async () => {
+        await expect(
+            createCrdtMutationCommand({
+                operation: 'append',
+                commandId: 'append-admin-audience',
+                actor: actor(),
+                capturedAtEpochMs: 2_000,
+                expireAtEpochMs: 62_000,
+                document: DOCUMENT,
+                responseAudience: {
+                    kind: 'admin' as const,
+                    senderSessionId: 'session-1',
+                    topicId: 'crdt.admin',
+                    contextId: 'document-1'
+                },
+                authorizationScope: 'principal',
+                update: {
+                    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+                    document: DOCUMENT,
+                    updateId: 'update-admin-audience',
+                    replicaId: 'replica-1',
+                    lamport: 1,
+                    parents: [],
+                    schemaVersion: 1,
+                    operationVersion: RALLAR_CRDT_OPERATION_VERSION,
+                    createdAtEpochMs: 1_000,
+                    payload: { kind: 'batch' as const, operations: [] }
+                }
+            })
+        ).rejects.toThrow('CRDT append refuses an admin response audience');
+    });
+
+    it('keeps an admin response audience on a non-append operation', () => {
+        const decoded = decodeCrdtMutationCommand(
+            withCommandHash({
+                ...compactCommand(),
+                responseAudience: { ...audience(), kind: 'admin', topicId: 'crdt.admin' }
+            })
+        );
+
+        expect(decoded.responseAudience.kind).toBe('admin');
+    });
+
     it('checks compact fields before the canonical command hash ' + 'without rewriting raw snapshots', () => {
         const command = compactCommand();
         const mismatchedReason = {
