@@ -378,7 +378,8 @@ export class WsQueueBoxServerService {
             ackRelay: this.ackRelay,
             outboundPlanning: this.outboundPlanning,
             name: this.name,
-            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId
+            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId,
+            diagnostics: dependencies.outboundDiagnostics
         });
     }
 

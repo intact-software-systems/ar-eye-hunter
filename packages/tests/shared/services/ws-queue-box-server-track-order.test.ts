@@ -4,11 +4,13 @@ import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { toALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOrderingBatchSequences } from '@shared/alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
 import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
 import {
@@ -38,6 +40,7 @@ interface TrackFixture {
     readonly admissionStore: ReturnType<typeof createALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>>;
     /** The logical recipient each outside-audience ACK the relay was handed names. */
     readonly outsideAcks: string[];
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
     readonly trackOrder: WsQueueBoxServerTrackOrder;
 }
 
@@ -64,6 +67,7 @@ function createTrackFixture(options: TrackFixtureOptions = {}): TrackFixture {
         const control = parseALControlMessage(ack);
         outsideAcks.push(control?.type === 'ack' ? control.payload.logicalRecipientPeerId ?? '' : '');
     };
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const trackOrder = new WsQueueBoxServerTrackOrder({
         admissionStore,
         clock: { nowMs: () => NOW_MS },
@@ -75,9 +79,10 @@ function createTrackFixture(options: TrackFixtureOptions = {}): TrackFixture {
             })
         },
         name: 'server',
-        newControlId: () => 'control'
+        newControlId: () => 'control',
+        diagnostics: (event) => diagnostics.push(event)
     });
-    return { backend, admissionStore, outsideAcks, trackOrder };
+    return { backend, admissionStore, outsideAcks, diagnostics, trackOrder };
 }
 
 /** Index rows for each sequence, and a stored row recorded (`{ b: seq - 1 }`) or unrecorded (`null`) where named. */
@@ -208,5 +213,45 @@ describe('the WS outside-audience writer', () => {
         connections.set('b', { isOpen: true } as never);
         await fixture.trackOrder.writeOutsideAudience(rowFrom('origin'), ['b'], 'open-here');
         expect(fixture.outsideAcks).toEqual(['b']);
+    });
+
+    it('after three conflicts writes one outside-audience-commit diagnostic and no console line', async () => {
+        const fixture = createTrackFixture({ resolvePolicy: resolveReceiverPolicy });
+        const attempts: string[] = [];
+        vi.spyOn(fixture.admissionStore, 'commitOutsideAudience').mockImplementation(async (receipt) => {
+            attempts.push(receipt.msgId);
+            return 'conflict';
+        });
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const own = rowFrom('server');
+
+        await fixture.trackOrder.writeOutsideAudience(own, ['b'], 'durable');
+
+        expect(attempts).toEqual([own.id.msgId, own.id.msgId, own.id.msgId]);
+        expect(fixture.diagnostics).toEqual([{
+            kind: 'outside-audience-commit',
+            msgId: own.id.msgId,
+            recipientPeerIds: ['b'],
+            attempts: 3,
+            outcome: 'conflict',
+            ...toALMessageTrace(own)
+        }]);
+        expect(error.mock.calls).toEqual([]);
+        error.mockRestore();
+    });
+
+    it('stops at the first committed attempt and writes no diagnostic', async () => {
+        const fixture = createTrackFixture({ resolvePolicy: resolveReceiverPolicy });
+        const answers = ['conflict', 'committed'] as const;
+        const attempts: string[] = [];
+        vi.spyOn(fixture.admissionStore, 'commitOutsideAudience').mockImplementation(async () => {
+            attempts.push(answers[attempts.length]!);
+            return answers[attempts.length - 1]!;
+        });
+
+        await fixture.trackOrder.writeOutsideAudience(rowFrom('server'), ['b'], 'durable');
+
+        expect(attempts).toEqual(['conflict', 'committed']);
+        expect(fixture.diagnostics).toEqual([]);
     });
 });

@@ -460,6 +460,17 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         }>
         & ALMessageTrace
     )
+    | (
+        & Readonly<{
+            kind: 'outside-audience-commit';
+            msgId: string;
+            recipientPeerIds: readonly string[];
+            attempts: number;
+            /** The third lost fence on the server's own receipt; the recipient waits for the receipt retry. */
+            outcome: 'conflict';
+        }>
+        & ALMessageTrace
+    )
     | ALOutboundCongestionDiagnostic;
 
 export type ALOutboundRuntimeDiagnosticsSink = (

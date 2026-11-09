@@ -1,8 +1,13 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundMessageRuntime,
+    type ALOutboundRuntimeDiagnosticsSink
+} from '../../alm/outbound/al-outbound-message-runtime.ts';
 import {
     isALOutboundRowUnrecorded,
     toALOrderingPendingPredecessors,
@@ -33,6 +38,7 @@ export namespace WsQueueBoxServerTrackOrder {
         readonly outboundPlanning: Pick<WsQueueBoxServerOutboundPlanning, 'resolvePolicy'>;
         readonly name: string;
         readonly newControlId: () => string;
+        readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     }
 }
 
@@ -151,7 +157,14 @@ export class WsQueueBoxServerTrackOrder {
                 return;
             }
         }
-        console.error('Own receipt outside-audience record kept conflicting', { msgId: message.id.msgId });
+        writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
+            kind: 'outside-audience-commit',
+            msgId: message.id.msgId,
+            recipientPeerIds,
+            attempts: WsQueueBoxServerTrackOrder.OWN_OUTSIDE_AUDIENCE_ATTEMPTS,
+            outcome: 'conflict',
+            ...toALMessageTrace(message)
+        });
     }
 
     private toHeldAuthority(
