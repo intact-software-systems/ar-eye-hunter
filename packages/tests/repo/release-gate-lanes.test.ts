@@ -88,7 +88,9 @@ describe('Release Gate lanes', () => {
             'db:migrate',
             'test:postgres:integration',
             'test:rallar:full-stack:postgres:rest',
-            'test:rallar:full-stack:postgres:control'
+            'test:rallar:full-stack:postgres:control',
+            'test:api-v1:black-box:postgres:view-push',
+            'test:api-v1:black-box:postgres:ordering'
         ]));
         for (
             const denoCheck of [

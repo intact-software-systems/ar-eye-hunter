@@ -5,10 +5,7 @@ import { parseAuthoritativeClientSnapshot } from '@shared/api/authoritative-stat
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { assert, assertEquals } from '@std/assert';
-import type {
-    ManagedApiServerLifecycleControls,
-    ManagedApiServerPlan
-} from '../../managed-api/with-managed-api-server-plans.mts';
+import type { ManagedApiServerPlan } from '../../managed-api/with-managed-api-server-plans.mts';
 import {
     ApiV1RtcTopologyProofApi,
     requireRecord,
@@ -27,7 +24,6 @@ const RECEIVER_ACK_TIMEOUT_MS = 1_000;
 export namespace OrderingClusterScenario {
     export interface Input {
         readonly plans: readonly ManagedApiServerPlan[];
-        readonly controls: ManagedApiServerLifecycleControls;
         readonly databaseUrl: string;
         readonly artifactDir: string;
     }
@@ -95,8 +91,8 @@ export class OrderingClusterScenario {
         const [primary, secondary, tertiary] = this.#input.plans;
         const parties = await this.#joinParties(secondary!, tertiary!);
         this.#phase = 'grants-and-subscriptions';
-        await this.#grant(parties.c, parties.c, true);
-        await this.#grant(parties.c, parties.s, false);
+        await this.#grant({ owner: parties.c, grantee: parties.c, publish: true });
+        await this.#grant({ owner: parties.c, grantee: parties.s, publish: false });
         for (const party of [parties.r, parties.x, parties.s]) {
             await this.#subscribe(party);
         }
@@ -203,7 +199,7 @@ export class OrderingClusterScenario {
         return connected.generationId;
     }
 
-    async #grant(owner: Party, grantee: Party, publish: boolean): Promise<void> {
+    async #grant({ owner, grantee, publish }: PublicationGrant): Promise<void> {
         const requestId = this.#newRequestId();
         const principalId = grantee.session.clientId;
         await this.#mutate(
@@ -254,7 +250,7 @@ export class OrderingClusterScenario {
         const sentPositions = await this.#database.readSentPositions(first.id.msgId);
         assertEquals(
             sentPositions,
-            Object.fromEntries(copies.map(({ party, frame }) => [party.session.sessionId, readPriorSeq(party, frame)])),
+            Object.fromEntries(copies.map(({ party, frame }) => [party.session.sessionId, toPriorSeq(party, frame)])),
             'The record names every live session of the audience at its prior position, the remote ones and the co-member included'
         );
         return { msgId: first.id.msgId, orderingKey: first.ordering!.orderingKey!, firstSeq, sentPositions };
@@ -393,7 +389,7 @@ export class OrderingClusterScenario {
 
     async #readClient(session: ProofSession): Promise<ClientSnapshot> {
         const response = await fetch(`${session.apiBaseUrl}${this.#scopePath}/clients/${session.clientId}`, {
-            headers: authHeaders(session)
+            headers: toAuthHeaders(session)
         });
         assertEquals(response.status, 200);
         return parseAuthoritativeClientSnapshot(await response.text(), this.#scope);
@@ -402,7 +398,11 @@ export class OrderingClusterScenario {
     async #mutate(session: ProofSession, path: string, request: MutationRequest): Promise<ProofJsonObject> {
         const response = await fetch(`${session.apiBaseUrl}${this.#scopePath}${path}`, {
             method: request.method,
-            headers: { ...authHeaders(session), 'Content-Type': 'application/json', 'x-request-id': request.requestId },
+            headers: {
+                ...toAuthHeaders(session),
+                'Content-Type': 'application/json',
+                'x-request-id': request.requestId
+            },
             body: JSON.stringify(request.body)
         });
         const body = await response.text();
@@ -420,6 +420,13 @@ interface Party {
     readonly socket: OrderingProofSocket;
     /** The socket's live connection generation the room presence and the subscription assert. */
     readonly generationId: string;
+}
+
+/** The owner grants the grantee the granted feed: always to subscribe, and to publish only when asked. */
+interface PublicationGrant {
+    readonly owner: Party;
+    readonly grantee: Party;
+    readonly publish: boolean;
 }
 
 interface Parties {
@@ -481,14 +488,14 @@ function assertInOrderOnTrack(party: Party, frame: ALMessage, message: string): 
         candidate.ordering?.orderingKey === ordering.orderingKey && candidate.ordering?.epoch === ordering.epoch
     );
     const previous = track[track.indexOf(frame) - 1];
-    assertEquals(readPriorSeq(party, frame), previous?.ordering?.seq ?? 0, message);
+    assertEquals(toPriorSeq(party, frame), previous?.ordering?.seq ?? 0, message);
 }
 
 /** The prior a receiver reads: the listed one, or `seq - 1` when the record omits it. */
-function readPriorSeq(party: Party, frame: ALMessage): number {
+function toPriorSeq(party: Party, frame: ALMessage): number {
     return frame.ordering!.priorSeqByRecipient?.[party.session.sessionId] ?? frame.ordering!.seq! - 1;
 }
 
-function authHeaders(session: ProofSession): Record<string, string> {
+function toAuthHeaders(session: ProofSession): Record<string, string> {
     return { Authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId };
 }
