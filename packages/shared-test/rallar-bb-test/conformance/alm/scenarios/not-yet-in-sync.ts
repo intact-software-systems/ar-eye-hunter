@@ -6,7 +6,7 @@ import {
     NON_EXPIRING_SEND_TIMEOUT_MS,
     RESPONSE_MARGIN_MS
 } from '../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_RTC_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
     toObserveCommand,
@@ -21,7 +21,6 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 
 /** `not-yet-in-sync` needs a carrier whose first hop is RTC: the receiver checks a room send's snapshot floor at RTC ingress. */
-const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 /** A floor no group reaches within a run, so the receiver refuses every copy until the message expires. */
 const UNREACHABLE_SNAPSHOT_VERSION = 999_999;
 
@@ -34,7 +33,7 @@ export const notYetInSync: AlmConformanceScenarioDefinition = {
     scenarioId: 'not-yet-in-sync',
     scenarioKey: 'not-yet-in-sync-expires',
     tags: FULL_TAGS,
-    carriers: RTC_CARRIERS,
+    carriers: ALM_CONFORMANCE_RTC_CARRIERS,
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toNotYetInSyncSenderCommands,

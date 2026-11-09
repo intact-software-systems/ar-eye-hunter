@@ -27,6 +27,7 @@ import { leaderOutsideList } from '@shared-test/rallar-bb-test/conformance/alm/s
 import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/leader-ack/no-leader-refused.ts';
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
 import { pacedIsolationLists } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-isolation-lists.ts';
+import { repairExhausted } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/range-repair/repair-exhausted.ts';
 import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
@@ -89,7 +90,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'checkpoint-lag', carriers: ALM_CONFORMANCE_CARRIERS },
     // The range repair cells' lane evidence is local and the hosted full read's too; manifests 18 and 22 stay as recorded.
     { scenarioKey: 'ordering-gap-repair', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
-    { scenarioKey: 'repair-exhausted', carriers: ALM_CONFORMANCE_CARRIERS },
+    { scenarioKey: 'repair-exhausted', carriers: repairExhausted.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
     { scenarioKey: 'fenced-delivery', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
     // A combined recipe keeps only its first prologue, so the recipient that leaves here would miss every later cell.

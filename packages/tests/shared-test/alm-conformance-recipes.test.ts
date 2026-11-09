@@ -368,8 +368,8 @@ describe('alm-conformance recipe family', () => {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
                 .toEqual([
                     // The exhausted repair sits among the ordering cells on the RTC carriers, its second receiver
-                    // reporting the held gap;
-                    // the paced list-isolation cell sits among the paced cells, the one of them with a second recipient;
+                    // reporting the held gap.
+                    // The paced list-isolation cell sits among the paced cells, the one of them with a second recipient;
                     // the server-ordered entry cell sits beside the server-originated one, with the principal's sibling.
                     ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => toInterleavedRoles(key).map((role) => `alm-${carrier}-${key}-${role}`)),
                     ...[...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier], ...MEMBERSHIP_FENCE_KEYS_BY_CARRIER[carrier]].flatMap((key) =>

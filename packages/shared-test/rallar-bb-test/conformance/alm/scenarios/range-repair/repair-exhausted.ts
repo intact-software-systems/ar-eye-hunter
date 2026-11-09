@@ -1,7 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_RTC_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toHeldSecondSendCommands, toOrderedSendCommands } from '../../alm-conformance-ordering-commands.ts';
 import { toSingleArrivalReceiverCommands } from '../../alm-conformance-receiver-commands.ts';
@@ -12,8 +12,6 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 
-const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
-
 /**
  * A repair budget that runs out ends on the handle: the sender's second frame stays held through every
  * retransmission, and each receiver orders the track itself and reports the gap once the third frame arrives. The
@@ -21,14 +19,13 @@ const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.
  * finds it spent, so the sender settles the second frame `skipped` with reason `repair-exhausted`. Both receivers
  * delivered the first send only: the third and fourth wait for a second that never arrives. Over `ws` the server
  * orders the track and is the one requester of its gaps, so a held frame's repeated reports are one attempt: the
- * sender never states exhaustion there and the frame arrives on the hold's release, so the cell runs over the RTC
- * carriers.
+ * sender never states exhaustion there and the frame arrives on the hold's release.
  */
 export const repairExhausted: AlmConformanceScenarioDefinition = {
     scenarioId: 'repair-exhausted',
     scenarioKey: 'repair-exhausted',
     tags: FULL_TAGS,
-    carriers: RTC_CARRIERS,
+    carriers: ALM_CONFORMANCE_RTC_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toSenderCommands: toRepairExhaustedSenderCommands,

@@ -2,6 +2,11 @@ export const ALM_CONFORMANCE_CARRIERS = ['ws', 'rtc', 'rtc-with-ws-fallback'] as
 
 export type AlmConformanceCarrier = typeof ALM_CONFORMANCE_CARRIERS[number];
 
+/** The carriers on which the receivers order the track themselves. */
+export const ALM_CONFORMANCE_RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((
+    carrier
+) => carrier !== 'ws');
+
 /** The only cell with a second carrier to hand an admitted message to (D56). */
 export const ALM_CONFORMANCE_FALLBACK_CARRIERS: readonly AlmConformanceCarrier[] = [
     'rtc-with-ws-fallback'

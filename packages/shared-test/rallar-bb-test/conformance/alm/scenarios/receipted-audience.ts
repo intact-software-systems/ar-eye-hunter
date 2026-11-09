@@ -9,7 +9,11 @@ import {
     RESPONSE_MARGIN_MS,
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    ALM_CONFORMANCE_RTC_CARRIERS,
+    type AlmConformanceCarrier
+} from '../alm-conformance-carriers.ts';
 import { toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
@@ -35,7 +39,6 @@ import {
 import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 
-const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 const RETIRED_ACK_TYPE_ID = 'al.control.ack.v1';
 
 const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
@@ -125,7 +128,7 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
     scenarioId: 'receipted-audience',
     scenarioKey: 'unknown-ack-version',
     tags: FULL_TAGS,
-    carriers: RTC_CARRIERS,
+    carriers: ALM_CONFORMANCE_RTC_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
