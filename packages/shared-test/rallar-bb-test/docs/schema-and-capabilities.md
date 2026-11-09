@@ -805,11 +805,12 @@ refused `unsupported`; the hold reorders their arrival. A receiver enters a reco
 goes first: holding it instead would make the receiver enter at seq 2 and refuse seq 1. All carry `ack: 'none'`,
 since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and a 90 s `ttlMs`, and the receiver
 receives all 66 in a 90 s window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real
-runtime). The receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted` count is
-above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per
-iteration, against the page's event history. Over `ws` the WS server NACKs the gap at each later
-frame's arrival; those reports are one attempt per requester, charged once (D573), so the held seq 2 does not settle
-`repair-exhausted` and the release delivers it.
+runtime). Over `rtc` the receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted`
+count is above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading
+digit per iteration, against the page's event history. Over `ws` the WS server is the hop that buffers the track and
+releases it when seq 2 arrives, so the receiver reads the 66 arrivals and no promotion: the server NACKs the gap at
+each later frame's arrival; those reports are one attempt per requester, charged once (D573), so the held seq 2 does
+not settle `repair-exhausted` and the release delivers it.
 `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
 sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
 in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of

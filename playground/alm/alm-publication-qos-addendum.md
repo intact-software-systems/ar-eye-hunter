@@ -1127,27 +1127,29 @@ budget spent. It runs over `rtc` and `rtc-with-ws-fallback` only (D580). The
 CRDT mutation command codec refuses an `append` with an `admin` response
 audience after the envelope is decoded
 (`TypeError('CRDT append refuses an admin response audience')`, classed
-`app-inbox-malformed-command`), a `compact` with one still decodes, and
-api-v1's admin branch states its null publication authority. The PGlite
-statement recorder is one `vi`-free `recordPGliteStatements` under `apps/api-v1/test/db/` with a caller-owned
-`restore()`, imported by the four Vitest users and the Deno topology test;
-`recordResourceInboxInserts` is deleted. Bundle figures (guidance):
-`browser/rallar.ts` 297.9 → 298.0 KiB brotli (305,056 → 305,200 B, 48 B over its
-298 KiB budget, which was raised to 299 KiB) and the headless agent 394.705 →
-394.516 KiB under its 395 KiB budget. Limits: the `ws` leg of
-`buffered-track-drains` is observed, not proved, since the gate's observation
-job runs the smoke scope, which does not run the full-scope cell, and the local
-lane's typed `ws` sends do not complete inside the recipe budgets, as the hosted
-runner's do not. Over `ws` the WS server orders the track and is the one
-requester of its gaps, so a held frame's repeated reports are one attempt under
-the per-gap identity: the sender never states `repair-exhausted` over `ws`, and
-the frame arrives on the hold's release; a server repair report per logical
-recipient would make a second receiver a second requester there. The three-agent
-cell's RTC legs are observation only. A repair planner whose prepared payload
-changes with the hint would charge again under the per-gap identity; the RTC
-overlay planner is the only such planner in production, and S7-ii does not
-exercise it. Decisions D568–D580 are in the roadmap; Slice 7 is complete (S7-i
-and S7-ii).
+`app-inbox-malformed-command`), a `compact` with one still decodes, and api-v1's
+admin branch states its null publication authority. The PGlite statement
+recorder is one `vi`-free `recordPGliteStatements` under `apps/api-v1/test/db/`
+with a caller-owned `restore()`, imported by the four Vitest users and the Deno
+topology test; `recordResourceInboxInserts` is deleted. Bundle figures
+(guidance): `browser/rallar.ts` 297.9 → 298.0 KiB brotli (305,056 → 305,200 B,
+48 B over its 298 KiB budget, which was raised to 299 KiB) and the headless
+agent 394.705 → 394.516 KiB under its 395 KiB budget. Limits: the `ws` leg of
+`buffered-track-drains` is observed locally over `ws` (the full-scope lane; the
+gate's observation job runs the smoke scope, which does not run the full-scope
+cell). Its earlier local red was the receiver's promotion wait: over `ws` the WS
+server is the hop that buffers the track, so only the RTC receiver promotes, and
+the wait is now `rtc`-only. Over `ws` the WS server orders the track and is the
+one requester of its gaps, so a held frame's repeated reports are one attempt
+under the per-gap identity: the sender never states `repair-exhausted` over
+`ws`, and the frame arrives on the hold's release; a server repair report per
+logical recipient would make a second receiver a second requester there. The
+three-agent cell's RTC legs are observation only. A repair planner whose
+prepared payload changes with the hint would find the budget spent under the
+per-gap identity and state `repair-exhausted` once, as every later report did
+before S7-ii, a regression only if `maxRepairs` ever exceeds 1; the RTC overlay
+planner is the only such planner in production, and S7-ii does not exercise it.
+Decisions D568–D580 are in the roadmap; Slice 7 is complete (S7-i and S7-ii).
 
 ### Later outcomes
 
