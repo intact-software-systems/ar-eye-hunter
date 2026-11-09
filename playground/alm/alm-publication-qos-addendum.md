@@ -1146,7 +1146,7 @@ under the per-gap identity: the sender never states `repair-exhausted` over
 logical recipient would make a second receiver a second requester there. The
 three-agent cell's RTC legs are observation only. A repair planner whose
 prepared payload changes with the hint would find the budget spent under the
-per-gap identity and state `repair-exhausted` once, as every later report did
+per-gap identity and state `repair-exhausted` once, as a later report did
 before S7-ii, a regression only if `maxRepairs` ever exceeds 1; the RTC overlay
 planner is the only such planner in production, and S7-ii does not exercise it.
 Decisions D568–D580 are in the roadmap; Slice 7 is complete (S7-i and S7-ii).

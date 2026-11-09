@@ -192,10 +192,10 @@ and it has no status list.
   planner) finds the budget spent on a changed payload and states
   `repair-exhausted` once, as before S7-ii; a regression only if `maxRepairs`
   ever exceeds 1, and no cell exercises it.
-- The `ws` typed-send recipe budgets, hosted and local (S7-ii): full-scope `ws`
-  cells whose typed sends do not complete inside the recipe budgets
-  (`capacity-tracks`, `server-ordered-entry`, `ordering-resync`) go red
-  regardless of the branch.
+- The `ws` full-scope cells red regardless of the branch, hosted and local
+  (S7-ii): `capacity-tracks` and `server-ordered-entry` fail their typed-send
+  assertions and `ordering-resync` its `relay-resync-nack` wait; the recipe
+  budgets are the suspected cause, unproven.
 - A granted `receiver` RTC unicast to a non-holder (S6-i, D553) reads
   `acknowledged` with zero recipients over RTC, where WS reads `unauthorized`.
 - A frozen session that never subscribes after a hand-over (S6-i) stays

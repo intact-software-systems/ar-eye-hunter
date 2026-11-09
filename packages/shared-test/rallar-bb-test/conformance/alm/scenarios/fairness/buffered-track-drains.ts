@@ -26,7 +26,7 @@ const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /**
  * The cell's own lifetime for the sends and the receive window. A slow runner may take longer than the default 30 s
  * to put 66 sends on the wire and deliver them; that a 64-message buffer drains within the default lifetime is
- * proven on the real runtime, and this cell proves the promotion and the 66 arrivals.
+ * proven on the real runtime, and this cell proves the 66 arrivals and, over `rtc`, the promotion.
  */
 const BUFFERED_TRACK_TTL_MS = 90_000;
 /** A count above zero starts with a digit from 1 to 9, and `promoted` is the last key `effect-drain` emits. */
