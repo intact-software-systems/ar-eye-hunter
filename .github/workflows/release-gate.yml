@@ -399,6 +399,24 @@ jobs:
           path: .artifacts/api-v1-black-box/view-push
           if-no-files-found: error
 
+      - name: Run ordering cluster proof
+        id: ordering
+        env:
+          DENO_NO_PACKAGE_JSON: '1'
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/ordering
+          git rev-parse HEAD > .artifacts/api-v1-black-box/ordering/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/ordering/validated-tree.txt
+          npm run test:api-v1:black-box:postgres:ordering -- --artifact-dir=../../.artifacts/api-v1-black-box/ordering --run-id=${{ github.run_id }}-${{ github.run_attempt }}-ordering
+
+      - name: Upload ordering proof artifacts
+        if: ${{ !cancelled() && steps.ordering.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-ordering-${{ github.sha }}
+          path: .artifacts/api-v1-black-box/ordering
+          if-no-files-found: error
+
       - name: Run Postgres full-stack smoke tests
         run: |
           npm run test:rallar:full-stack:postgres:rest
