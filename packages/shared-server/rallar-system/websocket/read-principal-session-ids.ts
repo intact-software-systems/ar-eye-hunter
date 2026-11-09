@@ -12,7 +12,11 @@ export interface PrincipalSessionIds {
     readonly liveSessionIds: readonly string[];
 }
 
-/** Durable own-account sessions only: group memberships never extend this audience. */
+/**
+ * Durable own-account sessions only: group memberships never extend this audience. It reads the client snapshot, which
+ * shows open sessions only, so it cannot tell a closed own session from a stranger's; `readPrincipalSessions` reads the
+ * stored rows for the dequeue's re-check, which must.
+ */
 export async function readPrincipalSessionIds(
     ref: ClientPrincipalRef,
     reader: PrincipalSessionReader
@@ -34,14 +38,19 @@ export async function readPrincipalSessionIds(
 
 export interface PrincipalSessionRowsReader {
     readonly findPrincipal: (ref: ClientPrincipalRef) => Promise<ClientPrincipal | undefined>;
-    /** Every stored session row of the principal until the purge, closed ones included. */
+    /**
+     * Every stored session row of the principal, closed ones included, until the purge at
+     * `min(max(expiresAt, disconnectedAt) + 24 h, disconnectedAt + disconnectedRetentionMs)`; a closed own session
+     * purged by then reads as nobody's and is kept, the harmless direction.
+     */
     readonly listSessionsForPrincipal: (ref: ClientPrincipalRef) => Promise<readonly ClientSession[]>;
     readonly nowEpochMs: () => number;
 }
 
 /**
  * The principal's stored session rows, and the live ones while the principal is active; `undefined` when no principal
- * row exists in the scope.
+ * row exists in the scope. It reads the rows, not the snapshot `readPrincipalSessionIds` reads, so a closed own session
+ * is judged dead instead of being taken for a co-member's.
  */
 export async function readPrincipalSessions(
     ref: ClientPrincipalRef,

@@ -33,18 +33,20 @@ export function createApiV1CapturedRecipientEligibilityFilters(
                 readPrincipalSessions,
                 nowEpochMs: input.nowEpochMs()
             }),
-        local: async (captured) =>
-            await filterGrantedWsRecipientSessionIds({
+        local: async (captured) => {
+            const nowEpochMs = input.nowEpochMs();
+            return await filterGrantedWsRecipientSessionIds({
                 ...captured,
                 durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
                     ...captured,
                     socketServer,
-                    nowMs: input.nowEpochMs()
+                    nowMs: nowEpochMs
                 }),
                 grantedTopics,
                 serverPeerId,
                 readPublicationAuthority,
-                nowEpochMs: input.nowEpochMs()
-            })
+                nowEpochMs
+            });
+        }
     };
 }

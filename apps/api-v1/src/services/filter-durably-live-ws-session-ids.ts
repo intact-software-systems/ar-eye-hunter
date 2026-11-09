@@ -1,6 +1,7 @@
 import type { PrincipalSessionIds } from '@shared-server/rallar-system/websocket/read-principal-session-ids.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { readALPrincipalBroadcastTarget } from '@shared/al-contracts/read-al-principal-broadcast-target.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 
 import {
@@ -18,10 +19,10 @@ export interface FilterDurablyLiveWsSessionIdsInput
  * The dequeue's half of the D498 re-check: the candidates with a live connection generation anywhere, in candidate
  * order; the local half is the socket filter at send. A granted row keeps the candidates whose live subscription
  * asserts the generation it captured; a room row the candidates the room's live generations name, nobody when the room
- * has no current snapshot; a principal row the principal's own sessions that are live (none while the principal is not
- * active) and every candidate that is not one of its stored sessions (a co-member's, which no fact of the row judges),
- * every candidate when no principal row exists. A row naming neither keeps its candidates: no durable fact names its
- * sessions, so the send filter and the retry decide.
+ * has no current snapshot or the authority read answers for another room; a principal row the principal's own
+ * sessions that are live (none while the principal is not active) and every candidate that is not one of its stored
+ * sessions (a co-member's, which no fact of the row judges), every candidate when no principal row exists. A row
+ * naming neither keeps its candidates: no durable fact names its sessions, so the send filter and the retry decide.
  */
 export async function filterDurablyLiveWsSessionIds(
     input: FilterDurablyLiveWsSessionIdsInput
@@ -33,7 +34,7 @@ export async function filterDurablyLiveWsSessionIds(
     const groupRef = readALTargetGroupRef(message);
     if (groupRef !== undefined) {
         const authority = await input.readPublicationAuthority(groupRef, message.route.topicId);
-        return authority === undefined
+        return authority === undefined || !isSameGroupRef(authority.snapshot.group, groupRef)
             ? []
             : candidateSessionIds.filter((sessionId) => Object.hasOwn(authority.liveSessionGenerations, sessionId));
     }

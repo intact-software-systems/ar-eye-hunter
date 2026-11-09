@@ -14,6 +14,7 @@ import {
 } from '../../src/services/filter-durably-live-ws-session-ids.ts';
 
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+const OTHER_ROOM: GroupRef = { ...ROOM, groupId: 'room-2' };
 const GRANTED_TOPIC = 'room.feed';
 const MEMBERS_TOPIC = 'room.chat';
 const SERVER_PEER_ID = 'ws-server';
@@ -36,7 +37,7 @@ Deno.test('a granted row keeps the candidates whose live subscription asserts th
     assert.equal(reads, 1);
 });
 
-Deno.test('a room row keeps the candidates with a live generation wherever their socket is, and nobody when the room has no snapshot', async () => {
+Deno.test('a room row keeps the candidates with a live generation wherever their socket is, and nobody when the room has no snapshot or the read answers for another room', async () => {
     const live = await filterDurablyLiveWsSessionIds({
         ...durableInput(feedMessage('alice', MEMBERS_TOPIC), ['bob', 'carol', 'dave']),
         readPublicationAuthority: () => Promise.resolve(createAuthority(['bob', 'carol']))
@@ -45,9 +46,27 @@ Deno.test('a room row keeps the candidates with a live generation wherever their
         ...durableInput(feedMessage('alice', MEMBERS_TOPIC), ['bob', 'carol', 'dave']),
         readPublicationAuthority: () => Promise.resolve(undefined)
     });
+    const foreign = await filterDurablyLiveWsSessionIds({
+        ...durableInput(feedMessage('alice', MEMBERS_TOPIC), ['bob', 'carol', 'dave']),
+        readPublicationAuthority: () => Promise.resolve(createAuthority(['bob', 'carol'], OTHER_ROOM))
+    });
 
     assert.deepEqual(live, ['bob', 'carol']);
     assert.deepEqual(absent, []);
+    assert.deepEqual(foreign, []);
+});
+
+Deno.test('a principal row that names a room is judged by the room\'s live generations, not the principal\'s sessions', async () => {
+    const message: ALMessage = {
+        ...principalMessage(),
+        targets: { mode: 'broadcast', scope: 'principal', principalRef: PRINCIPAL, groupRef: ROOM }
+    };
+    const eligible = await filterDurablyLiveWsSessionIds({
+        ...durableInput(message, ['bob', 'carol']),
+        readPublicationAuthority: () => Promise.resolve(createAuthority(['bob']))
+    });
+
+    assert.deepEqual(eligible, ['bob']);
 });
 
 Deno.test('a principal row keeps the principal\'s live sessions, and every candidate when no principal row exists', async () => {
@@ -114,9 +133,9 @@ function durableInput(message: ALMessage, candidateSessionIds: readonly string[]
 }
 
 /** The granted snapshot, every session subscribed under its one client generation; only `liveSessionIds` hold a live one. */
-function createAuthority(liveSessionIds: readonly string[] = PRINCIPAL_IDS): GroupPublicationAuthority {
+function createAuthority(liveSessionIds: readonly string[] = PRINCIPAL_IDS, room: GroupRef = ROOM): GroupPublicationAuthority {
     return {
-        snapshot: grantedSnapshot(),
+        snapshot: grantedSnapshot(room),
         subscriptions: PRINCIPAL_IDS.map((sessionId): GroupTopicSubscription => ({
             sessionId,
             principalId: sessionId,
@@ -147,18 +166,18 @@ function principalMessage(): ALMessage {
 }
 
 /** Alice publishes and subscribes, Bob and Dave subscribe, Carol holds nothing. */
-function grantedSnapshot(): GroupSnapshot {
+function grantedSnapshot(room: GroupRef): GroupSnapshot {
     const permissions = {
         alice: { publish: true, subscribe: true },
         bob: { publish: false, subscribe: true },
         dave: { publish: false, subscribe: true }
     };
-    const group = createTestGroup({ ...ROOM, snapshotVersion: 4, presenceVersion: 1, activeMemberCount: PRINCIPAL_IDS.length });
+    const group = createTestGroup({ ...room, snapshotVersion: 4, presenceVersion: 1, activeMemberCount: PRINCIPAL_IDS.length });
     return {
         causalRevision: { groupRevision: 4, presenceRevision: 1 },
         group,
         members: PRINCIPAL_IDS.map((principalId): GroupMember => ({
-            ...ROOM,
+            ...room,
             principalId,
             role: principalId === 'alice' ? 'owner' : 'member',
             status: 'active',
@@ -171,7 +190,7 @@ function grantedSnapshot(): GroupSnapshot {
             invitationExpiresAtEpochMs: null
         })),
         activeSessions: PRINCIPAL_IDS.map((sessionId): GroupPresenceSession => ({
-            ...ROOM,
+            ...room,
             principalId: sessionId,
             sessionId,
             generationId: `generation-${sessionId}`,
@@ -188,7 +207,7 @@ function grantedSnapshot(): GroupSnapshot {
         memberCount: PRINCIPAL_IDS.length,
         onlineMemberCount: PRINCIPAL_IDS.length,
         publicationGrants: Object.entries(permissions).map(([principalId, granted]) => ({
-            ...ROOM,
+            ...room,
             principalId,
             topics: { [GRANTED_TOPIC]: granted },
             updated: group.updated
