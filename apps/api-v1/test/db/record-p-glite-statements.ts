@@ -1,8 +1,6 @@
-import { vi } from 'vitest';
-
 import type { PSqlParameter } from '@shared-server/postgres/p-sql-sql.ts';
 
-import type { PGliteSql } from '../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
 export interface RecordedPGliteStatement {
     readonly scope: 'autocommit' | 'exec' | 'transaction';
@@ -17,29 +15,28 @@ export interface RecordedPGliteStatements {
     inTransaction(): readonly RecordedPGliteStatement[];
     /** How many transactions the PGlite instance opened. */
     transactions(): number;
+    /** Puts the three originals back; the caller owns this teardown. */
+    restore(): void;
 }
 
-/**
- * Patches `query`, `exec` and `transaction` of one PGlite instance for the rest of the test: the caller
- * owns the teardown, and every suite using this needs `vi.restoreAllMocks()` in an `afterEach`.
- */
+/** Records every statement of one PGlite instance until `restore()`, BEGIN and COMMIT excluded. */
 export function recordPGliteStatements(raw: PGliteSql['raw']): RecordedPGliteStatements {
     const statements: RecordedPGliteStatement[] = [];
     let transactions = 0;
-    const query = raw.query.bind(raw);
-    const exec = raw.exec.bind(raw);
-    const transaction = raw.transaction.bind(raw);
-    vi.spyOn(raw, 'query').mockImplementation((...args: Parameters<typeof raw.query>) => {
+    const query = raw.query;
+    const exec = raw.exec;
+    const transaction = raw.transaction;
+    raw.query = ((...args: Parameters<typeof query>) => {
         statements.push({ scope: 'autocommit', query: args[0], params: args[1] ?? [] });
-        return query(...args);
-    });
-    vi.spyOn(raw, 'exec').mockImplementation((...args: Parameters<typeof raw.exec>) => {
+        return query.apply(raw, args);
+    }) as typeof query;
+    raw.exec = ((...args: Parameters<typeof exec>) => {
         statements.push({ scope: 'exec', query: args[0], params: [] });
-        return exec(...args);
-    });
-    vi.spyOn(raw, 'transaction').mockImplementation((callback) => {
+        return exec.apply(raw, args);
+    }) as typeof exec;
+    raw.transaction = ((callback: Parameters<typeof transaction>[0]) => {
         transactions += 1;
-        return transaction((tx) => {
+        return transaction.call(raw, (tx) => {
             const txQuery = tx.query.bind(tx);
             return callback(Object.assign(Object.create(tx), {
                 query: (...args: Parameters<typeof tx.query>) => {
@@ -48,10 +45,15 @@ export function recordPGliteStatements(raw: PGliteSql['raw']): RecordedPGliteSta
                 }
             }));
         });
-    });
+    }) as typeof transaction;
     return {
         statements: () => statements,
         inTransaction: () => statements.filter(({ scope }) => scope === 'transaction'),
-        transactions: () => transactions
+        transactions: () => transactions,
+        restore: () => {
+            raw.query = query;
+            raw.exec = exec;
+            raw.transaction = transaction;
+        }
     };
 }

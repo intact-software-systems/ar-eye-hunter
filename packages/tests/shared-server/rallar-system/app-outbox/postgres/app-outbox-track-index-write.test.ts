@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
@@ -16,7 +16,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PGliteSql } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
-import { recordPGliteStatements } from '../../../al-runtime/postgres/record-p-glite-statements.ts';
+import { recordPGliteStatements } from '../../../../../../apps/api-v1/test/db/record-p-glite-statements.ts';
 import { createResourceInboxTestStorage, recordResourceInboxStatements } from '../../../queuebox/resource-inbox-test-storage.ts';
 import {
     createTrackIndexTestEntry,
@@ -71,6 +71,7 @@ function countInTransactionStatements(sql: PSqlSql): (() => number) | undefined 
         return undefined;
     }
     const recorded = recordPGliteStatements((sql as PGliteSql).raw);
+    onTestFinished(() => recorded.restore());
     return () => recorded.inTransaction().length;
 }
 
@@ -94,10 +95,6 @@ async function seedSidecarRow(sql: PSqlSql, row: AppOutboxSidecarRow, value: str
 }
 
 describe('the app outbox writer with a track index row', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
     it('writes the outbox row and its index row in one statement of one transaction', async () => {
         const sql = await createStorage();
         const computed = computeOrdered();

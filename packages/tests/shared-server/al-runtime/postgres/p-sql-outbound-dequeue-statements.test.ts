@@ -40,6 +40,7 @@ import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { recordPGliteStatements, type RecordedPGliteStatements } from '../../../../../apps/api-v1/test/db/record-p-glite-statements.ts';
 import {
     createOutboundMessage,
     createOutboundRuntimeWithWorkTask,
@@ -52,7 +53,6 @@ import {
     createPSqlAdmissionTestStorage,
     type PSqlAdmissionTestStorage
 } from './create-p-sql-admission-test-storage.ts';
-import { recordPGliteStatements, type RecordedPGliteStatements } from './record-p-glite-statements.ts';
 
 interface PGliteStatementCounts {
     readonly autocommit: number;
@@ -72,6 +72,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         const row = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage('dequeued'), 'outbox', Temporal.Now.instant());
         await outbox.enqueue(row);
         const recorded = recordPGliteStatements(storage.sql.raw);
+        onTestFinished(() => recorded.restore());
         const counts = () => toPGliteStatementCounts(recorded);
         const readKeys = recordQueueRowReads();
 
@@ -113,6 +114,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
             return await readMessageSupersedence(messages);
         });
         const recorded = recordPGliteStatements(storage.sql.raw);
+        onTestFinished(() => recorded.restore());
         const counts = () => toPGliteStatementCounts(recorded);
 
         await runOutboundWorkTask(runtime);
@@ -133,6 +135,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
     it('reads the WS authority and supersedence of a dequeued group in one statement per store and round', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const recorded = recordPGliteStatements(storage.sql.raw);
+        onTestFinished(() => recorded.restore());
         const counts = () => toPGliteStatementCounts(recorded);
         const phases: Record<string, PGliteStatementCounts> = {};
         const lane = createWsDequeueLane(storage, (observation) => {
@@ -162,6 +165,7 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
     it('commits a dequeued WS group in one statement per kind of write', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const recorded = recordPGliteStatements(storage.sql.raw);
+        onTestFinished(() => recorded.restore());
         const counts = () => toPGliteStatementCounts(recorded);
         const phases: Record<string, PGliteStatementCounts> = {};
         const lane = createWsDequeueLane(storage, (observation) => {

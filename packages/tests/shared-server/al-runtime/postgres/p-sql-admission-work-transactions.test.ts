@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -16,8 +17,8 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
+import { recordPGliteStatements } from '../../../../../apps/api-v1/test/db/record-p-glite-statements.ts';
 import { createPSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
-import { recordPGliteStatements } from './record-p-glite-statements.ts';
 
 describe('AL admission persistence-ready queue work', () => {
     afterEach(() => vi.restoreAllMocks());
@@ -162,6 +163,7 @@ describe('AL admission persistence-ready queue work', () => {
         const backend = new PSqlAdmissionWorkBackend({ sql, namespace: 'admission', nowMs: Date.now });
         await backend.write(async (write) => await write.set('version', 0));
         const recorded = recordPGliteStatements(sql.raw);
+        onTestFinished(() => recorded.restore());
 
         await backend.write(async (write) => {
             await write.set('effect:a', 'a');
@@ -217,6 +219,7 @@ describe('AL admission persistence-ready queue work', () => {
         const claimed = await claimEntries(backend, ['held-1', 'held-2', 'held-3']);
         const inserted = ['new-1', 'new-2', 'new-3'].map(createEntryOf);
         const recorded = recordPGliteStatements(sql.raw);
+        onTestFinished(() => recorded.restore());
 
         await backend.write(async (write) => {
             await Promise.all(claimed.map((entry) => write.readClaimedWork(entry)));
@@ -229,6 +232,25 @@ describe('AL admission persistence-ready queue work', () => {
         for (const entry of inserted) {
             expect(await backend.workQueue.getItem(entry.key)).toMatchObject({ resource: 'computed message' });
         }
+    });
+
+    it('restores the three originals and records nothing after', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const { query, exec, transaction } = sql.raw;
+        const recorded = recordPGliteStatements(sql.raw);
+        await sql.raw.query('select 1');
+        recorded.restore();
+        await sql.raw.query('select 2');
+
+        expect(recorded.statements().map(({ query }) => query)).toEqual(['select 1']);
+        expect(sql.raw.query).toBe(query);
+        expect(sql.raw.exec).toBe(exec);
+        expect(sql.raw.transaction).toBe(transaction);
+
+        const again = recordPGliteStatements(sql.raw);
+        await sql.raw.query('select 3');
+        again.restore();
+        expect(again.statements().map(({ query }) => query)).toEqual(['select 3']);
     });
 
     it('conflicts the whole commit when one of several held claimed rows moved after its claim', async () => {
