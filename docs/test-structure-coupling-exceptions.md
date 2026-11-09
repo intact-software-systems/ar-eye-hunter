@@ -6065,6 +6065,59 @@ moved or changed test.
         "requiredConstraint": "commitOutsideAudience opens no write transaction when its fold changes nothing, when no pending receipt exists, or when the receipt is complete.",
         "failureRationale": "An identical rewrite leaves the readback row unchanged apart from its expiry, so the row snapshot alone cannot prove the sender version was not bumped and a concurrent dispatch was not forced into a conflict."
       }
+    },
+    {
+      "id": "rtc-baseline-finalization-publishes-summary-exactly-once",
+      "domain": "RTC baseline finalization summary publication",
+      "owner": "Rallar shared maintainers",
+      "summary": "A successful baseline finalization publishes the finalized summary exactly once before the evidence lock ends.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#finalizes a collected baseline by publishing its summary once inside the lock lifecycle",
+      "coverageRelation": "The finalizer acquires the lock, collects, partitions and summarizes, then publishes the summary once and ends the lock. The test asserts the publish port fires exactly once and the lock end is the final call.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcBaselineFinalizerDependencies.publishSummary",
+        "observableEffect": "Publishing writes the finalized summary artifact, which the catalog and later analysis consume as the authoritative baseline result.",
+        "requiredConstraint": "publishSummary is invoked exactly once for one successful finalization.",
+        "failureRationale": "A summary artifact produced twice would duplicate authoritative baseline evidence; zero would leave a finalization reported successful with no published summary."
+      }
+    },
+    {
+      "id": "rtc-baseline-finalization-no-publish-on-failure",
+      "domain": "RTC baseline finalization failure publishing",
+      "owner": "Rallar shared maintainers",
+      "summary": "A baseline finalization that fails raw-reference verification publishes no summary and writes a failure artifact instead.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reports a raw-reference mismatch as a failure without publishing a summary",
+      "coverageRelation": "When the raw reference byte length or SHA-256 mismatches the stored bytes, the finalizer writes a finalization-failure artifact and publishes no summary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcBaselineFinalizerDependencies.publishSummary",
+        "observableEffect": "Publishing the summary would record a successful baseline for artifacts that failed verification.",
+        "requiredConstraint": "publishSummary is not invoked when raw-reference verification fails.",
+        "failureRationale": "A published summary could coexist with a failed verification if the failure write succeeded but a stray publish also ran; observing the publish port proves no success summary escaped."
+      }
+    },
+    {
+      "id": "rtc-baseline-finalization-raw-reference-read-once",
+      "domain": "RTC baseline finalization raw-reference verification",
+      "owner": "Rallar shared maintainers",
+      "summary": "The finalizer reads each raw reference's bytes exactly once to verify its stored length and SHA-256.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reads the raw reference bytes once before reporting a length mismatch",
+      "coverageRelation": "The finalizer reads the raw reference bytes to recompute SHA-256 and compare against the stored hash; the test asserts the read port fires exactly once per verification.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcBaselineFinalizerDependencies.readBytes",
+        "observableEffect": "Reading the raw bytes is the input to SHA-256 verification; a repeated read could hide a race or a non-idempotent read source.",
+        "requiredConstraint": "readBytes is invoked exactly once per raw reference verification.",
+        "failureRationale": "Zero reads would leave the hash unverified while reporting a mismatch; more than one read would make verification depend on a non-canonical read source."
+      }
+    },
+    {
+      "id": "rtc-benchmark-package-source-typecheck",
+      "domain": "shared-rtc-bench package source typechecking",
+      "owner": "Rallar shared maintainers",
+      "summary": "The shared-rtc-bench package's tsconfig includes its own source glob so the package typechecks its source, replacing the retired Deno-checked baseline catalog.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside the accepted baseline catalog and typechecked by the package",
+      "coverageRelation": "The test reads the package tsconfig and asserts it includes the **/*.ts source glob, proving the package typechecks its own source tree."
     }
   ],
   "entries": [
@@ -12876,6 +12929,50 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The stored-row keys the backend reads prove the dequeue wait reads its own row and the settled predecessor only: the absent sequences below a settled row are neither read nor pending, which bounds the wait's cost on a long client-state track.",
       "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts#reads the listed sequences' stored rows from the highest down to the first settled one, and none below it"
+    },
+    {
+      "id": "test-structure-coupling-085319d50380bd97",
+      "path": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-baseline-finalization-raw-reference-read-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The raw reference bytes are read exactly once to recompute SHA-256 against the stored hash; a repeated read would make verification depend on a non-canonical read source.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reads the raw reference bytes once before reporting a length mismatch"
+    },
+    {
+      "id": "test-structure-coupling-87a2a1fd0abe8439",
+      "path": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-baseline-finalization-publishes-summary-exactly-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The summary is published exactly once and the lock ends as the final call, so one successful finalization yields one authoritative summary artifact.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#finalizes a collected baseline by publishing its summary once inside the lock lifecycle"
+    },
+    {
+      "id": "test-structure-coupling-cc5922c319085118",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "rtc-benchmark-package-source-typecheck",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The tsconfig source glob is the package's typecheck boundary that replaced the Deno-checked baseline catalog; pinning it proves the package typechecks its own source.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside the accepted baseline catalog and typechecked by the package"
+    },
+    {
+      "id": "test-structure-coupling-f8a1aa65a087a4c1",
+      "path": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-baseline-finalization-no-publish-on-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "A failed raw-reference verification must not publish a success summary; the failure artifact is the only output.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reports a raw-reference mismatch as a failure without publishing a summary"
     }
   ]
 }
