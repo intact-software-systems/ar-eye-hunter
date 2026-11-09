@@ -13,9 +13,9 @@ export interface PrincipalSessionIds {
 }
 
 /**
- * Durable own-account sessions only: group memberships never extend this audience. It reads the client snapshot, which
- * shows open sessions only, so it cannot tell a closed own session from a stranger's; `readPrincipalSessions` reads the
- * stored rows for the dequeue's re-check, which must.
+ * Durable own-account sessions only: group memberships never extend this audience. It reads the client snapshot, whose
+ * sessions are the active ones with `disconnectedAtEpochMs === null`, so it cannot tell a closed own session from a
+ * stranger's; `readPrincipalSessions` reads the stored rows (status and expiry only) for the dequeue's re-check, which must.
  */
 export async function readPrincipalSessionIds(
     ref: ClientPrincipalRef,

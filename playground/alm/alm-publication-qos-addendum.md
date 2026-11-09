@@ -1128,7 +1128,8 @@ completes with S7-ii.
 - **Measured operating envelope:** representative multi-group publishers,
   subscription churn, slow consumers, relay depth, mixed WS/RTC, and sustained
   overload with bounded memory and accurate outcome evidence; server-side
-  ordered sends are measured by the 6b probe (counts in the Release 14 record).
+  ordered sends are measured by the 6b probe on room rows (counts in the Release 14
+  record; the principal path is unmeasured).
 
 Full adoption requires those outcomes relevant to the advertised mode. A
 temporary typed refusal during staged delivery is not evidence that the whole

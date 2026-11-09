@@ -1992,7 +1992,9 @@ every send; api-v1's `filterDurablyLiveWsSessionIds` reads a room's live generat
 and a principal's stored and live session rows through `readPrincipalSessions`, keeping co-member sessions it cannot
 judge. `writeOutsideAudience` takes `'durable'` or `'open-here'`, the bridge reports its send-time drops, a judged
 dequeue that reaches no socket here sends to nobody here (`audienceJudgedAtSend`), and three lost fences are one
-diagnostic. The 6b counts are identical on the front before and after, with one durable read added per dequeue. The
+diagnostic. The 6b counts are identical on the front before and after; the probe measures the authority batch read the
+durable re-check adds (one statement), a room row gains at least two (the snapshot read and the batch), and the
+principal path is unmeasured. The
 ordering cluster proof proves the record and entry half on both tracks and the outside judgement on the
 receipt-retry path, since holding the dequeuer would hold every AppInbox mutation. The addendum's "As applied (S7-i)"
 under Slice 7 states the limits.
