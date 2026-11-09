@@ -2829,10 +2829,12 @@ Optional:
 - `rtcTopologyPublicationRepository`, `rtcTopologyExecutionRepository`,
   `rtcTopologyDelivery`, `rtcTopologyReplay`.
 - `queuePubSubBridge`, `readiness`, `healthFailure`.
-- `filterEligibleCapturedSessionIds`: the asynchronous re-check of a captured
-  outbox audience at each dequeue, cluster send, repair and awaited-connection
-  send, handed to the WS server and the cluster bridge. Without it a granted
-  topic's row reaches nobody.
+- `capturedRecipientEligibilityFilters: { durable; local }`: the asynchronous
+  re-checks of a captured outbox audience. `durable` keeps the sessions with a
+  live connection generation anywhere and judges each dequeue and receipt
+  retry; `local` keeps the sessions whose socket on this instance is open and
+  judges each send on this instance: the WS server's awaited-connection send and
+  the cluster bridge's send. Without them a granted topic's row reaches nobody.
 
 ### Construction And Queue Ownership
 
