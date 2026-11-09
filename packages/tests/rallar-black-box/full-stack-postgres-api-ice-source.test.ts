@@ -142,7 +142,9 @@ async function readPostgresApiLaunchObservation(input: PostgresApiLaunchInput): 
 function toProbeCommand(command: string, probePath: string): string {
     expect(command).toContain(`bun run ${API_ENTRY_POINT}`);
     expect(command.endsWith(` ${API_ENTRY_POINT}`)).toBe(true);
-    return command.replace(` ${API_ENTRY_POINT}`, ` ${probePath}`);
+    // Bun auto-loads `.env`/`.env.local` by default; Deno did not. The probe isolates the launching
+    // environment from the env files, so disable Bun's automatic loading to match the Deno behaviour.
+    return command.replace(`bun run ${API_ENTRY_POINT}`, `bun --no-env-file run ${probePath}`);
 }
 
 function toInheritedEnvironment(): NodeJS.ProcessEnv {

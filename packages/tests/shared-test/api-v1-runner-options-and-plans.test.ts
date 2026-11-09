@@ -404,7 +404,7 @@ describe('API-v1 runner options and process plans', () => {
         const options = parseApiV1BlackBoxArgs(['--backend=postgres']);
 
         expect(toApiV1ServerCommand(options)).toEqual([
-            'bun',
+            process.execPath,
             'run',
             'apps/api-v1/src/main.ts'
         ]);
