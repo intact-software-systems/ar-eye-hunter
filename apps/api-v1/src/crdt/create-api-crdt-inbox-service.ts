@@ -122,7 +122,8 @@ function createApiCrdtMutationAuthorizer(
         ) {
             return { allowed: false, code: 'authorization-forbidden', publicationAuthority: null };
         }
-        // An admin audience proves no publication audience, so the authority is null; the codec refuses it on append, so the null never reaches a WS_OUTBOX compute.
+        // An admin audience proves no publication audience, so the authority is null; the codec refuses it on
+        // append, so the null never reaches a WS_OUTBOX compute.
         if (command.responseAudience.kind === 'admin') {
             const allowed = dependencies.currentAuthority.adminClientIds.includes(session.clientId);
             return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden', publicationAuthority: null };
