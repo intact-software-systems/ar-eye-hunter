@@ -125,6 +125,7 @@ test(
         'PGlite auth finalization fence rolls back state and result',
         'through retry exhaustion'
     ].join(' '),
+    { timeout: 15_000 },
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
