@@ -219,11 +219,10 @@ and it has no status list.
   `admitted` receipt writes up to 256 shared position rows per receipted send
   (S4-ii); none is measured. `readUsage().ordering` counts position events and
   is not this measurement.
-- One writer for the producer provenance sidecar (S5-i, D541): the
-  `ws-outbox-provenance` rows are written by six raw inserts with differing
-  conflict rules and a guarded-batch path, beside the shared outbox insert that
-  now writes the track index; folding them behind one writer, as the index is,
-  is its own owner.
+- The view-invalidation proofs' retried-conflict class (Q-D3, S6ii-R2): a live
+  view-proof collision is a replayed `changeId` that retries into the same key
+  through the guarded batch (`guarded-view-publication.ts:58-66`); corruption
+  would be the honest answer, a behaviour change for ~10 producers.
 - The measured cost of server-side ordered sends (S5-i, D539, D544): every
   tracked WS dequeue that has not recorded lists its track's index and reads
   the listed predecessors' stored rows as one session of point reads, from the

@@ -63,6 +63,7 @@ interface CrdtMutationRollbackCountsRow {
     readonly documents: string;
     readonly updates: string;
     readonly outbox: string;
+    readonly proofs: string;
     readonly results: string;
 }
 
@@ -179,8 +180,7 @@ Deno.test(
 const FAILURE_STAGES = [
     'document',
     'record',
-    'first-ws-outbox',
-    'second-ws-outbox',
+    'ws-outbox',
     'result',
     'completion'
 ] as const;
@@ -218,10 +218,13 @@ for (const stage of FAILURE_STAGES) {
           (select count(*) from crdt_updates)::text as updates,
           (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox,
           (select count(*)
+            from runtime_state_store
+            where store_namespace = 'ws-outbox-provenance')::text as proofs,
+          (select count(*)
             from resource_inbox_results
             where ris_topic_id = 'app-inbox.crdt-state')::text as results
       `;
-            assert.deepEqual(domain, { documents: '0', updates: '0', outbox: '0', results: '0' });
+            assert.deepEqual(domain, { documents: '0', updates: '0', outbox: '0', proofs: '0', results: '0' });
         });
     });
 }
@@ -555,19 +558,14 @@ function withInjectedTransactionFailure(
             }
             return async <T>(write: (transaction: PSqlSql) => Promise<T>) =>
                 await database.begin(async (transaction) => {
-                    let wsOutboxWrites = 0;
                     const failing = new Proxy(transaction, {
                         apply: (_transaction, _thisArgument, argumentsList) => {
                             const parts = argumentsList[0];
                             const values = argumentsList.slice(1);
                             const text = isTemplateStringsArray(parts) ? parts.join(' ') : '';
-                            if (isWsOutboxInsert(text, values)) {
-                                wsOutboxWrites += 1;
-                            }
                             const fail = (stage === 'document' && text.includes('insert into crdt_documents')) ||
                                 (stage === 'record' && text.includes('insert into crdt_updates')) ||
-                                (stage === 'first-ws-outbox' && wsOutboxWrites === 1) ||
-                                (stage === 'second-ws-outbox' && wsOutboxWrites === 2) ||
+                                (stage === 'ws-outbox' && isWsOutboxInsert(text, values)) ||
                                 (stage === 'result' && text.includes('insert into resource_inbox_results')) ||
                                 (stage === 'completion' && text.includes('update resource_inbox') &&
                                     text.includes('ri_status = \'RESERVED\''));
@@ -583,7 +581,7 @@ function withInjectedTransactionFailure(
     });
 }
 
-/** The CRDT write inserts each outbox row with its own statement, whose rows travel as one recordset parameter. */
+/** The CRDT write inserts its outbox rows and their proofs in one statement, whose rows travel as one recordset parameter. */
 function isWsOutboxInsert(text: string, values: readonly PSqlParameter[]): boolean {
     return text.includes('insert into resource_inbox') &&
         values.some((value) =>

@@ -10,7 +10,7 @@ import { computeClientMutation } from '@shared-server/rallar-system/client-state
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
 import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
-import { isAppOutboxTrackIndexedInsert } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
+import { isAppOutboxSidecarInsert } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 
 describe('client mutation write purity', () => {
@@ -78,15 +78,19 @@ function appliedSql(): PSqlSql {
             ri_resource_id: row.resourceId,
             ri_topic_id: row.topicId,
             fk_ext_bank_id: row.contextId,
+            store_namespace: null,
             store_key: null
         }));
-        if (!isAppOutboxTrackIndexedInsert(stringsOrValues.join('').toLowerCase())) {
+        if (!isAppOutboxSidecarInsert(stringsOrValues.join('').toLowerCase())) {
             return Promise.resolve(outbox);
         }
-        const indexed = (values[1] as readonly { readonly key: string; }[]).map(({ key }) => ({
+        const indexed = (values[1] as readonly { readonly namespace: string; readonly key: string; }[]).map((
+            { namespace, key }
+        ) => ({
             ri_resource_id: null,
             ri_topic_id: null,
             fk_ext_bank_id: null,
+            store_namespace: namespace,
             store_key: key
         }));
         return Promise.resolve([...outbox, ...indexed]);

@@ -2,10 +2,12 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { AppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeCrdtInboxMutation, validateCrdtInboxMutation } from '@shared-server/rallar-system/crdt/inbox/compute-crdt-inbox-mutation.ts';
+import { computeCrdtOutboxWrites } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-outbox-writes.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import type { CrdtMutationRead } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { writeCrdtOutboxProvenance } from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
+import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
 import { writePSqlCrdtMutation } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION } from '@shared/crdt/mod.ts';
@@ -189,7 +191,7 @@ describe('CRDT inbox completion candidate', () => {
         const computed = computeCrdtInboxMutation(read);
         expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
         const statements: string[] = [];
-        const transaction = createCrdtWriteTransaction(statements);
+        const transaction = createCrdtWriteTransaction(statements, computed.mutation.outboxWrites);
         const serialize = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
             throw new Error('CRDT serialization ran during write');
         });
@@ -198,7 +200,6 @@ describe('CRDT inbox completion candidate', () => {
             await expect(writePSqlCrdtMutation(transaction, computed.mutation)).resolves.toBe(
                 computed.mutation.result
             );
-            await writeCrdtOutboxProvenance(transaction, computed.provenanceWrites);
         }
         finally {
             serialize.mockRestore();
@@ -206,8 +207,37 @@ describe('CRDT inbox completion candidate', () => {
 
         expect(statements.filter((statement) => statement.includes('insert into crdt_documents'))).toHaveLength(1);
         expect(statements.filter((statement) => statement.includes('insert into crdt_updates'))).toHaveLength(1);
-        expect(statements.filter((statement) => statement.includes('insert into resource_inbox'))).toHaveLength(2);
-        expect(statements.filter((statement) => statement.includes('insert into runtime_state_store'))).toHaveLength(2);
+        expect(statements.filter((statement) => statement.includes('insert into resource_inbox'))).toHaveLength(1);
+        expect(statements.filter((statement) => statement.includes('insert into runtime_state_store'))).toHaveLength(1);
+        expect(statements.some((statement) => statement.includes('sidecars as'))).toBe(true);
+    });
+
+    it('carries no proof on an audit-only append', async () => {
+        const read = await createRead();
+        const computed = computeCrdtInboxMutation(read);
+        if (computed.mutation.outcome !== 'write' || read.command.operation !== 'append') {
+            throw new Error('Expected an accepted CRDT append');
+        }
+        const outboxWrites = computeCrdtOutboxWrites({
+            command: read.command,
+            read: read.read,
+            entries: [toCrdtAuditOutbox({
+                event: { kind: 'append', atEpochMs: 1_000, documentKey: read.command.documentKey },
+                command: read.command,
+                serviceId: 'server',
+                traceId: read.traceId
+            })]
+        });
+        const statements: string[] = [];
+
+        await writePSqlCrdtMutation(createCrdtWriteTransaction(statements, outboxWrites), {
+            ...computed.mutation,
+            outboxWrites
+        });
+
+        expect(outboxWrites.map(({ provenance }) => provenance)).toEqual([null]);
+        expect(statements.filter((statement) => statement.includes('insert into resource_inbox'))).toHaveLength(1);
+        expect(statements.some((statement) => statement.includes('runtime_state_store'))).toBe(false);
     });
 });
 
@@ -284,18 +314,30 @@ function createEntry(): ResourceEntry {
     };
 }
 
-function createCrdtWriteTransaction(statements: string[]): PSqlSql {
+function createCrdtWriteTransaction(statements: string[], outboxWrites: readonly AppOutboxInsert[]): PSqlSql {
+    const identityRows = outboxWrites.map(({ entry }) => ({
+        ri_resource_id: entry.key.resourceId,
+        ri_topic_id: entry.key.topicId,
+        fk_ext_bank_id: entry.key.contextId,
+        store_namespace: null,
+        store_key: null
+    }));
+    const sidecarRows = outboxWrites.flatMap(({ trackIndex, provenance }) =>
+        [trackIndex, provenance].flatMap((row) =>
+            row === null ? [] : [{ ri_resource_id: null, ri_topic_id: null, fk_ext_bank_id: null, store_namespace: row.namespace, store_key: row.key }]
+        )
+    );
     const transaction = (async <Result>(strings: TemplateStringsArray): Promise<Result> => {
         const statement = strings.join(' ');
         statements.push(statement);
         if (statement.includes('insert into crdt_documents')) {
             return [{ document_key: 'document' }] as Result;
         }
-        if (statement.includes('insert into resource_inbox')) {
-            return [{ ri_row_id: 1n }] as Result;
+        if (statement.includes('sidecars as')) {
+            return [...identityRows, ...sidecarRows] as Result;
         }
-        if (statement.includes('insert into runtime_state_store')) {
-            return [{ revision: 0 }] as Result;
+        if (statement.includes('insert into resource_inbox')) {
+            return identityRows as Result;
         }
         return [] as Result;
     }) as PSqlSql;

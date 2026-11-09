@@ -31,6 +31,7 @@ import {
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { readRtcTopologyWorkEnvelope, toRtcTopologyExecutionId } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
+import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -376,19 +377,20 @@ describe('RTC topology complete write computation', () => {
         if (computed === undefined || computed.write.kind !== 'transaction' || !computed.write.transaction.delivery) {
             throw new Error('Expected publication delivery');
         }
-        expect(computed.write.transaction.delivery.provenanceWrites).toHaveLength(1);
+        const { delivery } = computed.write.transaction;
+        expect(delivery.outboxWrites.map(({ provenance }) => provenance)).toEqual([expect.objectContaining({ namespace: WS_OUTBOX_PROVENANCE_NAMESPACE })]);
         const altered = {
             ...computed,
             write: {
                 ...computed.write,
                 transaction: {
                     ...computed.write.transaction,
-                    delivery: { ...computed.write.transaction.delivery, provenanceWrites: [] }
+                    delivery: { ...delivery, outboxWrites: delivery.outboxWrites.map((write) => ({ ...write, provenance: null })) }
                 }
             }
         };
         expect(validateRtcTopologyWork(input, Either.ofRight(altered))).toEqual(expect.arrayContaining([
-            expect.objectContaining({ path: expect.stringContaining('provenanceWrites') })
+            expect.objectContaining({ path: expect.stringContaining('provenance') })
         ]));
     });
 

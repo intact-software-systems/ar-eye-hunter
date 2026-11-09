@@ -15,7 +15,6 @@ import type { ClientStateService, ClientStateWritten } from '@shared-server/rall
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { computeClientMutationOperation } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { computeClientSnapshotProvenance } from '@shared-server/rallar-system/client-state/persistence/client-snapshot-provenance.ts';
 import {
     CLIENT_STATE_IDEMPOTENT_NAMESPACE,
     CLIENT_STATE_SESSIONS_NAMESPACE
@@ -452,12 +451,17 @@ describe('client snapshot provenance computation', () => {
             : undefined;
         expect(write?.event.traceId).toBe(command.facts.traceId);
         expect(write?.principal.value.updated.traceId).toBe(command.facts.traceId);
-        const sidecarWrites = computed.outcome === 'completed' ? computed.sidecarWrites : [];
-        expect(sidecarWrites.map((write) => ({
-            resourceId: write.queueKey.resourceId,
-            targetKind: JSON.parse(write.value).target.kind,
-            digest: JSON.parse(write.value).digest
-        }))).toEqual([
+        const outboxWrites = computed.outcome === 'completed'
+            ? computed.writes.flatMap((write) => write.persistence.outboxWrites)
+            : [];
+        const sidecarWrites = outboxWrites.flatMap(({ entry, provenance }) =>
+            provenance === null ? [] : [{
+                resourceId: entry.key.resourceId,
+                targetKind: JSON.parse(provenance.value).target.kind,
+                digest: JSON.parse(provenance.value).digest
+            }]
+        );
+        expect(sidecarWrites).toEqual([
             {
                 resourceId: '--snapshot-page----------13yvi54kepr',
                 targetKind: 'scoped-principal-broadcast',
@@ -474,8 +478,8 @@ describe('client snapshot provenance computation', () => {
                 digest: '6fc46b50d830d38fa290e3982f7d8ffa678d84f8a57be54cb4d019939abe1d59'
             }
         ]);
-        expect(createHash('sha256').update(JSON.stringify(sidecarWrites)).digest('hex'))
-            .toBe('14caf38d69236f5ad33278e6d4e8aaa045c8b5042bbe44e714586f6d7f4711b6');
+        expect(createHash('sha256').update(JSON.stringify(outboxWrites.map(({ provenance }) => provenance))).digest('hex'))
+            .toBe('e15d6cc8a99f0e3932edfee70ad5137305664e4853b7b5e943c18be21c3bf5e5');
     });
 });
 
@@ -568,7 +572,7 @@ function withSnapshotProofCollision(
             const read = await durable.read(command);
             if (command.requestId === requestId) {
                 const mutation = computeClientMutation({ command, read });
-                const [proof] = computeClientSnapshotProvenance(mutation);
+                const proof = mutation.outcome === 'write' ? mutation.outbox[0]?.write.provenance : null;
                 if (!proof) {
                     throw new Error('Expected an exact principal proof collision candidate');
                 }

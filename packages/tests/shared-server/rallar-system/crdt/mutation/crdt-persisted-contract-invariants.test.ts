@@ -218,7 +218,7 @@ async function appendCommand() {
         capturedAtEpochMs: 2_000,
         expireAtEpochMs: 62_000,
         document: DOCUMENT,
-        responseAudience: audience(),
+        responseAudience: { ...audience(), kind: 'principal' as const, topicId: 'crdt.app' },
         authorizationScope: 'principal',
         update: update()
     });
@@ -258,7 +258,7 @@ function emptyRead() {
         snapshot: null,
         authorized: true,
         authorizationCode: 'allowed',
-        publicationAuthority: null,
+        publicationAuthority: { recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, admittedAudience: ['session-1'] },
         featureDecision: {
             allowed: true,
             code: 'allowed' as const,

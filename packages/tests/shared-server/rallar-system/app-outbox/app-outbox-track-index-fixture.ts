@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import { toServerWsQBoxALOutboundAdmissionNamespace } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import type { WsOutboxProvenanceFacts } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { newALMulticastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -36,4 +37,18 @@ export function createTrackIndexTestEntry(input: TrackIndexTestEntryInput): Reso
 
 export function toTrackIndexTestMessage(entry: ResourceEntry): ALMessage {
     return JSON.parse(entry.resource) as ALMessage;
+}
+
+/** A room-application proof of the entry's round broadcast, expiring with the row. */
+export function toTrackIndexTestProvenanceFacts(entry: ResourceEntry): WsOutboxProvenanceFacts {
+    return {
+        message: toTrackIndexTestMessage(entry),
+        producerKind: 'room-application',
+        target: {
+            kind: 'scoped-room-broadcast',
+            groupRef: { applicationId: 'relic', workspaceId: 'workspace', groupId: 'game-1' },
+            admittedAudience: ['b']
+        },
+        expiresAtMs: entry.audit.expiryTs.epochMilliseconds
+    };
 }

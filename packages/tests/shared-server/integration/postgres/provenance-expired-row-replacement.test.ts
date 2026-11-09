@@ -1,16 +1,24 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { writeAuthLogoutProvenance } from '@shared-server/rallar-system/auth/mutation/compute/auth-logout-provenance.ts';
-import { writeClientSnapshotProvenance } from '@shared-server/rallar-system/client-state/persistence/client-snapshot-provenance.ts';
-import { writeCrdtOutboxProvenance } from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
-import { writeGroupDeltaProvenance } from '@shared-server/rallar-system/group-state/presence/group-delta-provenance.ts';
-import { writeRtcTopologyOutboxProvenance } from '@shared-server/rallar-system/topology/publication/rtc-topology-outbox-provenance.ts';
-import { WS_OUTBOX_PROVENANCE_NAMESPACE } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
-import type { Key } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    computeWsOutboxInsert,
+    writeAppOutboxInserts,
+    type AppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import {
+    toWsOutboxProvenanceKey,
+    WS_OUTBOX_PROVENANCE_NAMESPACE,
+    type WsOutboxProvenance,
+    type WsOutboxProvenanceFacts
+} from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createTrackIndexTestEntry, toTrackIndexTestMessage } from '../../rallar-system/app-outbox/app-outbox-track-index-fixture.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -20,46 +28,121 @@ import {
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
-interface Proof {
-    readonly queueKey: Key;
-    readonly key: string;
-    readonly value: string;
-    readonly expiresAt: string;
-}
+const SCOPE = { applicationId: 'relic', workspaceId: 'workspace' };
+const ROOM = { ...SCOPE, groupId: 'game-1' };
+const PRINCIPAL = { ...SCOPE, principalId: 'principal-1' };
 
-/** Each WS-outbox producer's proof writer, as its transaction calls it with one proof. */
-const PROOF_WRITERS: readonly (readonly [string, (transaction: PSqlSql, proof: Proof) => Promise<void>])[] = [
-    ['group delta', async (transaction, proof) => await writeGroupDeltaProvenance(transaction, [proof])],
+type ToProducerFacts = (entry: ResourceEntry) => WsOutboxProvenanceFacts;
+
+/** Each WS-outbox producer's proof facts, as its compute names them for one outbox row. */
+const PRODUCERS: readonly (readonly [string, ToProducerFacts])[] = [
+    [
+        'auth logout',
+        (entry) =>
+            toFacts(entry, 'auth-session-invalidation', {
+                kind: 'exact-invalidated-session',
+                sessionInvalidation: {
+                    kind: 'auth-session-invalidation',
+                    sessionId: 'session-1',
+                    requestId: 'logout-1',
+                    invalidatedAtMs: 1,
+                    issuedAtMs: 1,
+                    expiresAtMs: entry.audit.expiryTs.epochMilliseconds
+                },
+                admittedAudience: ['session-1']
+            })
+    ],
     [
         'client snapshot',
-        async (transaction, proof) => await writeClientSnapshotProvenance(transaction, [{ ...proof, namespace: WS_OUTBOX_PROVENANCE_NAMESPACE }])
+        (entry) => toFacts(entry, 'state-sync', { kind: 'scoped-unicast', peerId: 'session-1', scope: SCOPE, admittedAudience: ['session-1'] })
     ],
-    ['CRDT', async (transaction, proof) => await writeCrdtOutboxProvenance(transaction, [proof])],
-    ['RTC topology', async (transaction, proof) => await writeRtcTopologyOutboxProvenance(transaction, [proof])],
-    ['auth logout', async (transaction, proof) => await writeAuthLogoutProvenance(transaction, proof)]
+    [
+        'CRDT',
+        (entry) =>
+            toFacts(entry, 'crdt', {
+                kind: 'scoped-principal-unicast',
+                peerId: PRINCIPAL.principalId,
+                principalRef: PRINCIPAL,
+                admittedAudience: ['session-1']
+            })
+    ],
+    [
+        'group delta',
+        (entry) => toFacts(entry, 'state-sync', { kind: 'scoped-room-broadcast', groupRef: ROOM, admittedAudience: ['session-1'] })
+    ],
+    [
+        'RTC topology',
+        (entry) => toFacts(entry, 'rtc-topology', { kind: 'scoped-room-broadcast', groupRef: ROOM, admittedAudience: ['session-1'] })
+    ],
+    [
+        'Relic',
+        (entry) =>
+            toFacts(entry, 'room-application', {
+                kind: 'scoped-principal-broadcast',
+                principalRef: PRINCIPAL,
+                admittedAudience: ['session-1']
+            })
+    ]
 ];
 
-describe.each(PROOF_WRITERS)('Postgres %s provenance proof over an expired row', (_producer, writeProof) => {
-    postgresIt('writes a proof over an expired one, one revision past it, and still refuses a live one', async () => {
-        await withProofSql(async (sql, runId) => {
-            const proof = toProof(runId, 'first');
-            await runInPSqlTransaction(sql, async (transaction) => await writeProof(transaction, proof));
-            await sql`
-                update runtime_state_store set expire_at_ts = now() - interval '1 minute'
-                where store_namespace = ${WS_OUTBOX_PROVENANCE_NAMESPACE} and store_key = ${proof.key}
-            `;
+describe.each(PRODUCERS)(
+    'Postgres %s proof facts, hand-built per producer kind, prove the shared outbox writer\'s expired-row rule',
+    (_producer, toProducerFacts) => {
+        postgresIt('writes a proof over an expired row and proof, one revision past it, and still refuses a live one', async () => {
+            await withProofSql(async (sql, runId) => {
+                const entry = createTrackIndexTestEntry({
+                    typeId: EnqueuedType.WS_OUTBOX,
+                    resourceId: `provenance-${runId}`,
+                    seq: undefined,
+                    expiresAt: Temporal.Now.instant().add({ minutes: 10 })
+                });
+                const proofKey = toWsOutboxProvenanceKey(entry.key);
+                const first = toInsert(entry, toProducerFacts);
+                await writeProved(sql, first);
+                await expireOutboxRow(sql, entry);
+                await sql`update runtime_state_store set expire_at_ts = now() - interval '1 minute' where store_key = ${proofKey}`;
 
-            const replay = toProof(runId, 'replay');
-            await runInPSqlTransaction(sql, async (transaction) => await writeProof(transaction, replay));
-            expect(await readProof(sql, proof.key)).toEqual({ value: replay.value, revision: 1 });
+                const replayEntry = { ...entry, audit: { ...entry.audit, createdTs: entry.audit.createdTs.add({ seconds: 1 }) } };
+                const replay = toInsert(replayEntry, toProducerFacts);
+                await writeProved(sql, replay);
+                expect(await readProof(sql, proofKey)).toEqual({ value: replay.provenance?.value, revision: 1 });
+                expect(replay.provenance?.value).not.toBe(first.provenance?.value);
 
-            await expect(
-                runInPSqlTransaction(sql, async (transaction) => await writeProof(transaction, proof))
-            ).rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
-            expect(await readProof(sql, proof.key)).toEqual({ value: replay.value, revision: 1 });
-        });
-    }, 60_000);
-});
+                const live = writeProved(sql, toInsert(entry, toProducerFacts));
+                await expect(live).rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
+                await expect(live).rejects.toThrow('App outbox insert did not create exactly one row');
+
+                await expireOutboxRow(sql, entry);
+                await expect(writeProved(sql, toInsert(entry, toProducerFacts)))
+                    .rejects.toThrow('App outbox provenance did not create exactly one row');
+                expect(await readProof(sql, proofKey)).toEqual({ value: replay.provenance?.value, revision: 1 });
+            });
+        }, 60_000);
+    }
+);
+
+function toFacts(
+    entry: ResourceEntry,
+    producerKind: WsOutboxProvenance['producerKind'],
+    target: WsOutboxProvenance['target']
+): WsOutboxProvenanceFacts {
+    return { message: toTrackIndexTestMessage(entry), producerKind, target, expiresAtMs: entry.audit.expiryTs.epochMilliseconds };
+}
+
+function toInsert(entry: ResourceEntry, toProducerFacts: ToProducerFacts): AppOutboxInsert {
+    return computeWsOutboxInsert({ entry, admissionNamespace: null, provenance: toProducerFacts(entry) });
+}
+
+async function writeProved(sql: PSqlSql, insert: AppOutboxInsert): Promise<void> {
+    await runInPSqlTransaction(sql, async (transaction) => await writeAppOutboxInserts(transaction, [insert]));
+}
+
+async function expireOutboxRow(sql: PSqlSql, entry: ResourceEntry): Promise<void> {
+    await sql`
+        update resource_inbox set expire_ts = now() at time zone 'UTC' - interval '1 minute'
+        where ri_resource_id = ${entry.key.resourceId}
+    `;
+}
 
 async function withProofSql(run: (sql: PSqlSql, runId: string) => Promise<void>): Promise<void> {
     await withPostgresClients({
@@ -73,18 +156,10 @@ async function withProofSql(run: (sql: PSqlSql, runId: string) => Promise<void>)
             await run(sql, runId);
         }
         finally {
+            await sql`delete from resource_inbox where ri_resource_id like ${`%${runId}%`}`;
             await sql`delete from runtime_state_store where store_key like ${`%${runId}%`}`;
         }
     });
-}
-
-function toProof(runId: string, label: string): Proof {
-    return {
-        queueKey: { topicId: 'provenance-test', contextId: runId, resourceId: label },
-        key: `provenance-test:${runId}`,
-        value: JSON.stringify({ label }),
-        expiresAt: new Date(Date.now() + 60_000).toISOString()
-    };
 }
 
 async function readProof(sql: PSqlSql, key: string): Promise<Readonly<{ value: string; revision: number; }> | undefined> {

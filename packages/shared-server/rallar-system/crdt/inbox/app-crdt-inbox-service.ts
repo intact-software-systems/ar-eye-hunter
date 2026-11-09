@@ -35,7 +35,6 @@ import {
 } from '../mutation/crdt-mutation-contracts.ts';
 import type { CrdtMutationService } from '../mutation/create-crdt-mutation-service.ts';
 import { decodeCrdtMutationResult } from '../mutation/decode-crdt-mutation-result.ts';
-import { writeCrdtOutboxProvenance } from '../persistence/crdt-outbox-provenance.ts';
 import { writePSqlCrdtMutation } from '../persistence/psql-crdt-mutation-repository.ts';
 import { computeCrdtInboxMutation, validateCrdtInboxMutation } from './compute-crdt-inbox-mutation.ts';
 import { CrdtHttpAdminRejectionError } from './crdt-http-admin-rejection-error.ts';
@@ -295,7 +294,6 @@ export class AppCrdtInboxService {
             computed.completion,
             async (transaction) => {
                 await writePSqlCrdtMutation(transaction, computed.mutation);
-                await writeCrdtOutboxProvenance(transaction, computed.provenanceWrites);
             }
         );
         if (result.operation === 'erase' && result.status === 'accepted') {

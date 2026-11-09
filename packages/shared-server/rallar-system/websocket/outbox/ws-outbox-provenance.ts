@@ -57,6 +57,14 @@ export interface WsOutboxProvenance {
     readonly digest: string;
 }
 
+/** The proof facts a producer names for its WS outbox row; the row itself supplies the rest. */
+export interface WsOutboxProvenanceFacts {
+    readonly message: ALMessage;
+    readonly producerKind: WsOutboxProvenance['producerKind'];
+    readonly target: WsOutboxProvenance['target'];
+    readonly expiresAtMs: number;
+}
+
 export interface WsOutboxProvenanceRecord {
     readonly namespace: string;
     readonly key: string;
@@ -64,12 +72,8 @@ export interface WsOutboxProvenanceRecord {
     readonly expireAtTimestamp: number;
 }
 
-export interface ComputeWsOutboxProvenanceRecordInput {
+export interface ComputeWsOutboxProvenanceRecordInput extends WsOutboxProvenanceFacts {
     readonly entry: ResourceEntry;
-    readonly message: ALMessage;
-    readonly producerKind: WsOutboxProvenance['producerKind'];
-    readonly target: WsOutboxProvenance['target'];
-    readonly expiresAtMs: number;
 }
 
 /** Serializes row-bound proof facts after the producer has validated its publication authority. */

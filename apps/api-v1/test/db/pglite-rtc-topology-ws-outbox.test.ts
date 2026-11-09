@@ -5,15 +5,15 @@ import {
     createPSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { computeAppOutboxInsert, writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeTopologyMutation } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { writeRtcTopologyOutboxProvenance } from '@shared-server/rallar-system/topology/publication/rtc-topology-outbox-provenance.ts';
 import { computeRtcTopologyExecutionCommandDigest } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import {
+    computeRtcTopologyPublicationOutbox,
     computeRtcTopologyPublicationOutboxWrites
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
@@ -23,7 +23,6 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts';
 import {
     computeRtcTopologyPublicationDeliveryWrite,
-    writePublicationDelivery,
     writeRtcTopologyPublicationTransaction
 } from '@shared-server/rallar-system/topology/replay/work/write-rtc-topology-publication-transaction.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
@@ -34,6 +33,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 interface OutboxRow {
@@ -50,11 +50,7 @@ Deno.test('PGlite persists distinct topology publications with one logical route
     try {
         const publications = [publication('work-1'), publication('work-2')];
         const outboxWrites = publications.flatMap(computeRtcTopologyPublicationOutboxWrites);
-        await sql.begin(async (transaction) => {
-            for (const write of outboxWrites) {
-                await writeAppOutboxInsert(transaction, write);
-            }
-        });
+        await sql.begin(async (transaction) => await writeAppOutboxInserts(transaction, outboxWrites));
         const rows = await sql<OutboxRow[]>`
       select ri_resource_id, ri_resource
       from resource_inbox
@@ -142,7 +138,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
         try {
             await sql.begin(async (transaction) => {
                 await executions.writeTopologyMutation(transaction, computed);
-                await writePublicationDelivery(transaction, delivery, undefined);
+                await writeAppOutboxInserts(transaction, delivery.outboxWrites);
                 await finishRtcTopologyReservation(transaction, reservationFinish);
             });
         }
@@ -218,10 +214,11 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
             const reservation = await writeReservedWork(sql, outboxWrites[0].entry);
             const reservationFinish = computeRtcTopologyReservationFinish(reservation, new Date());
             if (collision === 'last-page') {
-                await writeAppOutboxInsert(sql, lastPage);
+                await writeAppOutboxInserts(sql, [{ ...lastPage, provenance: null }]);
             }
             if (collision === 'last-proof') {
-                await writeRtcTopologyOutboxProvenance(sql, [delivery.provenanceWrites.at(-1)!]);
+                const proof = lastPage.provenance!;
+                await sql`insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision) values (${proof.namespace}, ${proof.key}, ${proof.value}, ${proof.expiresAt}::timestamptz, now(), 0)`;
             }
 
             const write = () =>
@@ -271,6 +268,121 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
             await lifecycle.close();
         }
     });
+}
+
+Deno.test('a promotion-only topology work writes its outbox rows in one statement with no sidecar', async () => {
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const sql = lifecycle.database;
+    try {
+        const [page] = computeRtcTopologyPublicationOutbox(publication('promotion-only'));
+        assert.ok(page);
+        const [promotionWrite, ...connectWrites] = ['promotion', 'connect-1', 'connect-2'].map((resourceId) =>
+            computeAppOutboxInsert({ ...page, typeId: EnqueuedType.APP_OUTBOX, key: { ...page.key, resourceId } })
+        );
+        const reservation = await writeReservedWork(sql, page);
+        const executions = new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(sql));
+        const inserts = recordResourceInboxInserts(sql);
+        try {
+            await writeRtcTopologyPublicationTransaction({ database: sql, executionRepository: executions, deliveryAppend: undefined }, {
+                mutation: null,
+                promotionWrite,
+                connectWrites,
+                fingerprint: null,
+                delivery: null,
+                reservationFinish: computeRtcTopologyReservationFinish(reservation, new Date())
+            });
+        }
+        finally {
+            inserts.restore();
+        }
+
+        assert.equal(inserts.queries.length, 1);
+        assert.ok(!inserts.queries[0].includes('runtime_state_store'));
+        const rows = await sql<readonly { ri_resource_id: string; }[]>`
+            select ri_resource_id from resource_inbox
+            where ri_resource_id in ('promotion', 'connect-1', 'connect-2') order by ri_resource_id
+        `;
+        assert.deepEqual(rows.map((row) => row.ri_resource_id), ['connect-1', 'connect-2', 'promotion']);
+        const proofs = await sql<CountRow[]>`select count(*)::text as count from runtime_state_store where store_namespace = 'ws-outbox-provenance'`;
+        assert.equal(Number(proofs[0].count), 0);
+    }
+    finally {
+        await lifecycle.close();
+    }
+});
+
+Deno.test('a publishing topology work writes its promotion, connect and page rows and one proof per page in one statement', async () => {
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const sql = lifecycle.database;
+    try {
+        const candidate = publication('publishing', 600);
+        const delivery = computeRtcTopologyPublicationDeliveryWrite(candidate, undefined);
+        assert.ok(delivery.outboxWrites.length > 1);
+        const [page] = delivery.outboxWrites;
+        const [promotionWrite, ...connectWrites] = ['promotion', 'connect-1', 'connect-2'].map((resourceId) =>
+            computeAppOutboxInsert({ ...page.entry, typeId: EnqueuedType.APP_OUTBOX, key: { ...page.entry.key, resourceId } })
+        );
+        const reservation = await writeReservedWork(sql, page.entry);
+        const executions = new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(sql));
+        const inserts = recordResourceInboxInserts(sql);
+        try {
+            await writeRtcTopologyPublicationTransaction({ database: sql, executionRepository: executions, deliveryAppend: undefined }, {
+                mutation: null,
+                promotionWrite,
+                connectWrites,
+                fingerprint: null,
+                delivery,
+                reservationFinish: computeRtcTopologyReservationFinish(reservation, new Date())
+            });
+        }
+        finally {
+            inserts.restore();
+        }
+
+        assert.equal(inserts.queries.length, 1);
+        const outbox = await sql<readonly { ri_resource_id: string; }[]>`
+            select ri_resource_id from resource_inbox where ri_resource_id <> 'topology-work-reservation' order by ri_resource_id
+        `;
+        const written = [promotionWrite, ...connectWrites, ...delivery.outboxWrites].map(({ entry }) => entry.key.resourceId).sort();
+        assert.deepEqual(outbox.map((row) => row.ri_resource_id), written);
+        const proofs = await sql<readonly { store_key: string; }[]>`
+            select store_key from runtime_state_store where store_namespace = 'ws-outbox-provenance' order by store_key
+        `;
+        assert.deepEqual(proofs.map((row) => row.store_key), delivery.outboxWrites.map(({ provenance }) => provenance!.key).sort());
+    }
+    finally {
+        await lifecycle.close();
+    }
+});
+
+interface ResourceInboxInsertRecorder {
+    readonly queries: readonly string[];
+    restore(): void;
+}
+
+/** The transaction statements that insert into `resource_inbox`, until `restore`. */
+function recordResourceInboxInserts(sql: PGliteSql): ResourceInboxInsertRecorder {
+    const queries: string[] = [];
+    const original = sql.raw.transaction;
+    const transaction: typeof original = (callback) =>
+        original.call(sql.raw, (tx) => {
+            const query = tx.query.bind(tx);
+            return callback(Object.assign(Object.create(tx), {
+                query: (...args: Parameters<typeof tx.query>) => {
+                    if (/insert into resource_inbox/i.test(args[0])) {
+                        queries.push(args[0]);
+                    }
+                    return query(...args);
+                }
+            }));
+        }) as ReturnType<typeof callback>;
+    sql.raw.transaction = transaction;
+    return {
+        queries,
+        restore: () => {
+            sql.raw.transaction = original;
+        }
+    };
 }
 
 async function writeReservedWork(sql: PSqlSql, page: ResourceEntry): Promise<ResourceEntry> {

@@ -3,16 +3,11 @@ import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transact
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
-    writeAppOutboxInsert,
+    writeAppOutboxInserts,
     type AppOutboxInsert
 } from '../../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyMutationComputed } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
-import {
-    computeRtcTopologyOutboxProvenance,
-    writeRtcTopologyOutboxProvenance,
-    type RtcTopologyOutboxProvenanceInsert
-} from '../../publication/rtc-topology-outbox-provenance.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
     computeRtcTopologyPublicationOutboxWrites
@@ -40,7 +35,6 @@ export interface RtcTopologyPublicationTransactionWrite {
 
 export interface RtcTopologyPublicationDeliveryWrite {
     readonly outboxWrites: readonly AppOutboxInsert[];
-    readonly provenanceWrites: readonly RtcTopologyOutboxProvenanceInsert[];
     readonly deliveryAppend: RtcTopologyDeliveryAppend | null;
 }
 
@@ -63,12 +57,11 @@ export async function writeRtcTopologyPublicationTransaction(
                     computed.mutation
                 );
             }
-            if (computed.promotionWrite) {
-                await writeAppOutboxInsert(transaction, computed.promotionWrite);
-            }
-            for (const connectWrite of computed.connectWrites) {
-                await writeAppOutboxInsert(transaction, connectWrite);
-            }
+            await writeAppOutboxInserts(transaction, [
+                ...(computed.promotionWrite === null ? [] : [computed.promotionWrite]),
+                ...computed.connectWrites,
+                ...(computed.delivery === null ? [] : computed.delivery.outboxWrites)
+            ]);
             if (computed.fingerprint) {
                 await options.executionRepository.writeTopologyInputFingerprint(
                     transaction,
@@ -76,7 +69,7 @@ export async function writeRtcTopologyPublicationTransaction(
                 );
             }
             if (computed.delivery) {
-                await writePublicationDelivery(
+                await writePublicationDeliveryAppend(
                     transaction,
                     computed.delivery,
                     options.deliveryAppend
@@ -100,7 +93,6 @@ export function computeRtcTopologyPublicationDeliveryWrite(
     const outboxWrites = computeRtcTopologyPublicationOutboxWrites(publication);
     return {
         outboxWrites,
-        provenanceWrites: computeRtcTopologyOutboxProvenance(publication, outboxWrites),
         deliveryAppend: publisherStreamId === undefined
             ? null
             : computeRtcTopologyDeliveryAppend(
@@ -111,15 +103,11 @@ export function computeRtcTopologyPublicationDeliveryWrite(
     };
 }
 
-export async function writePublicationDelivery(
+async function writePublicationDeliveryAppend(
     transaction: PSqlSql,
     computed: RtcTopologyPublicationDeliveryWrite,
     append: RtcTopologyDeliveryAppendPort | undefined
 ): Promise<void> {
-    for (const write of computed.outboxWrites) {
-        await writeAppOutboxInsert(transaction, write);
-    }
-    await writeRtcTopologyOutboxProvenance(transaction, computed.provenanceWrites);
     if (!append || computed.deliveryAppend === null) {
         return;
     }

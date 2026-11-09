@@ -18,10 +18,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
-import {
-    computeAppOutboxInsert,
-    type AppOutboxInsert
-} from '../../app-outbox/app-outbox-insert.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
     isMutableCoalescedStatus,
     type ComputedCoalescedAppOutboxWork
@@ -51,6 +48,7 @@ import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggreg
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
 import { PRESENCE_SUMMARIES_NAMESPACE } from '../persistence/group-state-runtime-namespaces.ts';
 import { serializeGroupStateValue } from '../persistence/serialize-group-state-value.ts';
+import { computeGroupDeltaOutboxWrites } from './compute-group-delta-outbox-writes.ts';
 import {
     computeGroupPresenceSummary,
     type GroupPresenceSummaryComputed,
@@ -187,7 +185,11 @@ export function computeGroupPresenceSummaryWork(
         summary,
         summaryWrite: computeGroupPresenceSummaryWrite(summary, read.presence.group.entry.revision),
         snapshot,
-        downstreamOutboxWrites: downstreamOutboxEntries.map(computeAppOutboxInsert),
+        downstreamOutboxWrites: computeGroupDeltaOutboxWrites({
+            entries: downstreamOutboxEntries,
+            groupRef: work.aggregateRef,
+            activeSessionIds: summary.summary.activeSessionIds
+        }),
         topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options, traceId }),
         reservationFinish: {
             key: { ...read.reservation.key },

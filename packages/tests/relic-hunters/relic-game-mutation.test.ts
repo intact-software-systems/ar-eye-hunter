@@ -1,6 +1,10 @@
 import { createRelicGame, RELIC_PROTOCOL_VERSION } from '@relic-hunters/mod.ts';
 import { captureRelicGameCommand } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import {
+    toWsOutboxProvenanceKey,
+    WS_OUTBOX_PROVENANCE_NAMESPACE
+} from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
@@ -172,7 +176,10 @@ describe('Relic authoritative save mutations', () => {
             // The publication the attempt writes carries the trace of its queued command.
             expect(decodePersistedALMessage(reset.computed.outboxWrites[0]!.entry.resource).id.traceId)
                 .toBe(RELIC_FIXTURE_TRACE_ID);
-            expect(reset.computed.provenance).toHaveLength(1);
+            expect(reset.computed.outboxWrites[0]!.provenance).toMatchObject({
+                namespace: WS_OUTBOX_PROVENANCE_NAMESPACE,
+                key: toWsOutboxProvenanceKey(reset.computed.outboxWrites[0]!.entry.key)
+            });
             expect(reset.computed.result).toEqual({ status: 'applied', gameId: fixture.ref.groupId });
             if (reset.computed.save?.operation !== 'save') {
                 throw new Error('Expected the prepared reset save');

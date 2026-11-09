@@ -62,11 +62,11 @@ export function validateAuthMutation(
             issues.push(...validateAuthUserMutation({ kind: commandKind, command, read }));
             break;
         case 'issue-session':
-            issues.push(...validateAuthSessionMutation({ kind: commandKind, command, read, computed }));
+            issues.push(...validateAuthSessionMutation({ kind: commandKind, command, read, facts, computed }));
             issues.push(...validateAuthUserMutation({ kind: commandKind, command, read }));
             break;
         case 'logout-session':
-            issues.push(...validateAuthSessionMutation({ kind: commandKind, command, read, computed }));
+            issues.push(...validateAuthSessionMutation({ kind: commandKind, command, read, facts, computed }));
             break;
         case 'issue-ws-ticket':
             issues.push(...validateAuthTicketMutation({ kind: commandKind, command, read }));

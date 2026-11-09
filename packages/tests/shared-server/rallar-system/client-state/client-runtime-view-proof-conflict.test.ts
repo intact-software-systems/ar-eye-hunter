@@ -22,7 +22,7 @@ it('rolls back the client guard when a merged social proof collides outside the 
         });
         await storage.sql`insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, updated_ts, revision)
             values (${WS_OUTBOX_PROVENANCE_NAMESPACE}, 'social-proof', '{}', '9999-01-01', now(), 0)`;
-        await expect(storage.sql.begin((transaction) => writeClientRuntimeBatch(transaction, batch, [])))
+        await expect(storage.sql.begin((transaction) => writeClientRuntimeBatch(transaction, batch)))
             .rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(await storage.sql`select store_key from runtime_state_store where store_namespace = 'client-test'`).toEqual([]);
         expect(await storage.sql`select store_value from runtime_state_store where store_key = 'social-proof'`).toEqual([{ store_value: '{}' }]);

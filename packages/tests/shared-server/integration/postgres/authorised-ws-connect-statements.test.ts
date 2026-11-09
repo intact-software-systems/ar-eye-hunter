@@ -5,7 +5,7 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { AUTH_SESSIONS_BY_SESSION_NAMESPACE } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
-import { isAppOutboxTrackIndexedInsert } from '../../rallar-system/app-inbox/test-support/create-app-inbox-test-database-sql.ts';
+import { isAppOutboxSidecarInsert } from '../../rallar-system/app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { putAuthorisedWsTestTicket } from '../../rallar-system/client-state/authorised-ws-test-ticket.ts';
 import {
     createRuntimeStatePostgresSql,
@@ -90,11 +90,11 @@ async function measureCoMemberConnect(setupSql: PSqlSql, sql: PSqlSql, runId: st
     expect(countValueOccurrences(reads, AUTH_SESSIONS_BY_SESSION_NAMESPACE)).toBe(1);
     expect(connectTransaction.length, connectTransaction.map(({ text }) => text.slice(0, 80)).join('\n'))
         .toBeLessThanOrEqual(5);
-    // The principal event is ordered, so the outbox rows go in with its track index row as one tracked insert.
-    const outboxInserts = connectTransaction.filter(({ text }) => isAppOutboxTrackIndexedInsert(text));
+    // The principal event is ordered, so the outbox rows go in with its track index row and the proofs as one tracked insert.
+    const outboxInserts = connectTransaction.filter(({ text }) => isAppOutboxSidecarInsert(text));
     expect(outboxInserts).toHaveLength(1);
-    // Three outbox rows and the event's one track index row.
-    expect(outboxInserts[0]!.rowCount).toBe(4);
+    // Three outbox rows, the event's track index row and the three proofs.
+    expect(outboxInserts[0]!.rowCount).toBe(7);
 }
 
 /** Stores the session and its ticket, and returns the connect that consumes them. */

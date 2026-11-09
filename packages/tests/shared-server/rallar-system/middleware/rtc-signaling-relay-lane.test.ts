@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
+    afterEach,
     describe,
     expect,
     it,
@@ -28,10 +29,8 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
-import {
-    createPSqlAdmissionTestStorage,
-    type PSqlAdmissionTestStorage
-} from '../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import { createPSqlAdmissionTestStorage } from '../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import { recordPGliteStatements } from '../../al-runtime/postgres/record-p-glite-statements.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -46,6 +45,8 @@ interface RelayServer {
 }
 
 describe('the WS server relay lane', () => {
+    afterEach(() => vi.restoreAllMocks());
+
     it('admits and relays a best-effort RTC signal in memory, issuing no SQL statement', async () => {
         const server = await createRelayServer();
         // The first arrival also starts the durable lane, whose recovery scans its work pages once.
@@ -132,7 +133,7 @@ async function createRelayServer(
     relayedAckNotices: CreateRallarMiddlewareOptions['relayedAckNotices'] = undefined
 ): Promise<RelayServer> {
     const storage = await createPSqlAdmissionTestStorage();
-    const statements = countPGliteStatements(storage.sql.raw);
+    const recorded = recordPGliteStatements(storage.sql.raw);
     const durable = createPSqlALInboundRuntimeStores({
         repository: storage.repository,
         namespace: 'server-ws-qbox:relay-lane',
@@ -165,6 +166,8 @@ async function createRelayServer(
         timing: undefined
     });
     onTestFinished(() => runtime.wsQBoxServerService.dispose());
+    // Each transaction also runs a BEGIN and a COMMIT.
+    const statements = () => recorded.statements().length + 2 * recorded.transactions();
     return { runtime, durable, volatile, sender, receiver, statements };
 }
 
@@ -173,35 +176,6 @@ async function openConnection(socket: JsonWebSocketServer, id: string): Promise<
     await native.open();
     socket.addConnection(new ConnectionContext({ id, socket: native }));
     return native;
-}
-
-/** Every statement the PGlite instance runs, inside a transaction as well as outside, with its BEGIN and COMMIT. */
-function countPGliteStatements(raw: PSqlAdmissionTestStorage['sql']['raw']): () => number {
-    let statements = 0;
-    const query = raw.query.bind(raw);
-    const exec = raw.exec.bind(raw);
-    const transaction = raw.transaction.bind(raw);
-    vi.spyOn(raw, 'query').mockImplementation((...args: Parameters<typeof raw.query>) => {
-        statements += 1;
-        return query(...args);
-    });
-    vi.spyOn(raw, 'exec').mockImplementation((...args: Parameters<typeof raw.exec>) => {
-        statements += 1;
-        return exec(...args);
-    });
-    vi.spyOn(raw, 'transaction').mockImplementation((callback) => {
-        statements += 2;
-        return transaction((tx) => {
-            const txQuery = tx.query.bind(tx);
-            return callback(Object.assign(Object.create(tx), {
-                query: (...args: Parameters<typeof tx.query>) => {
-                    statements += 1;
-                    return txQuery(...args);
-                }
-            }));
-        });
-    });
-    return () => statements;
 }
 
 function createResilience(): CreateRallarMiddlewareOptions['resilience'] {

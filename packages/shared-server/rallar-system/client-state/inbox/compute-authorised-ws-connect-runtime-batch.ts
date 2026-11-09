@@ -11,17 +11,12 @@ import type {
     ClientMutationComputedWrite,
     ClientRuntimePersistenceOperation
 } from '../mutation/client-mutation-contracts.ts';
-import {
-    toClientSnapshotProvenanceEffect,
-    type ClientSnapshotProvenanceInsert
-} from '../persistence/client-snapshot-provenance.ts';
 import { CLIENT_STATE_PRINCIPALS_NAMESPACE } from '../persistence/client-state-runtime-namespaces.ts';
 
 export interface ComputeAuthorisedWsConnectRuntimeBatchInput {
     readonly ticketConsumption: AuthWsTicketConsumption;
     readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
     readonly writes: readonly ClientMutationComputedWrite[];
-    readonly sidecarWrites: readonly ClientSnapshotProvenanceInsert[];
 }
 
 /**
@@ -46,7 +41,6 @@ export function computeAuthorisedWsConnectRuntimeBatch(
         ...clientRows
             .filter((row) => row !== principal)
             .map((row) => ({ ...toClientRuntimeRow(row), effectId: `client:${row.namespace}` })),
-        ...input.sidecarWrites.map(toClientSnapshotProvenanceEffect),
         ...input.writes.flatMap(toClientViewEffects)
     ];
     return computeRuntimeStateGuardedBatchWrite(validateRuntimeStateGuardedBatch({

@@ -6,7 +6,7 @@ import type {
 } from '@shared/crdt/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { computeCrdtOutboxWrites } from './compute-crdt-outbox-writes.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from './crdt-append-rejection.ts';
 import type {
     CrdtAppendCommand,
@@ -255,7 +255,7 @@ function createCrdtMutationComputedBase<TDocument extends RallarCrdtDocumentMeta
         update,
         append,
         snapshot,
-        outboxWrites: outboxEntries.map(computeAppOutboxInsert),
+        outboxWrites: computeCrdtOutboxWrites({ command, read, entries: outboxEntries }),
         result
     };
 }

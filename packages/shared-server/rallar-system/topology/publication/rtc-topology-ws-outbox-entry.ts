@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
@@ -7,7 +8,9 @@ import {
     isKeysEqual,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+
+import { computeWsOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import type { WsOutboxProvenanceFacts } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import { materializeRtcOverlayTopologyMessages } from '../planning/materialize-rtc-overlay-topology-messages.ts';
 import { assertRtcTopologyPublication } from './decode-rtc-topology-publication.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
@@ -64,5 +67,27 @@ export function assertRtcTopologyPublicationOutbox(
 export function computeRtcTopologyPublicationOutboxWrites(
     publication: RtcTopologyPublication
 ): readonly AppOutboxInsert[] {
-    return computeRtcTopologyPublicationOutbox(publication).map(computeAppOutboxInsert);
+    return computeRtcTopologyPublicationOutbox(publication).map((entry) =>
+        computeWsOutboxInsert({
+            entry,
+            admissionNamespace: null,
+            provenance: toRtcTopologyProvenanceFacts(publication, entry)
+        })
+    );
+}
+
+function toRtcTopologyProvenanceFacts(
+    publication: RtcTopologyPublication,
+    entry: ResourceEntry
+): WsOutboxProvenanceFacts {
+    return {
+        message: decodePersistedALMessage(entry.resource),
+        producerKind: 'rtc-topology',
+        target: {
+            kind: 'scoped-room-broadcast',
+            groupRef: publication.groupRef,
+            admittedAudience: publication.recipientSessionIds
+        },
+        expiresAtMs: entry.audit.expiryTs.epochMilliseconds
+    };
 }
