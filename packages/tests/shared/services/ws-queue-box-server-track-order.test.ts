@@ -222,7 +222,10 @@ describe('the WS outside-audience writer', () => {
             attempts.push(receipt.msgId);
             return 'conflict';
         });
-        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const consoleLines: string[] = [];
+        const error = vi.spyOn(console, 'error').mockImplementation((line: string) => {
+            consoleLines.push(line);
+        });
         const own = rowFrom('server');
 
         await fixture.trackOrder.writeOutsideAudience(own, ['b'], 'durable');
@@ -236,7 +239,7 @@ describe('the WS outside-audience writer', () => {
             outcome: 'conflict',
             ...toALMessageTrace(own)
         }]);
-        expect(error.mock.calls).toEqual([]);
+        expect(consoleLines).toEqual([]);
         error.mockRestore();
     });
 

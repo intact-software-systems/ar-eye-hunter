@@ -189,14 +189,10 @@ describe('client snapshot producer provenance', () => {
             }
             await foreign.stores.workQueue.enqueue(entry);
             await foreign.engine.executeOnce();
+            // A late session's row completes having sent to nobody here: its audience is judged, and the awaited hold
+            // or the receipt's retry decides the session, never a no-route retry of the row.
             await expect.poll(async () => (await foreign.stores.workQueue.getItem(entry.key))?.status)
-                .toBe(
-                    kind === 'expired-proof'
-                        ? EntityStatus.NON_RETRYABLE
-                        : kind === 'late-session'
-                        ? EntityStatus.RETRY
-                        : EntityStatus.COMPLETED
-                );
+                .toBe(kind === 'expired-proof' ? EntityStatus.NON_RETRYABLE : EntityStatus.COMPLETED);
             expect(foreign.native.sent).toEqual([]);
             expect(replacement.sent).toEqual([]);
         }
