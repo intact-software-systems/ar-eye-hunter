@@ -70,12 +70,16 @@ function createOrderedMessage(seq: number): ALMessage {
     };
 }
 
+interface GapReportInput {
+    readonly revealing: ALMessage;
+    readonly trackKey: string;
+    readonly missingRanges: readonly ALSeqRange[];
+    readonly requester?: string;
+}
+
 /** What every control of the test shares: the addressee reports a gap before the revealing message. */
 function toGapReport(
-    revealing: ALMessage,
-    trackKey: string,
-    missingRanges: readonly ALSeqRange[],
-    requester = 'peer-1'
+    { revealing, trackKey, missingRanges, requester = 'peer-1' }: GapReportInput
 ): Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId'> {
     return {
         msgId: revealing.id.msgId,
@@ -88,20 +92,16 @@ function toGapReport(
     };
 }
 
-function toGapNack(
-    controlMsgId: string,
-    report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId'>,
-    requester = 'peer-1'
-): ALMessage {
+function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId'>): ALMessage {
     return newALNackControlMessage(
-        { v: 4, msgId: controlMsgId, ts: 1, senderId: requester, traceId: 'trace-al-outbound-repair-exhaustion' },
+        { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
         { ...report, logicalRecipientPeerId: report.fromPeerId, reason: 'gap' }
     );
 }
 
-function toMissingSeqRepair(controlMsgId: string, report: Omit<ALRepairPayload, 'reason'>, requester = 'peer-1'): ALMessage {
+function toMissingSeqRepair(controlMsgId: string, report: Omit<ALRepairPayload, 'reason'>): ALMessage {
     return newALRepairControlMessage(
-        { v: 4, msgId: controlMsgId, ts: 1, senderId: requester, traceId: 'trace-al-outbound-repair-exhaustion' },
+        { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
         { ...report, reason: 'missing-seq' }
     );
 }
@@ -192,11 +192,11 @@ describe('the repair budget runs out', () => {
         // Seq 3 reveals the gap: its receiver raises a NACK and a repair request naming the same two
         // sequences. They are one hint, so each predecessor is retransmitted once, which spends its budget of one.
         await runtime.acceptControlMessage(
-            toGapNack('control-gap-3', toGapReport(third, trackKey, [{ from: 1, to: 2 }])),
+            toGapNack('control-gap-3', toGapReport({ revealing: third, trackKey, missingRanges: [{ from: 1, to: 2 }] })),
             'peer'
         );
         await runtime.acceptControlMessage(
-            toMissingSeqRepair('control-repair-3', toGapReport(third, trackKey, [{ from: 1, to: 2 }])),
+            toMissingSeqRepair('control-repair-3', toGapReport({ revealing: third, trackKey, missingRanges: [{ from: 1, to: 2 }] })),
             'peer'
         );
         await waitForOutboundWorkDrained(stores);
@@ -205,7 +205,7 @@ describe('the repair budget runs out', () => {
 
         // Seq 4 reveals the same gap to the same requester: each sequence finds its first attempt and charges nothing.
         await runtime.acceptControlMessage(
-            toGapNack('control-gap-4', toGapReport(fourth, trackKey, [{ from: 1, to: 2 }])),
+            toGapNack('control-gap-4', toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 2 }] })),
             'peer'
         );
         await waitForOutboundWorkDrained(stores);
@@ -215,7 +215,7 @@ describe('the repair budget runs out', () => {
         // Another requester's report of the same sequences is its own attempt: it finds both budgets spent
         // and settles each message once.
         await runtime.acceptControlMessage(
-            toGapNack('control-gap-4-peer-2', toGapReport(fourth, trackKey, [{ from: 1, to: 2 }], 'peer-2'), 'peer-2'),
+            toGapNack('control-gap-4-peer-2', toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 2 }], requester: 'peer-2' })),
             'peer'
         );
         await waitForOutboundWorkDrained(stores);
@@ -227,11 +227,14 @@ describe('the repair budget runs out', () => {
 
         // That requester's repair request joins its NACK's hint; a narrower report states nothing more.
         await runtime.acceptControlMessage(
-            toMissingSeqRepair('control-repair-4-peer-2', toGapReport(fourth, trackKey, [{ from: 1, to: 2 }], 'peer-2'), 'peer-2'),
+            toMissingSeqRepair(
+                'control-repair-4-peer-2',
+                toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 2 }], requester: 'peer-2' })
+            ),
             'peer'
         );
         await runtime.acceptControlMessage(
-            toGapNack('control-gap-4-first-peer-2', toGapReport(fourth, trackKey, [{ from: 1, to: 1 }], 'peer-2'), 'peer-2'),
+            toGapNack('control-gap-4-first-peer-2', toGapReport({ revealing: fourth, trackKey, missingRanges: [{ from: 1, to: 1 }], requester: 'peer-2' })),
             'peer'
         );
         await waitForOutboundWorkDrained(stores);

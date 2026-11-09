@@ -59,8 +59,8 @@ export function toALOutboundRepairHintEffectId(msgId: string, request: ALOutboun
 
 /**
  * The attempt one paged sequence's repair belongs to: the gap names it -- the requester, the track, the
- * sequence and the recipient a relay asked for -- so every later report of that gap finds the first
- * attempt's sends and charges nothing more.
+ * sequence and the recipient a relay asked for -- so every later report of that gap by the same requester
+ * (and for the same recipient) finds the first attempt's sends and charges nothing more.
  */
 export function toALOutboundRepairGapAttemptIdentity(
     request: ALOutboundRepairHint,

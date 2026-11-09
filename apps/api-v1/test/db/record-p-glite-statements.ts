@@ -8,6 +8,7 @@ export interface RecordedPGliteStatement {
     readonly params: readonly PSqlParameter[];
 }
 
+/** What one PGlite instance ran while recorded, and the teardown that ends the recording. */
 export interface RecordedPGliteStatements {
     /** Every statement the PGlite instance ran, in order; the BEGIN and COMMIT of a transaction are not among them. */
     statements(): readonly RecordedPGliteStatement[];
