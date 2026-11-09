@@ -4,7 +4,11 @@ import type { ALNackPayload, ALPeerRepairControlMessage } from '@shared/al-contr
 import type { ALOutboundRepairHint } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
-import { toALOutboundEffectId, toALOutboundRepairHintEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import {
+    toALOutboundEffectId,
+    toALOutboundRepairGapAttemptIdentity,
+    toALOutboundRepairHintEffectId
+} from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
 const GAP: ALNackPayload = {
     msgId: 'subject',
@@ -103,5 +107,27 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
 
         expect(decoded).toEqual({ kind: 'repair-hint', msgId: 'subject', request });
         expect(decoded.kind === 'repair-hint' && decoded.request).not.toHaveProperty('logicalRecipientPeerId');
+    });
+});
+
+describe('the gap attempt identity', () => {
+    const request: ALOutboundRepairHint = {
+        trigger: 'nack',
+        requestedByPeerId: 'leaf',
+        orderingTrackKey: 'feed:origin:1',
+        missingRanges: [{ from: 2, to: 2 }],
+        failedPeerIds: []
+    };
+
+    it('names the requester, the track and the sequence', () => {
+        expect(toALOutboundRepairGapAttemptIdentity(request, 'feed:origin:1', 2))
+            .toBe(toALOutboundEffectId(['repair-gap', 'leaf', 'feed:origin:1', 2]));
+    });
+
+    it('names a relay\'s recipient apart in the gap attempt identity', () => {
+        const relayed = toALOutboundRepairGapAttemptIdentity({ ...request, logicalRecipientPeerId: 'member' }, 'feed:origin:1', 2);
+
+        expect(relayed).toBe(toALOutboundEffectId(['repair-gap', 'leaf', 'feed:origin:1', 2, 'member']));
+        expect(relayed).not.toBe(toALOutboundRepairGapAttemptIdentity(request, 'feed:origin:1', 2));
     });
 });

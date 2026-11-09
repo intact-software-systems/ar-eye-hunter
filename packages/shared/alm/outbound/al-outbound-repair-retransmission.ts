@@ -17,7 +17,7 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { isALOutboundOwnHopPeer } from './is-al-outbound-own-hop-peer.ts';
-import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundRepairGapAttemptIdentity, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundCompletedHopPeerIds
@@ -75,7 +75,9 @@ export class ALOutboundRepairRetransmission<TPrepared> {
      * Serves one page of the hint's missing sequences, ascending, and re-commits the rest as one follow-up
      * hint, so a wide gap costs a bounded page of indexed reads and dispatch commits per execution. A hint
      * without ordering, or without ranges, repairs the message it names instead. A page whose sequences
-     * have left the sent cache retransmits nothing: the message the hint names is not the gap.
+     * have left the sent cache retransmits nothing: the message the hint names is not the gap. Each paged
+     * sequence is repaired under its own gap attempt identity; the fallback, an ack-timeout's included,
+     * keeps the hint's identity.
      */
     async retransmitFromRepairHint(
         fallbackMsgId: string,
@@ -95,7 +97,11 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         for (const seq of page) {
             const cached = await this.dependencies.admissionStore.readSentMessageByOrdering(trackKey, seq);
             if (cached) {
-                await this.repairByMsgId(cached.msgId, request, attemptIdentity);
+                await this.repairByMsgId(
+                    cached.msgId,
+                    request,
+                    toALOutboundRepairGapAttemptIdentity(request, trackKey, seq)
+                );
             }
         }
 

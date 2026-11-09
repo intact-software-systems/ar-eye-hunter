@@ -30,7 +30,7 @@ type FairnessScenarioId = (typeof FAIRNESS_SCENARIO_IDS)[number];
 
 const FAIRNESS_CARRIERS: Readonly<Record<FairnessScenarioId, readonly AlmConformanceCarrier[]>> = {
     'own-share-under-inbound': ['ws', 'rtc'],
-    'buffered-track-drains': ['rtc'],
+    'buffered-track-drains': ['ws', 'rtc'],
     'churn-bounded-tracks': ['rtc']
 };
 

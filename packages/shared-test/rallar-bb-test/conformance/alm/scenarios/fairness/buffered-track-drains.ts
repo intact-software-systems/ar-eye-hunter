@@ -40,14 +40,14 @@ const NONZERO_LEADING_DIGITS = 9;
  * receipt: the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives, so a receipted send would wait out its
  * ACK retries one after the other. They are bare, without an admission observation each, and paced. The receiver is
  * the hop that buffered them, so one of its inbound batches states a release it ran by promotion. The cell runs over
- * `rtc` alone, a stated S4-i limit: over `ws` the server NACKs the gap at each later frame's arrival, and the sender's
- * repairs of the held seq 2 spend its one retransmit on the hold, so it settles `repair-exhausted` before its release.
+ * both carriers: over `ws` the server NACKs the gap at each later frame's arrival, and every report of the held seq 2
+ * is the same gap, so the sender's one retransmit is charged once and the hold's release delivers it (D573).
  */
 export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     scenarioId: 'buffered-track-drains',
     scenarioKey: 'buffered-track-drains',
     tags: FULL_TAGS,
-    carriers: ['rtc'],
+    carriers: ['ws', 'rtc'],
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [

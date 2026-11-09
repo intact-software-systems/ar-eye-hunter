@@ -792,7 +792,7 @@ arrivals' own 30 s counted lifetime instead of each waiting out an ACK. Arrivals
 the bound, so its own room send, which asks for a receiver receipt, is admitted only under the share: it is
 `acknowledged`, and its `stats`, read once the receiver has counted all 20 arrivals, reads
 `rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then
-reconnects without the field. `buffered-track-drains` (`rtc` alone) sends seq 1 on one ordering key and observes it
+reconnects without the field. `buffered-track-drains` (`ws` and `rtc`) sends seq 1 on one ordering key and observes it
 `transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the message id its send returned (the
 type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare send commands (a loop index counts
 from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as the pause, and releases seq 2, which

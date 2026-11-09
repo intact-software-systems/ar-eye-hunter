@@ -79,6 +79,7 @@ const CARRIER_SCENARIO_IDS = {
         'paced-isolation-lists',
         'backpressure-deferred',
         'own-share-under-inbound',
+        'buffered-track-drains',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const),
         'fenced-delivery',
         'fenced-catch-up',
