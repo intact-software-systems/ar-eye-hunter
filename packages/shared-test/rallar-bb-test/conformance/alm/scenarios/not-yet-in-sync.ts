@@ -20,14 +20,14 @@ import {
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
 
-/** `not-yet-in-sync` needs a carrier whose first hop is RTC: the receiver checks a room send's snapshot floor at RTC ingress. */
 /** A floor no group reaches within a run, so the receiver refuses every copy until the message expires. */
 const UNREACHABLE_SNAPSHOT_VERSION = 999_999;
 
 /**
  * A send above every snapshot the group reaches. The receiver refuses each copy at admission and writes nothing; its
  * NACK schedules the sender's retries until the message expires. Delivery after the version advances is the
- * `fenced-catch-up` cell's.
+ * `fenced-catch-up` cell's. It needs a carrier whose first hop is RTC: the receiver checks a room send's snapshot floor
+ * at RTC ingress.
  */
 export const notYetInSync: AlmConformanceScenarioDefinition = {
     scenarioId: 'not-yet-in-sync',

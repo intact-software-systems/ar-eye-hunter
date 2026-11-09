@@ -2,7 +2,7 @@ export const ALM_CONFORMANCE_CARRIERS = ['ws', 'rtc', 'rtc-with-ws-fallback'] as
 
 export type AlmConformanceCarrier = typeof ALM_CONFORMANCE_CARRIERS[number];
 
-/** The carriers on which the receivers order the track themselves. */
+/** The carriers whose first hop is RTC: no WS server orders a track or refuses a control before the receivers. */
 export const ALM_CONFORMANCE_RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((
     carrier
 ) => carrier !== 'ws');

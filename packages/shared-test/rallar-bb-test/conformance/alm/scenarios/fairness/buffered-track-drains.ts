@@ -38,10 +38,12 @@ const NONZERO_LEADING_DIGITS = 9;
  * is held by its message id, seq 3 to 66 pass, then seq 2 is released. A receiver with no position enters a recorded
  * track at its first copy, so seq 1 goes first: an entry at seq 3 would leave seq 2 below it. The sends ask for no
  * receipt: the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives, so a receipted send would wait out its
- * ACK retries one after the other. They are bare, without an admission observation each, and paced. The receiver is
- * the hop that buffered them, so one of its inbound batches states a release it ran by promotion. The cell runs over
- * both carriers: over `ws` the server NACKs the gap at each later frame's arrival, and every report of the held seq 2
- * is the same gap, so the sender's one retransmit is charged once and the hold's release delivers it (D573).
+ * ACK retries one after the other. They are bare, without an admission observation each, and paced. Over `rtc` the
+ * receiver is the hop that buffered them, so one of its inbound batches states a release it ran by promotion. The cell
+ * runs over both carriers: over `ws` the server NACKs the gap at each later frame's arrival, and every report of the
+ * held seq 2 is the same gap, so the sender's one retransmit is charged once and the hold's release delivers it
+ * (D573). Over `ws` the server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver
+ * reads the arrivals and the promotion observation is the RTC receiver's.
  */
 export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     scenarioId: 'buffered-track-drains',
@@ -61,10 +63,10 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
         ...toHeldMessageFaultCommands({ ...sender, index: HELD_SEQ }, `release-message-${HELD_SEQ}`, 0),
         ...toAdmissionCommands({ ...sender, index: HELD_SEQ })
     ],
-    toRecipientCommands: (receiver) => [
-        toTrackArrivalsCommand(receiver),
-        toPromotionWait(receiver)
-    ]
+    toRecipientCommands: (receiver) =>
+        receiver.input.carrier === 'rtc'
+            ? [toTrackArrivalsCommand(receiver), toPromotionWait(receiver)]
+            : [toTrackArrivalsCommand(receiver)]
 };
 
 function toTrackSend(sender: AlmConformanceStepInput, seq: number): RallarBlackBoxTestCommand {

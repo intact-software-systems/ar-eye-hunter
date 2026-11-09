@@ -301,6 +301,12 @@ describe('buffered-track-drains', () => {
         expect(await runAfterDrains(promotion, [0, 9])).toBe(true);
         expect(await runAfterDrains(promotion, [0, 0])).toBe(false);
     });
+
+    it('reads only the arrivals on ws, where the server is the hop that buffered the track', () => {
+        const scenario = findScenario('ws', 'buffered-track-drains');
+
+        expect(toCommandNames(scenario.receiver)).toEqual([...RECEIVER_PROLOGUE, 'received-1', 'stats']);
+    });
 });
 
 describe('churn-bounded-tracks', () => {
