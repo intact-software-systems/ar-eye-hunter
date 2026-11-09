@@ -184,6 +184,42 @@ describe('WS server outbound planning', () => {
         expect(plan.preparedMessages).toMatchObject([{ kind: 'cluster-local-complete' }]);
     });
 
+    it('a dequeue with a captured audience and no local socket plans a send to nobody here, not no-route', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { requiresFrozenAudience: () => true, resolveGroupRecipients: () => [] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'captured-nobody-here' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+        );
+        const planWith = (admittedAudience: readonly string[] | undefined) =>
+            planning.planOutboundMessage({
+                message,
+                phase: 'dequeue',
+                clusterPublisherRegistered: false,
+                admittedAudience,
+                admittedConnectionGenerationIds: undefined
+            });
+
+        // The captured sessions stay expected: the awaited-connection hold or the retry's re-check decides them.
+        expect(planWith(['b'])).toMatchObject({
+            dropReasonCode: undefined,
+            preparedMessages: [],
+            ackTracking: { mode: 'receiver', expectedPeerIds: ['b'] }
+        });
+        expect(planWith(undefined).dropReasonCode).toBe('no-route');
+    });
+
     it('mints the sequence of its own keyed publication and leaves a relayed keyed send unsequenced', async () => {
         const fixture = createPlanningFixture(['b']);
         const keyedSend = (senderId: string, resourceId: string, orderingKey: string) =>
