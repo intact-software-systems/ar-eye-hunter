@@ -229,7 +229,10 @@ export class OrderingClusterScenario {
         assertEquals(requireString(outcome.outcome, 'subscribe outcome'), 'subscribed');
     }
 
-    /** The principal upsert on the secondary reaches both of Alice's other instances' sessions from the primary's dequeue. */
+    /**
+     * The principal upsert on the secondary reaches, from the primary's dequeue, every live session of Alice and of her
+     * full-visibility co-member Bob, wherever their sockets are.
+     */
     async #assertTrack1Entry(parties: Parties): Promise<Omit<Track1Evidence, 'secondSeq'>> {
         const { c, r, x, s } = parties;
         const secondary = this.#input.plans[1]!.baseUrl;

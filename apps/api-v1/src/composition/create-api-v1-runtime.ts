@@ -506,7 +506,13 @@ function createWsDeliveryAuthority(
             serverPeerId: input.wsRuntimeName,
             readPublicationAuthority: (ref, topicId) =>
                 mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
-            readPrincipalSessions: (ref) => readPrincipalSessions(ref, principalSessionReader),
+            readPrincipalSessions: (ref) =>
+                readPrincipalSessions(ref, {
+                    findPrincipal: (principalRef) => mutation.clientsRepository.findPrincipal(principalRef),
+                    listSessionsForPrincipal: (principalRef) =>
+                        mutation.clientsRepository.listSessionsForPrincipal(principalRef),
+                    nowEpochMs: input.nowEpochMs
+                }),
             nowEpochMs: input.nowEpochMs
         })
     };

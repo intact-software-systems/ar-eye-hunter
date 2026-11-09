@@ -50,7 +50,7 @@ Deno.test('a room row keeps the candidates with a live generation wherever their
     assert.deepEqual(absent, []);
 });
 
-Deno.test('a principal row keeps the principal\'s live sessions', async () => {
+Deno.test('a principal row keeps the principal\'s live sessions, and every candidate when no principal row exists', async () => {
     const message = principalMessage();
     const live = await filterDurablyLiveWsSessionIds({
         ...durableInput(message, ['s1', 's3']),
@@ -65,7 +65,8 @@ Deno.test('a principal row keeps the principal\'s live sessions', async () => {
     });
 
     assert.deepEqual(live, ['s1']);
-    assert.deepEqual(absent, []);
+    // No principal row: no fact judges any candidate, so the send filter and the retry decide.
+    assert.deepEqual(absent, ['s1', 's3']);
 });
 
 Deno.test('a principal row keeps a co-member\'s session it has no durable fact for and drops the principal\'s own session that is not live', async () => {
@@ -75,6 +76,15 @@ Deno.test('a principal row keeps a co-member\'s session it has no durable fact f
     });
 
     assert.deepEqual(eligible, ['own-live', 'comember']);
+});
+
+Deno.test('an inactive principal\'s row keeps co-members and drops the principal\'s own sessions', async () => {
+    const eligible = await filterDurablyLiveWsSessionIds({
+        ...durableInput(principalMessage(), ['own-a', 'comember', 'own-b']),
+        readPrincipalSessions: () => Promise.resolve({ sessionIds: ['own-a', 'own-b'], liveSessionIds: [] })
+    });
+
+    assert.deepEqual(eligible, ['comember']);
 });
 
 Deno.test('a row naming no group and no principal keeps its candidates', async () => {

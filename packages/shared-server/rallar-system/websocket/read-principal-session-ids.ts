@@ -1,4 +1,4 @@
-import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { ClientPrincipal, ClientPrincipalRef, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import { isClientSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 
 export interface PrincipalSessionReader {
@@ -6,7 +6,7 @@ export interface PrincipalSessionReader {
     readonly nowEpochMs: () => number;
 }
 
-/** The principal's own session rows in its scope: every one it knows, and those still live. */
+/** The principal's own session rows in its scope: every stored one, and those still live recipients. */
 export interface PrincipalSessionIds {
     readonly sessionIds: readonly string[];
     readonly liveSessionIds: readonly string[];
@@ -17,14 +17,6 @@ export async function readPrincipalSessionIds(
     ref: ClientPrincipalRef,
     reader: PrincipalSessionReader
 ): Promise<readonly string[] | undefined> {
-    return (await readPrincipalSessions(ref, reader))?.liveSessionIds;
-}
-
-/** One durable read of the principal's session rows; `undefined` when the principal is not active in the scope. */
-export async function readPrincipalSessions(
-    ref: ClientPrincipalRef,
-    reader: PrincipalSessionReader
-): Promise<PrincipalSessionIds | undefined> {
     const snapshot = await reader.readClientSnapshot(ref);
     if (
         !snapshot || snapshot.principal.status !== 'active' ||
@@ -34,14 +26,45 @@ export async function readPrincipalSessions(
         return undefined;
     }
     const now = reader.nowEpochMs();
-    const sessions = snapshot.activeSessions.filter((session) =>
+    return snapshot.activeSessions.filter((session) =>
+        session.applicationId === ref.applicationId && session.workspaceId === ref.workspaceId &&
+        session.principalId === ref.principalId && isClientSnapshotSessionLive(session, now)
+    ).map((session) => session.sessionId);
+}
+
+export interface PrincipalSessionRowsReader {
+    readonly findPrincipal: (ref: ClientPrincipalRef) => Promise<ClientPrincipal | undefined>;
+    /** Every stored session row of the principal until the purge, closed ones included. */
+    readonly listSessionsForPrincipal: (ref: ClientPrincipalRef) => Promise<readonly ClientSession[]>;
+    readonly nowEpochMs: () => number;
+}
+
+/**
+ * The principal's stored session rows, and the live ones while the principal is active; `undefined` when no principal
+ * row exists in the scope.
+ */
+export async function readPrincipalSessions(
+    ref: ClientPrincipalRef,
+    reader: PrincipalSessionRowsReader
+): Promise<PrincipalSessionIds | undefined> {
+    const [principal, rows] = await Promise.all([reader.findPrincipal(ref), reader.listSessionsForPrincipal(ref)]);
+    if (
+        !principal || principal.applicationId !== ref.applicationId || principal.workspaceId !== ref.workspaceId ||
+        principal.principalId !== ref.principalId
+    ) {
+        return undefined;
+    }
+    const sessions = rows.filter((session) =>
         session.applicationId === ref.applicationId && session.workspaceId === ref.workspaceId &&
         session.principalId === ref.principalId
     );
+    const now = reader.nowEpochMs();
     return {
         sessionIds: sessions.map((session) => session.sessionId),
-        liveSessionIds: sessions.filter((session) => isClientSnapshotSessionLive(session, now)).map((session) =>
-            session.sessionId
-        )
+        liveSessionIds: principal.status === 'active'
+            ? sessions.filter((session) => isClientSnapshotSessionLive(session, now)).map((session) =>
+                session.sessionId
+            )
+            : []
     };
 }
