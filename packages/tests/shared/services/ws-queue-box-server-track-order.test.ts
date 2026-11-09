@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
@@ -9,12 +10,14 @@ import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-ou
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import { toALOrderingBatchSequences } from '@shared/alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
-import type {
+import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
+import {
     WsQueueBoxServerOutboundPlanning,
-    WsQueueBoxServerPreparedMessage
+    type WsQueueBoxServerPreparedMessage
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { WsQueueBoxServerTrackOrder } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 const NAMESPACE = 'outbound';
 const NOW_MS = 1_700_000_000_000;
@@ -156,17 +159,32 @@ describe('the WS track order of a dequeued row', () => {
     });
 });
 
-/** A logical receipt, so the writer has recipients to record outside. */
-const resolveReceiverPolicy = (() => ({ effective: { ack: { algo: 'receiver' } } })) as unknown as WsQueueBoxServerOutboundPlanning['resolvePolicy'];
+const PLANNING = new WsQueueBoxServerOutboundPlanning({
+    serverPeerId: 'server',
+    qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+    targetResolution: new WsQueueBoxServerTargetResolution({
+        socket: new JsonWebSocketServer(),
+        targetResolver: { requiresFrozenAudience: () => false }
+    }),
+    deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+});
+const resolveReceiverPolicy: WsQueueBoxServerOutboundPlanning['resolvePolicy'] = (message) => PLANNING.resolvePolicy(message);
 
+/** A receiver-acked row, so its receipt counts logical recipients the writer can record outside. */
 function rowFrom(senderId: string): ALMessage {
-    return { ...trackedMessage(2), id: { ...trackedMessage(2).id, senderId } };
+    const message = trackedMessage(2);
+    return { ...message, id: { ...message.id, senderId }, qos: { ...message.qos, ack: { algo: 'receiver' } } };
+}
+
+interface OwnOutsideCommit {
+    readonly receipt: { readonly originPeerId: string; readonly msgId: string; };
+    readonly sessionIds: readonly string[];
 }
 
 describe('the WS outside-audience writer', () => {
     it('records a durable drop outside with no socket open here', async () => {
         const fixture = createTrackFixture({ resolvePolicy: resolveReceiverPolicy });
-        const ownCommits: unknown[] = [];
+        const ownCommits: OwnOutsideCommit[] = [];
         vi.spyOn(fixture.admissionStore, 'commitOutsideAudience').mockImplementation(async (receipt, sessionIds) => {
             ownCommits.push({ receipt, sessionIds });
             return 'absent';
