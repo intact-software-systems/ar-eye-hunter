@@ -33,8 +33,8 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
+import { recordPGliteStatements } from './record-p-glite-statements.ts';
 
 interface OutboxRow {
     readonly ri_resource_id: string;
@@ -281,7 +281,7 @@ Deno.test('a promotion-only topology work writes its outbox rows in one statemen
         );
         const reservation = await writeReservedWork(sql, page);
         const executions = new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(sql));
-        const inserts = recordResourceInboxInserts(sql);
+        const recorded = recordPGliteStatements(sql.raw);
         try {
             await writeRtcTopologyPublicationTransaction({ database: sql, executionRepository: executions, deliveryAppend: undefined }, {
                 mutation: null,
@@ -293,11 +293,12 @@ Deno.test('a promotion-only topology work writes its outbox rows in one statemen
             });
         }
         finally {
-            inserts.restore();
+            recorded.restore();
         }
 
-        assert.equal(inserts.queries.length, 1);
-        assert.ok(!inserts.queries[0].includes('runtime_state_store'));
+        const inserts = recorded.inTransaction().filter(({ query }) => /insert into resource_inbox/i.test(query));
+        assert.equal(inserts.length, 1);
+        assert.ok(!inserts[0]!.query.includes('runtime_state_store'));
         const rows = await sql<readonly { ri_resource_id: string; }[]>`
             select ri_resource_id from resource_inbox
             where ri_resource_id in ('promotion', 'connect-1', 'connect-2') order by ri_resource_id
@@ -324,7 +325,7 @@ Deno.test('a publishing topology work writes its promotion, connect and page row
         );
         const reservation = await writeReservedWork(sql, page.entry);
         const executions = new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(sql));
-        const inserts = recordResourceInboxInserts(sql);
+        const recorded = recordPGliteStatements(sql.raw);
         try {
             await writeRtcTopologyPublicationTransaction({ database: sql, executionRepository: executions, deliveryAppend: undefined }, {
                 mutation: null,
@@ -336,10 +337,11 @@ Deno.test('a publishing topology work writes its promotion, connect and page row
             });
         }
         finally {
-            inserts.restore();
+            recorded.restore();
         }
 
-        assert.equal(inserts.queries.length, 1);
+        const inserts = recorded.inTransaction().filter(({ query }) => /insert into resource_inbox/i.test(query));
+        assert.equal(inserts.length, 1);
         const outbox = await sql<readonly { ri_resource_id: string; }[]>`
             select ri_resource_id from resource_inbox where ri_resource_id <> 'topology-work-reservation' order by ri_resource_id
         `;
@@ -354,36 +356,6 @@ Deno.test('a publishing topology work writes its promotion, connect and page row
         await lifecycle.close();
     }
 });
-
-interface ResourceInboxInsertRecorder {
-    readonly queries: readonly string[];
-    restore(): void;
-}
-
-/** The transaction statements that insert into `resource_inbox`, until `restore`. */
-function recordResourceInboxInserts(sql: PGliteSql): ResourceInboxInsertRecorder {
-    const queries: string[] = [];
-    const original = sql.raw.transaction;
-    const transaction: typeof original = (callback) =>
-        original.call(sql.raw, (tx) => {
-            const query = tx.query.bind(tx);
-            return callback(Object.assign(Object.create(tx), {
-                query: (...args: Parameters<typeof tx.query>) => {
-                    if (/insert into resource_inbox/i.test(args[0])) {
-                        queries.push(args[0]);
-                    }
-                    return query(...args);
-                }
-            }));
-        }) as ReturnType<typeof callback>;
-    sql.raw.transaction = transaction;
-    return {
-        queries,
-        restore: () => {
-            sql.raw.transaction = original;
-        }
-    };
-}
 
 async function writeReservedWork(sql: PSqlSql, page: ResourceEntry): Promise<ResourceEntry> {
     const work = { ...page, typeId: EnqueuedType.APP_OUTBOX, key: { ...page.key, resourceId: 'topology-work-reservation' } };

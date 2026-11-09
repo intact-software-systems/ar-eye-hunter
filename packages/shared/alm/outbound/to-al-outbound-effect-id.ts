@@ -41,8 +41,10 @@ export function toALOutboundAckTimeoutEffectId(
  * The hint a NACK or repair request raises, and the follow-up that carries what a served page left. The
  * gap names it -- the requester, the track and the missing ranges, and the recipient a relay asked for --
  * never the control that reported it: a NACK and a repair request naming the same gap are one hint, served
- * once, and so are the rest of one page and a later report of the same gap. Each recipient a relay reports
- * one gap for is its own hint; a hint without a recipient keeps the identity it always had.
+ * once, and so is the rest of one page. A later frame's report of the same gap is a new hint, whose
+ * sequences name the first attempt by their gap identity. Per gap means per (requester, track, sequence[,
+ * recipient]): a page of N sequences is N attempt identities. Each recipient a relay reports one gap for is
+ * its own hint; a hint without a recipient keeps the identity it always had.
  */
 export function toALOutboundRepairHintEffectId(msgId: string, request: ALOutboundRepairHint): string {
     return toALOutboundEffectId([
@@ -51,6 +53,25 @@ export function toALOutboundRepairHintEffectId(msgId: string, request: ALOutboun
         request.requestedByPeerId ?? '-',
         request.orderingTrackKey ?? '-',
         toALSeqRangesText(request.missingRanges),
+        ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId])
+    ]);
+}
+
+/**
+ * The attempt one paged sequence's repair belongs to: the gap names it -- the requester, the track, the
+ * sequence and the recipient a relay asked for -- so every later report of that gap by the same requester
+ * (and for the same recipient) finds the first attempt's sends and charges nothing more.
+ */
+export function toALOutboundRepairGapAttemptIdentity(
+    request: ALOutboundRepairHint,
+    trackKey: string,
+    seq: number
+): string {
+    return toALOutboundEffectId([
+        'repair-gap',
+        request.requestedByPeerId ?? '-',
+        trackKey,
+        seq,
         ...(request.logicalRecipientPeerId === undefined ? [] : [request.logicalRecipientPeerId])
     ]);
 }

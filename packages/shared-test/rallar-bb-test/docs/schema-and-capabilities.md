@@ -702,14 +702,18 @@ own to show). The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
 one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
 receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
 
-The `repair-exhausted` conformance scenario runs over every carrier. It is the gap repair whose message hold
-is never released: after the admitted NACK the sender sends seq 4, whose arrival reports the gap a second
-time. One arrival raises one hint, whatever controls it sends, so seq 3's report spent the budget of one
-retransmit (`maxRepairs`) and seq 4's finds it spent. The sender
-then observes seq 2's handle `failed` and asserts `failure.kind: 'skipped'` with `failure.reason:
-'repair-exhausted'`; the receiver receives the first send once and proves the absence of a second, since
-seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let
-the second frame reach the receiver inside its absence window. Both cells are withheld from the hosted
+The `repair-exhausted` conformance scenario runs over the RTC carriers (`rtc` and `rtc-with-ws-fallback`), on
+three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
+released. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
+(`maxRepairs`), still held, and the second receiver's report is another attempt identity and finds the budget spent.
+The sender sends seq 4 too, whose arrival reports the gap again at both receivers; a later report names its
+requester's first attempt and charges nothing (D573), so it states nothing more. The sender then observes seq 2's
+handle `failed` and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`; both receivers
+receive the first send once and prove the absence of a second, since seq 3 and seq 4 wait for a seq 2 that never
+arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
+absence window. The cell does not run over `ws`, a stated limit: there the server orders the track and is the one
+requester of its gaps, so a held frame's repeated reports are one attempt, the sender never states exhaustion, and
+the frame arrives on the hold's release. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
 The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
@@ -792,7 +796,7 @@ arrivals' own 30 s counted lifetime instead of each waiting out an ACK. Arrivals
 the bound, so its own room send, which asks for a receiver receipt, is admitted only under the share: it is
 `acknowledged`, and its `stats`, read once the receiver has counted all 20 arrivals, reads
 `rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then
-reconnects without the field. `buffered-track-drains` (`rtc` alone) sends seq 1 on one ordering key and observes it
+reconnects without the field. `buffered-track-drains` (`ws` and `rtc`) sends seq 1 on one ordering key and observes it
 `transport-accepted`, so it opens the receiver's track; it then holds seq 2 by the message id its send returned (the
 type's hold covers it until that id is known), sends seq 3 to 66 as 64 literal bare send commands (a loop index counts
 from 0 and a sequence is not substituted), each followed by a 75 ms absence wait as the pause, and releases seq 2, which
@@ -801,11 +805,12 @@ refused `unsupported`; the hold reorders their arrival. A receiver enters a reco
 goes first: holding it instead would make the receiver enter at seq 2 and refuse seq 1. All carry `ack: 'none'`,
 since the receiver cannot acknowledge a buffered sequence before seq 2 arrives, and a 90 s `ttlMs`, and the receiver
 receives all 66 in a 90 s window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real
-runtime). The receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted` count is
-above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per
-iteration, against the page's event history. The cell does not run over `ws`, a stated S4-i limit: the WS server NACKs
-the gap at each later frame's arrival, and the sender's repairs of the held seq 2 spend its one retransmit on the hold,
-so it settles `repair-exhausted` before its release.
+runtime). Over `rtc` the receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted`
+count is above zero (D190): a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading
+digit per iteration, against the page's event history. Over `ws` the WS server is the hop that buffers the track and
+releases it when seq 2 arrives, so the receiver reads the 66 arrivals and no promotion: the server NACKs the gap at
+each later frame's arrival; those reports are one attempt per requester, charged once (D573), so the held seq 2 does
+not settle `repair-exhausted` and the release delivers it.
 `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
 sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
 in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of

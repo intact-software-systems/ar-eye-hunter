@@ -225,7 +225,6 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-lag',
         'ordering-resync',
         'ordering-gap-repair',
-        'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
         'server-originated',
@@ -243,7 +242,8 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'paced-isolation-resources',
         'paced-isolation-lists',
         'backpressure-deferred',
-        'own-share-under-inbound'
+        'own-share-under-inbound',
+        'buffered-track-drains'
     ],
     rtc: [
         'volatile-default',
@@ -319,7 +319,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
 
 /** The roles of a cell the carrier list interleaves among the two-role cells. */
 function toInterleavedRoles(key: string): readonly string[] {
-    if (key === 'paced-isolation-lists') {
+    if (key === 'paced-isolation-lists' || key === 'repair-exhausted') {
         return ['sender', 'receiver', 'recipient-b'];
     }
     return key === 'server-ordered-entry' ? ['sender', 'receiver', 'sibling'] : ['sender', 'receiver'];
@@ -367,6 +367,8 @@ describe('alm-conformance recipe family', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
                 .toEqual([
+                    // The exhausted repair sits among the ordering cells on the RTC carriers, its second receiver
+                    // reporting the held gap.
                     // The paced list-isolation cell sits among the paced cells, the one of them with a second recipient;
                     // the server-ordered entry cell sits beside the server-originated one, with the principal's sibling.
                     ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => toInterleavedRoles(key).map((role) => `alm-${carrier}-${key}-${role}`)),
@@ -397,7 +399,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('declares recipient-b on the receipted-audience, membership fence, leader, claim, reply-first-wins and paced-isolation-lists scenarios, successor on durable-takeover, flush-on-hide and subscription-successor, sibling on the audiences and publisher-b with sibling on the four-role cells; every other scenario keeps one sender and one receiver', () => {
+    it('declares recipient-b on the receipted-audience, membership fence, leader, claim, reply-first-wins, paced-isolation-lists and repair-exhausted scenarios, successor on durable-takeover, flush-on-hide and subscription-successor, sibling on the audiences and publisher-b with sibling on the four-role cells; every other scenario keeps one sender and one receiver', () => {
         const threeAgentIds = [
             'receipted-audience',
             'fenced-delivery',
@@ -411,6 +413,7 @@ describe('alm-conformance recipe family', () => {
             'claim-refused-on-rtc',
             'reply-first-wins',
             'paced-isolation-lists',
+            'repair-exhausted',
             ...GRANTED_RTC_THREE_AGENT_KEYS
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {

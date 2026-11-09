@@ -182,6 +182,20 @@ and it has no status list.
   durable session-to-principal fact would let the dequeue judge it.
 - Two unwired cluster proofs (Q-B9, Slice 7): the group-delta and auth-logout
   cluster proofs (`packages/shared-test/package.json:14-15`) run in no gate.
+- A server repair report per logical recipient over `ws` (S7-ii, D580): the WS
+  server orders the track and is the one requester of its gaps, so the
+  receivers never report a gap and `repair-exhausted` is unobservable over
+  `ws`; a report per logical recipient would make a second
+  receiver a second requester there.
+- A hint-dependent repair planner under the per-gap identity (S7-ii, D573): a
+  planner whose prepared payload changes with the hint (the RTC overlay
+  planner) finds the budget spent on a changed payload and states
+  `repair-exhausted` once, as before S7-ii; a regression only if `maxRepairs`
+  ever exceeds 1, and no cell exercises it.
+- The `ws` full-scope cells red regardless of the branch, hosted and local
+  (S7-ii): `capacity-tracks` and `server-ordered-entry` fail their typed-send
+  assertions and `ordering-resync` its `relay-resync-nack` wait; the recipe
+  budgets are the suspected cause, unproven.
 - A granted `receiver` RTC unicast to a non-holder (S6-i, D553) reads
   `acknowledged` with zero recipients over RTC, where WS reads `unauthorized`.
 - A frozen session that never subscribes after a hand-over (S6-i) stays
@@ -213,9 +227,6 @@ and it has no status list.
   which writes no rows (its sequence stays pending until folded or expired).
   Full closure needs a hold for the receipt and a receipt field that states the
   audience the dequeue recorded, a protocol change.
-- `buffered-track-drains` over `ws` (S4-i, D535): the WS server's gap NACK at
-  each later frame spends the held frame's one retransmit, so the cell runs over
-  `rtc` only; a per-gap rather than per-frame repair budget would restore it.
 - A per-row subscription identity (Slice 4 §9): an unsubscribe and re-subscribe
   under one connection generation inside a row's deadline is one subscription
   for repair.

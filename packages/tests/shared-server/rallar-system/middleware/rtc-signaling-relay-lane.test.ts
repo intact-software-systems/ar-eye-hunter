@@ -1,11 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
     describe,
     expect,
     it,
-    onTestFinished,
-    vi
+    onTestFinished
 } from 'vitest';
 
 import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
@@ -28,9 +26,9 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { recordPGliteStatements } from '../../../../../apps/api-v1/test/db/record-p-glite-statements.ts';
 import { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
 import { createPSqlAdmissionTestStorage } from '../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
-import { recordPGliteStatements } from '../../al-runtime/postgres/record-p-glite-statements.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -45,8 +43,6 @@ interface RelayServer {
 }
 
 describe('the WS server relay lane', () => {
-    afterEach(() => vi.restoreAllMocks());
-
     it('admits and relays a best-effort RTC signal in memory, issuing no SQL statement', async () => {
         const server = await createRelayServer();
         // The first arrival also starts the durable lane, whose recovery scans its work pages once.
@@ -134,6 +130,7 @@ async function createRelayServer(
 ): Promise<RelayServer> {
     const storage = await createPSqlAdmissionTestStorage();
     const recorded = recordPGliteStatements(storage.sql.raw);
+    onTestFinished(() => recorded.restore());
     const durable = createPSqlALInboundRuntimeStores({
         repository: storage.repository,
         namespace: 'server-ws-qbox:relay-lane',

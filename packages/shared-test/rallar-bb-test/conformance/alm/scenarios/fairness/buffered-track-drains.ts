@@ -26,7 +26,7 @@ const TRACK_LENGTH = BUFFERED_SEQS.length + 2;
 /**
  * The cell's own lifetime for the sends and the receive window. A slow runner may take longer than the default 30 s
  * to put 66 sends on the wire and deliver them; that a 64-message buffer drains within the default lifetime is
- * proven on the real runtime, and this cell proves the promotion and the 66 arrivals.
+ * proven on the real runtime, and this cell proves the 66 arrivals and, over `rtc`, the promotion.
  */
 const BUFFERED_TRACK_TTL_MS = 90_000;
 /** A count above zero starts with a digit from 1 to 9, and `promoted` is the last key `effect-drain` emits. */
@@ -38,16 +38,18 @@ const NONZERO_LEADING_DIGITS = 9;
  * is held by its message id, seq 3 to 66 pass, then seq 2 is released. A receiver with no position enters a recorded
  * track at its first copy, so seq 1 goes first: an entry at seq 3 would leave seq 2 below it. The sends ask for no
  * receipt: the receiver cannot acknowledge seq 3 to 66 before seq 2 arrives, so a receipted send would wait out its
- * ACK retries one after the other. They are bare, without an admission observation each, and paced. The receiver is
- * the hop that buffered them, so one of its inbound batches states a release it ran by promotion. The cell runs over
- * `rtc` alone, a stated S4-i limit: over `ws` the server NACKs the gap at each later frame's arrival, and the sender's
- * repairs of the held seq 2 spend its one retransmit on the hold, so it settles `repair-exhausted` before its release.
+ * ACK retries one after the other. They are bare, without an admission observation each, and paced. Over `rtc` the
+ * receiver is the hop that buffered them, so one of its inbound batches states a release it ran by promotion. The cell
+ * runs over both carriers: over `ws` the server NACKs the gap at each later frame's arrival, and every report of the
+ * held seq 2 is the same gap, so the sender's one retransmit is charged once and the hold's release delivers it
+ * (D573). Over `ws` the server is the hop that buffers the track and releases it when seq 2 arrives, so the receiver
+ * reads the arrivals and the promotion observation is the RTC receiver's.
  */
 export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
     scenarioId: 'buffered-track-drains',
     scenarioKey: 'buffered-track-drains',
     tags: FULL_TAGS,
-    carriers: ['rtc'],
+    carriers: ['ws', 'rtc'],
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: (sender) => [
@@ -61,10 +63,10 @@ export const bufferedTrackDrains: AlmConformanceScenarioDefinition = {
         ...toHeldMessageFaultCommands({ ...sender, index: HELD_SEQ }, `release-message-${HELD_SEQ}`, 0),
         ...toAdmissionCommands({ ...sender, index: HELD_SEQ })
     ],
-    toRecipientCommands: (receiver) => [
-        toTrackArrivalsCommand(receiver),
-        toPromotionWait(receiver)
-    ]
+    toRecipientCommands: (receiver) =>
+        receiver.input.carrier === 'rtc'
+            ? [toTrackArrivalsCommand(receiver), toPromotionWait(receiver)]
+            : [toTrackArrivalsCommand(receiver)]
 };
 
 function toTrackSend(sender: AlmConformanceStepInput, seq: number): RallarBlackBoxTestCommand {
