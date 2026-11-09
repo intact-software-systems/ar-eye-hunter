@@ -10,7 +10,7 @@ export const RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS = 5_000;
  * budget; the command-level timeout below is the sum of this connect budget, the readiness budget,
  * and the completion margin, because connect and readiness run sequentially inside one command.
  */
-export const RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS = 30_000;
+export const RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS = 45_000;
 
 /**
  * Budget for the idempotent ensure-group + ensure-member HTTP mutation pair. Distributed

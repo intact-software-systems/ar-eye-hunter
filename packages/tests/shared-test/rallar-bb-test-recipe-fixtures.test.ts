@@ -79,7 +79,7 @@ describe('rallar-bb-test recipe fixtures', () => {
             frameCount: 600
         });
         expect(senderConnect).toMatchObject({
-            timeoutMs: 80_000,
+            timeoutMs: 95_000,
             readiness: { timeoutMs: 45_000 }
         });
         expect(sender.metadata?.expectedInboundMessages).toBeUndefined();
