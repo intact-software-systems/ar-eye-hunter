@@ -19,7 +19,9 @@ import {
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { WsQueueBoxServerTrackOrder } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
-import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
+import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const NAMESPACE = 'outbound';
 const NOW_MS = 1_700_000_000_000;
@@ -45,7 +47,7 @@ interface TrackFixture {
 }
 
 interface TrackFixtureOptions {
-    readonly connections?: JsonWebSocketServer['connections'];
+    readonly socket?: JsonWebSocketServer;
     readonly resolvePolicy?: WsQueueBoxServerOutboundPlanning['resolvePolicy'];
 }
 
@@ -71,7 +73,7 @@ function createTrackFixture(options: TrackFixtureOptions = {}): TrackFixture {
     const trackOrder = new WsQueueBoxServerTrackOrder({
         admissionStore,
         clock: { nowMs: () => NOW_MS },
-        socket: { connections: options.connections ?? new Map() },
+        socket: options.socket ?? new JsonWebSocketServer(),
         ackRelay: { writeServerAck },
         outboundPlanning: {
             resolvePolicy: options.resolvePolicy ?? (() => {
@@ -204,13 +206,15 @@ describe('the WS outside-audience writer', () => {
     });
 
     it('judges an open-here drop only for a session whose socket here is open', async () => {
-        const connections = new Map() as JsonWebSocketServer['connections'];
-        const fixture = createTrackFixture({ connections, resolvePolicy: resolveReceiverPolicy });
+        const socket = new JsonWebSocketServer();
+        const fixture = createTrackFixture({ socket, resolvePolicy: resolveReceiverPolicy });
 
         await fixture.trackOrder.writeOutsideAudience(rowFrom('origin'), ['b'], 'open-here');
         expect(fixture.outsideAcks).toEqual([]);
 
-        connections.set('b', { isOpen: true } as never);
+        const native = new TestWebSocket('ws://b');
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: 'b', socket: native }));
         await fixture.trackOrder.writeOutsideAudience(rowFrom('origin'), ['b'], 'open-here');
         expect(fixture.outsideAcks).toEqual(['b']);
     });
@@ -228,33 +232,38 @@ describe('the WS outside-audience writer', () => {
         });
         const own = rowFrom('server');
 
-        await fixture.trackOrder.writeOutsideAudience(own, ['b'], 'durable');
+        try {
+            await fixture.trackOrder.writeOutsideAudience(own, ['b'], 'durable');
 
-        expect(attempts).toEqual([own.id.msgId, own.id.msgId, own.id.msgId]);
-        expect(fixture.diagnostics).toEqual([{
-            kind: 'outside-audience-commit',
-            msgId: own.id.msgId,
-            recipientPeerIds: ['b'],
-            attempts: 3,
-            outcome: 'conflict',
-            ...toALMessageTrace(own)
-        }]);
-        expect(consoleLines).toEqual([]);
-        error.mockRestore();
+            expect(attempts).toEqual([own.id.msgId, own.id.msgId, own.id.msgId]);
+            expect(fixture.diagnostics).toEqual([{
+                kind: 'outside-audience-commit',
+                msgId: own.id.msgId,
+                recipientPeerIds: ['b'],
+                attempts: 3,
+                outcome: 'conflict',
+                ...toALMessageTrace(own)
+            }]);
+            expect(consoleLines).toEqual([]);
+        }
+        finally {
+            error.mockRestore();
+        }
     });
 
     it('stops at the first committed attempt and writes no diagnostic', async () => {
         const fixture = createTrackFixture({ resolvePolicy: resolveReceiverPolicy });
-        const answers = ['conflict', 'committed'] as const;
+        const answers: ('conflict' | 'committed')[] = ['conflict', 'committed'];
         const attempts: string[] = [];
-        vi.spyOn(fixture.admissionStore, 'commitOutsideAudience').mockImplementation(async () => {
-            attempts.push(answers[attempts.length]!);
-            return answers[attempts.length - 1]!;
+        vi.spyOn(fixture.admissionStore, 'commitOutsideAudience').mockImplementation(async (receipt) => {
+            attempts.push(receipt.msgId);
+            return answers.shift() ?? 'committed';
         });
+        const own = rowFrom('server');
 
-        await fixture.trackOrder.writeOutsideAudience(rowFrom('server'), ['b'], 'durable');
+        await fixture.trackOrder.writeOutsideAudience(own, ['b'], 'durable');
 
-        expect(attempts).toEqual(['conflict', 'committed']);
+        expect(attempts).toEqual([own.id.msgId, own.id.msgId]);
         expect(fixture.diagnostics).toEqual([]);
     });
 });

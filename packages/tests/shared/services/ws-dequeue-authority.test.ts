@@ -333,7 +333,7 @@ function toRecheckedGenerations(input: CapturedWsRecipientEligibilityInputDto) {
 function createFixture(
     readProducerProvenance?: WsQueueBoxServerService.Input['readProducerProvenance'],
     stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage }),
-    filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter
+    recheck?: WsCapturedRecipientEligibilityFilter
 ): DequeueAuthorityFixture {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
@@ -348,14 +348,14 @@ function createFixture(
         outboundStores: stores,
         queueEngine: engine,
         targetResolver: {
-            requiresFrozenAudience: () => filterEligibleCapturedSessionIds !== undefined,
+            requiresFrozenAudience: () => recheck !== undefined,
             resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }]
         },
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance,
-        capturedRecipientEligibilityFilters: filterEligibleCapturedSessionIds === undefined
+        capturedRecipientEligibilityFilters: recheck === undefined
             ? undefined
-            : { durable: filterEligibleCapturedSessionIds, local: filterEligibleCapturedSessionIds }
+            : { durable: recheck, local: recheck }
     };
     const service = createDefaultWsQueueBoxServerService(input);
     onTestFinished(async () => {
