@@ -603,6 +603,42 @@ Deno.test('a subscribed session live on another instance is expected and recorde
     });
 });
 
+Deno.test('a captured session live nowhere is outside at the dequeue, the receipt completing on the other recipient', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
+        // Admission, inbox dispatch and route read Carol live; her last generation ended before the dequeue.
+        harness.reads.push(...grantedReads(3), () => Promise.resolve(withoutLiveGeneration(createAuthority(GRANTS), 'carol')));
+        const message = { ...feedMessage({ senderId: 'alice', msgId: 'live-nowhere-at-dequeue' }), ordering: { orderingKey: FEED, epoch: 1, seq: 1 } };
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) > 0);
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await waitFor(() => readReceipts(frames.alice).some((receipt) => receipt.phase === 'complete'));
+
+        assertOutsideAudienceReceipt(readReceipts(frames.alice), { confirmed: ['bob'], outside: ['carol'] });
+        assert.deepEqual((await harness.stores.admissionStore.readStoredMessage(message.id.msgId))?.sentPositions, { bob: 0 });
+    });
+});
+
+Deno.test('a captured session live at the dequeue and live nowhere at the retry is recorded outside by the retry, the receipt completing', async () => {
+    await withHarness({ fanout: 'outbox' }, async (harness) => {
+        const frames = { alice: addConnection(harness.server, 'alice'), bob: addConnection(harness.server, 'bob') };
+        // The first dequeue finds Carol live on another instance; her last generation ends before the retry's re-check.
+        harness.reads.push(...grantedReads(4), () => Promise.resolve(withoutLiveGeneration(createAuthority(GRANTS), 'carol')));
+        const message = {
+            ...feedMessage({ senderId: 'alice', msgId: 'live-nowhere-at-retry' }),
+            qos: { ack: { algo: 'receiver', opts: { timeoutMs: 50 } } }
+        } as const;
+
+        await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitFor(() => readDelivered(frames.bob, message) > 0);
+        await harness.service.acceptIncomingMessage(receiverAck(message, 'bob'), 'bob');
+        await waitFor(() => readReceipts(frames.alice).some((receipt) => receipt.phase === 'complete'));
+
+        assertOutsideAudienceReceipt(readReceipts(frames.alice), { confirmed: ['bob'], outside: ['carol'] });
+    });
+});
+
 Deno.test('a members-topic outbox row is narrowed by the durable filter only', async () => {
     await withHarness({ fanout: 'outbox' }, async (harness) => {
         const frames = addAudience(harness.server);
@@ -935,4 +971,10 @@ class LoopbackBridge implements QueueBoxPubSubBridge {
     subscribe(): Promise<void> {
         return Promise.resolve();
     }
+}
+
+/** The authority with no live client generation of the session left: it is live on no instance. */
+function withoutLiveGeneration(authority: GroupPublicationAuthority, sessionId: string): GroupPublicationAuthority {
+    const { [sessionId]: _ended, ...liveSessionGenerations } = authority.liveSessionGenerations;
+    return { ...authority, liveSessionGenerations };
 }

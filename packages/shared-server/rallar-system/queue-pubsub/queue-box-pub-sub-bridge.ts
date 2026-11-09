@@ -36,6 +36,7 @@ import {
     type WsQueueBoxServerReceiptObserver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
+import type { WsOutsideAudienceJudgement } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
 import type { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
@@ -69,7 +70,11 @@ export interface QueueBoxPubSubWsService {
     /** The positions the row's first dequeue recorded, from which each local copy takes its entry. */
     readSentPositions(message: ALMessage): Promise<Readonly<Record<string, number>> | null>;
     /** Records each session a send reached nothing of outside the audience of the receipt its origin awaits. */
-    writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void>;
+    writeOutsideAudience(
+        message: ALMessage,
+        sessionIds: readonly string[],
+        judgement: WsOutsideAudienceJudgement
+    ): Promise<void>;
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
@@ -565,8 +570,24 @@ async function sendToCapturedLocalTargets(
         eligibleSessionIds: eligible,
         sentPositions: input.sentPositions
     }));
-    await options.wsQBoxServerService.writeOutsideAudience(message, result.belowPositionPeerIds);
+    await options.wsQBoxServerService.writeOutsideAudience(
+        message,
+        [...result.belowPositionPeerIds, ...toCapturedSendDrops(policy, eligible, options)],
+        'open-here'
+    );
     return result;
+}
+
+/** With no re-check wired a send declares no exclusion: its captured sessions stay expected, none is dropped. */
+function toCapturedSendDrops(
+    policy: SendToCapturedLocalTargetsInput['policy'],
+    eligible: readonly string[] | undefined,
+    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'filterEligibleCapturedSessionIds'>
+): readonly string[] {
+    if (eligible === undefined || options.filterEligibleCapturedSessionIds === undefined) {
+        return [];
+    }
+    return (policy?.admittedAudience ?? []).filter((sessionId) => !eligible.includes(sessionId));
 }
 
 /**

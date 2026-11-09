@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -8,8 +9,12 @@ import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-ou
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundOrderingMessageKey } from '@shared/alm/outbound/admission/al-outbound-ordering-track-keys.ts';
 import { toALOrderingBatchSequences } from '@shared/alm/outbound/lane/compute-al-outbound-group-sent-positions.ts';
-import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import type {
+    WsQueueBoxServerOutboundPlanning,
+    WsQueueBoxServerPreparedMessage
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { WsQueueBoxServerTrackOrder } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 const NAMESPACE = 'outbound';
 const NOW_MS = 1_700_000_000_000;
@@ -27,10 +32,18 @@ const TRACK_KEY = toALOrderingTrackKey(trackedMessage(1))!;
 
 interface TrackFixture {
     readonly backend: InMemoryAdmissionBackend;
+    readonly admissionStore: ReturnType<typeof createALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>>;
+    /** The logical recipient each outside-audience ACK the relay was handed names. */
+    readonly outsideAcks: string[];
     readonly trackOrder: WsQueueBoxServerTrackOrder;
 }
 
-function createTrackFixture(): TrackFixture {
+interface TrackFixtureOptions {
+    readonly connections?: JsonWebSocketServer['connections'];
+    readonly resolvePolicy?: WsQueueBoxServerOutboundPlanning['resolvePolicy'];
+}
+
+function createTrackFixture(options: TrackFixtureOptions = {}): TrackFixture {
     const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), () => NOW_MS);
     const admissionStore = createALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>({
         nowMs: () => NOW_MS,
@@ -43,20 +56,25 @@ function createTrackFixture(): TrackFixture {
             throw new TypeError('The track order reads no prepared message');
         }
     });
+    const outsideAcks: string[] = [];
+    const writeServerAck = async (ack: ALMessage) => {
+        const control = parseALControlMessage(ack);
+        outsideAcks.push(control?.type === 'ack' ? control.payload.logicalRecipientPeerId ?? '' : '');
+    };
     const trackOrder = new WsQueueBoxServerTrackOrder({
         admissionStore,
         clock: { nowMs: () => NOW_MS },
-        socket: { connections: new Map() },
-        ackRelay: { writeServerAck: vi.fn(async () => {}) },
+        socket: { connections: options.connections ?? new Map() },
+        ackRelay: { writeServerAck },
         outboundPlanning: {
-            resolvePolicy: () => {
+            resolvePolicy: options.resolvePolicy ?? (() => {
                 throw new TypeError('The wait resolves no policy');
-            }
+            })
         },
         name: 'server',
         newControlId: () => 'control'
     });
-    return { backend, trackOrder };
+    return { backend, admissionStore, outsideAcks, trackOrder };
 }
 
 /** Index rows for each sequence, and a stored row recorded (`{ b: seq - 1 }`) or unrecorded (`null`) where named. */
@@ -135,5 +153,42 @@ describe('the WS track order of a dequeued row', () => {
         const authority = await fixture.trackOrder.readTrackOrderAuthority(trackedMessage(4), batch);
 
         expect(authority).toMatchObject({ status: 'held', reason: 'WS row waits for sequence 2 of its track to record first' });
+    });
+});
+
+/** A logical receipt, so the writer has recipients to record outside. */
+const resolveReceiverPolicy = (() => ({ effective: { ack: { algo: 'receiver' } } })) as unknown as WsQueueBoxServerOutboundPlanning['resolvePolicy'];
+
+function rowFrom(senderId: string): ALMessage {
+    return { ...trackedMessage(2), id: { ...trackedMessage(2).id, senderId } };
+}
+
+describe('the WS outside-audience writer', () => {
+    it('records a durable drop outside with no socket open here', async () => {
+        const fixture = createTrackFixture({ resolvePolicy: resolveReceiverPolicy });
+        const ownCommits: unknown[] = [];
+        vi.spyOn(fixture.admissionStore, 'commitOutsideAudience').mockImplementation(async (receipt, sessionIds) => {
+            ownCommits.push({ receipt, sessionIds });
+            return 'absent';
+        });
+        const own = rowFrom('server');
+
+        await fixture.trackOrder.writeOutsideAudience(rowFrom('origin'), ['b'], 'durable');
+        await fixture.trackOrder.writeOutsideAudience(own, ['b'], 'durable');
+
+        expect(fixture.outsideAcks).toEqual(['b']);
+        expect(ownCommits).toEqual([{ receipt: { originPeerId: 'server', msgId: own.id.msgId }, sessionIds: ['b'] }]);
+    });
+
+    it('judges an open-here drop only for a session whose socket here is open', async () => {
+        const connections = new Map() as JsonWebSocketServer['connections'];
+        const fixture = createTrackFixture({ connections, resolvePolicy: resolveReceiverPolicy });
+
+        await fixture.trackOrder.writeOutsideAudience(rowFrom('origin'), ['b'], 'open-here');
+        expect(fixture.outsideAcks).toEqual([]);
+
+        connections.set('b', { isOpen: true } as never);
+        await fixture.trackOrder.writeOutsideAudience(rowFrom('origin'), ['b'], 'open-here');
+        expect(fixture.outsideAcks).toEqual(['b']);
     });
 });

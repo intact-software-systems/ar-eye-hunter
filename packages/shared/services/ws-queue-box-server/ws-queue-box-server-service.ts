@@ -103,7 +103,7 @@ import {
     type WsQueueBoxServerReceiptSocketFacts
 } from './ws-queue-box-server-receipt-observation.ts';
 import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
-import { WsQueueBoxServerTrackOrder } from './ws-queue-box-server-track-order.ts';
+import { WsQueueBoxServerTrackOrder, type WsOutsideAudienceJudgement } from './ws-queue-box-server-track-order.ts';
 
 interface WsQueueBoxServerPreparedRecipientInput {
     readonly prepared: Extract<
@@ -451,7 +451,7 @@ export class WsQueueBoxServerService {
                 await this.trackOrder.readTrackOrderAuthority(message, batch),
             readDequeueAuthority: async (message, entry) => {
                 const read = await this.dequeueAuthority.readDequeueAuthority(message, entry);
-                await this.trackOrder.writeOutsideAudience(message, read.dropped);
+                await this.trackOrder.writeOutsideAudience(message, read.dropped, 'durable');
                 return read.authority;
             },
             planOutgoingMessage: (message, authority) => this.planWorkDispatch(message, authority, 'immediate'),
@@ -464,7 +464,7 @@ export class WsQueueBoxServerService {
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: async (message, request) => {
                 const audience = await this.dequeueAuthority.readCurrentAudience(message, request, 'durable');
-                await this.trackOrder.writeOutsideAudience(message, audience.dropped);
+                await this.trackOrder.writeOutsideAudience(message, audience.dropped, 'durable');
                 return this.outboundPlanning.planRepairMessage(message, {
                     ...request,
                     admittedAudience: audience.eligible
@@ -871,7 +871,7 @@ export class WsQueueBoxServerService {
         { message, entry, policy, sentPositions }: WsQueueBoxServerService.HeldRowSend
     ): Promise<void> {
         const audience = await this.dequeueAuthority.readCurrentAudience(message, policy, 'local');
-        await this.trackOrder.writeOutsideAudience(message, audience.dropped);
+        await this.trackOrder.writeOutsideAudience(message, audience.dropped, 'open-here');
         const sent = this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
             message,
             key: entry.key,
@@ -879,7 +879,7 @@ export class WsQueueBoxServerService {
             eligibleSessionIds: undefined,
             sentPositions
         }));
-        await this.trackOrder.writeOutsideAudience(message, sent.belowPositionPeerIds);
+        await this.trackOrder.writeOutsideAudience(message, sent.belowPositionPeerIds, 'open-here');
     }
 
     /** The cluster bridge reads the positions each published row's live copies take their entries from. */
@@ -887,8 +887,12 @@ export class WsQueueBoxServerService {
         return await this.trackOrder.readSentPositions(message);
     }
 
-    async writeOutsideAudience(message: ALMessage, sessionIds: readonly string[]): Promise<void> {
-        await this.trackOrder.writeOutsideAudience(message, sessionIds);
+    async writeOutsideAudience(
+        message: ALMessage,
+        sessionIds: readonly string[],
+        judgement: WsOutsideAudienceJudgement
+    ): Promise<void> {
+        await this.trackOrder.writeOutsideAudience(message, sessionIds, judgement);
     }
 
     private async sendPreparedMessage(
@@ -946,7 +950,7 @@ export class WsQueueBoxServerService {
             sentPositions: lifecycle.sentPositions
         });
         if (copy.right === undefined) {
-            await this.trackOrder.writeOutsideAudience(canonical, [prepared.peerId]);
+            await this.trackOrder.writeOutsideAudience(canonical, [prepared.peerId], 'open-here');
             return { status: 'no-targets', submissionAttempted: false, reason: 'A later row of the track reached it' };
         }
         return this.sendRecipientCopy({ prepared, lifecycle, message: copy.right });
