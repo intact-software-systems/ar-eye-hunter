@@ -213,9 +213,6 @@ and it has no status list.
   which writes no rows (its sequence stays pending until folded or expired).
   Full closure needs a hold for the receipt and a receipt field that states the
   audience the dequeue recorded, a protocol change.
-- `buffered-track-drains` over `ws` (S4-i, D535): the WS server's gap NACK at
-  each later frame spends the held frame's one retransmit, so the cell runs over
-  `rtc` only; a per-gap rather than per-frame repair budget would restore it.
 - A per-row subscription identity (Slice 4 §9): an unsubscribe and re-subscribe
   under one connection generation inside a row's deadline is one subscription
   for repair.

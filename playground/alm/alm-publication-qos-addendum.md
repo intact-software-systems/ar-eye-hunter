@@ -5,8 +5,8 @@ Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
 S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii), Slice
 5 (producer-row positions, as S5-i), Slice 6 (granted unicast, list and
 principal broadcast over RTC, as S6-i and S6-ii) and Slice 7 (cross-instance
-positions and outside class, as S7-i) are implemented and recorded as applied in
-§7; the later outcomes remain a proposed extension, not implemented
+positions and outside class, as S7-i and S7-ii) are implemented and recorded as
+applied in §7; the later outcomes remain a proposed extension, not implemented
 behavior or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
@@ -1011,7 +1011,7 @@ below); the local-socket filter applies only at send, on every instance. No
 merge write, row kind, mutation, key family or wire field
 is added. It was designed in the Slice 7 design proposal, now deleted (git
 history is the archive), from the candidates survey and three surveys at
-`2279d4f3b`, and lands as S7-i (the 6b probe, the mechanism, the ordering
+`2279d4f3b`, and landed as S7-i (the 6b probe, the mechanism, the ordering
 cluster proof and these documents, server-only) and S7-ii (the riders:
 `buffered-track-drains` over `ws`, the admin-audience append refused at decode
 and a `vi`-free statement recorder).
@@ -1099,9 +1099,55 @@ the product's snapshot publication covers its state. The window, a socket closed
 whose AppInbox close has not committed and a lease lapsed before the 60 s
 presence sweep, is judged at the retry; a send-time drop
 of a session live nowhere waits for the retry; after three lost fences the
-recipient waits for the retry; the presence sweep is 60 s and not configurable;
-and the riders land in S7-ii. Decisions D568–D578 are in the roadmap; Slice 7
-completes with S7-ii.
+recipient waits for the retry; and the presence sweep is 60 s and not
+configurable.
+
+As applied (S7-ii): a repair hint's paged sequences are charged once per gap.
+`toALOutboundRepairGapAttemptIdentity` names the attempt
+`['repair-gap', requester, track, seq[, recipient]]`, and only the page loop of
+`retransmitFromRepairHint` passes it; a hint with no track or no ranges, and the
+`ack-timeout` path, keep the hint's identity. The identity holds for the
+message's whole repairable lifetime, a correction to the design: completed send
+rows are retained until the message expires on every backend
+(`AL_ADMISSION_WORK_COMPLETED_RETENTION`; on Postgres only the admin prune of
+expired rows deletes them), so a later report of a gap by the same requester
+(for the same recipient) finds the first attempt's sends, charges nothing,
+retransmits nothing new and writes no row, and can never exhaust the budget.
+Exhaustion is another identity's finding: the WS server hop, whose NACKs the
+`ws` sender admits as `hopPeerIds: [serverPeerId]`, or another receiver; its
+report finds the budget spent, and the message is settled `repair-exhausted`
+once. The outbound exhaustion pins were rewritten that way (the second requester
+is the hop, since control admission refuses a NACK from a peer with no retained
+obligation), a fallback case was added, and the WS server's ordered-repair suite
+reads served repairs by the gap identity. `buffered-track-drains` declares
+`['ws', 'rtc']` (observation). The `repair-exhausted` cell, whose two-agent form
+induced exhaustion by the same receiver re-reporting the same gap, is a
+three-agent cell (D579): the second receiver's report of the held gap finds the
+budget spent. It runs over `rtc` and `rtc-with-ws-fallback` only (D580). The
+CRDT mutation command codec refuses an `append` with an `admin` response
+audience after the envelope is decoded
+(`TypeError('CRDT append refuses an admin response audience')`, classed
+`app-inbox-malformed-command`), a `compact` with one still decodes, and
+api-v1's admin branch states its null publication authority. The PGlite
+statement recorder is one `vi`-free `recordPGliteStatements` under `apps/api-v1/test/db/` with a caller-owned
+`restore()`, imported by the four Vitest users and the Deno topology test;
+`recordResourceInboxInserts` is deleted. Bundle figures (guidance):
+`browser/rallar.ts` 297.9 → 298.0 KiB brotli (305,056 → 305,200 B, 48 B over its
+298 KiB budget, which was raised to 299 KiB) and the headless agent 394.705 →
+394.516 KiB under its 395 KiB budget. Limits: the `ws` leg of
+`buffered-track-drains` is observed, not proved, since the gate's observation
+job runs the smoke scope, which does not run the full-scope cell, and the local
+lane's typed `ws` sends do not complete inside the recipe budgets, as the hosted
+runner's do not. Over `ws` the WS server orders the track and is the one
+requester of its gaps, so a held frame's repeated reports are one attempt under
+the per-gap identity: the sender never states `repair-exhausted` over `ws`, and
+the frame arrives on the hold's release; a server repair report per logical
+recipient would make a second receiver a second requester there. The three-agent
+cell's RTC legs are observation only. A repair planner whose prepared payload
+changes with the hint would charge again under the per-gap identity; the RTC
+overlay planner is the only such planner in production, and S7-ii does not
+exercise it. Decisions D568–D580 are in the roadmap; Slice 7 is complete (S7-i
+and S7-ii).
 
 ### Later outcomes
 
