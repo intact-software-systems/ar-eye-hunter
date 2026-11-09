@@ -21,6 +21,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsOutboxProducerAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
@@ -589,16 +590,17 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     const producerRows = new Map<string, WsOutboxProducerAuthority | 'corrupt' | 'non-retryable'>();
     const unreadable = new Set(options.unreadableOnceMsgId === undefined ? [] : [options.unreadableOnceMsgId]);
     const rechecksAudience = options.unreadableOnceMsgId !== undefined || options.recheckGate !== undefined;
+    const recheck: WsCapturedRecipientEligibilityFilter = async (captured) => {
+        if (captured.message.id.msgId === options.recheckGate?.msgId) {
+            await options.recheckGate.released;
+        }
+        if (unreadable.delete(captured.message.id.msgId)) {
+            throw new Error('Re-check could not read');
+        }
+        return captured.candidateSessionIds;
+    };
     const service = createDefaultWsQueueBoxServerService({
-        filterEligibleCapturedSessionIds: !rechecksAudience ? undefined : async (captured) => {
-            if (captured.message.id.msgId === options.recheckGate?.msgId) {
-                await options.recheckGate.released;
-            }
-            if (unreadable.delete(captured.message.id.msgId)) {
-                throw new Error('Re-check could not read');
-            }
-            return captured.candidateSessionIds;
-        },
+        capturedRecipientEligibilityFilters: !rechecksAudience ? undefined : { durable: recheck, local: recheck },
         inboundVolatileStores: undefined,
         outbox,
         socket: socketServer,

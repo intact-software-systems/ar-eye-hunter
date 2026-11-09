@@ -8,6 +8,7 @@ import {
 import { createPSqlALOutboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeWsOutboxInsert, writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { readGroupTopicSubscriptionAuthority } from '@shared-server/rallar-system/group-state/persistence/subscription/read-group-topic-subscriptions.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import {
     WsOutboxProvenanceReader,
@@ -20,13 +21,17 @@ import { toALOutboundAdmissionNamespace } from '@shared/alm/outbound/admission/a
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundDequeuedAdmission } from '@shared/alm/outbound/lane/al-outbound-dequeued-admission.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
+import { createTestGroup } from '../../../create-test-group.ts';
 
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
@@ -88,8 +93,9 @@ describe('Postgres tracked WS dequeue statements', () => {
                 else {
                     expect(report.holds).toBeGreaterThanOrEqual(1);
                 }
-                // The dequeue of a non-frozen row runs no re-check today.
-                expect(recheckCalls).toBe(0);
+                // Durable presence judges the non-frozen row once, in one batch statement.
+                expect(recheckCalls).toBe(1);
+                expect(report.recheckStatements).toBe(1);
             }
             finally {
                 await storage.close();
@@ -137,9 +143,10 @@ async function measureTrackedDequeue(sql: PSqlSql, cell: TrackedDequeueCell): Pr
         await writeTrackedRows(lane, [measured], 'queued');
         await expect.poll(() => lane.probe.completed(), { timeout: 60_000 }).toBe(true);
         await lane.probe.released();
+        const recheck = lane.recheck();
         return {
-            report: toCellReport(cell, lane.probe.admissions(), log.statements),
-            recheckCalls: lane.recheckCalls()
+            report: { ...toCellReport(cell, lane.probe.admissions(), log.statements), recheckStatements: recheck.statements },
+            recheckCalls: recheck.calls
         };
     }
     finally {
@@ -264,6 +271,7 @@ interface TrackedDequeueProbe {
     readonly sink: ALOutboundDequeuedAdmission.TimingSink;
     /** Measures the row `msgId` from its next dequeue on; `release` runs once, at its first held front. */
     measure(msgId: string, release: () => Promise<void>): void;
+    isMeasured(msgId: string): boolean;
     completed(): boolean;
     released(): Promise<void>;
     admissions(): readonly AdmissionMarks[];
@@ -312,6 +320,7 @@ function createTrackedDequeueProbe(log: PostgresStatementLog, readReadCount: () 
         measure: (msgId, onHeld) => {
             measured = { msgId, release: onHeld };
         },
+        isMeasured: (msgId) => msgId === measured?.msgId,
         completed: () => completed,
         released: async () => await release,
         admissions: () => admissions
@@ -328,7 +337,7 @@ function toCellReport(
     cell: TrackedDequeueCell,
     admissions: readonly AdmissionMarks[],
     statements: readonly RecordedPostgresStatement[]
-): TrackedDequeueCellReport {
+): Omit<TrackedDequeueCellReport, 'recheckStatements'> {
     const first = admissions[0]!;
     const completing = admissions.at(-1)!;
     const frontStart = toStageMark(first, 'admission-start');
@@ -342,7 +351,6 @@ function toCellReport(
         frontStatements: front.length,
         holds: admissions.filter((marks) => toStageMark(marks, 'pending-authority-read-end').outcome !== 'ready').length,
         dequeueStatements: toStageMark(completing, 'admission-end').statements - toStageMark(completing, 'admission-start').statements,
-        recheckStatements: 0,
         frontMs: Math.round((frontEnd.atMs - frontStart.atMs) * 100) / 100
     };
 }
@@ -361,9 +369,35 @@ interface TrackedDequeueLane {
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly engine: InboxOutboxEngine;
     readonly probe: TrackedDequeueProbe;
-    recheckCalls(): number;
+    /** The measured row's durable re-checks and the statements they issued. */
+    recheck(): Readonly<{ calls: number; statements: number; }>;
     dispose(): Promise<void>;
 }
+
+/** The room the rows publish to, with `peer` present: its read names one client-state selector. */
+const ROOM_SNAPSHOT: GroupSnapshot = {
+    causalRevision: { groupRevision: 1, presenceRevision: 1 },
+    group: createTestGroup(GROUP),
+    members: [],
+    activeSessions: [{
+        ...GROUP,
+        sessionId: 'peer',
+        principalId: 'peer',
+        generationId: 'peer-generation',
+        generationVersion: 1,
+        connectionGenerationId: 'peer-connection',
+        publicationKey: null,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    }],
+    memberCount: 0,
+    onlineMemberCount: 1,
+    publicationGrants: []
+};
 
 /** A running WS server whose outbound lane, producer proofs and cluster NOTIFYs all run on one recorded client. */
 function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStatementLog): TrackedDequeueLane {
@@ -385,7 +419,22 @@ function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStat
     socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
     const engine = new InboxOutboxEngine();
     const probe = createTrackedDequeueProbe(log, () => stores.admissionStore.getReadOperationCount());
-    let recheckCalls = 0;
+    const recheck = { calls: 0, statements: 0 };
+    // The probe measures the durable read's cost, not its verdict: the candidates pass unchanged.
+    const durable: WsCapturedRecipientEligibilityFilter = async ({ message, candidateSessionIds }) => {
+        if (!probe.isMeasured(message.id.msgId)) {
+            return candidateSessionIds;
+        }
+        const before = log.statements.length;
+        await readGroupTopicSubscriptionAuthority(repository, {
+            snapshot: ROOM_SNAPSHOT,
+            topicId: message.route.topicId,
+            observedAtEpochMs: Date.now()
+        });
+        recheck.calls += 1;
+        recheck.statements += log.statements.length - before;
+        return candidateSessionIds;
+    };
     const service = createDefaultWsQueueBoxServerService({
         name: 'server',
         inboundVolatileStores: undefined,
@@ -397,10 +446,7 @@ function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStat
         targetResolver: { requiresFrozenAudience: () => false, resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] },
         readAuthenticatedConnectionScope: () => ({ scope: WS_SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance: (message, entry) => proofs.readProducerProvenance(message, entry),
-        filterEligibleCapturedSessionIds: async ({ candidateSessionIds }) => {
-            recheckCalls += 1;
-            return candidateSessionIds;
-        }
+        capturedRecipientEligibilityFilters: { durable, local: async ({ candidateSessionIds }) => candidateSessionIds }
     });
     void installQueueBoxPubSubBridge({
         wsQBoxServerService: service,
@@ -420,7 +466,7 @@ function createTrackedDequeueLane(sql: PSqlSql, runId: string, log: PostgresStat
         stores,
         engine,
         probe,
-        recheckCalls: () => recheckCalls,
+        recheck: () => recheck,
         dispose: async () => {
             await Promise.all([service.dispose(), engine.stop()]);
         }

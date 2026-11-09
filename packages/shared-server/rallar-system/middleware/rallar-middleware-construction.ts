@@ -12,7 +12,7 @@ import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/re
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type {
-    WsCapturedRecipientEligibilityFilter,
+    WsCapturedRecipientEligibilityFilters,
     WsDeliveryDiagnosticsSink,
     WsServerInboundConnectionScopeReader,
     WsServerTargetResolver
@@ -106,8 +106,11 @@ export interface CreateRallarMiddlewareOptions {
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
     readonly grantedTopics: WsServerTargetResolutionOptions['grantedTopics'];
-    /** The per-attempt re-check of captured outbox audiences, handed to the WS server and the cluster bridge (D498). */
-    readonly filterEligibleCapturedSessionIds?: WsCapturedRecipientEligibilityFilter;
+    /**
+     * The per-attempt re-checks of captured outbox audiences (D498): the durable one judges the dequeue and the retry,
+     * the local one every send.
+     */
+    readonly capturedRecipientEligibilityFilters?: WsCapturedRecipientEligibilityFilters;
     readonly inboundStores?: ALInboundRuntimeStores;
     /**
      * The instance-local memory pair a volatile message is admitted and delivered from; `undefined` keeps every

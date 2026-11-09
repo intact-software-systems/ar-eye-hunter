@@ -65,6 +65,7 @@ import type {
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import type {
@@ -480,7 +481,7 @@ function createWsDeliveryAuthority(
     | 'findGroupSnapshotByRef'
     | 'findClientSnapshotByRef'
     | 'grantedTopics'
-    | 'filterEligibleCapturedSessionIds'
+    | 'capturedRecipientEligibilityFilters'
 > {
     const { mutation } = input;
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
@@ -493,26 +494,27 @@ function createWsDeliveryAuthority(
                 nowEpochMs: input.nowEpochMs
             })
     });
+    const recheck: WsCapturedRecipientEligibilityFilter = async (captured) =>
+        await filterGrantedWsRecipientSessionIds({
+            ...captured,
+            durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
+                ...captured,
+                socketServer: mutation.webSocketServer,
+                nowMs: input.nowEpochMs()
+            }),
+            grantedTopics: input.grantedTopics,
+            serverPeerId: input.wsRuntimeName,
+            readPublicationAuthority: (ref, topicId) =>
+                mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
+            nowEpochMs: input.nowEpochMs()
+        });
     return {
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
         readWsOutboxProducerProvenance: (message, entry) => wsOutboxProvenance.readProducerProvenance(message, entry),
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         grantedTopics: input.grantedTopics,
-        filterEligibleCapturedSessionIds: async (captured) =>
-            await filterGrantedWsRecipientSessionIds({
-                ...captured,
-                durableEligibleSessionIds: filterEligibleDurableWsSessionIds({
-                    ...captured,
-                    socketServer: mutation.webSocketServer,
-                    nowMs: input.nowEpochMs()
-                }),
-                grantedTopics: input.grantedTopics,
-                serverPeerId: input.wsRuntimeName,
-                readPublicationAuthority: (ref, topicId) =>
-                    mutation.groupStateService.readCurrentPublicationAuthority(ref, topicId),
-                nowEpochMs: input.nowEpochMs()
-            })
+        capturedRecipientEligibilityFilters: { durable: recheck, local: recheck }
     };
 }
 

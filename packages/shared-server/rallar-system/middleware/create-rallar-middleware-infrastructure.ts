@@ -86,7 +86,7 @@ export function createRallarMiddlewareInfrastructure(
                     messageId: crypto.randomUUID(),
                     createdAtEpochMs: (options.now ?? Date.now)()
                 }),
-            filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+            filterEligibleCapturedSessionIds: options.capturedRecipientEligibilityFilters?.local,
             wsQBoxServerService,
             receiptObserver: options.wsReceiptObserver,
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite(PUB_SUB_REQUEUE_TYPES)
@@ -185,7 +185,7 @@ function createMiddlewareWsQueueBoxServer(
         name: options.wsRuntimeName ?? 'default-qbox-server',
         targetResolver,
         readProducerProvenance: options.readWsOutboxProducerProvenance,
-        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds,
+        capturedRecipientEligibilityFilters: options.capturedRecipientEligibilityFilters,
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         inboundVolatileStores: options.inboundVolatileStores,

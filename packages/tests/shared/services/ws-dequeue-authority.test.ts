@@ -353,7 +353,9 @@ function createFixture(
         },
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 }),
         readProducerProvenance,
-        filterEligibleCapturedSessionIds
+        capturedRecipientEligibilityFilters: filterEligibleCapturedSessionIds === undefined
+            ? undefined
+            : { durable: filterEligibleCapturedSessionIds, local: filterEligibleCapturedSessionIds }
     };
     const service = createDefaultWsQueueBoxServerService(input);
     onTestFinished(async () => {

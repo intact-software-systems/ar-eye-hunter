@@ -23,6 +23,7 @@ import type { GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsCapturedRecipientEligibilityFilter } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     createDefaultWsQueueBoxServerService,
@@ -649,6 +650,15 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
     };
     const readCurrentSnapshot = async (ref: GroupRef) => (await readRoom(ref))?.snapshot;
     const readRecheckRoom = (ref: GroupRef) => harness.recheckRead?.() ?? readRoom(ref);
+    const recheck: WsCapturedRecipientEligibilityFilter = (captured) =>
+        filterGrantedWsRecipientSessionIds({
+            ...captured,
+            durableEligibleSessionIds: captured.candidateSessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
+            grantedTopics,
+            serverPeerId: SERVER_PEER_ID,
+            readPublicationAuthority: readRecheckRoom,
+            nowEpochMs: Date.now()
+        });
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: stores.workQueue,
@@ -661,15 +671,7 @@ async function createHarness(input: GrantedDeliveryHarnessInput): Promise<Grante
                 ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => createSnapshot(GRANTS), grantedTopics }),
-        filterEligibleCapturedSessionIds: input.withoutRecheck === true ? undefined : (captured) =>
-            filterGrantedWsRecipientSessionIds({
-                ...captured,
-                durableEligibleSessionIds: captured.candidateSessionIds.filter((sessionId) => server.connections.get(sessionId)?.isOpen === true),
-                grantedTopics,
-                serverPeerId: SERVER_PEER_ID,
-                readPublicationAuthority: readRecheckRoom,
-                nowEpochMs: Date.now()
-            })
+        capturedRecipientEligibilityFilters: input.withoutRecheck === true ? undefined : { durable: recheck, local: recheck }
     });
     const router = new RallarServerWsRouter(service, {
         grantedTopics,
