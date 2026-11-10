@@ -729,7 +729,8 @@ function createALOutboundLaneAdmissions<TPrepared>(
         clock: runtime.clock,
         settlements,
         carrier: runtime.carrier,
-        hopPeerIds: runtime.hopPeerIds
+        hopPeerIds: runtime.hopPeerIds,
+        recipientAuthentication: runtime.recipientAuthentication
     });
     return {
         dispatchAdmission,

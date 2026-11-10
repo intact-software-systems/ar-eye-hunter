@@ -361,6 +361,7 @@ function createDefaultOutboundRuntime(
     const runtime = createOutboundRuntimeWithWorkTask(() =>
         createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             outbox: stores.runtimeStores.workQueue,
             stores: stores.runtimeStores,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),

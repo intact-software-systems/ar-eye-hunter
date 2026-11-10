@@ -243,6 +243,7 @@ describe('outbound message expiry', () => {
                 clock,
                 settlements: () => {},
                 carrier: 'ws',
+                recipientAuthentication: { kind: 'carrier' },
                 hopPeerIds: undefined
             }),
             planOutgoingMessage: (msg) => ({

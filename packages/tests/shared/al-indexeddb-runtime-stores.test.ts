@@ -864,6 +864,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput): ALO
     const runtime = createOutboundRuntimeWithWorkTask(() =>
         createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             outbox: new InMemoryQueueBox(new Map()),
             stores: input.stores ?? createDefaultIndexedDbALOutboundRuntimeStores({
                 dbName,

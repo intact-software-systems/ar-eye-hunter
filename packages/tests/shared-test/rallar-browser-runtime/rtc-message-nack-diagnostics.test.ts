@@ -36,6 +36,7 @@ describe('RTC message diagnostic receipts', () => {
                     clock: { nowMs: Date.now },
                     settlements: () => {},
                     carrier: 'rtc',
+                    recipientAuthentication: { kind: 'carrier' },
                     hopPeerIds: undefined
                 });
                 expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);

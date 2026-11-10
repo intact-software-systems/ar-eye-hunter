@@ -519,7 +519,7 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     readonly createControlAdmission: (
         owner: Pick<
             CreateALOutboundControlAdmissionInput<TPrepared>,
-            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds'
+            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds' | 'recipientAuthentication'
         >
     ) => ALOutboundControlAdmission<TPrepared>;
 }
@@ -608,7 +608,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     createControlAdmission(
         owner: Pick<
             CreateALOutboundControlAdmissionInput<TPrepared>,
-            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds'
+            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds' | 'recipientAuthentication'
         >
     ): ALOutboundControlAdmission<TPrepared> {
         return new ALOutboundControlAdmission({

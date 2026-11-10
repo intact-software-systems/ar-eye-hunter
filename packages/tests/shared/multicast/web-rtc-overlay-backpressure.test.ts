@@ -25,6 +25,7 @@ import {
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
     ORIGIN_ROOM,
+    signRoomNackPayload,
     toOriginFrozenTargets,
     type CapturedChannel,
     type RtcOriginOverlayFixture
@@ -324,14 +325,14 @@ describe('what never reads backpressure (D184)', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-backpressure' },
-            toTestALNackPayload({
+            await signRoomNackPayload(toTestALNackPayload({
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
                 logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'gap',
                 observedAtEpochMs: Date.now()
-            })
+            }))
         ));
         await vi.advanceTimersByTimeAsync(100);
         holdBuffered(fixture.channels.b!, 0);

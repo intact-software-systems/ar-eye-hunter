@@ -64,6 +64,7 @@ describe('outbound control version candidate', () => {
             parsed: parsePeerControl(control),
             source: 'peer',
             carrier: 'ws',
+            recipientProof: 'carrier-authenticated',
             hopPeerIds: undefined,
             targetMsgId: message.id.msgId,
             nowMs: 1_000,
@@ -119,6 +120,7 @@ describe('outbound control version candidate', () => {
             parsed: parsePeerControl(ack),
             source: 'peer',
             carrier: 'ws',
+            recipientProof: 'carrier-authenticated',
             hopPeerIds: undefined,
             targetMsgId: message.id.msgId,
             nowMs,
@@ -204,6 +206,75 @@ describe('outbound control version candidate', () => {
         expect(await backend.read(`${namespace}:version:self`, (value) => value)).toEqual({ senderId: 'self', version: 3 });
     });
 });
+
+describe('the recipient proof verdict as a read fact (S8-R5)', () => {
+    it('a refused proof is an unauthorized issue beside the others', async () => {
+        const read = await createNackRead('proof-refused');
+        const refused: ALControlAdmissionRead = {
+            ...read,
+            recipientProof: { kind: 'unknown-key', claimedRecipientPeerId: 'peer-1', channelPeerId: 'peer-1' }
+        };
+        const candidate = computeALOutboundControlAdmission(refused, normalizeALRuntimeStoreRetention());
+
+        expect(validateALOutboundControlAdmission({ ...candidate, nextVersion: { senderId: 'self', version: 9 } })).toEqual([
+            { code: 'malformed', message: 'AL control version differs from its captured owner observation' },
+            { code: 'unauthorized', message: 'AL control proof is refused: unknown-key' }
+        ]);
+    });
+
+    it('carrier-authenticated and verified add nothing', async () => {
+        const read = await createNackRead('proof-accepted');
+        const retention = normalizeALRuntimeStoreRetention();
+
+        for (const recipientProof of ['carrier-authenticated', 'verified'] as const) {
+            expect(validateALOutboundControlAdmission(computeALOutboundControlAdmission({ ...read, recipientProof }, retention)))
+                .toEqual([]);
+        }
+    });
+});
+
+/** A peer's not-yet-in-sync NACK about a message the owner `self` admitted, read as its first control. */
+async function createNackRead(namespace: string): Promise<ALControlAdmissionRead> {
+    const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
+    const store = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: namespace,
+        decodePrepared: decodeOutboundTestPayload,
+        backend,
+        namespace,
+        retention: normalizeALRuntimeStoreRetention(),
+        supersedenceTrackTtlMs: 60_000
+    });
+    const message = createOutboundMessage(namespace);
+    await store.commitBundle(
+        await readOutboundTestAdmission({ store, message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
+    );
+    const sent = await backend.read(`${namespace}:sent:${message.id.msgId}`, (value) => decodeALOutboundSentMessage(value, message.id.msgId));
+    const control = newALNackControlMessage(
+        { v: 4, msgId: 'nack', senderId: 'peer-1', ts: 1_000, traceId: 'trace-outbound-control-version-candidate' },
+        toTestALNackPayload({
+            msgId: message.id.msgId,
+            fromPeerId: 'peer-1',
+            toPeerId: 'self',
+            reason: 'not-yet-in-sync',
+            observedAtEpochMs: 1_000
+        })
+    );
+    return {
+        parsed: parsePeerControl(control),
+        source: 'peer',
+        carrier: 'ws',
+        hopPeerIds: undefined,
+        targetMsgId: message.id.msgId,
+        nowMs: 1_000,
+        owner: 'self',
+        ownerVersion: { senderId: 'self', version: 7 },
+        sent,
+        history: { kind: 'nacks', values: [] },
+        acknowledgements: [],
+        recipientProof: 'carrier-authenticated'
+    };
+}
 
 function freezeValues<T>(value: T): T {
     if (typeof value === 'object' && value !== null) {

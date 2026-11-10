@@ -281,6 +281,7 @@ function createRepairAdmission(
             clock,
             settlements: (fact) => facts.push(fact),
             carrier: 'rtc',
+            recipientAuthentication: { kind: 'carrier' },
             hopPeerIds: undefined
         }),
         clock,

@@ -224,6 +224,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             dequeue: options.dequeue,
             diagnostics: options.diagnostics,
             carrier: options.carrier ?? 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             settlements: options.settlements,
             nowMs: options.nowMs ?? Date.now,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),

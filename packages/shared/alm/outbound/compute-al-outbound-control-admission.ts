@@ -9,6 +9,7 @@ import type {
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
+import type { ALReceiptProofRefusal } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
@@ -64,6 +65,8 @@ export interface ALControlAdmissionRead {
     readonly history: ALControlHistory;
     /** The ACKs admitted before this control, which the hop view reads whatever kind of control it is. */
     readonly acknowledgements: readonly ALAckPayload[];
+    /** Who spoke the control: its carrier authenticated its peer, its recipient's frozen key verified it, or why not. */
+    readonly recipientProof: 'carrier-authenticated' | 'verified' | ALReceiptProofRefusal;
 }
 
 export type ALPendingAckWrite =

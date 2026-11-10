@@ -54,6 +54,7 @@ export function createTestALOutboundControlAdmission<TPrepared>(
         clock: { nowMs: input.nowMs },
         settlements: input.settlements ?? (() => {}),
         carrier: input.carrier,
+        recipientAuthentication: { kind: 'carrier' },
         hopPeerIds: undefined
     });
 }

@@ -40,6 +40,16 @@ a receipt. Only the `outbox` fan-out mints on the server; a keyed publish withou
 refused. Each browser carrier mints its own keyed room sends ("Server-minted sequences" below).
 Application consumers select an ordering key for each independent stream and advance its epoch when the stream restarts.
 [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners share.
+Control acceptance also knows who spoke a recipient's control, as the composition states it in
+`ALOutboundMessageRuntime.Dependencies.recipientAuthentication`: the WS client and the WS server state `carrier`, whose
+socket authenticates its peer; the RTC overlay states `signature`. Under `signature`, a peer ACK or NACK about a
+`receiver` or `leader` send is verified in the read phase
+([`readALOutboundRecipientProof`](./control/read-al-outbound-recipient-proof.ts)) against the key the sent row froze
+for the recipient it names (`receiptProofKeys`; a row that froze none keys nobody). A refusal (`missing-proof`,
+`unknown-key`, `key-mismatch`, `invalid-signature`) is an `unauthorized` issue and a `rejected` admission carrying
+`proofRefusal`, which the control-admission diagnostic states as `proofRefusal`, `claimedRecipientPeerId` and
+`channelPeerId`; nothing is counted, written, retained or answered. A repair request, and a `hop` or `subtree`
+receipt, carry no proof and are admitted as before.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
 most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the
 `al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's NACK plan do;

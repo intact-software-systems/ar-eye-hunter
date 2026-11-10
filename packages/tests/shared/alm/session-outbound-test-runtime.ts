@@ -89,6 +89,7 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
             checkpointStores,
             durableWorkOwnership: ownership,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (msg) => ({

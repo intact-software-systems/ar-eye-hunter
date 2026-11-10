@@ -38,6 +38,7 @@ import {
     ORIGIN_PRINCIPAL_REF,
     ORIGIN_ROOM,
     readSentTargets,
+    signRoomNackPayload,
     toOriginDirectedSnapshot,
     toOriginFrozenTargets,
     type RtcOriginOverlayFixture
@@ -141,14 +142,14 @@ describe('RTC frozen room audience', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-resync-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-frozen-audience' },
-            toTestALNackPayload({
+            await signRoomNackPayload(toTestALNackPayload({
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
                 logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'resync-required',
                 observedAtEpochMs: Date.now()
-            })
+            }))
         ));
         await vi.advanceTimersByTimeAsync(0);
 
@@ -237,14 +238,14 @@ describe('the origin receipt of a frozen room multicast', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-frozen-audience' },
-            toTestALNackPayload({
+            await signRoomNackPayload(toTestALNackPayload({
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
                 logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'gap',
                 observedAtEpochMs: Date.now()
-            })
+            }))
         ));
         await vi.advanceTimersByTimeAsync(100);
 

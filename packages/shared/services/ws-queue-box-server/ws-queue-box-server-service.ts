@@ -426,6 +426,7 @@ export class WsQueueBoxServerService {
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             dequeue: {
                 types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
                 resilience: dependencies.dequeueResilience

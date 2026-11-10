@@ -61,6 +61,7 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
             decodePreparedMessage: decodeOutboundTestPayload,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             settlements: undefined,
             admissionStore,
             workQueue: stores.workQueue,

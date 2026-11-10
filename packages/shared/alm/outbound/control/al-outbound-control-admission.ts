@@ -4,7 +4,9 @@ import {
     decodeALPeerControlMessage,
     type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
+import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
+import type { ALReceiptProofRefusal } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -56,13 +58,23 @@ import {
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
+import {
+    readALOutboundRecipientProof,
+    toALOutboundProofRefusal,
+    type ALOutboundRecipientAuthentication
+} from './read-al-outbound-recipient-proof.ts';
 import { writeALOutboundAckTimeoutCompletion } from './write-al-outbound-ack-timeout-completion.ts';
 
 export type ALOutboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
     | Readonly<{ kind: 'committed'; }>
     | Readonly<{ kind: 'pending-control'; }>
-    | Readonly<{ kind: 'rejected'; reason: string; }>
+    | Readonly<{
+        kind: 'rejected';
+        reason: string;
+        /** Present exactly when a proof was refused. */
+        proofRefusal?: ALReceiptProofRefusal;
+    }>
     /** The store could not persist the control: a claim that carried it retries, an inline caller answers it not handled. */
     | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable);
 
@@ -97,6 +109,8 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly carrier: ALDeliveryCarrier;
     /** The composition's fixed hops, whose repair controls are expected like a receipt's peers; undefined for none. */
     readonly hopPeerIds: readonly string[] | undefined;
+    /** How this owner knows who spoke a recipient's control; a refused proof rejects the control. */
+    readonly recipientAuthentication: ALOutboundRecipientAuthentication;
 }
 
 /** One conditional control admission per call; a conflict becomes retained work the outbound worker replays. */
@@ -112,6 +126,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly settlements: ALOutboundSettlementEmitter;
     private readonly carrier: ALDeliveryCarrier;
     private readonly hopPeerIds: readonly string[] | undefined;
+    private readonly recipientAuthentication: ALOutboundRecipientAuthentication;
 
     constructor(input: CreateALOutboundControlAdmissionInput<TPrepared>) {
         this.clock = input.clock;
@@ -125,6 +140,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.settlements = input.settlements;
         this.carrier = input.carrier;
         this.hopPeerIds = input.hopPeerIds;
+        this.recipientAuthentication = input.recipientAuthentication;
     }
 
     async admit(msg: ALMessage, source: ALOutboundControlSource): Promise<ALOutboundControlAdmissionResult> {
@@ -133,11 +149,19 @@ export class ALOutboundControlAdmission<TPrepared> {
             return { kind: 'not-handled' };
         }
         const nowMs = this.clock.nowMs();
-        const read = await this.readControlAdmission({ parsed: decoded.right!, source, nowMs });
+        const surface = await this.readControlAdmission({ parsed: decoded.right!, source, nowMs });
+        const read: ALControlAdmissionRead = {
+            ...surface,
+            recipientProof: await readALOutboundRecipientProof({
+                parsed: surface.parsed,
+                sent: surface.sent,
+                recipientAuthentication: this.recipientAuthentication
+            })
+        };
         const computed = computeALOutboundControlAdmission(read, this.retention);
         const issues = validateALOutboundControlAdmission(computed);
         if (issues.length > 0) {
-            return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
+            return toRejectedControlAdmission(issues, read.recipientProof);
         }
         const effects = this.effectStore.computeEffects(
             await this.backend.readWithin((session) =>
@@ -298,7 +322,7 @@ export class ALOutboundControlAdmission<TPrepared> {
 
     private async readControlAdmission(
         arrival: Pick<ALControlAdmissionRead, 'parsed' | 'source' | 'nowMs'>
-    ): Promise<ALControlAdmissionRead> {
+    ): Promise<Omit<ALControlAdmissionRead, 'recipientProof'>> {
         const { parsed, source, nowMs } = arrival;
         const targetMsgId = controlTargetMsgId(parsed);
         // The owner key gates the rest of the surface, so this callback awaits inside itself and
@@ -447,4 +471,13 @@ export class ALOutboundControlAdmission<TPrepared> {
             expireAtTimestamp: expiresAtMs
         }));
     }
+}
+
+function toRejectedControlAdmission(
+    issues: readonly ALMessageRejection[],
+    recipientProof: ALControlAdmissionRead['recipientProof']
+): ALOutboundControlAdmissionResult {
+    const reason = issues.map((issue) => issue.message).join('; ');
+    const proofRefusal = toALOutboundProofRefusal(recipientProof);
+    return proofRefusal === undefined ? { kind: 'rejected', reason } : { kind: 'rejected', reason, proofRefusal };
 }

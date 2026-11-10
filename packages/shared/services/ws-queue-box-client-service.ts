@@ -233,6 +233,7 @@ export class WsQueueBoxClientService {
             {
                 ...resources,
                 carrier: 'ws',
+                recipientAuthentication: { kind: 'carrier' },
                 decodePreparedMessage: decodeALOutboundTransportMessage,
                 dequeue: {
                     types: WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,

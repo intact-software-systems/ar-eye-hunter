@@ -45,19 +45,17 @@ export function toTestALNackPayload(fields: TestALNackFields): ALNackPayload {
 }
 
 /** The control with the proof a real signer over the crypto's key gives it; a refused signature fails the test. */
-export async function signTestALReceiptControl(
+export async function signTestALReceiptControl<TControl extends ALReceiptControl>(
     crypto: AvailablePublicationCrypto,
-    control: ALReceiptControl
-): Promise<ALReceiptControl> {
+    control: TControl
+): Promise<TControl> {
     const proof = (await signALReceiptProof({ subtle: crypto.subtle, keyPair: crypto.keyPair, control })).fold(
         (failure) => {
             throw new Error(failure.message);
         },
         (signed) => signed
     );
-    return control.type === 'ack'
-        ? { type: 'ack', payload: { ...control.payload, proof } }
-        : { type: 'nack', payload: { ...control.payload, proof } };
+    return { ...control, payload: { ...control.payload, proof } };
 }
 
 /** Whether `msg` is an ACK or NACK whose proof verifies against the crypto's own public key. */

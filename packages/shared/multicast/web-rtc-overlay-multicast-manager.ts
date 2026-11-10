@@ -107,6 +107,7 @@ import {
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
+import { RtcReceiptProofVerifier } from './receipt-proof/rtc-receipt-proof-verifier.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import {
@@ -274,6 +275,13 @@ export class WebRtcOverlayMulticastManager {
             {
                 ...dependencies.outboundRuntime,
                 carrier: 'rtc',
+                recipientAuthentication: {
+                    kind: 'signature',
+                    verifier: new RtcReceiptProofVerifier({
+                        crypto: dependencies.publicationCrypto,
+                        nowEpochMs: () => this.clock.nowMs()
+                    })
+                },
                 decodePreparedMessage: decodeALOutboundTransportMessage,
                 dequeue: {
                     types: WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,

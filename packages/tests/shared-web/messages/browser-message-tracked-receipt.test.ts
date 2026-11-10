@@ -52,6 +52,7 @@ import {
     toOriginDirectedSnapshot,
     type RtcOriginOverlayFixture
 } from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
@@ -303,7 +304,8 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
                 msgId: handle.msgId,
                 fromPeerId: 'c',
                 logicalRecipientPeerId: 'c',
-                status: 'delivered'
+                status: 'delivered',
+                key: ROOM_PUBLICATION_CRYPTO
             });
             await recordCompleteAcknowledgement(leg);
 

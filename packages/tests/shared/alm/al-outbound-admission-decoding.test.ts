@@ -291,6 +291,7 @@ describe('outbound admission persisted-record validation', () => {
         const sent: string[] = [];
         const runtime = createDefaultALOutboundMessageRuntime({
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
@@ -353,6 +354,7 @@ describe('outbound admission persisted-record validation', () => {
         });
         const runtime = createDefaultALOutboundMessageRuntime({
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
@@ -563,6 +565,7 @@ async function runOutboundWorkBatch(
 ): Promise<readonly string[]> {
     const runtime = createDefaultALOutboundMessageRuntime({
         carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' },
         stores: admission.stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,

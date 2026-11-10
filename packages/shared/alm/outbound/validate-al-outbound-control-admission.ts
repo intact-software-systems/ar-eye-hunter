@@ -16,6 +16,7 @@ import {
     isALOutboundRecipientControlSender
 } from './control/is-al-outbound-expected-repair-peer.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
+import { validateALOutboundRecipientProof } from './control/read-al-outbound-recipient-proof.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { validateALOutboundOutsideAudienceNack } from './control/validate-al-outbound-outside-audience-nack.ts';
@@ -47,6 +48,7 @@ export function validateALOutboundControlAdmission(
     if (isDuplicateControl(read)) {
         issues.push({ code: 'unauthorized', message: 'AL control was already admitted' });
     }
+    issues.push(...validateALOutboundRecipientProof(read.recipientProof));
     if (read.parsed.type === 'ack') {
         return [...issues, ...validateAcknowledgement(read, read.sent, read.parsed.payload)];
     }

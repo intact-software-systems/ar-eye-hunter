@@ -387,6 +387,7 @@ function createDequeueLane(
             stores,
             dequeue: { types: new Set(['outbox']), resilience: createDefaultALOutboundDequeueResilience() },
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             nowMs: Date.now,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
