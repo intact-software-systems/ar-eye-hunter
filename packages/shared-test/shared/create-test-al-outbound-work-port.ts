@@ -23,7 +23,10 @@ export interface TestALOutboundWorkPortInput<TPrepared> extends ALOutboundRuntim
 export interface TestALOutboundControlAdmissionInput<TPrepared> extends TestALOutboundWorkPortInput<TPrepared> {
     /** The carrier the controls a test admits arrive on, as the runtime of that carrier would stamp them. */
     readonly carrier: ALDeliveryCarrier;
-    /** How the admission authenticates a recipient's control; each test states the pairing its carrier's composition does. */
+    /**
+     * How the admission authenticates a recipient's control; each test states the pairing its carrier's composition
+     * uses.
+     */
     readonly recipientAuthentication: ALOutboundRecipientAuthentication;
 }
 

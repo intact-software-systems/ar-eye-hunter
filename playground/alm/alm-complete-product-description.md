@@ -363,15 +363,16 @@ the origin's snapshot still grants it `publish`, a revoke ending the handle
 recipient still holding `subscribe`; nothing re-signs (D519). Under `receiver`
 and `leader` a counted recipient's ACK and NACK on RTC carry its signature, and
 the origin counts them only after verifying it against the key it froze for that
-recipient when it froze the audience (Slice 8, D582–D587). **Limit:** the payload is not confidential from
-relays (D520); an exclusions-only, `world` or exclusive granted send, one whose
-frozen audience passes the room limit of 256, and a `group-leader` send whose director holds no
-`subscribe` are RTC-`unsupported`, and `ws-then-rtc` sends granted messages over
-WS; a named session without `subscribe` is left out silently, so a receipted
-peer send to it completes with zero recipients over RTC where WS answers
-`unauthorized` (D553); after a hand-over the WS server keeps a frozen session
-that never subscribed expected and unconfirmed until the deadline; the
-`granted-rtc` and four-role cells run on the local lane only (D521, D558).
+recipient when it froze the audience (Slice 8, D582–D587). **Limit:** the
+payload is not confidential from relays (D520); an exclusions-only, `world` or
+exclusive granted send, one whose frozen audience passes the room limit of 256,
+and a `group-leader` send whose director holds no `subscribe` are
+RTC-`unsupported`, and `ws-then-rtc` sends granted messages over WS; a named
+session without `subscribe` is left out silently, so a receipted peer send to it
+completes with zero recipients over RTC where WS answers `unauthorized` (D553);
+after a hand-over the WS server keeps a frozen session that never subscribed
+expected and unconfirmed until the deadline; the `granted-rtc` and four-role
+cells run on the local lane only (D521, D558).
 
 ## Logical audiences
 

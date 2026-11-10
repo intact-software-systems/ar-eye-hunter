@@ -1220,12 +1220,12 @@ answered `not-subscribed` and that then receives the WS copy is recorded outside
 on WS too, since that copy answers with an ACK that confirms nobody. Under
 `receiver` and `leader` a confirmation on `rtc` carries its recipient's
 signature, which the origin verifies against the key it froze for that
-recipient when it froze the audience, whichever peer forwarded it; a control whose proof is
-missing or fails is refused and counts nobody. A leg the origin could never
-verify (a counted recipient that registered no publication key, a page without
-WebCrypto, or a receipted unicast that names no room) is refused `unsupported`
-before admission, so `rtc-with-ws-fallback` hands it to WS. `hop` and `subtree`
-receipts rest on the channel, and on `ws` the server attests every
+recipient when it froze the audience, whichever peer forwarded it; a control
+whose proof is missing or fails is refused and counts nobody. A leg the origin
+could never verify (a counted recipient that registered no publication key, a
+page without WebCrypto, or a receipted unicast that names no room) is refused
+`unsupported` before admission, so `rtc-with-ws-fallback` hands it to WS. `hop`
+and `subtree` receipts rest on the channel, and on `ws` the server attests every
 confirmation.
 
 A stored granted publication is resent only while the origin's cached snapshot

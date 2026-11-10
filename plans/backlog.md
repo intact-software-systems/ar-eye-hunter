@@ -188,8 +188,9 @@ and it has no status list.
   the receipt reads the key before the verdict, the publication answers a
   cached verdict without any registration, which its tests pin). One mechanism
   in `packages/shared/signature/` needs a ruling on that order.
-- `toSafeAck` in `apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts`
-  is a hand-written ACK shape rule beside the codec's (S8-i).
+- `toSafeAck` in
+  `apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts` is a
+  hand-written ACK shape rule beside the codec's (S8-i).
 - `tests/playwright/**` is in no typecheck project (S8-i): a payload-shape
   change there compiles unchecked.
 - The full-scope RTC ALM lane's pre-existing reds (S8-i): `capacity-tracks`,
