@@ -1262,8 +1262,11 @@ the message's own receipt, never from the plan that refused it, so a counted
 recipient's refusal NACKs (`not-yet-in-sync` and its siblings), whose plan
 states no receipt, are signed; the full-scope ALM lane found them unsigned, the
 only lane that drives a real recipient's refusal to a verifying origin, and a
-fixture now pins it (`rtc-receipt-refusal-proof.test.ts`). A relay's upward
-audience is the same counted-recipient rule. A send that counts nobody is not
+fixture now pins it (`rtc-receipt-refusal-proof.test.ts`). A replayed first
+admission (one whose first commit conflicted) keeps the keys its plan froze, so
+its counted recipients' first ACKs and NACKs verify; the full-scope ALM lane
+found the replay keyless. A relay's upward audience is the same
+counted-recipient rule. A send that counts nobody is not
 judged by the key refusal, so a page without WebCrypto still sends one. The
 publication proof signs exactly the sections its table classes `signed`: a
 section classed `signed` without a builder fails the build. The plan's four
