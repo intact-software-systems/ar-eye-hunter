@@ -207,11 +207,13 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         createPassThroughTransportFaultPort()
     );
     onTestFinished(() => connection.dispose());
-    const resources = createDefaultRelayOverlayResources(input, connection);
+    const publicationCrypto = input.publicationCrypto ?? ROOM_PUBLICATION_CRYPTO;
+    const resources = createDefaultRelayOverlayResources(input, connection, publicationCrypto);
     const inboundStores = shared.createDefaultInMemoryALInboundRuntimeStores();
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const service = shared.createDefaultWebRtcRxStreamerService({
         multicast: resources.multicast,
+        publicationCrypto,
         sessionId: input.selfPeerId,
         inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
@@ -253,7 +255,8 @@ export function createObservedVolatileInboundPair(namespace: string): ObservedVo
 
 function createDefaultRelayOverlayResources(
     input: RtcRelayOverlayFixtureInput,
-    connection: NativeRtcConnectionFixture
+    connection: NativeRtcConnectionFixture,
+    publicationCrypto: PublicationCrypto
 ): RtcRelayOverlayResources {
     const groups = new LatestRepository<string, GroupSnapshot>({ ttlMs: input.groupCacheTtlMs });
     onTestFinished(() => groups.dispose());
@@ -264,7 +267,6 @@ function createDefaultRelayOverlayResources(
         overlays.accept(overlayId, createOriginOverlay(input.neighbourPeerIds));
     }
     const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
-    const publicationCrypto = input.publicationCrypto ?? ROOM_PUBLICATION_CRYPTO;
     const multicast = new shared.WebRtcOverlayMulticastManager({
         quotaNow: Date.now,
         creationNow: Temporal.Now.instant,

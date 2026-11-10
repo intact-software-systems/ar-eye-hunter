@@ -35,9 +35,9 @@ import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './native-rtc-connection-fixture.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
-import { ROOM_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO, UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
-import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+import { toTestALAckPayload, verifyTestALReceiptControl } from '../al-control-test-payloads.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
@@ -442,6 +442,24 @@ describe('a retried copy of a message this peer already admitted', () => {
         ]);
     });
 
+    it('a streamer built with an available crypto signs a counted recipient\'s ACK', async () => {
+        const fixture = new RtcReceiveFixture();
+        fixture.service.onAllInboxMessagesDo({ onMessage: async () => {} });
+        const message = toCopyForSelf(createMulticast({ seq: 1, acknowledgeSubtree: true }), ['peer-2', 'peer-3']);
+
+        await fixture.receive(message, 'peer-1');
+
+        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([['self', 'delivered']]);
+        const [ack] = (await fixture.outboundTo('peer-1')).filter((outgoing) => shared.parseALControlMessage(outgoing)?.type === 'ack');
+        expect(await verifyTestALReceiptControl(ROOM_PUBLICATION_CRYPTO, ack!)).toBe(true);
+    });
+
+    it('the multicast manager exposes no receipt signing', () => {
+        const fixture = new RtcReceiveFixture();
+
+        expect('signReceiptProof' in fixture.multicast).toBe(false);
+    });
+
     it('forwards the copy only to the child hop whose subtree has not completed', async () => {
         const fixture = new RtcReceiveFixture();
         const delivered: string[] = [];
@@ -591,7 +609,7 @@ class RtcReceiveFixture {
     readonly stores: shared.ALInboundRuntimeStores;
     private readonly nativeRuntime = installNativeRtcRuntime();
     private readonly connection;
-    private readonly multicast: shared.WebRtcOverlayMulticastManager;
+    readonly multicast: shared.WebRtcOverlayMulticastManager;
     private readonly groups = new shared.LatestRepository<string, GroupSnapshot>();
     private readonly overlays = new shared.LatestRepository<string, shared.OverlayInfo>();
     private readonly ready: Promise<void[]>;
@@ -635,8 +653,8 @@ class RtcReceiveFixture {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            // The session signs the receipts a receiver or leader send counts it for with the key its room registers.
-            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
+            // The manager is keyless: the session's receipt signing reaches its inbound runtime from the streamer alone.
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             selfPrincipalId: this.connection.service.input.sessionId
@@ -647,6 +665,7 @@ class RtcReceiveFixture {
         });
         this.service = shared.createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             sessionId: 'self',
             inboundStores: stores,
             inboundDiagnostics,

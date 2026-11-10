@@ -127,6 +127,7 @@ export class RtcEndpointFixture {
         });
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             sessionId,
             inboundStores: this.inbound,
             inboundDiagnostics,

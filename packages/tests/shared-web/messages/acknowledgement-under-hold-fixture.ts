@@ -302,6 +302,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
     const streamer = initialiseRtcRxStreamer({
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         webRtcOverlayMulticastManager: manager,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),

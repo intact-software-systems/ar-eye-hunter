@@ -249,6 +249,7 @@ describe('exact RTC ACK boundary observations', () => {
                     });
                     const streamer = createDefaultWebRtcRxStreamerService({
                         multicast: manager,
+                        publicationCrypto: ROOM_PUBLICATION_CRYPTO,
                         sessionId,
                         inboundStores: stores,
                         queueEngine: undefined,

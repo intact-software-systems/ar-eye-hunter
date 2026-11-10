@@ -105,7 +105,11 @@ function createRtcOwner(settlements: ALDeliverySettlement[]) {
         selfPrincipalId: 'self'
     });
     onTestFinished(() => multicast.dispose());
-    const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });
+    const service = createDefaultWebRtcRxStreamerService({
+        multicast,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        sessionId: 'self'
+    });
     onTestFinished(() => service.dispose());
     return service;
 }

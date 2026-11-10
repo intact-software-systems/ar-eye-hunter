@@ -1103,6 +1103,7 @@ class NativeAuthorityEndpoint {
         onTestFinished(() => this.multicast.dispose());
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             sessionId: input.sessionId,
             inboundStores: this.inboundStores,
             roomAuthorityRefresh: input.refresh,
