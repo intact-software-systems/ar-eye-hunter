@@ -10,10 +10,10 @@ import {
     verifyALReceiptProof,
     type ALReceiptControl
 } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
-import { importEcdsaP256PublicKey, type SigningKeyPair } from '@shared/signature/ecdsa-p256-signature.ts';
-import type { SignedFieldClass } from '@shared/signature/to-classified-signing-input.ts';
+import { importEcdsaP256PublicKey, signDetached, type SigningKeyPair } from '@shared/signature/ecdsa-p256-signature.ts';
+import { toClassifiedSigningInput, type SignedFieldClass } from '@shared/signature/to-classified-signing-input.ts';
 
-import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
 import { createAvailablePublicationCryptoFixture } from '../../signature/publication-crypto-fixtures.ts';
 
 const subtle = globalThis.crypto.subtle;
@@ -81,31 +81,23 @@ const RELAY_REWRITES: readonly (readonly [string, Partial<ALAckPayload>])[] = [
     ['carrier', { carrier: 'ws' }]
 ];
 
+async function toPublicKey(keyPair: SigningKeyPair): Promise<CryptoKey> {
+    return (await importEcdsaP256PublicKey(subtle, keyPair.publicJwk)).fold(
+        (failure) => {
+            throw new Error(failure.message);
+        },
+        (value) => value
+    );
+}
+
 async function createCryptoAndSigned(control: ALReceiptControl): Promise<{
     readonly keyPair: SigningKeyPair;
     readonly publicKey: CryptoKey;
     readonly signed: ALReceiptControl;
 }> {
     const crypto = await createAvailablePublicationCryptoFixture();
-    const proof = (await signALReceiptProof({ subtle, keyPair: crypto.keyPair, control })).fold(
-        (failure) => {
-            throw new Error(failure.message);
-        },
-        (value) => value
-    );
-    const publicKey = (await importEcdsaP256PublicKey(subtle, crypto.keyPair.publicJwk)).fold(
-        (failure) => {
-            throw new Error(failure.message);
-        },
-        (value) => value
-    );
-    return { keyPair: crypto.keyPair, publicKey, signed: withProof(control, proof) };
-}
-
-function withProof(control: ALReceiptControl, proof: ALAckPayload['proof']): ALReceiptControl {
-    return control.type === 'ack'
-        ? { type: 'ack', payload: { ...control.payload, proof } }
-        : { type: 'nack', payload: { ...control.payload, proof } };
+    const publicKey = await toPublicKey(crypto.keyPair);
+    return { keyPair: crypto.keyPair, publicKey, signed: await signTestALReceiptControl(crypto, control) };
 }
 
 function withPayload(control: ALReceiptControl, change: Partial<ALAckPayload> | Partial<ALNackPayload>): ALReceiptControl {
@@ -164,11 +156,36 @@ describe('ALM receipt proof signing and verification', () => {
 
     it('never verifies an ACK\'s signature as a NACK\'s', async () => {
         const { publicKey, signed } = await createCryptoAndSigned(ACK);
-        const nackWithAckProof = withProof(NACK, signed.payload.proof);
+        const nackWithAckProof: ALReceiptControl = { type: 'nack', payload: { ...NACK.payload, proof: signed.payload.proof } };
 
         expect((await verifyALReceiptProof({ subtle, publicKey, control: nackWithAckProof })).left?.kind).toBe(
             'invalid-signature'
         );
+    });
+
+    it('refuses a signature made over the same fields under the other domain tag', async () => {
+        const crypto = await createAvailablePublicationCryptoFixture();
+        const publicKey = await toPublicKey(crypto.keyPair);
+        const otherTagInput = toClassifiedSigningInput(AL_NACK_PROOF_DOMAIN_TAG, [
+            { name: 'ack', fields: { ...ACK.payload }, classes: AL_RECEIPT_PROOF_FIELD_CLASSES.ack }
+        ]);
+        const signature = (await signDetached(subtle, crypto.keyPair.privateKey, new TextEncoder().encode(otherTagInput))).fold(
+            (failure) => {
+                throw new Error(failure.message);
+            },
+            (value) => value
+        );
+        const otherTagAck: ALReceiptControl = {
+            type: 'ack',
+            payload: { ...ACK.payload, proof: { alg: 'ES256', keyId: crypto.keyPair.keyId, signature } }
+        };
+        const sameTagControl = await signTestALReceiptControl(crypto, ACK);
+
+        expect(AL_ACK_PROOF_DOMAIN_TAG).not.toBe(AL_NACK_PROOF_DOMAIN_TAG);
+        expect((await verifyALReceiptProof({ subtle, publicKey, control: otherTagAck })).left?.kind).toBe(
+            'invalid-signature'
+        );
+        expect((await verifyALReceiptProof({ subtle, publicKey, control: sameTagControl })).right).toBe(true);
     });
 
     it.each(ACK_ALTERATIONS)('refuses an ACK whose %s was altered', async (_field, change) => {
@@ -191,6 +208,12 @@ describe('ALM receipt proof signing and verification', () => {
         const { publicKey, signed } = await createCryptoAndSigned(ACK);
 
         expect((await verifyALReceiptProof({ subtle, publicKey, control: withPayload(signed, change) })).right).toBe(true);
+    });
+
+    it.each(['fromPeerId', 'toPeerId'] as const)('still verifies a NACK whose %s a relay rewrote', async (field) => {
+        const { publicKey, signed } = await createCryptoAndSigned(NACK);
+
+        expect((await verifyALReceiptProof({ subtle, publicKey, control: withPayload(signed, { [field]: 'rewritten' }) })).right).toBe(true);
     });
 
     it('reports a key WebCrypto refuses to sign with as sign-failed, copying the primitive message', async () => {
