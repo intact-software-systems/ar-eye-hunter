@@ -13,6 +13,9 @@ against B's derived fields; S8-R5 against B's handoff seam; S8-R6 against B's "t
 S8-R10 against C's "no new harness capability"). The slice is Release 15 and lands as two pull requests (S8-R12).
 Decisions are D581… in the roadmap's decision record, entered at the close; this file is deleted with it.
 
+**Rulings taken.** The maintainer ruled S8-R1 to S8-R14 one at a time on 2026-11-10, each on its recommended
+option (a). The record is `.superpowers/sdd/slice-8/s8-planning-rulings.md`.
+
 ## 1. The problem and the scope
 
 **The premise, corrected (S8-C0b).** The candidates survey said the slice replaces "the `fromPeerId` trust", that the
