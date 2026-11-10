@@ -368,5 +368,9 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         principalTargetId: pending.policy.principalTargetId,
         sessionInvalidation: pending.policy.sessionInvalidation,
         accountView: pending.policy.accountView
-    } satisfies ALOutboundDispatchPlan<TPrepared> & Record<Exclude<keyof ALOutboundCapturedPolicy, 'persist'>, unknown>;
+    } satisfies
+        & ALOutboundDispatchPlan<TPrepared>
+        & {
+            [Field in Exclude<keyof ALOutboundCapturedPolicy, 'persist'>]: ALOutboundDispatchPlan<TPrepared>[Field];
+        };
 }
