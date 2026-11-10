@@ -28,6 +28,8 @@ import {
 import { createInboundTestStores } from '../alm/inbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 /** Messages one session acknowledges inside one relay window, each aggregated on another instance. */
 const HELD_AGGREGATES = 61;
@@ -375,7 +377,7 @@ describe('the server own ACK for a session it sent nothing', () => {
     function toServerAck(logicalRecipientPeerId: string): ALMessage {
         return newALAckControlMessage(
             { v: 4, msgId: `outside-${logicalRecipientPeerId}`, senderId: 'server', ts: 1_000, traceId: 'trace-room-message-1' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'room-message-1',
                 fromPeerId: 'server',
                 toPeerId: 'a',
@@ -384,7 +386,7 @@ describe('the server own ACK for a session it sent nothing', () => {
                 carrier: 'ws',
                 status: 'subtree-complete-not-subscribed',
                 observedAtEpochMs: 1_000
-            }
+            })
         );
     }
 
@@ -394,7 +396,7 @@ describe('the server own ACK for a session it sent nothing', () => {
         await relay.writeServerAck(toServerAck('c'));
 
         expect(published).toEqual([]);
-        const lateConfirmation: ALAckPayload = {
+        const lateConfirmation: ALAckPayload = toTestALAckPayload({
             ackedMsgId: 'room-message-1',
             fromPeerId: 'c',
             toPeerId: 'a',
@@ -403,7 +405,7 @@ describe('the server own ACK for a session it sent nothing', () => {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: 1_000
-        };
+        });
         expect(relay.readRelayedAckRejection(lateConfirmation)?.message)
             .toBe('AL acknowledgement answers for a peer the receipt already records outside the audience');
     });
@@ -549,7 +551,7 @@ function receiverAck(
 ): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'room-message-1',
             fromPeerId: address.fromPeerId ?? recipient,
             toPeerId: address.toPeerId ?? 'a',
@@ -558,7 +560,7 @@ function receiverAck(
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
@@ -566,7 +568,7 @@ function receiverAck(
 function messageAck(recipient: string, ackedMsgId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${recipient}-${ackedMsgId}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: recipient,
             toPeerId: 'a',
@@ -575,14 +577,14 @@ function messageAck(recipient: string, ackedMsgId: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
 function repeatedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
             toPeerId: 'a',
@@ -591,14 +593,14 @@ function repeatedAck(recipient: string, index: number): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
 function forgedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-ack-relay' },
-        {
+        toTestALAckPayload({
             ackedMsgId: `forged-message-${index}`,
             fromPeerId: recipient,
             toPeerId: 'a',
@@ -607,7 +609,7 @@ function forgedAck(recipient: string, index: number): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

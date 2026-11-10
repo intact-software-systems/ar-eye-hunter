@@ -15,6 +15,8 @@ import {
 } from '@shared/alm/inbound/control/compute-al-inbound-nack-admission.ts';
 import { validateALInboundNackAdmission } from '@shared/alm/inbound/control/validate-al-inbound-nack-admission.ts';
 
+import { toTestALAckPayload } from '../../../../al-control-test-payloads.ts';
+
 const NOW_MS = 1_800_000_000_000;
 
 /** A relay waiting on its child `child` for the frozen recipients `child` and `leaf`, toward its parent `parent`. */
@@ -80,7 +82,7 @@ function toUpwardControls(candidate: ALInboundNackAdmissionCandidate) {
 }
 
 function toConfirmation(logicalRecipientPeerId: string): ALAckPayload {
-    return {
+    return toTestALAckPayload({
         ackedMsgId: 'subject',
         fromPeerId: 'child',
         toPeerId: 'relay',
@@ -89,7 +91,7 @@ function toConfirmation(logicalRecipientPeerId: string): ALAckPayload {
         carrier: 'rtc',
         status: 'forwarded',
         observedAtEpochMs: NOW_MS
-    };
+    });
 }
 
 describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {

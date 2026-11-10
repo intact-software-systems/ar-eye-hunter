@@ -61,6 +61,8 @@ import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const NOW_MS = 1_700_000_000_000;
 const INBOUND_NAMESPACE = 'al-inbound-counts';
 const INBOUND_WORKER_ID = 'al-inbound:counts';
@@ -512,7 +514,7 @@ describe('inbound work owner IndexedDB scan volume', () => {
                     ts: Date.now(),
                     traceId: 'trace-al-indexeddb-operation-counts'
                 },
-                {
+                toTestALAckPayload({
                     ackedMsgId: 'own-message',
                     fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
                     toPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -521,7 +523,7 @@ describe('inbound work owner IndexedDB scan volume', () => {
                     carrier: 'ws',
                     status: 'delivered',
                     observedAtEpochMs: Date.now()
-                }
+                })
             ),
             INBOUND_TEST_SOURCE
         );

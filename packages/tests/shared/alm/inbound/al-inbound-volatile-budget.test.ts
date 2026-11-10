@@ -22,6 +22,8 @@ import {
     setNextInboundCommitConflicted
 } from '../inbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 function withDeadline(msg: ALMessage, expiresAtMs: number): ALMessage {
     return { ...msg, constraints: { ...msg.constraints, expiresAtMs } };
 }
@@ -174,7 +176,7 @@ describe('the session volatile bound at the inbound admission (D74, C6)', () => 
 function toReceivedAck(): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: 'received-ack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-volatile-budget' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'sent-message',
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
             toPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -183,20 +185,20 @@ function toReceivedAck(): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
 function toReceivedNack(): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: 'received-nack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-volatile-budget' },
-        {
+        toTestALNackPayload({
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
             logicalRecipientPeerId: INBOUND_TEST_SENDER_PEER_ID,
             toPeerId: INBOUND_TEST_SELF_PEER_ID,
             msgId: 'sent-message',
             reason: 'gap',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }

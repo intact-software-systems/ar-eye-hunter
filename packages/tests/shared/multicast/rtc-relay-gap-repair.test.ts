@@ -23,6 +23,8 @@ import {
 import { createObservedVolatileInboundPair, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 import { createRtcTopicSubscriptionsFixture } from './rtc-topic-subscription-reader-fixtures.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 type ChainGrants = Readonly<Record<string, GroupPublicationTopicPermissions>>;
 
 type GapNackControl = Extract<ALPeerControlMessage, { type: 'nack'; }>;
@@ -336,7 +338,7 @@ function toGapNack(gap: GapChain, input: GapNackInput): ALMessage {
     const { fromPeerId, revealing } = input;
     return newALNackControlMessage(
         { v: 4, msgId: `leaf-gap-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: revealing.id.traceId },
-        {
+        toTestALNackPayload({
             msgId: revealing.id.msgId,
             fromPeerId,
             toPeerId: 'r',
@@ -346,7 +348,7 @@ function toGapNack(gap: GapChain, input: GapNackInput): ALMessage {
             expectedSeq: 2,
             missingRanges: [{ from: 2, to: 2 }],
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

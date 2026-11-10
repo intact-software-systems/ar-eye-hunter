@@ -15,10 +15,12 @@ import {
     newALNackControlMessage
 } from '@shared/al-contracts/al-control.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 function receiverAck(ackedMsgId = 'room-message-1'): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: 'ack-c', senderId: 'c', ts: 1, traceId: 'trace-relayed-ack-notice' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: 'c',
             toPeerId: 'a',
@@ -27,7 +29,7 @@ function receiverAck(ackedMsgId = 'room-message-1'): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: 1
-        }
+        })
     );
 }
 
@@ -100,14 +102,14 @@ describe('relayed ACK notice codec', () => {
     it('relays only a receiver acknowledgement', () => {
         const nack = newALNackControlMessage(
             { v: 4, msgId: 'nack-c', senderId: 'c', ts: 1, traceId: 'trace-relayed-ack-notice' },
-            {
+            toTestALNackPayload({
                 msgId: 'room-message-1',
                 fromPeerId: 'c',
                 logicalRecipientPeerId: 'c',
                 toPeerId: 'a',
                 reason: 'unauthorized',
                 observedAtEpochMs: 1
-            }
+            })
         );
 
         expect(

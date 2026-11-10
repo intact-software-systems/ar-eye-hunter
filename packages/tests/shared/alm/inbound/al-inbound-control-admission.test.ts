@@ -46,6 +46,8 @@ import {
     type InboundTestAcknowledgements
 } from '../read-inbound-test-acknowledgements.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 /** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
@@ -170,7 +172,7 @@ async function seedRelayRow(admissionStore: ALInboundAdmissionStore, seeded: See
 function createAcknowledgement(fromPeerId: string, originPeerId: string = message.id.senderId): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-al-inbound-control-admission' },
-        {
+        toTestALAckPayload({
             ackedMsgId: message.id.msgId,
             originPeerId,
             logicalRecipientPeerId: fromPeerId,
@@ -179,7 +181,7 @@ function createAcknowledgement(fromPeerId: string, originPeerId: string = messag
             status: 'delivered',
             observedAtEpochMs: 1,
             carrier: 'ws'
-        }
+        })
     );
 }
 
@@ -379,7 +381,7 @@ describe('inbound control admission', () => {
 
     it('relays the child ACK that completes its subtree, then sends its own terminal ACK last', () => {
         const nowMs = 1_800_000_000_000;
-        const toAck = (fromPeerId: string, logicalRecipientPeerId: string): ALAckPayload => ({
+        const toAck = (fromPeerId: string, logicalRecipientPeerId: string): ALAckPayload => (toTestALAckPayload({
             ackedMsgId: message.id.msgId,
             originPeerId: message.id.senderId,
             logicalRecipientPeerId,
@@ -388,7 +390,7 @@ describe('inbound control admission', () => {
             status: 'subtree-complete',
             observedAtEpochMs: nowMs,
             carrier: 'rtc'
-        });
+        }));
         // The lower relay already completed its hop; the direct leaf completes the subtree.
         const candidate = computeALInboundControlAdmission({
             traceId: 'trace-al-inbound-control-admission',
@@ -457,7 +459,7 @@ describe('inbound control admission', () => {
 
     it('keys a child\'s acknowledgements by the recipient each speaks for, refusing only a repeat (D40)', () => {
         const nowMs = 1_800_000_000_000;
-        const toAck = (logicalRecipientPeerId: string): ALAckPayload => ({
+        const toAck = (logicalRecipientPeerId: string): ALAckPayload => (toTestALAckPayload({
             ackedMsgId: message.id.msgId,
             originPeerId: message.id.senderId,
             logicalRecipientPeerId,
@@ -466,7 +468,7 @@ describe('inbound control admission', () => {
             status: 'subtree-complete',
             observedAtEpochMs: nowMs,
             carrier: 'rtc'
-        });
+        }));
         const readWith = (ack: ALAckPayload) =>
             computeALInboundControlAdmission({
                 traceId: 'trace-al-inbound-control-admission',
@@ -504,7 +506,7 @@ describe('inbound control admission', () => {
         const candidate = computeALInboundControlAdmission({
             traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
-            ack: {
+            ack: toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: 'leaf',
@@ -513,7 +515,7 @@ describe('inbound control admission', () => {
                 status: 'delivered',
                 observedAtEpochMs: nowMs,
                 carrier: 'rtc'
-            },
+            }),
             controlOwners: TRACKED_CONTROL_OWNERS,
             owner: {
                 msgId: message.id.msgId,
@@ -550,7 +552,7 @@ describe('inbound control admission', () => {
         const candidate = computeALInboundControlAdmission({
             traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
-            ack: {
+            ack: toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: 'B',
                 logicalRecipientPeerId: 'receiver',
@@ -559,7 +561,7 @@ describe('inbound control admission', () => {
                 status: 'delivered',
                 observedAtEpochMs: nowMs,
                 carrier: 'ws'
-            },
+            }),
             controlOwners: TRACKED_CONTROL_OWNERS,
             owner: {
                 msgId: message.id.msgId,
@@ -597,7 +599,7 @@ describe('inbound control admission', () => {
         const candidate = computeALInboundControlAdmission({
             traceId: 'trace-al-inbound-control-admission',
             namespace: 'inbound',
-            ack: {
+            ack: toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: 'stranger',
@@ -606,7 +608,7 @@ describe('inbound control admission', () => {
                 status: 'delivered',
                 observedAtEpochMs: nowMs,
                 carrier: 'ws'
-            },
+            }),
             controlOwners: { ambiguous: false, values: [{ peerId: 'stranger', senderId: message.id.senderId }] },
             owner: {
                 msgId: message.id.msgId,
@@ -624,7 +626,7 @@ describe('inbound control admission', () => {
                 outsideAudiencePeerIds: [],
                 carrier: 'ws'
             },
-            acks: [{
+            acks: [toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: 'stranger',
@@ -633,7 +635,7 @@ describe('inbound control admission', () => {
                 status: 'delivered',
                 observedAtEpochMs: nowMs,
                 carrier: 'ws'
-            }],
+            })],
             nowMs,
             controlMsgId: 'control'
         }, normalizeALRuntimeStoreRetention());
@@ -718,13 +720,13 @@ function toSentAck(payload: { readonly kind: string; readonly msg?: ALMessage; }
 function toRelayAck(
     input: Pick<ALAckPayload, 'fromPeerId' | 'toPeerId' | 'logicalRecipientPeerId' | 'status'>
 ): ALAckPayload {
-    return {
+    return toTestALAckPayload({
         ...input,
         ackedMsgId: message.id.msgId,
         originPeerId: message.id.senderId,
         carrier: 'rtc',
         observedAtEpochMs: 1_800_000_000_000
-    };
+    });
 }
 
 describe('a not-subscribed NACK at a relay (PL9)', () => {
@@ -739,14 +741,14 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
     function createNotSubscribedNack(logicalRecipientPeerId: string, reason: 'not-subscribed' | 'duplicate' = 'not-subscribed'): ALMessage {
         return newALNackControlMessage(
             { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
-            {
+            toTestALNackPayload({
                 msgId: message.id.msgId,
                 fromPeerId: 'receiver',
                 toPeerId: 'self',
                 logicalRecipientPeerId,
                 reason,
                 observedAtEpochMs: 1
-            }
+            })
         );
     }
 
@@ -783,7 +785,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
     function createChildAck(logicalRecipientPeerId: string, status: ALAckPayload['status']): ALMessage {
         return newALAckControlMessage(
             { v: 4, msgId: `ack-${logicalRecipientPeerId}-${status}`, ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId,
@@ -792,7 +794,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
                 status,
                 observedAtEpochMs: 1,
                 carrier: 'rtc'
-            }
+            })
         );
     }
 
@@ -880,7 +882,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
         await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL);
         const forwarded = newALAckControlMessage(
             { v: 4, msgId: 'ack-below', ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: 'below',
@@ -889,7 +891,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
                 status: 'forwarded',
                 observedAtEpochMs: 1,
                 carrier: 'rtc'
-            }
+            })
         );
 
         expect(await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL)).toEqual({
@@ -917,7 +919,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
         const ordering = { orderingKey: 'chat:sender:1', expectedSeq: 1, missingRanges: [{ from: 1, to: 1 }] };
         const gap = newALNackControlMessage(
             { v: 4, msgId: 'gap-below', ts: 1, senderId: 'receiver', traceId: 'trace-not-subscribed' },
-            {
+            toTestALNackPayload({
                 msgId: message.id.msgId,
                 fromPeerId: 'receiver',
                 toPeerId: 'self',
@@ -925,7 +927,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
                 reason: 'gap',
                 observedAtEpochMs: 1,
                 ...ordering
-            }
+            })
         );
 
         expect(await control.admit(gap, WS_ARRIVAL)).toEqual({ kind: 'committed', acceptance: { handled: true, completedPendingAcks: [] } });

@@ -26,6 +26,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
 import '../../setup-browser-indexeddb.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const PENDING_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'sender' };
 
 afterEach(() => {
@@ -244,22 +246,25 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     });
     onTestFinished(() => runtime.dispose());
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
-    const untrackedAck = newALAckControlMessage({
-        v: 4,
-        senderId: 'sender',
-        msgId: 'unknown-control',
-        ts: Date.now(),
-        traceId: 'trace-al-inbound-pending-admission'
-    }, {
-        ackedMsgId: 'unknown',
-        originPeerId: 'receiver',
-        logicalRecipientPeerId: 'sender',
-        fromPeerId: 'sender',
-        toPeerId: 'receiver',
-        status: 'delivered',
-        observedAtEpochMs: Date.now(),
-        carrier: 'rtc'
-    });
+    const untrackedAck = newALAckControlMessage(
+        {
+            v: 4,
+            senderId: 'sender',
+            msgId: 'unknown-control',
+            ts: Date.now(),
+            traceId: 'trace-al-inbound-pending-admission'
+        },
+        toTestALAckPayload({
+            ackedMsgId: 'unknown',
+            originPeerId: 'receiver',
+            logicalRecipientPeerId: 'sender',
+            fromPeerId: 'sender',
+            toPeerId: 'receiver',
+            status: 'delivered',
+            observedAtEpochMs: Date.now(),
+            carrier: 'rtc'
+        })
+    );
     const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
     const malformed = await runtime.admitIncomingMessage({}, { kind: 'trusted-server' });
     expect(malformed.left).toMatchObject({ code: 'malformed' });

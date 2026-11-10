@@ -21,6 +21,8 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 /** The trigger each cause's repair request names; a gap NACK without missing ranges asks for the message itself. */
@@ -54,14 +56,17 @@ describe('retained room authority through repair scheduling', () => {
         }
         if (cause === 'nack') {
             await runtime.acceptControlMessage(
-                newALNackControlMessage({ v: 4, msgId: 'nack', senderId: 'frozen-session', ts: 1, traceId: 'trace-outbound-room-repair-authority' }, {
-                    msgId: message.id.msgId,
-                    fromPeerId: 'frozen-session',
-                    logicalRecipientPeerId: 'frozen-session',
-                    toPeerId: 'self',
-                    reason: 'gap',
-                    observedAtEpochMs: 1
-                }),
+                newALNackControlMessage(
+                    { v: 4, msgId: 'nack', senderId: 'frozen-session', ts: 1, traceId: 'trace-outbound-room-repair-authority' },
+                    toTestALNackPayload({
+                        msgId: message.id.msgId,
+                        fromPeerId: 'frozen-session',
+                        logicalRecipientPeerId: 'frozen-session',
+                        toPeerId: 'self',
+                        reason: 'gap',
+                        observedAtEpochMs: 1
+                    })
+                ),
                 'peer'
             );
         }

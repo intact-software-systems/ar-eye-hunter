@@ -49,6 +49,8 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 describe('inbound durable effect worker lifecycle', () => {
     beforeEach(() =>
         onTestFinished(() => {
@@ -537,7 +539,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 kind: 'send-control',
                 msg: newALAckControlMessage(
                     { v: 4, msgId: 'forwarded-ack', ts: 1, senderId: 'receiver', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
-                    {
+                    toTestALAckPayload({
                         ackedMsgId: 'tracked-message',
                         originPeerId: 'sender',
                         logicalRecipientPeerId: 'receiver',
@@ -546,7 +548,7 @@ describe('inbound durable effect worker lifecycle', () => {
                         status: 'accepted',
                         observedAtEpochMs: 1,
                         carrier: 'ws'
-                    }
+                    })
                 )
             }
         });
@@ -559,16 +561,19 @@ describe('inbound durable effect worker lifecycle', () => {
             {}
         );
         await seedTrackedAcknowledgement(resources.admissionStore, tracked);
-        const ack = newALAckControlMessage({ v: 4, msgId: 'inbound-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' }, {
-            ackedMsgId: tracked.id.msgId,
-            originPeerId: tracked.id.senderId,
-            logicalRecipientPeerId: 'sender',
-            fromPeerId: 'sender',
-            toPeerId: 'receiver',
-            status: 'accepted',
-            observedAtEpochMs: 1,
-            carrier: 'ws'
-        });
+        const ack = newALAckControlMessage(
+            { v: 4, msgId: 'inbound-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
+            toTestALAckPayload({
+                ackedMsgId: tracked.id.msgId,
+                originPeerId: tracked.id.senderId,
+                logicalRecipientPeerId: 'sender',
+                fromPeerId: 'sender',
+                toPeerId: 'receiver',
+                status: 'accepted',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            })
+        );
 
         const acceptance = await runtime.admitIncomingMessage(ack, INBOUND_TEST_SOURCE);
 
@@ -609,22 +614,25 @@ describe('inbound durable effect worker lifecycle', () => {
             expireAtTimestamp: Date.now() + 60_000,
             payload: {
                 kind: 'send-control',
-                msg: newALAckControlMessage({
-                    v: 4,
-                    msgId: 'unannounced-ack',
-                    ts: 1,
-                    senderId: 'receiver',
-                    traceId: 'trace-al-inbound-effect-worker-lifecycle'
-                }, {
-                    ackedMsgId: 'tracked-message',
-                    originPeerId: 'sender',
-                    logicalRecipientPeerId: 'receiver',
-                    fromPeerId: 'receiver',
-                    toPeerId: 'sender',
-                    status: 'accepted',
-                    observedAtEpochMs: 1,
-                    carrier: 'ws'
-                })
+                msg: newALAckControlMessage(
+                    {
+                        v: 4,
+                        msgId: 'unannounced-ack',
+                        ts: 1,
+                        senderId: 'receiver',
+                        traceId: 'trace-al-inbound-effect-worker-lifecycle'
+                    },
+                    toTestALAckPayload({
+                        ackedMsgId: 'tracked-message',
+                        originPeerId: 'sender',
+                        logicalRecipientPeerId: 'receiver',
+                        fromPeerId: 'receiver',
+                        toPeerId: 'sender',
+                        status: 'accepted',
+                        observedAtEpochMs: 1,
+                        carrier: 'ws'
+                    })
+                )
             }
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
@@ -638,16 +646,19 @@ describe('inbound durable effect worker lifecycle', () => {
         // Two peers owe this obligation, so one peer's acknowledgement completes none of it; the relay still
         // passes the recipient it names upward at once, and that row is work the commit announces.
         await seedTrackedAcknowledgement(resources.admissionStore, tracked, ['sender', 'second-peer']);
-        const ack = newALAckControlMessage({ v: 4, msgId: 'partial-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' }, {
-            ackedMsgId: tracked.id.msgId,
-            originPeerId: tracked.id.senderId,
-            logicalRecipientPeerId: 'sender',
-            fromPeerId: 'sender',
-            toPeerId: 'receiver',
-            status: 'accepted',
-            observedAtEpochMs: 1,
-            carrier: 'ws'
-        });
+        const ack = newALAckControlMessage(
+            { v: 4, msgId: 'partial-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
+            toTestALAckPayload({
+                ackedMsgId: tracked.id.msgId,
+                originPeerId: tracked.id.senderId,
+                logicalRecipientPeerId: 'sender',
+                fromPeerId: 'sender',
+                toPeerId: 'receiver',
+                status: 'accepted',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            })
+        );
 
         const acceptance = await runtime.admitIncomingMessage(ack, INBOUND_TEST_SOURCE);
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -699,22 +710,25 @@ describe('inbound durable effect worker lifecycle', () => {
             expireAtTimestamp: nowMs + 600_000,
             payload: {
                 kind: 'send-control',
-                msg: newALAckControlMessage({
-                    v: 4,
-                    msgId: 'expired-retention-ack',
-                    ts: 1,
-                    senderId: 'receiver',
-                    traceId: 'trace-al-inbound-effect-worker-lifecycle'
-                }, {
-                    ackedMsgId: 'tracked-message',
-                    originPeerId: 'sender',
-                    logicalRecipientPeerId: 'receiver',
-                    fromPeerId: 'receiver',
-                    toPeerId: 'sender',
-                    status: 'accepted',
-                    observedAtEpochMs: 1,
-                    carrier: 'ws'
-                })
+                msg: newALAckControlMessage(
+                    {
+                        v: 4,
+                        msgId: 'expired-retention-ack',
+                        ts: 1,
+                        senderId: 'receiver',
+                        traceId: 'trace-al-inbound-effect-worker-lifecycle'
+                    },
+                    toTestALAckPayload({
+                        ackedMsgId: 'tracked-message',
+                        originPeerId: 'sender',
+                        logicalRecipientPeerId: 'receiver',
+                        fromPeerId: 'receiver',
+                        toPeerId: 'sender',
+                        status: 'accepted',
+                        observedAtEpochMs: 1,
+                        carrier: 'ws'
+                    })
+                )
             }
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
@@ -1223,7 +1237,7 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage, obser
     const expiresAtMs = observedAtMs + 60_000;
     const ack = newALAckControlMessage(
         { v: 4, msgId: 'retained-control-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
-        {
+        toTestALAckPayload({
             ackedMsgId: tracked.id.msgId,
             originPeerId: tracked.id.senderId,
             logicalRecipientPeerId: 'sender',
@@ -1232,7 +1246,7 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage, obser
             status: 'accepted',
             observedAtEpochMs: 1,
             carrier: 'ws'
-        }
+        })
     );
     return computeALInboundWorkEntry({
         carrier: 'ws',

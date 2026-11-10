@@ -20,6 +20,8 @@ import {
     type ReceiptServerInstance
 } from './ws-queue-box-server-receipt-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 const ROOM = { ...SCOPE, groupId: 'room-1' };
 /** Long enough that the receipt budget (four 2 s windows) ends first. */
@@ -277,7 +279,7 @@ function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' =
 function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-originated-receipt' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: recipient,
             toPeerId: RECEIPT_SERVER_PEER_ID,
@@ -286,6 +288,6 @@ function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }

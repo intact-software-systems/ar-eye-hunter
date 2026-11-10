@@ -47,6 +47,8 @@ import {
 
 import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 /** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
@@ -686,7 +688,7 @@ describe('inbound admission persisted values', () => {
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:acks:message:sender%3Awith%3Adelimiter', {
                 kind: 'acks',
-                values: [{
+                values: [toTestALAckPayload({
                     ackedMsgId: 'different',
                     originPeerId: message.id.senderId,
                     logicalRecipientPeerId: 'downstream',
@@ -695,7 +697,7 @@ describe('inbound admission persisted values', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'rtc'
-                }]
+                })]
             });
         });
 
@@ -1002,7 +1004,7 @@ describe('inbound admission persisted values', () => {
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `receiver-${index}`);
         await seedPendingAcknowledgement(store, expectedPeerIds, expectedPeerIds.slice(0, -1));
         const values = [
-            ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
+            ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => (toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: fromPeerId,
@@ -1011,8 +1013,8 @@ describe('inbound admission persisted values', () => {
                 status: 'accepted' as const,
                 observedAtEpochMs,
                 carrier: 'ws' as const
-            })),
-            {
+            }))),
+            toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: expectedPeerIds[0]!,
@@ -1021,7 +1023,7 @@ describe('inbound admission persisted values', () => {
                 status: 'delivered' as const,
                 observedAtEpochMs: 256,
                 carrier: 'ws' as const
-            }
+            })
         ];
         await backend.write((transaction) =>
             transaction.set(
@@ -1128,7 +1130,7 @@ async function seedPendingAcknowledgement(
 function createAcknowledgement(fromPeerId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-al-inbound-persistence-validation' },
-        {
+        toTestALAckPayload({
             ackedMsgId: message.id.msgId,
             originPeerId: message.id.senderId,
             logicalRecipientPeerId: fromPeerId,
@@ -1137,6 +1139,6 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
             status: 'delivered',
             observedAtEpochMs: 1,
             carrier: 'ws'
-        }
+        })
     );
 }

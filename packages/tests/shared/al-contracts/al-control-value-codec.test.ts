@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALPendingAckSnapshot } from '@shared/al-contracts/al-control-value-codec.ts';
+import {
+    decodeALAckPayload,
+    decodeALNackPayload,
+    decodeALPendingAckSnapshot
+} from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     decodeALControlMessage,
     newALNackControlMessage,
@@ -9,6 +13,8 @@ import {
     type ALNackPayload,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
+
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
 
 const controlId: ALMessage['id'] = {
     v: 4,
@@ -18,14 +24,14 @@ const controlId: ALMessage['id'] = {
     traceId: 'trace-al-control-value-codec'
 };
 
-const notSubscribedNack: ALNackPayload = {
+const notSubscribedNack: ALNackPayload = toTestALNackPayload({
     msgId: 'msg-1',
     fromPeerId: 'relay',
     toPeerId: 'origin',
     logicalRecipientPeerId: 'recipient-b',
     reason: 'not-subscribed',
     observedAtEpochMs: 13
-};
+});
 
 const receipt: ALReceiptPayload = {
     msgId: 'msg-1',
@@ -44,6 +50,14 @@ function withResource(message: ALMessage, resource: object): ALMessage {
 }
 
 describe('AL control value codec', () => {
+    it('the shared test builders build payloads the closed decoders round-trip', () => {
+        const ack = toTestALAckPayload({ ackedMsgId: 'm', fromPeerId: 'b', toPeerId: 'a' });
+        const nack = toTestALNackPayload({ msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'not-subscribed' });
+
+        expect(decodeALAckPayload(ack)).toEqual(ack);
+        expect(decodeALNackPayload(nack)).toEqual(nack);
+    });
+
     it('round-trips a not-subscribed NACK that speaks for a logical recipient other than its sender', () => {
         const message = newALNackControlMessage(controlId, notSubscribedNack);
 

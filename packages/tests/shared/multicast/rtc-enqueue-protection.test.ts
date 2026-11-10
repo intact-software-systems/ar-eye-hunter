@@ -20,10 +20,12 @@ import {
     createRtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 function createAck(sequence: number) {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${sequence}`, senderId: 'a', ts: Date.now(), traceId: 'trace-rtc-enqueue-protection' },
-        {
+        toTestALAckPayload({
             ackedMsgId: `subject-${sequence}`,
             fromPeerId: 'a',
             toPeerId: 'b',
@@ -32,7 +34,7 @@ function createAck(sequence: number) {
             carrier: 'rtc',
             status: 'forwarded',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

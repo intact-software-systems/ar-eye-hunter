@@ -45,6 +45,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 interface ObservedServerOptions {
@@ -229,7 +231,7 @@ function createRoomSubjectMessage(): ALMessage {
 function createReceiverAcknowledgement(senderId = 'recipient'): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: 'ack-1', senderId, ts: Date.now() - 1, traceId: 'trace-ws-queue-box-server-receipt-observation' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'subject',
             originPeerId: 'origin',
             fromPeerId: senderId,
@@ -238,7 +240,7 @@ function createReceiverAcknowledgement(senderId = 'recipient'): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now() - 1
-        }
+        })
     );
 }
 
@@ -1429,7 +1431,7 @@ it.each<ALAckStatus>(['accepted', 'delivered', 'forwarded', 'subtree-complete', 
     (status) => {
         const ack = newALAckControlMessage(
             { v: 4, msgId: `ack-${status}`, senderId: 'recipient', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'subject',
                 originPeerId: 'origin',
                 fromPeerId: 'recipient',
@@ -1438,7 +1440,7 @@ it.each<ALAckStatus>(['accepted', 'delivered', 'forwarded', 'subtree-complete', 
                 carrier: 'rtc',
                 status,
                 observedAtEpochMs: 901
-            }
+            })
         );
 
         expect(toWsQueueBoxServerReceiptAckFacts(ack)?.ack.status).toBe(status);

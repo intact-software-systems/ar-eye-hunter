@@ -19,6 +19,8 @@ import {
     type ReceiptTrackingFixture
 } from './receipt-tracking-test-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
 describe('WS client receipt tracking for a receiver room send', () => {
@@ -761,7 +763,7 @@ async function readReceipt(fixture: ReceiptTrackingFixture) {
 function serverAck(ackedMsgId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `server-ack-${ackedMsgId}`, senderId: 'server', ts: Date.now(), traceId: 'trace-ws-queue-box-client-receipt-tracking' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: 'server',
             toPeerId: 'self',
@@ -770,7 +772,7 @@ function serverAck(ackedMsgId: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

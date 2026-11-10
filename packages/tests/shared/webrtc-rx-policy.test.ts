@@ -37,6 +37,8 @@ import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './nat
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
+import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
 describe('WebRtcRxStreamerService channel receive pipeline', () => {
@@ -355,16 +357,19 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
         await fixture.receive(
-            shared.newALAckControlMessage({ v: 4, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-webrtc-rx-policy' }, {
-                fromPeerId: 'peer-2',
-                toPeerId: 'self',
-                ackedMsgId: message.id.msgId,
-                originPeerId: 'peer-1',
-                logicalRecipientPeerId: 'peer-2',
-                status: 'delivered',
-                observedAtEpochMs: Date.now(),
-                carrier: 'rtc'
-            }),
+            shared.newALAckControlMessage(
+                { v: 4, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-webrtc-rx-policy' },
+                toTestALAckPayload({
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    ackedMsgId: message.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
+                    status: 'delivered',
+                    observedAtEpochMs: Date.now(),
+                    carrier: 'rtc'
+                })
+            ),
             'peer-2'
         );
         // A member that delivered confirms itself at once, before any child ACK it relays.
@@ -374,16 +379,19 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         ]);
 
         await fixture.receive(
-            shared.newALAckControlMessage({ v: 4, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3', traceId: 'trace-webrtc-rx-policy' }, {
-                fromPeerId: 'peer-3',
-                toPeerId: 'self',
-                ackedMsgId: message.id.msgId,
-                originPeerId: 'peer-1',
-                logicalRecipientPeerId: 'peer-3',
-                status: 'delivered',
-                observedAtEpochMs: Date.now(),
-                carrier: 'rtc'
-            }),
+            shared.newALAckControlMessage(
+                { v: 4, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3', traceId: 'trace-webrtc-rx-policy' },
+                toTestALAckPayload({
+                    fromPeerId: 'peer-3',
+                    toPeerId: 'self',
+                    ackedMsgId: message.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-3',
+                    status: 'delivered',
+                    observedAtEpochMs: Date.now(),
+                    carrier: 'rtc'
+                })
+            ),
             'peer-3'
         );
 
@@ -550,16 +558,19 @@ function toCopyForSelf(message: shared.ALMessage, visitedPeerIds: readonly strin
 }
 
 function createChildAck(message: shared.ALMessage, childPeerId: string): shared.ALMessage {
-    return shared.newALAckControlMessage({ v: 4, msgId: `ack-${childPeerId}`, ts: Date.now(), senderId: childPeerId, traceId: 'trace-webrtc-rx-policy' }, {
-        fromPeerId: childPeerId,
-        toPeerId: 'self',
-        ackedMsgId: message.id.msgId,
-        originPeerId: message.id.senderId,
-        logicalRecipientPeerId: childPeerId,
-        status: 'delivered',
-        observedAtEpochMs: Date.now(),
-        carrier: 'rtc'
-    });
+    return shared.newALAckControlMessage(
+        { v: 4, msgId: `ack-${childPeerId}`, ts: Date.now(), senderId: childPeerId, traceId: 'trace-webrtc-rx-policy' },
+        toTestALAckPayload({
+            fromPeerId: childPeerId,
+            toPeerId: 'self',
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: childPeerId,
+            status: 'delivered',
+            observedAtEpochMs: Date.now(),
+            carrier: 'rtc'
+        })
+    );
 }
 
 function readUpstreamAcks(outbound: readonly shared.ALMessage[]): readonly (readonly [string, string])[] {

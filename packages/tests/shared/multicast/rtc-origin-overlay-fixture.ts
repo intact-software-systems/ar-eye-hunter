@@ -52,6 +52,8 @@ import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 export interface CapturedChannel {
     readonly channel: QRtcDataChannel;
     readonly sent: ALMessage[];
@@ -197,7 +199,7 @@ export async function acknowledgeAtOrigin(
             ts: Date.now(),
             traceId: 'trace-rtc-origin-overlay-fixture'
         },
-        {
+        toTestALAckPayload({
             ackedMsgId: input.msgId,
             fromPeerId: input.fromPeerId,
             toPeerId: 'a',
@@ -206,7 +208,7 @@ export async function acknowledgeAtOrigin(
             carrier: 'rtc',
             status: input.status,
             observedAtEpochMs: Date.now()
-        }
+        })
     ));
 }
 

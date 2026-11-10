@@ -13,6 +13,8 @@ import {
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from '@shared/alm/inbound/read-al-inbound-message-authorization.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 const SERVER = toALInboundReceiver(
     'server',
     (ack) => ack.originPeerId === 'origin' ? undefined : { code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' },
@@ -57,7 +59,7 @@ describe('inbound control addressing', () => {
             message: 'closed relay refusal'
         });
         expect(identities).toEqual([{ v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' }]);
-        expect(receiver.readRelayedAckRejection({
+        expect(receiver.readRelayedAckRejection(toTestALAckPayload({
             ackedMsgId: 'message-1',
             fromPeerId: 'recipient',
             toPeerId: 'origin',
@@ -66,7 +68,7 @@ describe('inbound control addressing', () => {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: 1
-        })).toEqual({ code: 'unauthorized', message: 'closed relay refusal' });
+        }))).toEqual({ code: 'unauthorized', message: 'closed relay refusal' });
         expect(identities[1]).toBeUndefined();
     });
 
@@ -85,7 +87,7 @@ describe('inbound control addressing', () => {
     it.each(['server', 'origin'])('refuses a WS session ACK to %s that speaks for another recipient', async (toPeerId) => {
         const forged = newALAckControlMessage(
             { v: 4, msgId: 'ack-forged', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'message-1',
                 fromPeerId: 'recipient',
                 toPeerId,
@@ -94,7 +96,7 @@ describe('inbound control addressing', () => {
                 carrier: 'ws',
                 status: 'delivered',
                 observedAtEpochMs: 1
-            }
+            })
         );
 
         const relayObservations: string[] = [];
@@ -114,14 +116,14 @@ describe('inbound control addressing', () => {
     it.each(['server', 'origin'])('refuses a WS session NACK to %s that speaks for another recipient', async (toPeerId) => {
         const forged = newALNackControlMessage(
             { v: 4, msgId: 'nack-forged', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
-            {
+            toTestALNackPayload({
                 msgId: 'message-1',
                 fromPeerId: 'recipient',
                 logicalRecipientPeerId: 'another-recipient',
                 toPeerId,
                 reason: 'not-subscribed',
                 observedAtEpochMs: 1
-            }
+            })
         );
 
         expect((await readALInboundMessageAuthorization(forged, toWsClientSource('recipient'), SERVER)).left).toEqual({
@@ -133,7 +135,14 @@ describe('inbound control addressing', () => {
     it('refuses a nonlocal NACK and an ACK without relay authority', async () => {
         const nack = newALNackControlMessage(
             { v: 4, msgId: 'nack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
-            { msgId: 'message-1', fromPeerId: 'recipient', logicalRecipientPeerId: 'recipient', toPeerId: 'origin', reason: 'gap', observedAtEpochMs: 1 }
+            toTestALNackPayload({
+                msgId: 'message-1',
+                fromPeerId: 'recipient',
+                logicalRecipientPeerId: 'recipient',
+                toPeerId: 'origin',
+                reason: 'gap',
+                observedAtEpochMs: 1
+            })
         );
 
         expect((await readALInboundMessageAuthorization(nack, toWsClientSource('recipient'), SERVER)).left?.code).toBe('unauthorized');
@@ -238,7 +247,7 @@ function toWsClientSource(peerId: string): ALInboundMessageRuntime.Source {
 function createReceiverAcknowledgement(originPeerId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'message-1',
             fromPeerId: 'recipient',
             toPeerId: originPeerId,
@@ -247,14 +256,14 @@ function createReceiverAcknowledgement(originPeerId: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: 1
-        }
+        })
     );
 }
 
 function createGapNack(fromPeerId: string): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `nack-${fromPeerId}`, senderId: fromPeerId, ts: 1, traceId: 'trace-read-al-inbound-message-authorization' },
-        {
+        toTestALNackPayload({
             msgId: 'message-1',
             fromPeerId,
             logicalRecipientPeerId: fromPeerId,
@@ -264,7 +273,7 @@ function createGapNack(fromPeerId: string): ALMessage {
             orderingKey: 'game-1:origin:1',
             expectedSeq: 2,
             missingRanges: [{ from: 2, to: 2 }]
-        }
+        })
     );
 }
 

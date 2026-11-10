@@ -32,6 +32,8 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 describe('inbound store lanes', () => {
     it.each([
         { durability: undefined, lane: 'volatile' },
@@ -95,7 +97,7 @@ describe('inbound store lanes', () => {
         const durableRead = vi.spyOn(pairs.durable.stores.admissionStore, 'readControlDecisionSurface');
         const own = newALAckControlMessage(
             { v: 4, msgId: 'ack-own-message', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-store-lane' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'own-message',
                 fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
                 toPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -104,7 +106,7 @@ describe('inbound store lanes', () => {
                 carrier: 'ws',
                 status: 'delivered',
                 observedAtEpochMs: Date.now()
-            }
+            })
         );
 
         expect((await fixture.runtime.admitIncomingMessage(own, INBOUND_TEST_SOURCE)).right)
@@ -321,7 +323,7 @@ async function seedPendingAcknowledgement(store: ALInboundAdmissionStore, messag
 function toSenderAck(tracked: ALMessage): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${tracked.id.msgId}`, senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-store-lane' },
-        {
+        toTestALAckPayload({
             ackedMsgId: tracked.id.msgId,
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
             toPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -330,7 +332,7 @@ function toSenderAck(tracked: ALMessage): ALMessage {
             carrier: 'ws',
             status: 'accepted',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

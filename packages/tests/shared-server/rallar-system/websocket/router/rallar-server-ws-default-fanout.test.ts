@@ -25,6 +25,8 @@ import {
 
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 
+import { toTestALAckPayload } from '../../../../al-control-test-payloads.ts';
+
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
@@ -287,7 +289,7 @@ function createReceiverRoomSend(
 function createReceiverAck(ackedMsgId: string, recipientId: string, nowMs: number): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `${recipientId}-ack-${ackedMsgId}`, senderId: recipientId, ts: nowMs, traceId: 'trace-rallar-server-ws-default-fanout' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: recipientId,
             toPeerId: 'origin',
@@ -296,7 +298,7 @@ function createReceiverAck(ackedMsgId: string, recipientId: string, nowMs: numbe
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: nowMs
-        }
+        })
     );
 }
 

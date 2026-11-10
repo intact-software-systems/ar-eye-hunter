@@ -39,6 +39,8 @@ import {
     type OutboundTestPayload
 } from './outbound-test-payload.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const TEST_NOW_MS = Date.now();
 
 afterEach(() => {
@@ -268,7 +270,7 @@ function createControlMessage(msgId: string): ALMessage {
     return {
         ...newALAckControlMessage(
             { v: 4, senderId: 'self', msgId, ts: TEST_NOW_MS, traceId: 'trace-outbound-control-handoff' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'inbound-message',
                 fromPeerId: 'self',
                 toPeerId: 'peer',
@@ -277,7 +279,7 @@ function createControlMessage(msgId: string): ALMessage {
                 carrier: 'ws',
                 status: 'delivered',
                 observedAtEpochMs: TEST_NOW_MS
-            }
+            })
         ),
         constraints: { expiresAtMs: TEST_NOW_MS + 5 * 60_000 }
     };

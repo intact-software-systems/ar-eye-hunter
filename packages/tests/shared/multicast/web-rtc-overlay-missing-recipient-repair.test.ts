@@ -29,6 +29,8 @@ import {
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const ACK_TIMEOUT_MS = 2_000;
 /** The default `at-least-once` retry budget of a receipt, read from the policy the origin plans with. */
 const RETRY_BUDGET = normalizeALQosPolicy(createOriginReceiverMulticast('budget')).effective.retry.opts.maxAttempts;
@@ -463,7 +465,7 @@ function createChildAck(input: ChildAckInput): ALMessage {
             ts: Date.now(),
             traceId: 'trace-web-rtc-overlay-missing-recipient-repair'
         },
-        {
+        toTestALAckPayload({
             ackedMsgId: input.msgId,
             fromPeerId: input.fromPeerId,
             toPeerId: input.toPeerId,
@@ -472,7 +474,7 @@ function createChildAck(input: ChildAckInput): ALMessage {
             carrier: 'rtc',
             status: input.status,
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

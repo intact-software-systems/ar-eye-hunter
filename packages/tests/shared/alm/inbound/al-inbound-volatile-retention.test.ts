@@ -36,6 +36,8 @@ import {
     type InboundTestRuntime
 } from '../inbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const NAMESPACE = 'inbound-retention';
 
 interface ObservedBackend {
@@ -506,7 +508,7 @@ function toSenderAck(tracked: ALMessage): ALMessage {
             ts: Date.now(),
             traceId: 'trace-al-inbound-volatile-retention'
         },
-        {
+        toTestALAckPayload({
             ackedMsgId: tracked.id.msgId,
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
             toPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -515,7 +517,7 @@ function toSenderAck(tracked: ALMessage): ALMessage {
             carrier: 'ws',
             status: 'accepted',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

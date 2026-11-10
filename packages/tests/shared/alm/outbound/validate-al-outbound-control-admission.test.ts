@@ -10,6 +10,8 @@ import {
     enqueueOutboundOrThrow
 } from '../outbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 /** A `receiver` receipt on two frozen recipients, sent through one relay that is neither of them. */
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     enabled: true,
@@ -67,7 +69,7 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
             senderId: input.fromPeerId,
             traceId: 'trace-relayed-gap'
         },
-        {
+        toTestALNackPayload({
             msgId: msg.id.msgId,
             fromPeerId: input.fromPeerId,
             toPeerId: 'self',
@@ -77,7 +79,7 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
             orderingKey: input.orderingKey ?? TRACK_KEY,
             expectedSeq: 2,
             missingRanges: [{ from: 2, to: 2 }]
-        }
+        })
     );
 }
 
@@ -85,7 +87,7 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
 function toForwardedAck(msg: ALMessage, logicalRecipientPeerId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-relayed-gap' },
-        {
+        toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
             fromPeerId: 'relay',
             toPeerId: 'self',
@@ -94,7 +96,7 @@ function toForwardedAck(msg: ALMessage, logicalRecipientPeerId: string): ALMessa
             carrier: 'rtc',
             status: 'forwarded',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
@@ -144,14 +146,14 @@ describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
         const origin = await createOrderedOrigin('relayed-terminal-nack');
         const expired = newALNackControlMessage(
             { v: 4, msgId: 'expired-relay-r2', ts: Date.now(), senderId: 'relay', traceId: 'trace-relayed-gap' },
-            {
+            toTestALNackPayload({
                 msgId: origin.msg.id.msgId,
                 fromPeerId: 'relay',
                 toPeerId: 'self',
                 logicalRecipientPeerId: 'r2',
                 reason: 'expired',
                 observedAtEpochMs: Date.now()
-            }
+            })
         );
 
         expect(await origin.accept(expired)).toBe('AL repair sender has no retained outbound obligation');

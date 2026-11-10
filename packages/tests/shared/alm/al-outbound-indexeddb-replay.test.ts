@@ -46,6 +46,8 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 describe('outbound IndexedDB durable queue replay', () => {
     it.each(['memory', 'indexeddb'] as const)('retains malformed work as non-retryable and releases unrelated work in %s', async (storage) => {
         const { admissionStore, stores, backend, port, peek } = createAdmission(storage);
@@ -138,7 +140,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                     await runtime1.acceptControlMessage(
                         newALAckControlMessage(
                             { v: 4, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId, traceId: 'trace-al-outbound-indexeddb-replay' },
-                            {
+                            toTestALAckPayload({
                                 ackedMsgId: msg.id.msgId,
                                 originPeerId: 'self',
                                 logicalRecipientPeerId: fromPeerId,
@@ -147,7 +149,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                                 status: 'accepted',
                                 observedAtEpochMs: Date.now(),
                                 carrier: 'ws'
-                            }
+                            })
                         ),
                         'peer'
                     );

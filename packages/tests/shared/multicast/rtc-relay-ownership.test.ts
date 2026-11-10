@@ -28,6 +28,8 @@ import {
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const ACK_TIMEOUT_MS = 2_000;
 
 describe('the child hops an RTC relay owns', () => {
@@ -368,7 +370,14 @@ describe('the RTC subtree targeted repair keeps every unfinished hop expected (R
 
         await origin.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-rtc-relay-ownership' },
-            { msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+            toTestALNackPayload({
+                msgId: message.id.msgId,
+                fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
+                toPeerId: 'a',
+                reason: 'gap',
+                observedAtEpochMs: Date.now()
+            })
         ));
         await vi.advanceTimersByTimeAsync(100);
 

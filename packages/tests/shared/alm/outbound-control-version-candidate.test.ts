@@ -25,6 +25,8 @@ import { validateALOutboundControlAdmission } from '@shared/alm/outbound/validat
 import { createOutboundMessage, readOutboundTestAdmission } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 describe('outbound control version candidate', () => {
     afterEach(() => vi.restoreAllMocks());
 
@@ -47,14 +49,17 @@ describe('outbound control version candidate', () => {
         if (!sent) {
             throw new Error('Expected admitted compact sent fact');
         }
-        const control = newALNackControlMessage({ v: 4, msgId: 'nack', senderId: 'peer-1', ts: 1_000, traceId: 'trace-outbound-control-version-candidate' }, {
-            msgId: message.id.msgId,
-            fromPeerId: 'peer-1',
-            logicalRecipientPeerId: 'peer-1',
-            toPeerId: 'self',
-            reason: 'not-yet-in-sync',
-            observedAtEpochMs: 1_000
-        });
+        const control = newALNackControlMessage(
+            { v: 4, msgId: 'nack', senderId: 'peer-1', ts: 1_000, traceId: 'trace-outbound-control-version-candidate' },
+            toTestALNackPayload({
+                msgId: message.id.msgId,
+                fromPeerId: 'peer-1',
+                logicalRecipientPeerId: 'peer-1',
+                toPeerId: 'self',
+                reason: 'not-yet-in-sync',
+                observedAtEpochMs: 1_000
+            })
+        );
         const read = freezeValues<ALControlAdmissionRead>({
             parsed: parsePeerControl(control),
             source: 'peer',
@@ -97,16 +102,19 @@ describe('outbound control version candidate', () => {
         if (!sent) {
             throw new Error('Expected admitted compact sent fact');
         }
-        const ack = newALAckControlMessage({ v: 4, msgId: 'ack', senderId: 'peer-1', ts: 1_000, traceId: 'trace-outbound-control-version-candidate' }, {
-            ackedMsgId: message.id.msgId,
-            originPeerId: 'self',
-            logicalRecipientPeerId: 'peer-1',
-            fromPeerId: 'peer-1',
-            toPeerId: 'self',
-            status: 'accepted',
-            observedAtEpochMs: 1_000,
-            carrier: 'ws'
-        });
+        const ack = newALAckControlMessage(
+            { v: 4, msgId: 'ack', senderId: 'peer-1', ts: 1_000, traceId: 'trace-outbound-control-version-candidate' },
+            toTestALAckPayload({
+                ackedMsgId: message.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: 'peer-1',
+                fromPeerId: 'peer-1',
+                toPeerId: 'self',
+                status: 'accepted',
+                observedAtEpochMs: 1_000,
+                carrier: 'ws'
+            })
+        );
         const readAt = (nowMs: number): ALControlAdmissionRead => ({
             parsed: parsePeerControl(ack),
             source: 'peer',
@@ -162,20 +170,23 @@ describe('outbound control version candidate', () => {
         await store.commitBundle(
             await readOutboundTestAdmission({ store: store, message: message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
         );
-        const control = newALNackControlMessage({
-            v: 4,
-            msgId: 'nack-race',
-            senderId: 'peer-1',
-            ts: Date.now(),
-            traceId: 'trace-outbound-control-version-candidate'
-        }, {
-            msgId: message.id.msgId,
-            fromPeerId: 'peer-1',
-            logicalRecipientPeerId: 'peer-1',
-            toPeerId: 'self',
-            reason: 'not-yet-in-sync',
-            observedAtEpochMs: Date.now()
-        });
+        const control = newALNackControlMessage(
+            {
+                v: 4,
+                msgId: 'nack-race',
+                senderId: 'peer-1',
+                ts: Date.now(),
+                traceId: 'trace-outbound-control-version-candidate'
+            },
+            toTestALNackPayload({
+                msgId: message.id.msgId,
+                fromPeerId: 'peer-1',
+                logicalRecipientPeerId: 'peer-1',
+                toPeerId: 'self',
+                reason: 'not-yet-in-sync',
+                observedAtEpochMs: Date.now()
+            })
+        );
         const write = backend.write.bind(backend);
         let injected = false;
         vi.spyOn(backend, 'write').mockImplementationOnce(async (apply) => {

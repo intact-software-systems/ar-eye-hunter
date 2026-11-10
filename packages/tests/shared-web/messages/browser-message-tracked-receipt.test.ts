@@ -55,6 +55,8 @@ import {
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const SESSION_ID = 'session-1';
 const TTL_MS = 30_000;
 const SERVER_PEER_ID = 'server';
@@ -376,14 +378,14 @@ describe('the leader receipt of a group-leader room send reaches its handle', ()
 
         await ws.acceptIncomingMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-no-leader', senderId: SERVER_PEER_ID, ts: Date.now(), traceId: 'trace-browser-message-tracked-receipt' },
-            {
+            toTestALNackPayload({
                 msgId: handle.msgId,
                 fromPeerId: SERVER_PEER_ID,
                 logicalRecipientPeerId: SERVER_PEER_ID,
                 toPeerId: SESSION_ID,
                 reason: 'no-leader',
                 observedAtEpochMs: Date.now()
-            }
+            })
         ));
 
         await expect.poll(() => handle.lifecycle().state).toBe('rejected');
@@ -563,7 +565,14 @@ function createGrantedTopicSend(): ALMessage {
 function createServerNack(msgId: string, reason: ALNackReason, nowMs: () => number): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `nack-${reason}-${msgId}`, senderId: SERVER_PEER_ID, ts: nowMs(), traceId: 'trace-browser-message-tracked-receipt' },
-        { msgId, fromPeerId: SERVER_PEER_ID, logicalRecipientPeerId: SERVER_PEER_ID, toPeerId: SESSION_ID, reason, observedAtEpochMs: nowMs() }
+        toTestALNackPayload({
+            msgId,
+            fromPeerId: SERVER_PEER_ID,
+            logicalRecipientPeerId: SERVER_PEER_ID,
+            toPeerId: SESSION_ID,
+            reason,
+            observedAtEpochMs: nowMs()
+        })
     );
 }
 

@@ -43,6 +43,8 @@ import {
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 function createFixture(
     input = { snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] }
 ): RtcOriginOverlayFixture {
@@ -139,14 +141,14 @@ describe('RTC frozen room audience', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-resync-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-frozen-audience' },
-            {
+            toTestALNackPayload({
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
                 logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'resync-required',
                 observedAtEpochMs: Date.now()
-            }
+            })
         ));
         await vi.advanceTimersByTimeAsync(0);
 
@@ -172,14 +174,14 @@ describe('RTC frozen room audience', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-resync-receipt-less', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-frozen-audience' },
-            {
+            toTestALNackPayload({
                 msgId: message.id.msgId,
                 fromPeerId: 'b',
                 logicalRecipientPeerId: 'b',
                 toPeerId: 'a',
                 reason: 'resync-required',
                 observedAtEpochMs: Date.now()
-            }
+            })
         ));
         await vi.advanceTimersByTimeAsync(0);
 
@@ -235,7 +237,14 @@ describe('the origin receipt of a frozen room multicast', () => {
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-web-rtc-overlay-frozen-audience' },
-            { msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+            toTestALNackPayload({
+                msgId: message.id.msgId,
+                fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
+                toPeerId: 'a',
+                reason: 'gap',
+                observedAtEpochMs: Date.now()
+            })
         ));
         await vi.advanceTimersByTimeAsync(100);
 

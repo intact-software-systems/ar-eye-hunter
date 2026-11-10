@@ -12,6 +12,8 @@ import {
     trackALOutboundPendingAckSnapshot
 } from '@shared/alm/outbound/transition-al-outbound-pending-ack.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     enabled: true,
     timeoutMs: 2_000,
@@ -183,7 +185,7 @@ function receiverRow(overrides: Partial<ALOutboundPendingAckSnapshot>): ALOutbou
 }
 
 function relayAck(logicalRecipientPeerId: string): ALAckPayload {
-    return {
+    return toTestALAckPayload({
         ackedMsgId: 'message',
         fromPeerId: 'relay',
         toPeerId: 'origin',
@@ -192,5 +194,5 @@ function relayAck(logicalRecipientPeerId: string): ALAckPayload {
         carrier: 'ws',
         status: 'delivered',
         observedAtEpochMs: 1_000
-    };
+    });
 }

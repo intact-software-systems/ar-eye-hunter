@@ -41,6 +41,8 @@ import {
 import type { OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledOutboundWork } from './wait-for-al-outbound-work.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
+
 interface UndrainedOutboundRuntime {
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
     readonly claimedCounts: number[];
@@ -239,14 +241,14 @@ describe('AL outbound durable effect lifecycle', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );
@@ -390,7 +392,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 await control.admit(
                     newALAckControlMessage(
                         { v: 4, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
-                        {
+                        toTestALAckPayload({
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',
                             logicalRecipientPeerId: 'peer-1',
@@ -399,7 +401,7 @@ describe('AL outbound durable effect lifecycle', () => {
                             status: 'accepted',
                             observedAtEpochMs: 1,
                             carrier: 'ws'
-                        }
+                        })
                     ),
                     'peer'
                 );
@@ -483,7 +485,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 await control.admit(
                     newALAckControlMessage(
                         { v: 4, msgId: 'control-conflict-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
-                        {
+                        toTestALAckPayload({
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',
                             logicalRecipientPeerId: 'peer-1',
@@ -492,7 +494,7 @@ describe('AL outbound durable effect lifecycle', () => {
                             status: 'accepted',
                             observedAtEpochMs: 1,
                             carrier: 'ws'
-                        }
+                        })
                     ),
                     'peer'
                 )
@@ -632,14 +634,14 @@ describe('AL outbound durable effect lifecycle', () => {
         const handled = await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-missing-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
-                {
+                toTestALNackPayload({
                     msgId: 'missing-msg',
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );
@@ -788,14 +790,14 @@ describe('AL outbound durable effect lifecycle', () => {
         const accepted = await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-expired', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-durable-effects' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'expired',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );

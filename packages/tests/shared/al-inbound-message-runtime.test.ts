@@ -39,6 +39,8 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { readInboundTestAcknowledgements } from './alm/read-inbound-test-acknowledgements.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+
 afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
@@ -351,7 +353,7 @@ describe('ALInboundMessageRuntime', () => {
 
         const control = newALAckControlMessage(
             { v: 4, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'missing-msg',
                 originPeerId: 'peer-1',
                 logicalRecipientPeerId: 'peer-2',
@@ -360,7 +362,7 @@ describe('ALInboundMessageRuntime', () => {
                 status: 'delivered',
                 observedAtEpochMs: 1,
                 carrier: 'ws'
-            }
+            })
         );
         const pending = await runtime.admitIncomingMessage(control, {
             kind: 'ws-client',
@@ -441,7 +443,7 @@ describe('ALInboundMessageRuntime', () => {
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: seq2.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -450,7 +452,7 @@ describe('ALInboundMessageRuntime', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -518,7 +520,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -527,7 +529,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -568,7 +570,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         const accepted = await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -577,7 +579,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -644,7 +646,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -653,7 +655,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -909,7 +911,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
         await runtime1.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -918,7 +920,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );

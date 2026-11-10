@@ -19,6 +19,8 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 interface RepairPolicyCase {
     readonly name: string;
     readonly repair: ALOutboundRepairTrackingPlan;
@@ -63,7 +65,14 @@ describe('AL outbound repair policy', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'gap-control', senderId: 'peer-1', ts: 1, traceId: 'trace-al-outbound-repair-policy' },
-                { msgId: message.id.msgId, fromPeerId: 'peer-1', logicalRecipientPeerId: 'peer-1', toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 }
+                toTestALNackPayload({
+                    msgId: message.id.msgId,
+                    fromPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1
+                })
             ),
             'peer'
         );
@@ -200,6 +209,6 @@ async function settleRetransmission(runtime: ReturnType<typeof createRoomSendRun
 function roomGapNack(roomSend: ALMessage, fromPeerId: string): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `room-gap-control-${fromPeerId}`, senderId: fromPeerId, ts: 1, traceId: 'trace-al-outbound-repair-policy' },
-        { msgId: roomSend.id.msgId, fromPeerId, logicalRecipientPeerId: fromPeerId, toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 }
+        toTestALNackPayload({ msgId: roomSend.id.msgId, fromPeerId, logicalRecipientPeerId: fromPeerId, toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 })
     );
 }

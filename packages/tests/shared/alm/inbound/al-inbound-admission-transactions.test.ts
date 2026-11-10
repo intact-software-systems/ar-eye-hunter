@@ -36,6 +36,8 @@ import {
 } from '../inbound-runtime-test-fixture.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 afterEach(() => {
     vi.restoreAllMocks();
 });
@@ -183,7 +185,7 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
 function newAcknowledgement(message: ALMessage): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `${message.id.msgId}-ack`, senderId: ACKNOWLEDGING_PEER_ID, ts: Date.now(), traceId: 'trace-al-inbound-admission-transactions' },
-        {
+        toTestALAckPayload({
             fromPeerId: ACKNOWLEDGING_PEER_ID,
             toPeerId: message.id.senderId,
             ackedMsgId: message.id.msgId,
@@ -192,7 +194,7 @@ function newAcknowledgement(message: ALMessage): ALMessage {
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'
-        }
+        })
     );
 }
 

@@ -53,6 +53,8 @@ import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 /** Queued turns `settle` runs; a count of turns, not a clock. */
 export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
 
@@ -495,7 +497,7 @@ export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 's
     const hopPeerId = sender.carrier === 'ws' ? WS_SERVER_PEER_ID : 'receiver';
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${submission.id.msgId}`, senderId: hopPeerId, ts: Date.now(), traceId: 'trace-acknowledgement-under-hold-fixture' },
-        {
+        toTestALAckPayload({
             ackedMsgId: submission.id.msgId,
             originPeerId: sender.selfPeerId,
             logicalRecipientPeerId: hopPeerId,
@@ -504,7 +506,7 @@ export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 's
             status: 'accepted',
             observedAtEpochMs: Date.now(),
             carrier: sender.carrier
-        }
+        })
     );
 }
 

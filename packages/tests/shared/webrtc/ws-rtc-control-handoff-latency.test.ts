@@ -62,6 +62,8 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 import '../../setup-browser-indexeddb.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const BATCH_STARTED_AT_MS = 1_800_000_000_000;
 const BACKGROUND_CONTROL_COUNT = 31;
 
@@ -212,7 +214,7 @@ class RtcControlHandoffFixture {
     async seedFullInboundControlPage(): Promise<readonly InboundClaimTrace[]> {
         const bootstrap = newALAckControlMessage(
             { v: 4, senderId: 'bootstrap-peer', msgId: 'unknown-control', ts: BATCH_STARTED_AT_MS, traceId: 'trace-ws-rtc-control-handoff-latency' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'unknown',
                 originPeerId: 'self',
                 logicalRecipientPeerId: 'bootstrap-peer',
@@ -221,7 +223,7 @@ class RtcControlHandoffFixture {
                 toPeerId: 'self',
                 status: 'delivered',
                 observedAtEpochMs: BATCH_STARTED_AT_MS
-            }
+            })
         );
         expect((await this.dependencies.service.acceptIncomingMessage(bootstrap)).right).toEqual({
             kind: 'control',

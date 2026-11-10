@@ -31,6 +31,8 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
 interface BackpressureClient {
@@ -91,7 +93,7 @@ const REJECT_UNDER_CONGESTION: ALQosPolicyRequest = { congestion: { algo: 'rejec
 function acknowledgementOf(ackedMsgId: string, qos: ALQosPolicyRequest): ALMessage {
     const acknowledgement = newALAckControlMessage(
         { v: 4, msgId: `ack-${ackedMsgId}`, senderId: 'self', ts: Date.now(), traceId: 'trace-ws-queue-box-client-backpressure' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: 'self',
             toPeerId: 'server',
@@ -100,7 +102,7 @@ function acknowledgementOf(ackedMsgId: string, qos: ALQosPolicyRequest): ALMessa
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
     return { ...acknowledgement, qos };
 }

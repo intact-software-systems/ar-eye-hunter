@@ -28,6 +28,8 @@ import {
 
 import { readOutboundTestAdmission } from '../outbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 interface ReceiptTestObligation {
     readonly mode: ALOutboundPendingAckSnapshot['mode'];
     readonly expectedPeerIds: readonly string[];
@@ -223,7 +225,7 @@ function toPendingSnapshot(obligation: ReceiptTestObligation, observedAtMs: numb
 function createRelayAck(logicalRecipientPeerId: string, controlMsgId: string, relayPeerId: string = RELAY): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: controlMsgId, senderId: relayPeerId, ts: Date.now(), traceId: 'trace-al-outbound-receipt-keys' },
-        {
+        toTestALAckPayload({
             ackedMsgId: MSG_ID,
             fromPeerId: relayPeerId,
             toPeerId: ORIGIN,
@@ -232,6 +234,6 @@ function createRelayAck(logicalRecipientPeerId: string, controlMsgId: string, re
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }

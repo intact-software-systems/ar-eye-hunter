@@ -33,6 +33,8 @@ import {
 
 import { INBOUND_TEST_EFFECT_PREPARATION } from '../inbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const DIRECTOR_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'relay' };
 const DIRECTOR_CHILD_PEER_IDS = ['leaf-a', 'leaf-b'];
@@ -270,7 +272,7 @@ function acceptChildCompletions(pending: ALPendingAckSnapshot, childPeerIds: rea
 }
 
 function toChildAck(fromPeerId: string, logicalRecipientPeerId: string, status: ALAckStatus): ALAckPayload {
-    return {
+    return toTestALAckPayload({
         ackedMsgId: 'message',
         fromPeerId,
         toPeerId: 'relay',
@@ -279,5 +281,5 @@ function toChildAck(fromPeerId: string, logicalRecipientPeerId: string, status: 
         carrier: 'rtc',
         status,
         observedAtEpochMs: 1
-    };
+    });
 }

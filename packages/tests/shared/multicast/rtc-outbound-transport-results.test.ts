@@ -55,6 +55,8 @@ import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 interface RtcTransportManagerOptions {
     readonly qosProvider?: ALQosInputProvider;
     readonly settlements?: ALDeliverySettlementSink;
@@ -650,14 +652,17 @@ function createMessage(resourceId: string, peerId = 'peer-1', ttlMs = 5_000) {
 }
 
 function createAck(msgId: string): ALMessage {
-    return newALAckControlMessage({ v: 4, msgId, senderId: 'self', ts: Date.now(), traceId: 'trace-rtc-outbound-transport-results' }, {
-        ackedMsgId: `${msgId}-acked`,
-        fromPeerId: 'self',
-        toPeerId: 'peer-1',
-        originPeerId: 'peer-1',
-        logicalRecipientPeerId: 'self',
-        carrier: 'rtc',
-        status: 'delivered',
-        observedAtEpochMs: Date.now()
-    });
+    return newALAckControlMessage(
+        { v: 4, msgId, senderId: 'self', ts: Date.now(), traceId: 'trace-rtc-outbound-transport-results' },
+        toTestALAckPayload({
+            ackedMsgId: `${msgId}-acked`,
+            fromPeerId: 'self',
+            toPeerId: 'peer-1',
+            originPeerId: 'peer-1',
+            logicalRecipientPeerId: 'self',
+            carrier: 'rtc',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        })
+    );
 }

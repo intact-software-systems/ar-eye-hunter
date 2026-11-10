@@ -47,6 +47,8 @@ import {
 import { createOutboundRuntimeWithWorkTask, holdOutboundClaims, runOutboundWorkTask } from '../alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const SERVER_PEER_ID = 'server';
 const ACK_TIMEOUT_MS = 100;
@@ -314,7 +316,7 @@ function orderedRoomSend(seq: number, qos: ALQosPolicyRequest | undefined): ALMe
 function serverGapNack(trigger: ALMessage, missingRanges: readonly ALSeqRange[]): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `server-gap-${trigger.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now(), traceId: 'trace-ws-queue-box-client-own-hop-retry' },
-        {
+        toTestALNackPayload({
             msgId: trigger.id.msgId,
             fromPeerId: SERVER_PEER_ID,
             logicalRecipientPeerId: SERVER_PEER_ID,
@@ -324,7 +326,7 @@ function serverGapNack(trigger: ALMessage, missingRanges: readonly ALSeqRange[])
             orderingKey: toALOrderingTrackKey(trigger),
             expectedSeq: missingRanges[0].from,
             missingRanges
-        }
+        })
     );
 }
 
@@ -338,14 +340,14 @@ function serverNotYetInSyncNack(trigger: ALMessage): ALMessage {
             ts: Date.now(),
             traceId: 'trace-ws-queue-box-client-own-hop-retry'
         },
-        {
+        toTestALNackPayload({
             msgId: trigger.id.msgId,
             fromPeerId: SERVER_PEER_ID,
             logicalRecipientPeerId: SERVER_PEER_ID,
             toPeerId: 'self',
             reason: 'not-yet-in-sync',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

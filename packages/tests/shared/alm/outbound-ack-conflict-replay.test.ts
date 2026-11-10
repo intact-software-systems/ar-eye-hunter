@@ -33,6 +33,8 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 interface ReadRepairBundleInput {
     readonly attemptIdentity: string;
     readonly creationNow: QueueBoxUtilities.CreationClock;
@@ -113,7 +115,7 @@ it.each(
         });
         const ack = newALAckControlMessage(
             { v: 4, msgId: 'ack', senderId: 'receiver', ts: nowMs, traceId: 'trace-outbound-ack-conflict-replay' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: 'sender',
                 logicalRecipientPeerId: 'receiver',
@@ -122,7 +124,7 @@ it.each(
                 status: 'delivered',
                 observedAtEpochMs: nowMs,
                 carrier: 'rtc'
-            }
+            })
         );
         expect(await control.admit(ack, 'peer')).toEqual({ kind: 'pending-control' });
         const page = await workQueue.readWorkPage({

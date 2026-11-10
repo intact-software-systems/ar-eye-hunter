@@ -26,6 +26,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
+import { toTestALNackPayload } from '../al-control-test-payloads.ts';
+
 interface SnapshotObservation {
     snapshot: GroupSnapshot | undefined;
 }
@@ -49,14 +51,14 @@ describe('RTC snapshot rejection controls', () => {
             const result = await fixture.runtime.admitIncomingMessage(
                 newALNackControlMessage(
                     { v: 4, msgId: 'nack-control', senderId: 'sender', ts: Date.now(), traceId: 'trace-rtc-snapshot-nack' },
-                    {
+                    toTestALNackPayload({
                         fromPeerId: 'sender',
                         logicalRecipientPeerId: 'sender',
                         toPeerId: 'receiver',
                         msgId: fixture.message.id.msgId,
                         reason: 'not-yet-in-sync',
                         observedAtEpochMs: Date.now()
-                    }
+                    })
                 ),
                 source
             );

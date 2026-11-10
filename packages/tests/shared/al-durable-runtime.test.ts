@@ -41,6 +41,8 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { toTestALNackPayload } from '../al-control-test-payloads.ts';
+
 interface RetainedAdmissionState {
     readonly admissionState: ALAdmissionMemoryState;
 }
@@ -199,7 +201,7 @@ describe('AL state retained across runtime recreation', () => {
         await restartedForRepair.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-durable-runtime' },
-                {
+                toTestALNackPayload({
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
@@ -209,7 +211,7 @@ describe('AL state retained across runtime recreation', () => {
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
                     missingRanges: [{ from: 1, to: 1 }]
-                }
+                })
             ),
             'peer'
         );

@@ -36,6 +36,8 @@ import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 
 import { reserveNoResourceEntries } from '../shared/reserve-no-resource-entries.ts';
 
+import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+
 export type ReceiptOwnerScenario = 'native-return' | 'later-throw' | 'closed' | 'native-throw' | 'publish-return' | 'publish-throw' | 'direct-failure';
 
 export type ReceiptOwnerSink = 'collecting' | 'mutating' | 'throwing' | 'disabled' | 'unsafe' | 'unsafe-transport' | 'unsafe-publication' | 'clock-mutating';
@@ -382,7 +384,7 @@ async function generateCompleteReceipt(service: WsQueueBoxServerService): Promis
     assert.equal((await service.acceptIncomingMessage(createReceiptSubject(), 'origin')).right?.kind, 'admitted');
     const ack = newALAckControlMessage(
         { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: Date.now(), traceId: 'trace-full-stack-api-receipt-owner-fixture' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'subject',
             originPeerId: 'origin',
             fromPeerId: 'recipient',
@@ -391,7 +393,7 @@ async function generateCompleteReceipt(service: WsQueueBoxServerService): Promis
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
     assert.equal((await service.acceptIncomingMessage(ack, 'recipient')).right?.kind, 'control');
 }

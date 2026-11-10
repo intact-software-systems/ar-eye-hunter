@@ -32,6 +32,8 @@ import {
 } from './rtc-relay-chain-test-support.ts';
 import { createRtcTopicSubscriptionsFixture } from './rtc-topic-subscription-reader-fixtures.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 interface ReceiptedPublicationInput {
     readonly resourceId: string;
     /** The audience the origin froze the frame to, which the proof signs. */
@@ -637,14 +639,14 @@ function createSwitchableTopicSubscriptions(): Readonly<{ reader: RtcTopicSubscr
 function createStrayNotSubscribed(signed: ALMessage, logicalRecipientPeerId: string): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: 'stray-nack', ts: Date.now(), senderId: 'c', traceId: signed.id.traceId },
-        {
+        toTestALNackPayload({
             msgId: signed.id.msgId,
             fromPeerId: 'c',
             toPeerId: 'r',
             logicalRecipientPeerId,
             reason: 'not-subscribed',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

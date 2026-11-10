@@ -55,6 +55,8 @@ import {
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 interface OutboundObligationInput {
     readonly targets: NonNullable<ALMessage['targets']>;
     readonly expectedPeerIds: readonly string[];
@@ -88,14 +90,14 @@ const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale', 'membership-f
 function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `control-${reason}`, senderId: 'receiver', ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        {
+        toTestALNackPayload({
             fromPeerId: 'receiver',
             logicalRecipientPeerId: 'receiver',
             toPeerId: 'sender',
             msgId: 'message',
             reason,
             observedAtEpochMs: 1
-        }
+        })
     );
 }
 
@@ -151,22 +153,28 @@ describe('outbound control admission identity', () => {
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
             const ordering = { orderingKey: toALOrderingTrackKey(message), missingRanges: [{ from: 2, to: 2 }], expectedSeq: 2 };
             const accepted = type === 'ack'
-                ? newALAckControlMessage(id, {
-                    ...common,
-                    ackedMsgId: msgId,
-                    originPeerId: 'sender',
-                    logicalRecipientPeerId: 'receiver',
-                    status: 'delivered',
-                    carrier: 'ws'
-                })
+                ? newALAckControlMessage(
+                    id,
+                    toTestALAckPayload({
+                        ...common,
+                        ackedMsgId: msgId,
+                        originPeerId: 'sender',
+                        logicalRecipientPeerId: 'receiver',
+                        status: 'delivered',
+                        carrier: 'ws'
+                    })
+                )
                 : type === 'nack'
-                ? newALNackControlMessage(id, {
-                    ...common,
-                    ...ordering,
-                    logicalRecipientPeerId: 'receiver',
-                    msgId,
-                    reason: 'gap'
-                })
+                ? newALNackControlMessage(
+                    id,
+                    toTestALNackPayload({
+                        ...common,
+                        ...ordering,
+                        logicalRecipientPeerId: 'receiver',
+                        msgId,
+                        reason: 'gap'
+                    })
+                )
                 : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
             const before = [...state.data];
             const wrongRoute = { ...accepted, route: { ...accepted.route, resourceId: 'another-locator' } };
@@ -257,7 +265,7 @@ describe('outbound control admission identity', () => {
         await seedDirectObligation(admissionStore);
         const ack = newALAckControlMessage(
             { v: 4, msgId: 'control', senderId: 'receiver', ts: Date.now(), traceId: 'trace-al-outbound-control-admission' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'message',
                 originPeerId: 'sender',
                 logicalRecipientPeerId: 'receiver',
@@ -266,7 +274,7 @@ describe('outbound control admission identity', () => {
                 status: 'delivered',
                 observedAtEpochMs: Date.now(),
                 carrier: 'rtc'
-            }
+            })
         );
 
         expect(await control.admit(ack, 'peer')).toEqual({ kind: 'committed' });
@@ -294,7 +302,7 @@ describe('outbound control admission identity', () => {
         const baseline = [...state.data];
         const forged = newALAckControlMessage(
             { v: 4, msgId: 'control', senderId: 'receiver', ts: 1, traceId: 'trace-al-outbound-control-admission' },
-            {
+            toTestALAckPayload({
                 fromPeerId: 'receiver',
                 toPeerId: 'sender',
                 ackedMsgId: 'message',
@@ -303,7 +311,7 @@ describe('outbound control admission identity', () => {
                 status: 'delivered',
                 observedAtEpochMs: 1,
                 carrier: 'ws'
-            }
+            })
         );
 
         expect(await control.admit(forged, 'peer')).toEqual({
@@ -320,7 +328,7 @@ describe('outbound control admission identity', () => {
         const baseline = [...state.data];
         const ack = newALAckControlMessage(
             { v: 4, msgId: 'control', senderId: 'receiver', ts: 1, traceId: 'trace-al-outbound-control-admission' },
-            {
+            toTestALAckPayload({
                 fromPeerId: 'receiver',
                 toPeerId: 'other-sender',
                 ackedMsgId: 'message',
@@ -329,7 +337,7 @@ describe('outbound control admission identity', () => {
                 status: 'delivered',
                 observedAtEpochMs: 1,
                 carrier: 'ws'
-            }
+            })
         );
 
         expect((await control.admit(ack, 'peer')).kind).toBe('rejected');
@@ -370,7 +378,7 @@ describe('outbound control admission identity', () => {
                     ts: serverSnapshotVersion,
                     traceId: 'trace-al-outbound-control-admission'
                 },
-                {
+                toTestALNackPayload({
                     fromPeerId: 'receiver',
                     logicalRecipientPeerId: 'receiver',
                     toPeerId: 'sender',
@@ -378,7 +386,7 @@ describe('outbound control admission identity', () => {
                     reason: 'stale',
                     observedAtEpochMs: serverSnapshotVersion,
                     serverSnapshotVersion
-                }
+                })
             );
             expect(await control.admit(nack, 'peer')).toEqual({ kind: 'committed' });
         }
@@ -454,7 +462,7 @@ describe('outbound control admission identity', () => {
             retryTracking: undefined
         });
         const values = [
-            ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
+            ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => (toTestALAckPayload({
                 ackedMsgId: 'message',
                 originPeerId: 'sender',
                 logicalRecipientPeerId: fromPeerId,
@@ -463,8 +471,8 @@ describe('outbound control admission identity', () => {
                 status: 'delivered' as const,
                 observedAtEpochMs,
                 carrier: 'ws' as const
-            })),
-            {
+            }))),
+            toTestALAckPayload({
                 ackedMsgId: 'message',
                 originPeerId: 'sender',
                 logicalRecipientPeerId: 'peer-0',
@@ -473,7 +481,7 @@ describe('outbound control admission identity', () => {
                 status: 'accepted' as const,
                 observedAtEpochMs: 256,
                 carrier: 'ws' as const
-            }
+            })
         ];
         const key = 'outbound-control:control:acks:message';
         state.data.set(key, {
@@ -1155,7 +1163,7 @@ function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[
             ts: 1,
             traceId: 'trace-al-outbound-control-admission'
         },
-        {
+        toTestALNackPayload({
             fromPeerId: 'receiver',
             logicalRecipientPeerId: 'receiver',
             toPeerId: 'sender',
@@ -1165,7 +1173,7 @@ function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[
             orderingKey,
             expectedSeq: 2,
             missingRanges
-        }
+        })
     );
 }
 
@@ -1196,7 +1204,7 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
     const hints = input.hints ?? 'retained-track';
     return newALNackControlMessage(
         { v: 4, msgId: `control-resync-${fromPeerId}`, senderId: fromPeerId, ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        {
+        toTestALNackPayload({
             fromPeerId,
             logicalRecipientPeerId: fromPeerId,
             toPeerId: input.toPeerId ?? 'sender',
@@ -1210,7 +1218,7 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
                     expectedSeq: 2,
                     missingRanges: []
                 })
-        }
+        })
     );
 }
 
@@ -1218,14 +1226,14 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
 function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired' | 'membership-fenced'): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        { fromPeerId, logicalRecipientPeerId: fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 }
+        toTestALNackPayload({ fromPeerId, logicalRecipientPeerId: fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 })
     );
 }
 
 function notYetInSyncNack(): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: 'control-not-yet-in-sync', senderId: 'receiver', ts: 1, traceId: 'trace-al-outbound-control-admission' },
-        {
+        toTestALNackPayload({
             fromPeerId: 'receiver',
             logicalRecipientPeerId: 'receiver',
             toPeerId: 'sender',
@@ -1233,7 +1241,7 @@ function notYetInSyncNack(): ALMessage {
             reason: 'not-yet-in-sync',
             observedAtEpochMs: 1,
             serverSnapshotVersion: 3
-        }
+        })
     );
 }
 
@@ -1242,21 +1250,27 @@ function controlMessage(type: 'ack' | 'nack' | 'repair', peerId: string = 'recei
     const common = { fromPeerId: peerId, toPeerId: 'sender', observedAtEpochMs: 1 };
     switch (type) {
         case 'ack':
-            return newALAckControlMessage(id, {
-                ...common,
-                ackedMsgId: 'message',
-                originPeerId: 'sender',
-                logicalRecipientPeerId: peerId,
-                status: 'delivered',
-                carrier: 'ws'
-            });
+            return newALAckControlMessage(
+                id,
+                toTestALAckPayload({
+                    ...common,
+                    ackedMsgId: 'message',
+                    originPeerId: 'sender',
+                    logicalRecipientPeerId: peerId,
+                    status: 'delivered',
+                    carrier: 'ws'
+                })
+            );
         case 'nack':
-            return newALNackControlMessage(id, {
-                ...common,
-                logicalRecipientPeerId: peerId,
-                msgId: 'message',
-                reason: 'gap'
-            });
+            return newALNackControlMessage(
+                id,
+                toTestALNackPayload({
+                    ...common,
+                    logicalRecipientPeerId: peerId,
+                    msgId: 'message',
+                    reason: 'gap'
+                })
+            );
         case 'repair':
             return newALRepairControlMessage(id, { ...common, msgId: 'message', reason: 'retransmit' });
     }

@@ -26,6 +26,8 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 type CommitPhasesEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'commit-phases'; }>;
 type SenderQueueWaitEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'sender-queue-wait'; }>;
 type ControlAdmissionEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'control-admission'; }>;
@@ -242,7 +244,7 @@ it.each(['memory', 'indexeddb'] as const)(
             await runtime.acceptControlMessage(
                 newALAckControlMessage(
                     { v: 4, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-outbound-commit-phase-diagnostics' },
-                    {
+                    toTestALAckPayload({
                         ackedMsgId: message.id.msgId,
                         originPeerId: 'self',
                         logicalRecipientPeerId: fromPeerId,
@@ -251,7 +253,7 @@ it.each(['memory', 'indexeddb'] as const)(
                         status: 'accepted',
                         observedAtEpochMs: 1,
                         carrier: 'ws'
-                    }
+                    })
                 ),
                 'peer'
             );

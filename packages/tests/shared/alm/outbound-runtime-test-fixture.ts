@@ -86,6 +86,8 @@ import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-cl
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 /**
  * How long after its lease end an outbound lane recovers a crashed lease or an exhausted row at worst, a
  * backlog larger than one sweep included: a sweep that comes back with room to spare closes its window for
@@ -554,7 +556,7 @@ export function trackOutboundTestAcks(expectedPeerIds: readonly string[]): ALOut
 export function toOutboundTestAck(message: ALMessage, fromPeerId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-outbound-runtime-test-fixture' },
-        {
+        toTestALAckPayload({
             ackedMsgId: message.id.msgId,
             originPeerId: 'self',
             logicalRecipientPeerId: fromPeerId,
@@ -563,7 +565,7 @@ export function toOutboundTestAck(message: ALMessage, fromPeerId: string): ALMes
             status: 'accepted',
             observedAtEpochMs: 1,
             carrier: 'ws'
-        }
+        })
     );
 }
 

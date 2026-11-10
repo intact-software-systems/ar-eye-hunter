@@ -21,6 +21,8 @@ import { toError } from '../../shared/resilience/to-error.ts';
 
 import type { ReceiptOwnerScenario, ReceiptOwnerSink } from './full-stack-api-receipt-owner-fixture.ts';
 
+import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+
 interface ReceiptCaptureSummaryDto extends ApiJsonObject {
     readonly retainedRecords: number;
     readonly rejectedLines: number;
@@ -341,7 +343,7 @@ const RECEIPT = {
     confirmedRecipientPeerIds: ['recipient']
 };
 
-const ACK = {
+const ACK = toTestALAckPayload({
     ackedMsgId: 'subject',
     originPeerId: 'origin',
     fromPeerId: 'recipient',
@@ -350,7 +352,7 @@ const ACK = {
     carrier: 'ws',
     status: 'delivered',
     observedAtEpochMs: 900
-};
+});
 
 /** One closed record of every kind, each naming its trace. */
 const TRACED_OBSERVATIONS = [

@@ -44,6 +44,8 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
+import { toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 const NAMESPACE = 'volatile-retention';
 const SERVER_PEER_ID = 'ws-server';
 
@@ -210,14 +212,14 @@ function readRowExpiries(
 function toServerRefusal(message: ALMessage): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `refusal-${message.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now(), traceId: 'trace-al-outbound-volatile-retention' },
-        {
+        toTestALNackPayload({
             fromPeerId: SERVER_PEER_ID,
             logicalRecipientPeerId: SERVER_PEER_ID,
             toPeerId: message.id.senderId,
             msgId: message.id.msgId,
             reason: 'unauthorized',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

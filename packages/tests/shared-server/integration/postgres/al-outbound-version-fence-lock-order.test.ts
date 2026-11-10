@@ -17,6 +17,8 @@ import { createOutboundMessage, readOutboundTestAdmission } from '../../../share
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
 import { createResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 const NAMESPACE = 'fence-lock-order';
@@ -197,20 +199,23 @@ function toPendingAck(
 
 function toDeliveredAck(message: ALMessage, peerId: string): ALMessage {
     const observedAtMs = Date.now();
-    return newALAckControlMessage({
-        v: 4,
-        msgId: `${message.id.msgId}-ack`,
-        senderId: peerId,
-        ts: observedAtMs,
-        traceId: 'trace-al-outbound-version-fence-lock-order'
-    }, {
-        fromPeerId: peerId,
-        toPeerId: message.id.senderId,
-        ackedMsgId: message.id.msgId,
-        originPeerId: message.id.senderId,
-        logicalRecipientPeerId: peerId,
-        status: 'delivered',
-        observedAtEpochMs: observedAtMs,
-        carrier: 'ws'
-    });
+    return newALAckControlMessage(
+        {
+            v: 4,
+            msgId: `${message.id.msgId}-ack`,
+            senderId: peerId,
+            ts: observedAtMs,
+            traceId: 'trace-al-outbound-version-fence-lock-order'
+        },
+        toTestALAckPayload({
+            fromPeerId: peerId,
+            toPeerId: message.id.senderId,
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: peerId,
+            status: 'delivered',
+            observedAtEpochMs: observedAtMs,
+            carrier: 'ws'
+        })
+    );
 }

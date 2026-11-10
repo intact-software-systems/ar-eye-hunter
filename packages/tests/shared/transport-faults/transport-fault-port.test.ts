@@ -10,10 +10,12 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { describe, expect, it } from 'vitest';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 /** Both carriers put `JSON.stringify(ALMessage)` on the wire, so the frames here are built, not hand-written. */
 const ackFrame = JSON.stringify(newALAckControlMessage(
     { v: 4, msgId: 'ctl-1', senderId: 'b', ts: 1, traceId: 'trace-transport-fault-port' },
-    {
+    toTestALAckPayload({
         ackedMsgId: 'msg-1',
         originPeerId: 'a',
         logicalRecipientPeerId: 'b',
@@ -22,18 +24,18 @@ const ackFrame = JSON.stringify(newALAckControlMessage(
         status: 'delivered',
         observedAtEpochMs: 1,
         carrier: 'ws'
-    }
+    })
 ));
 const nackFrame = JSON.stringify(newALNackControlMessage(
     { v: 4, msgId: 'ctl-2', senderId: 'b', ts: 1, traceId: 'trace-transport-fault-port' },
-    {
+    toTestALNackPayload({
         msgId: 'msg-2',
         fromPeerId: 'b',
         logicalRecipientPeerId: 'b',
         toPeerId: 'a',
         reason: 'gap',
         observedAtEpochMs: 1
-    }
+    })
 ));
 const repairFrame = JSON.stringify(newALRepairControlMessage(
     { v: 4, msgId: 'ctl-3', senderId: 'b', ts: 1, traceId: 'trace-transport-fault-port' },

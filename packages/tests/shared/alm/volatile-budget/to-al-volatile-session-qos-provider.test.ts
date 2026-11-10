@@ -9,6 +9,8 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionQosProvider } from '@shared/alm/volatile-budget/to-al-volatile-session-qos-provider.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const NOW_MS = 1_700_000_000_000;
 const CONTEXT: ALQosMessageContext = { direction: 'outbound' };
 const MESSAGE = newALUnicastMessage(
@@ -34,7 +36,7 @@ function createFullBudget(): ALVolatileSessionBudget {
 
 const ACK = newALAckControlMessage(
     { v: 4, msgId: 'ack-planned', senderId: 'self', ts: NOW_MS, traceId: 'trace-to-al-volatile-session-qos-provider' },
-    {
+    toTestALAckPayload({
         ackedMsgId: 'planned',
         fromPeerId: 'self',
         toPeerId: 'peer',
@@ -43,7 +45,7 @@ const ACK = newALAckControlMessage(
         carrier: 'rtc',
         status: 'delivered',
         observedAtEpochMs: NOW_MS
-    }
+    })
 );
 
 describe('the session QoS provider over the volatile budget (D78)', () => {

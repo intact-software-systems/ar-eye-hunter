@@ -28,7 +28,9 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 
-const ack: ALAckPayload = {
+import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
+
+const ack: ALAckPayload = toTestALAckPayload({
     ackedMsgId: 'msg-1',
     fromPeerId: 'sender',
     toPeerId: 'receiver',
@@ -37,8 +39,8 @@ const ack: ALAckPayload = {
     status: 'delivered',
     observedAtEpochMs: 12,
     carrier: 'ws'
-};
-const nack: ALNackPayload = {
+});
+const nack: ALNackPayload = toTestALNackPayload({
     msgId: 'msg-1',
     fromPeerId: 'sender',
     logicalRecipientPeerId: 'sender',
@@ -48,7 +50,7 @@ const nack: ALNackPayload = {
     orderingKey: 'track',
     expectedSeq: 2,
     missingRanges: []
-};
+});
 const repair: ALRepairPayload = {
     msgId: 'msg-1',
     fromPeerId: 'sender',
@@ -150,14 +152,14 @@ describe('AL control message codec', () => {
     it.each(['membership-fenced', 'held-by-other', 'unsupported', 'no-publish-grant'] as const)(
         'round-trips a %s NACK and refuses a reason outside the vocabulary',
         (reason) => {
-            const refusal: ALNackPayload = {
+            const refusal: ALNackPayload = toTestALNackPayload({
                 msgId: 'msg-1',
                 fromPeerId: 'sender',
                 logicalRecipientPeerId: 'sender',
                 toPeerId: 'receiver',
                 reason,
                 observedAtEpochMs: 13
-            };
+            });
             const message = newALNackControlMessage(controlId, refusal);
             const unknownReason = controlMessageWithResource(
                 AL_CONTROL_NACK_TYPE_ID,

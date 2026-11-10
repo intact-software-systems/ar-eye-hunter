@@ -41,6 +41,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const SNAPSHOT_VERSION = 7;
 /** The room message's lifetime: its deadline is this long after it was sent. */
@@ -113,7 +115,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         await fixture.service.enqueueOutboxIfAbsent(fromServer);
         const forged = newALAckControlMessage(
             { v: 4, msgId: 'ack-c-for-b', senderId: 'c', ts: fixture.clock.nowMs, traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'server-room-1',
                 fromPeerId: 'c',
                 toPeerId: 'server',
@@ -122,7 +124,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
                 carrier: 'ws',
                 status: 'delivered',
                 observedAtEpochMs: fixture.clock.nowMs
-            }
+            })
         );
 
         const refused = await fixture.service.acceptIncomingMessage(forged, 'c');
@@ -638,7 +640,7 @@ function admission(): WsQueueBoxServerReceiptAggregation.Admission {
 function aggregateAck(
     ack: Readonly<{ fromPeerId: string; logicalRecipientPeerId: string; ackedMsgId?: string; status?: ALAckStatus; }>
 ): ALAckPayload {
-    return {
+    return toTestALAckPayload({
         ackedMsgId: ack.ackedMsgId ?? 'room-message-1',
         fromPeerId: ack.fromPeerId,
         toPeerId: 'a',
@@ -647,7 +649,7 @@ function aggregateAck(
         carrier: 'ws',
         status: ack.status ?? 'delivered',
         observedAtEpochMs: 1_000
-    };
+    });
 }
 
 /** The receiver ACK as the control message the server counts, under the subject's trace. */
@@ -822,7 +824,7 @@ function roomMessage(nowMs: number): ALMessage {
 function receiverAck(fixture: ReceiptFixture, recipient: 'b' | 'c'): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: fixture.clock.nowMs, traceId: 'trace-ws-queue-box-server-receipt-aggregation' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
             toPeerId: 'a',
@@ -831,7 +833,7 @@ function receiverAck(fixture: ReceiptFixture, recipient: 'b' | 'c'): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: fixture.clock.nowMs
-        }
+        })
     );
 }
 

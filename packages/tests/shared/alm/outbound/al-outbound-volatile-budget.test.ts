@@ -25,6 +25,8 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 const DURABLE_TYPE_ID = 'chat.durable.v1';
 
 /**
@@ -142,7 +144,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         const { budget, runtime } = await createFullRuntime();
         const ack = newALAckControlMessage(
             { v: 4, msgId: 'ack-at-the-bound', senderId: 'self', ts: Date.now(), traceId: 'trace-al-outbound-volatile-budget' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'received-message',
                 fromPeerId: 'self',
                 toPeerId: 'peer-1',
@@ -151,7 +153,7 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
                 carrier: 'ws',
                 status: 'delivered',
                 observedAtEpochMs: Date.now()
-            }
+            })
         );
         // A deadline, so only the control rule can exempt it.
         const [acked] = await runtime.enqueueAllIfAbsent([{
@@ -168,14 +170,14 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
             'a NACK',
             newALNackControlMessage(
                 { v: 4, msgId: 'nack-at-the-bound', senderId: 'self', ts: Date.now(), traceId: 'trace-al-outbound-volatile-budget' },
-                {
+                toTestALNackPayload({
                     fromPeerId: 'self',
                     logicalRecipientPeerId: 'self',
                     toPeerId: 'peer-1',
                     msgId: 'received-message',
                     reason: 'gap',
                     observedAtEpochMs: Date.now()
-                }
+                })
             )
         ],
         [
