@@ -1446,3 +1446,21 @@ it.each<ALAckStatus>(['accepted', 'delivered', 'forwarded', 'subtree-complete', 
         expect(toWsQueueBoxServerReceiptAckFacts(ack)?.ack.status).toBe(status);
     }
 );
+
+describe('closed ACK facts of a v3 acknowledgement', () => {
+    const ack = newALAckControlMessage(
+        { v: 4, msgId: 'ack-proof-slot', senderId: 'recipient', ts: 900, traceId: 'trace-ws-queue-box-server-receipt-observation' },
+        toTestALAckPayload({ ackedMsgId: 'subject', fromPeerId: 'recipient', toPeerId: 'origin', carrier: 'ws' })
+    );
+
+    it('observes no ACK facts for an acknowledgement resource without its proof slot', () => {
+        const { proof: _proof, ...withoutProof } = JSON.parse(ack.payload.resource);
+        const unslotted = { ...ack, payload: { ...ack.payload, resource: JSON.stringify(withoutProof) } };
+
+        expect(toWsQueueBoxServerReceiptAckFacts(unslotted)).toBeUndefined();
+    });
+
+    it('observes the null proof of an acknowledgement resource that carries its proof slot', () => {
+        expect(toWsQueueBoxServerReceiptAckFacts(ack)?.ack.proof).toBeNull();
+    });
+});

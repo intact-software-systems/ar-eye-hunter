@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID, isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
+import { decodeALAckPayload } from '../../al-contracts/al-control-value-codec.ts';
 import type { ALAckPayload, ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../alm/delivery/al-delivery-lifecycle.ts';
@@ -209,10 +210,7 @@ export function toWsQueueBoxServerReceiptAckFacts(message: ALMessage): WsQueueBo
         return undefined;
     }
     try {
-        const ack: unknown = JSON.parse(message.payload.resource);
-        if (!isClosedAck(ack)) {
-            return undefined;
-        }
+        const ack = decodeALAckPayload(JSON.parse(message.payload.resource));
         return Object.freeze({
             controlMsgId: message.id.msgId,
             controlSenderId: message.id.senderId,
@@ -277,17 +275,4 @@ export function toWsQueueBoxServerReceiptOutboxVerdict(
         cause: verdict.kind === 'storage-unavailable' ? verdict.cause : undefined,
         limit: verdict.kind === 'refused' ? verdict.limit : undefined
     });
-}
-
-function isClosedAck(value: unknown): value is ALAckPayload {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        return false;
-    }
-    const fields = value as Readonly<Record<string, unknown>>;
-    return ['ackedMsgId', 'originPeerId', 'fromPeerId', 'toPeerId', 'logicalRecipientPeerId']
-        .every((field) => typeof fields[field] === 'string') &&
-        (fields.carrier === 'ws' || fields.carrier === 'rtc') &&
-        (fields.status === 'accepted' || fields.status === 'delivered' || fields.status === 'forwarded' ||
-            fields.status === 'subtree-complete' || fields.status === 'subtree-complete-not-subscribed') &&
-        typeof fields.observedAtEpochMs === 'number' && Number.isFinite(fields.observedAtEpochMs);
 }
