@@ -89,19 +89,20 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
 function toForwardedAck(
     msg: ALMessage,
     logicalRecipientPeerId: string,
-    status: 'delivered' | 'subtree-complete-not-subscribed' = 'delivered'
+    status: 'delivered' | 'subtree-complete-not-subscribed' = 'delivered',
+    fromPeerId = 'relay'
 ): ALMessage {
     return newALAckControlMessage(
         {
             v: 4,
             msgId: `ack-${logicalRecipientPeerId}-${status}`,
             ts: Date.now(),
-            senderId: 'relay',
+            senderId: fromPeerId,
             traceId: 'trace-relayed-gap'
         },
         toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
-            fromPeerId: 'relay',
+            fromPeerId,
             toPeerId: 'self',
             originPeerId: 'self',
             logicalRecipientPeerId,
@@ -200,5 +201,14 @@ describe('a forwarded hop-end at the origin', () => {
         expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe(
             'AL acknowledgement confirms no peer of the pending outbound receipt'
         );
+    });
+
+    it('refuses a forwarded hop-end from a sender that is neither a next hop nor an expected repair peer', async () => {
+        const origin = await createOrderedOrigin('forwarded-not-subscribed-stranger');
+
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2', 'subtree-complete-not-subscribed', 'x'))).toBe(
+            'AL acknowledgement confirms no peer of the pending outbound receipt'
+        );
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe('committed');
     });
 });

@@ -28,7 +28,7 @@ export function validateALInboundNackAdmission(
         issues.push(rejectInboundNack('Inbound NACK names no recipient of the frozen audience'));
     }
     if (pending.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId)) {
-        issues.push(rejectInboundNack('Inbound NACK names a recipient already relayed outside the audience'));
+        issues.push(rejectInboundNack('Inbound NACK names a recipient already forwarded outside the audience'));
     }
     if (
         acks.some((ack) =>
@@ -38,7 +38,7 @@ export function validateALInboundNackAdmission(
         issues.push(rejectInboundNack('Inbound NACK names a recipient whose confirmation was already forwarded'));
     }
     if (nack.reason === 'gap' && !hasGapOrderingHints(nack)) {
-        issues.push({ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to relay' });
+        issues.push({ code: 'malformed', message: 'Inbound gap NACK carries no ordering hints to forward' });
     }
     if (
         nack.reason !== 'gap' &&

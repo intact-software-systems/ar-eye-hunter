@@ -1,7 +1,7 @@
 import type { ALNackPayload } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALControlAdmissionRead } from '../compute-al-outbound-control-admission.ts';
-import { isALOutboundExpectedRepairPeer } from './is-al-outbound-expected-repair-peer.ts';
+import { isALOutboundRecipientControlSender } from './is-al-outbound-expected-repair-peer.ts';
 import { toALOutboundReceiptClasses } from './to-al-outbound-receipt-classes.ts';
 
 /**
@@ -15,8 +15,7 @@ export function validateALOutboundRelayedNack(
 ): readonly ALMessageRejection[] {
     const owed = read.pending !== undefined &&
         toALOutboundReceiptClasses(read.pending).unconfirmedPeerIds.includes(nack.logicalRecipientPeerId);
-    const fromExpectedPeer = isALOutboundExpectedRepairPeer(read, nack.fromPeerId) ||
-        read.sent?.policy.ackTracking?.nextHopPeerIds.includes(nack.fromPeerId) === true;
+    const fromExpectedPeer = isALOutboundRecipientControlSender(read, nack.fromPeerId);
     return [
         ...(fromExpectedPeer
             ? []

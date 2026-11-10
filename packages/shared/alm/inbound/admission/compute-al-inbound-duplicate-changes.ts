@@ -169,18 +169,20 @@ function toStoredUpwardControls(
     const confirmed = confirmations.filter((ack, index) =>
         confirmations.findIndex((prior) => prior.logicalRecipientPeerId === ack.logicalRecipientPeerId) === index
     );
-    const outside = pendingAck.outsideAudiencePeerIds.flatMap((peerId): readonly ALReceiptControl[] => {
-        const nack = read.nacks.find((stored) => stored.logicalRecipientPeerId === peerId);
-        const hopEnd = read.acks.find((stored) =>
-            stored.logicalRecipientPeerId === peerId && stored.status === 'subtree-complete-not-subscribed'
-        );
-        return nack !== undefined
-            ? [{ type: 'nack', payload: nack }]
-            : hopEnd === undefined
-            ? []
-            : [{ type: 'ack', payload: hopEnd }];
-    });
+    const outside = pendingAck.outsideAudiencePeerIds.flatMap((peerId) => toStoredOutsideControl(read, peerId));
     return [...confirmed.map((ack): ALReceiptControl => ({ type: 'ack', payload: ack })), ...outside];
+}
+
+/** The stored NACK that recorded a recipient outside, else the hop-end that implied it; none once both expired. */
+function toStoredOutsideControl(read: ALInboundMessageReadDto, peerId: string): readonly ALReceiptControl[] {
+    const nack = read.nacks.find((stored) => stored.logicalRecipientPeerId === peerId);
+    if (nack !== undefined) {
+        return [{ type: 'nack', payload: nack }];
+    }
+    const hopEnd = read.acks.find((stored) =>
+        stored.logicalRecipientPeerId === peerId && stored.status === 'subtree-complete-not-subscribed'
+    );
+    return hopEnd === undefined ? [] : [{ type: 'ack', payload: hopEnd }];
 }
 
 /**

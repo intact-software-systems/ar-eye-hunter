@@ -144,7 +144,7 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([{
             code: 'unauthorized',
-            message: 'Inbound NACK names a recipient already relayed outside the audience'
+            message: 'Inbound NACK names a recipient already forwarded outside the audience'
         }]);
     });
 
@@ -159,7 +159,7 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([{
             code: 'malformed',
-            message: 'Inbound gap NACK carries no ordering hints to relay'
+            message: 'Inbound gap NACK carries no ordering hints to forward'
         }]);
     });
 

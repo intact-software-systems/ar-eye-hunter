@@ -909,7 +909,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
 
         expect(await control.admit(createNotSubscribedNack('below'), WS_ARRIVAL)).toEqual({
             kind: 'rejected',
-            reason: 'Inbound NACK names a recipient already relayed outside the audience'
+            reason: 'Inbound NACK names a recipient already forwarded outside the audience'
         });
         expect(await control.admit(forwarded, WS_ARRIVAL)).toEqual({
             kind: 'rejected',
