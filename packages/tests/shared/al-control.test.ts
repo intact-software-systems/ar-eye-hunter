@@ -118,7 +118,7 @@ describe('AL control message codec', () => {
 
     it('round-trips a v3 acknowledgement with a null proof, and one that carries a proof', () => {
         const message = newALAckControlMessage(controlId, ack);
-        const signed: ALAckPayload = { ...ack, proof: { alg: 'ES256', keyId: 'key-1', signature: 'c2lnbmF0dXJl' } };
+        const signed: ALAckPayload = { ...ack, proof: { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 's'.repeat(85) + 'A' } };
 
         expect(message.payload.typeId).toBe('al.control.ack.v3');
         expect(ack.proof).toBeNull();

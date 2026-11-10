@@ -45,6 +45,9 @@ const receipt: ALReceiptPayload = {
     observedAtEpochMs: 15
 };
 
+/** An ES256 proof of the persisted proof's shape: a 43-character key id and an 86-character signature. */
+const ES256_PROOF = { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 's'.repeat(85) + 'A' } as const;
+
 /** A control whose payload resource was written by a peer that did not go through the strict builder. */
 function withResource(message: ALMessage, resource: object): ALMessage {
     return { ...message, payload: { ...message.payload, resource: JSON.stringify(resource) } };
@@ -111,7 +114,7 @@ describe('AL control value codec', () => {
 
     it('refuses a proof with an unknown field or another algorithm', () => {
         const ack = toTestALAckPayload({ ackedMsgId: 'msg-1', fromPeerId: 'relay', toPeerId: 'origin' });
-        const proof = { alg: 'ES256', keyId: 'key-1', signature: 'c2lnbmF0dXJl' };
+        const proof = ES256_PROOF;
 
         expect(() => decodeALAckPayload({ ...ack, proof: { ...proof, extra: true } }))
             .toThrow('Control proof is invalid');
@@ -123,11 +126,23 @@ describe('AL control value codec', () => {
             .toThrow('Control proof is invalid');
     });
 
+    it('refuses a proof whose key id or signature is not the ES256 length', () => {
+        const ack = toTestALAckPayload({ ackedMsgId: 'msg-1', fromPeerId: 'relay', toPeerId: 'origin' });
+
+        expect(() => decodeALAckPayload({ ...ack, proof: { ...ES256_PROOF, keyId: 'K'.repeat(10) } }))
+            .toThrow('Control proof is invalid');
+        expect(() => decodeALAckPayload({ ...ack, proof: { ...ES256_PROOF, signature: 's'.repeat(85) } }))
+            .toThrow('Control proof is invalid');
+        expect(() => decodeALNackPayload({ ...notSubscribedNack, proof: { ...ES256_PROOF, signature: 's'.repeat(85) } }))
+            .toThrow('Control proof is invalid');
+        expect(decodeALAckPayload({ ...ack, proof: ES256_PROOF }).proof).toEqual(ES256_PROOF);
+    });
+
     it('round-trips a NACK that carries its origin and a proof', () => {
         const signed: ALNackPayload = {
             ...notSubscribedNack,
             originPeerId: 'origin',
-            proof: { alg: 'ES256', keyId: 'key-1', signature: 'c2lnbmF0dXJl' }
+            proof: ES256_PROOF
         };
 
         expect(decodeALControlMessage(newALNackControlMessage(controlId, signed)).right)
