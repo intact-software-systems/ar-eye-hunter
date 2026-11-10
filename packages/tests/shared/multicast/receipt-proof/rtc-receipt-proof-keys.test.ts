@@ -483,6 +483,57 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.receiptProofKeys)
             .toEqual(keys);
     });
+
+    it('a send whose first admission conflicted still verifies its counted recipients\' ACKs', async () => {
+        const recipients = { b: await createAvailablePublicationCryptoFixture(), c: await createAvailablePublicationCryptoFixture() };
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createKeyedRoom({ b: toGroupPresencePublicationKey(recipients.b)!, c: toGroupPresencePublicationKey(recipients.c)! }),
+            nextHopPeerIds: ['b', 'c'],
+            publicationCrypto: await createAvailablePublicationCryptoFixture()
+        });
+        const store = fixture.resources.admissionStore;
+        const commitBundle = store.commitBundle.bind(store);
+        let conflicts = 0;
+        vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle, observation) => {
+            if (conflicts > 0) {
+                return await commitBundle(bundle, observation);
+            }
+            conflicts++;
+            return 'conflict';
+        });
+        const message = createOriginReceiverMulticast('conflicted-keyed');
+
+        await fixture.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(10);
+        const sentBefore = [fixture.channels.b!.sent.length, fixture.channels.c!.sent.length];
+        const admitted = [];
+        for (const peerId of ['b', 'c'] as const) {
+            const signed = await signTestALReceiptControl(recipients[peerId], {
+                type: 'ack',
+                payload: toTestALAckPayload({
+                    ackedMsgId: message.id.msgId,
+                    fromPeerId: peerId,
+                    toPeerId: 'a',
+                    originPeerId: 'a',
+                    logicalRecipientPeerId: peerId,
+                    carrier: 'rtc',
+                    observedAtEpochMs: Date.now()
+                })
+            });
+            admitted.push(
+                await fixture.manager.acceptControlMessage(newALAckControlMessage(
+                    { v: 4, msgId: `ack-${peerId}-conflicted`, senderId: peerId, ts: Date.now(), traceId: 'trace-conflicted' },
+                    signed.payload
+                ))
+            );
+        }
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(conflicts).toBe(1);
+        expect(sentBefore).toEqual([1, 1]);
+        expect(admitted).toEqual([{ kind: 'committed' }, { kind: 'committed' }]);
+        expect([fixture.channels.b!.sent.length, fixture.channels.c!.sent.length]).toEqual(sentBefore);
+    });
 });
 
 const ROUTE = { topicId: 'chat', resourceId: 'counted', contextId: ORIGIN_ROOM.groupId };

@@ -15,6 +15,7 @@ import type { ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbou
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
+import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import {
     ALOutboundMessageRuntime,
     EntityStatus,
@@ -39,6 +40,7 @@ import {
     type OutboundTestStores
 } from './alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from './alm/outbound-test-payload.ts';
+import { createAvailablePublicationCryptoFixture } from './signature/publication-crypto-fixtures.ts';
 import { waitForSettledOutboundWork } from './wait-for-al-outbound-work.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
@@ -546,6 +548,51 @@ describe('AL outbound durable effect lifecycle', () => {
 
         expect(rejectedFirstCommit).toBe(true);
         expect(sent).toEqual([]);
+        await runtime.dispose();
+    });
+
+    it('a replayed first admission keeps the receipt keys its plan froze', async () => {
+        vi.useFakeTimers();
+
+        const stores = createDefaultOutboundTestStores();
+        const msg = createOutboundMessage('msg-conflict-receipt-keys');
+        const keys = { 'peer-1': toGroupPresencePublicationKey(await createAvailablePublicationCryptoFixture())! };
+        const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+        let conflicts = 0;
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
+            if (conflicts > 0) {
+                return await commitBundle(bundle, observation);
+            }
+            conflicts++;
+            return 'conflict';
+        });
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
+            planOutgoingMessage: (plannedMsg) => ({
+                msg: plannedMsg,
+                dropReasonCode: undefined,
+                lane: 'volatile',
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+                ackTracking: {
+                    enabled: true,
+                    timeoutMs: 60_000,
+                    maxAttempts: 1,
+                    expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
+                    mode: 'receiver'
+                },
+                receiptProofKeys: keys
+            })
+        });
+
+        expect((await runtime.enqueueIfAbsent(msg)).verdict).toEqual({ kind: 'pending' });
+        await vi.advanceTimersByTimeAsync(200);
+
+        const stored = await stores.admissionStore.readStoredMessage(msg.id.msgId);
+        expect(conflicts).toBe(1);
+        expect(stored?.policy.ackTracking?.mode).toBe('receiver');
+        expect(stored?.policy.receiptProofKeys).toEqual(keys);
         await runtime.dispose();
     });
 
