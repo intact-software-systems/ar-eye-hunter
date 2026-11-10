@@ -4,10 +4,11 @@ Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
 (authorized WS pub/sub, as S2-i and S2-ii), Slice 3 (restricted RTC parity, as
 S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii), Slice
 5 (producer-row positions, as S5-i), Slice 6 (granted unicast, list and
-principal broadcast over RTC, as S6-i and S6-ii) and Slice 7 (cross-instance
-positions and outside class, as S7-i and S7-ii) are implemented and recorded as
-applied in §7; the later outcomes remain a proposed extension, not implemented
-behavior or an adopted change to `docs/product.md`.
+principal broadcast over RTC, as S6-i and S6-ii), Slice 7 (cross-instance
+positions and outside class, as S7-i and S7-ii) and Slice 8 (signed receipts on
+RTC, as S8-i) are implemented and recorded as applied in §7; the later outcomes
+remain a proposed extension, not implemented behavior or an adopted change to
+`docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -426,7 +427,13 @@ signature by the publishing session, verified at every relay and receiver
 against its own room snapshot. Slice 6 extends the same proof to a listed or
 principal room broadcast and a room unicast, each sent as the multicast its
 leg admission froze. RTC returns unsupported for an exclusions-only, `world`
-or exclusive send, and an allowed WS strategy uses the validated WS path.
+or exclusive send, and an allowed WS strategy uses the validated WS path. Slice
+8 authenticates the recipient beside the publisher: under a `receiver` or
+`leader` receipt every ACK and NACK a counted recipient authors on RTC carries
+that session's ECDSA P-256 signature, a relay forwards it as signed, and the
+origin counts it only after verifying it against the key it froze for that
+recipient at admission. The publisher of an ordinary room send stays
+unauthenticated across relays.
 
 Relays may inspect payload bytes unless a separate confidentiality mechanism
 protects them. Applications requiring subscriber-only byte access use a
@@ -1151,13 +1158,139 @@ before S7-ii, a regression only if `maxRepairs` ever exceeds 1; the RTC overlay
 planner is the only such planner in production, and S7-ii does not exercise it.
 Decisions D568–D580 are in the roadmap; Slice 7 is complete (S7-i and S7-ii).
 
+### Slice 8: signed receipts on RTC
+
+Authenticate the recipient a receipt control speaks for on RTC, so that
+`acknowledged` means one thing on both carriers and at-least-once over peer
+relays holds against a misbehaving member, not only against faults. The premise
+is corrected (S8-C0b): the candidates survey said the slice replaces the trust
+in an ACK's `fromPeerId`, that the AR Eye games gate proves it and that it is
+client-only, and the code corrects all three. No game-lane room relays: below 5
+active sessions a room is a `star`, in which every recipient ACKs the origin
+directly, and lane rooms hold 2 to 4 sessions, so the games gate runs direct
+ACKs only. The defect needs no relay: on RTC the channel binds a control's
+`fromPeerId`, but nothing bound its `logicalRecipientPeerId`, so under
+`receiver` and `leader` any room peer with a channel to the origin could confirm
+another recipient (whose true ACK was then refused as already counted), move one
+outside with a forged outside-audience NACK or end everyone's receipt with a
+forged terminal NACK, and a relay could drop a copy and forge its ACK, so the
+timeout and the WS fallback never fired. It is not client-only: the WS server
+decodes the same payloads through its closed decoder and authors three of its
+own, though its behaviour does not change. And it is half a guarantee: the
+publisher proof covers granted sends only, so an ordinary room send's origin
+stays unauthenticated across relays. It was designed in the Slice 8 design
+proposal, now deleted (git history is the archive), from the candidates survey
+and three read-only surveys at `664ed19d5`, and lands as S8-i (the protocol: the
+shapes, the signing, the relay's forward, the frozen keys, the origin's
+verification, the cutover, every fixture, the blocking units and these
+documents) and S8-ii (the observation cells, the `messages.control` recipient
+field and the 6f count).
+
+As applied (S8-i): one encoder, `toClassifiedSigningInput(domainTag, sections)`
+in `packages/shared/signature/`, builds both signing inputs, and
+`ALPublicationProof` is `SignatureProof` with no alias; a granted frame's signed
+bytes are pinned unmoved. One test builder,
+`packages/tests/al-control-test-payloads.ts`, builds the ACK and NACK fixtures
+of 93 test files. The control ids are `al.control.ack.v3` and
+`al.control.nack.v3` on both carriers: each payload carries a required nullable
+`proof`, whose `null` means the carrier's admission authenticates the sender,
+and a NACK a required `originPeerId`, checked against the owner row at a relay
+and at the origin; `v2` is refused `unsupported` by the existing id check, the
+two wire shims `decodeALNackWirePayload` and `decodeALReceiptWirePayload` are
+deleted, a control's proof decodes to the strict ES256 shape of a persisted
+message proof (a 43-character key id and an 86-character signature, base64url),
+the WS server's receipt observation decodes an ACK through the codec, and five
+black-box recipes and the hosted manifests 18 and 22 carry the new ids. The
+receipt proof (`al-contracts/receipt-proof/al-receipt-proof.ts`) signs every
+field a recipient states and none of the hop fields (`fromPeerId`, `toPeerId`,
+an ACK's `carrier`), under the domain tags `rallar-alm-ack-proof-v1` and
+`rallar-alm-nack-proof-v1`, so an ACK's signature never verifies as a NACK's.
+The RTC planner states `receiptProofKeys`, each counted recipient's
+`{ keyId, publicJwk }`, on the plan that freezes the audience: at admission when
+the room snapshot is cached, at the dequeue that first has it otherwise; the
+sent policy adopts the plan's keys once and never replaces them, and an empty
+key record is never stated or stored. A counted recipient is a session the
+frozen audience names or the unicast addresses. `computeRtcReceiptKeyRefusal`
+refuses that plan's leg `unsupported`, naming the message with its sender's
+targets, so the fallback takes it at once: when the origin page holds no
+WebCrypto, when a counted session the snapshot names live registered no
+publication key, or when a unicast names no room. A counted session the snapshot
+does not name live is absent, not keyless: it gets no key and is left to the
+planner's verdict; a send whose named room has no cached snapshot is not judged.
+One async `signALInboundReceiptControls` runs at the four inbound commit sites
+after validation and before the one conditional commit and signs each control
+its compute marked: a counted recipient's own ACK or NACK on `rtc`, never a
+repair request or a control it forwards. The signer is built by
+`WebRtcRxStreamerService` from the session's `publicationCrypto` and reaches
+only the inbound runtime, never the multicast manager that application code
+holds. A relay forwards a child's stored control through
+`toALForwardedReceiptControlMessage`, which keeps every signed field and the
+proof and rewrites only `fromPeerId`, `toPeerId` and an ACK's `carrier`, and
+authors only its own `accepted`, its terminal ACK and its NACKs about itself.
+Outside-audience NACKs join a new `set-control-nacks` history beside
+`set-control-acks`, so a retried copy forwards each recipient's control again
+with the child's own reason, and the implied `not-subscribed` is the child's own
+hop-end, forwarded. The origin admits a forwarded hop-end or a relayed NACK only
+from a next hop or an expected repair peer
+(`isALOutboundRecipientControlSender`). The compositions state their
+authentication: the RTC overlay `signature`, the WS client and the WS server
+`carrier`. Under `signature` the origin's control admission verifies, in its
+read phase (`readALOutboundRecipientProof` through `RtcReceiptProofVerifier`), a
+peer ACK or NACK about a `receiver` or `leader` send that speaks for a recipient
+the receipt counts, against the key the sent row froze for it, whichever peer
+forwarded it. A refusal (`missing-proof`, `unknown-key`, `key-mismatch`,
+`invalid-signature`) is an `unauthorized` issue and a `rejected` admission,
+whose `control-admission` diagnostic states `proofRefusal`,
+`claimedRecipientPeerId` and `channelPeerId`; nothing is counted, written or
+answered, and the true ACK still completes the receipt. A control that speaks
+for a peer the receipt does not count is a hop fact the channel authenticates
+when it speaks for its own sender, judged by the validators as before the slice
+(a non-counted next hop's own hop-end completes its hop and confirms nobody, and
+its own terminal NACK is refused as from a peer the send owes nothing), and is
+refused `unknown-key` when it speaks for another: such a peer can complete its
+own hop's bookkeeping, never confirm, exclude or end a receipt for a counted
+recipient. The plan's four decisions: a stored `v2` control history fails the
+strict `v3` decode as `ALAdmissionCorruptionError` until it expires (30 minutes
+durable; the deadline plus the receipt grace volatile), with no
+`AL_ADMISSION_SCHEMA_ID` bump, since a different schema identity refuses a
+returning browser's store rather than resetting it; a control whose sign fails
+is left out with a `receipt-sign` inbound diagnostic and nothing unsigned goes
+in its place, its hop-end included, so its parent's row stays open and the retry
+completes it; the origin's verdict cache holds `verified` only (1,024 entries
+keyed `keyId|signature|digest`), because a forger varies the signature for free;
+and the frozen keys are those of the plan that freezes the audience, so a later
+re-plan or dequeue is neither refused nor re-keyed. Bundle figures (S8-R11):
+`browser/rallar.ts` 298.0 → 300.024 KiB brotli (307,225 B), its budget raised
+299 → 301 KiB, and the headless agent 394.516 → 396.793 KiB (406,316 B), its
+budget raised 395 → 397 KiB. Limits: an ordinary (non-granted) publication's
+origin stays unsigned across relays; `hop` and `subtree` receipts rest on
+channel trust, which is what they count; a signed terminal NACK from one counted
+recipient still ends everyone's receipt, now under its own signature; a page
+without SubtleCrypto (an insecure origin) cannot be a counted recipient or the
+origin of receipted RTC, and the fallback takes such a leg; a logically
+receipted RTC unicast that names no room is refused `unsupported`, where before
+the slice it was admitted. A stored-stage `unsupported` refusal is a silent
+drop: a send held until its freeze that then meets a keyless counted recipient
+(or passes the room limit, as before the slice) is neither settled nor handed to
+the fallback, and its handle runs to its deadline. A held send whose audience
+was frozen before it was held adopts its keys at the dequeue that first sees its
+room, for each counted recipient the room keys; one the room does not key there
+is sent to, reads `unknown-key` and runs to the retry or the fallback. When a
+not-subscribed recipient's hop-end reaches the relay before its NACK, the relay
+forwards the hop-end and refuses the later NACK, so the child's reason never
+reaches the origin, which records the recipient outside in either order. A
+forwarded hop-end lost on the relay-to-origin hop while the relay's terminal ACK
+arrives strands that recipient until the deadline, as the relay-authored NACK
+could before. The observation cells, the `messages.control` recipient field and
+the 6f sign and verify count land in S8-ii, observed on the local lane only.
+Decisions D581–D595 are in the roadmap; Slice 8 completes with S8-ii.
+
 ### Later outcomes
 
 - **Restricted RTC beyond room multicast:** an encrypted publication with key
-  distribution, rotation and revocation, ACKs that authenticate their logical
-  recipient across relays, and native hosts' publication keys. Native
-  publication-key custody outside a browser (a Deno sidecar, a native kit) is
-  the actor's gating dependency for RTC parity.
+  distribution, rotation and revocation, and native hosts' publication keys.
+  Native publication-key custody outside a browser (a Deno sidecar, a native
+  kit) is the actor's gating dependency for RTC parity.
 - **Ordered subscription history:** a latest-state snapshot with a fenced
   live cursor (the snapshot/live hand-off), and an authorized replay of
   retained history, with no replay to an unauthorized or newly joined
@@ -1256,6 +1389,23 @@ and its omitted granted copy reads `omitted`, not a gap; the 6b probe's counts
 on Postgres show the dequeue's front unchanged and the durable read added (its
 authority batch measured; the snapshot read before it and the principal path
 not).
+
+Slice 8 adds evidence to two rows. **RTC distinguishes origin, recipient, and
+relay:** on the relay chain fixture, whose sessions each hold their own key, a
+recipient's `delivered`, `accepted`, `not-subscribed`, `before-entry` and `gap`
+controls reach the origin forwarded by the relay with the recipient's own
+status, time and proof, which verifies under the recipient's key and not the
+relay's; the origin counts the two ACKs, records the two outside-audience NACKs
+outside, and repairs a gap whose NACK the leaf's own sign step signed; and the
+five forge units, red before the origin verified (`cae77e87b`) and green
+since, refuse a direct peer that names another recipient, a relay that forges its
+child's ACK, a forged outside-audience NACK, a forged terminal NACK and a true
+ACK replayed to another message or origin, with a sixth refusing an unsigned
+`forwarded`-status ACK that names a counted recipient. **Revocation and receipts
+preserve truthful outcomes:** a refused forgery counts nobody and the true ACK
+still completes the receipt; and a receipted RTC leg with a keyless counted
+recipient is refused `unsupported` at admission and handed to the fallback, and
+under `rtc` alone is refused, never admitted to time out.
 
 Focused shared ALM, browser facade, and server tests run before package
 typechecks/builds. Public exports require API snapshots and bundle-boundary

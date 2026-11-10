@@ -282,31 +282,36 @@ every session the page opens. The event's `data` is the event itself:
 - `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
   `reason`, for a receipt `phase` (below), and for a NACK `nackReason`, the
   NACK's own reason, then `nackOrderingKey`, the track key a gap NACK names
-  (absent when the NACK names none): one event for every inbound
-  ACK, NACK, repair or receipt control the outbound owner decides, recorded
-  when it decides it. Every carrier discards
-  that verdict: when captured, the inbound topic's `admission-outcome` for the
-  same control reads `not-handled`/`control` whatever the outbound owner answered,
-  so it does not report that outbound verdict. `msgId` is the control's own id,
-  the join key when both events are present, and `targetMsgId` is the sent message it
-  answers. `outcome` is `committed`, `pending-control` (a conflict retained as
-  `admit-control` work, which the outbound drain replays), `rejected`, or
-  `not-handled` (the control's repair authority failed, or a NACK the origin
-  leaves to its hop: the WS server's advisory `not-yet-in-sync` NACK on a room
-  send, which the server retains and delivers itself once its room meets the
-  floor). `reason` is the
+  (absent when the NACK names none): one event for every inbound ACK, NACK,
+  repair or receipt control the outbound owner decides, recorded when it decides
+  it. Every carrier discards that verdict: when captured, the inbound topic's
+  `admission-outcome` for the same control reads `not-handled`/`control`
+  whatever the outbound owner answered, so it does not report that outbound
+  verdict. `msgId` is the control's own id, the join key when both events are
+  present, and `targetMsgId` is the sent message it answers. `outcome` is
+  `committed`, `pending-control` (a conflict retained as `admit-control` work,
+  which the outbound drain replays), `rejected`, or `not-handled` (the control's
+  repair authority failed, or a NACK the origin leaves to its hop: the WS
+  server's advisory `not-yet-in-sync` NACK on a room send, which the server
+  retains and delivers itself once its room meets the floor). `reason` is the
   rejection's reasons, or `none` for every other outcome — for an ACK whose
-  receipt is gone it reads `AL acknowledgement sender has no pending outbound
-  obligation`. Its bounded dimensions are `outcome`, `phase` and `nackReason`;
-  `nackOrderingKey`, `targetMsgId` and the free-text `reason` are not. A relay's
-  re-originated gap NACK reads `nackReason: gap` at the origin, like the
-  recipient's own. A control the outbound drain replays reports the verdict its
-  replay reaches under the same control id, so a control that read
-  `pending-control` reads again, `committed` or `rejected`, once per replay
+  receipt is gone it reads
+  `AL acknowledgement sender has no pending outbound obligation`. Its bounded
+  dimensions are `outcome`, `phase` and `nackReason`; `nackOrderingKey`,
+  `targetMsgId` and the free-text `reason` are not. A gap NACK a relay forwarded
+  reads `nackReason: gap` at the origin, like the recipient's own, since it is
+  the recipient's own. A `rejected` control whose receipt proof the origin
+  refused also carries, straight after the NACK's fields, `proofRefusal`
+  (`missing-proof`, `unknown-key`, `key-mismatch` or `invalid-signature`),
+  `claimedRecipientPeerId` (the recipient the control speaks for) and
+  `channelPeerId` (its `fromPeerId`, the peer it arrived from); every other
+  event carries none of the three. A control the outbound drain replays reports
+  the verdict its replay reaches under the same control id, so a control that
+  read `pending-control` reads again, `committed` or `rejected`, once per replay
   (a replay that conflicts again reads `pending-control` again); a replay past
-  the control's deadline reports nothing. The event describes
-  a received control decision and rides the page's batched diagnostics. Its
-  presence does not guarantee a matching `admission-outcome`
+  the control's deadline reports nothing. The event describes a received control
+  decision and rides the page's batched diagnostics. Its presence does not
+  guarantee a matching `admission-outcome`
 - A WS server receipt (`al.control.receipt.v1`) is decided by the origin's
   receipt admission, not control admission, and states the same
   `control-admission` event: `msgId` is the receipt control's own id,
@@ -426,21 +431,21 @@ independent of any connection. The following cadences describe eligible
 observations; events are captured only when optional diagnostic projection and
 publication succeed. The event's `data` is the event itself:
 
-- `kind`: `admission-outcome`, `ordering-position`, `effect-drain`, `claim-settled` or
-  `rotation-alive`, plus explicitly enabled `acknowledgement-association` and
-  `acknowledgement-handoff`. There is no `readiness-probe` on this topic: the inbound
-  rotation probes storage on every engine round by construction, and relaying
-  one event per round doubled the page's measured per-operation cost in the
-  conformance lane (8.2 → 20.9 ms/op) and delayed RTC signaling until the cell
-  failed, so the inbound owner does not relay probes and `rotation-alive` below
-  is its liveness witness instead
+- `kind`: `admission-outcome`, `ordering-position`, `effect-drain`,
+  `claim-settled`, `receipt-sign` or `rotation-alive`, plus explicitly enabled
+  `acknowledgement-association` and `acknowledgement-handoff`. There is no
+  `readiness-probe` on this topic: the inbound rotation probes storage on every
+  engine round by construction, and relaying one event per round doubled the
+  page's measured per-operation cost in the conformance lane (8.2 → 20.9 ms/op)
+  and delayed RTC signaling until the cell failed, so the inbound owner does not
+  relay probes and `rotation-alive` below is its liveness witness instead
 - `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
-  to, on every kind. One page runs a WS inbound owner and an RTC inbound
-  owner, so this says which carrier an event came from
+  to, on every kind but `receipt-sign`. One page runs a WS inbound owner and an
+  RTC inbound owner, so this says which carrier an event came from
 - `traceId` then `corrId` close every message-scoped kind: `admission-outcome`,
   `ordering-position`, `claim-settled`, `dispatch-decision`, `consumer-invocation`,
-  `rtc-ack-ingress`, `reply-late` and `reply-wrong-responder`, and the
-  `incoming`, `control` and `generated` identities of
+  `rtc-ack-ingress`, `receipt-sign`, `reply-late` and `reply-wrong-responder`,
+  and the `incoming`, `control` and `generated` identities of
   `acknowledgement-association` and `acknowledgement-handoff`. They are the
   message's envelope trace and its correlation (`actions.corrId`, or its own
   `msgId` when it carries none); a reply's `corrId` is the correlation of the
@@ -509,10 +514,16 @@ publication succeed. The event's `data` is the event itself:
   roster beyond its stamp`, and its hop NACKs it `membership-fenced`
 - a raw control a recipe submits through `messages.control` is decided by its
   addressee's ingress like any control. When this event is captured, it carries
-  the recipe's authored `msgId`: a retired `al.control.ack.v1` reads
+  the recipe's authored `msgId`: a retired `al.control.ack.v2` reads
   carrier `rtc`, `rejected`/`unsupported`. The `messages.control` result is the
   submitting page's own carrier verdict (`admitted` when that carrier took the
   frame), never the addressee's
+- `receipt-sign` carries `msgId` (the control's own id), `typeId`,
+  `targetMsgId` (the message the control is about) and `reason` (the signing
+  failure's kind and message), then `traceId` and `corrId`, and no `workerId`:
+  a counted recipient's ACK or NACK on `rtc` whose signature failed, so its
+  commit left that control out and sent nothing unsigned in its place, its
+  hop-end included; the origin's retry repairs it
 - `ordering-position` carries `workerId`, `trackKey`, `seq`, `priorSeq`,
   `status` and `carrier`: a recipient's position event on an ordering track,
   stated by the inbound admission after its commit, so a replayed pending

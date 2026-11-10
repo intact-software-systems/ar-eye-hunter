@@ -1217,8 +1217,16 @@ frozen set as the receipt's expected set and sends only to its own audience, so
 the carriers can disagree: a frozen session that never subscribes stays expected
 and unconfirmed on WS until the deadline, while one whose RTC copy already
 answered `not-subscribed` and that then receives the WS copy is recorded outside
-on WS too, since that copy answers with an ACK that confirms nobody. Receipts are
-not signed: a confirmation authenticates no recipient across relays.
+on WS too, since that copy answers with an ACK that confirms nobody. Under
+`receiver` and `leader` a confirmation on `rtc` carries its recipient's
+signature, which the origin verifies against the key it froze for that
+recipient at admission, whichever peer forwarded it; a control whose proof is
+missing or fails is refused and counts nobody. A leg the origin could never
+verify (a counted recipient that registered no publication key, a page without
+WebCrypto, or a receipted unicast that names no room) is refused `unsupported`
+before admission, so `rtc-with-ws-fallback` hands it to WS. `hop` and `subtree`
+receipts rest on the channel, and on `ws` the server attests every
+confirmation.
 
 A stored granted publication is resent only while the origin's cached snapshot
 still grants it `publish`: once that snapshot shows the revoke, its next repair,
@@ -1990,7 +1998,7 @@ session, not per connection generation, and the reopened socket restores the
 session's presence in its current room (Subscriptions above), so a session that
 missed sequences while its socket was down reads its next copy as `omitted`,
 never as loss. A recipient behind an RTC relay reports a gap to the relay, which
-re-originates the NACK toward the origin for that recipient; the origin applies
+forwards the recipient's own NACK toward the origin; the origin applies
 the entry rule to the recipient and sends the repair copy through the relay,
 which forwards it down the tree.
 
@@ -2012,8 +2020,8 @@ resync or the track expires, instead of a silent loss, in three cases the
 receipt does not cover: the server's dequeue dropped the session after the route
 captured the audience the receipt names, the send asked no logical receipt (its
 sequence stays a floor for every recipient until the track's row expires), or
-the `admitted` receipt arrived after the `complete` one; a relay re-originates a
-gap NACK only for a receipted send, so an `ack: 'none'` ordered track behind a
+the `admitted` receipt arrived after the `complete` one; a relay forwards a gap
+NACK only for a receipted send, so an `ack: 'none'` ordered track behind a
 relay stalls until resync or expiry, and two recipients reporting one gap
 through one relay are two repair requests at the origin; a predecessor whose
 dequeue keeps answering deferred or pending keeps its index row, so if it never

@@ -144,11 +144,10 @@ and it has no status list.
   encrypted publication needs key distribution, rotation and revocation bound
   to the grant; until then an application that needs subscriber-only bytes
   keeps the topic on `ws`.
-- Signed receipts (S3, D519): ACKs and NACKs stay unsigned and
-  relay-re-originated, so a receipt authenticates no logical recipient across
-  relays.
 - The measured granted RTC envelope (S3): sign and verify cost per frame and
-  hop, relay depth and mixed WS/RTC under role churn, beside the refresh
+  hop, and since Slice 8 per receipt control (a counted recipient's sign, the
+  origin's verify; unmeasured, the S8-ii 6f count is a count, not a cost),
+  relay depth and mixed WS/RTC under role churn, beside the refresh
   amplification of an unknown key: every receiver of a frame whose `keyId` its
   snapshot does not name runs one scoped snapshot read
   (`not-yet-in-sync: unknown-key`, collapsed only while one is in flight), the
@@ -157,12 +156,41 @@ and it has no status list.
   (`packages/shared-web/browser/state-read/rtc-group-snapshot-refresh.ts`).
 - Publication keys for native hosts (S3, D513): only a browser session
   registers a key, so a native host signs no granted RTC publication.
+- The terminal NACK's reach (S8-i, D590): a signed terminal NACK from one
+  counted recipient still ends everyone's receipt; Slice 8 proves who said it,
+  not that one recipient may speak for all. Narrowing it to its sender is a
+  receipt-semantics change with its own pins.
+- Unsigned ordinary publications (S8-i, D590): the publisher proof covers
+  granted sends only, so an ordinary room send's origin stays unauthenticated
+  across relays while its receipts are signed.
+- A logically receipted RTC unicast that names no room (S8-i, D585) is refused
+  `unsupported`, since no presence row can key its addressee; before Slice 8
+  it was admitted. No product caller sends one; one that did degrades to WS
+  under the fallback or is refused under `rtc` alone.
+- A stored-stage `unsupported` refusal is a silent drop (S8-i, D585;
+  pre-existing for the room-limit refusal): a send held until its freeze that
+  then meets a keyless counted recipient is neither settled nor handed to the
+  fallback, and its handle runs to its deadline. The smallest settle:
+  `resolveALOutboundReplanRefusalSettlement` also returns the terminal
+  admission fact for `refused` + `unsupported`, which ends the handle at once
+  but still does not hand the send to WS.
+- A held send frozen before it was held (S8-i, D585) adopts its receipt keys
+  at the dequeue that first sees its room, for each counted recipient the room
+  keys; one the room does not key there is sent to, its control reads
+  `unknown-key`, and its receipt runs to the retry or the fallback.
+- The reason of a hop-end that arrives first (S8-i, D587): when a
+  not-subscribed recipient's hop-end reaches its relay before its NACK, the
+  relay forwards the hop-end and refuses the later NACK, so the origin records
+  the recipient outside without the child's reason.
+- A lost forwarded hop-end (S8-i, D587; pre-existing for the relay-authored
+  NACK): a forwarded hop-end lost on the relay-to-origin hop while the relay's
+  terminal ACK arrives leaves that recipient unconfirmed until the deadline.
 - Ordered subscription history (the addendum's later outcome after Slice 4):
   a latest-state snapshot with a fenced live cursor, and an authorized replay
   of retained history; Slice 4 delivers live entry and omissions only (D526).
 - Relayed gap repair for `ack: 'none'` ordered tracks (S4-ii, D534): a relay
-  keeps a row only for a receipted send, so it has nothing to re-originate a
-  child's gap NACK from, and an `ack: 'none'` ordered track behind a relay
+  keeps a row only for a receipted send, so it has nothing to forward a child's
+  gap NACK from, and an `ack: 'none'` ordered track behind a relay
   stalls until resync or expiry; it needs a relay surface that holds the
   forward without a receipt row.
 - A browser-lane reload witness for the restart proof (S4-ii, D537): the

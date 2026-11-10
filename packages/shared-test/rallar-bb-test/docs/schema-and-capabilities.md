@@ -338,9 +338,10 @@ after the run.
     receipt ends timed out: the handle reads `expired`, with the receiver confirmed
     and `recipient-b` unconfirmed.
 - `unknown-ack-version` (`rtc`, `rtc-with-ws-fallback`): `recipient-b` answers the
-  send with a raw `al.control.ack.v1` through `messages.control` and asserts its own
-  carrier took it (`verdict` `admitted`), and the sender waits for its own
-  `admission-outcome` of that authored msgId refusing it `rejected`/`unsupported`.
+  send with a raw `al.control.ack.v2`, the id Slice 8 retired, through
+  `messages.control` and asserts its own carrier took it (`verdict` `admitted`),
+  and the sender waits for its own `admission-outcome` of that authored msgId
+  refusing it `rejected`/`unsupported`.
   The authored msgId is the carrier and scenario followed by the msgId of the send it
   answers, which both pages read from their own result cache, so a re-run on a page
   whose store survived submits a new control rather than a `duplicate`. Over `ws` the
@@ -392,7 +393,7 @@ only the owner removes one, so no cell removes.
   the cell's type whose `rosterVersion` equals that read's `body.group.rosterVersion`
   (`roster-stamp`, a `{resultCache...}` token in `contains`).
 - `fenced-catch-up`: the sender floors its first send `{ aboveCurrentBy: 1 }` and waits
-  for the `al.control.nack.v2` that refuses it `not-yet-in-sync`; only then does it send
+  for the `al.control.nack.v3` that refuses it `not-yet-in-sync`; only then does it send
   the cue, an unfloored second send. Over `rtc` a recipient refuses the copy and the
   sender commits its NACK. Over `ws` the server retains the send as a pending admission
   and answers an advisory NACK, which the sender leaves not handled, so the wait matches
@@ -642,9 +643,10 @@ reliability. No hosted manifest carries them (D505).
   commits. The receiver receives `p1`–`p3`, its `ordering-position` for `p1` reads `entered` with prior `0`, and no
   `omitted` event appears. Recipient-b, a publish-only peer, asserts the publications' absence and records its next
   hops; a frame frozen to the receiver reaches it only when the path puts it in the middle, so it asserts no
-  admission. The drawn layout is recorded, and when recipient-b is the middle its re-originated gap NACK is in the
+  admission. The drawn layout is recorded, and when recipient-b is the middle the gap NACK it forwards is in the
   run's evidence, reported and not asserted; the relay fixture
-  (`packages/tests/shared/multicast/rtc-relay-gap-repair.test.ts`) is the blocking proof of relay re-origination.
+  (`packages/tests/shared/multicast/rtc-relay-gap-repair.test.ts`) is the blocking proof of the relay's forward: it
+  forwards the leaf's own signed gap NACK, which the origin verifies before it repairs the gap.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.
@@ -664,7 +666,7 @@ Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its
 `admission-outcome` refusing the send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
-`control-admission` of that `al.control.nack.v2`, pinned on the gapped send's msgId through a wait
+`control-admission` of that `al.control.nack.v3`, pinned on the gapped send's msgId through a wait
 result reference. The sender admits that NACK as the word of its trusted server and states the
 relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
 handle is already `transport-accepted` and keeps that state. When the lane's catalog input names
@@ -684,7 +686,7 @@ sends seq 2, then holds that one message by the id its send returned (`hold-mess
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
 NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. The sender waits for its
-`control-admission` of that `al.control.nack.v2` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
+`control-admission` of that `al.control.nack.v3` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
 the `commit-phases` of the retransmission the hint dispatched (`repair-dispatch-2`: seq 2's msgId, the cell's
 typeId, `"origin":"repair"`), and only then releases the message hold: under the hold the original is
 resubmitted as well, so a release right after the NACK would deliver seq 2 even if the hint were never served.
