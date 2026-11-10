@@ -1,7 +1,7 @@
 import type { ClientPrincipalRef } from '../api/client-types.ts';
 import { toCanonicalGroupRef, type GroupRef } from '../api/group-types.ts';
+import type { SignatureProof } from '../signature/signature-proof.ts';
 import type { ALQosPolicyRequest } from './al-policy.ts';
-import type { ALPublicationProof } from './publication-proof/al-publication-proof.ts';
 import { toALPrincipalBroadcastTargets } from './read-al-principal-broadcast-target.ts';
 import { newALTraceId } from './trace/al-trace-id.ts';
 
@@ -178,7 +178,7 @@ export interface ALMessage {
     readonly audit?: ALAudit;
     readonly diagnostics?: ALDiagnostics;
     /** The publisher's signature over the signed fields; absent on a members frame, which no grant restricts. */
-    readonly proof?: ALPublicationProof;
+    readonly proof?: SignatureProof;
 }
 
 // -------------------------------------------------------

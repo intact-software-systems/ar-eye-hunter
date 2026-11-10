@@ -1,8 +1,7 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     toALPublicationProofSigningInput,
-    verifyALPublicationProof,
-    type ALPublicationProof
+    verifyALPublicationProof
 } from '../../al-contracts/publication-proof/al-publication-proof.ts';
 import { resolvePublicationKey } from '../../api/group-presence/resolve-publication-key.ts';
 import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '../../api/group-types.ts';
@@ -10,6 +9,7 @@ import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { toBase64Url } from '../../encoding/base64url.ts';
 import { computeEcdsaP256JwkThumbprint, importEcdsaP256PublicKey } from '../../signature/ecdsa-p256-signature.ts';
 import type { PublicationVerificationCrypto } from '../../signature/publication-crypto.ts';
+import type { SignatureProof } from '../../signature/signature-proof.ts';
 import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
 
 const UTF8_ENCODER = new TextEncoder();
@@ -82,7 +82,7 @@ export class RtcPublicationProofVerifier implements RtcPublicationProofVerifierP
     private async verifyAgainstSnapshot(
         subtle: SubtleCrypto,
         message: ALMessage,
-        proof: ALPublicationProof
+        proof: SignatureProof
     ): Promise<boolean> {
         const groupRef = readALTargetGroupRef(message);
         const snapshot = groupRef === undefined ? undefined : this.#findGroupSnapshot(groupRef);

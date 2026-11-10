@@ -12,7 +12,7 @@ import {
     decodePersistedALMessageValue
 } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import type { ALPublicationProof } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
+import type { SignatureProof } from '@shared/signature/signature-proof.ts';
 
 interface MutablePersistedALMessageFixture {
     id: {
@@ -316,7 +316,7 @@ describe('persisted AL message decoding', () => {
     });
 });
 
-const WELL_FORMED_PROOF: ALPublicationProof = { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 'S'.repeat(85) + 'A' };
+const WELL_FORMED_PROOF: SignatureProof = { alg: 'ES256', keyId: 'K'.repeat(42) + 'A', signature: 'S'.repeat(85) + 'A' };
 
 describe('the persisted publication proof section', () => {
     it('decodes a v4 frame without a proof unchanged', () => {
