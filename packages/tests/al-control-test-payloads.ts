@@ -1,4 +1,7 @@
 import type { ALAckPayload, ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import { signALReceiptProof, type ALReceiptControl } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
+
+import type { AvailablePublicationCrypto } from './shared/signature/publication-crypto-fixtures.ts';
 
 export type TestALAckFields =
     & Pick<ALAckPayload, 'ackedMsgId' | 'fromPeerId' | 'toPeerId'>
@@ -33,4 +36,20 @@ export function toTestALNackPayload(fields: TestALNackFields): ALNackPayload {
         proof: null,
         ...fields
     };
+}
+
+/** The control with the proof a real signer over the crypto's key gives it; a refused signature fails the test. */
+export async function signTestALReceiptControl(
+    crypto: AvailablePublicationCrypto,
+    control: ALReceiptControl
+): Promise<ALReceiptControl> {
+    const proof = (await signALReceiptProof({ subtle: crypto.subtle, keyPair: crypto.keyPair, control })).fold(
+        (failure) => {
+            throw new Error(failure.message);
+        },
+        (signed) => signed
+    );
+    return control.type === 'ack'
+        ? { type: 'ack', payload: { ...control.payload, proof } }
+        : { type: 'nack', payload: { ...control.payload, proof } };
 }
