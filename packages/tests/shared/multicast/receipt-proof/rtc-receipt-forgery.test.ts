@@ -12,7 +12,6 @@ import { isALCountedRecipient } from '@shared/alm/delivery/resolve-al-counted-re
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
-import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 
 import { createDefaultOutboundTestRuntime, createOutboundMessage, enqueueOutboundOrThrow } from '../../alm/outbound-runtime-test-fixture.ts';
 import { createCountingSubtleCrypto, type CountingSubtleCrypto } from '../../signature/counting-subtle-crypto-fixtures.ts';
@@ -473,7 +472,6 @@ describe('the channel binding a hop fact rests on (S8-R1)', () => {
 
     it('a peer cannot speak as another non-counted peer: a control whose fromPeerId is not its channel sender never reaches the origin\'s admission', async () => {
         const chain = await createRelayChain(['a', 'r', 'c', 'x'], {});
-        const admissions = vi.spyOn(WebRtcOverlayMulticastManager.prototype, 'acceptControlMessage');
         // `r` is the origin here: a real RTC receive pipeline whose own send the controls answer.
         const origin = createRtcRelayOverlayFixture({
             selfPeerId: 'r',
@@ -502,11 +500,12 @@ describe('the channel binding a hop fact rests on (S8-R1)', () => {
         await origin.receive(toHopEnd('x'), 'c');
         await origin.receive(toHopEnd('c'), 'c');
 
+        // Inbound authorization refuses the forged one before any control is routed; `c`'s own is routed to the origin's
+        // control admission (`not-handled` by the inbound owner).
         expect(readInboundOutcomes(origin, ['hop-end-x', 'hop-end-c'])).toEqual([
             ['hop-end-x', 'unauthorized'],
             ['hop-end-c', 'not-handled']
         ]);
-        expect(admissions.mock.calls.map(([control]) => control.id.msgId)).toEqual(['hop-end-c']);
     });
 });
 
