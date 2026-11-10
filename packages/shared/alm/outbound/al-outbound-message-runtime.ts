@@ -15,6 +15,7 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
+import type { ALReceiptProofKeys } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -220,6 +221,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly admittedAudience?: readonly string[];
     /** On a granted topic's row, the connection generation each admitted session's subscription asserted at route. */
     readonly admittedConnectionGenerationIds?: Readonly<Record<string, string>>;
+    /** Each counted recipient's registered key on the origin's own logically receipted RTC send; absent: no signed recipient is counted. */
+    readonly receiptProofKeys?: ALReceiptProofKeys;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;

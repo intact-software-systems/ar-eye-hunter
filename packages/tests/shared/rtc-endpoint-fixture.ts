@@ -43,7 +43,7 @@ import { ALWorkBatchTestObserver } from './alm/work/al-work-batch-test-observer.
 import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from './signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -117,7 +117,7 @@ export class RtcEndpointFixture {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             selfPrincipalId: service.input.sessionId
@@ -186,7 +186,11 @@ export class RtcEndpointFixture {
             ...snapshot,
             causalRevision,
             group: { ...snapshot.group, snapshotVersion: version, acceptedLayoutIdentity: { ...causalRevision, version, state: 'active' } },
-            activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+            activeSessions: snapshot.activeSessions.map((session) => ({
+                ...session,
+                expiresAtEpochMs: Date.now() + 60_000,
+                publicationKey: ROOM_PUBLICATION_KEY
+            }))
         });
     }
 

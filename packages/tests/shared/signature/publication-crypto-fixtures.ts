@@ -1,3 +1,4 @@
+import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { createSigningKeyPair } from '@shared/signature/ecdsa-p256-signature.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
@@ -15,3 +16,14 @@ export async function createAvailablePublicationCryptoFixture(): Promise<Availab
         (keyPair) => ({ kind: 'available', subtle, keyPair })
     );
 }
+
+/**
+ * The page key the RTC fixtures hand their origin and register for every room session, so each recipient a `receiver`
+ * or `leader` receipt counts is keyed.
+ */
+export const ROOM_PUBLICATION_CRYPTO: AvailablePublicationCrypto = await createAvailablePublicationCryptoFixture();
+
+export const ROOM_PUBLICATION_KEY: GroupPresencePublicationKey = {
+    keyId: ROOM_PUBLICATION_CRYPTO.keyPair.keyId,
+    publicJwk: ROOM_PUBLICATION_CRYPTO.keyPair.publicJwk
+};

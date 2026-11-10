@@ -7,7 +7,9 @@ import {
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { ALStoreDurability } from '../../../al-contracts/al-policy.ts';
+import type { ALReceiptProofKeys } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
+import { decodeGroupPresencePublicationKey } from '../../../api/group-presence/decode-group-presence-publication-key.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -68,6 +70,8 @@ export interface ALOutboundCapturedPolicy {
      * asserts the same generation; an admitted session without an entry is never sent.
      */
     readonly admittedConnectionGenerationIds?: Readonly<Record<string, string>>;
+    /** Kept exactly on the origin's logically receipted RTC row: the key its first dispatch froze for each counted recipient. */
+    readonly receiptProofKeys?: ALReceiptProofKeys;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
@@ -87,6 +91,7 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         ...(plan.admittedConnectionGenerationIds === undefined
             ? {}
             : { admittedConnectionGenerationIds: plan.admittedConnectionGenerationIds }),
+        ...(plan.receiptProofKeys === undefined ? {} : { receiptProofKeys: plan.receiptProofKeys }),
         ...(plan.accountView === undefined ? {} : { accountView: decodeALAccountViewAuthority(plan.accountView) }),
         ...(plan.sessionInvalidation === undefined
             ? {}
@@ -101,7 +106,8 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
 /**
  * A sent message keeps the policy of its first dispatch, except the next hops of its acknowledgement: a
  * retry that re-plans the receipt records the hops of the local view it planned over, so a settlement
- * names the hops of the latest tree, never those of a tree that has changed since.
+ * names the hops of the latest tree, never those of a tree that has changed since. A row stored before its audience
+ * was frozen takes the counted recipients' keys of the plan that freezes it, and never other keys after that.
  */
 export function toALOutboundSentPolicy<TPrepared>(
     stored: ALOutboundCapturedPolicy | undefined,
@@ -111,9 +117,12 @@ export function toALOutboundSentPolicy<TPrepared>(
         return captureALOutboundPolicy(plan);
     }
     const tracking = plan.ackTracking;
-    return tracking?.expectedPeerIdsUpdate === 'replace' && stored.ackTracking
-        ? { ...stored, ackTracking: { ...stored.ackTracking, nextHopPeerIds: tracking.nextHopPeerIds } }
+    const keyed = stored.receiptProofKeys === undefined && plan.receiptProofKeys !== undefined
+        ? { ...stored, receiptProofKeys: plan.receiptProofKeys }
         : stored;
+    return tracking?.expectedPeerIdsUpdate === 'replace' && keyed.ackTracking
+        ? { ...keyed, ackTracking: { ...keyed.ackTracking, nextHopPeerIds: tracking.nextHopPeerIds } }
+        : keyed;
 }
 
 export function toALOutboundCapturedLane(policy: ALOutboundCapturedPolicy): ALStoreDurability {
@@ -191,6 +200,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'recordsSentPositions',
         'admittedAudience',
         'admittedConnectionGenerationIds',
+        'receiptProofKeys',
         'recipientScope',
         'principalTargetId',
         'sessionInvalidation',
@@ -219,6 +229,9 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
     if (policy.admittedConnectionGenerationIds !== undefined) {
         decodeALOutboundCapturedConnectionGenerations(policy.admittedConnectionGenerationIds, policy.admittedAudience);
+    }
+    if (policy.receiptProofKeys !== undefined) {
+        decodeALOutboundCapturedReceiptProofKeys(policy.receiptProofKeys);
     }
     if (policy.recipientScope !== undefined) {
         decodeALOutboundRecipientScope(policy.recipientScope);
@@ -251,6 +264,20 @@ function decodeALOutboundCapturedConnectionGenerations(
     const generations = decodeALAdmissionRecord(value, [], admittedAudience as readonly string[]);
     for (const generation of Object.values(generations)) {
         requirePersistedALNonEmptyString(generation, 'captured connection generation');
+    }
+}
+
+/** Each counted recipient's key is decoded as a presence row's is: a 43-character key id and exactly a public P-256 JWK. */
+function decodeALOutboundCapturedReceiptProofKeys(value: PersistedALValue): void {
+    const keys = decodeALAdmissionRecord(
+        value,
+        [],
+        typeof value === 'object' && value !== null ? Object.keys(value) : []
+    );
+    for (const key of Object.values(keys)) {
+        if (key === null || decodeGroupPresencePublicationKey(key).left !== undefined) {
+            throw new TypeError('Captured receipt proof key is invalid');
+        }
     }
 }
 

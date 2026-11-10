@@ -47,7 +47,7 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from '../signature/publication-crypto-fixtures.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
@@ -95,7 +95,7 @@ export interface RtcOriginOverlayFixtureInput {
     readonly onSettlement?: (settlement: ALDeliverySettlement) => void;
     /** The page's granted topics; absent, none, so every publication is carried unsigned. */
     readonly grantedTopics?: RtcGrantedTopicReader;
-    /** The page's key; absent, a keyless page. */
+    /** The page's key; absent, the key every room session of the fixture registers. */
     readonly publicationCrypto?: PublicationCrypto;
 }
 
@@ -150,7 +150,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationCrypto: input.publicationCrypto ?? ROOM_PUBLICATION_CRYPTO,
         publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
         selfPrincipalId: 'a'
@@ -212,6 +212,7 @@ export async function acknowledgeAtOrigin(
     ));
 }
 
+/** The origin room of `sessionIds`, each session live and registering the room key. */
 export function createOriginSnapshot(sessionIds: readonly string[], snapshotVersion: number): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...ORIGIN_ROOM, sessionIds });
     return {
@@ -221,7 +222,11 @@ export function createOriginSnapshot(sessionIds: readonly string[], snapshotVers
             snapshotVersion,
             acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' }
         },
-        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 600_000 }))
+        activeSessions: snapshot.activeSessions.map((session) => ({
+            ...session,
+            expiresAtEpochMs: Date.now() + 600_000,
+            publicationKey: ROOM_PUBLICATION_KEY
+        }))
     };
 }
 

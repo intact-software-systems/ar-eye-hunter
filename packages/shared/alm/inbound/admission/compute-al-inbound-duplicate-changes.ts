@@ -5,10 +5,9 @@ import {
 } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
-import { isALUnicastAddressedTo } from '../../../al-contracts/is-al-unicast-addressed-to.ts';
-import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
+import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
 import {
@@ -201,10 +200,8 @@ function isAcceptingRecipient(
     pendingAck: ALPendingAckSnapshot,
     selfPeerId: string
 ): boolean {
-    const frozen = resolveALFrozenMulticastAudience(read.msg.targets);
-    return isALLogicalReceiptMode(read.plan.ack.algo) && pendingAck.localReady &&
-        pendingAck.status === 'subtree-complete' &&
-        (frozen?.recipientPeerIds.includes(selfPeerId) === true || isALUnicastAddressedTo(read.msg, selfPeerId));
+    return pendingAck.localReady && pendingAck.status === 'subtree-complete' &&
+        isALCountedRecipient(read.msg, read.plan.ack.algo, selfPeerId);
 }
 
 /** Child hops a repeated parent copy can still forward to using the original canonical envelope. */
