@@ -128,6 +128,13 @@ export const AL_PUBLICATION_PROOF_FIELD_CLASSES = {
 /** `keyof` a union is only its common keys; the targets record classifies every member's keys. */
 type UnionKeys<T> = T extends object ? keyof T : never;
 
+/** The envelope sections the message table classes `signed`: the signing input is built from exactly these. */
+type ALPublicationProofSignedSection = {
+    [Section in keyof ALMessage]-?: (typeof AL_PUBLICATION_PROOF_FIELD_CLASSES.message)[Section] extends 'signed' ?
+        Section :
+        never;
+}[keyof ALMessage];
+
 const UTF8_ENCODER = new TextEncoder();
 
 export function toALPublicationProofSigningInput(message: ALMessage): string {
@@ -171,19 +178,33 @@ export async function verifyALPublicationProof(
     return verified.mapBoth(toALPublicationProofFailure, () => input.message);
 }
 
+/** The signed sections in the table's order: a section classed `signed` that this record lacks fails the build. */
 function toALPublicationProofSections(message: ALMessage): ClassifiedSigningSection[] {
+    const sections = toALPublicationProofSectionsByName(message);
+    const messageClasses = AL_PUBLICATION_PROOF_FIELD_CLASSES.message;
+    return (Object.keys(messageClasses) as (keyof ALMessage)[]).filter(isALPublicationProofSignedSection)
+        .map((name) => sections[name]);
+}
+
+function isALPublicationProofSignedSection(name: keyof ALMessage): name is ALPublicationProofSignedSection {
+    return AL_PUBLICATION_PROOF_FIELD_CLASSES.message[name] === 'signed';
+}
+
+function toALPublicationProofSectionsByName(
+    message: ALMessage
+): Readonly<Record<ALPublicationProofSignedSection, ClassifiedSigningSection>> {
     const classes = AL_PUBLICATION_PROOF_FIELD_CLASSES;
-    return [
-        { name: 'id', fields: { ...message.id }, classes: classes.id },
-        { name: 'route', fields: { ...message.route }, classes: classes.route },
-        { name: 'targets', fields: { ...toSignedTargets(message.targets) }, classes: classes.targets },
-        { name: 'constraints', fields: { ...message.constraints }, classes: classes.constraints },
-        { name: 'ordering', fields: { ...message.ordering }, classes: classes.ordering },
-        { name: 'delivery', fields: { ...message.delivery }, classes: classes.delivery },
-        { name: 'actions', fields: { ...message.actions }, classes: classes.actions },
-        { name: 'qos', fields: { ...message.qos }, classes: classes.qos },
-        { name: 'payload', fields: { ...message.payload }, classes: classes.payload }
-    ];
+    return {
+        id: { name: 'id', fields: { ...message.id }, classes: classes.id },
+        route: { name: 'route', fields: { ...message.route }, classes: classes.route },
+        targets: { name: 'targets', fields: { ...toSignedTargets(message.targets) }, classes: classes.targets },
+        constraints: { name: 'constraints', fields: { ...message.constraints }, classes: classes.constraints },
+        ordering: { name: 'ordering', fields: { ...message.ordering }, classes: classes.ordering },
+        delivery: { name: 'delivery', fields: { ...message.delivery }, classes: classes.delivery },
+        actions: { name: 'actions', fields: { ...message.actions }, classes: classes.actions },
+        qos: { name: 'qos', fields: { ...message.qos }, classes: classes.qos },
+        payload: { name: 'payload', fields: { ...message.payload }, classes: classes.payload }
+    };
 }
 
 function toSignedTargets(targets: ALTargets | undefined): ALTargets | undefined {
