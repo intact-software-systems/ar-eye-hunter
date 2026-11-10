@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -8,9 +8,11 @@ import {
     type ALNackPayload
 } from '@shared/al-contracts/al-control.ts';
 import type { ALReceiptControl } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
+import { isALCountedRecipient } from '@shared/alm/delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-group-presence-publication-key.ts';
 import type { GroupPresencePublicationKey, GroupSnapshot } from '@shared/api/group-types.ts';
+import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 
 import { createDefaultOutboundTestRuntime, createOutboundMessage, enqueueOutboundOrThrow } from '../../alm/outbound-runtime-test-fixture.ts';
 import { createCountingSubtleCrypto, type CountingSubtleCrypto } from '../../signature/counting-subtle-crypto-fixtures.ts';
@@ -22,11 +24,13 @@ import {
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
     ORIGIN_ROOM,
+    signRoomNackPayload,
     toOriginDirectedSnapshot,
     toOriginFrozenTargets,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
 import { createRelayChain, drainUntil, type RelayChain } from '../rtc-relay-chain-test-support.ts';
+import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
 import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
 
@@ -330,7 +334,7 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         ]);
     });
 
-    it('a non-counted next hop\'s own hop-end is refused as confirming no peer, not as a proof refusal', async () => {
+    it('a non-counted peer behind a counted hop: its own hop-end is refused as confirming no peer, not as a proof refusal', async () => {
         const chain = await createRelayChain(['a', 'b', 'd'], {});
         const origin = createRtcOriginOverlayFixture({ snapshot: chain.snapshot, nextHopPeerIds: ['b'], publicationCrypto: chain.keys.a });
         const message = await sendFrozenReceipted(origin, 'outside-hop-end', ['b']);
@@ -348,6 +352,37 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         expect(readProofRefusals(origin)).toEqual([
             { proofRefusal: undefined, claimedRecipientPeerId: undefined, channelPeerId: undefined }
         ]);
+    });
+
+    it('a non-counted next hop\'s own unsigned hop-end completes its hop and confirms nobody', async () => {
+        // `r` is a publish-only relay outside the frozen audience `[c]`, and the origin's only next hop.
+        const chain = await createRelayChain(['a', 'r', 'c'], {});
+        const origin = createRtcOriginOverlayFixture({ snapshot: chain.snapshot, nextHopPeerIds: ['r'], publicationCrypto: chain.keys.a });
+        const message = await sendFrozenReceipted(origin, 'outside-next-hop-end', ['c']);
+        const acknowledgements = () => origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
+        // The hop-end of a relay that holds no subscription itself confirms nobody: `subtree-complete-not-subscribed`.
+        const hopEnd = toAckControl({
+            msgId: message.id.msgId,
+            fromPeerId: 'r',
+            logicalRecipientPeerId: 'r',
+            status: 'subtree-complete-not-subscribed'
+        });
+
+        expect(await origin.manager.acceptControlMessage(toControlMessage(hopEnd, 'hop-end'))).toEqual({ kind: 'committed' });
+        expect(acknowledgements().at(-1)).toMatchObject({
+            confirmedHopPeerIds: ['r'],
+            confirmedRecipientPeerIds: [],
+            outsideAudienceRecipientPeerIds: [],
+            complete: false
+        });
+        const forwarded = await signTestALReceiptControl(
+            chain.keys.c!,
+            toAckControl({ msgId: message.id.msgId, fromPeerId: 'r', logicalRecipientPeerId: 'c' })
+        );
+        expect(await origin.manager.acceptControlMessage(toControlMessage(forwarded, 'forwarded'))).toEqual({ kind: 'committed' });
+
+        expect(acknowledgements().at(-1)).toMatchObject({ confirmedHopPeerIds: ['r'], confirmedRecipientPeerIds: ['c'] });
+        expect(readProofRefusals(origin)).toEqual([]);
     });
 
     it('under leader, a non-leader peer\'s own unsigned terminal NACK leaves the leader\'s receipt row in place', async () => {
@@ -424,6 +459,155 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         expect((await readReceipt(origin, message))?.ackedPeerIds).toEqual(['c']);
     });
 });
+
+describe('the channel binding a hop fact rests on (S8-R1)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('a peer cannot speak as another non-counted peer: a control whose fromPeerId is not its channel sender never reaches the origin\'s admission', async () => {
+        const chain = await createRelayChain(['a', 'r', 'c', 'x'], {});
+        const admissions = vi.spyOn(WebRtcOverlayMulticastManager.prototype, 'acceptControlMessage');
+        // `r` is the origin here: a real RTC receive pipeline whose own send the controls answer.
+        const origin = createRtcRelayOverlayFixture({
+            selfPeerId: 'r',
+            snapshot: chain.snapshot,
+            neighbourPeerIds: ['a', 'c'],
+            publicationCrypto: chain.keys.r
+        });
+        const message = newALMulticastMessage('r', { topicId: 'chat', resourceId: 'bound', contextId: 'room' }, ORIGIN_ROOM, 'chat.message.v1', {}, {
+            ack: 'all-logical-recipients',
+            reliability: 'at-least-once',
+            ttlMs: 30_000
+        });
+        expect((await origin.enqueue(message)).verdict.kind).toBe('admitted');
+        const toHopEnd = (fromPeerId: string) =>
+            newALAckControlMessage(
+                { v: 4, msgId: `hop-end-${fromPeerId}`, senderId: fromPeerId, ts: Date.now(), traceId: 'trace-bound' },
+                toTestALAckPayload({
+                    ackedMsgId: message.id.msgId,
+                    fromPeerId,
+                    toPeerId: 'r',
+                    status: 'subtree-complete-not-subscribed',
+                    observedAtEpochMs: Date.now()
+                })
+            );
+
+        await origin.receive(toHopEnd('x'), 'c');
+        await origin.receive(toHopEnd('c'), 'c');
+
+        expect(readInboundOutcomes(origin, ['hop-end-x', 'hop-end-c'])).toEqual([
+            ['hop-end-x', 'unauthorized'],
+            ['hop-end-c', 'not-handled']
+        ]);
+        expect(admissions.mock.calls.map(([control]) => control.id.msgId)).toEqual(['hop-end-c']);
+    });
+});
+
+describe('a logical receipt never expects a peer its message does not count (S8-R1)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    // The non-counted branch of the proof read is safe only while every expected peer is a counted recipient.
+    it.each([
+        {
+            plan: 'a frozen receiver multicast to direct recipients',
+            snapshot: () => createOriginSnapshot(['a', 'b', 'c'], 4),
+            nextHopPeerIds: ['b', 'c'],
+            nextHopsBySessionId: undefined,
+            message: (): ALMessage => createOriginReceiverMulticast('expected-star')
+        },
+        {
+            plan: 'a frozen receiver multicast through a relay, after its retry',
+            snapshot: () => createOriginSnapshot(['a', 'r', 'b', 'c'], 4),
+            nextHopPeerIds: ['r', 'c'],
+            nextHopsBySessionId: undefined,
+            message: (): ALMessage => createOriginReceiverMulticast('expected-tree')
+        },
+        {
+            plan: 'a leader send narrowed to its director, after its retry',
+            snapshot: () => toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd', Date.now()),
+            nextHopPeerIds: ['b', 'c'],
+            nextHopsBySessionId: { a: ['b', 'c'], b: ['a'], c: ['a', 'd'], d: ['c'] },
+            message: (): ALMessage =>
+                newALMulticastMessage('a', { topicId: 'chat', resourceId: 'expected-leader', contextId: 'room' }, ORIGIN_ROOM, 'chat.message.v1', {}, {
+                    ack: 'group-leader',
+                    reliability: 'at-least-once',
+                    ttlMs: 30_000
+                })
+        },
+        {
+            plan: 'a receiver room unicast, after its retry',
+            snapshot: () => createOriginSnapshot(['a', 'b', 'c'], 4),
+            nextHopPeerIds: ['b', 'c'],
+            nextHopsBySessionId: undefined,
+            message: (): ALMessage =>
+                newALUnicastMessage('a', { topicId: 'chat', resourceId: 'expected-unicast', contextId: 'room' }, 'b', 'chat.message.v1', {}, {
+                    groupRef: ORIGIN_ROOM,
+                    ack: 'all-logical-recipients',
+                    reliability: 'at-least-once',
+                    ttlMs: 30_000
+                })
+        }
+    ])('$plan', async ({ snapshot, nextHopPeerIds, nextHopsBySessionId, message }) => {
+        const origin = createRtcOriginOverlayFixture({ snapshot: snapshot(), nextHopPeerIds, nextHopsBySessionId });
+        const sent = message();
+        expect((await enqueueAndDrain(origin.manager, sent)).verdict.kind).toBe('admitted');
+        const before = await readUncountedExpectedPeerIds(origin, sent);
+        await vi.advanceTimersByTimeAsync(2_100);
+
+        expect(before).toEqual([]);
+        expect((await readReceipt(origin, sent))?.attempts).toBe(1);
+        expect(await readUncountedExpectedPeerIds(origin, sent)).toEqual([]);
+    });
+
+    it('a targeted repair a counted recipient asked for', async () => {
+        const origin = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] });
+        const sent = { ...createOriginReceiverMulticast('expected-targeted'), qos: { repair: { algo: 'retransmit' } } } as const;
+        expect((await enqueueAndDrain(origin.manager, sent)).verdict.kind).toBe('admitted');
+        const gap = await signRoomNackPayload(
+            toTestALNackPayload({ msgId: sent.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() })
+        );
+
+        await origin.manager.acceptControlMessage(toControlMessage({ type: 'nack', payload: gap }, 'targeted'));
+        await vi.advanceTimersByTimeAsync(100);
+
+        expect(origin.channels.b!.sent).toHaveLength(2);
+        expect(await readUncountedExpectedPeerIds(origin, sent)).toEqual([]);
+    });
+});
+
+/** Each inbound admission outcome the session stated for the named controls, in arrival order. */
+function readInboundOutcomes(fixture: RtcRelayOverlayFixture, msgIds: readonly string[]): readonly (readonly [string, string])[] {
+    return fixture.diagnostics.flatMap((event) =>
+        event.kind === 'admission-outcome' && msgIds.includes(event.msgId) ? [[event.msgId, event.outcome] as const] : []
+    );
+}
+
+/** Every peer the receipt row or the sent row's tracking expects that the stored message does not count; logical receipts only. */
+async function readUncountedExpectedPeerIds(origin: RtcOriginOverlayFixture, sent: ALMessage): Promise<readonly string[]> {
+    const store = origin.resources.admissionStore;
+    const pending = await store.readPendingAck({ originPeerId: 'a', msgId: sent.id.msgId });
+    const tracking = (await store.readStoredMessage(sent.id.msgId))?.policy.ackTracking;
+    const canonical = (await store.readSentMessage(sent.id.msgId))?.msg;
+    expect(canonical).toBeDefined();
+    expect(tracking?.mode === 'receiver' || tracking?.mode === 'leader').toBe(true);
+    const expected = [...(pending?.expectedPeerIds ?? []), ...(tracking?.expectedPeerIds ?? [])];
+    return expected.filter((peerId) => !isALCountedRecipient(canonical!, tracking!.mode, peerId));
+}
 
 /** The origin `a` with the direct recipients `b` and `c`, each session its own key. */
 async function createStarOrigin(gated?: CountingSubtleCrypto): Promise<ForgeryOrigin> {

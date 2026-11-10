@@ -353,6 +353,16 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.receiptProofKeys)
             .toEqual(keys);
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'admission')).toEqual([]);
+        // The Limit is per recipient: `b`'s key was frozen, `c` has none, so even `c`'s own signed ACK keys nobody.
+        const ownAck = await signTestALReceiptControl(await createAvailablePublicationCryptoFixture(), {
+            type: 'ack',
+            payload: toTestALAckPayload({ ackedMsgId: message.id.msgId, fromPeerId: 'c', toPeerId: 'a', observedAtEpochMs: Date.now() })
+        });
+        expect(
+            await fixture.manager.acceptControlMessage(
+                newALAckControlMessage({ v: 4, msgId: 'ack-c-own', senderId: 'c', ts: Date.now(), traceId: 'trace-limit' }, ownAck.payload)
+            )
+        ).toMatchObject({ kind: 'rejected', proofRefusal: { kind: 'unknown-key', claimedRecipientPeerId: 'c', channelPeerId: 'c' } });
     });
 
     it('counts the recipients its dequeue froze, so a counted recipient\'s own unsigned ACK there is missing-proof', async () => {
