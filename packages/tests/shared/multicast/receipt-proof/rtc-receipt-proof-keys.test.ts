@@ -90,6 +90,22 @@ describe('the keys an RTC origin freezes for the recipients its receipt counts',
         expect(refusal.left?.dropReason).toBe('RTC receipt cannot be verified: this page holds no WebCrypto');
     });
 
+    it('does not refuse a send that counts nobody on a page without WebCrypto', () => {
+        const message = createFrozenMulticast([]);
+
+        const refusal = computeRtcReceiptKeyRefusal({
+            msg: message,
+            original: message,
+            effective: createEffectivePolicy(message, 'receiver'),
+            room: createKeyedRoom({}),
+            canVerify: false,
+            storedSend: false,
+            nowMs: Date.now()
+        });
+
+        expect(refusal.right).toBe(message);
+    });
+
     it('refuses a receiver unicast whose addressee the room does not key, and one that names no room', async () => {
         const roomUnicast = newALUnicastMessage('a', ROUTE, 'b', 'chat.message.v1', {}, { groupRef: ORIGIN_ROOM });
         const roomlessUnicast = newALUnicastMessage('a', ROUTE, 'b', 'chat.message.v1', {});

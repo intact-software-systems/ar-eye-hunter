@@ -21,10 +21,11 @@ export interface ComputeRtcReceiptKeyRefusalInput {
 
 /**
  * The origin counts a `receiver` or `leader` recipient only on that session's signature, verified against the key it
- * froze at admission. A leg whose page cannot verify, that counts a live session the room names with no registered key,
- * or that addresses a unicast whose message names no room, could never complete: it is refused as unsupported before
- * admission, the refusal a fallback carrier takes over. A counted session the room does not name live is absent, not
- * keyless: it is left to the planner's verdict. A send whose named room has no cached snapshot yet is not judged.
+ * froze for that recipient when it froze the audience. A leg whose page cannot verify, that counts a live session the
+ * room names with no registered key, or that addresses a unicast whose message names no room, could never complete:
+ * it is refused as unsupported before admission, the refusal a fallback carrier takes over. A counted session the room does not name live is absent, not
+ * keyless: it is left to the planner's verdict. A send whose named room has no cached snapshot yet is not judged, nor
+ * one that counts nobody, which is complete at admission.
  *
  * Only a message's first dispatch is judged, as only it states the keys its sent row keeps: a first admission or a
  * hand-over (a non-stored stage) of any target mode, and the stored plan that freezes a multicast's audience, which
@@ -38,7 +39,9 @@ export function computeRtcReceiptKeyRefusal(
     const counted = isRtcFirstDispatch(input)
         ? resolveALCountedRecipientPeerIds(msg, input.effective.ack.algo)
         : undefined;
-    if (counted === undefined || (room === undefined && readALTargetGroupRef(msg) !== undefined)) {
+    if (
+        counted === undefined || counted.length === 0 || (room === undefined && readALTargetGroupRef(msg) !== undefined)
+    ) {
         return Either.ofRight(msg);
     }
     const dropReason = resolveRtcReceiptKeyRefusalReason(input, counted);

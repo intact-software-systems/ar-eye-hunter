@@ -823,23 +823,20 @@ export class WebRtcOverlayMulticastManager {
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
-                (carried) =>
-                    computeRtcFrozenAudienceRefusal(carried, original).flatMap<
-                        ALOutboundDispatchPlan<ALOutboundTransportMessage>,
-                        ALMessage
-                    >(
-                        (refusal) => Either.ofLeft(refusal),
-                        (frozen) =>
-                            computeRtcReceiptKeyRefusal({
-                                msg: frozen,
-                                original,
-                                effective: policy.effective,
-                                room: this.readOutboundObservation(carried).room,
-                                canVerify: this.canVerify,
-                                storedSend,
-                                nowMs: this.clock.nowMs()
-                            })
-                    )
+                (carried) => computeRtcFrozenAudienceRefusal(carried, original)
+            )
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+                (refusal) => Either.ofLeft(refusal),
+                (frozen) =>
+                    computeRtcReceiptKeyRefusal({
+                        msg: frozen,
+                        original,
+                        effective: policy.effective,
+                        room: this.readOutboundObservation(frozen).room,
+                        canVerify: this.canVerify,
+                        storedSend,
+                        nowMs: this.clock.nowMs()
+                    })
             )
             .flatMap(
                 (refusal) => Either.ofLeft(refusal),
