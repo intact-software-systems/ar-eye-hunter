@@ -31,7 +31,8 @@ export interface ReadALOutboundRecipientProofInput {
  * The verdict on who spoke the control. Under `signature` a peer ACK or NACK about a logically receipted send that
  * speaks for a recipient the receipt counts is verified against the key the sent row froze for it; an absent key
  * record keys nobody. One that speaks for a peer the receipt does not count is a hop fact its channel authenticates
- * when it speaks for its own sender, and keyed for nobody when it speaks for another.
+ * when it speaks for its own sender, and keyed for nobody when it speaks for another. A control addressed to another
+ * owner than the sent row's is not judged: the admission refuses it for its address.
  */
 export async function readALOutboundRecipientProof(
     input: ReadALOutboundRecipientProofInput
@@ -40,7 +41,7 @@ export async function readALOutboundRecipientProof(
     const mode = sent?.policy.ackTracking?.mode;
     if (
         recipientAuthentication.kind === 'carrier' || parsed.type === 'repair' || sent === undefined ||
-        mode === undefined || !isALLogicalReceiptMode(mode)
+        mode === undefined || !isALLogicalReceiptMode(mode) || parsed.payload.toPeerId !== sent.reference.senderId
     ) {
         return 'carrier-authenticated';
     }

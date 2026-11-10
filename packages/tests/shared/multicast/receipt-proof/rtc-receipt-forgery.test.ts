@@ -28,7 +28,7 @@ import {
     toOriginFrozenTargets,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
-import { createRelayChain, drainUntil, type RelayChain } from '../rtc-relay-chain-test-support.ts';
+import { createRelayChain, drainUntil, toControlTuples, type RelayChain } from '../rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
 import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
@@ -269,6 +269,25 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         expect((await readReceipt(origin, message))?.ackedPeerIds).toEqual(['b']);
     });
 
+    it.each(['hop', 'subtree'] as const)('under %s, a next hop\'s unsigned hop-end that names another hop moves nobody outside', async (algo) => {
+        const { origin } = await createStarOrigin();
+        const message = { ...createOriginReceiverMulticast(`other-hop-end-${algo}`), qos: { ack: { algo } } } as const;
+        expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
+        const hopEnd = toAckControl({
+            msgId: message.id.msgId,
+            fromPeerId: 'b',
+            logicalRecipientPeerId: 'c',
+            status: 'subtree-complete-not-subscribed'
+        });
+
+        await origin.manager.acceptControlMessage(toControlMessage(hopEnd, algo));
+
+        const receipt = await readReceipt(origin, message);
+        expect(receipt?.outsideAudiencePeerIds).toEqual([]);
+        expect(receipt?.expectedPeerIds).toContain('c');
+        expect(receipt?.ackedPeerIds).not.toContain('c');
+    });
+
     it('admits a null proof on ws, whose carrier authenticates its peer', async () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
@@ -439,6 +458,29 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         ]);
     });
 
+    it('a control addressed to another owner is refused for its address, with no proof refusal', async () => {
+        const { origin } = await createStarOrigin();
+        const message = await sendReceipted(origin, 'other-owner');
+        // `c` answers its parent hop `b`, which a copy of the same message reaches as an owner of its own.
+        const toParent = toTestALAckPayload({
+            ackedMsgId: message.id.msgId,
+            fromPeerId: 'c',
+            toPeerId: 'b',
+            originPeerId: 'a',
+            logicalRecipientPeerId: 'c',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        });
+
+        const admitted = await origin.manager.acceptControlMessage(toControlMessage({ type: 'ack', payload: toParent }, 'to-parent'));
+
+        expect(admitted).toEqual({ kind: 'rejected', reason: 'AL control is addressed to another outbound message owner' });
+        expect((await readReceipt(origin, message))?.ackedPeerIds).toEqual([]);
+        expect(readProofRefusals(origin)).toEqual([
+            { proofRefusal: undefined, claimedRecipientPeerId: undefined, channelPeerId: undefined }
+        ]);
+    });
+
     it('counts a signed control whichever hop forwarded it', async () => {
         const chain = await createRelayChain(['a', 'r', 'b', 'c'], {});
         const origin = createRtcOriginOverlayFixture({
@@ -507,6 +549,52 @@ describe('the channel binding a hop fact rests on (S8-R1)', () => {
             ['hop-end-c', 'not-handled']
         ]);
     });
+});
+
+describe('a child hop at an honest relay that speaks for another recipient (S8-R5, S8-R6)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    // Limit (S8-i): the relay verifies nothing and keys "already forwarded" and "outside" by the recipient alone, so the
+    // first control naming `c` wins at `r` and `c`'s own true ACK never reaches the origin. A fix flips this test:
+    // relay-side verification of a child control that names a counted recipient, or relay rows keyed by its proof.
+    it.each<readonly ['ack' | 'nack', readonly (readonly string[])[]]>([
+        ['ack', [['ack', 'c', 'delivered']]],
+        ['nack', [['nack', 'c', 'not-subscribed']]]
+    ])(
+        'Limit: a child hop that names another recipient with an unverifiable proof pre-empts that recipient\'s true ACK at the relay (forged %s first)',
+        async (forgedType, upwardForC) => {
+            const { chain, origin, relay, message } = await createRelayWithTwoChildren(`pre-empted-${forgedType}`);
+            const forged = forgedType === 'ack'
+                ? toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'm', logicalRecipientPeerId: 'c' })
+                : toChildNackControl({ msgId: message.id.msgId, fromPeerId: 'm', logicalRecipientPeerId: 'c' });
+            const own = toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+
+            // `m` signs with its own key: a proof of the right shape that never verifies for `c`.
+            await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.m!, forged), 'forged'), 'm');
+            await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, own), 'own'), 'c');
+            const upward = await relay.readSent('a');
+            for (const control of upward) {
+                await origin.manager.acceptControlMessage(control);
+            }
+
+            expect(toControlTuples(await relay.readSentControls('a')).filter(([, recipient]) => recipient === 'c'))
+                .toEqual(upwardForC);
+            const receipt = await readReceipt(origin, message);
+            expect(receipt?.ackedPeerIds).not.toContain('c');
+            expect(receipt?.outsideAudiencePeerIds).not.toContain('c');
+            expect(readProofRefusals(origin)).toContainEqual(
+                { proofRefusal: 'key-mismatch', claimedRecipientPeerId: 'c', channelPeerId: 'r' }
+            );
+        }
+    );
 });
 
 describe('a logical receipt never expects a peer its message does not count (S8-R1)', () => {
@@ -605,6 +693,8 @@ async function readUncountedExpectedPeerIds(origin: RtcOriginOverlayFixture, sen
     expect(canonical).toBeDefined();
     expect(tracking?.mode === 'receiver' || tracking?.mode === 'leader').toBe(true);
     const expected = [...(pending?.expectedPeerIds ?? []), ...(tracking?.expectedPeerIds ?? [])];
+    // An empty expected set would prove nothing about who is expected.
+    expect(expected).not.toEqual([]);
     return expected.filter((peerId) => !isALCountedRecipient(canonical!, tracking!.mode, peerId));
 }
 
@@ -717,6 +807,55 @@ function toNackControl(input: ForgedNackInput): ALReceiptControl {
             originPeerId: 'a',
             logicalRecipientPeerId: input.logicalRecipientPeerId,
             reason: input.reason,
+            observedAtEpochMs: Date.now()
+        })
+    };
+}
+
+/** The origin `a`, its relay `r` and the relay's children `m` and `c`, each its own key; `a`'s send is frozen to `m` and `c`. */
+async function createRelayWithTwoChildren(resourceId: string) {
+    const chain = await createRelayChain(['a', 'r', 'm', 'c'], {});
+    const origin = createRtcOriginOverlayFixture({ snapshot: chain.snapshot, nextHopPeerIds: ['r'], publicationCrypto: chain.keys.a });
+    const relay = createRtcRelayOverlayFixture({
+        selfPeerId: 'r',
+        snapshot: chain.snapshot,
+        neighbourPeerIds: ['a', 'm', 'c'],
+        publicationCrypto: chain.keys.r
+    });
+    const message = await sendFrozenReceipted(origin, resourceId, ['m', 'c']);
+    await relay.receive(origin.channels.r!.sent[0]!, 'a');
+    expect((await relay.readSent('m')).length).toBeGreaterThan(0);
+    expect((await relay.readSent('c')).length).toBeGreaterThan(0);
+    return { chain, origin, relay, message };
+}
+
+/** A child's ACK to the relay `r`. */
+function toChildAckControl(input: Omit<ForgedAckInput, 'status' | 'originPeerId'>): ALReceiptControl {
+    return {
+        type: 'ack',
+        payload: toTestALAckPayload({
+            ackedMsgId: input.msgId,
+            fromPeerId: input.fromPeerId,
+            toPeerId: 'r',
+            originPeerId: 'a',
+            logicalRecipientPeerId: input.logicalRecipientPeerId,
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        })
+    };
+}
+
+/** A child's `not-subscribed` NACK to the relay `r`. */
+function toChildNackControl(input: Omit<ForgedNackInput, 'reason'>): ALReceiptControl {
+    return {
+        type: 'nack',
+        payload: toTestALNackPayload({
+            msgId: input.msgId,
+            fromPeerId: input.fromPeerId,
+            toPeerId: 'r',
+            originPeerId: 'a',
+            logicalRecipientPeerId: input.logicalRecipientPeerId,
+            reason: 'not-subscribed',
             observedAtEpochMs: Date.now()
         })
     };

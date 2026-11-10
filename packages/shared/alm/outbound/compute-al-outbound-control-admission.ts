@@ -14,7 +14,6 @@ import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
-import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type {
     ALOutboundRepairHint,
@@ -22,6 +21,7 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
+import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import {
     resolveALOutboundRelayRejection,
@@ -246,7 +246,7 @@ function computePendingAckWrite(
         const owedPeerIds = toALOutboundReceiptClasses(next).unconfirmedPeerIds;
         return {
             kind: 'set',
-            value: isALImpliedNotSubscribedNack(ack, owedPeerIds)
+            value: isALOutboundImpliedNotSubscribedAck(next.mode, ack, owedPeerIds)
                 ? acceptALOutboundOutsideAudienceNack(next, ack.logicalRecipientPeerId)
                 : next
         };

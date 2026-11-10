@@ -7,7 +7,6 @@ import {
 } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
-import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
@@ -15,6 +14,7 @@ import {
     isALOutboundExpectedRepairPeer,
     isALOutboundRecipientControlSender
 } from './control/is-al-outbound-expected-repair-peer.ts';
+import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import { validateALOutboundRecipientProof } from './control/read-al-outbound-recipient-proof.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
@@ -140,7 +140,7 @@ function isForwardedOutsideHopEnd(
     ack: ALAckPayload
 ): boolean {
     return isALOutboundRecipientControlSender(read, ack.fromPeerId) &&
-        isALImpliedNotSubscribedNack(ack, toALOutboundReceiptClasses(pending).unconfirmedPeerIds);
+        isALOutboundImpliedNotSubscribedAck(pending.mode, ack, toALOutboundReceiptClasses(pending).unconfirmedPeerIds);
 }
 
 function isOpenNextHopCompletion(read: ALControlAdmissionRead, ack: ALAckPayload): boolean {
