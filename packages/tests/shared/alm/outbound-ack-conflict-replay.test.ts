@@ -104,11 +104,13 @@ it.each(
             expect(await admissionStore.commitBundle(repairBundle)).toBe('committed');
             return await write(operation, deadline);
         });
+        // What is pinned is the conflict replay, not the proof: the ACK's speaker is taken as its carrier authenticates it.
         const control = createTestALOutboundControlAdmission({
             admissionStore,
             workQueue,
             nowMs: clock,
             carrier: 'rtc',
+            recipientAuthentication: { kind: 'carrier' },
             settlements: () => {
                 throw new Error('A conflicted ACK must not settle before replay');
             }

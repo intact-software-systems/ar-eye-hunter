@@ -950,6 +950,7 @@ function createFixture(settlements?: ALOutboundSettlementFact[]): ControlAdmissi
             workQueue: state.workQueue,
             nowMs: Date.now,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             settlements: settlements === undefined ? undefined : (fact) => settlements.push(fact)
         })
     };

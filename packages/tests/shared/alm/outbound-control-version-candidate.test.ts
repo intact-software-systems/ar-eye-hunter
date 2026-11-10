@@ -166,7 +166,8 @@ describe('outbound control version candidate', () => {
             admissionStore: store,
             workQueue: backend.workQueue,
             nowMs: Date.now,
-            carrier: 'ws'
+            carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' }
         });
         const message = createOutboundMessage('control-version-race');
         await store.commitBundle(

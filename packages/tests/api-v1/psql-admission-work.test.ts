@@ -340,7 +340,8 @@ describe('PostgreSQL outbound admission', () => {
             admissionStore: store,
             workQueue: backend.workQueue,
             nowMs: Date.now,
-            carrier: 'ws'
+            carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' }
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 

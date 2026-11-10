@@ -47,7 +47,8 @@ describe('Postgres outbound sender version fence lock order', () => {
                 admissionStore: store,
                 workQueue: store.backend.workQueue,
                 nowMs: Date.now,
-                carrier: 'ws'
+                carrier: 'ws',
+                recipientAuthentication: { kind: 'carrier' }
             });
 
             const gate = holdRowGate(storage.sql);

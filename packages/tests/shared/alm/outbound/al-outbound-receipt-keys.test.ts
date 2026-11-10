@@ -67,6 +67,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             ...stores,
             nowMs: Date.now,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             settlements: (fact) => settlements.push(fact)
         });
 
@@ -96,7 +97,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
     it('refuses a receiver-mode ACK whose logical recipient is outside the audience, as a typed rejection', async () => {
         const stores = createStores();
         await seedObligation(stores.admissionStore, { mode: 'receiver', expectedPeerIds: ['r1', 'r2'] });
-        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } });
 
         // A hop ACK names the hop itself; under `receiver` it is never a logical confirmation.
         const hop = await control.admit(createRelayAck(RELAY, 'ack-hop'), 'peer');
@@ -117,6 +118,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             ...stores,
             nowMs: Date.now,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             settlements: (fact) => settlements.push(fact)
         });
 
@@ -137,7 +139,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
     it('refuses an ACK for an already-confirmed logical recipient under `receiver`, however it travelled', async () => {
         const stores = createStores();
         await seedObligation(stores.admissionStore, { mode: 'receiver', expectedPeerIds: ['r1', 'r2'] });
-        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } });
 
         expect(await control.admit(createRelayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
         // Another relay's ACK for `r1` is not a duplicate by key, but `r1` is already counted.

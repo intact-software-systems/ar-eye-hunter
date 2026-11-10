@@ -470,7 +470,8 @@ function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAd
         admissionStore: fixture.store,
         workQueue: fixture.backend.workQueue,
         nowMs: Date.now,
-        carrier: 'ws'
+        carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' }
     });
 }
 

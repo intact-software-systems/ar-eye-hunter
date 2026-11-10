@@ -530,7 +530,7 @@ describe('IndexedDB AL runtime stores', () => {
             })
         ).toBe('committed');
 
-        await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' }).admit(
+        await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } }).admit(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-indexeddb-runtime-stores' },
                 toTestALNackPayload({
@@ -721,7 +721,7 @@ describe('IndexedDB AL runtime stores', () => {
         const admissionStore = stores.admissionStore;
         const msg = createOutboundUnicastMessage('msg-indexeddb-ack-during-timeout');
         let acceptedAckDuringTimeout = false;
-        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } });
         const reserveEntries = stores.workQueue.reserveEntries.bind(stores.workQueue);
         vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation(async (input) => {
             const reserved = await reserveEntries(input);

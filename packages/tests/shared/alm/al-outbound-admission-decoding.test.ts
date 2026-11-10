@@ -595,7 +595,7 @@ async function scheduleNotYetInSyncRetry(
     admission: OutboundAdmissionFixture,
     msgId: string
 ) {
-    const control = createTestALOutboundControlAdmission({ ...admission.stores, nowMs: Date.now, carrier: 'ws' });
+    const control = createTestALOutboundControlAdmission({ ...admission.stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } });
     return await control.scheduleNotYetInSyncRetry({
         senderId: 'sender',
         expectedVersion: undefined,

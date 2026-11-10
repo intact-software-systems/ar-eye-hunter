@@ -8,6 +8,7 @@ import {
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import type { ALOutboundRecipientAuthentication } from '@shared/alm/outbound/control/read-al-outbound-recipient-proof.ts';
 import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 
@@ -22,6 +23,8 @@ export interface TestALOutboundWorkPortInput<TPrepared> extends ALOutboundRuntim
 export interface TestALOutboundControlAdmissionInput<TPrepared> extends TestALOutboundWorkPortInput<TPrepared> {
     /** The carrier the controls a test admits arrive on, as the runtime of that carrier would stamp them. */
     readonly carrier: ALDeliveryCarrier;
+    /** How the admission authenticates a recipient's control; each test states the pairing its carrier's composition does. */
+    readonly recipientAuthentication: ALOutboundRecipientAuthentication;
 }
 
 /**
@@ -54,7 +57,7 @@ export function createTestALOutboundControlAdmission<TPrepared>(
         clock: { nowMs: input.nowMs },
         settlements: input.settlements ?? (() => {}),
         carrier: input.carrier,
-        recipientAuthentication: { kind: 'carrier' },
+        recipientAuthentication: input.recipientAuthentication,
         hopPeerIds: undefined
     });
 }

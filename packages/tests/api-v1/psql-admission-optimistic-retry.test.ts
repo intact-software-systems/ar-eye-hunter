@@ -208,7 +208,8 @@ describe('PSql admission optimistic retry', () => {
             admissionStore: store,
             workQueue: backend.workQueue,
             nowMs: Date.now,
-            carrier: 'ws'
+            carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' }
         });
 
         await expect(control.scheduleNotYetInSyncRetry({

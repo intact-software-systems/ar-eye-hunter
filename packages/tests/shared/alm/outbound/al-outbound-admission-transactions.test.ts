@@ -426,7 +426,8 @@ it('reads a control decision surface from one readonly transaction before its wr
         admissionStore: store,
         workQueue: backend.workQueue,
         nowMs: Date.now,
-        carrier: 'ws'
+        carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' }
     });
     const ack = newALAckControlMessage(
         { v: 4, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now(), traceId: 'trace-al-outbound-admission-transactions' },
