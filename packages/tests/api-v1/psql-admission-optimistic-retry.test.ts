@@ -321,6 +321,7 @@ function createInboundTestRuntime(
     controls: ALMessage[]
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',

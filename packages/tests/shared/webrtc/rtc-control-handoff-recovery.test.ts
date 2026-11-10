@@ -220,6 +220,7 @@ function createControlRecoveryRuntime(
         acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
     });
     const runtime = new ALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         ...resources,
         carrier: 'rtc',

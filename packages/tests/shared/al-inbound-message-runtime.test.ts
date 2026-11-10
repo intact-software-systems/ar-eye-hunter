@@ -979,6 +979,7 @@ function createInboundHarness(
     const controlAcceptances: ALControlAcceptance[] = [];
 
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',

@@ -51,6 +51,11 @@ export interface ALInboundDurableEffectWrite {
     readonly expireAtTimestamp: number;
     /** Whose runtime claims the row: the carrier the message the effect acts on arrived on. */
     readonly carrier: ALDeliveryCarrier;
+    /**
+     * Never persisted. True on a `send-control` effect whose ACK or NACK a counted recipient authors about itself: its
+     * committer signs it first.
+     */
+    readonly signsForRecipient: boolean;
 }
 
 export interface ALPersistedInboundEffect {
@@ -94,6 +99,7 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
         payload: input.payload,
         expireAtTimestamp: input.expireAtTimestamp,
         carrier: input.carrier,
+        signsForRecipient: false,
         entry: {
             key: toALInboundWorkKey(input.namespace, input.effectId),
             typeId: toALInboundWorkType(input.namespace, input.carrier),
@@ -113,6 +119,10 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
             db: undefined
         }
     };
+}
+
+export function toALInboundRecipientControlWork(write: ALInboundDurableEffectWrite): ALInboundDurableEffectWrite {
+    return { ...write, signsForRecipient: true };
 }
 
 export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string): ALPersistedInboundEffect {

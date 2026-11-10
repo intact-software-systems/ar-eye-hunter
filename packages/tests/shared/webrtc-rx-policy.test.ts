@@ -35,7 +35,7 @@ import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './native-rtc-connection-fixture.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
 import { toTestALAckPayload } from '../al-control-test-payloads.ts';
 
@@ -635,7 +635,8 @@ class RtcReceiveFixture {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            // The session signs the receipts a receiver or leader send counts it for with the key its room registers.
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             selfPrincipalId: this.connection.service.input.sessionId

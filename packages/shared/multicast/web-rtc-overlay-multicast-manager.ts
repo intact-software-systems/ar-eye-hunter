@@ -15,6 +15,11 @@ import {
     shouldAwaitALRoute,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
+import type {
+    ALReceiptControl,
+    ALReceiptProofFailure,
+    ALReceiptProofSignerPort
+} from '../al-contracts/receipt-proof/al-receipt-proof.ts';
 import {
     resolveALOwnedChildPeerIds,
     toALAcceptedOverlayAdjacency
@@ -70,6 +75,7 @@ import type { RateLimiter } from '../resilience/rate-limiter.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type { PublicationCrypto } from '../signature/publication-crypto.ts';
+import type { SignatureProof } from '../signature/signature-proof.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 import type {
     QRtcDataChannel,
@@ -107,6 +113,7 @@ import {
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
+import { RtcReceiptProofSigner } from './receipt-proof/rtc-receipt-proof-signer.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import {
@@ -211,7 +218,7 @@ export namespace WebRtcOverlayMulticastManager {
     }
 }
 
-export class WebRtcOverlayMulticastManager {
+export class WebRtcOverlayMulticastManager implements ALReceiptProofSignerPort {
     public static readonly ENQUEUE_TYPE = EnqueuedType.RTC_OUTBOX;
     public static readonly OUTBOX_DEQUEUE_TYPES = new Set<string>([
         this.ENQUEUE_TYPE
@@ -238,6 +245,7 @@ export class WebRtcOverlayMulticastManager {
     private readonly submission: RtcOutboundSubmission;
     /** A `receiver` or `leader` leg is carried only by a page that can verify its recipients' signatures. */
     private readonly canVerify: boolean;
+    readonly #receiptProofSigner: RtcReceiptProofSigner;
 
     constructor(dependencies: WebRtcOverlayMulticastManager.Dependencies) {
         this.outbox = dependencies.outboundRuntime.workQueue;
@@ -263,6 +271,7 @@ export class WebRtcOverlayMulticastManager {
         this.outboundDiagnostics = dependencies.outboundDiagnostics;
         this.clock = dependencies.outboundRuntime.clock;
         this.canVerify = dependencies.publicationCrypto.kind === 'available';
+        this.#receiptProofSigner = new RtcReceiptProofSigner({ crypto: dependencies.publicationCrypto });
         this.submission = new RtcOutboundSubmission({
             connectionService: dependencies.connectionService,
             clock: this.clock,
@@ -518,6 +527,10 @@ export class WebRtcOverlayMulticastManager {
             detail: 'RTC overlay multicast manager is disposed.'
         };
         return { verdict, message: msg, entries: [], reason: verdict.detail, trackedReceiptAlgo: 'none' };
+    }
+
+    async signReceiptProof(control: ALReceiptControl): Promise<Either<ALReceiptProofFailure, SignatureProof>> {
+        return await this.#receiptProofSigner.signReceiptProof(control);
     }
 
     /** Awaited on each message object before it is planned, so the planner reads a granted frame's verdict. */

@@ -392,6 +392,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
                 overlayNeighborPeerIds: ['relay']
             });
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',

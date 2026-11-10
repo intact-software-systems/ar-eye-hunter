@@ -663,7 +663,9 @@ function createALInboundLaneControlAdmission(
         port: workPort,
         clock: dependencies.clock,
         newControlId: dependencies.effectPreparation.newControlId,
-        retention: dependencies.admissionStore.retention
+        retention: dependencies.admissionStore.retention,
+        receiptProofs: dependencies.receiptProofs,
+        diagnostics: dependencies.diagnostics
     });
 }
 

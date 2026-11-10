@@ -715,6 +715,7 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
     expect(diagnostics?.acknowledgementCapture !== undefined).toBe(almDiagnostics !== false);
     const accepted: string[] = [];
     const inbound = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         selfPeerId: 'origin',
         carrier: 'ws',

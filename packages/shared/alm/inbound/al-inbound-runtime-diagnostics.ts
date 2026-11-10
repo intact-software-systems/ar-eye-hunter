@@ -123,6 +123,19 @@ export type ALInboundRuntimeDiagnosticsEvent =
     )
     | (
         & Readonly<{
+            /** A counted recipient's ACK or NACK whose signature failed, so its commit left it out. */
+            kind: 'receipt-sign';
+            /** The control's own identifier. */
+            msgId: string;
+            typeId: string;
+            /** The message the control is about. */
+            targetMsgId: string;
+            reason: string;
+        }>
+        & ALMessageTrace
+    )
+    | (
+        & Readonly<{
             /**
              * A recipient's position event on a recorded track: entry, omission, witness, or a copy below it. The
              * admission emits it after its commit, so a replayed pending admission reports its position too.

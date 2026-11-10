@@ -75,6 +75,7 @@ function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
     });
     const delivery = new ALInboundAdmittedDelivery({
+        receiptProofs: { kind: 'carrier-authenticated' },
         ...resources,
         lane: 'durable',
         effectWorkerId: 'worker',

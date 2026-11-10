@@ -16,8 +16,10 @@ import type {
 } from '../al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
 import { toALInboundPendingControlId } from '../al-inbound-pending-admission.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '../al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier, toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry } from '../al-inbound-work-entry.ts';
+import { signALInboundReceiptControls, type ALInboundReceiptProofs } from '../sign-al-inbound-receipt-controls.ts';
 import type { ALInboundAcknowledgementEvidence } from './al-inbound-acknowledgement-evidence.ts';
 import type { ALInboundControlSubject } from './al-inbound-control-rows.ts';
 import {
@@ -40,6 +42,8 @@ export interface ALInboundControlAdmissionDependencies {
     readonly clock: ALInboundMessageRuntime.Clock;
     readonly newControlId: () => string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly receiptProofs: ALInboundReceiptProofs;
+    readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
 }
 
 export type ALInboundControlAdmissionResult =
@@ -88,6 +92,8 @@ export class ALInboundControlAdmission {
     private readonly clock: ALInboundMessageRuntime.Clock;
     private readonly newControlId: () => string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly receiptProofs: ALInboundReceiptProofs;
+    private readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
 
     constructor(dependencies: ALInboundControlAdmissionDependencies) {
         this.admissionStore = dependencies.admissionStore;
@@ -95,6 +101,8 @@ export class ALInboundControlAdmission {
         this.clock = dependencies.clock;
         this.newControlId = dependencies.newControlId;
         this.retention = dependencies.retention;
+        this.receiptProofs = dependencies.receiptProofs;
+        this.diagnostics = dependencies.diagnostics;
     }
 
     async admit(
@@ -201,8 +209,14 @@ export class ALInboundControlAdmission {
         admitted: ALInboundControlCommit,
         evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
+        const signed = await signALInboundReceiptControls({
+            bundle: admitted.bundle,
+            namespace: this.admissionStore.namespace,
+            receiptProofs: this.receiptProofs,
+            diagnostics: this.diagnostics
+        });
         evidence?.commit('pending');
-        const status = await this.admissionStore.commitBundle(admitted.bundle);
+        const status = await this.admissionStore.commitBundle(signed);
         evidence?.commit(status);
         if (status === 'committed') {
             return { kind: 'committed', acceptance: admitted.acceptance };

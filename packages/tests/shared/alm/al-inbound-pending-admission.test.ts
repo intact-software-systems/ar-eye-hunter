@@ -416,6 +416,7 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
 
 function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessage[], controls: ALMessage[]): ALInboundMessageRuntime.Dependencies {
     return {
+        receiptProofs: { kind: 'carrier-authenticated' },
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores,

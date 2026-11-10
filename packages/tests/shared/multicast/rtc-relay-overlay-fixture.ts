@@ -3,7 +3,11 @@ import { onTestFinished } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    decodeALControlMessage,
+    type ALPeerControlMessage,
+    type ALPendingAckSnapshot
+} from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import {
@@ -19,6 +23,7 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type { ALInboundControlSubject } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
 import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
@@ -47,7 +52,7 @@ import {
     installNativeRtcRuntime,
     type NativeRtcConnectionFixture
 } from '../native-rtc-connection-fixture.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { createOriginOverlay } from './rtc-origin-overlay-fixture.ts';
@@ -68,7 +73,7 @@ export interface RtcRelayOverlayFixtureInput {
     readonly faultPort?: TransportFaultPort;
     /** The page's granted topics; absent, none, so every frame is admitted by its room alone. */
     readonly grantedTopics?: RtcGrantedTopicReader;
-    /** The relay page's own key, with which it verifies granted frames; absent, a keyless page. */
+    /** The relay page's own key, with which it verifies granted frames and signs its receipts; absent, the room key. */
     readonly publicationCrypto?: PublicationCrypto;
     /** The tab's held subscription tokens; absent, none is active. */
     readonly topicSubscriptions?: RtcTopicSubscriptionReader;
@@ -94,6 +99,8 @@ export interface RtcRelayOverlayFixture {
     forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
     /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
+    /** The relay row a control from `subject.fromPeerId` about `subject.msgId` would read; absent when none is kept. */
+    readPendingAck(subject: ALInboundControlSubject): Promise<ALPendingAckSnapshot | undefined>;
 }
 
 /** A relay session's inbound memory pair together with the admission map it writes, which a test reads back. */
@@ -179,6 +186,10 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
         await this.dependencies.multicast.forwardRetriedCopy(copy);
         await waitForOwnedQueueWork(this.dependencies.outboundResources.workQueue);
     }
+
+    async readPendingAck(subject: ALInboundControlSubject): Promise<ALPendingAckSnapshot | undefined> {
+        return (await this.dependencies.inboundStores.admissionStore.readControlDecisionSurface(subject))?.pendingAck;
+    }
 }
 
 export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput): RtcRelayOverlayFixture {
@@ -253,6 +264,7 @@ function createDefaultRelayOverlayResources(
         overlays.accept(overlayId, createOriginOverlay(input.neighbourPeerIds));
     }
     const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+    const publicationCrypto = input.publicationCrypto ?? ROOM_PUBLICATION_CRYPTO;
     const multicast = new shared.WebRtcOverlayMulticastManager({
         quotaNow: Date.now,
         creationNow: Temporal.Now.instant,
@@ -269,11 +281,9 @@ function createDefaultRelayOverlayResources(
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationCrypto,
         publicationVerifier: new RtcPublicationProofVerifier({
-            crypto: toPublicationVerificationCrypto(
-                input.publicationCrypto?.kind === 'available' ? input.publicationCrypto.subtle : undefined
-            ),
+            crypto: toPublicationVerificationCrypto(publicationCrypto.kind === 'available' ? publicationCrypto.subtle : undefined),
             findGroupSnapshot: (groupRef) => readRtcGroupSnapshotByRef(groups, groupRef),
             nowEpochMs: Date.now
         }),

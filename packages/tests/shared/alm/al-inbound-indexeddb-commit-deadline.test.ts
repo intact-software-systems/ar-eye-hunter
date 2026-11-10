@@ -60,6 +60,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                     fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId
                 });
             const admission = new ALInboundMessageAdmission({
+                receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
                 diagnostics: undefined,
                 effectWorkerId: 'al-inbound:test',

@@ -15,6 +15,7 @@ import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
     computeALInboundWorkEntry,
     toALInboundEffectId,
+    toALInboundRecipientControlWork,
     type ALInboundDurableEffectWrite
 } from '../al-inbound-work-entry.ts';
 
@@ -68,7 +69,7 @@ export function toALInboundUpwardControlWork(
     return controls.map((control, index) => {
         const controlMsgId = `${context.controlMsgId}:${index}`;
         const msg = toUpwardControlMessage(context, control, controlMsgId);
-        return computeALInboundWorkEntry({
+        const work = computeALInboundWorkEntry({
             namespace: context.namespace,
             observedAtMs: context.nowMs,
             effectId: toALInboundEffectId([
@@ -86,7 +87,19 @@ export function toALInboundUpwardControlWork(
             carrier,
             payload: { kind: 'send-control', msg }
         });
+        return carrier === 'rtc' && isALInboundRelayOwnCountedAck(context, control)
+            ? toALInboundRecipientControlWork(work)
+            : work;
     });
+}
+
+/** The relay's own ACK when its frozen audience counts it; a control it sends for a child is never its own word. */
+function isALInboundRelayOwnCountedAck(
+    context: ALInboundUpwardControlContext,
+    control: ALInboundUpwardControl
+): boolean {
+    return control.kind === 'ack' && control.ack.logicalRecipient.kind === 'self' &&
+        context.pending.upwardAudiencePeerIds?.includes(context.relayPeerId) === true;
 }
 
 function toUpwardControlMessage(

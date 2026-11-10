@@ -29,7 +29,8 @@ import {
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { toTestALAckPayload, verifyTestALReceiptControl } from '../../al-control-test-payloads.ts';
+import { ROOM_PUBLICATION_CRYPTO, type AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 
 const ACK_TIMEOUT_MS = 2_000;
 /** The default `at-least-once` retry budget of a receipt, read from the policy the origin plans with. */
@@ -134,6 +135,104 @@ describe('the RTC origin retry of a receiver receipt', () => {
             unconfirmedRecipientPeerIds: []
         });
         expect(settled?.kind === 'acknowledgement' && settled.confirmedRecipientPeerIds.toSorted()).toEqual(['b', 'c', 'r']);
+    });
+
+    // Decision 2's premise: a hop-end left out, as a failed signature leaves it, is a lost control the retry repairs.
+    it('a recipient whose hop-end never arrives keeps its parent\'s row open, so the retry reaches it and its repeated ACK completes the receipt', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'c'], 4);
+        const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'] });
+        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const leaf = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['r'] });
+        const message = createOriginReceiverMulticast('lost-hop-end');
+        await enqueueAndDrain(fixture.manager, message);
+        await relay.receive(fixture.channels.r!.sent[0]!, 'a');
+        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
+        // `c` delivers and ends its hop with its one ACK, which the c -> r leg loses.
+        expect(readAckTuples(await leaf.readSent('r'))).toEqual([['c', 'delivered']]);
+        const first = (await relay.readSent('a')).filter(isAck);
+        expect(readAckTuples(first)).toEqual([['r', 'accepted']]);
+        expect(await relay.readPendingAck({ msgId: message.id.msgId, fromPeerId: 'c' }))
+            .toMatchObject({ expectedFromPeerIds: ['c'], ackedFromPeerIds: [] });
+        for (const ack of first) {
+            await fixture.manager.acceptControlMessage(ack);
+        }
+
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(fixture.channels.r!.sent).toHaveLength(2);
+        await relay.receive(fixture.channels.r!.sent[1]!, 'a');
+        const copies = await relay.readSent('c');
+        expect(copies).toHaveLength(2);
+        await leaf.receive(copies[1]!, 'r');
+        const repeated = (await leaf.readSent('r')).filter(isAck).slice(1);
+        expect(readAckTuples(repeated)).toEqual([['c', 'delivered']]);
+        for (const ack of repeated) {
+            await relay.receive(ack, 'c');
+        }
+        // `r` confirms itself again on the retried copy, then relays `c` and ends its hop.
+        const answer = (await relay.readSent('a')).filter(isAck).slice(first.length);
+        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'forwarded'], ['r', 'accepted'], ['r', 'subtree-complete']]);
+        for (const ack of answer) {
+            await fixture.manager.acceptControlMessage(ack);
+        }
+
+        const settled = fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1);
+        expect(settled).toMatchObject({
+            mode: 'receiver',
+            complete: true,
+            expectedRecipientPeerIds: ['r', 'c'],
+            confirmedRecipientPeerIds: ['r', 'c'],
+            unconfirmedRecipientPeerIds: []
+        });
+    });
+
+    it('a recipient whose sign fails sends no control; the retry reaches it and its signed repeat completes the receipt', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'c'], 4);
+        const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'] });
+        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const leaf = createRtcRelayOverlayFixture({
+            selfPeerId: 'c',
+            snapshot,
+            neighbourPeerIds: ['r'],
+            publicationCrypto: toSignFailingOnce(ROOM_PUBLICATION_CRYPTO)
+        });
+        const message = createOriginReceiverMulticast('unsigned-hop-end');
+        await enqueueAndDrain(fixture.manager, message);
+        await relay.receive(fixture.channels.r!.sent[0]!, 'a');
+        await leaf.receive((await relay.readSent('c'))[0]!, 'r');
+
+        expect(await leaf.readSent('r')).toEqual([]);
+        expect(leaf.diagnostics.filter((event) => event.kind === 'receipt-sign')).toEqual([
+            expect.objectContaining({ targetMsgId: message.id.msgId, reason: expect.stringMatching(/^sign-failed: /) })
+        ]);
+        const first = (await relay.readSent('a')).filter(isAck);
+        expect(readAckTuples(first)).toEqual([['r', 'accepted']]);
+        expect(await relay.readPendingAck({ msgId: message.id.msgId, fromPeerId: 'c' }))
+            .toMatchObject({ expectedFromPeerIds: ['c'], ackedFromPeerIds: [] });
+        for (const ack of first) {
+            await fixture.manager.acceptControlMessage(ack);
+        }
+
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        await relay.receive(fixture.channels.r!.sent[1]!, 'a');
+        await leaf.receive((await relay.readSent('c'))[1]!, 'r');
+        const repeated = (await leaf.readSent('r')).filter(isAck);
+        expect(readAckTuples(repeated)).toEqual([['c', 'delivered']]);
+        expect(await verifyTestALReceiptControl(ROOM_PUBLICATION_CRYPTO, repeated[0]!)).toBe(true);
+        for (const ack of repeated) {
+            await relay.receive(ack, 'c');
+        }
+        for (const ack of (await relay.readSent('a')).filter(isAck).slice(first.length)) {
+            await fixture.manager.acceptControlMessage(ack);
+        }
+
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            mode: 'receiver',
+            complete: true,
+            confirmedRecipientPeerIds: ['r', 'c'],
+            unconfirmedRecipientPeerIds: []
+        });
     });
 
     it('confirms a hop whose recipient relays all acknowledged, and retries only toward the recipient still missing', async () => {
@@ -487,4 +586,22 @@ function readAckTuples(messages: readonly ALMessage[]): readonly (readonly [stri
         const control = parseALControlMessage(message);
         return control?.type === 'ack' ? [[control.payload.logicalRecipientPeerId, control.payload.status] as const] : [];
     });
+}
+
+/** The crypto whose first signature WebCrypto refuses; every later one, and every other call, is the crypto's own. */
+function toSignFailingOnce(crypto: AvailablePublicationCrypto): AvailablePublicationCrypto {
+    let refused = false;
+    const subtle = new Proxy(crypto.subtle, {
+        get(target, property) {
+            if (property === 'sign' && !refused) {
+                refused = true;
+                return async () => {
+                    throw new Error('The signature was refused');
+                };
+            }
+            const member = Reflect.get(target, property);
+            return typeof member === 'function' ? member.bind(target) : member;
+        }
+    });
+    return { ...crypto, subtle };
 }

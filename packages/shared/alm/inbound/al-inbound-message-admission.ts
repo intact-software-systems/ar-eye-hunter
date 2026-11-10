@@ -21,6 +21,7 @@ import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-in
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
+import { signALInboundReceiptControls } from './sign-al-inbound-receipt-controls.ts';
 
 /** A replay that never reached a commit wrote nothing, so it has no work to announce. */
 const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
@@ -52,6 +53,7 @@ export namespace ALInboundMessageAdmission {
             | 'readRelayedRepairRequestRejection'
             | 'onResyncRequired'
             | 'orderingObserver'
+            | 'receiptProofs'
             | 'diagnostics'
             | 'effectWorkerId'
         > {
@@ -136,7 +138,13 @@ export class ALInboundMessageAdmission {
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }
-        const status = await admissionStore.commitBundle(validated.right!);
+        const signed = await signALInboundReceiptControls({
+            bundle: validated.right!,
+            namespace: read.namespace,
+            receiptProofs: this.dependencies.receiptProofs,
+            diagnostics: this.dependencies.diagnostics
+        });
+        const status = await admissionStore.commitBundle(signed);
         if (status === 'expired') {
             return Either.ofRight(ATTEMPT_EXPIRED);
         }
@@ -155,7 +163,7 @@ export class ALInboundMessageAdmission {
         return Either.ofRight({
             kind: 'completed',
             acceptance: toAdmissionAcceptance(plan),
-            wroteWork: validated.right!.durableEffects.length > 0
+            wroteWork: signed.durableEffects.length > 0
         });
     }
 

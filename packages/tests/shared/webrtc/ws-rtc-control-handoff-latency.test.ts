@@ -331,6 +331,7 @@ class RtcControlHandoffFixture {
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const admission = new ALInboundMessageAdmission({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             diagnostics: undefined,
             ...resources,

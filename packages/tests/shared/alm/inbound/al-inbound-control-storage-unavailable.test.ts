@@ -107,6 +107,7 @@ function createRuntime(
 ): InboundControlRuntime {
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',

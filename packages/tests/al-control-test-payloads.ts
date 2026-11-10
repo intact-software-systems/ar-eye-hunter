@@ -1,5 +1,11 @@
-import type { ALAckPayload, ALNackPayload } from '@shared/al-contracts/al-control.ts';
-import { signALReceiptProof, type ALReceiptControl } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALPeerControlMessage, type ALAckPayload, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import {
+    signALReceiptProof,
+    verifyALReceiptProof,
+    type ALReceiptControl
+} from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
+import { importEcdsaP256PublicKey } from '@shared/signature/ecdsa-p256-signature.ts';
 
 import type { AvailablePublicationCrypto } from './shared/signature/publication-crypto-fixtures.ts';
 
@@ -52,4 +58,14 @@ export async function signTestALReceiptControl(
     return control.type === 'ack'
         ? { type: 'ack', payload: { ...control.payload, proof } }
         : { type: 'nack', payload: { ...control.payload, proof } };
+}
+
+/** Whether `msg` is an ACK or NACK whose proof verifies against the crypto's own public key. */
+export async function verifyTestALReceiptControl(crypto: AvailablePublicationCrypto, msg: ALMessage): Promise<boolean> {
+    const control = decodeALPeerControlMessage(msg).right;
+    const publicKey = (await importEcdsaP256PublicKey(crypto.subtle, crypto.keyPair.publicJwk)).right;
+    if (control === undefined || control.type === 'repair' || publicKey === undefined) {
+        return false;
+    }
+    return (await verifyALReceiptProof({ subtle: crypto.subtle, publicKey, control })).right === true;
 }

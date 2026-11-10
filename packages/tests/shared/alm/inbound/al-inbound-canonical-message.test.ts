@@ -298,6 +298,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         ...resources,

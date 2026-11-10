@@ -5,9 +5,10 @@ import {
     newALNackControlMessage,
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { isALCountedRecipient } from '../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import { computeALInboundWitnessedCompletedThrough } from './admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundAdmissionMutation,
@@ -18,7 +19,12 @@ import type {
 } from './al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
-import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
+import {
+    computeALInboundWorkEntry,
+    toALInboundRecipientControlWork,
+    type ALInboundDurableEffectWrite
+} from './al-inbound-work-entry.ts';
+import { isALInboundOwnReceiptIntent } from './sign-al-inbound-receipt-controls.ts';
 
 export interface ALInboundEffectPreparationDependencies {
     readonly newControlId: () => string;
@@ -99,7 +105,9 @@ function toPreparedALInboundMessage(read: PrepareALInboundCommitBundleInput['rea
 
 function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readonly ALInboundDurableEffectWrite[] {
     const { read, facts } = input;
-    const { traceId, senderId: originPeerId } = toPreparedALInboundMessage(read).id;
+    const msg = toPreparedALInboundMessage(read);
+    const { traceId, senderId: originPeerId } = msg.id;
+    const countsSelf = isALCountedRecipient(msg, toPreparedALInboundPlan(read).ack.algo, facts.selfPeerId);
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({
@@ -114,7 +122,7 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
         const effectId = payload.kind === 'send-control'
             ? `${effect.effectId}:${encodeURIComponent(payload.msg.id.msgId)}`
             : effect.effectId;
-        return computeALInboundWorkEntry({
+        const work = computeALInboundWorkEntry({
             namespace: read.namespace,
             observedAtMs: facts.observedAtEpochMs,
             effectId,
@@ -122,7 +130,12 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
             payload,
             carrier: effect.carrier
         });
+        return isALInboundOwnReceiptIntent(effect, countsSelf) ? toALInboundRecipientControlWork(work) : work;
     });
+}
+
+function toPreparedALInboundPlan(read: PrepareALInboundCommitBundleInput['read']): ALMessageHandlingPlan {
+    return read.kind === 'incoming' ? read.plan : read.snapshot.plan;
 }
 
 /** Provenance covers its work; volatile terminal eligibility records the policy actually admitted. */
@@ -132,7 +145,7 @@ function toProvenanceMutations(
     ownedWorkExpiries: readonly number[]
 ): readonly ALInboundAdmissionMutation[] {
     const { read } = input;
-    const effective = read.kind === 'incoming' ? read.plan.effective : read.snapshot.plan.effective;
+    const effective = toPreparedALInboundPlan(read).effective;
     return mutations.flatMap((mutation): readonly ALInboundAdmissionMutation[] => {
         if (mutation.kind !== 'set-msg-owner') {
             return [mutation];
