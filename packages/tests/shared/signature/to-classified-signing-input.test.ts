@@ -24,6 +24,14 @@ describe('toClassifiedSigningInput', () => {
         expect(toClassifiedSigningInput('tag-v1', sectionsWith(undefined))).toBe('["tag-v1",1,2]');
     });
 
+    it('signs every slot of an absent section as null', () => {
+        expect(
+            toClassifiedSigningInput('tag-v1', [
+                { name: 's', fields: undefined, classes: { a: 'signed', b: 'signed', c: 'excluded' } }
+            ])
+        ).toBe('["tag-v1",null,null]');
+    });
+
     it('gives the same fields different bytes under another domain tag', () => {
         const sections: ClassifiedSigningSection[] = [{ name: 's', fields: { a: 1 }, classes: { a: 'signed' } }];
         expect(toClassifiedSigningInput('tag-v1', sections)).not.toBe(toClassifiedSigningInput('tag-v2', sections));

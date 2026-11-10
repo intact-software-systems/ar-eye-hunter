@@ -128,12 +128,6 @@ export const AL_PUBLICATION_PROOF_FIELD_CLASSES = {
 /** `keyof` a union is only its common keys; the targets record classifies every member's keys. */
 type UnionKeys<T> = T extends object ? keyof T : never;
 
-type ALPublicationProofSignedSection = {
-    [Section in keyof ALMessage]-?: (typeof AL_PUBLICATION_PROOF_FIELD_CLASSES.message)[Section] extends 'signed' ?
-        Section :
-        never;
-}[keyof ALMessage];
-
 const UTF8_ENCODER = new TextEncoder();
 
 export function toALPublicationProofSigningInput(message: ALMessage): string {
