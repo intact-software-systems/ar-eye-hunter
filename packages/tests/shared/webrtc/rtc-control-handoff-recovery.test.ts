@@ -256,6 +256,7 @@ async function seedControlRecoveryWork(run: ControlRecoveryRuntime, sequence: nu
         })
     );
     const computed = computeALInboundWorkEntry({
+        signsForRecipient: false,
         namespace: run.resources.admissionStore.namespace,
         effectId: msg.id.msgId,
         payload: { kind: 'send-control', msg },

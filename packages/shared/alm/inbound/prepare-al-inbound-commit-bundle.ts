@@ -19,12 +19,8 @@ import type {
 } from './al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
-import {
-    computeALInboundWorkEntry,
-    toALInboundRecipientControlWork,
-    type ALInboundDurableEffectWrite
-} from './al-inbound-work-entry.ts';
-import { isALInboundOwnReceiptIntent } from './sign-al-inbound-receipt-controls.ts';
+import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
+import { isALInboundRecipientReceiptIntent } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 
 export interface ALInboundEffectPreparationDependencies {
     readonly newControlId: () => string;
@@ -122,15 +118,15 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
         const effectId = payload.kind === 'send-control'
             ? `${effect.effectId}:${encodeURIComponent(payload.msg.id.msgId)}`
             : effect.effectId;
-        const work = computeALInboundWorkEntry({
+        return computeALInboundWorkEntry({
             namespace: read.namespace,
             observedAtMs: facts.observedAtEpochMs,
             effectId,
             expireAtTimestamp,
             payload,
-            carrier: effect.carrier
+            carrier: effect.carrier,
+            signsForRecipient: isALInboundRecipientReceiptIntent(effect, countsSelf)
         });
-        return isALInboundOwnReceiptIntent(effect, countsSelf) ? toALInboundRecipientControlWork(work) : work;
     });
 }
 

@@ -19,7 +19,10 @@ import { toALInboundPendingControlId } from '../al-inbound-pending-admission.ts'
 import type { ALInboundRuntimeDiagnosticsSink } from '../al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier, toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry } from '../al-inbound-work-entry.ts';
-import { signALInboundReceiptControls, type ALInboundReceiptProofs } from '../sign-al-inbound-receipt-controls.ts';
+import {
+    signALInboundReceiptControls,
+    type ALInboundReceiptProofs
+} from '../receipt-proof/sign-al-inbound-receipt-controls.ts';
 import type { ALInboundAcknowledgementEvidence } from './al-inbound-acknowledgement-evidence.ts';
 import type { ALInboundControlSubject } from './al-inbound-control-rows.ts';
 import {
@@ -251,7 +254,8 @@ export class ALInboundControlAdmission {
             payload: { kind: 'admit-control', msg: arrival.msg, carrier: arrival.carrier, expiresAtMs },
             observedAtMs: nowMs,
             expireAtTimestamp: expiresAtMs,
-            carrier: arrival.carrier
+            carrier: arrival.carrier,
+            signsForRecipient: false
         });
         await this.port.retainIfAbsent(work.entry);
     }

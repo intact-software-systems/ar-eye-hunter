@@ -76,6 +76,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
@@ -169,6 +170,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
@@ -214,6 +216,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const nowMs = Date.now();
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             observedAtMs: nowMs - 20_000,
@@ -273,6 +276,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const missingSource = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'missing-source', contextId: 'room' }, 'receiver', 'chat', {});
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             observedAtMs: Date.now(),
@@ -322,6 +326,7 @@ describe('inbound durable effect worker lifecycle', () => {
             observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
@@ -397,6 +402,7 @@ describe('inbound durable effect worker lifecycle', () => {
         expect(await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
 
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: store.namespace,
             observedAtMs: Date.now(),
@@ -540,6 +546,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
         // Retained control work gives the batch a delivery to hold, so the admission below must outlive it.
         const forwarded = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'forwarded-control',
@@ -618,6 +625,7 @@ describe('inbound durable effect worker lifecycle', () => {
         // batch already read. No engine round is ever driven here, so only a commit's own
         // announcement can bring the batch that would claim it.
         const forwarded = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'unannounced-control',
@@ -715,6 +723,7 @@ describe('inbound durable effect worker lifecycle', () => {
         // The retained row of the pin above, behind the page the bootstrap batch already read. No
         // engine round is ever driven here, so only an announcement can bring the batch that claims it.
         const forwarded = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'expired-retention-control',
@@ -845,6 +854,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const read = await readAdmission(store, buffered);
         const trackKey = toALOrderingTrackKey(buffered)!;
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: store.namespace,
             observedAtMs: Date.now(),
@@ -1045,6 +1055,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(external, expireAtTimestamp)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: store.namespace,
                 effectId: 'externally-admitted-work',
@@ -1108,6 +1119,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const store = resources.admissionStore;
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: stage, contextId: 'room' }, 'receiver', 'chat', {}, { ttlMs: 60_000 });
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: store.namespace,
             effectId: 'paused-delivery',
@@ -1267,6 +1279,7 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage, obser
         })
     );
     return computeALInboundWorkEntry({
+        signsForRecipient: false,
         carrier: 'ws',
         namespace,
         effectId: toALInboundPendingControlId(ack),

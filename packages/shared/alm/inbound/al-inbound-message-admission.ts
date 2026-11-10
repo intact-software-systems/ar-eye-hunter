@@ -21,7 +21,7 @@ import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-in
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
-import { signALInboundReceiptControls } from './sign-al-inbound-receipt-controls.ts';
+import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
 /** A replay that never reached a commit wrote nothing, so it has no work to announce. */
 const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
@@ -231,7 +231,8 @@ export class ALInboundMessageAdmission {
             payload: pending,
             observedAtMs: clock.nowMs(),
             expireAtTimestamp: deadline,
-            carrier: toALDeliveryCarrier(pending.source)
+            carrier: toALDeliveryCarrier(pending.source),
+            signsForRecipient: false
         });
         decodeALInboundWorkEntry(work.entry, admissionStore.namespace);
         const observed = await this.dependencies.workPort.retainIfAbsent(work.entry);

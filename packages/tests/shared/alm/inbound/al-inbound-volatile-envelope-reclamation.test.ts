@@ -155,6 +155,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
         const messageKey = toALInboundMessageKey(namespace, reference);
         const pendingKey = toALInboundControlPendingKey(namespace, reference.msgId, reference.senderId);
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             namespace,
             effectId: 'owed-child-forward',
             payload: { kind: 'forward-message', message: reference, fromPeerId: reference.senderId },
@@ -298,6 +299,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
         const messageKey = toALInboundMessageKey(namespace, reference);
         const retainUntilMs = Date.now() + 60_000;
         const orphan = computeALInboundWorkEntry({
+            signsForRecipient: false,
             namespace,
             effectId: 'missing-canonical-owner',
             payload: {

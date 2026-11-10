@@ -25,9 +25,11 @@ import {
     ORIGIN_ROOM,
     readSentTargets,
     toOriginDirectedSnapshot,
-    toOriginFrozenTargets
+    toOriginFrozenTargets,
+    type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
-import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
+import { createRelayChain, type RelayChain } from './rtc-relay-chain-test-support.ts';
+import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
 import { toTestALAckPayload, verifyTestALReceiptControl } from '../../al-control-test-payloads.ts';
 import { ROOM_PUBLICATION_CRYPTO, type AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
@@ -194,7 +196,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
             selfPeerId: 'c',
             snapshot,
             neighbourPeerIds: ['r'],
-            publicationCrypto: toSignFailingOnce(ROOM_PUBLICATION_CRYPTO)
+            publicationCrypto: toSignFailingOnCall(ROOM_PUBLICATION_CRYPTO, 1)
         });
         const message = createOriginReceiverMulticast('unsigned-hop-end');
         await enqueueAndDrain(fixture.manager, message);
@@ -232,6 +234,71 @@ describe('the RTC origin retry of a receiver receipt', () => {
             complete: true,
             confirmedRecipientPeerIds: ['r', 'c'],
             unconfirmedRecipientPeerIds: []
+        });
+    });
+
+    it('a counted relay whose terminal ACK\'s sign fails leaves its hop unconfirmed and the receipt complete on the recipients\' own ACKs', async () => {
+        const { origin, relay, message } = await createRelayTerminalChain('unsigned-relay-terminal');
+
+        const first = (await relay.readSent('a')).filter(isAck);
+        expect(readAckTuples(first).toSorted()).toEqual([['c', 'forwarded'], ['r', 'accepted']]);
+        expect(relay.diagnostics.filter((event) => event.kind === 'receipt-sign')).toEqual([
+            expect.objectContaining({ targetMsgId: message.id.msgId, reason: expect.stringMatching(/^sign-failed: /) })
+        ]);
+        for (const ack of first) {
+            await origin.manager.acceptControlMessage(ack);
+        }
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            mode: 'receiver',
+            complete: true,
+            confirmedRecipientPeerIds: ['r', 'c'],
+            unconfirmedRecipientPeerIds: [],
+            confirmedHopPeerIds: [],
+            unconfirmedHopPeerIds: ['r']
+        });
+        expect(origin.channels.r!.sent).toHaveLength(1);
+    });
+
+    it('a copy that reaches a counted relay again is answered with a signed terminal ACK', async () => {
+        const { chain, origin, relay } = await createRelayTerminalChain('relay-terminal-reanswer');
+        const first = (await relay.readSent('a')).filter(isAck);
+        expect(readOwnTerminals(first, 'r')).toEqual([]);
+
+        await relay.receive(origin.channels.r!.sent[0]!, 'a');
+
+        const terminals = readOwnTerminals((await relay.readSent('a')).filter(isAck).slice(first.length), 'r');
+        expect(terminals).toHaveLength(1);
+        expect(await verifyTestALReceiptControl(chain.keys.r!, terminals[0]!)).toBe(true);
+        expect(await verifyTestALReceiptControl(chain.keys.c!, terminals[0]!)).toBe(false);
+    });
+
+    it('a counted relay whose terminal ACK\'s sign fails while a recipient below it is unconfirmed is reached by the retry and completes the receipt signed', async () => {
+        const { chain, origin, relay } = await createRelayTerminalChain('relay-terminal-retried');
+        // The r -> a leg loses `c`'s relayed ACK, so the origin still misses `c`.
+        const first = (await relay.readSent('a')).filter(isAck);
+        for (const ack of first.filter((candidate) => readAckTuples([candidate])[0]?.[0] === 'r')) {
+            await origin.manager.acceptControlMessage(ack);
+        }
+
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(origin.channels.r!.sent).toHaveLength(2);
+        await relay.receive(origin.channels.r!.sent[1]!, 'a');
+        const answer = (await relay.readSent('a')).filter(isAck).slice(first.length);
+        const terminals = readOwnTerminals(answer, 'r');
+        expect(terminals).toHaveLength(1);
+        expect(await verifyTestALReceiptControl(chain.keys.r!, terminals[0]!)).toBe(true);
+        for (const ack of answer) {
+            await origin.manager.acceptControlMessage(ack);
+        }
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            mode: 'receiver',
+            complete: true,
+            confirmedRecipientPeerIds: ['r', 'c'],
+            confirmedHopPeerIds: ['r'],
+            unconfirmedHopPeerIds: []
         });
     });
 
@@ -588,20 +655,65 @@ function readAckTuples(messages: readonly ALMessage[]): readonly (readonly [stri
     });
 }
 
-/** The crypto whose first signature WebCrypto refuses; every later one, and every other call, is the crypto's own. */
-function toSignFailingOnce(crypto: AvailablePublicationCrypto): AvailablePublicationCrypto {
-    let refused = false;
+/** The crypto whose `call`-th signature WebCrypto refuses; every other call is the crypto's own. */
+function toSignFailingOnCall(crypto: AvailablePublicationCrypto, call: number): AvailablePublicationCrypto {
+    let calls = 0;
+    const sign: SubtleCrypto['sign'] = async (algorithm, key, data) => {
+        calls++;
+        if (calls === call) {
+            throw new Error('The signature was refused');
+        }
+        return await crypto.subtle.sign(algorithm, key, data);
+    };
     const subtle = new Proxy(crypto.subtle, {
         get(target, property) {
-            if (property === 'sign' && !refused) {
-                refused = true;
-                return async () => {
-                    throw new Error('The signature was refused');
-                };
+            if (property === 'sign') {
+                return sign;
             }
             const member = Reflect.get(target, property);
             return typeof member === 'function' ? member.bind(target) : member;
         }
     });
     return { ...crypto, subtle };
+}
+
+interface RelayTerminalChain {
+    readonly chain: RelayChain;
+    readonly origin: RtcOriginOverlayFixture;
+    readonly relay: RtcRelayOverlayFixture;
+    readonly leaf: RtcRelayOverlayFixture;
+    readonly message: ALMessage;
+}
+
+/**
+ * The chain `a` -> `r` -> `c`, each session with its own key, whose relay `r` signs its `accepted` first and has its
+ * second signature, the terminal ACK it ends its hop with after `c`'s `delivered`, refused.
+ */
+async function createRelayTerminalChain(resourceId: string): Promise<RelayTerminalChain> {
+    const chain = await createRelayChain(['a', 'r', 'c'], {});
+    const origin = createRtcOriginOverlayFixture({ snapshot: chain.snapshot, nextHopPeerIds: ['r'], publicationCrypto: chain.keys.a });
+    const relay = createRtcRelayOverlayFixture({
+        selfPeerId: 'r',
+        snapshot: chain.snapshot,
+        neighbourPeerIds: ['a', 'c'],
+        publicationCrypto: toSignFailingOnCall(chain.keys.r!, 2)
+    });
+    const leaf = createRtcRelayOverlayFixture({
+        selfPeerId: 'c',
+        snapshot: chain.snapshot,
+        neighbourPeerIds: ['r'],
+        publicationCrypto: chain.keys.c
+    });
+    const message = createOriginReceiverMulticast(resourceId);
+    await enqueueAndDrain(origin.manager, message);
+    await relay.receive(origin.channels.r!.sent[0]!, 'a');
+    await leaf.receive((await relay.readSent('c'))[0]!, 'r');
+    for (const ack of (await leaf.readSent('r')).filter(isAck)) {
+        await relay.receive(ack, 'c');
+    }
+    return { chain, origin, relay, leaf, message };
+}
+
+function readOwnTerminals(acks: readonly ALMessage[], peerId: string): readonly ALMessage[] {
+    return acks.filter((ack) => readAckTuples([ack])[0]?.join() === `${peerId},subtree-complete`);
 }

@@ -38,7 +38,7 @@ import {
     toALInboundReceiver,
     type ALInboundReceiver
 } from './read-al-inbound-message-authorization.ts';
-import type { ALInboundReceiptProofs } from './sign-al-inbound-receipt-controls.ts';
+import type { ALInboundReceiptProofs } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;

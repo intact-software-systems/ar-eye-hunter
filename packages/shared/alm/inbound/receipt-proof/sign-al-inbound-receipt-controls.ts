@@ -1,27 +1,22 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import {
     decodeALPeerControlMessage,
     newALAckControlMessage,
     newALNackControlMessage
-} from '../../al-contracts/al-control.ts';
+} from '../../../al-contracts/al-control.ts';
 import type {
     ALReceiptControl,
     ALReceiptProofFailure,
     ALReceiptProofSignerPort
-} from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
-import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
-import type { SignatureProof } from '../../signature/signature-proof.ts';
-import type { ALInboundCommitBundle } from './al-inbound-admission-store.ts';
-import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
+} from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
+import { toALMessageTrace } from '../../../al-contracts/trace/to-al-message-trace.ts';
+import type { SignatureProof } from '../../../signature/signature-proof.ts';
+import type { ALInboundCommitBundle } from '../al-inbound-admission-store.ts';
 import {
     recordALInboundDiagnostic,
     type ALInboundRuntimeDiagnosticsSink
-} from './al-inbound-runtime-diagnostics.ts';
-import {
-    computeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
-    type ALInboundDurableEffectWrite
-} from './al-inbound-work-entry.ts';
+} from '../al-inbound-runtime-diagnostics.ts';
+import { toALInboundWorkEntryWithPayload, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 
 /** How a composition authenticates its counted recipients' controls: by the carrier alone, or by their own signature. */
 export type ALInboundReceiptProofs =
@@ -38,16 +33,6 @@ export interface SignALInboundReceiptControlsInput {
 interface ALInboundMarkedControl {
     readonly msg: ALMessage;
     readonly control: ALReceiptControl;
-}
-
-/**
- * Whether a counted recipient's intent is an ACK or NACK on `rtc` it speaks for itself, which its committer signs; a
- * repair request and a control for a child never are.
- */
-export function isALInboundOwnReceiptIntent(intent: ALInboundEffectIntent, countsSelf: boolean): boolean {
-    const { payload } = intent;
-    return countsSelf && intent.carrier === 'rtc' && (payload.kind === 'send-ack' || payload.kind === 'send-nack') &&
-        payload.logicalRecipient.kind === 'self';
 }
 
 /**
@@ -79,6 +64,7 @@ async function signRecipientControl(
     effect: ALInboundDurableEffectWrite
 ): Promise<ALInboundDurableEffectWrite | undefined> {
     const marked = toALInboundMarkedControl(effect);
+    assertALInboundMarkedControl(marked);
     const proof = await signer.signReceiptProof(marked.control);
     return proof.fold(
         (failure) => {
@@ -86,26 +72,29 @@ async function signRecipientControl(
             return undefined;
         },
         (signature) =>
-            computeALInboundWorkEntry({
-                namespace: input.namespace,
-                effectId: effect.effectId,
-                payload: { kind: 'send-control', msg: toSignedControlMessage(marked, signature) },
-                observedAtMs: resolveALInboundWorkDueAtMs(effect.entry),
-                expireAtTimestamp: effect.expireAtTimestamp,
-                carrier: effect.carrier
+            toALInboundWorkEntryWithPayload(effect, input.namespace, {
+                kind: 'send-control',
+                msg: toSignedControlMessage(marked, signature)
             })
     );
 }
 
+/** The ACK or NACK a marked effect sends; `undefined` for any other effect. */
+function toALInboundMarkedControl(effect: ALInboundDurableEffectWrite): ALInboundMarkedControl | undefined {
+    if (effect.payload.kind !== 'send-control') {
+        return undefined;
+    }
+    const control = decodeALPeerControlMessage(effect.payload.msg).right;
+    return control === undefined || control.type === 'repair' ? undefined : { msg: effect.payload.msg, control };
+}
+
 /** Only an ACK or NACK a counted recipient authors about itself is ever marked. */
-function toALInboundMarkedControl(effect: ALInboundDurableEffectWrite): ALInboundMarkedControl {
-    const control = effect.payload.kind === 'send-control'
-        ? decodeALPeerControlMessage(effect.payload.msg).right
-        : undefined;
-    if (effect.payload.kind !== 'send-control' || control === undefined || control.type === 'repair') {
+function assertALInboundMarkedControl(
+    marked: ALInboundMarkedControl | undefined
+): asserts marked is ALInboundMarkedControl {
+    if (marked === undefined) {
         throw new TypeError('A marked inbound effect is not a receipt control');
     }
-    return { msg: effect.payload.msg, control };
 }
 
 function toSignedControlMessage(marked: ALInboundMarkedControl, proof: SignatureProof): ALMessage {

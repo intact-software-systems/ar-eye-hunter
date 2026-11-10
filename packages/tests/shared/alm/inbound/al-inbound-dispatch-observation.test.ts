@@ -103,6 +103,7 @@ function createObservedDispatch(planChange: (plan: ALMessageHandlingPlan) => ALM
     const original = createInboundTestMessage({ msgId: 'signal', seq: ordered ? 1 : undefined, traceId: 'trace-signal' });
     const msg = { ...original, payload: { ...original.payload, typeId: 'rtc-signaling' } };
     const written = computeALInboundWorkEntry({
+        signsForRecipient: false,
         namespace: 'al-inbound-runtime',
         effectId: 'dispatch:sender:signal',
         payload: { kind: 'dispatch-local', message: toALInboundMessageReference(msg) },

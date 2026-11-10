@@ -19,18 +19,18 @@ import { validateALInboundCommitBundle } from '@shared/alm/inbound/admission/val
 import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { decodeALInboundWorkEntry, toALInboundRecipientControlWork } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     signALInboundReceiptControls,
     type ALInboundReceiptProofs
-} from '@shared/alm/inbound/sign-al-inbound-receipt-controls.ts';
+} from '@shared/alm/inbound/receipt-proof/sign-al-inbound-receipt-controls.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RtcReceiptProofSigner } from '@shared/multicast/receipt-proof/rtc-receipt-proof-signer.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { toTestALAckPayload, verifyTestALReceiptControl } from '../../../al-control-test-payloads.ts';
-import { createAvailablePublicationCryptoFixture } from '../../signature/publication-crypto-fixtures.ts';
+import { toTestALAckPayload, verifyTestALReceiptControl } from '../../../../al-control-test-payloads.ts';
+import { createAvailablePublicationCryptoFixture } from '../../../signature/publication-crypto-fixtures.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -40,7 +40,7 @@ import {
     INBOUND_TEST_SOURCE,
     readInboundTestAdmission,
     type InboundTestRuntime
-} from '../inbound-runtime-test-fixture.ts';
+} from '../../inbound-runtime-test-fixture.ts';
 
 const NAMESPACE = 'sign-al-inbound-receipt-controls';
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' };
@@ -70,7 +70,7 @@ async function readMarkedAdmission(msgId: string): Promise<ALInboundCommitBundle
     );
     return {
         ...bundle,
-        durableEffects: bundle.durableEffects.map((effect) => effect.payload.kind === 'send-control' ? toALInboundRecipientControlWork(effect) : effect)
+        durableEffects: bundle.durableEffects.map((effect) => effect.payload.kind === 'send-control' ? { ...effect, signsForRecipient: true } : effect)
     };
 }
 
@@ -110,9 +110,13 @@ describe('signALInboundReceiptControls', () => {
         const stored = decodeALInboundWorkEntry(control.entry, NAMESPACE).payload;
         expect(stored.kind).toBe('send-control');
         expect(stored.kind === 'send-control' && await verifyTestALReceiptControl(CRYPTO, stored.msg)).toBe(true);
-        expect(control.effectId).toBe(marked.effectId);
-        expect(control.expireAtTimestamp).toBe(marked.expireAtTimestamp);
-        expect(control.entry.key).toEqual(marked.entry.key);
+        // Only the stored resource changes: the rebuilt write is the marked one, now signed and no longer marked.
+        expect({ ...control, payload: undefined, entry: { ...control.entry, resource: undefined } }).toEqual({
+            ...marked,
+            payload: undefined,
+            signsForRecipient: false,
+            entry: { ...marked.entry, resource: undefined }
+        });
         expect(signed.durableEffects.filter((_, at) => at !== index))
             .toEqual(bundle.durableEffects.filter((_, at) => at !== index));
         expect(signed.mutations).toEqual(bundle.mutations);

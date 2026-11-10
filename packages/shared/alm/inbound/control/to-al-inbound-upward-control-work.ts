@@ -15,9 +15,9 @@ import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
     computeALInboundWorkEntry,
     toALInboundEffectId,
-    toALInboundRecipientControlWork,
     type ALInboundDurableEffectWrite
 } from '../al-inbound-work-entry.ts';
+import { isALInboundRelayRecipientReceipt } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
 
 /** The relay a child's control reached, and the message it is about: whom its upward controls name. */
 export interface ALInboundUpwardControlContext {
@@ -69,7 +69,7 @@ export function toALInboundUpwardControlWork(
     return controls.map((control, index) => {
         const controlMsgId = `${context.controlMsgId}:${index}`;
         const msg = toUpwardControlMessage(context, control, controlMsgId);
-        const work = computeALInboundWorkEntry({
+        return computeALInboundWorkEntry({
             namespace: context.namespace,
             observedAtMs: context.nowMs,
             effectId: toALInboundEffectId([
@@ -85,21 +85,10 @@ export function toALInboundUpwardControlWork(
                 context.nowMs
             ),
             carrier,
-            payload: { kind: 'send-control', msg }
+            payload: { kind: 'send-control', msg },
+            signsForRecipient: isALInboundRelayRecipientReceipt(context, control, carrier)
         });
-        return carrier === 'rtc' && isALInboundRelayOwnCountedAck(context, control)
-            ? toALInboundRecipientControlWork(work)
-            : work;
     });
-}
-
-/** The relay's own ACK when its frozen audience counts it; a control it sends for a child is never its own word. */
-function isALInboundRelayOwnCountedAck(
-    context: ALInboundUpwardControlContext,
-    control: ALInboundUpwardControl
-): boolean {
-    return control.kind === 'ack' && control.ack.logicalRecipient.kind === 'self' &&
-        context.pending.upwardAudiencePeerIds?.includes(context.relayPeerId) === true;
 }
 
 function toUpwardControlMessage(

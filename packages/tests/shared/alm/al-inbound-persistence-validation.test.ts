@@ -147,6 +147,7 @@ async function writeCanonicalMessage(transaction: ALAdmissionWriteContext, candi
 
 function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kind: 'release-buffered', trackKey: 'track', seq: 2 }) {
     return computeALInboundWorkEntry({
+        signsForRecipient: false,
         carrier: 'ws',
         namespace: 'inbound',
         effectId,
@@ -775,6 +776,7 @@ describe('inbound admission persisted values', () => {
         const ack = createAcknowledgement('receiver');
         const expiresAtMs = Date.now() + 60_000;
         const retained = computeALInboundWorkEntry({
+            signsForRecipient: false,
             namespace: 'inbound',
             effectId: toALInboundPendingControlId(ack),
             payload: { kind: 'admit-control', msg: ack, carrier: 'ws', expiresAtMs },

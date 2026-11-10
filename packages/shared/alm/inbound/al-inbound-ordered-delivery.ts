@@ -21,7 +21,7 @@ import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
 } from './prepare-al-inbound-commit-bundle.ts';
-import { signALInboundReceiptControls } from './sign-al-inbound-receipt-controls.ts';
+import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
 export namespace ALInboundOrderedDelivery {
     export type Readiness =

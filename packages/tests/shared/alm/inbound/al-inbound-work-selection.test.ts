@@ -882,6 +882,7 @@ function createPendingAdmissionEntry(namespace: string, observedAtMs: number = N
         constraints: { ...original.constraints, expiresAtMs: NOW_MS + 60_000 }
     };
     return computeALInboundWorkEntry({
+        signsForRecipient: false,
         carrier: 'ws',
         namespace,
         effectId: toALInboundPendingAdmissionId(msg),
