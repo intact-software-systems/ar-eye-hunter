@@ -51,12 +51,14 @@ hop's control, and refused `unknown-key` when it speaks for another. A refusal (
 `unknown-key`, `key-mismatch`, `invalid-signature`) is an `unauthorized` issue and a `rejected` admission carrying
 `proofRefusal`, which the control-admission diagnostic states as `proofRefusal`, `claimedRecipientPeerId` and
 `channelPeerId`; nothing is counted, written, retained or answered. A repair request, and a `hop` or `subtree`
-receipt, carry no proof and are admitted as before. The RTC planner states the keys, each counted recipient's
+receipt, carry no proof and are admitted as before; a control addressed to another owner than the sent row's is not
+judged, and is refused for its address alone. The RTC planner states the keys, each counted recipient's
 `{ keyId, publicJwk }` from the room snapshot, on the plan that freezes the audience (at admission when the snapshot
 is cached, at the dequeue that first has it otherwise), and the sent policy adopts them once and never replaces them;
 [`computeRtcReceiptKeyRefusal`](../../multicast/receipt-proof/compute-rtc-receipt-key-refusal.ts) refuses that
 plan's leg `unsupported`, so a fallback carrier takes it, when the page holds no WebCrypto, a counted session the
-snapshot names live registered no publication key, or a unicast names no room.
+snapshot names live registered no publication key, or a unicast names no room; a send that counts nobody is not
+judged.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
 most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the
 `al.control.nack.v3` and `al.control.repair.v2` payloads and the planner's NACK plan do;
@@ -1427,7 +1429,9 @@ while the receipt still owes that recipient it also stands for the NACK, from th
 relayed NACK may come from
 ([`isALOutboundRecipientControlSender`](./control/is-al-outbound-expected-repair-peer.ts)), so a lost NACK records
 the recipient outside at once, as every relay reads it
-([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)).
+([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)). The forwarded form is read
+only under a logical receipt; under `hop` and `subtree` only a hop's own hop-end stands for its NACK
+([`isALOutboundImpliedNotSubscribedAck`](./control/is-al-outbound-implied-not-subscribed-ack.ts)).
 The acknowledgement a NACK states reads its hop view from the ACK history. It ends no receipt and hands nothing over:
 the row completes once every expected recipient is confirmed or outside and one is confirmed, and a receipt whose
 every recipient is outside stays open to its deadline and ends `receipt-exhausted` (PL10, PL16).

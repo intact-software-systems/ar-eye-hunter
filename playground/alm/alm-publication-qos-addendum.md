@@ -432,7 +432,7 @@ or exclusive send, and an allowed WS strategy uses the validated WS path. Slice
 `leader` receipt every ACK and NACK a counted recipient authors on RTC carries
 that session's ECDSA P-256 signature, a relay forwards it as signed, and the
 origin counts it only after verifying it against the key it froze for that
-recipient at admission. The publisher of an ordinary room send stays
+recipient when it froze the audience. The publisher of an ordinary room send stays
 unauthenticated across relays.
 
 Relays may inspect payload bytes unless a separate confidentiality mechanism
@@ -1161,8 +1161,9 @@ Decisions D568–D580 are in the roadmap; Slice 7 is complete (S7-i and S7-ii).
 ### Slice 8: signed receipts on RTC
 
 Authenticate the recipient a receipt control speaks for on RTC, so that
-`acknowledged` means one thing on both carriers and at-least-once over peer
-relays holds against a misbehaving member, not only against faults. The premise
+`acknowledged` means one thing on both carriers and, at the origin, no peer can
+confirm, exclude or end a receipt for another recipient, against a misbehaving
+member as well as faults. The premise
 is corrected (S8-C0b): the candidates survey said the slice replaces the trust
 in an ACK's `fromPeerId`, that the AR Eye games gate proves it and that it is
 client-only, and the code corrects all three. No game-lane room relays: below 5
@@ -1242,14 +1243,26 @@ forwarded it. A refusal (`missing-proof`, `unknown-key`, `key-mismatch`,
 `invalid-signature`) is an `unauthorized` issue and a `rejected` admission,
 whose `control-admission` diagnostic states `proofRefusal`,
 `claimedRecipientPeerId` and `channelPeerId`; nothing is counted, written or
-answered, and the true ACK still completes the receipt. A control that speaks
+answered, and a true ACK the origin receives still completes the receipt. A control that speaks
 for a peer the receipt does not count is a hop fact the channel authenticates
 when it speaks for its own sender, judged by the validators as before the slice
 (a non-counted next hop's own hop-end completes its hop and confirms nobody, and
 its own terminal NACK is refused as from a peer the send owes nothing), and is
 refused `unknown-key` when it speaks for another: such a peer can complete its
 own hop's bookkeeping, never confirm, exclude or end a receipt for a counted
-recipient. The plan's four decisions: a stored `v2` control history fails the
+recipient. The origin reads a hop-end that names another recipient as that
+recipient's `not-subscribed` NACK only under a logical receipt; under `hop` and
+`subtree` only a hop's own hop-end stands for its NACK. A control addressed to
+another owner than the sent row's is refused for its address alone, with no
+proof judged. Whether a recipient is counted is read from the message's own
+receipt, never from the plan that refused it, so a counted recipient's refusal
+NACKs (`not-yet-in-sync` and its siblings), whose plan states no receipt, are
+signed; the full-scope ALM lane found them unsigned, the only lane that drives a
+real recipient's refusal to a verifying origin. A relay's upward audience is
+the same counted-recipient rule. A send that counts nobody is not judged by the
+key refusal, so a page without WebCrypto still sends one. The publication proof
+signs exactly the sections its table classes `signed`: a section classed
+`signed` without a builder fails the build. The plan's four decisions: a stored `v2` control history fails the
 strict `v3` decode as `ALAdmissionCorruptionError` until it expires (30 minutes
 durable; the deadline plus the receipt grace volatile), with no
 `AL_ADMISSION_SCHEMA_ID` bump, since a different schema identity refuses a
@@ -1263,8 +1276,13 @@ re-plan or dequeue is neither refused nor re-keyed. Bundle figures (S8-R11):
 `browser/rallar.ts` 298.0 → 300.024 KiB brotli (307,225 B), its budget raised
 299 → 301 KiB, and the headless agent 394.516 → 396.793 KiB (406,316 B), its
 budget raised 395 → 397 KiB. Limits: an ordinary (non-granted) publication's
-origin stays unsigned across relays; `hop` and `subtree` receipts rest on
-channel trust, which is what they count; a signed terminal NACK from one counted
+origin stays unsigned across relays, and the receipt binds the message id and
+the origin, not the bytes, so a peer adjacent to a recipient can deliver other
+content under the origin's id first: the recipient signs a true `delivered` and
+the origin reads `acknowledged` (a granted publication is not affected, since
+its recipient verifies the publisher); `hop` and `subtree` receipts rest on
+channel trust, which is what they count, and a hop can still exclude another
+hop with an unsigned outside-audience NACK, as before the slice; a signed terminal NACK from one counted
 recipient still ends everyone's receipt, now under its own signature; a page
 without SubtleCrypto (an insecure origin) cannot be a counted recipient or the
 origin of receipted RTC, and the fallback takes such a leg; a logically
@@ -1281,7 +1299,18 @@ forwards the hop-end and refuses the later NACK, so the child's reason never
 reaches the origin, which records the recipient outside in either order. A
 forwarded hop-end lost on the relay-to-origin hop while the relay's terminal ACK
 arrives strands that recipient until the deadline, as the relay-authored NACK
-could before. The observation cells, the `messages.control` recipient field and
+could before. An honest relay verifies nothing and keys "already forwarded"
+and "outside" by the recipient alone, so a child hop that names another
+recipient with a proof that does not verify pre-empts that recipient's true
+control at the relay: after a forged ACK the true one is stored but not
+forwarded, and every retried copy forwards the forged one again; after a forged
+`not-subscribed` NACK or hop-end the true one is refused at the relay. The
+origin refuses the forgery and counts nobody, so the recipient stays
+unconfirmed and the receipt runs to `receipt-exhausted` and the fallback:
+truthful, and the forger can no longer confirm the recipient as it could before
+the slice, but that recipient cannot be confirmed on RTC for that message. The
+fix is relay-side verification of a child control that names a counted
+recipient, or relay rows keyed by the control's proof. The observation cells, the `messages.control` recipient field and
 the 6f sign and verify count land in S8-ii, observed on the local lane only.
 Decisions D581–D595 are in the roadmap; Slice 8 completes with S8-ii.
 
@@ -1396,14 +1425,16 @@ recipient's `delivered`, `accepted`, `not-subscribed`, `before-entry` and `gap`
 controls reach the origin forwarded by the relay with the recipient's own
 status, time and proof, which verifies under the recipient's key and not the
 relay's; the origin counts the two ACKs, records the two outside-audience NACKs
-outside, and repairs a gap whose NACK the leaf's own sign step signed; and the
+outside (`web-rtc-overlay-missing-recipient-repair.test.ts`); on
+`rtc-relay-gap-repair.test.ts` the origin verifies a gap NACK the leaf's own
+sign step signed and repairs the gap; and the
 five forge units, red before the origin verified (`cae77e87b`) and green
 since, refuse a direct peer that names another recipient, a relay that forges its
 child's ACK, a forged outside-audience NACK, a forged terminal NACK and a true
 ACK replayed to another message or origin, with a sixth refusing an unsigned
 `forwarded`-status ACK that names a counted recipient. **Revocation and receipts
-preserve truthful outcomes:** a refused forgery counts nobody and the true ACK
-still completes the receipt; and a receipted RTC leg with a keyless counted
+preserve truthful outcomes:** a refused forgery counts nobody and a true ACK the
+origin receives still completes the receipt; and a receipted RTC leg with a keyless counted
 recipient is refused `unsupported` at admission and handed to the fallback, and
 under `rtc` alone is refused, never admitted to time out.
 

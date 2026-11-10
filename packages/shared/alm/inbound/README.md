@@ -358,10 +358,17 @@ the attempt cap.
 itself (S2c-i). Over RTC, under `receiver` and `leader`, a counted recipient (a
 session the frozen audience names or the unicast addresses) signs every ACK and
 NACK it authors about the message, and the origin counts it only after
-verifying that signature against the key it froze for that recipient at
-admission, whichever peer forwarded it (outbound README). A relay therefore
-cannot confirm, exclude or end a receipt for a recipient below it; it can only
-withhold the copy, which the origin's timeout, retry and fallback cover. The
+verifying that signature against the key it froze for that recipient when it
+froze the audience, whichever peer forwarded it (outbound README). A relay
+therefore cannot make the origin confirm, exclude or end a receipt for a
+recipient below it; it can only withhold the copy, which the origin's timeout,
+retry and fallback cover. An honest relay verifies nothing and keys "already
+forwarded" and "outside" by the recipient alone, so a child hop that names
+another recipient with a proof that does not verify pre-empts that recipient's
+true control here (a limit): after a forged ACK the true one is stored but not
+forwarded, after a forged `not-subscribed` NACK or hop-end it is refused. The
+origin refuses the forgery, so the recipient stays unconfirmed and the receipt
+runs to its retry budget and the fallback. The
 signing runs in
 [`signALInboundReceiptControls`](./receipt-proof/sign-al-inbound-receipt-controls.ts)
 at the four commit sites (the message admission, both ordered-delivery
@@ -370,7 +377,10 @@ conditional commit, so the stored control is the signed one every later send
 resends. It signs a control exactly when
 [`is-al-inbound-recipient-receipt.ts`](./receipt-proof/is-al-inbound-recipient-receipt.ts)
 marks it: a counted recipient's own ACK or NACK on `rtc`, and a relay's own ACK
-when the frozen audience counts the relay; never a repair request, a control a
+when the frozen audience counts the relay; whether this session is
+counted is read from the message's own receipt, never from the plan that
+refused it, so its refusal NACKs (`not-yet-in-sync` and its siblings, whose
+plan states no receipt) are signed too; never a repair request, a control a
 relay forwards, a `hop` or `subtree` control or anything on `ws`, which carry
 `proof: null`. A composition states it: the RTC overlay `signed`, with the
 signer `WebRtcRxStreamerService` builds from the session's publication crypto,

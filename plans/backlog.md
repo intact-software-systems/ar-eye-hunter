@@ -162,7 +162,40 @@ and it has no status list.
   receipt-semantics change with its own pins.
 - Unsigned ordinary publications (S8-i, D590): the publisher proof covers
   granted sends only, so an ordinary room send's origin stays unauthenticated
-  across relays while its receipts are signed.
+  across relays while its receipts are signed. A receipt binds the message id
+  and the origin, not the bytes: a peer adjacent to a recipient can deliver
+  other content under the origin's id first, the recipient signs a true
+  `delivered` and the origin reads `acknowledged`. A granted publication is not
+  affected, since its recipient verifies the publisher.
+- A hop excludes another hop under `hop` and `subtree` (S8-i, D582;
+  pre-existing): an unsigned outside-audience NACK from a next hop that names
+  another owed hop moves it outside the receipt. Closing it needs
+  `fromPeerId === logicalRecipientPeerId` for outside-audience controls under a
+  non-logical receipt; an honest relay never forwards one there.
+- A child hop pre-empts another recipient at an honest relay (S8-i, D586,
+  D587): the relay verifies nothing and keys "already forwarded" and "outside"
+  by the recipient alone, so a child that names another recipient with a proof
+  that does not verify blocks that recipient's true control there, and the
+  recipient runs to `receipt-exhausted` and the fallback. Two fix shapes: the
+  relay verifies a child control that names a counted recipient before it moves
+  the row (it holds the same room snapshot; one verify per forwarded control per
+  level), or the relay keys those facts by the control's proof so two different
+  statements about one recipient both go up. Keying by child hop is not enough.
+- One key-import and verdict-cache mechanism (S8-i, D586, D588): the receipt
+  and publication verifiers each import a JWK under its thumbprint and cache a
+  `verified` verdict keyed `keyId|signature|digest`, and they already differ
+  (the receipt key cache is keyed `keyId|JWK`, the publication one `keyId`;
+  the receipt reads the key before the verdict, the publication answers a
+  cached verdict without any registration, which its tests pin). One mechanism
+  in `packages/shared/signature/` needs a ruling on that order.
+- `toSafeAck` in `apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts`
+  is a hand-written ACK shape rule beside the codec's (S8-i).
+- `tests/playwright/**` is in no typecheck project (S8-i): a payload-shape
+  change there compiles unchecked.
+- The full-scope RTC ALM lane's pre-existing reds (S8-i): `capacity-tracks`,
+  `ordering-resync`, `repair-exhausted` and `granted-rtc-ordered-relay` fail on
+  `main` (`664ed19d5`) and on the Slice 8 branch at the same commands; cause
+  unproven.
 - A logically receipted RTC unicast that names no room (S8-i, D585) is refused
   `unsupported`, since no presence row can key its addressee; before Slice 8
   it was admitted. No product caller sends one; one that did degrades to WS
