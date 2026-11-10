@@ -155,7 +155,11 @@ export class ALOutboundControlAdmission<TPrepared> {
             recipientProof: await readALOutboundRecipientProof({
                 parsed: surface.parsed,
                 sent: surface.sent,
-                recipientAuthentication: this.recipientAuthentication
+                recipientAuthentication: this.recipientAuthentication,
+                readSentMessage: async () =>
+                    (await this.backend.readWithin((session) =>
+                        this.reads.readSentMessage(session, surface.targetMsgId)
+                    ))?.msg
             })
         };
         const computed = computeALOutboundControlAdmission(read, this.retention);

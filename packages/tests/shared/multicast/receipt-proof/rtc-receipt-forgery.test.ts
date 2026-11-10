@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
     newALNackControlMessage,
@@ -21,6 +21,9 @@ import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
+    ORIGIN_ROOM,
+    toOriginDirectedSnapshot,
+    toOriginFrozenTargets,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
 import { createRelayChain, drainUntil, type RelayChain } from '../rtc-relay-chain-test-support.ts';
@@ -211,6 +214,7 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         expect(await origin.manager.acceptControlMessage(fromC!)).toEqual({ kind: 'committed' });
         release();
         expect(await held).toEqual({ kind: 'pending-control' });
+        const digestsBeforeReplay = subtle.counts.digest;
         await drainUntil(async () => (await readReceipt(origin, message)) === undefined);
 
         expect(await readReceipt(origin, message)).toBeUndefined();
@@ -219,6 +223,8 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
             complete: true
         });
         expect(subtle.counts.verify).toBe(2);
+        // The replay judged the proof again: one digest of its signed bytes looked the verdict up, and no verify ran.
+        expect(subtle.counts.digest).toBe(digestsBeforeReplay + 1);
     });
 
     it('the fence decides the race', async () => {
@@ -307,14 +313,27 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         ]);
     });
 
-    // Correction (h): an honest next hop outside the frozen audience signs nothing, so its hop-end is refused
-    // `missing-proof` where it was refused as confirming no peer; it counted nothing then and counts nothing now.
-    it('refuses the unsigned hop-end of a next hop outside the frozen audience as missing-proof (a recorded limit)', async () => {
-        const origin = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b'], 4), nextHopPeerIds: ['b'] });
-        const message = await sendReceipted(origin, 'outside-hop-end');
-        origin.groups.accept('room', createOriginSnapshot(['a', 'b', 'd'], 5));
-        origin.overlays.accept('room', createOriginOverlay(['d']));
-        origin.ready.peerIds = ['d'];
+    // As at cae77e87b: a relay the receipt does not count is no peer the send owes, so the validator, not the proof,
+    // refuses its own refusal and the receipt runs on to its retry.
+    it('a non-counted next hop\'s own terminal NACK is judged by the validators as before the slice, never as a proof refusal', async () => {
+        const chain = await createRelayChain(['a', 'r', 'c'], {});
+        const origin = createRtcOriginOverlayFixture({ snapshot: chain.snapshot, nextHopPeerIds: ['r'], publicationCrypto: chain.keys.a });
+        const message = await sendFrozenReceipted(origin, 'outside-relay-refusal', ['c']);
+        const refusal = toNackControl({ msgId: message.id.msgId, fromPeerId: 'r', logicalRecipientPeerId: 'r', reason: 'unsupported' });
+
+        const admitted = await origin.manager.acceptControlMessage(toControlMessage(refusal, 'own'));
+
+        expect(admitted).toEqual({ kind: 'rejected', reason: 'AL repair sender has no retained outbound obligation' });
+        expect(await readReceipt(origin, message)).toMatchObject({ expectedPeerIds: ['c'], ackedPeerIds: [] });
+        expect(readProofRefusals(origin)).toEqual([
+            { proofRefusal: undefined, claimedRecipientPeerId: undefined, channelPeerId: undefined }
+        ]);
+    });
+
+    it('a non-counted next hop\'s own hop-end is refused as confirming no peer, not as a proof refusal', async () => {
+        const chain = await createRelayChain(['a', 'b', 'd'], {});
+        const origin = createRtcOriginOverlayFixture({ snapshot: chain.snapshot, nextHopPeerIds: ['b'], publicationCrypto: chain.keys.a });
+        const message = await sendFrozenReceipted(origin, 'outside-hop-end', ['b']);
         const hopEnd = toAckControl({
             msgId: message.id.msgId,
             fromPeerId: 'd',
@@ -322,11 +341,67 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
             status: 'subtree-complete'
         });
 
-        await origin.manager.acceptControlMessage(toControlMessage(hopEnd, 'hop-end'));
+        const admitted = await origin.manager.acceptControlMessage(toControlMessage(hopEnd, 'hop-end'));
 
+        expect(admitted).toEqual({ kind: 'rejected', reason: 'AL acknowledgement confirms no peer of the pending outbound receipt' });
         expect(await readReceipt(origin, message)).toMatchObject({ expectedPeerIds: ['b'], ackedPeerIds: [] });
         expect(readProofRefusals(origin)).toEqual([
-            { proofRefusal: 'missing-proof', claimedRecipientPeerId: 'd', channelPeerId: 'd' }
+            { proofRefusal: undefined, claimedRecipientPeerId: undefined, channelPeerId: undefined }
+        ]);
+    });
+
+    it('under leader, a non-leader peer\'s own unsigned terminal NACK leaves the leader\'s receipt row in place', async () => {
+        const chain = await createRelayChain(['a', 'b', 'c', 'd'], {});
+        const origin = createRtcOriginOverlayFixture({
+            snapshot: toOriginDirectedSnapshot(chain.snapshot, 'd', Date.now()),
+            nextHopPeerIds: ['b', 'c'],
+            nextHopsBySessionId: { a: ['b', 'c'], b: ['a'], c: ['a', 'd'], d: ['c'] },
+            publicationCrypto: chain.keys.a
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'chat', resourceId: 'leader-outsider', contextId: 'room' },
+            ORIGIN_ROOM,
+            'chat.message.v1',
+            {},
+            { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+        );
+        expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
+        // `b` is in the room but neither the director, nor the next hop toward it, nor a peer a repair may come from.
+        expect(origin.channels.b!.sent).toEqual([]);
+        const refusal = toNackControl({ msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'b', reason: 'expired' });
+
+        const admitted = await origin.manager.acceptControlMessage(toControlMessage(refusal, 'leader-outsider'));
+
+        expect(admitted).toEqual({ kind: 'rejected', reason: 'AL repair sender has no retained outbound obligation' });
+        expect(await readReceipt(origin, message)).toMatchObject({ mode: 'leader', expectedPeerIds: ['d'], ackedPeerIds: [] });
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'receipt-exhausted')).toEqual([]);
+    });
+
+    it('a counted recipient\'s unsigned NACK that names a non-counted peer ends no receipt', async () => {
+        const { origin } = await createStarOrigin();
+        const message = await sendReceipted(origin, 'counted-names-outsider');
+        const forged = toNackControl({ msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'z', reason: 'expired' });
+
+        await origin.manager.acceptControlMessage(toControlMessage(forged, 'outsider'));
+
+        expect(await readReceipt(origin, message)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: [] });
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'receipt-exhausted')).toEqual([]);
+        expect(readProofRefusals(origin)).toEqual([
+            { proofRefusal: 'unknown-key', claimedRecipientPeerId: 'z', channelPeerId: 'b' }
+        ]);
+    });
+
+    it('a counted recipient\'s own unsigned ACK is missing-proof', async () => {
+        const { origin } = await createStarOrigin();
+        const message = await sendReceipted(origin, 'counted-unsigned');
+        const own = toAckControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+
+        await origin.manager.acceptControlMessage(toControlMessage(own, 'unsigned'));
+
+        expect((await readReceipt(origin, message))?.ackedPeerIds).toEqual([]);
+        expect(readProofRefusals(origin)).toEqual([
+            { proofRefusal: 'missing-proof', claimedRecipientPeerId: 'c', channelPeerId: 'c' }
         ]);
     });
 
@@ -400,6 +475,18 @@ async function sendReceipted(origin: RtcOriginOverlayFixture, resourceId: string
     const message = createOriginReceiverMulticast(resourceId);
     expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
     expect(await readReceipt(origin, message)).toBeDefined();
+    return message;
+}
+
+/** A receipted send frozen to `recipientPeerIds`, which the receipt counts. */
+async function sendFrozenReceipted(
+    origin: RtcOriginOverlayFixture,
+    resourceId: string,
+    recipientPeerIds: readonly string[]
+): Promise<ALMessage> {
+    const message = { ...createOriginReceiverMulticast(resourceId), targets: toOriginFrozenTargets(recipientPeerIds, 3) };
+    expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
+    expect(await readReceipt(origin, message)).toMatchObject({ expectedPeerIds: recipientPeerIds });
     return message;
 }
 

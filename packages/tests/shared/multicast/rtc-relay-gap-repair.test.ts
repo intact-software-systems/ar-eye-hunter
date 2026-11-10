@@ -28,7 +28,7 @@ import {
 import { createObservedVolatileInboundPair, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 import { createRtcTopicSubscriptionsFixture } from './rtc-topic-subscription-reader-fixtures.ts';
 
-import { signTestALReceiptControl, toTestALNackPayload } from '../../al-control-test-payloads.ts';
+import { signTestALReceiptControl, toTestALNackPayload, verifyTestALReceiptControl } from '../../al-control-test-payloads.ts';
 
 type ChainGrants = Readonly<Record<string, GroupPublicationTopicPermissions>>;
 
@@ -124,6 +124,25 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
         expect(readOrderingPositions(gap.leaf)).toEqual([['entered', 1, 0]]);
         expect(readAdmissionOutcomes(gap.relay, gap.frames[1]!.id.msgId)).toEqual([['committed', 'admitted']]);
+    });
+
+    it('verifies the gap NACK the leaf\'s own sign step signed at the signature origin, and repairs the gap', async () => {
+        const gap = await createGapChain({ ack: 'receiver' });
+        await forwardTrack(gap, [1, 2, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+
+        const leafGap = (await readLeafControls(gap)).find((control) => findGapNack([control]) !== undefined);
+        await deliverEach(await readLeafControls(gap), gap.relay, 'c');
+        const relayedGap = (await readRelayUpwardControls(gap)).find((control) => findGapNack([control]) !== undefined);
+        const admissions = await acceptAtOrigin(gap, await readRelayUpwardControls(gap));
+        await repairThroughRelay(gap);
+
+        expect(leafGap === undefined ? false : await verifyTestALReceiptControl(gap.chain.keys.c!, leafGap)).toBe(true);
+        expect(relayedGap === undefined ? false : await verifyTestALReceiptControl(gap.chain.keys.c!, relayedGap)).toBe(true);
+        expect(admissions.get('gap')).toBe('committed');
+        expect(gap.chain.origin.diagnostics.some((event) => event.kind === 'control-admission' && event.proofRefusal !== undefined))
+            .toBe(false);
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
     it('serves no copy toward a leaf the origin froze into the next sequence but not the missing one (D530)', async () => {

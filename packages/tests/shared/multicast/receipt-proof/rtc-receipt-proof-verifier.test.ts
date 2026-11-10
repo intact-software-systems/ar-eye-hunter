@@ -55,17 +55,36 @@ describe('RtcReceiptProofVerifier', () => {
         });
     });
 
-    it('refuses invalid-signature on a page without WebCrypto and for a key whose thumbprint is not its keyId', async () => {
+    it('refuses invalid-signature on a page without WebCrypto', async () => {
+        const c = await createAvailablePublicationCryptoFixture();
+        const keyless = new RtcReceiptProofVerifier({ crypto: { kind: 'unavailable' }, nowEpochMs: Date.now });
+
+        expect((await keyless.verifyReceiptProof(await signTestALReceiptControl(c, RECIPIENT_ACK), toKey(c))).left?.kind)
+            .toBe('invalid-signature');
+    });
+
+    it('refuses a frozen key whose key id is not its own thumbprint, though the signature verifies under its JWK', async () => {
+        const c = await createAvailablePublicationCryptoFixture();
+        const otherKeyId = (await createAvailablePublicationCryptoFixture()).keyPair.keyId;
+        const signedByC = await signTestALReceiptControl(c, RECIPIENT_ACK);
+        const renamed = withAckFields(signedByC, { proof: { ...signedByC.payload.proof!, keyId: otherKeyId } });
+        const verifier = new RtcReceiptProofVerifier({ crypto: { kind: 'available', subtle: c.subtle }, nowEpochMs: Date.now });
+
+        expect((await verifier.verifyReceiptProof(renamed, { keyId: otherKeyId, publicJwk: c.keyPair.publicJwk })).left?.kind)
+            .toBe('invalid-signature');
+        expect((await verifier.verifyReceiptProof(signedByC, toKey(c))).right).toBe(true);
+    });
+
+    it('refuses a frozen key whose JWK is not its key id even after a verdict for that key id and signature was cached', async () => {
         const c = await createAvailablePublicationCryptoFixture();
         const b = await createAvailablePublicationCryptoFixture();
         const signedByC = await signTestALReceiptControl(c, RECIPIENT_ACK);
-        const keyless = new RtcReceiptProofVerifier({ crypto: { kind: 'unavailable' }, nowEpochMs: Date.now });
         const verifier = new RtcReceiptProofVerifier({ crypto: { kind: 'available', subtle: c.subtle }, nowEpochMs: Date.now });
+        expect((await verifier.verifyReceiptProof(signedByC, toKey(c))).right).toBe(true);
+
         const misnamed: GroupPresencePublicationKey = { keyId: c.keyPair.keyId, publicJwk: b.keyPair.publicJwk };
 
-        expect((await keyless.verifyReceiptProof(signedByC, toKey(c))).left?.kind).toBe('invalid-signature');
         expect((await verifier.verifyReceiptProof(signedByC, misnamed)).left?.kind).toBe('invalid-signature');
-        expect((await verifier.verifyReceiptProof(signedByC, toKey(c))).right).toBe(true);
     });
 
     it('verifies once and answers a repeat from the cache', async () => {

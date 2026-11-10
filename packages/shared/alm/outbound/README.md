@@ -43,9 +43,11 @@ Application consumers select an ordering key for each independent stream and adv
 Control acceptance also knows who spoke a recipient's control, as the composition states it in
 `ALOutboundMessageRuntime.Dependencies.recipientAuthentication`: the WS client and the WS server state `carrier`, whose
 socket authenticates its peer; the RTC overlay states `signature`. Under `signature`, a peer ACK or NACK about a
-`receiver` or `leader` send is verified in the read phase
+`receiver` or `leader` send that speaks for a recipient the receipt counts is verified in the read phase
 ([`readALOutboundRecipientProof`](./control/read-al-outbound-recipient-proof.ts)) against the key the sent row froze
-for the recipient it names (`receiptProofKeys`; a row that froze none keys nobody). A refusal (`missing-proof`,
+for it (`receiptProofKeys`; a row that froze none keys nobody). One that speaks for a peer the receipt does not count
+is a hop fact: carrier-authenticated when that peer is its own sender, so the validators judge it as they judge any
+hop's control, and refused `unknown-key` when it speaks for another. A refusal (`missing-proof`,
 `unknown-key`, `key-mismatch`, `invalid-signature`) is an `unauthorized` issue and a `rejected` admission carrying
 `proofRefusal`, which the control-admission diagnostic states as `proofRefusal`, `claimedRecipientPeerId` and
 `channelPeerId`; nothing is counted, written, retained or answered. A repair request, and a `hop` or `subtree`

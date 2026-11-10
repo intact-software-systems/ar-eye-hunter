@@ -1,4 +1,5 @@
 import {
+    toALReceiptProofRefusal,
     toALReceiptProofSigningInput,
     verifyALReceiptProof,
     type ALReceiptControl,
@@ -45,17 +46,17 @@ export class RtcReceiptProofVerifier implements ALReceiptProofVerifierPort {
     ): Promise<Either<ALReceiptProofRefusal, true>> {
         const proof = control.payload.proof;
         if (proof === null) {
-            return Either.ofLeft(toRefusal('missing-proof', control));
+            return Either.ofLeft(toALReceiptProofRefusal('missing-proof', control));
         }
         if (frozenKey === undefined) {
-            return Either.ofLeft(toRefusal('unknown-key', control));
+            return Either.ofLeft(toALReceiptProofRefusal('unknown-key', control));
         }
         if (proof.keyId !== frozenKey.keyId) {
-            return Either.ofLeft(toRefusal('key-mismatch', control));
+            return Either.ofLeft(toALReceiptProofRefusal('key-mismatch', control));
         }
         return await this.verifySignature(control, proof, frozenKey)
             ? Either.ofRight(true)
-            : Either.ofLeft(toRefusal('invalid-signature', control));
+            : Either.ofLeft(toALReceiptProofRefusal('invalid-signature', control));
     }
 
     private async verifySignature(
@@ -67,6 +68,11 @@ export class RtcReceiptProofVerifier implements ALReceiptProofVerifierPort {
         if (subtle === undefined) {
             return false;
         }
+        // The key comes first, so a verdict cached under its key id never answers for a record whose JWK is another key's.
+        const publicKey = await this.readPublicKey(subtle, frozenKey);
+        if (publicKey === undefined) {
+            return false;
+        }
         const signedBytes = UTF8_ENCODER.encode(toALReceiptProofSigningInput(control));
         const digest = new Uint8Array(await subtle.digest('SHA-256', signedBytes));
         const verdictKey = `${proof.keyId}|${proof.signature}|${toBase64Url(digest)}`;
@@ -74,20 +80,20 @@ export class RtcReceiptProofVerifier implements ALReceiptProofVerifierPort {
         if (this.#verdicts.readAt(verdictKey, nowEpochMs) !== undefined) {
             return true;
         }
-        const publicKey = await this.readPublicKey(subtle, frozenKey);
-        if (publicKey === undefined || (await verifyALReceiptProof({ subtle, publicKey, control })).right !== true) {
+        if ((await verifyALReceiptProof({ subtle, publicKey, control })).right !== true) {
             return false;
         }
         this.#verdicts.acceptAt({ key: verdictKey, value: true, nowEpochMs });
         return true;
     }
 
-    /** A frozen key is imported only under the keyId its own key's thumbprint names. */
+    /** A frozen key is imported only under the keyId its own key's thumbprint names; the cache holds that exact pair. */
     private async readPublicKey(
         subtle: SubtleCrypto,
         frozenKey: GroupPresencePublicationKey
     ): Promise<CryptoKey | undefined> {
-        const cached = this.#publicKeys.read(frozenKey.keyId);
+        const cacheKey = `${frozenKey.keyId}|${JSON.stringify(frozenKey.publicJwk)}`;
+        const cached = this.#publicKeys.read(cacheKey);
         if (cached !== undefined) {
             return cached;
         }
@@ -96,16 +102,8 @@ export class RtcReceiptProofVerifier implements ALReceiptProofVerifierPort {
         }
         const imported = (await importEcdsaP256PublicKey(subtle, frozenKey.publicJwk)).right;
         if (imported !== undefined) {
-            this.#publicKeys.accept(frozenKey.keyId, imported);
+            this.#publicKeys.accept(cacheKey, imported);
         }
         return imported;
     }
-}
-
-function toRefusal(kind: ALReceiptProofRefusal['kind'], control: ALReceiptControl): ALReceiptProofRefusal {
-    return {
-        kind,
-        claimedRecipientPeerId: control.payload.logicalRecipientPeerId,
-        channelPeerId: control.payload.fromPeerId
-    };
 }

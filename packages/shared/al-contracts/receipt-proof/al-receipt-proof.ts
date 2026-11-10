@@ -93,6 +93,18 @@ export function toALReceiptProofSigningInput(control: ALReceiptControl): string 
         ]);
 }
 
+/** The refusal of a control, naming the recipient it speaks for and the peer it arrived from. */
+export function toALReceiptProofRefusal(
+    kind: ALReceiptProofRefusal['kind'],
+    control: ALReceiptControl
+): ALReceiptProofRefusal {
+    return {
+        kind,
+        claimedRecipientPeerId: control.payload.logicalRecipientPeerId,
+        channelPeerId: control.payload.fromPeerId
+    };
+}
+
 export async function signALReceiptProof(
     input: SignALReceiptProofInput
 ): Promise<Either<ALReceiptProofFailure, SignatureProof>> {

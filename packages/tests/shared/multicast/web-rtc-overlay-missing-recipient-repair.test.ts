@@ -477,6 +477,12 @@ describe('the RTC origin retry of a receiver receipt', () => {
 
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b'], ackedPeerIds: [] });
+        // `b` speaks for `d`, whom the receipt does not count, so no key answers for it; `d`'s own ACK is a hop fact the
+        // validator refuses as confirming no peer.
+        expect(fixture.diagnostics.flatMap((event) => event.kind === 'control-admission' ? [[event.outcome, event.reason, event.proofRefusal]] : [])).toEqual([
+            ['rejected', 'AL control proof is refused: unknown-key; AL acknowledgement confirms no peer of the pending outbound receipt', 'unknown-key'],
+            ['rejected', 'AL acknowledgement confirms no peer of the pending outbound receipt', undefined]
+        ]);
     });
 
     it('resends to a hop outside the frozen audience on every retry, bounded by the receipt retry budget', async () => {

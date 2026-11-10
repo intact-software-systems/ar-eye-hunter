@@ -6,6 +6,7 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALAckAlgo, ALQosEffectivePolicy } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { isALDeliveryAdmissionFallbackVerdict } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
@@ -30,6 +31,8 @@ import {
     ORIGIN_ROOM,
     toOriginFrozenTargets
 } from '../rtc-origin-overlay-fixture.ts';
+
+import { signTestALReceiptControl, toTestALAckPayload } from '../../../al-control-test-payloads.ts';
 
 const KEYLESS_DETAIL = 'RTC receipt cannot be verified: 1 of 2 counted recipients registered no publication key';
 
@@ -350,6 +353,60 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.receiptProofKeys)
             .toEqual(keys);
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'admission')).toEqual([]);
+    });
+
+    it('counts the recipients its dequeue froze, so a counted recipient\'s own unsigned ACK there is missing-proof', async () => {
+        // The row's policy was captured before the freeze and expects nobody; the canonical's frozen targets name who counts.
+        const { fixture, message } = await holdWithoutRoomSnapshot('held-freeze-counted');
+        fixture.groups.accept('room', createKeyedRoom(await createPageKeys(['b', 'c'])));
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        const admitted = await fixture.manager.acceptControlMessage(newALAckControlMessage(
+            { v: 4, msgId: 'ack-b-unsigned', senderId: 'b', ts: Date.now(), traceId: 'trace-held-freeze' },
+            toTestALAckPayload({ ackedMsgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', observedAtEpochMs: Date.now() })
+        ));
+
+        expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.ackTracking?.expectedPeerIds)
+            .toEqual([]);
+        expect(admitted).toMatchObject({
+            kind: 'rejected',
+            proofRefusal: { kind: 'missing-proof', claimedRecipientPeerId: 'b', channelPeerId: 'b' }
+        });
+    });
+
+    it('Limit: a send whose row froze no key reads unknown-key and runs to its retry', async () => {
+        // Limit (S8-i): a held already-frozen send whose room keys none of its counted recipients is sent unjudged and
+        // stores no key record, so even a recipient's own signed ACK keys nobody; its receipt retries, then times out.
+        const { fixture, message } = await holdWithoutRoomSnapshot('held-frozen-unkeyed', ['b', 'c']);
+        fixture.groups.accept('room', createKeyedRoom({}));
+        for (let step = 0; step < 50 && fixture.channels.c!.sent.length === 0; step++) {
+            await vi.advanceTimersByTimeAsync(100);
+        }
+        const sentBefore = fixture.channels.c!.sent.length;
+        const c = await createAvailablePublicationCryptoFixture();
+        const ack = await signTestALReceiptControl(c, {
+            type: 'ack',
+            payload: toTestALAckPayload({
+                ackedMsgId: message.id.msgId,
+                fromPeerId: 'c',
+                toPeerId: 'a',
+                observedAtEpochMs: Date.now()
+            })
+        });
+
+        const admitted = await fixture.manager.acceptControlMessage(
+            newALAckControlMessage({ v: 4, msgId: 'ack-c', senderId: 'c', ts: Date.now(), traceId: 'trace-limit' }, ack.payload)
+        );
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(sentBefore).toBeGreaterThan(0);
+        expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.receiptProofKeys)
+            .toBeUndefined();
+        expect(admitted).toMatchObject({
+            kind: 'rejected',
+            proofRefusal: { kind: 'unknown-key', claimedRecipientPeerId: 'c', channelPeerId: 'c' }
+        });
+        expect(fixture.channels.c!.sent.length).toBeGreaterThan(sentBefore);
     });
 
     it('defers a durable room unicast held without its room snapshot, storing nothing, and judges it when it is admitted again', async () => {
