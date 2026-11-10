@@ -107,8 +107,8 @@ export function markALPendingAckLocalReadySnapshot(
 
 /**
  * The audience whose child ACKs a relay passes upward: the recipients a `receiver` or `leader` multicast counts, since
- * its origin counts nobody else; `undefined`, relaying every child ACK, for any other send. A unicast keeps `undefined`,
- * as before.
+ * its origin counts nobody else; `undefined`, relaying every child ACK, for any other send. A unicast keeps
+ * `undefined`, as before.
  */
 export function resolveALUpwardAudiencePeerIds(msg: ALMessage, algo: ALAckAlgo): readonly string[] | undefined {
     return msg.targets?.mode === 'unicast' ? undefined : resolveALCountedRecipientPeerIds(msg, algo);
