@@ -70,7 +70,7 @@ export interface ALOutboundCapturedPolicy {
      * asserts the same generation; an admitted session without an entry is never sent.
      */
     readonly admittedConnectionGenerationIds?: Readonly<Record<string, string>>;
-    /** Kept exactly on the origin's logically receipted RTC row: the key its first dispatch froze for each counted recipient. */
+    /** On the origin's logically receipted RTC row: the first key record a plan stated, by keyed counted recipient; never replaced. */
     readonly receiptProofKeys?: ALReceiptProofKeys;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
@@ -106,8 +106,8 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
 /**
  * A sent message keeps the policy of its first dispatch, except the next hops of its acknowledgement: a
  * retry that re-plans the receipt records the hops of the local view it planned over, so a settlement
- * names the hops of the latest tree, never those of a tree that has changed since. A row stored before its audience
- * was frozen takes the counted recipients' keys of the plan that freezes it, and never other keys after that.
+ * names the hops of the latest tree, never those of a tree that has changed since. The sent policy adopts the first key
+ * record a plan states and never replaces it.
  */
 export function toALOutboundSentPolicy<TPrepared>(
     stored: ALOutboundCapturedPolicy | undefined,
@@ -267,14 +267,15 @@ function decodeALOutboundCapturedConnectionGenerations(
     }
 }
 
-/** Each counted recipient's key is decoded as a presence row's is: a 43-character key id and exactly a public P-256 JWK. */
+/** Each record key is a non-empty session id, its key decoded as a presence row's is: a 43-character key id and a public P-256 JWK. */
 function decodeALOutboundCapturedReceiptProofKeys(value: PersistedALValue): void {
     const keys = decodeALAdmissionRecord(
         value,
         [],
         typeof value === 'object' && value !== null ? Object.keys(value) : []
     );
-    for (const key of Object.values(keys)) {
+    for (const [sessionId, key] of Object.entries(keys)) {
+        requirePersistedALNonEmptyString(sessionId, 'captured receipt proof key session');
         if (key === null || decodeGroupPresencePublicationKey(key).left !== undefined) {
             throw new TypeError('Captured receipt proof key is invalid');
         }

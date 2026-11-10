@@ -221,7 +221,7 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly admittedAudience?: readonly string[];
     /** On a granted topic's row, the connection generation each admitted session's subscription asserted at route. */
     readonly admittedConnectionGenerationIds?: Readonly<Record<string, string>>;
-    /** Each counted recipient's registered key on the origin's own logically receipted RTC send; absent: no signed recipient is counted. */
+    /** The registered key of each keyed counted recipient of the origin's own logically receipted RTC send; absent: none is known yet. */
     readonly receiptProofKeys?: ALReceiptProofKeys;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;

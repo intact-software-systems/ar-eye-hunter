@@ -12,7 +12,11 @@ export interface RtcReceiptProofRoom {
     readonly nowMs: number;
 }
 
-/** States the keys on an undropped plan of the origin's own logically receipted message; any other plan is returned as it is. */
+/**
+ * States the keys on an undropped plan of the origin's own logically receipted message, once its room keys a counted
+ * recipient: a plan without a room, or whose room keys none of them, states no record, so a later plan that reads the
+ * room states the keys its sent row adopts. Any other plan is returned as it is.
+ */
 export function toRtcReceiptProofDispatchPlan(
     plan: ALOutboundDispatchPlan<ALOutboundTransportMessage>,
     input: RtcReceiptProofRoom
@@ -21,7 +25,8 @@ export function toRtcReceiptProofDispatchPlan(
             plan.msg.id.senderId !== input.selfPeerId
         ? undefined
         : resolveALCountedRecipientPeerIds(plan.msg, plan.ackTracking.mode);
-    return counted === undefined ? plan : { ...plan, receiptProofKeys: toRtcReceiptProofKeys(counted, input) };
+    const keys = counted === undefined ? {} : toRtcReceiptProofKeys(counted, input);
+    return Object.keys(keys).length === 0 ? plan : { ...plan, receiptProofKeys: keys };
 }
 
 /** A counted recipient the room does not key is left out: the admission's key refusal already refused such a leg. */

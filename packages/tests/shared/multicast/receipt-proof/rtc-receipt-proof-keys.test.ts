@@ -144,6 +144,18 @@ describe('the keys an RTC origin freezes for the recipients its receipt counts',
         expect(multicast.right).toBe(frozen);
     });
 
+    it('states no key record without a room, and none when no counted recipient is keyed', () => {
+        const roomless = toRtcReceiptProofDispatchPlan(createFrozenPlan('receiver'), { room: undefined, selfPeerId: 'a', nowMs: Date.now() });
+        const keyless = toRtcReceiptProofDispatchPlan(createFrozenPlan('receiver'), {
+            room: createKeyedRoom({}),
+            selfPeerId: 'a',
+            nowMs: Date.now()
+        });
+
+        expect(roomless).not.toHaveProperty('receiptProofKeys');
+        expect(keyless).not.toHaveProperty('receiptProofKeys');
+    });
+
     it('leaves a counted session the room does not name to the planner and states no key for it', async () => {
         const keys = await createPageKeys(['b']);
         const message = createFrozenMulticast(['b', 'c', 'z']);
@@ -221,6 +233,13 @@ describe('the keys an RTC origin freezes for the recipients its receipt counts',
         expect(toALOutboundSentPolicy(stored, replanned).receiptProofKeys).toEqual(keys);
     });
 
+    it('refuses a captured key record with an empty session id', async () => {
+        const keys = await createPageKeys(['b']);
+        const captured = captureALOutboundPolicy({ ...createFrozenPlan('receiver'), receiptProofKeys: keys });
+
+        expect(() => decodeALOutboundCapturedPolicy({ ...captured, receiptProofKeys: { '': keys.b! } })).toThrow(TypeError);
+    });
+
     it('round-trips the captured keys through the sent row\'s closed decoder and refuses a malformed key', async () => {
         const keys = await createPageKeys(['b', 'c']);
         const captured = captureALOutboundPolicy({ ...createFrozenPlan('receiver'), receiptProofKeys: keys });
@@ -288,7 +307,8 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
             .toEqual(keys);
     });
 
-    it('a send held without a room snapshot is refused unsupported then if a counted recipient is keyless', async () => {
+    it('Limit: a send held without a room snapshot is dropped unsettled at its freezing dequeue if a counted recipient is keyless', async () => {
+        // Limit (S8-i): a stored-stage unsupported refusal is not settled and not handed to the fallback; the room-limit refusal shares it.
         const { fixture, message, held } = await holdWithoutRoomSnapshot('held-keyless');
 
         fixture.groups.accept('room', createKeyedRoom(await createPageKeys(['b'])));
@@ -300,10 +320,36 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
         expect(keys).toBeUndefined();
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent, ...fixture.channels.d!.sent]).toEqual([]);
-        // A dequeue's refusal other than no-publish-grant is a silent drop (resolveALOutboundReplanRefusalSettlement):
-        // the held phase's not-ready attempt is the only settlement, and no fallback is handed the send.
         expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['attempt-settled']);
         expect(fixture.settlements[0]).toMatchObject({ outcome: 'not-ready', willRetry: true });
+    });
+
+    it('a held already-frozen send states its keys at the dequeue that first sees its room', async () => {
+        const keys = await createPageKeys(['b', 'c']);
+        const { fixture, message, held } = await holdWithoutRoomSnapshot('held-frozen-keyed', ['b', 'c']);
+
+        fixture.groups.accept('room', createKeyedRoom(keys));
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
+        expect(fixture.channels.b!.sent.length).toBeGreaterThan(0);
+        expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.receiptProofKeys)
+            .toEqual(keys);
+    });
+
+    it('Limit: a held already-frozen send to a keyless recipient is sent and left to its receipt timeout', async () => {
+        // Limit (S8-i): the stored plan of a send frozen before its admission is never judged, so a fix would refuse it unsupported and send nothing.
+        const keys = await createPageKeys(['b']);
+        const { fixture, message, held } = await holdWithoutRoomSnapshot('held-frozen-keyless', ['b', 'c']);
+
+        fixture.groups.accept('room', createKeyedRoom(keys));
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
+        expect(fixture.channels.c!.sent.length).toBeGreaterThan(0);
+        expect((await fixture.resources.admissionStore.readStoredMessage(message.id.msgId))?.policy.receiptProofKeys)
+            .toEqual(keys);
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'admission')).toEqual([]);
     });
 
     it('defers a durable room unicast held without its room snapshot, storing nothing, and judges it when it is admitted again', async () => {
@@ -385,15 +431,16 @@ async function createKeylessRecipientFixture() {
     });
 }
 
-/** A durable receiver send the origin admits while its room snapshot is not cached, so it waits for the room. */
-async function holdWithoutRoomSnapshot(resourceId: string) {
+/** A durable receiver send, frozen to `frozenPeerIds` when given, the origin admits while its room snapshot is not cached. */
+async function holdWithoutRoomSnapshot(resourceId: string, frozenPeerIds?: readonly string[]) {
     const fixture = createRtcOriginOverlayFixture({
         snapshot: createOriginSnapshot(['a', 'b', 'c'], 4),
         nextHopPeerIds: ['b', 'c'],
         publicationCrypto: await createAvailablePublicationCryptoFixture()
     });
     fixture.groups.delete('room');
-    const message: ALMessage = { ...createOriginReceiverMulticast(resourceId), qos: { durability: { algo: 'local-outbox' } } };
+    const unfrozen: ALMessage = { ...createOriginReceiverMulticast(resourceId), qos: { durability: { algo: 'local-outbox' } } };
+    const message = frozenPeerIds === undefined ? unfrozen : { ...unfrozen, targets: toOriginFrozenTargets(frozenPeerIds, 4) };
     const held = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
     await vi.advanceTimersByTimeAsync(0);
     return { fixture, message, held };
