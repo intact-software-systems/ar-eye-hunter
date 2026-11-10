@@ -34,7 +34,8 @@ export function toWsQueueBoxServerOutsideAudienceAck(input: ToWsQueueBoxServerOu
             logicalRecipientPeerId: input.recipientPeerId,
             carrier: 'ws',
             status: 'subtree-complete-not-subscribed',
-            observedAtEpochMs: nowMs
+            observedAtEpochMs: nowMs,
+            proof: null
         }
     );
 }

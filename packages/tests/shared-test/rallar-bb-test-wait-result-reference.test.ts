@@ -23,7 +23,7 @@ function toNackEvent(targetMsgId: string): RallarBlackBoxTestRuntimeEventInput {
     return {
         kind: 'diagnostic',
         topic: NACK_TOPIC,
-        payload: { data: { kind: 'control-admission', typeId: 'al.control.nack.v2', targetMsgId, outcome: 'rejected' } }
+        payload: { data: { kind: 'control-admission', typeId: 'al.control.nack.v3', targetMsgId, outcome: 'rejected' } }
     } as const;
 }
 
@@ -89,7 +89,7 @@ describe('rallar-bb-test wait result references', () => {
         runtime.recordEvent(toNackEvent('msg-2'));
 
         const result = await runtime.execute(
-            toNackWait('nack-literal', '{"kind":"control-admission","typeId":"al.control.nack.v2","targetMsgId":"{resultCache.send-2.value.msgId}"')
+            toNackWait('nack-literal', '{"kind":"control-admission","typeId":"al.control.nack.v3","targetMsgId":"{resultCache.send-2.value.msgId}"')
         );
 
         expect(result.status).toBe('ok');

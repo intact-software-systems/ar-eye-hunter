@@ -36,7 +36,8 @@ export class OrderingProofSocket extends ClusterProofSocket {
             logicalRecipientPeerId: recipientSessionId,
             carrier: 'ws',
             status: 'delivered',
-            observedAtEpochMs: Date.now()
+            observedAtEpochMs: Date.now(),
+            proof: null
         }));
     }
 

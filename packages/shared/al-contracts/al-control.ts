@@ -1,6 +1,7 @@
 import { toStrictAppInboxQueueKey } from '../queuebox/AppQueueIdentity.ts';
 import { isKeysEqual } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
+import type { SignatureProof } from '../signature/signature-proof.ts';
 import type { ALMessage } from './al-contract.ts';
 import {
     AL_CONTROL_ACK_TYPE_ID,
@@ -12,9 +13,7 @@ import {
 import {
     decodeALAckPayload,
     decodeALNackPayload,
-    decodeALNackWirePayload,
     decodeALReceiptPayload,
-    decodeALReceiptWirePayload,
     decodeALRepairPayload,
     type ALDeliveryCarrier
 } from './al-control-value-codec.ts';
@@ -56,13 +55,14 @@ export type ALNackReason =
     | 'before-entry';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
 
+/** `proof: null`: no recipient signature; the carrier's admission authenticates this control's sender. */
 export interface ALAckPayload {
     readonly ackedMsgId: string;
     readonly fromPeerId: string;
     readonly toPeerId: string;
     /** The acknowledged message's sender, whose receipt this ACK completes. */
     readonly originPeerId: string;
-    /** The recipient this ACK speaks for; a relay re-originates one ACK per recipient it confirmed. */
+    /** The recipient this ACK speaks for; a relay sends one ACK upward per recipient it confirmed. */
     readonly logicalRecipientPeerId: string;
     /**
      * The carrier the ACK travels on. The sender names the carrier it sends on; a store that records
@@ -71,20 +71,24 @@ export interface ALAckPayload {
     readonly carrier: ALDeliveryCarrier;
     readonly status: ALAckStatus;
     readonly observedAtEpochMs: number;
+    readonly proof: SignatureProof | null;
 }
 
+/** `originPeerId`: the refused message's sender, checked against the owner row at a relay and at the origin as an ACK's is. */
 export interface ALNackPayload {
     readonly msgId: string;
     readonly fromPeerId: string;
     readonly toPeerId: string;
     /** The recipient this NACK speaks for: its sender's own session, or a recipient below a relay that re-sends it. */
     readonly logicalRecipientPeerId: string;
+    readonly originPeerId: string;
     readonly reason: ALNackReason;
     readonly observedAtEpochMs: number;
     readonly orderingKey?: string;
     readonly expectedSeq?: number;
     readonly missingRanges?: readonly ALSeqRange[];
     readonly serverSnapshotVersion?: number;
+    readonly proof: SignatureProof | null;
 }
 
 export interface ALRepairPayload {
@@ -194,11 +198,11 @@ export function parseALControlMessage(msg: ALMessage): ALParsedControlMessage | 
         case AL_CONTROL_ACK_TYPE_ID:
             return { type: 'ack', payload: decodeALAckPayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_NACK_TYPE_ID:
-            return { type: 'nack', payload: decodeALNackWirePayload(parseControlPayload(msg.payload.resource)) };
+            return { type: 'nack', payload: decodeALNackPayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_REPAIR_TYPE_ID:
             return { type: 'repair', payload: decodeALRepairPayload(parseControlPayload(msg.payload.resource)) };
         case AL_CONTROL_RECEIPT_TYPE_ID:
-            return { type: 'receipt', payload: decodeALReceiptWirePayload(parseControlPayload(msg.payload.resource)) };
+            return { type: 'receipt', payload: decodeALReceiptPayload(parseControlPayload(msg.payload.resource)) };
         default:
             return undefined;
     }

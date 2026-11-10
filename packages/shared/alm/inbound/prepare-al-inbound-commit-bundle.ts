@@ -49,6 +49,8 @@ interface PrepareALInboundDurableEffectInput {
     readonly payload: ALInboundEffectIntent['payload'];
     readonly facts: ALInboundEffectFacts;
     readonly traceId: string;
+    /** The prepared message's sender, whom a NACK about it names as its origin. */
+    readonly originPeerId: string;
     readonly index: number;
     readonly carrier: ALDeliveryCarrier;
 }
@@ -97,13 +99,14 @@ function toPreparedALInboundMessage(read: PrepareALInboundCommitBundleInput['rea
 
 function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readonly ALInboundDurableEffectWrite[] {
     const { read, facts } = input;
-    const traceId = toPreparedALInboundMessage(read).id.traceId;
+    const { traceId, senderId: originPeerId } = toPreparedALInboundMessage(read).id;
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({
             payload: effect.payload,
             facts,
             traceId,
+            originPeerId,
             index,
             carrier: effect.carrier
         });
@@ -202,7 +205,8 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                         : payload.logicalRecipient.peerId,
                     status: payload.status,
                     observedAtEpochMs: facts.observedAtEpochMs,
-                    carrier: input.carrier
+                    carrier: input.carrier,
+                    proof: null
                 })
             };
         case 'send-nack':
@@ -215,9 +219,11 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     logicalRecipientPeerId: payload.logicalRecipient.kind === 'self'
                         ? facts.selfPeerId
                         : payload.logicalRecipient.peerId,
+                    originPeerId: input.originPeerId,
                     msgId: payload.msgId,
                     reason: payload.reason,
-                    observedAtEpochMs: facts.observedAtEpochMs
+                    observedAtEpochMs: facts.observedAtEpochMs,
+                    proof: null
                 })
             };
         case 'send-repair':

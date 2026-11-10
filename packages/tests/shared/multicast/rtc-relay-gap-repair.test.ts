@@ -342,6 +342,7 @@ function toGapNack(gap: GapChain, input: GapNackInput): ALMessage {
             msgId: revealing.id.msgId,
             fromPeerId,
             toPeerId: 'r',
+            originPeerId: revealing.id.senderId,
             logicalRecipientPeerId: input.logicalRecipientPeerId,
             reason: 'gap',
             orderingKey: readLeafTrackKey(gap),

@@ -1050,9 +1050,9 @@
             }
           },
           "payload": {
-            "typeId": "al.control.ack.v2",
+            "typeId": "al.control.ack.v3",
             "contentType": "application/json",
-            "resource": "{\"ackedMsgId\":\"pubgrantcl-granted-item-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0}"
+            "resource": "{\"ackedMsgId\":\"pubgrantcl-granted-item-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0,\"proof\":null}"
           }
         }
       }
@@ -1289,7 +1289,7 @@
             "toPeerId": "{aliceSessionId}"
           },
           "payload": {
-            "typeId": "al.control.nack.v2"
+            "typeId": "al.control.nack.v3"
           }
         },
         "consume": true

@@ -13,6 +13,7 @@ import {
     type ALAdmissionWriteContext
 } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALInboundAdmissionStore,
@@ -47,7 +48,7 @@ import {
 
 import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
 
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
 
 /** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
@@ -614,7 +615,7 @@ describe('inbound admission persisted values', () => {
         { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', retryPeerIds: [''] },
         { kind: 'send-control', msg: message },
         { kind: 'unknown' },
-        { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v2', resource: '{}' } } }
+        { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v3', resource: '{}' } } }
     ])('terminalizes corrupt work payloads at observed reservation', async (payload) => {
         const { store, workQueue, port } = createFixture();
         const entry = {
@@ -681,6 +682,25 @@ describe('inbound admission persisted values', () => {
             transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 2, expireAtTimestamp: Date.now() + 60_000 })
         );
         expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 2, predecessor: undefined });
+    });
+
+    it('refuses a control history the previous build stored, never reading it as unsigned', () => {
+        const { proof: _proof, ...previousAck } = toTestALAckPayload({
+            ackedMsgId: 'message',
+            fromPeerId: 'downstream',
+            toPeerId: 'receiver'
+        });
+        const { originPeerId: _origin, proof: _nackProof, ...previousNack } = toTestALNackPayload({
+            msgId: 'message',
+            fromPeerId: 'downstream',
+            toPeerId: 'receiver',
+            reason: 'not-subscribed'
+        });
+
+        expect(() => decodeALAdmissionControlValue({ kind: 'acks', values: [previousAck] }, 'message', 'acks'))
+            .toThrow(TypeError);
+        expect(() => decodeALAdmissionControlValue({ kind: 'nacks', values: [previousNack] }, 'message', 'nacks'))
+            .toThrow(TypeError);
     });
 
     it('rejects control history whose message ID differs from the trusted requested slot', async () => {

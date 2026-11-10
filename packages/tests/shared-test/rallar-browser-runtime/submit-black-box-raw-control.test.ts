@@ -13,7 +13,7 @@ const ADMITTED = { kind: 'admitted', durable: true, queuedAttempts: 1 } as const
 
 const CONTROL = {
     carrier: 'rtc',
-    typeId: 'al.control.ack.v1',
+    typeId: 'al.control.ack.v2',
     msgId: 'control-1',
     ackedMsgId: 'room-message-1',
     toPeerId: 'origin'
@@ -57,7 +57,7 @@ describe('submitBlackBoxRawControl', () => {
         expect(control).toMatchObject({
             id: { msgId: 'control-1', senderId: 'recipient-b', ts: 1_000, traceId: 'trace-acked-received' },
             targets: { mode: 'unicast', toPeerId: 'origin' },
-            payload: { typeId: 'al.control.ack.v1' }
+            payload: { typeId: 'al.control.ack.v2' }
         });
         expect(JSON.parse(control!.payload.resource)).toMatchObject({
             ackedMsgId: 'room-message-1',
@@ -68,7 +68,7 @@ describe('submitBlackBoxRawControl', () => {
             status: 'delivered'
         });
         expect(decodeALControlMessage(control!).left).toMatchObject({ code: 'unsupported' });
-        expect(decodeALControlMessage({ ...control!, payload: { ...control!.payload, typeId: 'al.control.ack.v2' } }).right)
+        expect(decodeALControlMessage({ ...control!, payload: { ...control!.payload, typeId: 'al.control.ack.v3' } }).right)
             .toMatchObject({ type: 'ack' });
     });
 

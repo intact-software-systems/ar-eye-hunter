@@ -80,7 +80,7 @@ interface GapReportInput {
 /** What every control of the test shares: the addressee reports a gap before the revealing message. */
 function toGapReport(
     { revealing, trackKey, missingRanges, requester = 'peer-1' }: GapReportInput
-): Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId'> {
+): Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId' | 'originPeerId' | 'proof'> {
     return {
         msgId: revealing.id.msgId,
         fromPeerId: requester,
@@ -92,10 +92,10 @@ function toGapReport(
     };
 }
 
-function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId'>): ALMessage {
+function toGapNack(controlMsgId: string, report: Omit<ALNackPayload, 'reason' | 'logicalRecipientPeerId' | 'originPeerId' | 'proof'>): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: controlMsgId, ts: 1, senderId: report.fromPeerId, traceId: 'trace-al-outbound-repair-exhaustion' },
-        { ...report, logicalRecipientPeerId: report.fromPeerId, reason: 'gap' }
+        { ...report, logicalRecipientPeerId: report.fromPeerId, originPeerId: report.toPeerId, reason: 'gap', proof: null }
     );
 }
 

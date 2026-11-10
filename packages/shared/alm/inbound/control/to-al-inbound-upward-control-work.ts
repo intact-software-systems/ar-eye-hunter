@@ -108,8 +108,10 @@ function toUpwardControlMessage(
             ...route,
             msgId: context.msgId,
             logicalRecipientPeerId: control.logicalRecipientPeerId,
+            originPeerId: context.owner.senderId,
             reason: control.reason,
-            ...(control.reason === 'gap' ? control.ordering : {})
+            ...(control.reason === 'gap' ? control.ordering : {}),
+            proof: null
         });
     }
     return newALAckControlMessage(id, {
@@ -120,6 +122,7 @@ function toUpwardControlMessage(
             ? relayPeerId
             : control.ack.logicalRecipient.peerId,
         carrier: toALDeliveryCarrier(context.owner.source),
-        status: control.ack.status
+        status: control.ack.status,
+        proof: null
     });
 }

@@ -57,6 +57,7 @@ interface GapNackInput {
     readonly fromPeerId: string;
     readonly logicalRecipientPeerId: string;
     readonly orderingKey?: string;
+    readonly originPeerId?: string;
 }
 
 /** A gap NACK for sequence 2: a recipient's own, or one a relay re-originated for the recipient it names. */
@@ -74,6 +75,7 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
             fromPeerId: input.fromPeerId,
             toPeerId: 'self',
             logicalRecipientPeerId: input.logicalRecipientPeerId,
+            originPeerId: input.originPeerId ?? 'self',
             reason: 'gap',
             observedAtEpochMs: Date.now(),
             orderingKey: input.orderingKey ?? TRACK_KEY,
@@ -131,6 +133,18 @@ describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
                 toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r2', orderingKey: 'game-2:self:1' })
             )
         ).toBe('AL repair ordering hints do not match the retained outbound message');
+    });
+
+    it('refuses a NACK that names another origin', async () => {
+        const origin = await createOrderedOrigin('relayed-gap-other-origin');
+
+        expect(
+            await origin.accept(
+                toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r2', originPeerId: 'other' })
+            )
+        ).toBe('AL NACK names another origin than this outbound message owner');
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r2' })))
+            .toBe('committed');
     });
 
     it('admits the gap NACKs a relay re-sends for two recipients over one range, each its own hint', async () => {

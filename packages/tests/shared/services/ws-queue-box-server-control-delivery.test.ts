@@ -104,7 +104,7 @@ describe('WS server control sends across instances', () => {
         expect((await readOutboxAckRows(fixture.outbox)).map((row) => row.status)).toEqual(['COMPLETED']);
         expect(readAcks(fixture.alice)).toEqual([]);
         expect(log).toHaveBeenCalledWith(expect.stringMatching(
-            /^WS server control al\.control\.ack\.v2 \S+ has no socket for a here; handed to the cluster outbox \(admitted\)$/
+            /^WS server control al\.control\.ack\.v3 \S+ has no socket for a here; handed to the cluster outbox \(admitted\)$/
         ));
     });
 

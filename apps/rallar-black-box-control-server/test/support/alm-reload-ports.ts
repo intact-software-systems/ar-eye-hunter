@@ -16,6 +16,7 @@ import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-t
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
+import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
@@ -1104,7 +1105,7 @@ export class AlmReloadPorts {
         recordOutboundDiagnostic(this.sender, {
             kind: 'control-admission',
             msgId: `${message.msgId}-nack`,
-            typeId: 'al.control.nack.v2',
+            typeId: AL_CONTROL_NACK_TYPE_ID,
             targetMsgId: message.msgId,
             outcome,
             reason: 'none',
@@ -1233,7 +1234,7 @@ export class AlmReloadPorts {
         recordOutboundDiagnostic(this.sender, {
             kind: 'control-admission',
             msgId: `${message.msgId}-ack`,
-            typeId: 'al.control.ack.v2',
+            typeId: AL_CONTROL_ACK_TYPE_ID,
             targetMsgId: message.msgId,
             outcome: 'committed',
             reason: 'none',

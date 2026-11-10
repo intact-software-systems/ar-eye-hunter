@@ -66,7 +66,8 @@ function toRawControlMessage(input: SubmitBlackBoxRawControl.Input, sessionId: s
         logicalRecipientPeerId: sessionId,
         carrier: control.carrier,
         status: 'delivered',
-        observedAtEpochMs: nowMs
+        observedAtEpochMs: nowMs,
+        proof: null
     });
     return { ...ack, payload: { ...ack.payload, typeId: control.typeId } };
 }

@@ -248,7 +248,8 @@ export function toImmutableWsQueueBoxServerReceiptAck(ack: ALAckPayload): ALAckP
         logicalRecipientPeerId: ack.logicalRecipientPeerId,
         carrier: ack.carrier,
         status: ack.status,
-        observedAtEpochMs: ack.observedAtEpochMs
+        observedAtEpochMs: ack.observedAtEpochMs,
+        proof: ack.proof
     });
 }
 

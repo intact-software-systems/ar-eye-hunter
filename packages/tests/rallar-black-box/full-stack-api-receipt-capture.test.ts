@@ -169,7 +169,8 @@ function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]):
                 { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 900, traceId: 'trace-full-stack-api-receipt-capture' },
                 {
                     ackedMsgId: 'subject', fromPeerId: 'recipient', toPeerId: 'origin', originPeerId: 'origin',
-                    logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered', observedAtEpochMs: 901
+                    logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered', observedAtEpochMs: 901,
+                    proof: null
                 }
             ));
         }

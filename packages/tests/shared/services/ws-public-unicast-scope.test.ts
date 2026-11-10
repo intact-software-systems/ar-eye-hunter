@@ -124,7 +124,7 @@ describe('public WS unicast scope', () => {
     it('does not treat a control type ID alone as scope exemption at either live boundary', () => {
         const { native, live } = createLiveDelivery();
         const message = createMessage();
-        const forged = { ...message, payload: { ...message.payload, typeId: 'al.control.ack.v2' } };
+        const forged = { ...message, payload: { ...message.payload, typeId: 'al.control.ack.v3' } };
         expect(live.sendToTargetsWithResult({ message: forged, sentPositions: null })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
         expect(live.sendToResolvedPeer({ peerId: 'peer', message: forged })).toBe(0);
         expect(native.sent).toEqual([]);

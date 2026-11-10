@@ -12,13 +12,16 @@ import { toALInboundUpwardNackOrdering } from './to-al-inbound-upward-control-wo
 export function validateALInboundNackAdmission(
     candidate: ALInboundNackAdmissionCandidate
 ): readonly ALMessageRejection[] {
-    const { nack, pending, acks } = candidate.read;
+    const { nack, pending, acks, owner } = candidate.read;
     if (!pending) {
         return [rejectInboundNack('Inbound NACK sender has no pending obligation')];
     }
     const issues: ALMessageRejection[] = [];
     if (!pending.expectedFromPeerIds.includes(nack.fromPeerId)) {
         issues.push(rejectInboundNack('Inbound NACK sender has no pending obligation'));
+    }
+    if (nack.originPeerId !== owner.senderId) {
+        issues.push(rejectInboundNack('Inbound NACK names another origin than the message it answers'));
     }
     if (pending.upwardAudiencePeerIds?.includes(nack.logicalRecipientPeerId) !== true) {
         issues.push(rejectInboundNack('Inbound NACK names no recipient of the frozen audience'));

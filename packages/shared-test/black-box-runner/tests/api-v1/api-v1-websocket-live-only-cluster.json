@@ -549,9 +549,9 @@
             }
           },
           "payload": {
-            "typeId": "al.control.ack.v2",
+            "typeId": "al.control.ack.v3",
             "contentType": "application/json",
-            "resource": "{\"ackedMsgId\":\"live-only-cluster-broadcast-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0}"
+            "resource": "{\"ackedMsgId\":\"live-only-cluster-broadcast-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0,\"proof\":null}"
           }
         }
       }

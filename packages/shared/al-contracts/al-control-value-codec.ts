@@ -1,3 +1,4 @@
+import type { SignatureProof } from '../signature/signature-proof.ts';
 import type {
     ALAckPayload,
     ALAckStatus,
@@ -21,7 +22,8 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         'logicalRecipientPeerId',
         'carrier',
         'status',
-        'observedAtEpochMs'
+        'observedAtEpochMs',
+        'proof'
     ]);
     return {
         ackedMsgId: decodeControlIdentifier(
@@ -38,7 +40,8 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         ),
         carrier: decodeALDeliveryCarrier(record.carrier, 'ACK carrier'),
         status: decodeAckStatus(record.status),
-        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time')
+        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time'),
+        proof: decodeControlProof(record.proof)
     };
 }
 
@@ -77,7 +80,16 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
 export function decodeALNackPayload(value: unknown): ALNackPayload {
     const record = decodeControlRecord(
         value,
-        ['msgId', 'fromPeerId', 'toPeerId', 'logicalRecipientPeerId', 'reason', 'observedAtEpochMs'],
+        [
+            'msgId',
+            'fromPeerId',
+            'toPeerId',
+            'logicalRecipientPeerId',
+            'originPeerId',
+            'reason',
+            'observedAtEpochMs',
+            'proof'
+        ],
         ['orderingKey', 'expectedSeq', 'missingRanges', 'serverSnapshotVersion']
     );
     return {
@@ -86,26 +98,14 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
             record.logicalRecipientPeerId,
             'NACK logical recipient identity'
         ),
+        originPeerId: decodeControlIdentifier(record.originPeerId, 'NACK origin identity'),
         reason: decodeNackReason(record.reason),
         ...decodeOptionalIdentifier(record, 'orderingKey', 'NACK ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'NACK expected sequence'),
         ...decodeOptionalSeqRanges(record, 'missingRanges', 'NACK missing ranges'),
-        ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version')
+        ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version'),
+        proof: decodeControlProof(record.proof)
     };
-}
-
-/** A NACK off the wire: an older peer's NACK names no logical recipient, so it speaks for its sender. */
-export function decodeALNackWirePayload(value: unknown): ALNackPayload {
-    return isControlRecord(value) && !Object.hasOwn(value, 'logicalRecipientPeerId')
-        ? decodeALNackPayload({ ...value, logicalRecipientPeerId: value.fromPeerId })
-        : decodeALNackPayload(value);
-}
-
-/** A receipt off the wire: an older server's receipt lists nobody outside the audience. */
-export function decodeALReceiptWirePayload(value: unknown): ALReceiptPayload {
-    return isControlRecord(value) && !Object.hasOwn(value, 'outsideAudienceRecipientPeerIds')
-        ? decodeALReceiptPayload({ ...value, outsideAudienceRecipientPeerIds: [] })
-        : decodeALReceiptPayload(value);
 }
 
 export function decodeALRepairPayload(value: unknown): ALRepairPayload {
@@ -203,6 +203,36 @@ function decodeControlRecord(
         throw new TypeError('Control value is missing mandatory fields');
     }
     return value as ControlRecord;
+}
+
+function decodeControlProof(value: unknown): SignatureProof | null {
+    if (value === null) {
+        return null;
+    }
+    if (
+        !isControlRecord(value) || !hasOnlyControlProofFields(value) || value.alg !== 'ES256' ||
+        !isControlIdentifier(value.keyId) || !isControlIdentifier(value.signature)
+    ) {
+        throw new TypeError('Control proof is invalid');
+    }
+    return { alg: value.alg, keyId: value.keyId, signature: value.signature };
+}
+
+const CONTROL_PROOF_FIELDS: readonly string[] = ['alg', 'keyId', 'signature'];
+
+function hasOnlyControlProofFields(record: ControlRecord): boolean {
+    const keys = Reflect.ownKeys(record);
+    return keys.length === CONTROL_PROOF_FIELDS.length && keys.every((key) => {
+        const descriptor = typeof key === 'string' && CONTROL_PROOF_FIELDS.includes(key)
+            ? Object.getOwnPropertyDescriptor(record, key)
+            : undefined;
+        return descriptor?.enumerable === true && Object.hasOwn(descriptor, 'value');
+    });
+}
+
+function isControlIdentifier(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 &&
+        value.length <= AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters;
 }
 
 function decodeControlRoute(

@@ -104,9 +104,11 @@ describe('RTC snapshot rejection controls', () => {
                         fromPeerId: 'receiver',
                         toPeerId: 'sender',
                         logicalRecipientPeerId: 'receiver',
+                        originPeerId: 'sender',
                         msgId: fixture.message.id.msgId,
                         reason: 'membership-fenced',
-                        observedAtEpochMs: expect.any(Number)
+                        observedAtEpochMs: expect.any(Number),
+                        proof: null
                     }
                 }
             ]);

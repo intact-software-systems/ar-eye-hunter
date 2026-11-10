@@ -155,7 +155,7 @@ describe('live RTC control client', () => {
                 'credential=must-not-be-retained',
                 JSON.stringify({
                     payload: {
-                        typeId: 'al.control.nack.v2',
+                        typeId: 'al.control.nack.v3',
                         resource: JSON.stringify({
                             msgId: 'different-message',
                             reason: 'not-yet-in-sync',

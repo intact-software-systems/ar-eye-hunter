@@ -36,6 +36,9 @@ export function validateALOutboundControlAdmission(
     if (read.parsed.payload.toPeerId !== read.owner) {
         issues.push({ code: 'unauthorized', message: 'AL control is addressed to another outbound message owner' });
     }
+    if (read.parsed.type === 'nack' && read.parsed.payload.originPeerId !== read.owner) {
+        issues.push({ code: 'unauthorized', message: 'AL NACK names another origin than this outbound message owner' });
+    }
     if (isDuplicateControl(read)) {
         issues.push({ code: 'unauthorized', message: 'AL control was already admitted' });
     }

@@ -42,6 +42,7 @@ interface NackArrival {
     readonly reason: ALRelayedNackReason;
     readonly fromPeerId?: string;
     readonly logicalRecipientPeerId?: string;
+    readonly originPeerId?: string;
     readonly ordering?: Partial<Pick<ALNackPayload, 'orderingKey' | 'expectedSeq' | 'missingRanges'>>;
 }
 
@@ -57,8 +58,10 @@ function computeArrival(
             fromPeerId: arrival.fromPeerId ?? 'child',
             toPeerId: 'relay',
             logicalRecipientPeerId: arrival.logicalRecipientPeerId ?? 'leaf',
+            originPeerId: arrival.originPeerId ?? 'origin',
             reason: arrival.reason,
             observedAtEpochMs: NOW_MS,
+            proof: null,
             ...(arrival.ordering ?? (arrival.reason === 'gap' ? GAP_ORDERING : {}))
         },
         controlOwners: { ambiguous: false, values: [{ peerId: 'child', senderId: 'origin' }] },
@@ -108,11 +111,18 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
                 fromPeerId: 'relay',
                 toPeerId: 'parent',
                 logicalRecipientPeerId: 'leaf',
+                originPeerId: 'origin',
+                proof: null,
                 reason: 'gap',
                 observedAtEpochMs: NOW_MS,
                 ...GAP_ORDERING
             }
         }]);
+    });
+
+    it('refuses a NACK that names another origin', () => {
+        expect(validateALInboundNackAdmission(computeArrival({ reason: 'gap', originPeerId: 'other' })))
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK names another origin than the message it answers' }]);
     });
 
     it('refuses a gap NACK from a child the row does not wait on', () => {
@@ -166,6 +176,8 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
                 fromPeerId: 'relay',
                 toPeerId: 'parent',
                 logicalRecipientPeerId: 'leaf',
+                originPeerId: 'origin',
+                proof: null,
                 reason: 'not-subscribed',
                 observedAtEpochMs: NOW_MS
             }

@@ -430,7 +430,8 @@ describe('inbound control admission', () => {
                 logicalRecipientPeerId,
                 carrier: 'rtc',
                 status,
-                observedAtEpochMs: nowMs
+                observedAtEpochMs: nowMs,
+                proof: null
             }))
         );
         expect(new Set(candidate.upwardEffects.map((effect) => effect.effectId)).size).toBe(2);
@@ -745,6 +746,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
                 msgId: message.id.msgId,
                 fromPeerId: 'receiver',
                 toPeerId: 'self',
+                originPeerId: message.id.senderId,
                 logicalRecipientPeerId,
                 reason,
                 observedAtEpochMs: 1
@@ -923,6 +925,7 @@ describe('a not-subscribed NACK at a relay (PL9)', () => {
                 msgId: message.id.msgId,
                 fromPeerId: 'receiver',
                 toPeerId: 'self',
+                originPeerId: message.id.senderId,
                 logicalRecipientPeerId: 'below',
                 reason: 'gap',
                 observedAtEpochMs: 1,

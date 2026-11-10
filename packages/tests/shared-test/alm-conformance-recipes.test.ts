@@ -865,7 +865,7 @@ describe('alm-conformance recipe family', () => {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v2","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
+                contains: '"typeId":"al.control.nack.v3","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
                     '"outcome":"committed"'
             },
             timeoutMs: 27_000
@@ -1083,7 +1083,7 @@ describe('alm-conformance recipe family', () => {
                 const arrival = bodyOf(scenario.recipientB).find((command) => command.kind === 'wait');
                 const control = bodyOf(scenario.recipientB).find((command) => command.kind === 'messages.control');
                 const refusal = scenario.sender.commands.find((command) =>
-                    command.kind === 'wait' && command.match.contains?.includes('al.control.ack.v1') === true
+                    command.kind === 'wait' && command.match.contains?.includes('al.control.ack.v2') === true
                 );
                 return {
                     arrival: arrival?.kind === 'wait' ? JSON.stringify(arrival.match.equals) : undefined,
@@ -1120,7 +1120,7 @@ describe('alm-conformance recipe family', () => {
                     kind: 'messages.control',
                     commandId: 'alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-unknown-ack-version-1',
                     carrier: 'rtc',
-                    typeId: 'al.control.ack.v1',
+                    typeId: 'al.control.ack.v2',
                     msgId: `alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-${arrival}.data.msgId}`,
                     ackedMsgId: `${arrival}.data.msgId}`,
                     toPeerId: `${arrival}.senderId}`
@@ -1139,7 +1139,7 @@ describe('alm-conformance recipe family', () => {
                     topic: INBOUND_DIAGNOSTICS_TOPIC,
                     contains: '"msgId":"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-' +
                         '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-sender-send-1.value.msgId}",' +
-                        '"typeId":"al.control.ack.v1","carrier":"rtc","outcome":"rejected","reason":"unsupported"'
+                        '"typeId":"al.control.ack.v2","carrier":"rtc","outcome":"rejected","reason":"unsupported"'
                 })
             }));
         });

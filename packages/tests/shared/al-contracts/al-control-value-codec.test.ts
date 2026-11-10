@@ -8,6 +8,7 @@ import {
 } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     decodeALControlMessage,
+    newALAckControlMessage,
     newALNackControlMessage,
     newALReceiptControlMessage,
     type ALNackPayload,
@@ -71,17 +72,6 @@ describe('AL control value codec', () => {
         expect(decodeALControlMessage(message).right).toEqual({ type: 'nack', payload: beforeEntryNack });
     });
 
-    // An older peer's NACK names no logical recipient: it speaks for its sender.
-    it('reads a NACK that names no logical recipient as speaking for its sender', () => {
-        const { logicalRecipientPeerId: _omitted, ...withoutRecipient } = notSubscribedNack;
-        const message = withResource(newALNackControlMessage(controlId, notSubscribedNack), withoutRecipient);
-
-        expect(decodeALControlMessage(message).right).toEqual({
-            type: 'nack',
-            payload: { ...notSubscribedNack, logicalRecipientPeerId: 'relay' }
-        });
-    });
-
     it('builds no NACK that names no logical recipient', () => {
         const { logicalRecipientPeerId: _omitted, ...withoutRecipient } = notSubscribedNack;
 
@@ -103,15 +93,45 @@ describe('AL control value codec', () => {
         expect(decodeALControlMessage(message).right).toEqual({ type: 'receipt', payload: receipt });
     });
 
-    // An older server's receipt lists nobody outside the audience.
-    it('reads a receipt that omits its outside-audience list as holding nobody outside', () => {
-        const { outsideAudienceRecipientPeerIds: _omitted, ...withoutOutside } = receipt;
-        const message = withResource(newALReceiptControlMessage(controlId, receipt), withoutOutside);
+    it('refuses an ACK without its proof slot and a NACK without its origin as malformed', () => {
+        const ack = toTestALAckPayload({ ackedMsgId: 'msg-1', fromPeerId: 'relay', toPeerId: 'origin' });
+        const { proof: _proof, ...ackWithoutProof } = ack;
+        const { originPeerId: _origin, ...nackWithoutOrigin } = notSubscribedNack;
 
-        expect(decodeALControlMessage(message).right).toEqual({
-            type: 'receipt',
-            payload: { ...receipt, outsideAudienceRecipientPeerIds: [] }
-        });
+        expect(() => decodeALAckPayload(ackWithoutProof)).toThrow('Control value is missing mandatory fields');
+        expect(() => decodeALNackPayload(nackWithoutOrigin)).toThrow('Control value is missing mandatory fields');
+        expect(decodeALControlMessage(withResource(newALAckControlMessage(controlId, ack), ackWithoutProof)).left)
+            .toEqual({ code: 'malformed', message: 'Control value is missing mandatory fields' });
+        expect(
+            decodeALControlMessage(
+                withResource(newALNackControlMessage(controlId, notSubscribedNack), nackWithoutOrigin)
+            ).left
+        ).toEqual({ code: 'malformed', message: 'Control value is missing mandatory fields' });
+    });
+
+    it('refuses a proof with an unknown field or another algorithm', () => {
+        const ack = toTestALAckPayload({ ackedMsgId: 'msg-1', fromPeerId: 'relay', toPeerId: 'origin' });
+        const proof = { alg: 'ES256', keyId: 'key-1', signature: 'c2lnbmF0dXJl' };
+
+        expect(() => decodeALAckPayload({ ...ack, proof: { ...proof, extra: true } }))
+            .toThrow('Control proof is invalid');
+        expect(() => decodeALAckPayload({ ...ack, proof: { ...proof, alg: 'RS256' } }))
+            .toThrow('Control proof is invalid');
+        expect(() => decodeALNackPayload({ ...notSubscribedNack, proof: { ...proof, keyId: '' } }))
+            .toThrow('Control proof is invalid');
+        expect(() => decodeALNackPayload({ ...notSubscribedNack, proof: 'signed' }))
+            .toThrow('Control proof is invalid');
+    });
+
+    it('round-trips a NACK that carries its origin and a proof', () => {
+        const signed: ALNackPayload = {
+            ...notSubscribedNack,
+            originPeerId: 'origin',
+            proof: { alg: 'ES256', keyId: 'key-1', signature: 'c2lnbmF0dXJl' }
+        };
+
+        expect(decodeALControlMessage(newALNackControlMessage(controlId, signed)).right)
+            .toEqual({ type: 'nack', payload: signed });
     });
 
     it('refuses a receipt whose outside-audience list names an empty recipient as malformed', () => {

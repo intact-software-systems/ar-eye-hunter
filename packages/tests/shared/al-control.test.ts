@@ -80,14 +80,25 @@ const controlId: ALMessage['id'] = {
 };
 
 describe('AL control message codec', () => {
-    it('names the v2 acknowledgement, NACK and repair and the v1 receipt as the four supported control ids', () => {
-        expect(AL_CONTROL_ACK_TYPE_ID).toBe('al.control.ack.v2');
-        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v2');
+    it('names the v3 acknowledgement and NACK, the v2 repair and the v1 receipt as the four supported control ids', () => {
+        expect(AL_CONTROL_ACK_TYPE_ID).toBe('al.control.ack.v3');
+        expect(AL_CONTROL_NACK_TYPE_ID).toBe('al.control.nack.v3');
         expect(AL_CONTROL_REPAIR_TYPE_ID).toBe('al.control.repair.v2');
         expect(AL_CONTROL_RECEIPT_TYPE_ID).toBe('al.control.receipt.v1');
-        expect(['al.control.ack.v2', 'al.control.nack.v2', 'al.control.repair.v2', 'al.control.receipt.v1']
+        expect(['al.control.ack.v3', 'al.control.nack.v3', 'al.control.repair.v2', 'al.control.receipt.v1']
             .every(isALControlTypeId)).toBe(true);
-        expect(['al.control.ack.v1', 'al.control.nack.v1', 'al.control.repair.v1'].some(isALControlTypeId)).toBe(false);
+        expect(['al.control.ack.v1', 'al.control.nack.v1', 'al.control.repair.v1', 'al.control.ack.v2', 'al.control.nack.v2']
+            .some(isALControlTypeId)).toBe(false);
+    });
+
+    it('refuses an al.control.ack.v2 and an al.control.nack.v2 control unsupported', () => {
+        const ackV3 = newALAckControlMessage(controlId, ack);
+        const nackV3 = newALNackControlMessage(controlId, nack);
+        const ackV2 = { ...ackV3, payload: { ...ackV3.payload, typeId: 'al.control.ack.v2' } };
+        const nackV2 = { ...nackV3, payload: { ...nackV3.payload, typeId: 'al.control.nack.v2' } };
+
+        expect(decodeALControlMessage(ackV2).left?.code).toBe('unsupported');
+        expect(decodeALControlMessage(nackV2).left?.code).toBe('unsupported');
     });
 
     it.each([
@@ -99,16 +110,21 @@ describe('AL control message codec', () => {
         expect(decodeALControlMessage(v1).left).toMatchObject({ code: 'unsupported' });
     });
 
-    it.each(['originPeerId', 'logicalRecipientPeerId'] as const)('requires a v2 acknowledgement to name its %s', (field) => {
+    it.each(['originPeerId', 'logicalRecipientPeerId', 'proof'] as const)('requires a v3 acknowledgement to name its %s', (field) => {
         const { [field]: _omitted, ...partial } = ack;
         expect(() => parseALControlMessage(controlMessageWithResource(AL_CONTROL_ACK_TYPE_ID, JSON.stringify(partial))))
             .toThrow(TypeError);
     });
 
-    it('round-trips a v2 acknowledgement with its origin and logical recipient', () => {
+    it('round-trips a v3 acknowledgement with a null proof, and one that carries a proof', () => {
         const message = newALAckControlMessage(controlId, ack);
-        expect(message.payload.typeId).toBe('al.control.ack.v2');
+        const signed: ALAckPayload = { ...ack, proof: { alg: 'ES256', keyId: 'key-1', signature: 'c2lnbmF0dXJl' } };
+
+        expect(message.payload.typeId).toBe('al.control.ack.v3');
+        expect(ack.proof).toBeNull();
         expect(decodeALControlMessage(message).right).toEqual({ type: 'ack', payload: ack });
+        expect(decodeALControlMessage(newALAckControlMessage(controlId, signed)).right)
+            .toEqual({ type: 'ack', payload: signed });
     });
 
     it('round-trips a receipt addressed and routed to its origin', () => {

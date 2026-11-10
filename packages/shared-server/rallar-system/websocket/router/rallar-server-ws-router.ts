@@ -556,12 +556,14 @@ export class RallarServerWsRouter {
                     fromPeerId: this.service.name,
                     toPeerId: message.id.senderId,
                     logicalRecipientPeerId: this.service.name,
+                    originPeerId: message.id.senderId,
                     msgId: message.id.msgId,
                     reason: rejection.reason,
                     observedAtEpochMs,
                     ...(rejection.serverSnapshotVersion === undefined
                         ? {}
-                        : { serverSnapshotVersion: rejection.serverSnapshotVersion })
+                        : { serverSnapshotVersion: rejection.serverSnapshotVersion }),
+                    proof: null
                 }
             );
             if (this.service.sendToTargets(nack) === 0) {

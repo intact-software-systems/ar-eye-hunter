@@ -21,7 +21,7 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
-import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
+import { ALAdmissionCorruptionError, type ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -493,6 +493,28 @@ describe('outbound control admission identity', () => {
         expect(await control.admit(controlMessage('ack', 'peer-255'), 'peer')).toEqual({ kind: 'committed' });
         expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
         expect(decodeALAdmissionControlValue(state.data.get(key)?.value, 'message', 'acks').values).toHaveLength(256);
+    });
+
+    it('answers a control whose stored history the previous build wrote with ALAdmissionCorruptionError and writes nothing', async () => {
+        const { admissionStore, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
+        const { proof: _proof, ...previousAck } = toTestALAckPayload({
+            ackedMsgId: 'message',
+            originPeerId: 'sender',
+            logicalRecipientPeerId: 'receiver',
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            status: 'accepted',
+            carrier: 'ws'
+        });
+        const key = 'outbound-control:control:acks:message';
+        const row = { key, value: { kind: 'acks', values: [previousAck] }, expireAtTimestamp: Date.now() + 60_000 };
+        state.data.set(key, row);
+        const baseline = [...state.data];
+
+        await expect(control.admit(controlMessage('ack'), 'peer')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(state.data.get(key)).toEqual(row);
+        expect([...state.data]).toEqual(baseline);
     });
 
     it('retains admit-control work when message ownership changes after the control read', async () => {

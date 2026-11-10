@@ -42,7 +42,7 @@ describe('the control-admission event of a NACK', () => {
         );
 
         expect(JSON.stringify(writeAdmitted(nack))).toContain(
-            '"typeId":"al.control.nack.v2","targetMsgId":"sent-3","outcome":"committed","reason":"none",' +
+            '"typeId":"al.control.nack.v3","targetMsgId":"sent-3","outcome":"committed","reason":"none",' +
                 '"nackReason":"gap","nackOrderingKey":"chat:a:0","traceId":'
         );
     });

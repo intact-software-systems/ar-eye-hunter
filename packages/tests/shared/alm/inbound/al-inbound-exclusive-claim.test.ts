@@ -169,8 +169,10 @@ describe.each(['memory', 'pglite'] as const)('the exclusive claim in the inbound
                 fromPeerId: 'server-1',
                 toPeerId: 'claimant-b',
                 logicalRecipientPeerId: 'server-1',
+                originPeerId: 'claimant-b',
                 reason: 'held-by-other',
-                observedAtEpochMs: STARTED_AT_MS
+                observedAtEpochMs: STARTED_AT_MS,
+                proof: null
             }
         }]);
     });

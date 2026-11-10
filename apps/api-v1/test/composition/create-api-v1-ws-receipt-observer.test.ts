@@ -110,7 +110,8 @@ for (const enabled of [false, true]) {
                     logicalRecipientPeerId: 'recipient',
                     carrier: 'ws',
                     status: 'delivered',
-                    observedAtEpochMs: Date.now()
+                    observedAtEpochMs: Date.now(),
+                    proof: null
                 });
                 const result = await server.runtime.wsQBoxServerService.acceptIncomingMessage(ack, 'missing-connection');
                 assert.equal(result.left?.code, 'unauthorized');
