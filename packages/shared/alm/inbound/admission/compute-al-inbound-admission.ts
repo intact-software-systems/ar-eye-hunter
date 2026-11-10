@@ -294,7 +294,7 @@ function computeRelayAcknowledgements(
         localReady: !plan.localDelivery.deferred,
         expireAtTimestamp: ack.expireAtTimestamp,
         carrier: ack.carrier,
-        upwardAudiencePeerIds: resolveALUpwardAudiencePeerIds(plan.ack.algo, read.msg.targets)
+        upwardAudiencePeerIds: resolveALUpwardAudiencePeerIds(read.msg, plan.ack.algo)
     });
     const changes = toAckTransitionChanges(transition, ack, read);
     if (!transition.pending) {

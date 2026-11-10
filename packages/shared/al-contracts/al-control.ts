@@ -79,7 +79,7 @@ export interface ALNackPayload {
     readonly msgId: string;
     readonly fromPeerId: string;
     readonly toPeerId: string;
-    /** The recipient this NACK speaks for: its sender's own session, or a recipient below a relay that re-sends it. */
+    /** The recipient this NACK speaks for; a relay that forwards it rewrites only `fromPeerId` and `toPeerId`. */
     readonly logicalRecipientPeerId: string;
     readonly originPeerId: string;
     readonly reason: ALNackReason;

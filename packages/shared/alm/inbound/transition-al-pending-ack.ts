@@ -1,4 +1,4 @@
-import type { ALTargets } from '../../al-contracts/al-contract.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
 import {
     isALHopCompletionAck,
@@ -8,11 +8,10 @@ import {
     type ALNackPayload,
     type ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
-import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
-import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
+import { resolveALCountedRecipientPeerIds } from '../delivery/resolve-al-counted-recipient-peer-ids.ts';
 
 export interface TrackALPendingAckSnapshotInput {
     readonly msgId: string;
@@ -47,7 +46,7 @@ export interface ALPendingAckTransition {
     readonly completed: ALCompletedPendingAck | undefined;
     /** The recipients this transition relays upward, one ACK each (D40). */
     readonly relayedRecipientPeerIds: readonly string[];
-    /** The recipients this transition records outside the audience, one `not-subscribed` NACK each upward. */
+    /** The recipients this transition records outside the audience; the relay forwards the hop-end that implied it. */
     readonly relayedOutsidePeerIds: readonly string[];
 }
 
@@ -107,14 +106,12 @@ export function markALPendingAckLocalReadySnapshot(
 }
 
 /**
- * The audience whose child ACKs a relay passes upward: the frozen audience of a `receiver` or `leader` send, since
- * its origin counts nobody else; `undefined`, relaying every child ACK, for any other send.
+ * The audience whose child ACKs a relay passes upward: the recipients a `receiver` or `leader` multicast counts, since
+ * its origin counts nobody else; `undefined`, relaying every child ACK, for any other send. A unicast is planned
+ * direct, so no relay keeps a row for it.
  */
-export function resolveALUpwardAudiencePeerIds(
-    algo: ALAckAlgo,
-    targets: ALTargets | undefined
-): readonly string[] | undefined {
-    return isALLogicalReceiptMode(algo) ? resolveALFrozenMulticastAudience(targets)?.recipientPeerIds : undefined;
+export function resolveALUpwardAudiencePeerIds(msg: ALMessage, algo: ALAckAlgo): readonly string[] | undefined {
+    return msg.targets?.mode === 'unicast' ? undefined : resolveALCountedRecipientPeerIds(msg, algo);
 }
 
 export function isALPendingAckUpwardRecipient(pending: ALPendingAckSnapshot, recipientPeerId: string): boolean {
@@ -124,9 +121,10 @@ export function isALPendingAckUpwardRecipient(pending: ALPendingAckSnapshot, rec
 /**
  * An admitted child ACK is relayed upward when it confirms a recipient the origin counts and no earlier child ACK
  * named it already: a recipient relay's terminal ACK follows its `accepted` one. Only the completion ACK of the child
- * hop itself completes it, a not-subscribed one's included, which is never relayed. That one also implies its
- * `not-subscribed` NACK, so a lost NACK still reaches the origin, as a delivering relay's terminal ACK still confirms
- * it when its `accepted` one was lost (R-S2c-ii-14).
+ * hop itself completes it, a not-subscribed one's included. A hop-end that confirms nobody for a recipient the row
+ * still owes implies that recipient's `not-subscribed` NACK: the row records it outside and the relay forwards the
+ * hop-end as it came, so a lost NACK still reaches the origin, as a delivering relay's terminal ACK still confirms it
+ * when its `accepted` one was lost (R-S2c-ii-14).
  */
 export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
