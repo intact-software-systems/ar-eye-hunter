@@ -463,7 +463,8 @@ function toServerAckFrame(command: ALMessage): string {
             logicalRecipientPeerId: 'default-qbox-server',
             carrier: 'ws',
             status: 'delivered',
-            observedAtEpochMs: Date.now()
+            observedAtEpochMs: Date.now(),
+            proof: null
         }
     ));
 }

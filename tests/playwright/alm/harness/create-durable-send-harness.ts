@@ -271,7 +271,8 @@ function createServerAcknowledgement(sessionId: string, msg: ALMessage): ALMessa
             logicalRecipientPeerId: HARNESS_SERVER_PEER_ID,
             carrier: 'ws',
             status: 'delivered',
-            observedAtEpochMs
+            observedAtEpochMs,
+            proof: null
         }
     );
 }
