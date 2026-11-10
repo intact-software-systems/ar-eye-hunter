@@ -92,8 +92,8 @@ describe('exact RTC ACK boundary observations', () => {
             const direct = messages[1]!;
             const hops = [
                 { subject: relayed, traceId: 'trace-03-shot', fromPeerId: 'director', toPeerId: '02', status: 'delivered' },
-                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '02', toPeerId: '04', status: 'forwarded' },
-                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '04', toPeerId: '03', status: 'forwarded' },
+                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '02', toPeerId: '04', status: 'delivered' },
+                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '04', toPeerId: '03', status: 'delivered' },
                 { subject: direct, traceId: 'trace-02-shot', fromPeerId: 'director', toPeerId: '02', status: 'delivered' }
             ] as const;
             // All business, origin and frame observers exist before the first admission.

@@ -176,7 +176,7 @@ describe('the RTC leg of a group-leader room send', () => {
                 for (const [relay, parent] of [['02', '04'], ['04', '03']]) {
                     expect(bySession.get(relay)!.sent.map(parseALControlMessage)).toContainEqual({
                         type: 'ack',
-                        payload: expect.objectContaining({ ...leaderAck, fromPeerId: relay, toPeerId: parent, status: 'forwarded' })
+                        payload: expect.objectContaining({ ...leaderAck, fromPeerId: relay, toPeerId: parent, status: 'delivered' })
                     });
                 }
             }

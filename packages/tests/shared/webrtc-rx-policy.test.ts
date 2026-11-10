@@ -375,7 +375,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         // A member that delivered confirms itself at once, before any child ACK it relays.
         await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([
             ['self', 'accepted'],
-            ['peer-2', 'forwarded']
+            ['peer-2', 'delivered']
         ]);
 
         await fixture.receive(
@@ -403,7 +403,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             .filter((control) => control?.type === 'ack');
         // Each is its own durable work row, so they leave in any order.
         expect(upstream.map((control) => control?.payload)).toEqual(
-            expect.arrayContaining([['self', 'accepted'], ['peer-2', 'forwarded'], ['peer-3', 'forwarded'], ['self', 'subtree-complete']].map((
+            expect.arrayContaining([['self', 'accepted'], ['peer-2', 'delivered'], ['peer-3', 'delivered'], ['self', 'subtree-complete']].map((
                 [recipient, status]
             ) => expect.objectContaining({
                 status,
@@ -479,8 +479,8 @@ describe('a retried copy of a message this peer already admitted', () => {
         expect(readForwardedCopies(await fixture.outboundTo('peer-2'), message)).toBe(1);
         // Its own accepted ACK and the one it relayed for `peer-2` may be the ones the origin lost, so both go upward again.
         await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'accepted']
         ]);
@@ -513,10 +513,10 @@ describe('a retried copy of a message this peer already admitted', () => {
 
         // Every ACK it relayed goes upward again beside its terminal ACK: any of them may be the one the origin lost.
         await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
-            ['peer-2', 'forwarded'],
-            ['peer-3', 'forwarded'],
-            ['peer-3', 'forwarded'],
+            ['peer-2', 'delivered'],
+            ['peer-2', 'delivered'],
+            ['peer-3', 'delivered'],
+            ['peer-3', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete'],
             ['self', 'subtree-complete']

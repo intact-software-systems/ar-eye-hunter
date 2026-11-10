@@ -34,6 +34,7 @@ import {
 import {
     computeALInboundNackAdmission,
     toALInboundNackCommitBundle,
+    type ALInboundNackAdmissionCandidate,
     type ALInboundNackAdmissionRead
 } from './compute-al-inbound-nack-admission.ts';
 import { validateALInboundControlAdmission } from './validate-al-inbound-control-admission.ts';
@@ -191,6 +192,7 @@ export class ALInboundControlAdmission {
             owner: surface.owner,
             pending: surface.pendingAck,
             acks: surface.acks,
+            nacks: surface.nacks,
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
@@ -201,7 +203,7 @@ export class ALInboundControlAdmission {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         return await this.commitControlAdmission(arrival, {
-            bundle: toALInboundNackCommitBundle(candidate),
+            bundle: toALInboundNackCommitBundle(this.toStoreCandidate(candidate)),
             acceptance: candidate.acceptance,
             nowMs
         }, evidence);
@@ -231,11 +233,13 @@ export class ALInboundControlAdmission {
     }
 
     /**
-     * The volatile pair keeps a message's acknowledgement history no longer than its deadline plus the receipt grace
-     * (D74): the control-owner index that admits an acknowledgement expires at the deadline, and a data copy past it
-     * is refused expired. A relay row of a message that named no deadline carries none, so its history keeps the TTL.
+     * The volatile pair keeps a message's ACK and NACK histories no longer than its deadline plus the receipt grace
+     * (D74): the control-owner index that admits a control expires at the deadline, and a data copy past it is
+     * refused expired. A relay row of a message that named no deadline carries none, so its history keeps the TTL.
      */
-    private toStoreCandidate(candidate: ALInboundControlAdmissionCandidate): ALInboundControlAdmissionCandidate {
+    private toStoreCandidate<C extends ALInboundControlAdmissionCandidate | ALInboundNackAdmissionCandidate>(
+        candidate: C
+    ): C {
         return {
             ...candidate,
             controlExpireAtTimestamp: computeALVolatileControlRowExpiryMs(
@@ -277,6 +281,7 @@ export class ALInboundControlAdmission {
             owner: surface.owner,
             pending: surface.pendingAck,
             acks: surface.acks,
+            nacks: surface.nacks,
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId

@@ -663,7 +663,7 @@ describe('inbound durable effect worker lifecycle', () => {
             {}
         );
         // Two peers owe this obligation, so one peer's acknowledgement completes none of it; the relay still
-        // passes the recipient it names upward at once, and that row is work the commit announces.
+        // forwards the recipient's own ACK upward at once, and that row is work the commit announces.
         await seedTrackedAcknowledgement(resources.admissionStore, tracked, ['sender', 'second-peer']);
         const ack = newALAckControlMessage(
             { v: 4, msgId: 'partial-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
@@ -689,7 +689,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 const parsed = parseALControlMessage(control);
                 return parsed?.type === 'ack' ? [parsed.payload.logicalRecipientPeerId, parsed.payload.status] : [];
             }).toSorted()
-        ).toEqual([['receiver', 'accepted'], ['sender', 'forwarded']]);
+        ).toEqual([['receiver', 'accepted'], ['sender', 'accepted']]);
     });
 
     it('leaves retained work unclaimed when the conflicted admission it retained had already expired', async () => {

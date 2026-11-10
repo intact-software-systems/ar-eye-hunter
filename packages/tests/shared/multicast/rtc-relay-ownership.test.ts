@@ -198,7 +198,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
             await chain.c.receive(control, 'd');
         }
         const answer = await chain.c.readSent('a');
-        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'accepted'], ['c', 'subtree-complete'], ['d', 'forwarded']]);
+        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'accepted'], ['c', 'subtree-complete'], ['d', 'delivered']]);
         for (const ack of answer) {
             await chain.origin.manager.acceptControlMessage(ack);
         }
@@ -265,7 +265,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
             await c.receive(control, 'd');
         }
         expect(readAckTuples((await c.readSent('s')).slice(2)).toSorted())
-            .toEqual([['c', 'subtree-complete'], ['d', 'forwarded']]);
+            .toEqual([['c', 'subtree-complete'], ['d', 'delivered']]);
         expect(readAckTuples(await c.readSent('r'))).toEqual([['c', 'accepted']]);
     });
 });

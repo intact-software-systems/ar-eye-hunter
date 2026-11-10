@@ -26,6 +26,7 @@ function toBundle(): ALInboundCommitBundle {
         supersedence: {},
         pendingAck: undefined,
         acks: [],
+        nacks: [],
         controlOwners: undefined
     };
     return {

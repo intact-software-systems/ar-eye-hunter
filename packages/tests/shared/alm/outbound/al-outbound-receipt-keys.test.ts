@@ -221,7 +221,7 @@ function toPendingSnapshot(obligation: ReceiptTestObligation, observedAtMs: numb
     };
 }
 
-/** The relay re-originates one ACK per logical recipient it confirmed, each from itself. */
+/** The relay forwards each recipient's own ACK, readdressed from itself. */
 function createRelayAck(logicalRecipientPeerId: string, controlMsgId: string, relayPeerId: string = RELAY): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: controlMsgId, senderId: relayPeerId, ts: Date.now(), traceId: 'trace-al-outbound-receipt-keys' },

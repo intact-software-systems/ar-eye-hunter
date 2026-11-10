@@ -468,7 +468,7 @@ describe('ALInboundMessageRuntime', () => {
 
         expect(releaseConflictObserved).toBe(true);
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
@@ -541,7 +541,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         const ackPayloads = readAckPayloads(controlMessages);
         // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
@@ -590,7 +590,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(3);
         expect(readAckPayloads(controlMessages)).toEqual(
             expect.arrayContaining(
-                [['peer-2', 'forwarded'], ['self', 'accepted'], ['self', 'subtree-complete']].map(([recipient, status]) =>
+                [['peer-2', 'delivered'], ['self', 'accepted'], ['self', 'subtree-complete']].map(([recipient, status]) =>
                     expect.objectContaining({
                         ackedMsgId: msg.id.msgId,
                         toPeerId: 'peer-1',
@@ -941,7 +941,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         // The relay's own ACK, the child ACK relayed as it arrived, and the terminal ACK that ends its subtree.
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);

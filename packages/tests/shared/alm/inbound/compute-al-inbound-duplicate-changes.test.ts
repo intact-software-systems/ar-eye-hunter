@@ -1,9 +1,16 @@
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
-import { decodeALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
+import {
+    decodeALControlMessage,
+    type ALAckPayload,
+    type ALAckStatus,
+    type ALNackPayload,
+    type ALParsedControlMessage
+} from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     computeALInboundAdmission,
     computeALInboundBufferedRelease
@@ -18,6 +25,14 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPlanningObservations
 } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
+import {
+    computeALInboundControlAdmission,
+    toALInboundControlCommitBundle
+} from '@shared/alm/inbound/control/compute-al-inbound-control-admission.ts';
+import {
+    computeALInboundNackAdmission,
+    toALInboundNackCommitBundle
+} from '@shared/alm/inbound/control/compute-al-inbound-nack-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { toRtcPublicationHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -27,6 +42,8 @@ import {
     it
 } from 'vitest';
 
+import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import { createAvailablePublicationCryptoFixture } from '../../signature/publication-crypto-fixtures.ts';
 import {
     createInboundTestMessage,
     INBOUND_TEST_EFFECT_PREPARATION,
@@ -379,5 +396,97 @@ describe('a relay answering the retried copy its parent resends', () => {
 
         expect(toRepeatedAcks(bundle).map((ack) => ack.status)).toEqual(accepted);
         expect(bundle.durableEffects.map((effect) => effect.payload.kind)).toContain('forward-message');
+    });
+});
+
+/** A frozen-audience room message this relay forwards to both downstream peers, itself a recipient too. */
+function createFrozenRelayedMessage(msgId: string): ALMessage {
+    return {
+        ...createRelayedMessage(msgId),
+        targets: {
+            mode: 'multicast',
+            groupRef: ROOM,
+            recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID, ...DOWNSTREAM_PEER_IDS],
+            snapshotVersion: 1
+        }
+    };
+}
+
+/** Admits a child's control at the relay through the pure control admission, as the control runtime does. */
+async function commitChildControl(
+    store: ALInboundAdmissionStore,
+    control: Readonly<{ type: 'ack'; payload: ALAckPayload; }> | Readonly<{ type: 'nack'; payload: ALNackPayload; }>
+): Promise<void> {
+    const subject = control.type === 'ack'
+        ? { msgId: control.payload.ackedMsgId, fromPeerId: control.payload.fromPeerId }
+        : { msgId: control.payload.msgId, fromPeerId: control.payload.fromPeerId };
+    const surface = await store.readControlDecisionSurface(subject);
+    if (surface?.messageOwner === undefined) {
+        throw new Error('The relay row must own the child control');
+    }
+    const read = {
+        namespace: store.namespace,
+        controlOwners: surface.controlOwners,
+        owner: surface.messageOwner,
+        pending: surface.pendingAck,
+        acks: surface.acks,
+        nacks: surface.nacks,
+        nowMs: Date.now(),
+        controlMsgId: `child-${subject.fromPeerId}`,
+        traceId: 'trace-child'
+    };
+    const retention = normalizeALRuntimeStoreRetention();
+    const bundle = control.type === 'ack'
+        ? toALInboundControlCommitBundle(computeALInboundControlAdmission({ ...read, ack: control.payload }, retention))
+        : toALInboundNackCommitBundle(
+            computeALInboundNackAdmission({ ...read, nack: { ...control.payload, reason: 'before-entry' } }, retention)
+        );
+    expect(await store.commitBundle(bundle)).toBe('committed');
+}
+
+function toSentControls(bundle: ALInboundCommitBundle): readonly (ALParsedControlMessage | undefined)[] {
+    return bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [decodeALControlMessage(effect.payload.msg).right] : []);
+}
+
+describe('a relay re-forwarding what its children signed on a retried copy', () => {
+    it('re-forwards the stored ACK and the stored NACK on a retried copy, the NACK with the child\'s own reason', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenRelayedMessage('re-forwarded');
+        const [delivering, entering] = DOWNSTREAM_PEER_IDS;
+        const first = await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'rtc' });
+        expect(await admissionStore.commitBundle(first)).toBe('committed');
+        const childAck = await signTestALReceiptControl(await createAvailablePublicationCryptoFixture(), {
+            type: 'ack',
+            payload: toTestALAckPayload({
+                ackedMsgId: 're-forwarded',
+                fromPeerId: delivering,
+                toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                originPeerId: INBOUND_TEST_SENDER_PEER_ID,
+                status: 'delivered',
+                observedAtEpochMs: 1_111
+            })
+        });
+        const childNack = {
+            type: 'nack',
+            payload: toTestALNackPayload({
+                msgId: 're-forwarded',
+                fromPeerId: entering,
+                toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                originPeerId: INBOUND_TEST_SENDER_PEER_ID,
+                reason: 'before-entry',
+                observedAtEpochMs: 2_222
+            })
+        } as const;
+        await commitChildControl(admissionStore, childAck);
+        await commitChildControl(admissionStore, childNack);
+
+        const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: RELAY_PEER, carrier: 'rtc' });
+        const hop = { fromPeerId: INBOUND_TEST_SELF_PEER_ID, toPeerId: INBOUND_TEST_SENDER_PEER_ID };
+
+        expect(toSentControls(retried)).toEqual(expect.arrayContaining([
+            { type: 'ack', payload: { ...childAck.payload, ...hop, carrier: 'rtc' } },
+            { type: 'nack', payload: { ...childNack.payload, ...hop } }
+        ]));
+        expect(toSentControls(retried).filter((control) => control?.type === 'nack')).toHaveLength(1);
     });
 });

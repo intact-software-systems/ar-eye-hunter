@@ -5,18 +5,15 @@ import {
 } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
+import type { ALReceiptControl } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
-import {
-    toALInboundAckEffect,
-    toALInboundRelayedOutsideAudienceEffect,
-    type ALInboundAckRecipient,
-    type ALInboundEffectIntent
-} from '../al-inbound-effect-intent.ts';
+import { toALInboundAckEffect, type ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
+import { toALInboundEffectId } from '../al-inbound-work-entry.ts';
 import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
 import { isALInboundNotSubscribedPlan } from './al-inbound-not-subscribed-plan.ts';
 
@@ -33,7 +30,6 @@ export interface ComputeALInboundDuplicateChangesInput {
 
 interface ALInboundRepeatedAck {
     readonly toPeerId: string;
-    readonly logicalRecipient: ALInboundAckRecipient;
     readonly status: ALAckStatus;
 }
 
@@ -42,7 +38,7 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
 /**
  * A copy of a message this peer already admitted. It is never delivered again. A retried copy addressed to
  * this peer (D25): a peer with no relay row sends its own ACK again. A relay answers its parent in full:
- * every ACK it already relayed again, since any of them may be the one the origin lost, then its terminal
+ * every child control it already forwarded again, since any of them may be the one the origin lost, then its terminal
  * ACK when its subtree completed, or the copy onward to the child hops it still waits on. A sibling sender
  * gets the terminal ACK of this peer at once, so its own row completes whatever the visited exclusion
  * missed (R-S2c-ii-8c). The origin, or any sender once the recorded parent left, becomes the parent of
@@ -75,7 +71,7 @@ export function computeALInboundDuplicateChanges(
     }
     if (!isReparentingSender(read, pendingAck, input.recordedParentPresent)) {
         const status = pendingAck.status;
-        const toSibling = { toPeerId: read.fromPeerId, logicalRecipient: { kind: 'self' } as const, status };
+        const toSibling = { toPeerId: read.fromPeerId, status };
         return { mutations: [], effects: [toRepeatedAck(read, toSibling)] };
     }
     const reparented = { ...pendingAck, toPeerId: read.fromPeerId };
@@ -109,11 +105,7 @@ function toOwnRepeatedAck(
     toPeerId: string,
     selfPeerId: string
 ): ALInboundEffectIntent {
-    return toRepeatedAck(read, {
-        toPeerId,
-        logicalRecipient: { kind: 'self' },
-        status: toOwnAckStatus(read, selfPeerId)
-    });
+    return toRepeatedAck(read, { toPeerId, status: toOwnAckStatus(read, selfPeerId) });
 }
 
 /**
@@ -121,11 +113,7 @@ function toOwnRepeatedAck(
  * it gets the sibling answer, so its own row completes and its own delivery is still confirmed (R-S2c-ii-14).
  */
 function toFormerParentRelease(read: ALInboundMessageReadDto, pendingAck: ALPendingAckSnapshot): ALInboundEffectIntent {
-    return toRepeatedAck(read, {
-        toPeerId: pendingAck.toPeerId,
-        logicalRecipient: { kind: 'self' },
-        status: pendingAck.status
-    });
+    return toRepeatedAck(read, { toPeerId: pendingAck.toPeerId, status: pendingAck.status });
 }
 
 /**
@@ -144,50 +132,55 @@ function isReparentingSender(
 }
 
 /**
- * Every ACK and `not-subscribed` NACK the row relays upward again, then its terminal ACK once complete. While it
- * still waits, a recipient that delivered confirms itself again, since its `accepted` ACK may be the one the origin
- * lost.
+ * Every child control the row forwarded upward again, then its terminal ACK once complete. While it still waits, a
+ * recipient that delivered confirms itself again, since its `accepted` ACK may be the one the origin lost.
  */
 function toParentAnswer(
     read: ALInboundMessageReadDto,
     pendingAck: ALPendingAckSnapshot,
     selfPeerId: string
 ): readonly ALInboundEffectIntent[] {
-    const confirmed = read.acks.filter(isALRecipientConfirmationAck).map((ack) => ack.logicalRecipientPeerId);
-    const relayed = [
-        ...[...new Set(confirmed)]
-            .filter((peerId) => isALPendingAckUpwardRecipient(pendingAck, peerId))
-            .map((peerId) =>
-                toRepeatedAck(read, {
-                    toPeerId: pendingAck.toPeerId,
-                    logicalRecipient: { kind: 'relayed', peerId },
-                    status: 'forwarded'
-                })
-            ),
-        ...pendingAck.outsideAudiencePeerIds.map((peerId) => toRepeatedNotSubscribed(read, pendingAck.toPeerId, peerId))
-    ];
+    const forwarded = toStoredUpwardControls(read, pendingAck)
+        .map((control) => toRepeatedForward(read, pendingAck.toPeerId, control));
     if (isALPendingAckComplete(pendingAck)) {
-        return [
-            ...relayed,
-            toRepeatedAck(read, {
-                toPeerId: pendingAck.toPeerId,
-                logicalRecipient: { kind: 'self' },
-                status: pendingAck.status
-            })
-        ];
+        return [...forwarded, toRepeatedAck(read, { toPeerId: pendingAck.toPeerId, status: pendingAck.status })];
     }
     const owedPeerIds = toALPendingAckOwedPeerIds(pendingAck);
     return [
-        ...relayed,
+        ...forwarded,
         ...(isAcceptingRecipient(read, pendingAck, selfPeerId)
-            ? [toRepeatedAck(read, {
-                toPeerId: pendingAck.toPeerId,
-                logicalRecipient: { kind: 'self' },
-                status: 'accepted'
-            })]
+            ? [toRepeatedAck(read, { toPeerId: pendingAck.toPeerId, status: 'accepted' })]
             : []),
         ...(owedPeerIds.length === 0 ? [] : [toRetriedForward(read, owedPeerIds)])
     ];
+}
+
+/**
+ * The stored child controls the row forwarded, each as its recipient signed it: per upward recipient the first
+ * confirming ACK that names it, and per recipient recorded outside its NACK, else the hop-end that implied it.
+ */
+function toStoredUpwardControls(
+    read: ALInboundMessageReadDto,
+    pendingAck: ALPendingAckSnapshot
+): readonly ALReceiptControl[] {
+    const confirmations = read.acks.filter((ack) =>
+        isALRecipientConfirmationAck(ack) && isALPendingAckUpwardRecipient(pendingAck, ack.logicalRecipientPeerId)
+    );
+    const confirmed = confirmations.filter((ack, index) =>
+        confirmations.findIndex((prior) => prior.logicalRecipientPeerId === ack.logicalRecipientPeerId) === index
+    );
+    const outside = pendingAck.outsideAudiencePeerIds.flatMap((peerId): readonly ALReceiptControl[] => {
+        const nack = read.nacks.find((stored) => stored.logicalRecipientPeerId === peerId);
+        const hopEnd = read.acks.find((stored) =>
+            stored.logicalRecipientPeerId === peerId && stored.status === 'subtree-complete-not-subscribed'
+        );
+        return nack !== undefined
+            ? [{ type: 'nack', payload: nack }]
+            : hopEnd === undefined
+            ? []
+            : [{ type: 'ack', payload: hopEnd }];
+    });
+    return [...confirmed.map((ack): ALReceiptControl => ({ type: 'ack', payload: ack })), ...outside];
 }
 
 /**
@@ -245,16 +238,24 @@ function toOwnAckStatus(read: ALInboundMessageReadDto, selfPeerId: string): ALAc
     return read.observations.messageOwner?.deliveredLocally === false ? 'subtree-complete-not-subscribed' : 'delivered';
 }
 
-function toRepeatedNotSubscribed(
+function toRepeatedForward(
     read: ALInboundMessageReadDto,
     toPeerId: string,
-    peerId: string
+    control: ALReceiptControl
 ): ALInboundEffectIntent {
-    const nack = toALInboundRelayedOutsideAudienceEffect(
-        { msg: read.msg, plan: read.plan, carrier: toALDeliveryCarrier(read.source), fromPeerId: read.fromPeerId },
-        { toPeerId, peerId }
-    );
-    return { ...nack, effectId: toRetriedEffectId(nack.effectId, read.nowMs) };
+    const effectId = toALInboundEffectId([
+        'forward-control',
+        read.msg.id.msgId,
+        toPeerId,
+        control.type,
+        control.payload.logicalRecipientPeerId
+    ]);
+    return {
+        effectId: toRetriedEffectId(effectId, read.nowMs),
+        expireAtTimestamp: resolveALMessageExpireAtMs(read.msg, read.plan.effective),
+        carrier: toALDeliveryCarrier(read.source),
+        payload: { kind: 'forward-control', toPeerId, control }
+    };
 }
 
 function toRepeatedAck(read: ALInboundMessageReadDto, repeated: ALInboundRepeatedAck): ALInboundEffectIntent {

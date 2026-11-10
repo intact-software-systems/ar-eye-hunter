@@ -67,7 +67,7 @@ async function createOriginFixture(
     };
 }
 
-/** The relay re-originates a recipient's `not-subscribed` NACK from itself (PL9, PL16). */
+/** The relay forwards a recipient's `not-subscribed` NACK, readdressed from itself (PL9, PL16). */
 function toRelayedNack(msg: ALMessage, logicalRecipientPeerId: string, fromPeerId = 'relay'): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
@@ -102,11 +102,11 @@ interface OwnAck {
     readonly status: ALAckStatus;
 }
 
-/** A relay's `forwarded` ACK for a recipient below it, or a direct hop's own ACK naming itself. */
+/** A recipient's own ACK a relay forwards from below it, or a direct hop's own ACK naming itself. */
 function toRelayedAck(msg: ALMessage, logicalRecipientPeerId: string, own?: OwnAck): ALMessage {
     const fromPeerId = own?.fromPeerId ?? 'relay';
     return newALAckControlMessage(
-        { v: 4, msgId: `ack-${logicalRecipientPeerId}-${own?.status ?? 'forwarded'}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
+        { v: 4, msgId: `ack-${logicalRecipientPeerId}-${own?.status ?? 'delivered'}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
         toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
             fromPeerId,
@@ -114,7 +114,7 @@ function toRelayedAck(msg: ALMessage, logicalRecipientPeerId: string, own?: OwnA
             originPeerId: 'self',
             logicalRecipientPeerId,
             carrier: 'rtc',
-            status: own?.status ?? 'forwarded',
+            status: own?.status ?? 'delivered',
             observedAtEpochMs: Date.now()
         })
     );

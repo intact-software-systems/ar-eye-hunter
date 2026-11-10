@@ -45,7 +45,8 @@ export function validateALInboundCommitBundle(
         }
         if (
             mutation.kind === 'set-buffered' || mutation.kind === 'set-control-acks' ||
-            mutation.kind === 'set-control-pending' || mutation.kind === 'set-control-owners'
+            mutation.kind === 'set-control-nacks' || mutation.kind === 'set-control-pending' ||
+            mutation.kind === 'set-control-owners'
         ) {
             ownedWorkExpireAtTimestamp = Math.max(ownedWorkExpireAtTimestamp, mutation.expireAtTimestamp);
         }

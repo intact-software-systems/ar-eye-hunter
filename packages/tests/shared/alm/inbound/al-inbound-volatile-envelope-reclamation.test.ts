@@ -17,11 +17,15 @@ import {
     decodeALInboundWorkEntry,
     toALInboundWorkType
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { toALInboundControlPendingKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
+import {
+    toALInboundControlNacksKey,
+    toALInboundControlPendingKey
+} from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { toTestALNackPayload } from '../../../al-control-test-payloads.ts';
 import {
     createInboundTestAdmission,
     createInboundTestMessage,
@@ -270,6 +274,35 @@ describe('volatile inbound canonical envelope reclamation', () => {
 
         expect(backend.peek(messageKey)).toBeUndefined();
         expect(backend.peek(pendingKey)).toBeDefined();
+    });
+
+    it('knows the nacks history row', async () => {
+        const namespace = 'reclaim-nacks-history';
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
+        const message = createInboundTestMessage({ msgId: 'outside-child' });
+        const reference = toALInboundMessageReference(message);
+        const messageKey = toALInboundMessageKey(namespace, reference);
+        const nacksKey = toALInboundControlNacksKey(namespace, reference.msgId, reference.senderId);
+        const retainUntilMs = Date.now() + 60_000;
+        await backend.write(async (tx) => {
+            await tx.set(messageKey, { ...reference, msg: message, retainUntilMs }, retainUntilMs);
+            await tx.set(nacksKey, {
+                kind: 'nacks',
+                values: [toTestALNackPayload({
+                    msgId: reference.msgId,
+                    fromPeerId: 'child',
+                    toPeerId: 'relay',
+                    originPeerId: reference.senderId,
+                    reason: 'not-subscribed'
+                })]
+            }, retainUntilMs);
+        });
+
+        evictTerminalVolatileInboundMessages(backend, namespace);
+
+        expect(nacksKey).toBe(`${namespace}:control:nacks:outside-child:${encodeURIComponent(reference.senderId)}`);
+        expect(backend.peek(messageKey)).toBeUndefined();
+        expect(backend.peek(nacksKey)).toBeDefined();
     });
 
     it('fails closed before any removal on an invalid held pending fact', async () => {

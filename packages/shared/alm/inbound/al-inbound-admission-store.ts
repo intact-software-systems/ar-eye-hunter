@@ -1,5 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALAckPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALNackPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
 import type {
     ALMessageHandlingPlan,
     ALMessagePlanningObservations,
@@ -72,6 +72,7 @@ import {
     readStoredControlOwnerIndex,
     type AcksControlValue,
     type ALInboundControlSubject,
+    type NacksControlValue,
     type PendingControlValue
 } from './control/al-inbound-control-rows.ts';
 
@@ -107,6 +108,7 @@ export interface ALInboundControlDecisionSurface {
     readonly messageOwner: ALInboundMessageOwner | undefined;
     readonly pendingAck: ALPendingAckSnapshot | undefined;
     readonly acks: readonly ALAckPayload[];
+    readonly nacks: readonly ALNackPayload[];
 }
 
 export type ALInboundPlanner = (
@@ -147,6 +149,7 @@ export interface ALInboundAdmissionObservations {
     readonly supersedence: ALInboundSupersedenceReadState;
     readonly pendingAck: ALPendingAckSnapshot | undefined;
     readonly acks: readonly ALAckPayload[];
+    readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
 }
 
@@ -166,6 +169,7 @@ export interface ALInboundMessageReadDto {
     readonly supersedenceAcceptance?: ALSupersedenceAcceptance;
     readonly pendingAck?: ALPendingAckSnapshot;
     readonly acks: readonly ALAckPayload[];
+    readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly plan: ALMessageHandlingPlan;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
@@ -189,6 +193,7 @@ export interface ALInboundAdmissionRead extends ALInboundPlannerSnapshot {
     readonly observations: ALInboundAdmissionObservations;
     readonly pendingAck?: ALPendingAckSnapshot;
     readonly acks: readonly ALAckPayload[];
+    readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly durability: ALStoreDurability;
@@ -281,6 +286,13 @@ export type ALInboundAdmissionMutation =
         msgId: string;
         senderId: string;
         value: AcksControlValue;
+        expireAtTimestamp: number;
+    }>
+    | Readonly<{
+        kind: 'set-control-nacks';
+        msgId: string;
+        senderId: string;
+        value: NacksControlValue;
         expireAtTimestamp: number;
     }>
     | Readonly<{
@@ -513,7 +525,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             const ordering = await this.readOrderingState(session, toALOrderingTrackKey(msg));
             const supersedence = await this.readSupersedenceState(session, prePlan.supersedence.key, msg.id.msgId);
             const deliveryProgress = await this.readDeliveryProgress(session, ordering.trackKey);
-            const { pendingAck, acks } = await readStoredAcknowledgements({
+            const { pendingAck, acks, nacks } = await readStoredAcknowledgements({
                 database: session,
                 namespace: this.namespace,
                 msgId: msg.id.msgId,
@@ -531,6 +543,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 deliveryProgress,
                 pendingAck,
                 acks,
+                nacks,
                 controlOwners,
                 orderingTrackTtlMs: this.orderingTrackTtlMs,
                 supersedenceTrackTtlMs: this.supersedenceTrackTtlMs,
@@ -600,7 +613,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             const messageOwner = await this.readMessageOwner(session, snapshot.msg);
             const deliveryProgress = await this.readDeliveryProgress(session, trackKey);
             const supersedence = await this.readSupersedenceState(session, snapshot.plan.supersedence.key, msgId);
-            const { pendingAck, acks } = await readStoredAcknowledgements({
+            const { pendingAck, acks, nacks } = await readStoredAcknowledgements({
                 database: session,
                 namespace: this.namespace,
                 msgId,
@@ -616,6 +629,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 supersedence,
                 pendingAck,
                 acks,
+                nacks,
                 controlOwners,
                 orderingTrackTtlMs: this.orderingTrackTtlMs,
                 supersedenceTrackTtlMs: this.supersedenceTrackTtlMs,
@@ -796,7 +810,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             msgId: observed.msgId,
             senderId: observed.senderId
         });
-        const { pendingAck, acks } = await readStoredAcknowledgements({
+        const { pendingAck, acks, nacks } = await readStoredAcknowledgements({
             database: transaction,
             namespace: this.namespace,
             msgId: observed.msgId,
@@ -822,6 +836,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 messageOwner,
                 pendingAck,
                 acks,
+                nacks,
                 controlOwners,
                 supersedence,
                 dedup,
@@ -900,6 +915,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                     mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
                 );
             case 'set-control-acks':
+            case 'set-control-nacks':
             case 'set-control-pending':
             case 'set-control-owners':
                 return await applyALInboundControlMutation(tx, this.namespace, mutation);
@@ -1061,6 +1077,7 @@ interface ToALInboundAdmissionReadInput {
     readonly deliveryProgress: ALInboundAdmissionObservations['deliveryProgress'];
     readonly pendingAck: ALPendingAckSnapshot | undefined;
     readonly acks: readonly ALAckPayload[];
+    readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
@@ -1070,7 +1087,7 @@ interface ToALInboundAdmissionReadInput {
 
 function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALInboundAdmissionRead {
     const { msg, source, nowMs, prePlan, selfPeerId, orderingObserver } = observed.request;
-    const { ordering, supersedence, dedupExpiresAt, claim, pendingAck, acks, controlOwners } = observed;
+    const { ordering, supersedence, dedupExpiresAt, claim, pendingAck, acks, nacks, controlOwners } = observed;
     return {
         namespace: observed.namespace,
         msg,
@@ -1094,10 +1111,12 @@ function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALIn
             supersedence,
             pendingAck,
             acks,
+            nacks,
             controlOwners
         },
         pendingAck,
         acks,
+        nacks,
         controlOwners,
         supersedence,
         dedupExpiresAt,
@@ -1122,6 +1141,7 @@ interface ToALInboundBufferedReleaseReadDtoInput {
     readonly supersedence: ALInboundSupersedenceReadState;
     readonly pendingAck: ALPendingAckSnapshot | undefined;
     readonly acks: readonly ALAckPayload[];
+    readonly nacks: readonly ALNackPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
@@ -1132,7 +1152,7 @@ interface ToALInboundBufferedReleaseReadDtoInput {
 function toALInboundBufferedReleaseReadDto(
     observed: ToALInboundBufferedReleaseReadDtoInput
 ): ALInboundBufferedReleaseReadDto {
-    const { snapshot, messageOwner, supersedence, pendingAck, acks, controlOwners } = observed;
+    const { snapshot, messageOwner, supersedence, pendingAck, acks, nacks, controlOwners } = observed;
     return {
         kind: 'buffered-release',
         orderingTrackTtlMs: observed.orderingTrackTtlMs,
@@ -1151,6 +1171,7 @@ function toALInboundBufferedReleaseReadDto(
             supersedence,
             pendingAck,
             acks,
+            nacks,
             controlOwners
         },
         snapshot,

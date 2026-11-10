@@ -32,7 +32,7 @@ import {
 } from './rtc-relay-chain-test-support.ts';
 import { createRtcTopicSubscriptionsFixture } from './rtc-topic-subscription-reader-fixtures.ts';
 
-import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+import { toTestALNackPayload, verifyTestALReceiptControl } from '../../al-control-test-payloads.ts';
 
 interface ReceiptedPublicationInput {
     readonly resourceId: string;
@@ -60,7 +60,7 @@ describe('a receipted granted publication at a frozen recipient that is not subs
         vi.useRealTimers();
     });
 
-    it('carries a leaf\'s NACK through the relay naming the leaf, ends the leaf\'s hop there, and the origin records it outside', async () => {
+    it('forwards a leaf\'s not-subscribed answer through the relay naming the leaf, ends the leaf\'s hop there, and the origin records it outside', async () => {
         const chain = await createRelayChain(['a', 'r', 'c'], { a: PUBLISH_AND_SUBSCRIBE, r: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY });
         const relay = createChainHop(chain, { selfPeerId: 'r', neighbourPeerIds: ['a', 'c'], topicSubscriptions: ACTIVE_TOKEN });
         const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['r'] });
@@ -77,20 +77,34 @@ describe('a receipted granted publication at a frozen recipient that is not subs
             ['ack', 'c', 'subtree-complete-not-subscribed'],
             ['nack', 'c', 'not-subscribed']
         ]);
-        // The relay's own terminal ACK and the NACK it relays leave as two works, in either order.
+        // The leaf's hop-end arrives first and is forwarded as the leaf signed it; the NACK after it moves nothing.
         expect(toControlTuples(await relay.readSentControls('a')).toSorted()).toEqual([
+            ['ack', 'c', 'subtree-complete-not-subscribed'],
             ['ack', 'r', 'accepted'],
-            ['ack', 'r', 'subtree-complete'],
-            ['nack', 'c', 'not-subscribed']
+            ['ack', 'r', 'subtree-complete']
         ]);
+        const hopEnd = (await relay.readSent('a')).find((sent) => {
+            const control = decodeALControlMessage(sent).right;
+            return control?.type === 'ack' && control.payload.logicalRecipientPeerId === 'c';
+        })!;
+        expect([await verifyTestALReceiptControl(chain.keys.c!, hopEnd), await verifyTestALReceiptControl(chain.keys.r!, hopEnd)])
+            .toEqual([true, false]);
         expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: ['r'], outside: ['c'], complete: true });
     });
 
-    it.each<[string, (controls: readonly ALMessage[]) => readonly ALMessage[]]>([
-        ['its NACK lost on the way', (controls) => controls.filter((control) => decodeALControlMessage(control).right?.type === 'ack')],
-        ['its NACK first', (controls) => toSortedByControlType(controls, ['nack', 'ack'])],
-        ['its hop-completion ACK first', (controls) => toSortedByControlType(controls, ['ack', 'nack'])]
-    ])('records a not-subscribed leaf outside at the origin once, with %s', async (_shape, toArrivals) => {
+    it.each<[string, (controls: readonly ALMessage[]) => readonly ALMessage[], readonly string[]]>([
+        [
+            'its NACK lost on the way',
+            (controls) => controls.filter((control) => decodeALControlMessage(control).right?.type === 'ack'),
+            ['ack', 'c', 'subtree-complete-not-subscribed']
+        ],
+        ['its NACK first', (controls) => toSortedByControlType(controls, ['nack', 'ack']), ['nack', 'c', 'not-subscribed']],
+        [
+            'its hop-completion ACK first',
+            (controls) => toSortedByControlType(controls, ['ack', 'nack']),
+            ['ack', 'c', 'subtree-complete-not-subscribed']
+        ]
+    ])('records a not-subscribed leaf outside at the origin once, with %s', async (_shape, toArrivals, forwarded) => {
         const chain = await createRelayChain(['a', 'r', 'c'], { a: PUBLISH_AND_SUBSCRIBE, r: SUBSCRIBE_ONLY, c: SUBSCRIBE_ONLY });
         const relay = createChainHop(chain, { selfPeerId: 'r', neighbourPeerIds: ['a', 'c'], topicSubscriptions: ACTIVE_TOKEN });
         const leaf = createChainHop(chain, { selfPeerId: 'c', neighbourPeerIds: ['r'] });
@@ -102,11 +116,12 @@ describe('a receipted granted publication at a frozen recipient that is not subs
         await deliverEach(toArrivals(await leaf.readSent('r')), relay, 'c');
         await origin.accept(await relay.readSent('a'));
 
+        // The relay forwards whichever of the leaf's two answers arrives first, and nothing for the other.
         expect(toControlTuples(await relay.readSentControls('a')).toSorted()).toEqual([
             ['ack', 'r', 'accepted'],
             ['ack', 'r', 'subtree-complete'],
-            ['nack', 'c', 'not-subscribed']
-        ]);
+            forwarded
+        ].toSorted());
         expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: ['r'], outside: ['c'], complete: true });
     });
 
@@ -145,7 +160,7 @@ describe('a receipted granted publication at a frozen recipient that is not subs
         expect(beforeRetry.toSorted()).toEqual([['ack', 'p', 'accepted'], ['nack', 'q', 'not-subscribed']]);
         expect(l.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
         expect(toControlTuples(await p.readSentControls('a'))).toContainEqual(['ack', 'p', 'subtree-complete']);
-        // The retried copy is answered with every NACK `p` relayed, as with every ACK.
+        // The retried copy is answered with every NACK `p` forwarded, as with every ACK.
         expect(toControlTuples(await p.readSentControls('a')).filter(([type]) => type === 'nack')).toEqual([
             ['nack', 'q', 'not-subscribed'],
             ['nack', 'q', 'not-subscribed']
@@ -181,8 +196,9 @@ describe('a receipted granted publication at a frozen recipient that is not subs
 
         expect(l.delivered.map((message) => message.id.msgId)).toEqual([signed.id.msgId]);
         expect(q.delivered).toEqual([]);
-        expect(toControlTuples(await p.readSentControls('a')).filter(([type]) => type === 'nack')).toEqual([
-            ['nack', 'q', 'not-subscribed']
+        // `p` forwards `q`'s hop-end, which stands for the lost NACK, as `q` signed it.
+        expect(toControlTuples(await p.readSentControls('a')).filter(([, recipient]) => recipient === 'q')).toEqual([
+            ['ack', 'q', 'subtree-complete-not-subscribed']
         ]);
         expect(toReceiptStatement(origin.facts)).toEqual({ confirmed: ['p', 'l'], outside: ['q'], complete: true });
     });
@@ -239,8 +255,8 @@ describe('a receipted granted publication at a frozen recipient that is not subs
 
         expect([q.delivered, l.delivered]).toEqual([[], []]);
         expect(toControlTuples(await q.readSentControls('a')).toSorted()).toEqual([
+            ['ack', 'l', 'subtree-complete-not-subscribed'],
             ['ack', 'q', 'subtree-complete-not-subscribed'],
-            ['nack', 'l', 'not-subscribed'],
             ['nack', 'q', 'not-subscribed']
         ]);
         // A receipt whose every recipient is outside confirmed nothing, so it stays open until its deadline.
@@ -261,7 +277,7 @@ describe('a receipted granted publication at a frozen recipient that is not subs
         expect(toControlTuples(await leaf.readSentControls('r'))).toContainEqual(['nack', 'c', 'not-subscribed']);
     });
 
-    it('answers for an unsubscribed relay with its own NACK, relays its child\'s ACK and NACK, and never confirms itself', async () => {
+    it('answers for an unsubscribed relay with its own NACK, forwards its children\'s answers, and never confirms itself', async () => {
         const chain = await createRelayChain(['a', 'r', 'c', 'd'], {
             a: PUBLISH_AND_SUBSCRIBE,
             r: SUBSCRIBE_ONLY,
@@ -285,9 +301,9 @@ describe('a receipted granted publication at a frozen recipient that is not subs
 
         expect(relay.delivered).toEqual([]);
         expect(toControlTuples(await relay.readSentControls('a')).toSorted()).toEqual([
-            ['ack', 'c', 'forwarded'],
+            ['ack', 'c', 'delivered'],
+            ['ack', 'd', 'subtree-complete-not-subscribed'],
             ['ack', 'r', 'subtree-complete-not-subscribed'],
-            ['nack', 'd', 'not-subscribed'],
             ['nack', 'r', 'not-subscribed']
         ]);
     });

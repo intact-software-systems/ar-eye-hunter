@@ -60,7 +60,7 @@ interface GapNackInput {
     readonly originPeerId?: string;
 }
 
-/** A gap NACK for sequence 2: a recipient's own, or one a relay re-originated for the recipient it names. */
+/** A gap NACK for sequence 2: a recipient's own, or one a relay forwards for the recipient it names. */
 function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
     return newALNackControlMessage(
         {
@@ -85,10 +85,20 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
     );
 }
 
-/** The relay's `forwarded` ACK confirming a recipient below it. */
-function toForwardedAck(msg: ALMessage, logicalRecipientPeerId: string): ALMessage {
+/** A recipient's own ACK, which the relay forwards readdressed. */
+function toForwardedAck(
+    msg: ALMessage,
+    logicalRecipientPeerId: string,
+    status: 'delivered' | 'subtree-complete-not-subscribed' = 'delivered'
+): ALMessage {
     return newALAckControlMessage(
-        { v: 4, msgId: `ack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-relayed-gap' },
+        {
+            v: 4,
+            msgId: `ack-${logicalRecipientPeerId}-${status}`,
+            ts: Date.now(),
+            senderId: 'relay',
+            traceId: 'trace-relayed-gap'
+        },
         toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
             fromPeerId: 'relay',
@@ -96,13 +106,13 @@ function toForwardedAck(msg: ALMessage, logicalRecipientPeerId: string): ALMessa
             originPeerId: 'self',
             logicalRecipientPeerId,
             carrier: 'rtc',
-            status: 'forwarded',
+            status,
             observedAtEpochMs: Date.now()
         })
     );
 }
 
-describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
+describe('a gap NACK a relay forwarded, at the origin (S4ii-R3)', () => {
     it('admits it from a next hop of the message for a recipient the receipt still owes', async () => {
         const origin = await createOrderedOrigin('relayed-gap-owed');
 
@@ -179,5 +189,16 @@ describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
 
         expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r2', logicalRecipientPeerId: 'r2' })))
             .toBe('committed');
+    });
+});
+
+describe('a forwarded hop-end at the origin', () => {
+    it('admits a forwarded hop-end that confirms nobody for a recipient the receipt still owes', async () => {
+        const origin = await createOrderedOrigin('forwarded-not-subscribed');
+
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2', 'subtree-complete-not-subscribed'))).toBe('committed');
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe(
+            'AL acknowledgement confirms no peer of the pending outbound receipt'
+        );
     });
 });

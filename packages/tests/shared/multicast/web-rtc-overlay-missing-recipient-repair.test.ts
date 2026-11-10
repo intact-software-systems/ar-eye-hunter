@@ -8,7 +8,12 @@ import {
 } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, parseALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    parseALControlMessage,
+    type ALAckStatus
+} from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -31,8 +36,13 @@ import {
 import { createRelayChain, type RelayChain } from './rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
-import { toTestALAckPayload, verifyTestALReceiptControl } from '../../al-control-test-payloads.ts';
-import { ROOM_PUBLICATION_CRYPTO, type AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
+import {
+    signTestALReceiptControl,
+    toTestALAckPayload,
+    toTestALNackPayload,
+    verifyTestALReceiptControl
+} from '../../al-control-test-payloads.ts';
+import type { AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 
 const ACK_TIMEOUT_MS = 2_000;
 /** The default `at-least-once` retry budget of a receipt, read from the policy the origin plans with. */
@@ -100,7 +110,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
         // `b` delivers behind `r`; `r` confirms itself, relays its ACK and ends its subtree, but the r -> a leg loses all three.
         await relay.receive(createChildAck({ msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'r', status: 'delivered' }), 'b');
         const lost = readAckTuples(await relay.readSent('a'));
-        expect(lost.toSorted()).toEqual([['b', 'forwarded'], ['r', 'accepted'], ['r', 'subtree-complete']]);
+        expect(lost.toSorted()).toEqual([['b', 'delivered'], ['r', 'accepted'], ['r', 'subtree-complete']]);
         // `c` is a leaf: its own delivered ACK completes its hop.
         await acknowledgeAtOrigin(fixture.manager, {
             msgId: message.id.msgId,
@@ -121,7 +131,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
 
         await relay.receive(fixture.channels.r!.sent[1]!, 'a');
         const answer = (await relay.readSent('a')).filter(isAck).slice(lost.length);
-        expect(readAckTuples(answer).toSorted()).toEqual([['b', 'forwarded'], ['r', 'subtree-complete']]);
+        expect(readAckTuples(answer).toSorted()).toEqual([['b', 'delivered'], ['r', 'subtree-complete']]);
         for (const ack of answer) {
             await fixture.manager.acceptControlMessage(ack);
         }
@@ -173,7 +183,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
         }
         // `r` confirms itself again on the retried copy, then relays `c` and ends its hop.
         const answer = (await relay.readSent('a')).filter(isAck).slice(first.length);
-        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'forwarded'], ['r', 'accepted'], ['r', 'subtree-complete']]);
+        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'delivered'], ['r', 'accepted'], ['r', 'subtree-complete']]);
         for (const ack of answer) {
             await fixture.manager.acceptControlMessage(ack);
         }
@@ -189,14 +199,20 @@ describe('the RTC origin retry of a receiver receipt', () => {
     });
 
     it('a recipient whose sign fails sends no control; the retry reaches it and its signed repeat completes the receipt', async () => {
-        const snapshot = createOriginSnapshot(['a', 'r', 'c'], 4);
-        const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'] });
-        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const chain = await createRelayChain(['a', 'r', 'c'], {});
+        const snapshot = chain.snapshot;
+        const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'], publicationCrypto: chain.keys.a });
+        const relay = createRtcRelayOverlayFixture({
+            selfPeerId: 'r',
+            snapshot,
+            neighbourPeerIds: ['a', 'c'],
+            publicationCrypto: chain.keys.r
+        });
         const leaf = createRtcRelayOverlayFixture({
             selfPeerId: 'c',
             snapshot,
             neighbourPeerIds: ['r'],
-            publicationCrypto: toSignFailingOnCall(ROOM_PUBLICATION_CRYPTO, 1)
+            publicationCrypto: toSignFailingOnCall(chain.keys.c!, 1)
         });
         const message = createOriginReceiverMulticast('unsigned-hop-end');
         await enqueueAndDrain(fixture.manager, message);
@@ -221,11 +237,16 @@ describe('the RTC origin retry of a receiver receipt', () => {
         await leaf.receive((await relay.readSent('c'))[1]!, 'r');
         const repeated = (await leaf.readSent('r')).filter(isAck);
         expect(readAckTuples(repeated)).toEqual([['c', 'delivered']]);
-        expect(await verifyTestALReceiptControl(ROOM_PUBLICATION_CRYPTO, repeated[0]!)).toBe(true);
+        expect(await verifyTestALReceiptControl(chain.keys.c!, repeated[0]!)).toBe(true);
         for (const ack of repeated) {
             await relay.receive(ack, 'c');
         }
-        for (const ack of (await relay.readSent('a')).filter(isAck).slice(first.length)) {
+        const answer = (await relay.readSent('a')).filter(isAck).slice(first.length);
+        const forwarded = answer.filter((ack) => readAckTuples([ack])[0]?.[0] === 'c');
+        expect(readAckTuples(forwarded)).toEqual([['c', 'delivered']]);
+        expect(await verifyTestALReceiptControl(chain.keys.c!, forwarded[0]!)).toBe(true);
+        expect(await verifyTestALReceiptControl(chain.keys.r!, forwarded[0]!)).toBe(false);
+        for (const ack of answer) {
             await fixture.manager.acceptControlMessage(ack);
         }
 
@@ -241,7 +262,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
         const { origin, relay, message } = await createRelayTerminalChain('unsigned-relay-terminal');
 
         const first = (await relay.readSent('a')).filter(isAck);
-        expect(readAckTuples(first).toSorted()).toEqual([['c', 'forwarded'], ['r', 'accepted']]);
+        expect(readAckTuples(first).toSorted()).toEqual([['c', 'delivered'], ['r', 'accepted']]);
         expect(relay.diagnostics.filter((event) => event.kind === 'receipt-sign')).toEqual([
             expect.objectContaining({ targetMsgId: message.id.msgId, reason: expect.stringMatching(/^sign-failed: /) })
         ]);
@@ -323,8 +344,8 @@ describe('the RTC origin retry of a receiver receipt', () => {
         await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
 
         expect(readAckTuples(parentAcks).toSorted()).toEqual([
-            ['b', 'forwarded'],
-            ['c', 'forwarded'],
+            ['b', 'delivered'],
+            ['c', 'accepted'],
             ['r', 'accepted'],
             ['r', 'subtree-complete']
         ]);
@@ -355,7 +376,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
         }
 
         expect(readAckTuples(await relay.readSent('a')).toSorted()).toEqual([
-            ['c', 'forwarded'],
+            ['c', 'accepted'],
             ['r', 'accepted'],
             ['r', 'subtree-complete']
         ]);
@@ -371,7 +392,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
             msgId: message.id.msgId,
             fromPeerId: 'r',
             logicalRecipientPeerId: 'b',
-            status: 'forwarded'
+            status: 'delivered'
         });
         expect(acknowledgements().at(-1)).toMatchObject({
             mode: 'receiver',
@@ -439,7 +460,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
             msgId: message.id.msgId,
             fromPeerId: 'b',
             logicalRecipientPeerId: 'd',
-            status: 'forwarded'
+            status: 'delivered'
         });
         await acknowledgeAtOrigin(fixture.manager, {
             msgId: message.id.msgId,
@@ -555,6 +576,69 @@ describe('the RTC origin retry of a receiver receipt', () => {
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
             expect.objectContaining({ msgId: message.id.msgId, complete: true })
         ]);
+    });
+});
+
+describe('a relay forwarding what its child signed (S8-R6)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it.each(['delivered', 'accepted', 'not-subscribed', 'before-entry', 'gap'] as const)(
+        'a forwarded %s reaches the origin with the recipient\'s own status, time and proof',
+        async (kind) => {
+            const { chain, relay, message } = await createForwardingChain(`forwarded-${kind}`);
+            const child = await signTestALReceiptControl(chain.keys.c!, toLeafControl(kind, message.id.msgId));
+            const before = (await relay.readSent('a')).length;
+
+            await relay.receive(toLeafControlMessage(child), 'c');
+
+            const received = (await relay.readSent('a')).slice(before).filter((frame) => toControlSubject(frame) === 'c');
+            expect(received).toHaveLength(1);
+            expect(parseALControlMessage(received[0]!)).toEqual({
+                type: child.type,
+                payload: {
+                    ...child.payload,
+                    fromPeerId: 'r',
+                    toPeerId: 'a',
+                    ...(child.type === 'ack' ? { carrier: 'rtc' } : {})
+                }
+            });
+            expect(await verifyTestALReceiptControl(chain.keys.c!, received[0]!)).toBe(true);
+            expect(await verifyTestALReceiptControl(chain.keys.r!, received[0]!)).toBe(false);
+        }
+    );
+
+    it('a not-subscribed hop-end whose NACK was lost reaches the origin as the recipient\'s own signed ACK', async () => {
+        const { chain, origin, relay, message } = await createForwardingChain('forwarded-hop-end');
+        const hopEnd = await signTestALReceiptControl(chain.keys.c!, {
+            type: 'ack',
+            payload: toLeafAckPayload(message.id.msgId, 'subtree-complete-not-subscribed')
+        });
+        const before = (await relay.readSent('a')).length;
+
+        await relay.receive(toLeafControlMessage(hopEnd), 'c');
+
+        const received = (await relay.readSent('a')).slice(before);
+        const forwarded = received.filter((frame) => toControlSubject(frame) === 'c');
+        expect(readAckTuples(forwarded)).toEqual([['c', 'subtree-complete-not-subscribed']]);
+        expect(await verifyTestALReceiptControl(chain.keys.c!, forwarded[0]!)).toBe(true);
+        for (const frame of received) {
+            await origin.manager.acceptControlMessage(frame);
+        }
+        expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toBeUndefined();
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            mode: 'receiver',
+            confirmedRecipientPeerIds: ['r'],
+            outsideAudienceRecipientPeerIds: ['c']
+        });
     });
 });
 
@@ -716,4 +800,74 @@ async function createRelayTerminalChain(resourceId: string): Promise<RelayTermin
 
 function readOwnTerminals(acks: readonly ALMessage[], peerId: string): readonly ALMessage[] {
     return acks.filter((ack) => readAckTuples([ack])[0]?.join() === `${peerId},subtree-complete`);
+}
+
+type LeafControlKind = 'delivered' | 'accepted' | 'not-subscribed' | 'before-entry' | 'gap';
+
+interface ForwardingChain {
+    readonly chain: RelayChain;
+    readonly origin: RtcOriginOverlayFixture;
+    readonly relay: RtcRelayOverlayFixture;
+    readonly message: ALMessage;
+}
+
+/** The chain `a` -> `r` -> `c`, each session with its own key, whose relay `r` holds the row that waits on `c`. */
+async function createForwardingChain(resourceId: string): Promise<ForwardingChain> {
+    const chain = await createRelayChain(['a', 'r', 'c'], {});
+    const origin = createRtcOriginOverlayFixture({ snapshot: chain.snapshot, nextHopPeerIds: ['r'], publicationCrypto: chain.keys.a });
+    const relay = createRtcRelayOverlayFixture({
+        selfPeerId: 'r',
+        snapshot: chain.snapshot,
+        neighbourPeerIds: ['a', 'c'],
+        publicationCrypto: chain.keys.r
+    });
+    const message = createOriginReceiverMulticast(resourceId);
+    await enqueueAndDrain(origin.manager, message);
+    await relay.receive(origin.channels.r!.sent[0]!, 'a');
+    return { chain, origin, relay, message };
+}
+
+/** The leaf's own time, which no hop above it restamps. */
+const LEAF_OBSERVED_AT_MS = Date.parse('2025-12-31T23:59:58Z');
+
+function toLeafAckPayload(msgId: string, status: ALAckStatus) {
+    return toTestALAckPayload({
+        ackedMsgId: msgId,
+        fromPeerId: 'c',
+        toPeerId: 'r',
+        originPeerId: 'a',
+        status,
+        observedAtEpochMs: LEAF_OBSERVED_AT_MS
+    });
+}
+
+function toLeafControl(kind: LeafControlKind, msgId: string) {
+    if (kind === 'delivered' || kind === 'accepted') {
+        return { type: 'ack', payload: toLeafAckPayload(msgId, kind) } as const;
+    }
+    return {
+        type: 'nack',
+        payload: toTestALNackPayload({
+            msgId,
+            fromPeerId: 'c',
+            toPeerId: 'r',
+            // The refused message's sender, never the relay the NACK is addressed to.
+            originPeerId: 'a',
+            reason: kind,
+            observedAtEpochMs: LEAF_OBSERVED_AT_MS,
+            ...(kind === 'gap' ? { orderingKey: 'feed:a:1', expectedSeq: 2, missingRanges: [{ from: 2, to: 2 }] } : {})
+        })
+    } as const;
+}
+
+function toLeafControlMessage(
+    control: Awaited<ReturnType<typeof signTestALReceiptControl>>
+): ALMessage {
+    const id = { v: 4, msgId: `leaf-${control.type}`, senderId: 'c', ts: Date.now(), traceId: 'trace-forwarded' } as const;
+    return control.type === 'ack' ? newALAckControlMessage(id, control.payload) : newALNackControlMessage(id, control.payload);
+}
+
+function toControlSubject(message: ALMessage): string | undefined {
+    const control = parseALControlMessage(message);
+    return control?.type === 'ack' || control?.type === 'nack' ? control.payload.logicalRecipientPeerId : undefined;
 }

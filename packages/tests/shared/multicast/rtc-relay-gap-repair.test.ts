@@ -76,7 +76,7 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         vi.useRealTimers();
     });
 
-    it('re-originates the leaf\'s gap NACK toward the origin, writing nothing, and forwards the origin\'s repair to the leaf', async () => {
+    it('forwards the leaf\'s gap NACK toward the origin, writing nothing, and forwards the origin\'s repair to the leaf', async () => {
         const gap = await createGapChain({ ack: 'receiver' });
         await forwardTrack(gap, [1, 2, 3]);
         await receiveAtLeaf(gap, [1, 3]);
@@ -265,7 +265,7 @@ async function readLeafControls(gap: GapChain): Promise<readonly ALMessage[]> {
     return await gap.leaf.readSent('r');
 }
 
-/** The relay's controls to the origin, once a gap NACK it re-originated is among them. */
+/** The relay's controls to the origin, once a gap NACK it forwarded is among them. */
 async function readRelayUpwardControls(gap: GapChain): Promise<readonly ALMessage[]> {
     await drainUntil(async () => findGapNack(await gap.relay.readSent('a')) !== undefined);
     return await gap.relay.readSent('a');

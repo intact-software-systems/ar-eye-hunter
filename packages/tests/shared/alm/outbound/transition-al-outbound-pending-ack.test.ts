@@ -148,7 +148,8 @@ describe('hop completion under `subtree`', () => {
     it.each([
         { ack: hopAck('hop', 'hop', 'delivered'), counted: 'hop', completes: true },
         { ack: hopAck('hop', 'hop', 'subtree-complete'), counted: 'hop', completes: true },
-        { ack: hopAck('hop', 'below', 'forwarded'), counted: undefined, completes: false },
+        { ack: hopAck('hop', 'below', 'delivered'), counted: undefined, completes: false },
+        { ack: hopAck('hop', 'below', 'subtree-complete-not-subscribed'), counted: undefined, completes: false },
         { ack: hopAck('hop', 'hop', 'forwarded'), counted: undefined, completes: false },
         { ack: hopAck('hop', 'below', 'subtree-complete'), counted: undefined, completes: false }
     ])('counts a hop on its own completion ACK only ($ack.status for $ack.logicalRecipientPeerId)', ({ ack, counted, completes }) => {
@@ -158,7 +159,7 @@ describe('hop completion under `subtree`', () => {
     });
 
     it('keeps counting the sender under `hop` and the named recipient under `receiver`', () => {
-        const relayed = hopAck('hop', 'below', 'forwarded');
+        const relayed = hopAck('hop', 'below', 'delivered');
 
         expect(toALOutboundAckedPeerId('hop', relayed)).toBe('hop');
         expect(toALOutboundAckedPeerId('receiver', relayed)).toBe('below');

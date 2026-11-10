@@ -334,13 +334,13 @@ describe('the receipt controls an RTC counted recipient sends', () => {
         expect(repair?.payload).not.toHaveProperty('proof');
     });
 
-    it('a counted relay\'s control for its child carries null', async () => {
+    it('a counted relay forwards its child\'s control as the child sent it, never signing it', async () => {
         const fixture = createSigningRuntime({ name: 'child-control', relays: true });
 
         await admitAsRecipient(fixture, createFrozenRoomMulticast('child-control', [INBOUND_TEST_SELF_PEER_ID, CHILD_PEER_ID]), true);
 
         const forwarded = await readOwnControl(fixture, (control) => control.type === 'ack' && control.payload.logicalRecipientPeerId === CHILD_PEER_ID);
-        expect(decodeALPeerControlMessage(forwarded).right?.payload).toMatchObject({ status: 'forwarded', proof: null });
+        expect(decodeALPeerControlMessage(forwarded).right?.payload).toMatchObject({ status: 'delivered', proof: null });
         expect(await verifyTestALReceiptControl(CRYPTO, await readOwnControl(fixture, isOwnAck('subtree-complete')))).toBe(true);
     });
 

@@ -7,12 +7,14 @@ import {
 } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
+import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
 import { isALOutboundExpectedRepairPeer } from './control/is-al-outbound-expected-repair-peer.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { validateALOutboundOutsideAudienceNack } from './control/validate-al-outbound-outside-audience-nack.ts';
 import { validateALOutboundRelayedNack } from './control/validate-al-outbound-relayed-nack.ts';
 import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
@@ -101,12 +103,17 @@ function validateRepairRequest(
  * would move nothing is refused rather than committed, so it costs no write and no version bump. The
  * exception is the terminal ACK of a next hop whose recipient the receipt already counted, or which confirms
  * nobody, having answered `not-subscribed`: it completes that hop, which the hop view records, so a retry never
- * resends into its subtree.
+ * resends into its subtree. A hop-end that confirms nobody, which a relay forwards for a recipient the receipt still
+ * owes, moves that recipient outside the audience.
  */
 function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPayload): readonly ALMessageRejection[] {
     const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
-    if (pending && countedPeerId === undefined && isOpenNextHopCompletion(read, ack)) {
+    if (
+        pending && countedPeerId === undefined &&
+        (isOpenNextHopCompletion(read, ack) ||
+            isALImpliedNotSubscribedNack(ack, toALOutboundReceiptClasses(pending).unconfirmedPeerIds))
+    ) {
         return [];
     }
     if (
