@@ -104,7 +104,8 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
     const { read, facts } = input;
     const msg = toPreparedALInboundMessage(read);
     const { traceId, senderId: originPeerId } = msg.id;
-    const countsSelf = isALCountedRecipient(msg, toPreparedALInboundPlan(read).ack.algo, facts.selfPeerId);
+    // The message's own receipt decides: a plan that refuses it plans no receipt of its own (`ack.algo: 'none'`).
+    const countsSelf = isALCountedRecipient(msg, toPreparedALInboundPlan(read).effective.ack.algo, facts.selfPeerId);
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({

@@ -5,7 +5,7 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import type { ALInboundNackPlanReason } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_INBOUND_NACK_PLAN_REASONS, type ALInboundNackPlanReason } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     decodeALPeerControlMessage,
     newALAckControlMessage,
@@ -244,6 +244,11 @@ function withNackPlan(reason: ALInboundNackPlanReason): (plan: ALMessageHandling
     });
 }
 
+/** A refusal as the RTC room admission plans it: no delivery, no forward and no receipt of its own, only the NACK. */
+function withRefusedPlan(reason: ALInboundNackPlanReason): (plan: ALMessageHandlingPlan) => ALMessageHandlingPlan {
+    return (plan) => ({ ...withNackPlan(reason)(plan), ack: { enabled: false, algo: 'none', deferred: false } });
+}
+
 function readSentControls(fixture: InboundTestRuntime): readonly { msg: ALMessage; control: ALPeerControlMessage; }[] {
     return fixture.controlSends.flat().flatMap((msg) => {
         const control = decodeALPeerControlMessage(msg).right;
@@ -304,6 +309,19 @@ describe('the receipt controls an RTC counted recipient sends', () => {
             const fixture = createSigningRuntime({ name: `nack-${reason}`, plan: withNackPlan(reason) });
 
             await admitAsRecipient(fixture, createReceiverUnicast(`nack-${reason}`), false);
+
+            const nack = await readOwnControl(fixture, (control) => control.type === 'nack' && control.payload.reason === reason);
+            expect(await verifyTestALReceiptControl(CRYPTO, nack)).toBe(true);
+        }
+    );
+
+    // A refusal plan drops the receipt it would have sent (`ack.algo: 'none'`); the message still counts this session.
+    it.each(AL_INBOUND_NACK_PLAN_REASONS)(
+        'a counted recipient\'s %s NACK under a plan that refuses the receipt carries a proof that verifies',
+        async (reason) => {
+            const fixture = createSigningRuntime({ name: `refused-${reason}`, plan: withRefusedPlan(reason) });
+
+            await admitAsRecipient(fixture, createReceiverUnicast(`refused-${reason}`), false);
 
             const nack = await readOwnControl(fixture, (control) => control.type === 'nack' && control.payload.reason === reason);
             expect(await verifyTestALReceiptControl(CRYPTO, nack)).toBe(true);
