@@ -7,6 +7,7 @@ import {
     type ALNackPayload,
     type ALParsedControlMessage
 } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -42,7 +43,12 @@ import {
     it
 } from 'vitest';
 
-import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import {
+    signTestALReceiptControl,
+    toTestALAckPayload,
+    toTestALNackPayload,
+    toTestSignatureProof
+} from '../../../al-control-test-payloads.ts';
 import { createAvailablePublicationCryptoFixture } from '../../signature/publication-crypto-fixtures.ts';
 import {
     createInboundTestMessage,
@@ -412,11 +418,11 @@ function createFrozenRelayedMessage(msgId: string): ALMessage {
     };
 }
 
-/** Admits a child's control at the relay through the pure control admission, as the control runtime does. */
+/** Admits a child's control at the relay through the pure control admission, as the control runtime does; returns what it committed. */
 async function commitChildControl(
     store: ALInboundAdmissionStore,
     control: Readonly<{ type: 'ack'; payload: ALAckPayload; }> | Readonly<{ type: 'nack'; payload: ALNackPayload; }>
-): Promise<void> {
+): Promise<ALInboundCommitBundle> {
     const subject = control.type === 'ack'
         ? { msgId: control.payload.ackedMsgId, fromPeerId: control.payload.fromPeerId }
         : { msgId: control.payload.msgId, fromPeerId: control.payload.fromPeerId };
@@ -432,7 +438,8 @@ async function commitChildControl(
         acks: surface.acks,
         nacks: surface.nacks,
         nowMs: Date.now(),
-        controlMsgId: `child-${subject.fromPeerId}`,
+        // Each signed control arrives as its own control message, so a child's distinct statements never share an id.
+        controlMsgId: `child-${subject.fromPeerId}-${control.payload.proof?.signature ?? 'unsigned'}`,
         traceId: 'trace-child'
     };
     const retention = normalizeALRuntimeStoreRetention();
@@ -442,10 +449,17 @@ async function commitChildControl(
             computeALInboundNackAdmission({ ...read, nack: { ...control.payload, reason: 'before-entry' } }, retention)
         );
     expect(await store.commitBundle(bundle)).toBe('committed');
+    return bundle;
 }
 
 function toSentControls(bundle: ALInboundCommitBundle): readonly (ALParsedControlMessage | undefined)[] {
     return bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [decodeALControlMessage(effect.payload.msg).right] : []);
+}
+
+function toSentControlsNaming(bundle: ALInboundCommitBundle, recipientPeerId: string): readonly ALParsedControlMessage[] {
+    return toSentControls(bundle).flatMap((control) =>
+        (control?.type === 'ack' || control?.type === 'nack') && control.payload.logicalRecipientPeerId === recipientPeerId ? [control] : []
+    );
 }
 
 describe('a relay re-forwarding what its children signed on a retried copy', () => {
@@ -488,5 +502,87 @@ describe('a relay re-forwarding what its children signed on a retried copy', () 
             { type: 'nack', payload: { ...childNack.payload, ...hop } }
         ]));
         expect(toSentControls(retried).filter((control) => control?.type === 'nack')).toHaveLength(1);
+    });
+
+    it.each(['ack', 'nack'] as const)(
+        're-forwards each distinct statement about one recipient once on a retried copy (a forged %s, then the true ACK)',
+        async (forgedType) => {
+            const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+            const msg = createFrozenRelayedMessage(`distinct-${forgedType}`);
+            const [victim, forger] = DOWNSTREAM_PEER_IDS;
+            const first = await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'rtc' });
+            expect(await admissionStore.commitBundle(first)).toBe('committed');
+            const named = {
+                fromPeerId: forger,
+                toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                originPeerId: INBOUND_TEST_SENDER_PEER_ID,
+                logicalRecipientPeerId: victim
+            };
+            const forged = await signTestALReceiptControl(
+                await createAvailablePublicationCryptoFixture(),
+                forgedType === 'ack'
+                    ? { type: 'ack', payload: toTestALAckPayload({ ...named, ackedMsgId: msg.id.msgId, status: 'delivered' }) }
+                    : { type: 'nack', payload: toTestALNackPayload({ ...named, msgId: msg.id.msgId, reason: 'before-entry' }) }
+            );
+            const own = await signTestALReceiptControl(await createAvailablePublicationCryptoFixture(), {
+                type: 'ack',
+                payload: toTestALAckPayload({ ...named, fromPeerId: victim, ackedMsgId: msg.id.msgId, status: 'delivered' })
+            });
+            await commitChildControl(admissionStore, forged);
+            await commitChildControl(admissionStore, own);
+
+            const retried = await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: RELAY_PEER, carrier: 'rtc' });
+            const hop = { fromPeerId: INBOUND_TEST_SELF_PEER_ID, toPeerId: INBOUND_TEST_SENDER_PEER_ID };
+
+            const sent = toSentControlsNaming(retried, victim);
+            expect(sent).toEqual(expect.arrayContaining([
+                forged.type === 'ack'
+                    ? { type: 'ack', payload: { ...forged.payload, ...hop, carrier: 'rtc' } }
+                    : { type: 'nack', payload: { ...forged.payload, ...hop } },
+                { type: 'ack', payload: { ...own.payload, ...hop, carrier: 'rtc' } }
+            ]));
+            expect(sent).toHaveLength(2);
+        }
+    );
+
+    it('Limit: a child that floods distinct forged statements about a recipient evicts its true control from the history, so a retried copy no longer re-forwards it; its first forward had already gone up', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenRelayedMessage('flooded');
+        const [victim, forger] = DOWNSTREAM_PEER_IDS;
+        const first = await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'rtc' });
+        expect(await admissionStore.commitBundle(first)).toBe('committed');
+        const named = {
+            ackedMsgId: msg.id.msgId,
+            toPeerId: INBOUND_TEST_SELF_PEER_ID,
+            originPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            logicalRecipientPeerId: victim
+        };
+        const own = await signTestALReceiptControl(await createAvailablePublicationCryptoFixture(), {
+            type: 'ack',
+            payload: toTestALAckPayload({ ...named, fromPeerId: victim, status: 'delivered' })
+        });
+        const toForgery = (index: number) => ({
+            type: 'ack' as const,
+            payload: { ...toTestALAckPayload({ ...named, fromPeerId: forger, status: 'delivered' }), proof: toTestSignatureProof(index) }
+        });
+        const hop = { fromPeerId: INBOUND_TEST_SELF_PEER_ID, toPeerId: INBOUND_TEST_SENDER_PEER_ID };
+        const toReforwarded = (control: Readonly<{ payload: ALAckPayload; }>) => ({
+            type: 'ack',
+            payload: { ...control.payload, ...hop, carrier: 'rtc' }
+        });
+        const toRetriedVictimControls = async () =>
+            toSentControlsNaming(await computeArrival(admissionStore, toRetriedHopCopy(msg), { peer: RELAY_PEER, carrier: 'rtc' }), victim);
+        const limit = AL_MESSAGE_RESOURCE_LIMITS.collectionEntries;
+        const forgeries = Array.from({ length: limit }, (_, index) => toForgery(index + 1));
+
+        const ownBundle = await commitChildControl(admissionStore, own);
+        expect(toSentControls(ownBundle)).toContainEqual(toReforwarded(own));
+        for (const forgery of forgeries.slice(0, limit - 1)) {
+            await commitChildControl(admissionStore, forgery);
+        }
+        expect(await toRetriedVictimControls()).toEqual([own, ...forgeries.slice(0, limit - 1)].map(toReforwarded));
+
+        await commitChildControl(admissionStore, forgeries[limit - 1]!);
+        expect(await toRetriedVictimControls()).toEqual(forgeries.map(toReforwarded));
     });
 });

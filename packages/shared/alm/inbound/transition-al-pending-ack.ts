@@ -180,14 +180,17 @@ function isALOwedByStatement(current: ALPendingAckSnapshot, input: AcceptALPendi
 }
 
 /**
- * An admitted outside-audience NACK names a recipient that delivered nothing, which the row relays upward and records.
- * It completes no hop: the child's own hop-completion ACK does, once its subtree answered.
+ * An admitted outside-audience NACK names a recipient that delivered nothing, which the row relays upward and records
+ * once, however many distinct statements name it. It completes no hop: the child's own hop-completion ACK does, once its
+ * subtree answered.
  */
 export function acceptALPendingOutsideAudienceNack(
     current: ALPendingAckSnapshot,
     nack: ALNackPayload
 ): ALPendingAckSnapshot {
-    return { ...current, outsideAudiencePeerIds: [...current.outsideAudiencePeerIds, nack.logicalRecipientPeerId] };
+    return current.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId)
+        ? current
+        : { ...current, outsideAudiencePeerIds: [...current.outsideAudiencePeerIds, nack.logicalRecipientPeerId] };
 }
 
 export function isALPendingAckComplete(pending: ALPendingAckSnapshot): boolean {

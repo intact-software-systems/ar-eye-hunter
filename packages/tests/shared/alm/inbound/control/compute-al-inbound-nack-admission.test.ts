@@ -15,8 +15,9 @@ import {
     type ALInboundNackAdmissionCandidate
 } from '@shared/alm/inbound/control/compute-al-inbound-nack-admission.ts';
 import { validateALInboundNackAdmission } from '@shared/alm/inbound/control/validate-al-inbound-nack-admission.ts';
+import type { SignatureProof } from '@shared/signature/signature-proof.ts';
 
-import { toTestALAckPayload, toTestALNackPayload } from '../../../../al-control-test-payloads.ts';
+import { toTestALAckPayload, toTestALNackPayload, toTestSignatureProof } from '../../../../al-control-test-payloads.ts';
 
 const NOW_MS = 1_800_000_000_000;
 /** The child's own time, which the relay forwards unchanged. */
@@ -48,6 +49,7 @@ interface NackArrival {
     readonly logicalRecipientPeerId?: string;
     readonly originPeerId?: string;
     readonly ordering?: Partial<Pick<ALNackPayload, 'orderingKey' | 'expectedSeq' | 'missingRanges'>>;
+    readonly proof?: SignatureProof | null;
 }
 
 function toChildNack(arrival: NackArrival): ALNackPayload & Readonly<{ reason: ALRelayedNackReason; }> {
@@ -59,7 +61,7 @@ function toChildNack(arrival: NackArrival): ALNackPayload & Readonly<{ reason: A
         originPeerId: arrival.originPeerId ?? 'origin',
         reason: arrival.reason,
         observedAtEpochMs: CHILD_OBSERVED_AT_MS,
-        proof: null,
+        proof: arrival.proof ?? null,
         ...(arrival.ordering ?? (arrival.reason === 'gap' ? GAP_ORDERING : {}))
     };
 }
@@ -94,8 +96,8 @@ function toUpwardControls(candidate: ALInboundNackAdmissionCandidate) {
     return candidate.upwardEffects.map((effect) => effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : undefined);
 }
 
-function toConfirmation(logicalRecipientPeerId: string): ALAckPayload {
-    return toTestALAckPayload({
+function toConfirmation(logicalRecipientPeerId: string, proof: SignatureProof | null = null): ALAckPayload {
+    const confirmation = toTestALAckPayload({
         ackedMsgId: 'subject',
         fromPeerId: 'child',
         toPeerId: 'relay',
@@ -105,6 +107,7 @@ function toConfirmation(logicalRecipientPeerId: string): ALAckPayload {
         status: 'delivered',
         observedAtEpochMs: NOW_MS
     });
+    return { ...confirmation, proof };
 }
 
 describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
@@ -197,5 +200,43 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
             expireAtTimestamp: NOW_MS + RETENTION.controlHistoryTtlMs
         });
         expect(toALInboundNackCommitBundle(gap).mutations).toEqual([]);
+    });
+
+    it('refuses a NACK only against a same statement: a second statement about a recipient recorded outside is forwarded', () => {
+        const stored = toChildNack({ reason: 'not-subscribed', proof: toTestSignatureProof(1) });
+        const candidate = computeArrival(
+            { reason: 'not-subscribed', proof: toTestSignatureProof(2) },
+            { ...ROW, outsideAudiencePeerIds: ['leaf'] },
+            [],
+            [stored]
+        );
+
+        expect(validateALInboundNackAdmission(candidate)).toEqual([]);
+    });
+
+    it('records a recipient outside once when a second distinct statement names it', () => {
+        const stored = toChildNack({ reason: 'not-subscribed', proof: toTestSignatureProof(1) });
+        const candidate = computeArrival(
+            { reason: 'not-subscribed', proof: toTestSignatureProof(2) },
+            { ...ROW, outsideAudiencePeerIds: ['leaf'] },
+            [],
+            [stored]
+        );
+
+        expect(candidate.pending?.value.outsideAudiencePeerIds).toEqual(['leaf']);
+        expect(candidate.nacks?.values).toHaveLength(2);
+        expect(toUpwardControls(candidate).filter((control) => control?.type === 'nack')).toHaveLength(1);
+    });
+
+    it('refuses a NACK after a confirmation only when the confirmation is the same statement', () => {
+        const confirmed = [toConfirmation('leaf', toTestSignatureProof(1))];
+        const same = computeArrival({ reason: 'not-subscribed', proof: toTestSignatureProof(1) }, ROW, confirmed);
+        const distinct = computeArrival({ reason: 'not-subscribed', proof: toTestSignatureProof(2) }, ROW, confirmed);
+
+        expect(validateALInboundNackAdmission(same)).toEqual([{
+            code: 'unauthorized',
+            message: 'Inbound NACK names a recipient whose confirmation was already forwarded'
+        }]);
+        expect(validateALInboundNackAdmission(distinct)).toEqual([]);
     });
 });

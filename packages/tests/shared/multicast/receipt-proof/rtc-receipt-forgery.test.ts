@@ -639,6 +639,62 @@ describe('a child hop at an honest relay that speaks for another recipient (S8-R
         ]);
     });
 
+    it('a forged NACK after the true ACK goes up once and is refused, undoing nothing', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('after-true-nack');
+        const own = toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+        const forged = await signTestALReceiptControl(
+            chain.keys.m!,
+            toChildNackControl({ msgId: message.id.msgId, fromPeerId: 'm', logicalRecipientPeerId: 'c' })
+        );
+
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, own), 'own'), 'c');
+        await relay.receive(toControlMessage(forged, 'forged'), 'm');
+        await relay.receive(toControlMessage(forged, 'forged-again'), 'm');
+        await acceptEach(origin, await relay.readSent('a'));
+
+        expect(await readUpwardTuplesFor(relay, 'a', 'c')).toEqual([['ack', 'c', 'delivered'], ['nack', 'c', 'not-subscribed']]);
+        const receipt = await readReceipt(origin, message);
+        expect(receipt?.ackedPeerIds).toContain('c');
+        expect(receipt?.outsideAudiencePeerIds).toEqual([]);
+    });
+
+    it('a recipient\'s true NACK after a forged ACK about it is forwarded and the origin records it outside', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('true-nack-after-forged');
+        const forged = toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'm', logicalRecipientPeerId: 'c' });
+        const own = toChildNackControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.m!, forged), 'forged'), 'm');
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, own), 'own'), 'c');
+        await acceptEach(origin, await relay.readSent('a'));
+
+        expect(await readUpwardTuplesFor(relay, 'a', 'c')).toEqual([['ack', 'c', 'delivered'], ['nack', 'c', 'not-subscribed']]);
+        const receipt = await readReceipt(origin, message);
+        expect(receipt?.outsideAudiencePeerIds).toContain('c');
+        expect(receipt?.ackedPeerIds).not.toContain('c');
+    });
+
+    it('forwards a recipient\'s own hop-end after a forged confirmation and refuses its later NACK as already forwarded', async () => {
+        const { chain, origin, relay, message } = await createRelayWithTwoChildren('own-hop-end-then-nack');
+        const forged = toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'm', logicalRecipientPeerId: 'c' });
+        const hopEnd = toChildAckControl({
+            msgId: message.id.msgId,
+            fromPeerId: 'c',
+            logicalRecipientPeerId: 'c',
+            status: 'subtree-complete-not-subscribed'
+        });
+        const own = toChildNackControl({ msgId: message.id.msgId, fromPeerId: 'c', logicalRecipientPeerId: 'c' });
+
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.m!, forged), 'forged'), 'm');
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, hopEnd), 'hop-end'), 'c');
+        await relay.receive(toControlMessage(await signTestALReceiptControl(chain.keys.c!, own), 'own'), 'c');
+        await acceptEach(origin, await relay.readSent('a'));
+
+        const upwardForC = await readUpwardTuplesFor(relay, 'a', 'c');
+        expect(upwardForC).toEqual([['ack', 'c', 'delivered'], ['ack', 'c', 'subtree-complete-not-subscribed']]);
+        expect(upwardForC.filter(([type]) => type === 'nack')).toEqual([]);
+        expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
+    });
+
     it('two honest relays each forward both statements about one recipient, and the origin counts it', async () => {
         const { chain, origin, g, r, message } = await createTwoRelaysWithTwoChildren('two-relays');
         const forged = toChildAckControl({ msgId: message.id.msgId, fromPeerId: 'm', logicalRecipientPeerId: 'c' });
