@@ -320,6 +320,7 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
         namespace: INBOUND_NAMESPACE
     });
     const runtime = new ALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         ...createDefaultALInboundRuntimeResources({

@@ -18,7 +18,6 @@ import type {
     ALInboundCommitBundle,
     ALInboundPlanner
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import { toALInboundUpwardAcks } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
     computeALInboundBufferedReleasePlanningObservations,
@@ -32,6 +31,8 @@ import {
 } from '@shared/alm/inbound/transition-al-pending-ack.ts';
 
 import { INBOUND_TEST_EFFECT_PREPARATION } from '../inbound-runtime-test-fixture.ts';
+
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const DIRECTOR_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'relay' };
@@ -64,11 +65,11 @@ const RELAY_ROW: ALPendingAckSnapshot = {
 };
 
 describe('inbound pending ACK transition', () => {
-    it('relays an ACK a child relay passes on without completing that hop', () => {
+    it('relays an ACK a child relay forwards without completing that hop', () => {
         const transition = acceptALPendingAckPayload({
             current: RELAY_ROW,
             acks: [],
-            ack: toChildAck('child-relay', 'grandchild', 'forwarded')
+            ack: toChildAck('child-relay', 'grandchild', 'delivered')
         });
 
         expect(transition.relayedRecipientPeerIds).toEqual(['grandchild']);
@@ -85,7 +86,7 @@ describe('inbound pending ACK transition', () => {
         const late = acceptALPendingAckPayload({
             current: afterRelay.pending,
             acks: [],
-            ack: toChildAck('child-relay', 'grandchild', 'forwarded')
+            ack: toChildAck('child-relay', 'grandchild', 'delivered')
         });
 
         expect(afterRelay.completed).toMatchObject({ msgId: 'message', toPeerId: 'origin', status: 'subtree-complete' });
@@ -110,6 +111,19 @@ describe('inbound pending ACK transition', () => {
         expect(transition.pending).toMatchObject({ localReady: false, expectedFromPeerIds: [] });
         expect(transition.completed).toBeUndefined();
     });
+
+    it('reads a forwarded not-subscribed hop-end as implying its NACK without completing the forwarding hop', () => {
+        const transition = acceptALPendingAckPayload({
+            current: { ...RELAY_ROW, upwardAudiencePeerIds: ['grandchild'] },
+            acks: [],
+            ack: toChildAck('child-relay', 'grandchild', 'subtree-complete-not-subscribed')
+        });
+
+        expect(transition.relayedOutsidePeerIds).toEqual(['grandchild']);
+        expect(transition.relayedRecipientPeerIds).toEqual([]);
+        expect(transition.pending).toMatchObject({ ackedFromPeerIds: [], outsideAudiencePeerIds: ['grandchild'] });
+        expect(transition.completed).toBeUndefined();
+    });
 });
 
 describe('a logical recipient that relays a group-leader send', () => {
@@ -131,7 +145,7 @@ describe('a logical recipient that relays a group-leader send', () => {
 
         const completed = acceptChildCompletions(readPendingRow(bundle), DIRECTOR_CHILD_PEER_IDS);
 
-        expect(toALInboundUpwardAcks(completed).at(-1)).toEqual({ logicalRecipient: { kind: 'self' }, status: 'subtree-complete' });
+        expect(completed.relayedRecipientPeerIds).toEqual([]);
         expect(completed.completed).toMatchObject({ toPeerId: 'relay', status: 'subtree-complete' });
     });
 
@@ -152,7 +166,8 @@ describe('a logical recipient that relays a group-leader send', () => {
     it('relays no ACK of a child outside the frozen audience upward, only its own terminal ACK', async () => {
         const bundle = await computeDirectorAdmission();
         let current = readPendingRow(bundle);
-        const upward = [];
+        const relayed = [];
+        const completions = [];
 
         for (const childPeerId of DIRECTOR_CHILD_PEER_IDS) {
             const transition = acceptALPendingAckPayload({
@@ -160,11 +175,13 @@ describe('a logical recipient that relays a group-leader send', () => {
                 acks: [],
                 ack: { ...toChildAck(childPeerId, childPeerId, 'subtree-complete'), toPeerId: 'director' }
             });
-            upward.push(...toALInboundUpwardAcks(transition));
+            relayed.push(...transition.relayedRecipientPeerIds, ...transition.relayedOutsidePeerIds);
+            completions.push(...(transition.completed === undefined ? [] : [transition.completed.status]));
             current = transition.pending!;
         }
 
-        expect(upward).toEqual([{ logicalRecipient: { kind: 'self' }, status: 'subtree-complete' }]);
+        expect(relayed).toEqual([]);
+        expect(completions).toEqual(['subtree-complete']);
     });
 });
 
@@ -270,7 +287,7 @@ function acceptChildCompletions(pending: ALPendingAckSnapshot, childPeerIds: rea
 }
 
 function toChildAck(fromPeerId: string, logicalRecipientPeerId: string, status: ALAckStatus): ALAckPayload {
-    return {
+    return toTestALAckPayload({
         ackedMsgId: 'message',
         fromPeerId,
         toPeerId: 'relay',
@@ -279,5 +296,5 @@ function toChildAck(fromPeerId: string, logicalRecipientPeerId: string, status: 
         carrier: 'rtc',
         status,
         observedAtEpochMs: 1
-    };
+    });
 }

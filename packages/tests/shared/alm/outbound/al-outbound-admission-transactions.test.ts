@@ -44,6 +44,8 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const TRANSACTION_NAMESPACE = 'admission-transactions';
 /** Longer than a few engine passes at their 100 ms delay, and far inside the 3 s readiness memory. */
 const IDLE_OWNER_SETTLE_MS = 300;
@@ -424,11 +426,12 @@ it('reads a control decision surface from one readonly transaction before its wr
         admissionStore: store,
         workQueue: backend.workQueue,
         nowMs: Date.now,
-        carrier: 'ws'
+        carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' }
     });
     const ack = newALAckControlMessage(
         { v: 4, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now(), traceId: 'trace-al-outbound-admission-transactions' },
-        {
+        toTestALAckPayload({
             fromPeerId: 'peer-1',
             toPeerId: message.id.senderId,
             ackedMsgId: message.id.msgId,
@@ -437,7 +440,7 @@ it('reads a control decision surface from one readonly transaction before its wr
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'
-        }
+        })
     );
 
     const recorded = recordIndexedDbTransactions();
@@ -635,7 +638,7 @@ function createOrderedOutboundMessage(resourceId: string, seq: number): ALMessag
 function createAcknowledgement(msgId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId, senderId: 'receiver', ts: Date.now(), traceId: 'trace-al-outbound-admission-transactions' },
-        {
+        toTestALAckPayload({
             fromPeerId: 'receiver',
             toPeerId: 'sender',
             ackedMsgId: `${msgId}-target`,
@@ -644,6 +647,6 @@ function createAcknowledgement(msgId: string): ALMessage {
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'
-        }
+        })
     );
 }

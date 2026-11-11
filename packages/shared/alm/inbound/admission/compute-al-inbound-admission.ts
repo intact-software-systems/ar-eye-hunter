@@ -22,7 +22,6 @@ import {
     toALInboundForwardingEffects,
     toALInboundLocalDeliveryEffects,
     toALInboundNegativeControlEffects,
-    toALInboundUpwardAcks,
     type ALInboundAckEffectInput,
     type ALInboundControlEffectInput,
     type ALInboundEffectIntent
@@ -108,6 +107,7 @@ function computeALInboundMessageRead(
         observations: read.observations,
         pendingAck: read.pendingAck,
         acks: read.acks,
+        nacks: read.nacks,
         controlOwners: read.controlOwners,
         plan,
         retention: read.retention,
@@ -294,7 +294,7 @@ function computeRelayAcknowledgements(
         localReady: !plan.localDelivery.deferred,
         expireAtTimestamp: ack.expireAtTimestamp,
         carrier: ack.carrier,
-        upwardAudiencePeerIds: resolveALUpwardAudiencePeerIds(plan.ack.algo, read.msg.targets)
+        upwardAudiencePeerIds: resolveALUpwardAudiencePeerIds(read.msg, plan.ack.algo)
     });
     const changes = toAckTransitionChanges(transition, ack, read);
     if (!transition.pending) {
@@ -378,7 +378,6 @@ function toInboundOwnAck(
             toPeerId: plan.ack.toPeerId,
             ackedMsgId: msg.id.msgId,
             originPeerId: msg.id.senderId,
-            logicalRecipient: { kind: 'self' },
             expireAtTimestamp: resolveALMessageExpireAtMs(msg, plan.effective),
             carrier: toALDeliveryCarrier(source)
         };
@@ -405,24 +404,21 @@ function toAckTransitionChanges(
     return { mutations, immediateEffects: [], completedEffects: toCompletedAckEffects(transition, ack) };
 }
 
-/** The origin is the tracked message sender, never what a child ACK claimed. */
+/** The terminal ACK of the transition that completed the row: the origin is the tracked message sender. */
 function toCompletedAckEffects(
     transition: ALPendingAckTransition,
     ack: InboundOwnAck
 ): readonly ALInboundEffectIntent[] {
-    const pending = transition.pending;
-    if (pending === undefined) {
+    const { pending, completed } = transition;
+    if (pending === undefined || completed === undefined) {
         return [];
     }
-    return toALInboundUpwardAcks(transition).map((upward) =>
-        toALInboundAckEffect({
-            ...ack,
-            toPeerId: pending.toPeerId,
-            logicalRecipient: upward.logicalRecipient,
-            status: upward.status,
-            expireAtTimestamp: pending.expireAtTimestamp ?? ack.expireAtTimestamp
-        })
-    );
+    return [toALInboundAckEffect({
+        ...ack,
+        toPeerId: pending.toPeerId,
+        status: completed.status,
+        expireAtTimestamp: pending.expireAtTimestamp ?? ack.expireAtTimestamp
+    })];
 }
 
 function computeInboundControlOwnerIndex(

@@ -233,6 +233,7 @@ export class WsQueueBoxClientService {
             {
                 ...resources,
                 carrier: 'ws',
+                recipientAuthentication: { kind: 'carrier' },
                 decodePreparedMessage: decodeALOutboundTransportMessage,
                 dequeue: {
                     types: WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
@@ -275,6 +276,7 @@ export class WsQueueBoxClientService {
                 ...resources,
                 carrier: 'ws',
                 orderingObserver: 'addressed',
+                receiptProofs: { kind: 'carrier-authenticated' },
                 planIncomingMessage: (msg, source, observations) => this.planIncomingMessage(msg, source, observations),
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),

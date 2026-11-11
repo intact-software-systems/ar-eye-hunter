@@ -19,6 +19,7 @@ import { Either } from '../resilience/Either.ts';
 import type { OverlayMulticasterContext } from './overlay-multicast-contracts.ts';
 import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from './rtc-room-snapshot-admission.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
+import { toUnfrozenRoomMessage } from './to-unfrozen-room-message.ts';
 
 /** The origin that freezes its own room send, and for a granted publication the sessions it may reach. */
 export interface RtcFreezingOrigin {
@@ -190,27 +191,6 @@ export function computeRtcLeaderRefusal(
             lane: 'volatile',
             preparedMessages: []
         });
-}
-
-/**
- * A refusal names the targets its sender gave: an audience this plan froze is undone, one its sender gave frozen -- a
- * signed stored copy's -- is kept.
- */
-function toUnfrozenRoomMessage(msg: ALMessage, original: ALMessage): ALMessage {
-    if (resolveALFrozenMulticastAudience(original.targets) !== undefined) {
-        return msg;
-    }
-    return original.targets?.mode === 'broadcast'
-        ? { ...msg, targets: original.targets }
-        : toUnfrozenMulticastMessage(msg);
-}
-
-function toUnfrozenMulticastMessage(msg: ALMessage): ALMessage {
-    if (msg.targets?.mode !== 'multicast') {
-        return msg;
-    }
-    const { recipientPeerIds, snapshotVersion, ...targets } = msg.targets;
-    return recipientPeerIds === undefined && snapshotVersion === undefined ? msg : { ...msg, targets };
 }
 
 /**

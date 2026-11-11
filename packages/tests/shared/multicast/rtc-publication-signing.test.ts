@@ -31,6 +31,7 @@ import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts'
 
 import {
     createAvailablePublicationCryptoFixture,
+    ROOM_PUBLICATION_KEY,
     UNAVAILABLE_PUBLICATION_CRYPTO,
     type AvailablePublicationCrypto
 } from '../signature/publication-crypto-fixtures.ts';
@@ -593,7 +594,7 @@ function createGrantedLeafFixture(crypto: PublicationCrypto, snapshot: GroupSnap
 }
 
 /**
- * The room of `a`, `b` and `c` whose snapshot attests `a`'s page key; `grants` is each principal's permissions on the
+ * The room of `a`, `b` and `c` whose snapshot attests `a`'s page key and the room key of `b` and `c`; `grants` is each principal's permissions on the
  * granted topic, absent, `b` and `c` may subscribe; `snapshotVersion`, absent, 3.
  */
 function toKeyedSnapshot(
@@ -604,19 +605,22 @@ function toKeyedSnapshot(
     return createPublicationRoomSnapshot({
         sessionIds: ['a', 'b', 'c'],
         snapshotVersion,
-        keys: { a: toGroupPresencePublicationKey(crypto)! },
+        keys: { a: toGroupPresencePublicationKey(crypto)!, b: ROOM_PUBLICATION_KEY, c: ROOM_PUBLICATION_KEY },
         grants: { a: PUBLISH_ONLY, ...grants }
     });
 }
 
-/** The room of `sessionCount` sessions, `a`, `b`, `c` and then `s0`, `s1`, ...: `a` publishes and every other session subscribes. */
+/**
+ * The room of `sessionCount` sessions, `a`, `b`, `c` and then `s0`, `s1`, ...: `a` publishes and every other session subscribes,
+ * registering the room key.
+ */
 function toSubscribedRoomSnapshot(crypto: AvailablePublicationCrypto, sessionCount: number): GroupSnapshot {
     const sessionIds = ['a', 'b', 'c', ...Array.from({ length: sessionCount - 3 }, (_, index) => `s${index}`)];
     const subscribers = Object.fromEntries(sessionIds.slice(1).map((sessionId) => [sessionId, SUBSCRIBE_ONLY]));
     return createPublicationRoomSnapshot({
         sessionIds,
         snapshotVersion: 3,
-        keys: { a: toGroupPresencePublicationKey(crypto)! },
+        keys: { ...Object.fromEntries(sessionIds.map((sessionId) => [sessionId, ROOM_PUBLICATION_KEY])), a: toGroupPresencePublicationKey(crypto)! },
         grants: { a: PUBLISH_ONLY, ...subscribers }
     });
 }

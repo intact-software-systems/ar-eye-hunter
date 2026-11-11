@@ -28,6 +28,8 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { ALWorkBatchTestObserver } from '../alm/work/al-work-batch-test-observer.ts';
 import { RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const CONTROL_RECOVERY_STARTED_AT_MS = 1791883286866;
 
 afterEach(() => {
@@ -218,6 +220,7 @@ function createControlRecoveryRuntime(
         acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
     });
     const runtime = new ALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         ...resources,
         carrier: 'rtc',
@@ -233,23 +236,27 @@ function createControlRecoveryRuntime(
 
 async function seedControlRecoveryWork(run: ControlRecoveryRuntime, sequence: number, expireAtTimestamp: number): Promise<ResourceEntry> {
     const nowMs = run.resources.clock.nowMs();
-    const msg = newALAckControlMessage({
-        v: 4,
-        msgId: `recovery-control-${sequence}`,
-        senderId: 'receiver',
-        ts: nowMs,
-        traceId: 'trace-rtc-control-handoff-recovery'
-    }, {
-        ackedMsgId: `recovery-subject-${sequence}`,
-        fromPeerId: 'receiver',
-        toPeerId: 'sender',
-        originPeerId: 'sender',
-        logicalRecipientPeerId: 'receiver',
-        carrier: 'rtc',
-        status: 'delivered',
-        observedAtEpochMs: nowMs
-    });
+    const msg = newALAckControlMessage(
+        {
+            v: 4,
+            msgId: `recovery-control-${sequence}`,
+            senderId: 'receiver',
+            ts: nowMs,
+            traceId: 'trace-rtc-control-handoff-recovery'
+        },
+        toTestALAckPayload({
+            ackedMsgId: `recovery-subject-${sequence}`,
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            originPeerId: 'sender',
+            logicalRecipientPeerId: 'receiver',
+            carrier: 'rtc',
+            status: 'delivered',
+            observedAtEpochMs: nowMs
+        })
+    );
     const computed = computeALInboundWorkEntry({
+        signsForRecipient: false,
         namespace: run.resources.admissionStore.namespace,
         effectId: msg.id.msgId,
         payload: { kind: 'send-control', msg },

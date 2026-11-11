@@ -39,7 +39,7 @@ import {
 import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 
-const RETIRED_ACK_TYPE_ID = 'al.control.ack.v1';
+const RETIRED_ACK_TYPE_ID = 'al.control.ack.v2';
 
 const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
     confirmed: ['receiver', 'recipient-b'],
@@ -119,7 +119,7 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
 };
 
 /**
- * `recipient-b` answers the send with a raw ACK envelope of the retired version `al.control.ack.v1`, over the rtc leg
+ * `recipient-b` answers the send with a raw ACK envelope of the retired version `al.control.ack.v2`, over the rtc leg
  * both RTC carriers admit the send on. The origin refuses it `unsupported` at its own inbound admission, and the real
  * ACK of `recipient-b` still completes the receipt. Over ws the WS server refuses the frame before any relay, so the
  * origin never sees it; that refusal stays a unit pin of the server.

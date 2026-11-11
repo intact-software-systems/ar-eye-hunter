@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALControlMessage, newALNackControlMessage, type ALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    decodeALControlMessage,
+    newALNackControlMessage,
+    type ALNackPayload,
+    type ALPeerControlMessage
+} from '@shared/al-contracts/al-control.ts';
 import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
 import type { ALAdmissionMemoryState, ALAdmissionStoredValue } from '@shared/alm/al-admission-backend.ts';
 import { toALInboundControlPendingKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
@@ -22,6 +27,8 @@ import {
 } from './rtc-relay-chain-test-support.ts';
 import { createObservedVolatileInboundPair, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 import { createRtcTopicSubscriptionsFixture } from './rtc-topic-subscription-reader-fixtures.ts';
+
+import { signTestALReceiptControl, toTestALNackPayload, verifyTestALReceiptControl } from '../../al-control-test-payloads.ts';
 
 type ChainGrants = Readonly<Record<string, GroupPublicationTopicPermissions>>;
 
@@ -74,7 +81,7 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         vi.useRealTimers();
     });
 
-    it('re-originates the leaf\'s gap NACK toward the origin, writing nothing, and forwards the origin\'s repair to the leaf', async () => {
+    it('forwards the leaf\'s gap NACK toward the origin, writing nothing, and forwards the origin\'s repair to the leaf', async () => {
         const gap = await createGapChain({ ack: 'receiver' });
         await forwardTrack(gap, [1, 2, 3]);
         await receiveAtLeaf(gap, [1, 3]);
@@ -119,6 +126,25 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         expect(readAdmissionOutcomes(gap.relay, gap.frames[1]!.id.msgId)).toEqual([['committed', 'admitted']]);
     });
 
+    it('verifies the gap NACK the leaf\'s own sign step signed at the signature origin, and repairs the gap', async () => {
+        const gap = await createGapChain({ ack: 'receiver' });
+        await forwardTrack(gap, [1, 2, 3]);
+        await receiveAtLeaf(gap, [1, 3]);
+
+        const leafGap = (await readLeafControls(gap)).find((control) => findGapNack([control]) !== undefined);
+        await deliverEach(await readLeafControls(gap), gap.relay, 'c');
+        const relayedGap = (await readRelayUpwardControls(gap)).find((control) => findGapNack([control]) !== undefined);
+        const admissions = await acceptAtOrigin(gap, await readRelayUpwardControls(gap));
+        await repairThroughRelay(gap);
+
+        expect(leafGap === undefined ? false : await verifyTestALReceiptControl(gap.chain.keys.c!, leafGap)).toBe(true);
+        expect(relayedGap === undefined ? false : await verifyTestALReceiptControl(gap.chain.keys.c!, relayedGap)).toBe(true);
+        expect(admissions.get('gap')).toBe('committed');
+        expect(gap.chain.origin.diagnostics.some((event) => event.kind === 'control-admission' && event.proofRefusal !== undefined))
+            .toBe(false);
+        expect(gap.leaf.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
+    });
+
     it('serves no copy toward a leaf the origin froze into the next sequence but not the missing one (D530)', async () => {
         const gap = await createGapChain({ ack: 'receiver', grantsBySeq: SEQ_2_WITHOUT_LEAF });
         await forwardTrack(gap, [1, 2, 3]);
@@ -126,7 +152,7 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         const sentBefore = gap.chain.origin.channels.r!.sent.length;
 
         // Seq 3 names the leaf's prior as 1, so the leaf sees no gap; a stale gap NACK still asks for seq 2.
-        await gap.relay.receive(toGapNack(gap, { fromPeerId: 'c', logicalRecipientPeerId: 'c', revealing: gap.frames[2]! }), 'c');
+        await gap.relay.receive(await toGapNack(gap, { fromPeerId: 'c', logicalRecipientPeerId: 'c', revealing: gap.frames[2]! }), 'c');
         const admissions = await acceptAtOrigin(gap, await readRelayUpwardControls(gap));
 
         expect(gap.frames.map((frame) => frame.targets)).toMatchObject([
@@ -164,9 +190,9 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         await receiveAtLeaf(gap, [1]);
         const revealing = gap.frames[2]!;
 
-        await gap.relay.receive(toGapNack(gap, { fromPeerId: 'd', logicalRecipientPeerId: 'c', revealing }), 'd');
+        await gap.relay.receive(await toGapNack(gap, { fromPeerId: 'd', logicalRecipientPeerId: 'c', revealing }), 'd');
         const relayedFromStranger = readRelayedNacks(await gap.relay.readSentControls('a'));
-        await gap.relay.receive(toGapNack(gap, { fromPeerId: 'c', logicalRecipientPeerId: 'c', revealing }), 'c');
+        await gap.relay.receive(await toGapNack(gap, { fromPeerId: 'c', logicalRecipientPeerId: 'c', revealing }), 'c');
         await readRelayUpwardControls(gap);
 
         expect(readRelayRow(gap, revealing.id.msgId)).toMatchObject({ value: { kind: 'pending', value: { expectedFromPeerIds: ['c'] } } });
@@ -183,7 +209,7 @@ describe('a gap below a publish-only RTC relay on a receipted ordered granted tr
         await receiveAtLeaf(gap, [1, 3]);
         const revealing = gap.frames[2]!;
 
-        await gap.relay.receive(toGapNack(gap, { fromPeerId: 'c', logicalRecipientPeerId: 'c', revealing }), 'c');
+        await gap.relay.receive(await toGapNack(gap, { fromPeerId: 'c', logicalRecipientPeerId: 'c', revealing }), 'c');
 
         expect(readRelayRow(gap, revealing.id.msgId)).toBeUndefined();
         expect(readAdmissionOutcomes(gap.relay, 'leaf-gap-c')).toEqual([['not-handled', 'control']]);
@@ -263,7 +289,7 @@ async function readLeafControls(gap: GapChain): Promise<readonly ALMessage[]> {
     return await gap.leaf.readSent('r');
 }
 
-/** The relay's controls to the origin, once a gap NACK it re-originated is among them. */
+/** The relay's controls to the origin, once a gap NACK it forwarded is among them. */
 async function readRelayUpwardControls(gap: GapChain): Promise<readonly ALMessage[]> {
     await drainUntil(async () => findGapNack(await gap.relay.readSent('a')) !== undefined);
     return await gap.relay.readSent('a');
@@ -332,22 +358,31 @@ function readAdmissionOutcomes(fixture: RtcRelayOverlayFixture, msgId: string): 
 }
 
 /** A gap NACK `fromPeerId` sends the relay, asking for seq 2 on the track the leaf entered. */
-function toGapNack(gap: GapChain, input: GapNackInput): ALMessage {
+/** Signed by its sender's own key when the chain keys it; a stranger to the room sends it unsigned. */
+async function toGapNack(gap: GapChain, input: GapNackInput): Promise<ALMessage> {
     const { fromPeerId, revealing } = input;
+    const nack = { type: 'nack', payload: toGapNackPayload(gap, input) } as const;
+    const key = gap.chain.keys[fromPeerId];
     return newALNackControlMessage(
         { v: 4, msgId: `leaf-gap-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: revealing.id.traceId },
-        {
-            msgId: revealing.id.msgId,
-            fromPeerId,
-            toPeerId: 'r',
-            logicalRecipientPeerId: input.logicalRecipientPeerId,
-            reason: 'gap',
-            orderingKey: readLeafTrackKey(gap),
-            expectedSeq: 2,
-            missingRanges: [{ from: 2, to: 2 }],
-            observedAtEpochMs: Date.now()
-        }
+        key === undefined ? nack.payload : (await signTestALReceiptControl(key, nack)).payload
     );
+}
+
+function toGapNackPayload(gap: GapChain, input: GapNackInput): ALNackPayload {
+    const { fromPeerId, revealing } = input;
+    return toTestALNackPayload({
+        msgId: revealing.id.msgId,
+        fromPeerId,
+        toPeerId: 'r',
+        originPeerId: revealing.id.senderId,
+        logicalRecipientPeerId: input.logicalRecipientPeerId,
+        reason: 'gap',
+        orderingKey: readLeafTrackKey(gap),
+        expectedSeq: 2,
+        missingRanges: [{ from: 2, to: 2 }],
+        observedAtEpochMs: Date.now()
+    });
 }
 
 /** The key of the track the leaf entered, as its receive pipeline stated it. */

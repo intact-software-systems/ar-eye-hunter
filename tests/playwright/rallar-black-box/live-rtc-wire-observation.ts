@@ -1,3 +1,5 @@
+import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+
 import {
     jsonRecord,
     normalizeJson,
@@ -125,7 +127,7 @@ export function summarizeLiveRtcNackWireObservation(
         if (decoded.typeId) {
             typedFrameCount += 1;
         }
-        if (decoded.typeId === 'al.control.nack.v2') {
+        if (decoded.typeId === AL_CONTROL_NACK_TYPE_ID) {
             nackFrameCount += 1;
             if (!decoded.nack) {
                 malformedNackFrameCount += 1;
@@ -159,7 +161,7 @@ function decodeLiveRtcWireFrame(
     const payload = jsonRecord(message?.payload);
     const typeId = stringValue(payload?.typeId) ?? null;
     const resource = stringValue(payload?.resource);
-    if (typeId !== 'al.control.nack.v2' || !resource) {
+    if (typeId !== AL_CONTROL_NACK_TYPE_ID || !resource) {
         return { malformed: false, typeId, nack: null };
     }
     try {

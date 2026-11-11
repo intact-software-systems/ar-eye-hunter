@@ -866,6 +866,7 @@ describe('AL outbound dequeue work', () => {
                 queueEngine: engine
             }),
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             receiptWorkCapture: {
                 batchObservations: ALWorkBatchObservations,

@@ -42,7 +42,10 @@ export function validateALInboundAdmissionMutation(
     if (mutation.kind === 'set-inbound-message' && mutation.value.retainUntilMs !== mutation.expireAtTimestamp) {
         issues.push('Inbound admission candidate retains its canonical message for an undeclared lifetime');
     }
-    if (mutation.kind === 'set-control-acks' || mutation.kind === 'set-control-pending') {
+    if (
+        mutation.kind === 'set-control-acks' || mutation.kind === 'set-control-nacks' ||
+        mutation.kind === 'set-control-pending'
+    ) {
         try {
             decodeALAdmissionControlValue(mutation.value, mutation.msgId, mutation.value.kind);
         }
@@ -71,6 +74,7 @@ function matchesOriginalObservation(mutation: ALInboundAdmissionMutation, bundle
         case 'set-inbound-message':
             return mutation.value.msgId === observed.msgId && mutation.value.senderId === observed.senderId;
         case 'set-control-acks':
+        case 'set-control-nacks':
         case 'set-control-pending':
         case 'mark-terminal-volatile-msg-owner':
             return mutation.msgId === observed.msgId && mutation.senderId === observed.senderId;

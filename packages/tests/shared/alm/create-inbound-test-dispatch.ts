@@ -29,6 +29,7 @@ export function createInboundTestDispatch(
 ): InboundTestDispatch {
     const dispatched: string[] = [];
     const delivery = new ALInboundAdmittedDelivery({
+        receiptProofs: { kind: 'carrier-authenticated' },
         admissionStore: stores.admissionStore,
         lane: 'durable',
         effectWorkerId: 'inbound-test-dispatch',

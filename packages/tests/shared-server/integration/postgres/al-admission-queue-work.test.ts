@@ -590,6 +590,7 @@ async function runOutboundWorkBatch(
 ): Promise<void> {
     const runtime = createDefaultALOutboundMessageRuntime({
         carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' },
         stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,

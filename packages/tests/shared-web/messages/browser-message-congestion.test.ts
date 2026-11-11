@@ -46,6 +46,8 @@ import {
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const TYPE_ID = 'chat.message.v1';
 
 type CongestionStrategy = 'rtc' | 'ws' | 'rtc-with-ws-fallback';
@@ -198,7 +200,7 @@ function toBackpressureFault(carrier: ScriptedTransportFault['carrier'], remaini
 function toServerAck(msgId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${msgId}`, senderId: 'server', ts: Date.now(), traceId: 'trace-browser-message-congestion' },
-        {
+        toTestALAckPayload({
             ackedMsgId: msgId,
             originPeerId: 'a',
             logicalRecipientPeerId: 'server',
@@ -207,7 +209,7 @@ function toServerAck(msgId: string): ALMessage {
             status: 'accepted',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'
-        }
+        })
     );
 }
 

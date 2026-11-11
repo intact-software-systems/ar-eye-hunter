@@ -6,6 +6,7 @@ import {
     type ALNackPayload,
     type ALPendingAckSnapshot
 } from '@shared/al-contracts/al-control.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALRelayedNackReason } from '@shared/alm/delivery/is-al-relayed-nack-reason.ts';
 import {
@@ -15,7 +16,12 @@ import {
 } from '@shared/alm/inbound/control/compute-al-inbound-nack-admission.ts';
 import { validateALInboundNackAdmission } from '@shared/alm/inbound/control/validate-al-inbound-nack-admission.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../../al-control-test-payloads.ts';
+
 const NOW_MS = 1_800_000_000_000;
+/** The child's own time, which the relay forwards unchanged. */
+const CHILD_OBSERVED_AT_MS = NOW_MS - 7;
+const RETENTION = normalizeALRuntimeStoreRetention();
 
 /** A relay waiting on its child `child` for the frozen recipients `child` and `leaf`, toward its parent `parent`. */
 const ROW: ALPendingAckSnapshot = {
@@ -40,25 +46,33 @@ interface NackArrival {
     readonly reason: ALRelayedNackReason;
     readonly fromPeerId?: string;
     readonly logicalRecipientPeerId?: string;
+    readonly originPeerId?: string;
     readonly ordering?: Partial<Pick<ALNackPayload, 'orderingKey' | 'expectedSeq' | 'missingRanges'>>;
+}
+
+function toChildNack(arrival: NackArrival): ALNackPayload & Readonly<{ reason: ALRelayedNackReason; }> {
+    return {
+        msgId: 'subject',
+        fromPeerId: arrival.fromPeerId ?? 'child',
+        toPeerId: 'relay',
+        logicalRecipientPeerId: arrival.logicalRecipientPeerId ?? 'leaf',
+        originPeerId: arrival.originPeerId ?? 'origin',
+        reason: arrival.reason,
+        observedAtEpochMs: CHILD_OBSERVED_AT_MS,
+        proof: null,
+        ...(arrival.ordering ?? (arrival.reason === 'gap' ? GAP_ORDERING : {}))
+    };
 }
 
 function computeArrival(
     arrival: NackArrival,
     row: ALPendingAckSnapshot = ROW,
-    acks: readonly ALAckPayload[] = []
+    acks: readonly ALAckPayload[] = [],
+    nacks: readonly ALNackPayload[] = []
 ): ALInboundNackAdmissionCandidate {
     return computeALInboundNackAdmission({
         namespace: 'relay',
-        nack: {
-            msgId: 'subject',
-            fromPeerId: arrival.fromPeerId ?? 'child',
-            toPeerId: 'relay',
-            logicalRecipientPeerId: arrival.logicalRecipientPeerId ?? 'leaf',
-            reason: arrival.reason,
-            observedAtEpochMs: NOW_MS,
-            ...(arrival.ordering ?? (arrival.reason === 'gap' ? GAP_ORDERING : {}))
-        },
+        nack: toChildNack(arrival),
         controlOwners: { ambiguous: false, values: [{ peerId: 'child', senderId: 'origin' }] },
         owner: {
             msgId: 'subject',
@@ -69,10 +83,11 @@ function computeArrival(
         },
         pending: row,
         acks,
+        nacks,
         nowMs: NOW_MS,
-        controlMsgId: 'relayed',
+        controlMsgId: 'forwarded',
         traceId: 'trace-relayed-nack'
-    }, normalizeALRuntimeStoreRetention());
+    }, RETENTION);
 }
 
 function toUpwardControls(candidate: ALInboundNackAdmissionCandidate) {
@@ -80,20 +95,20 @@ function toUpwardControls(candidate: ALInboundNackAdmissionCandidate) {
 }
 
 function toConfirmation(logicalRecipientPeerId: string): ALAckPayload {
-    return {
+    return toTestALAckPayload({
         ackedMsgId: 'subject',
         fromPeerId: 'child',
         toPeerId: 'relay',
         originPeerId: 'origin',
         logicalRecipientPeerId,
         carrier: 'rtc',
-        status: 'forwarded',
+        status: 'delivered',
         observedAtEpochMs: NOW_MS
-    };
+    });
 }
 
 describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
-    it('re-originates one gap NACK toward the parent with the ordering hints, writing no row', () => {
+    it('forwards the child\'s gap NACK toward the parent with its ordering hints and its own time, writing no row', () => {
         const candidate = computeArrival({ reason: 'gap' });
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([]);
@@ -101,16 +116,13 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         expect(toALInboundNackCommitBundle(candidate).mutations).toEqual([]);
         expect(toUpwardControls(candidate)).toEqual([{
             type: 'nack',
-            payload: {
-                msgId: 'subject',
-                fromPeerId: 'relay',
-                toPeerId: 'parent',
-                logicalRecipientPeerId: 'leaf',
-                reason: 'gap',
-                observedAtEpochMs: NOW_MS,
-                ...GAP_ORDERING
-            }
+            payload: { ...toChildNack({ reason: 'gap' }), fromPeerId: 'relay', toPeerId: 'parent' }
         }]);
+    });
+
+    it('refuses a NACK that names another origin', () => {
+        expect(validateALInboundNackAdmission(computeArrival({ reason: 'gap', originPeerId: 'other' })))
+            .toEqual([{ code: 'unauthorized', message: 'Inbound NACK names another origin than the message it answers' }]);
     });
 
     it('refuses a gap NACK from a child the row does not wait on', () => {
@@ -118,12 +130,12 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
             .toEqual([{ code: 'unauthorized', message: 'Inbound NACK sender has no pending obligation' }]);
     });
 
-    it('refuses a gap NACK for a recipient whose confirmation the relay already relayed', () => {
+    it('refuses a gap NACK for a recipient whose confirmation the relay already forwarded', () => {
         const candidate = computeArrival({ reason: 'gap' }, ROW, [toConfirmation('leaf')]);
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([{
             code: 'unauthorized',
-            message: 'Inbound NACK names a recipient whose confirmation was already relayed'
+            message: 'Inbound NACK names a recipient whose confirmation was already forwarded'
         }]);
     });
 
@@ -132,7 +144,7 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([{
             code: 'unauthorized',
-            message: 'Inbound NACK names a recipient already relayed outside the audience'
+            message: 'Inbound NACK names a recipient already forwarded outside the audience'
         }]);
     });
 
@@ -142,31 +154,48 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
             ['its ordering key', { expectedSeq: GAP_ORDERING.expectedSeq, missingRanges: GAP_ORDERING.missingRanges }],
             ['its expected sequence', { orderingKey: GAP_ORDERING.orderingKey, missingRanges: GAP_ORDERING.missingRanges }]
         ] as const
-    )('refuses a gap NACK without %s as malformed, relaying nothing', (_missing, ordering) => {
+    )('refuses a gap NACK without %s as malformed', (_missing, ordering) => {
         const candidate = computeArrival({ reason: 'gap', ordering });
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([{
             code: 'malformed',
-            message: 'Inbound gap NACK carries no ordering hints to relay'
+            message: 'Inbound gap NACK carries no ordering hints to forward'
         }]);
-        expect(candidate.upwardEffects).toEqual([]);
     });
 
-    it('records a not-subscribed recipient outside and relays its NACK without ordering hints, as before', () => {
+    it('records a not-subscribed recipient outside and forwards the child\'s NACK without ordering hints', () => {
         const candidate = computeArrival({ reason: 'not-subscribed' });
 
         expect(validateALInboundNackAdmission(candidate)).toEqual([]);
         expect(candidate.pending).toEqual({ kind: 'pending', value: { ...ROW, outsideAudiencePeerIds: ['leaf'] } });
         expect(toUpwardControls(candidate)).toEqual([{
             type: 'nack',
-            payload: {
-                msgId: 'subject',
-                fromPeerId: 'relay',
-                toPeerId: 'parent',
-                logicalRecipientPeerId: 'leaf',
-                reason: 'not-subscribed',
-                observedAtEpochMs: NOW_MS
-            }
+            payload: { ...toChildNack({ reason: 'not-subscribed' }), fromPeerId: 'relay', toPeerId: 'parent' }
         }]);
+    });
+
+    it('stores an outside-audience NACK in the nacks history, bounded by collectionEntries, and writes no row for a gap NACK', () => {
+        const limit = AL_MESSAGE_RESOURCE_LIMITS.collectionEntries;
+        const stored = Array.from({ length: limit }, (_, index) =>
+            toTestALNackPayload({
+                msgId: 'subject',
+                fromPeerId: 'child',
+                toPeerId: 'relay',
+                originPeerId: 'origin',
+                logicalRecipientPeerId: `earlier-${index}`,
+                reason: 'not-subscribed'
+            }));
+        const outside = computeArrival({ reason: 'before-entry' }, ROW, [], stored);
+        const gap = computeArrival({ reason: 'gap' }, ROW, [], stored);
+
+        const nacksRow = toALInboundNackCommitBundle(outside).mutations.find((mutation) => mutation.kind === 'set-control-nacks');
+        expect(nacksRow).toEqual({
+            kind: 'set-control-nacks',
+            msgId: 'subject',
+            senderId: 'origin',
+            value: { kind: 'nacks', values: [...stored.slice(1), toChildNack({ reason: 'before-entry' })] },
+            expireAtTimestamp: NOW_MS + RETENTION.controlHistoryTtlMs
+        });
+        expect(toALInboundNackCommitBundle(gap).mutations).toEqual([]);
     });
 });

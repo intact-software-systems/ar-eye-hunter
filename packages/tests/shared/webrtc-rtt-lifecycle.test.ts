@@ -270,7 +270,11 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         selfPrincipalId: connectionService.input.sessionId
     });
     onTestFinished(() => multicast.dispose());
-    const streamer = createDefaultWebRtcRxStreamerService({ multicast, sessionId });
+    const streamer = createDefaultWebRtcRxStreamerService({
+        multicast,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        sessionId
+    });
     onTestFinished(() => streamer.dispose());
     const measurements: RttMeasurementInfo[] = [];
     streamer.onRttMeasurementDo('observations', {

@@ -61,6 +61,8 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const ADMISSION_STORE_NAME = 'entries';
 const FENCE_NAMESPACE = 'fence';
 
@@ -408,22 +410,25 @@ async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTes
 }
 
 function toDeliveredAck(message: ALMessage, observedAtMs: number): ALMessage {
-    return newALAckControlMessage({
-        v: 4,
-        msgId: `${message.id.msgId}-ack`,
-        senderId: 'peer-1',
-        ts: observedAtMs,
-        traceId: 'trace-al-outbound-admission-fences'
-    }, {
-        fromPeerId: 'peer-1',
-        toPeerId: message.id.senderId,
-        ackedMsgId: message.id.msgId,
-        originPeerId: message.id.senderId,
-        logicalRecipientPeerId: 'peer-1',
-        status: 'delivered',
-        observedAtEpochMs: observedAtMs,
-        carrier: 'ws'
-    });
+    return newALAckControlMessage(
+        {
+            v: 4,
+            msgId: `${message.id.msgId}-ack`,
+            senderId: 'peer-1',
+            ts: observedAtMs,
+            traceId: 'trace-al-outbound-admission-fences'
+        },
+        toTestALAckPayload({
+            fromPeerId: 'peer-1',
+            toPeerId: message.id.senderId,
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: 'peer-1',
+            status: 'delivered',
+            observedAtEpochMs: observedAtMs,
+            carrier: 'ws'
+        })
+    );
 }
 
 /** The dispatch admission alone: the reads, fences and fallback of a group, without the work engine of an owner. */
@@ -465,7 +470,8 @@ function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAd
         admissionStore: fixture.store,
         workQueue: fixture.backend.workQueue,
         nowMs: Date.now,
-        carrier: 'ws'
+        carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' }
     });
 }
 

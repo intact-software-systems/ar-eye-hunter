@@ -26,6 +26,8 @@ import {
 } from '../inbound-runtime-test-fixture.ts';
 import { readInboundTestAcknowledgements } from '../read-inbound-test-acknowledgements.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const ORIGINAL_SENDER_ID = 's1';
 const RTC_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: ORIGINAL_SENDER_ID };
 /** Two downstream peers, so one acknowledgement leaves the pending receipt standing. */
@@ -76,7 +78,7 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
 function createDownstreamAcknowledgement(msg: ALMessage, fromPeerId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${fromPeerId}`, senderId: fromPeerId, ts: Date.now(), traceId: 'trace-al-inbound-control-rows' },
-        {
+        toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
             originPeerId: msg.id.senderId,
             logicalRecipientPeerId: fromPeerId,
@@ -85,7 +87,7 @@ function createDownstreamAcknowledgement(msg: ALMessage, fromPeerId: string): AL
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'
-        }
+        })
     );
 }
 

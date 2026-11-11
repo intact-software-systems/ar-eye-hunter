@@ -1,22 +1,21 @@
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '../../../al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
-    newALNackControlMessage,
-    type ALNackPayload,
+    type ALAckStatus,
     type ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
-import type { ALSeqRange } from '../../../al-contracts/al-runtime.ts';
+import type { ALReceiptControl } from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
-import type { ALOutsideAudienceNackReason } from '../../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALInboundMessageOwner } from '../al-inbound-admission-store.ts';
-import type { ALInboundUpwardAck } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
     computeALInboundWorkEntry,
     toALInboundEffectId,
     type ALInboundDurableEffectWrite
 } from '../al-inbound-work-entry.ts';
+import { isALInboundRelayRecipientReceipt } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
+import { toALForwardedReceiptControlMessage } from './to-al-forwarded-receipt-control-message.ts';
 
 /** The relay a child's control reached, and the message it is about: whom its upward controls name. */
 export interface ALInboundUpwardControlContext {
@@ -33,32 +32,12 @@ export interface ALInboundUpwardControlContext {
     readonly traceId: string;
 }
 
-/** The ordering hints of a recipient's gap NACK, which the relay passes upward unchanged. */
-export interface ALInboundUpwardNackOrdering {
-    /** The recipient's track key, which the origin matches against its stored track. */
-    readonly orderingKey: string;
-    readonly expectedSeq: number;
-    readonly missingRanges: readonly ALSeqRange[];
-}
-
-/**
- * One control a relay sends toward the origin: an ACK it relays or ends its hop with, or a NACK it relays. A relayed
- * gap NACK carries the recipient's ordering hints; an outside-audience NACK carries none.
- */
+/** One control a relay sends toward the origin: its own ACK, or a child's control it forwards readdressed. */
 export type ALInboundUpwardControl =
-    | Readonly<{ kind: 'ack'; ack: ALInboundUpwardAck; }>
-    | Readonly<{ kind: 'nack'; logicalRecipientPeerId: string; reason: ALOutsideAudienceNackReason; }>
-    | Readonly<{ kind: 'nack'; logicalRecipientPeerId: string; reason: 'gap'; ordering: ALInboundUpwardNackOrdering; }>;
+    | Readonly<{ kind: 'own-ack'; status: ALAckStatus; }>
+    | Readonly<{ kind: 'forwarded'; control: ALReceiptControl; }>;
 
-/** A gap NACK's ordering hints, complete; `undefined` when the NACK lacks any of them and so has none to relay. */
-export function toALInboundUpwardNackOrdering(nack: ALNackPayload): ALInboundUpwardNackOrdering | undefined {
-    const { orderingKey, expectedSeq, missingRanges } = nack;
-    return orderingKey === undefined || expectedSeq === undefined || missingRanges === undefined
-        ? undefined
-        : { orderingKey, expectedSeq, missingRanges };
-}
-
-/** The relay re-originates each control to its row's parent, over the carrier the message arrived on (D40). */
+/** The relay sends each control to its row's parent, over the carrier the message arrived on (D40). */
 export function toALInboundUpwardControlWork(
     context: ALInboundUpwardControlContext,
     controls: readonly ALInboundUpwardControl[],
@@ -67,7 +46,6 @@ export function toALInboundUpwardControlWork(
     const carrier = toALDeliveryCarrier(context.owner.source);
     return controls.map((control, index) => {
         const controlMsgId = `${context.controlMsgId}:${index}`;
-        const msg = toUpwardControlMessage(context, control, controlMsgId);
         return computeALInboundWorkEntry({
             namespace: context.namespace,
             observedAtMs: context.nowMs,
@@ -75,7 +53,7 @@ export function toALInboundUpwardControlWork(
                 control.kind,
                 context.msgId,
                 context.pending.toPeerId,
-                control.kind === 'ack' ? control.ack.status : control.logicalRecipientPeerId,
+                control.kind === 'own-ack' ? control.status : control.control.payload.logicalRecipientPeerId,
                 controlMsgId
             ]),
             expireAtTimestamp: resolveExpireAtTimestampWithFallback(
@@ -84,7 +62,13 @@ export function toALInboundUpwardControlWork(
                 context.nowMs
             ),
             carrier,
-            payload: { kind: 'send-control', msg }
+            payload: { kind: 'send-control', msg: toUpwardControlMessage(context, control, controlMsgId) },
+            signsForRecipient: isALInboundRelayRecipientReceipt({
+                controlKind: control.kind,
+                carrier,
+                relayPeerId: context.relayPeerId,
+                upwardAudiencePeerIds: context.pending.upwardAudiencePeerIds
+            })
         });
     });
 }
@@ -95,6 +79,7 @@ function toUpwardControlMessage(
     controlMsgId: string
 ): ALMessage {
     const { relayPeerId, nowMs } = context;
+    const carrier = toALDeliveryCarrier(context.owner.source);
     const id = {
         v: AL_MESSAGE_ENVELOPE_VERSION,
         msgId: controlMsgId,
@@ -102,24 +87,22 @@ function toUpwardControlMessage(
         ts: nowMs,
         traceId: context.traceId
     };
-    const route = { fromPeerId: relayPeerId, toPeerId: context.pending.toPeerId, observedAtEpochMs: nowMs };
-    if (control.kind === 'nack') {
-        return newALNackControlMessage(id, {
-            ...route,
-            msgId: context.msgId,
-            logicalRecipientPeerId: control.logicalRecipientPeerId,
-            reason: control.reason,
-            ...(control.reason === 'gap' ? control.ordering : {})
+    if (control.kind === 'forwarded') {
+        return toALForwardedReceiptControlMessage(id, control.control, {
+            fromPeerId: relayPeerId,
+            toPeerId: context.pending.toPeerId,
+            carrier
         });
     }
     return newALAckControlMessage(id, {
-        ...route,
+        fromPeerId: relayPeerId,
+        toPeerId: context.pending.toPeerId,
+        observedAtEpochMs: nowMs,
         ackedMsgId: context.msgId,
         originPeerId: context.owner.senderId,
-        logicalRecipientPeerId: control.ack.logicalRecipient.kind === 'self'
-            ? relayPeerId
-            : control.ack.logicalRecipient.peerId,
-        carrier: toALDeliveryCarrier(context.owner.source),
-        status: control.ack.status
+        logicalRecipientPeerId: relayPeerId,
+        carrier,
+        status: control.status,
+        proof: null
     });
 }

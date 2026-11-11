@@ -39,6 +39,8 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { readInboundTestAcknowledgements } from './alm/read-inbound-test-acknowledgements.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+
 afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
@@ -102,7 +104,7 @@ describe('ALInboundMessageRuntime', () => {
         });
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId)).toEqual([
-            'al.control.nack.v2',
+            'al.control.nack.v3',
             'al.control.repair.v2'
         ]);
         expect(dispatchedTexts).toEqual([]);
@@ -351,7 +353,7 @@ describe('ALInboundMessageRuntime', () => {
 
         const control = newALAckControlMessage(
             { v: 4, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'missing-msg',
                 originPeerId: 'peer-1',
                 logicalRecipientPeerId: 'peer-2',
@@ -360,7 +362,7 @@ describe('ALInboundMessageRuntime', () => {
                 status: 'delivered',
                 observedAtEpochMs: 1,
                 carrier: 'ws'
-            }
+            })
         );
         const pending = await runtime.admitIncomingMessage(control, {
             kind: 'ws-client',
@@ -441,7 +443,7 @@ describe('ALInboundMessageRuntime', () => {
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: seq2.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -450,7 +452,7 @@ describe('ALInboundMessageRuntime', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -466,7 +468,7 @@ describe('ALInboundMessageRuntime', () => {
 
         expect(releaseConflictObserved).toBe(true);
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
@@ -518,7 +520,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -527,7 +529,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -539,7 +541,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         const ackPayloads = readAckPayloads(controlMessages);
         // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
@@ -568,7 +570,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         const accepted = await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -577,7 +579,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -588,7 +590,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(3);
         expect(readAckPayloads(controlMessages)).toEqual(
             expect.arrayContaining(
-                [['peer-2', 'forwarded'], ['self', 'accepted'], ['self', 'subtree-complete']].map(([recipient, status]) =>
+                [['peer-2', 'delivered'], ['self', 'accepted'], ['self', 'subtree-complete']].map(([recipient, status]) =>
                     expect.objectContaining({
                         ackedMsgId: msg.id.msgId,
                         toPeerId: 'peer-1',
@@ -644,7 +646,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -653,7 +655,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -694,12 +696,12 @@ describe('ALInboundMessageRuntime durable effects', () => {
         // The round carried both and failed; each claim then answered for its own message alone, so
         // the repair went out and only the claim of the NACK waits for its retry.
         await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v2']);
-        expect(attemptedControls[0]).toEqual(['al.control.nack.v2', 'al.control.repair.v2']);
+        expect(attemptedControls[0]).toEqual(['al.control.nack.v3', 'al.control.repair.v2']);
 
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => sentControls.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v2',
+            'al.control.nack.v3',
             'al.control.repair.v2'
         ]);
     });
@@ -875,7 +877,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v2',
+            'al.control.nack.v3',
             'al.control.repair.v2'
         ]);
     });
@@ -909,7 +911,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
         await runtime1.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -918,7 +920,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
@@ -939,7 +941,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         // The relay's own ACK, the child ACK relayed as it arrived, and the terminal ACK that ends its subtree.
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
@@ -977,6 +979,7 @@ function createInboundHarness(
     const controlAcceptances: ALControlAcceptance[] = [];
 
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',

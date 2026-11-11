@@ -106,6 +106,9 @@ import {
     readRtcOutboundObservation,
     type RtcOutboundObservation
 } from './read-rtc-outbound-observation.ts';
+import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
+import { RtcReceiptProofVerifier } from './receipt-proof/rtc-receipt-proof-verifier.ts';
+import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import {
     computeRtcRoomSnapshotAdmission,
@@ -234,6 +237,8 @@ export class WebRtcOverlayMulticastManager {
     private readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
+    /** A `receiver` or `leader` leg is carried only by a page that can verify its recipients' signatures. */
+    private readonly canVerify: boolean;
 
     constructor(dependencies: WebRtcOverlayMulticastManager.Dependencies) {
         this.outbox = dependencies.outboundRuntime.workQueue;
@@ -258,6 +263,7 @@ export class WebRtcOverlayMulticastManager {
         });
         this.outboundDiagnostics = dependencies.outboundDiagnostics;
         this.clock = dependencies.outboundRuntime.clock;
+        this.canVerify = dependencies.publicationCrypto.kind === 'available';
         this.submission = new RtcOutboundSubmission({
             connectionService: dependencies.connectionService,
             clock: this.clock,
@@ -269,6 +275,13 @@ export class WebRtcOverlayMulticastManager {
             {
                 ...dependencies.outboundRuntime,
                 carrier: 'rtc',
+                recipientAuthentication: {
+                    kind: 'signature',
+                    verifier: new RtcReceiptProofVerifier({
+                        crypto: dependencies.publicationCrypto,
+                        nowEpochMs: () => this.clock.nowMs()
+                    })
+                },
                 decodePreparedMessage: decodeALOutboundTransportMessage,
                 dequeue: {
                     types: WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
@@ -763,9 +776,9 @@ export class WebRtcOverlayMulticastManager {
         const plan = this.computeOriginRefusal({ msg, original, policy, storedSend: RTC_STORED_SEND_STAGES.has(stage) })
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, stage));
         const selfPeerId = this.connectionService.input.sessionId;
-        const frozen = toRtcFrozenAudienceDispatchPlan(
-            toRtcEmptyAudienceDispatchPlan(plan, policy.effective),
-            selfPeerId
+        const frozen = toRtcReceiptProofDispatchPlan(
+            toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId),
+            { room: this.readOutboundObservation(msg).room, selfPeerId, nowMs: this.clock.nowMs() }
         );
         const planned = toRtcSentPositionRecordingPlan(toALOutboundMintingPlan(frozen, stage, selfPeerId));
         this.#publications.assertSignedPlanKept(original, planned);
@@ -789,7 +802,7 @@ export class WebRtcOverlayMulticastManager {
     private computeOriginRefusal(
         input: RtcOriginRefusalInput
     ): Either<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage> {
-        const { msg, original, policy } = input;
+        const { msg, original, policy, storedSend } = input;
         return computeRtcBroadcastScopeRefusal(msg)
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
@@ -797,8 +810,7 @@ export class WebRtcOverlayMulticastManager {
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
-                (carried) =>
-                    this.#publications.computeOriginRefusal({ carried, original, storedSend: input.storedSend })
+                (carried) => this.#publications.computeOriginRefusal({ carried, original, storedSend })
             )
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
@@ -812,6 +824,19 @@ export class WebRtcOverlayMulticastManager {
             .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
                 (refusal) => Either.ofLeft(refusal),
                 (carried) => computeRtcFrozenAudienceRefusal(carried, original)
+            )
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+                (refusal) => Either.ofLeft(refusal),
+                (frozen) =>
+                    computeRtcReceiptKeyRefusal({
+                        msg: frozen,
+                        original,
+                        effective: policy.effective,
+                        room: this.readOutboundObservation(frozen).room,
+                        canVerify: this.canVerify,
+                        storedSend,
+                        nowMs: this.clock.nowMs()
+                    })
             )
             .flatMap(
                 (refusal) => Either.ofLeft(refusal),

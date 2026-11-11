@@ -152,6 +152,7 @@ function createReceivingEndpoint(
     const admissionEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
     const streamer = createDefaultWebRtcRxStreamerService({
         multicast: createMulticast(),
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
         sessionId: 'self',
         roomAuthorityRefresh,
         inboundDiagnostics: (event) => {

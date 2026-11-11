@@ -13,6 +13,8 @@ import {
     decodeALAdmissionSupersedenceValue
 } from '@shared/alm/al-admission-value-validation.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 describe('admission scalar and version decoding', () => {
     it('accepts stored values without changing their representation', () => {
         expect(decodeALAdmissionNumber(7)).toBe(7);
@@ -47,7 +49,7 @@ describe('admission scalar and version decoding', () => {
 });
 
 describe('admission control decoding', () => {
-    const ack = {
+    const ack = toTestALAckPayload({
         ackedMsgId: 'msg',
         originPeerId: 'b',
         logicalRecipientPeerId: 'a',
@@ -56,7 +58,7 @@ describe('admission control decoding', () => {
         status: 'delivered',
         observedAtEpochMs: 7,
         carrier: 'rtc'
-    };
+    });
     const pending = {
         toPeerId: 'b',
         status: 'delivered',
@@ -72,7 +74,7 @@ describe('admission control decoding', () => {
             { kind: 'acks', values: [ack] },
             {
                 kind: 'nacks',
-                values: [{
+                values: [toTestALNackPayload({
                     msgId: 'msg',
                     fromPeerId: 'a',
                     toPeerId: 'b',
@@ -83,7 +85,7 @@ describe('admission control decoding', () => {
                     expectedSeq: 1,
                     missingRanges: [{ from: 1, to: 1 }],
                     serverSnapshotVersion: 2
-                }]
+                })]
             },
             { kind: 'repairs', values: [{ msgId: 'msg', fromPeerId: 'a', toPeerId: 'b', reason: 'resync', observedAtEpochMs: 7 }] },
             {

@@ -226,9 +226,9 @@ browser RTC and WS decode live messages once at ingress; control payloads are
 validated by
 [`al-control-value-codec.ts`](../../packages/shared/al-contracts/al-control-value-codec.ts)
 before dispatch; unknown controls cannot create pending work. An ACK names the
-message's origin and the logical recipient it speaks for (`al.control.ack.v2`,
-S2c-i), and RTC peer ingress refuses a room multicast that carries no frozen
-audience (S2c-ii).
+message's origin and the logical recipient it speaks for (S2c-i; the id is
+`al.control.ack.v3` since Slice 8), and RTC peer ingress refuses a room
+multicast that carries no frozen audience (S2c-ii).
 
 **CURRENT — #566, connection scope at WS ingress:** a WS connection's scope is
 the `applicationId` and `workspaceId` of its socket URL, or the default scope when
@@ -360,16 +360,19 @@ and one is confirmed (D518).
 A stored granted publication is repaired, re-planned and dequeued only while
 the origin's snapshot still grants it `publish`, a revoke ending the handle
 `rejected` `no-publish-grant`, and a responder repairs only toward a frozen
-recipient still holding `subscribe`; nothing re-signs (D519). **Limit:** the
-payload is not confidential from relays (D520); receipts are unsigned; an
-exclusions-only, `world` or exclusive granted send, one whose frozen audience
-passes the room limit of 256, and a `group-leader` send whose director holds no
-`subscribe` are RTC-`unsupported`, and `ws-then-rtc` sends granted messages over
-WS; a named session without `subscribe` is left out silently, so a receipted
-peer send to it completes with zero recipients over RTC where WS answers
-`unauthorized` (D553); after a hand-over the WS server keeps a frozen session
-that never subscribed expected and unconfirmed until the deadline; the
-`granted-rtc` and four-role cells run on the local lane only (D521, D558).
+recipient still holding `subscribe`; nothing re-signs (D519). Under `receiver`
+and `leader` a counted recipient's ACK and NACK on RTC carry its signature, and
+the origin counts them only after verifying it against the key it froze for that
+recipient when it froze the audience (Slice 8, D582–D587). **Limit:** the
+payload is not confidential from relays (D520); an exclusions-only, `world` or
+exclusive granted send, one whose frozen audience passes the room limit of 256,
+and a `group-leader` send whose director holds no `subscribe` are
+RTC-`unsupported`, and `ws-then-rtc` sends granted messages over WS; a named
+session without `subscribe` is left out silently, so a receipted peer send to it
+completes with zero recipients over RTC where WS answers `unauthorized` (D553);
+after a hand-over the WS server keeps a frozen session that never subscribed
+expected and unconfirmed until the deadline; the `granted-rtc` and four-role
+cells run on the local lane only (D521, D558).
 
 ## Logical audiences
 
@@ -815,10 +818,10 @@ applies the 256-sequence repair window and the 256-message, 1 MiB buffered-track
 ceilings and returns `resync-required` without enumerating an oversized gap.
 
 **CURRENT — R1, range repair and resync integration:** The ordering observation,
-the planner's NACK plan, the NACK and repair payloads (`al.control.nack.v2`,
-`al.control.repair.v2`; the `v1` ids are refused `unsupported`), the repair hint
-and the effect ids carry missing sequences as inclusive `ALSeqRange` ranges, at
-most 128 per payload
+the planner's NACK plan, the NACK and repair payloads (`al.control.nack.v3`
+since Slice 8, `al.control.repair.v2`; older ids are refused `unsupported`), the
+repair hint and the effect ids carry missing sequences as inclusive `ALSeqRange`
+ranges, at most 128 per payload
 ([`al-seq-range.ts`](../../packages/shared/al-contracts/al-seq-range.ts), D139).
 A repair hint retransmits 32 sequences per execution and re-commits the rest as
 one follow-up hint (D140); exhausted repair settles the sender's message
@@ -899,7 +902,7 @@ unchanged; a receiver whose entry frame is lost and whose next frame arrives
 first enters past it.
 
 **CURRENT — S4-ii, reconnect, relays and restart:** a reconnect reads as an
-omission, never loss, a relay re-originates a child's gap NACK toward the
+omission, never loss, a relay forwards a child's gap NACK toward the
 origin, and a minted sequence continues across a reload; the server refuses a
 presence connect naming a connection generation none of the session's live
 client-state rows holds `stale-generation`, when the session holds any. The

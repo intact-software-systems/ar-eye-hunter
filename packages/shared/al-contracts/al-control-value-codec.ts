@@ -1,3 +1,6 @@
+import { isBase64UrlOfByteLength } from '../encoding/base64url.ts';
+import { ECDSA_P256_KEY_ID_BYTES, ECDSA_P256_SIGNATURE_BYTES } from '../signature/ecdsa-p256-signature.ts';
+import type { SignatureProof } from '../signature/signature-proof.ts';
 import type {
     ALAckPayload,
     ALAckStatus,
@@ -21,7 +24,8 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         'logicalRecipientPeerId',
         'carrier',
         'status',
-        'observedAtEpochMs'
+        'observedAtEpochMs',
+        'proof'
     ]);
     return {
         ackedMsgId: decodeControlIdentifier(
@@ -38,7 +42,8 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         ),
         carrier: decodeALDeliveryCarrier(record.carrier, 'ACK carrier'),
         status: decodeAckStatus(record.status),
-        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time')
+        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time'),
+        proof: decodeControlProof(record.proof)
     };
 }
 
@@ -77,7 +82,16 @@ export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
 export function decodeALNackPayload(value: unknown): ALNackPayload {
     const record = decodeControlRecord(
         value,
-        ['msgId', 'fromPeerId', 'toPeerId', 'logicalRecipientPeerId', 'reason', 'observedAtEpochMs'],
+        [
+            'msgId',
+            'fromPeerId',
+            'toPeerId',
+            'logicalRecipientPeerId',
+            'originPeerId',
+            'reason',
+            'observedAtEpochMs',
+            'proof'
+        ],
         ['orderingKey', 'expectedSeq', 'missingRanges', 'serverSnapshotVersion']
     );
     return {
@@ -86,26 +100,14 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
             record.logicalRecipientPeerId,
             'NACK logical recipient identity'
         ),
+        originPeerId: decodeControlIdentifier(record.originPeerId, 'NACK origin identity'),
         reason: decodeNackReason(record.reason),
         ...decodeOptionalIdentifier(record, 'orderingKey', 'NACK ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'NACK expected sequence'),
         ...decodeOptionalSeqRanges(record, 'missingRanges', 'NACK missing ranges'),
-        ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version')
+        ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version'),
+        proof: decodeControlProof(record.proof)
     };
-}
-
-/** A NACK off the wire: an older peer's NACK names no logical recipient, so it speaks for its sender. */
-export function decodeALNackWirePayload(value: unknown): ALNackPayload {
-    return isControlRecord(value) && !Object.hasOwn(value, 'logicalRecipientPeerId')
-        ? decodeALNackPayload({ ...value, logicalRecipientPeerId: value.fromPeerId })
-        : decodeALNackPayload(value);
-}
-
-/** A receipt off the wire: an older server's receipt lists nobody outside the audience. */
-export function decodeALReceiptWirePayload(value: unknown): ALReceiptPayload {
-    return isControlRecord(value) && !Object.hasOwn(value, 'outsideAudienceRecipientPeerIds')
-        ? decodeALReceiptPayload({ ...value, outsideAudienceRecipientPeerIds: [] })
-        : decodeALReceiptPayload(value);
 }
 
 export function decodeALRepairPayload(value: unknown): ALRepairPayload {
@@ -187,22 +189,55 @@ function decodeControlRecord(
     if (!isControlRecord(value)) {
         throw new TypeError('Control value must be a plain record');
     }
+    const issues = validateControlRecordFields(value, required, optional);
+    if (issues.length > 0) {
+        throw new TypeError(issues[0]);
+    }
+    return value;
+}
+
+/** A closed record: only `required` and `optional` keys, each an enumerable data property, every required key present. */
+function validateControlRecordFields(
+    record: ControlRecord,
+    required: readonly string[],
+    optional: readonly string[]
+): readonly string[] {
     const allowed = [...required, ...optional];
+    const issues = new Set<string>();
     const keys: string[] = [];
-    for (const key of Reflect.ownKeys(value)) {
+    for (const key of Reflect.ownKeys(record)) {
         if (typeof key !== 'string' || !allowed.includes(key)) {
-            throw new TypeError('Control value has unknown fields');
+            issues.add('Control value has unknown fields');
+            continue;
         }
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        const descriptor = Object.getOwnPropertyDescriptor(record, key);
         if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
-            throw new TypeError('Control fields must be enumerable data properties');
+            issues.add('Control fields must be enumerable data properties');
         }
         keys.push(key);
     }
     if (required.some((key) => !keys.includes(key))) {
-        throw new TypeError('Control value is missing mandatory fields');
+        issues.add('Control value is missing mandatory fields');
     }
-    return value as ControlRecord;
+    return [...issues];
+}
+
+const CONTROL_PROOF_FIELDS: readonly string[] = ['alg', 'keyId', 'signature'];
+
+/** `null`, or the persisted proof's shape: ES256, a 43-character key id and an 86-character signature in strict base64url. */
+function decodeControlProof(value: unknown): SignatureProof | null {
+    if (value === null) {
+        return null;
+    }
+    if (
+        !isControlRecord(value) || validateControlRecordFields(value, CONTROL_PROOF_FIELDS, []).length > 0 ||
+        value.alg !== 'ES256' ||
+        typeof value.keyId !== 'string' || !isBase64UrlOfByteLength(value.keyId, ECDSA_P256_KEY_ID_BYTES) ||
+        typeof value.signature !== 'string' || !isBase64UrlOfByteLength(value.signature, ECDSA_P256_SIGNATURE_BYTES)
+    ) {
+        throw new TypeError('Control proof is invalid');
+    }
+    return { alg: value.alg, keyId: value.keyId, signature: value.signature };
 }
 
 function decodeControlRoute(

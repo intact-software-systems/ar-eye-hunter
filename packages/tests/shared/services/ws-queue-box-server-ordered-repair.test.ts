@@ -32,6 +32,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const SERVER_ID = 'server';
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 const ROOM = { ...SCOPE, groupId: 'room-1' };
@@ -797,7 +799,7 @@ function toNack(server: OrderedServer, input: NackInput): ALMessage {
             ts: server.clock.nowMs,
             traceId: 'trace-ws-queue-box-server-ordered-repair'
         },
-        {
+        toTestALNackPayload({
             msgId: input.msgId,
             fromPeerId: input.fromPeerId,
             logicalRecipientPeerId: input.fromPeerId,
@@ -809,7 +811,7 @@ function toNack(server: OrderedServer, input: NackInput): ALMessage {
                 expectedSeq: input.missingRanges[0]!.from,
                 missingRanges: input.missingRanges
             })
-        }
+        })
     );
 }
 
@@ -828,7 +830,7 @@ async function receiveAck(server: OrderedServer, ackedMsgId: string, recipient: 
 function toReceiverAck(server: OrderedServer, ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: server.clock.nowMs, traceId: 'trace-ws-queue-box-server-ordered-repair' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: recipient,
             toPeerId: SERVER_ID,
@@ -837,7 +839,7 @@ function toReceiverAck(server: OrderedServer, ackedMsgId: string, recipient: str
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: server.clock.nowMs
-        }
+        })
     );
 }
 

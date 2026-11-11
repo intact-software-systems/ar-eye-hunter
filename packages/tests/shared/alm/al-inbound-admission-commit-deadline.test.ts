@@ -46,6 +46,7 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                     fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId
                 });
             const admission = new ALInboundMessageAdmission({
+                receiptProofs: { kind: 'carrier-authenticated' },
                 orderingObserver: 'addressed',
                 diagnostics: undefined,
                 effectWorkerId: 'al-inbound:test',

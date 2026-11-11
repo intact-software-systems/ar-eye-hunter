@@ -43,7 +43,7 @@ import {
     type NativeRtcConnectionFixture,
     type SimulatedNativeRtcDataChannel
 } from '../native-rtc-connection-fixture.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginOverlay,
@@ -92,8 +92,8 @@ describe('exact RTC ACK boundary observations', () => {
             const direct = messages[1]!;
             const hops = [
                 { subject: relayed, traceId: 'trace-03-shot', fromPeerId: 'director', toPeerId: '02', status: 'delivered' },
-                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '02', toPeerId: '04', status: 'forwarded' },
-                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '04', toPeerId: '03', status: 'forwarded' },
+                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '02', toPeerId: '04', status: 'delivered' },
+                { subject: relayed, traceId: 'trace-03-shot', fromPeerId: '04', toPeerId: '03', status: 'delivered' },
                 { subject: direct, traceId: 'trace-02-shot', fromPeerId: 'director', toPeerId: '02', status: 'delivered' }
             ] as const;
             // All business, origin and frame observers exist before the first admission.
@@ -230,7 +230,7 @@ describe('exact RTC ACK boundary observations', () => {
                         faultPort,
                         dequeueResilience: createDefaultALOutboundDequeueResilience(),
                         grantedTopics: NO_RTC_GRANTED_TOPICS,
-                        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+                        publicationCrypto: ROOM_PUBLICATION_CRYPTO,
                         publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
                         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
                         selfPrincipalId: connection.service.input.sessionId
@@ -249,6 +249,7 @@ describe('exact RTC ACK boundary observations', () => {
                     });
                     const streamer = createDefaultWebRtcRxStreamerService({
                         multicast: manager,
+                        publicationCrypto: ROOM_PUBLICATION_CRYPTO,
                         sessionId,
                         inboundStores: stores,
                         queueEngine: undefined,

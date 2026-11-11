@@ -594,6 +594,7 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
 
 function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMessageRuntime.Dependencies {
     return {
+        receiptProofs: { kind: 'carrier-authenticated' },
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
         storageHealth: undefined,

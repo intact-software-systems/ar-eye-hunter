@@ -195,6 +195,7 @@ describe('inbound canonical message ownership', () => {
         const fixture = createCanonicalRuntime();
         const message = newInboundMessage('missing-owner', undefined, 'hello');
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: NAMESPACE,
             observedAtMs: Date.now(),
@@ -298,6 +299,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         ...resources,

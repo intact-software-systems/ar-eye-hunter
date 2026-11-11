@@ -35,7 +35,9 @@ import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './native-rtc-connection-fixture.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO, UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+
+import { toTestALAckPayload, verifyTestALReceiptControl } from '../al-control-test-payloads.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
@@ -355,35 +357,41 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
         await fixture.receive(
-            shared.newALAckControlMessage({ v: 4, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-webrtc-rx-policy' }, {
-                fromPeerId: 'peer-2',
-                toPeerId: 'self',
-                ackedMsgId: message.id.msgId,
-                originPeerId: 'peer-1',
-                logicalRecipientPeerId: 'peer-2',
-                status: 'delivered',
-                observedAtEpochMs: Date.now(),
-                carrier: 'rtc'
-            }),
+            shared.newALAckControlMessage(
+                { v: 4, msgId: 'ack-peer-2', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-webrtc-rx-policy' },
+                toTestALAckPayload({
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    ackedMsgId: message.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
+                    status: 'delivered',
+                    observedAtEpochMs: Date.now(),
+                    carrier: 'rtc'
+                })
+            ),
             'peer-2'
         );
         // A member that delivered confirms itself at once, before any child ACK it relays.
         await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([
             ['self', 'accepted'],
-            ['peer-2', 'forwarded']
+            ['peer-2', 'delivered']
         ]);
 
         await fixture.receive(
-            shared.newALAckControlMessage({ v: 4, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3', traceId: 'trace-webrtc-rx-policy' }, {
-                fromPeerId: 'peer-3',
-                toPeerId: 'self',
-                ackedMsgId: message.id.msgId,
-                originPeerId: 'peer-1',
-                logicalRecipientPeerId: 'peer-3',
-                status: 'delivered',
-                observedAtEpochMs: Date.now(),
-                carrier: 'rtc'
-            }),
+            shared.newALAckControlMessage(
+                { v: 4, msgId: 'ack-peer-3', ts: Date.now(), senderId: 'peer-3', traceId: 'trace-webrtc-rx-policy' },
+                toTestALAckPayload({
+                    fromPeerId: 'peer-3',
+                    toPeerId: 'self',
+                    ackedMsgId: message.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-3',
+                    status: 'delivered',
+                    observedAtEpochMs: Date.now(),
+                    carrier: 'rtc'
+                })
+            ),
             'peer-3'
         );
 
@@ -395,7 +403,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             .filter((control) => control?.type === 'ack');
         // Each is its own durable work row, so they leave in any order.
         expect(upstream.map((control) => control?.payload)).toEqual(
-            expect.arrayContaining([['self', 'accepted'], ['peer-2', 'forwarded'], ['peer-3', 'forwarded'], ['self', 'subtree-complete']].map((
+            expect.arrayContaining([['self', 'accepted'], ['peer-2', 'delivered'], ['peer-3', 'delivered'], ['self', 'subtree-complete']].map((
                 [recipient, status]
             ) => expect.objectContaining({
                 status,
@@ -434,6 +442,24 @@ describe('a retried copy of a message this peer already admitted', () => {
         ]);
     });
 
+    it('a streamer built with an available crypto signs a counted recipient\'s ACK', async () => {
+        const fixture = new RtcReceiveFixture();
+        fixture.service.onAllInboxMessagesDo({ onMessage: async () => {} });
+        const message = toCopyForSelf(createMulticast({ seq: 1, acknowledgeSubtree: true }), ['peer-2', 'peer-3']);
+
+        await fixture.receive(message, 'peer-1');
+
+        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([['self', 'delivered']]);
+        const [ack] = (await fixture.outboundTo('peer-1')).filter((outgoing) => shared.parseALControlMessage(outgoing)?.type === 'ack');
+        expect(await verifyTestALReceiptControl(ROOM_PUBLICATION_CRYPTO, ack!)).toBe(true);
+    });
+
+    it('the multicast manager exposes no receipt signing', () => {
+        const fixture = new RtcReceiveFixture();
+
+        expect('signReceiptProof' in fixture.multicast).toBe(false);
+    });
+
     it('forwards the copy only to the child hop whose subtree has not completed', async () => {
         const fixture = new RtcReceiveFixture();
         const delivered: string[] = [];
@@ -453,8 +479,8 @@ describe('a retried copy of a message this peer already admitted', () => {
         expect(readForwardedCopies(await fixture.outboundTo('peer-2'), message)).toBe(1);
         // Its own accepted ACK and the one it relayed for `peer-2` may be the ones the origin lost, so both go upward again.
         await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
-            ['peer-2', 'forwarded'],
+            ['peer-2', 'delivered'],
+            ['peer-2', 'delivered'],
             ['self', 'accepted'],
             ['self', 'accepted']
         ]);
@@ -487,10 +513,10 @@ describe('a retried copy of a message this peer already admitted', () => {
 
         // Every ACK it relayed goes upward again beside its terminal ACK: any of them may be the one the origin lost.
         await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).toSorted()).toEqual([
-            ['peer-2', 'forwarded'],
-            ['peer-2', 'forwarded'],
-            ['peer-3', 'forwarded'],
-            ['peer-3', 'forwarded'],
+            ['peer-2', 'delivered'],
+            ['peer-2', 'delivered'],
+            ['peer-3', 'delivered'],
+            ['peer-3', 'delivered'],
             ['self', 'accepted'],
             ['self', 'subtree-complete'],
             ['self', 'subtree-complete']
@@ -550,16 +576,19 @@ function toCopyForSelf(message: shared.ALMessage, visitedPeerIds: readonly strin
 }
 
 function createChildAck(message: shared.ALMessage, childPeerId: string): shared.ALMessage {
-    return shared.newALAckControlMessage({ v: 4, msgId: `ack-${childPeerId}`, ts: Date.now(), senderId: childPeerId, traceId: 'trace-webrtc-rx-policy' }, {
-        fromPeerId: childPeerId,
-        toPeerId: 'self',
-        ackedMsgId: message.id.msgId,
-        originPeerId: message.id.senderId,
-        logicalRecipientPeerId: childPeerId,
-        status: 'delivered',
-        observedAtEpochMs: Date.now(),
-        carrier: 'rtc'
-    });
+    return shared.newALAckControlMessage(
+        { v: 4, msgId: `ack-${childPeerId}`, ts: Date.now(), senderId: childPeerId, traceId: 'trace-webrtc-rx-policy' },
+        toTestALAckPayload({
+            fromPeerId: childPeerId,
+            toPeerId: 'self',
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: childPeerId,
+            status: 'delivered',
+            observedAtEpochMs: Date.now(),
+            carrier: 'rtc'
+        })
+    );
 }
 
 function readUpstreamAcks(outbound: readonly shared.ALMessage[]): readonly (readonly [string, string])[] {
@@ -580,7 +609,7 @@ class RtcReceiveFixture {
     readonly stores: shared.ALInboundRuntimeStores;
     private readonly nativeRuntime = installNativeRtcRuntime();
     private readonly connection;
-    private readonly multicast: shared.WebRtcOverlayMulticastManager;
+    readonly multicast: shared.WebRtcOverlayMulticastManager;
     private readonly groups = new shared.LatestRepository<string, GroupSnapshot>();
     private readonly overlays = new shared.LatestRepository<string, shared.OverlayInfo>();
     private readonly ready: Promise<void[]>;
@@ -624,6 +653,7 @@ class RtcReceiveFixture {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
+            // The manager is keyless: the session's receipt signing reaches its inbound runtime from the streamer alone.
             publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
@@ -635,6 +665,7 @@ class RtcReceiveFixture {
         });
         this.service = shared.createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             sessionId: 'self',
             inboundStores: stores,
             inboundDiagnostics,

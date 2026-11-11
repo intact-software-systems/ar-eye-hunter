@@ -14,6 +14,8 @@ import {
     waitForOutboundWorkDrained
 } from '../outbound-runtime-test-fixture.ts';
 
+import { toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 /** One retransmit the carrier ran: the message's sequence and the ranges of the hint that asked for it. */
 interface RecordedRepair {
     readonly seq: number;
@@ -94,7 +96,7 @@ describe('a repair hint is served in pages', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-repair-paging' },
-                {
+                toTestALNackPayload({
                     msgId: track[REVEALING_SEQ - 1]!.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
@@ -104,7 +106,7 @@ describe('a repair hint is served in pages', () => {
                     orderingKey: toALOrderingTrackKey(track[0]!)!,
                     expectedSeq: GAP.from,
                     missingRanges: [GAP]
-                }
+                })
             ),
             'peer'
         );

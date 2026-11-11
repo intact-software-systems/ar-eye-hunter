@@ -7,7 +7,7 @@ import {
     type ALMessage,
     type ALTargets
 } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, type ALAckStatus, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -47,10 +47,16 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import {
+    ROOM_PUBLICATION_CRYPTO,
+    ROOM_PUBLICATION_KEY,
+    type AvailablePublicationCrypto
+} from '../signature/publication-crypto-fixtures.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
+
+import { signTestALReceiptControl, toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 export interface CapturedChannel {
     readonly channel: QRtcDataChannel;
@@ -93,7 +99,7 @@ export interface RtcOriginOverlayFixtureInput {
     readonly onSettlement?: (settlement: ALDeliverySettlement) => void;
     /** The page's granted topics; absent, none, so every publication is carried unsigned. */
     readonly grantedTopics?: RtcGrantedTopicReader;
-    /** The page's key; absent, a keyless page. */
+    /** The page's key; absent, the key every room session of the fixture registers. */
     readonly publicationCrypto?: PublicationCrypto;
 }
 
@@ -102,6 +108,8 @@ export interface OriginAcknowledgementInput {
     readonly fromPeerId: string;
     readonly logicalRecipientPeerId: string;
     readonly status: ALAckStatus;
+    /** The key the ACK is signed with: the room key every fixture session registers, or a test's own per-session key. */
+    readonly key: AvailablePublicationCrypto;
 }
 
 export const ORIGIN_ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -148,7 +156,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         grantedTopics: input.grantedTopics ?? NO_RTC_GRANTED_TOPICS,
-        publicationCrypto: input.publicationCrypto ?? UNAVAILABLE_PUBLICATION_CRYPTO,
+        publicationCrypto: input.publicationCrypto ?? ROOM_PUBLICATION_CRYPTO,
         publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
         topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
         selfPrincipalId: 'a'
@@ -189,15 +197,9 @@ export async function acknowledgeAtOrigin(
     manager: WebRtcOverlayMulticastManager,
     input: OriginAcknowledgementInput
 ): Promise<void> {
-    await manager.acceptControlMessage(newALAckControlMessage(
-        {
-            v: 4,
-            msgId: `ack-${input.fromPeerId}-${input.logicalRecipientPeerId}-${input.status}`,
-            senderId: input.fromPeerId,
-            ts: Date.now(),
-            traceId: 'trace-rtc-origin-overlay-fixture'
-        },
-        {
+    const signed = await signTestALReceiptControl(input.key, {
+        type: 'ack',
+        payload: toTestALAckPayload({
             ackedMsgId: input.msgId,
             fromPeerId: input.fromPeerId,
             toPeerId: 'a',
@@ -206,10 +208,26 @@ export async function acknowledgeAtOrigin(
             carrier: 'rtc',
             status: input.status,
             observedAtEpochMs: Date.now()
-        }
+        })
+    });
+    await manager.acceptControlMessage(newALAckControlMessage(
+        {
+            v: 4,
+            msgId: `ack-${input.fromPeerId}-${input.logicalRecipientPeerId}-${input.status}`,
+            senderId: input.fromPeerId,
+            ts: Date.now(),
+            traceId: 'trace-rtc-origin-overlay-fixture'
+        },
+        signed.payload
     ));
 }
 
+/** A recipient's own NACK, signed by the room key every fixture session registers. */
+export async function signRoomNackPayload(payload: ALNackPayload): Promise<ALNackPayload> {
+    return (await signTestALReceiptControl(ROOM_PUBLICATION_CRYPTO, { type: 'nack', payload })).payload;
+}
+
+/** The origin room of `sessionIds`, each session live and registering the room key. */
 export function createOriginSnapshot(sessionIds: readonly string[], snapshotVersion: number): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...ORIGIN_ROOM, sessionIds });
     return {
@@ -219,7 +237,11 @@ export function createOriginSnapshot(sessionIds: readonly string[], snapshotVers
             snapshotVersion,
             acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' }
         },
-        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 600_000 }))
+        activeSessions: snapshot.activeSessions.map((session) => ({
+            ...session,
+            expiresAtEpochMs: Date.now() + 600_000,
+            publicationKey: ROOM_PUBLICATION_KEY
+        }))
     };
 }
 

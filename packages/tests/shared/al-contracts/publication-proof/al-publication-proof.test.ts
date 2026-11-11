@@ -24,8 +24,7 @@ import {
     signALPublicationProof,
     toALPublicationProofSigningInput,
     verifyALPublicationProof,
-    type ALPublicationProofFailure,
-    type ALPublicationProofFieldClass
+    type ALPublicationProofFailure
 } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import {
     createSigningKeyPair,
@@ -33,6 +32,7 @@ import {
     signDetached,
     type SigningKeyPair
 } from '@shared/signature/ecdsa-p256-signature.ts';
+import type { SignedFieldClass } from '@shared/signature/to-classified-signing-input.ts';
 
 interface ALPublicationProofFieldChange {
     readonly field: string;
@@ -307,7 +307,7 @@ describe('ALM publication proof signing input', () => {
         expectTypeOf<keyof typeof classes.qos>().toEqualTypeOf<keyof ALQosPolicyRequest>();
         expectTypeOf<keyof typeof classes.payload>().toEqualTypeOf<keyof ALPayload>();
         // @ts-expect-error a key the record does not classify fails the satisfies check
-        expect(classes.message satisfies Record<keyof ALMessage | 'added', ALPublicationProofFieldClass>).toBeDefined();
+        expect(classes.message satisfies Record<keyof ALMessage | 'added', SignedFieldClass>).toBeDefined();
         expect(classes.message).toMatchObject({
             forwarding: 'excluded',
             audit: 'excluded',

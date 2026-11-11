@@ -26,6 +26,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { createOutboundTestRuntimeFor } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 /** Every instance of one deployment shares this server peer id, as `wsRuntimeName` does in production. */
 const SERVER_ID = 'server';
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -102,7 +104,7 @@ describe('WS server control sends across instances', () => {
         expect((await readOutboxAckRows(fixture.outbox)).map((row) => row.status)).toEqual(['COMPLETED']);
         expect(readAcks(fixture.alice)).toEqual([]);
         expect(log).toHaveBeenCalledWith(expect.stringMatching(
-            /^WS server control al\.control\.ack\.v2 \S+ has no socket for a here; handed to the cluster outbox \(admitted\)$/
+            /^WS server control al\.control\.ack\.v3 \S+ has no socket for a here; handed to the cluster outbox \(admitted\)$/
         ));
     });
 
@@ -187,7 +189,7 @@ function createHandOffFixture(): HandOffFixture {
 function serverAck(msgId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId, senderId: SERVER_ID, ts: HAND_OFF_NOW_MS, traceId: 'trace-ws-queue-box-server-control-delivery' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'to-server',
             fromPeerId: SERVER_ID,
             toPeerId: 'a',
@@ -196,7 +198,7 @@ function serverAck(msgId: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: HAND_OFF_NOW_MS
-        }
+        })
     );
 }
 

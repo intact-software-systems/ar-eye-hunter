@@ -22,6 +22,8 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 const NAMESPACE = 'outbound-acknowledged-receipt';
 const ACK_TIMEOUT_MS = 2_000;
 /** One more than the work page of 16, which reads its rows in key order, not in readiness order. */
@@ -241,14 +243,14 @@ async function refuseForGood(
             ts: Date.now(),
             traceId: 'trace-al-outbound-acknowledged-receipt-timeout'
         },
-        {
+        toTestALNackPayload({
             msgId: msg.id.msgId,
             fromPeerId: relayPeerId,
             logicalRecipientPeerId: relayPeerId,
             toPeerId: 'self',
             reason: 'expired',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
     expect(await acceptWsQueueBoxClientControlMessage(fixture.runtime, nack)).toEqual({
         kind: 'committed'
@@ -281,7 +283,7 @@ async function acknowledge(
             ts: observedAtEpochMs,
             traceId: 'trace-al-outbound-acknowledged-receipt-timeout'
         },
-        {
+        toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
             fromPeerId: recipientPeerId,
             toPeerId: 'self',
@@ -290,7 +292,7 @@ async function acknowledge(
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs
-        }
+        })
     );
     expect(await acceptWsQueueBoxClientControlMessage(fixture.runtime, ack)).toEqual({
         kind: 'committed'

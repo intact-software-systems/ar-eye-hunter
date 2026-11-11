@@ -35,6 +35,7 @@ import {
 } from '../al-inbound-work-entry.ts';
 import {
     toALInboundControlAcksKey,
+    toALInboundControlNacksKey,
     toALInboundControlOwnersKey,
     toALInboundControlPendingKey
 } from '../control/al-inbound-control-rows.ts';
@@ -96,6 +97,7 @@ function isReclaimableProvenance(
     const { msgId, senderId } = held.owner;
     const controls = [
         toALInboundControlAcksKey(namespace, msgId, senderId),
+        toALInboundControlNacksKey(namespace, msgId, senderId),
         toALInboundControlPendingKey(namespace, msgId, senderId),
         toALInboundControlOwnersKey(namespace, msgId)
     ];
@@ -277,6 +279,7 @@ function isKnownOtherInboundKey(key: string, namespace: string): boolean {
         'supersedence:',
         'delivered:',
         'control:acks:',
+        'control:nacks:',
         'control:owners:'
     ].some((part) => key.startsWith(`${namespace}:${part}`));
 }

@@ -58,6 +58,8 @@ import '../setup-browser-indexeddb.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
+
 const SCOPED_PEER_1_SOURCE = {
     kind: 'ws-client' as const,
     peerId: 'peer-1',
@@ -211,6 +213,7 @@ describe('IndexedDB AL runtime stores', () => {
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             selfPeerId: 'self',
@@ -410,7 +413,7 @@ describe('IndexedDB AL runtime stores', () => {
         await control.admit(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2', traceId: 'trace-al-indexeddb-runtime-stores' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: msg.id.senderId,
                     logicalRecipientPeerId: 'peer-2',
@@ -419,7 +422,7 @@ describe('IndexedDB AL runtime stores', () => {
                     status: 'accepted',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'trusted-server' }
         );
@@ -442,7 +445,7 @@ describe('IndexedDB AL runtime stores', () => {
         await expect(control.admit(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3', traceId: 'trace-al-indexeddb-runtime-stores' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: msg.id.senderId,
                     logicalRecipientPeerId: 'peer-3',
@@ -451,7 +454,7 @@ describe('IndexedDB AL runtime stores', () => {
                     status: 'accepted',
                     observedAtEpochMs: 2,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'trusted-server' }
         )).resolves.toEqual({ kind: 'not-handled' });
@@ -527,17 +530,17 @@ describe('IndexedDB AL runtime stores', () => {
             })
         ).toBe('committed');
 
-        await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' }).admit(
+        await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } }).admit(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-indexeddb-runtime-stores' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );
@@ -611,7 +614,7 @@ describe('IndexedDB AL runtime stores', () => {
         await runtime2.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-ordering-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-indexeddb-runtime-stores' },
-                {
+                toTestALNackPayload({
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
@@ -621,7 +624,7 @@ describe('IndexedDB AL runtime stores', () => {
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
                     missingRanges: [{ from: 1, to: 1 }]
-                }
+                })
             ),
             'peer'
         );
@@ -718,7 +721,7 @@ describe('IndexedDB AL runtime stores', () => {
         const admissionStore = stores.admissionStore;
         const msg = createOutboundUnicastMessage('msg-indexeddb-ack-during-timeout');
         let acceptedAckDuringTimeout = false;
-        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws', recipientAuthentication: { kind: 'carrier' } });
         const reserveEntries = stores.workQueue.reserveEntries.bind(stores.workQueue);
         vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation(async (input) => {
             const reserved = await reserveEntries(input);
@@ -730,7 +733,7 @@ describe('IndexedDB AL runtime stores', () => {
                 await control.admit(
                     newALAckControlMessage(
                         { v: 4, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-indexeddb-runtime-stores' },
-                        {
+                        toTestALAckPayload({
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',
                             logicalRecipientPeerId: 'peer-1',
@@ -739,7 +742,7 @@ describe('IndexedDB AL runtime stores', () => {
                             status: 'accepted',
                             observedAtEpochMs: 1,
                             carrier: 'ws'
-                        }
+                        })
                     ),
                     'peer'
                 );
@@ -810,6 +813,7 @@ interface IndexedDbInboundFixtureInput {
 function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput): ALInboundMessageRuntime {
     const { dbName, namespace, dispatchedMsgIds } = input;
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',
@@ -860,6 +864,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput): ALO
     const runtime = createOutboundRuntimeWithWorkTask(() =>
         createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             outbox: new InMemoryQueueBox(new Map()),
             stores: input.stores ?? createDefaultIndexedDbALOutboundRuntimeStores({
                 dbName,

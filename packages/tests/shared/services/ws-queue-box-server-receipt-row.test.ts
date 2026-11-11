@@ -41,6 +41,8 @@ import {
     type ReceiptClock
 } from './ws-queue-box-server-receipt-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const SNAPSHOT_VERSION = 7;
 const ROOM_MESSAGE_LIFETIME_MS = 30_000;
 
@@ -192,7 +194,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs, traceId: 'trace-ws-queue-box-server-receipt-row' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
             toPeerId: 'a',
@@ -201,7 +203,7 @@ function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: nowMs
-        }
+        })
     );
 }
 

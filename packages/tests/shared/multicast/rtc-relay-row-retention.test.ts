@@ -26,6 +26,8 @@ import {
     type RtcRelayOverlayFixture
 } from './rtc-relay-overlay-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const RELAY_NAMESPACE = 'relay-rows';
 /** The dedup window of every default policy (`normalize-al-qos-policy.ts:171`). */
 const DEDUP_WINDOW_MS = 60_000;
@@ -134,7 +136,7 @@ function readDeadlineMs(message: ALMessage): number {
 function toChildAck(copy: ALMessage): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: 'ack-b', senderId: 'b', ts: Date.now(), traceId: 'trace-rtc-relay-row-retention' },
-        {
+        toTestALAckPayload({
             ackedMsgId: copy.id.msgId,
             fromPeerId: 'b',
             toPeerId: 'r',
@@ -143,6 +145,6 @@ function toChildAck(copy: ALMessage): ALMessage {
             carrier: 'rtc',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }

@@ -40,6 +40,8 @@ import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { openRecoveryOwner } from './ws-recovery-owner-fixture.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     // Advancing retry/TTL timers must advance epoch reads without replacing native Date values.
@@ -240,20 +242,23 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
     const held = createRoomOriginal(sessionId, roomA);
     const ready = createRoomOriginal(sessionId, roomB);
     const signaling = newALUnicastMessage(sessionId, { topicId: AppTopics.rtcSignaling, contextId: 'bootstrap', resourceId: 'signal' }, 'peer', 'signal', {});
-    const control = newALNackControlMessage({
-        v: 4,
-        msgId: crypto.randomUUID(),
-        senderId: sessionId,
-        ts: Date.now(),
-        traceId: 'trace-ws-durable-owner-recovery'
-    }, {
-        fromPeerId: sessionId,
-        logicalRecipientPeerId: sessionId,
-        toPeerId: 'peer',
-        msgId: 'missing',
-        reason: 'not-yet-in-sync',
-        observedAtEpochMs: Date.now()
-    });
+    const control = newALNackControlMessage(
+        {
+            v: 4,
+            msgId: crypto.randomUUID(),
+            senderId: sessionId,
+            ts: Date.now(),
+            traceId: 'trace-ws-durable-owner-recovery'
+        },
+        toTestALNackPayload({
+            fromPeerId: sessionId,
+            logicalRecipientPeerId: sessionId,
+            toPeerId: 'peer',
+            msgId: 'missing',
+            reason: 'not-yet-in-sync',
+            observedAtEpochMs: Date.now()
+        })
+    );
     const roomControl: ALMessage = { ...control, route: held.route, targets: held.targets };
     for (const message of [held, ready, signaling, roomControl]) {
         await owner.service.enqueueOutboxIfAbsent(message);

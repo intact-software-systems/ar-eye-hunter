@@ -914,7 +914,8 @@ function receiverAck(message: ALMessage, recipient: string): ALMessage {
         logicalRecipientPeerId: recipient,
         carrier: 'ws',
         status: 'delivered',
-        observedAtEpochMs: Date.now()
+        observedAtEpochMs: Date.now(),
+        proof: null
     });
 }
 

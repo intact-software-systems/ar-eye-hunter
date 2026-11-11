@@ -19,6 +19,8 @@ import {
     enqueueOutboundOrThrow
 } from '../outbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 /** A `receiver` receipt on two frozen recipients, sent through one relay that is neither of them. */
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     enabled: true,
@@ -65,18 +67,18 @@ async function createOriginFixture(
     };
 }
 
-/** The relay re-originates a recipient's `not-subscribed` NACK from itself (PL9, PL16). */
+/** The relay forwards a recipient's `not-subscribed` NACK, readdressed from itself (PL9, PL16). */
 function toRelayedNack(msg: ALMessage, logicalRecipientPeerId: string, fromPeerId = 'relay'): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `nack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
-        {
+        toTestALNackPayload({
             msgId: msg.id.msgId,
             fromPeerId,
             toPeerId: 'self',
             logicalRecipientPeerId,
             reason: 'not-subscribed',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
@@ -84,14 +86,14 @@ function toRelayedNack(msg: ALMessage, logicalRecipientPeerId: string, fromPeerI
 function toBeforeEntryNack(msg: ALMessage, logicalRecipientPeerId: string): ALMessage {
     return newALNackControlMessage(
         { v: 4, msgId: `before-entry-${logicalRecipientPeerId}`, ts: Date.now(), senderId: logicalRecipientPeerId, traceId: 'trace-outside' },
-        {
+        toTestALNackPayload({
             msgId: msg.id.msgId,
             fromPeerId: logicalRecipientPeerId,
             toPeerId: 'self',
             logicalRecipientPeerId,
             reason: 'before-entry',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
@@ -100,21 +102,21 @@ interface OwnAck {
     readonly status: ALAckStatus;
 }
 
-/** A relay's `forwarded` ACK for a recipient below it, or a direct hop's own ACK naming itself. */
+/** A recipient's own ACK a relay forwards from below it, or a direct hop's own ACK naming itself. */
 function toRelayedAck(msg: ALMessage, logicalRecipientPeerId: string, own?: OwnAck): ALMessage {
     const fromPeerId = own?.fromPeerId ?? 'relay';
     return newALAckControlMessage(
-        { v: 4, msgId: `ack-${logicalRecipientPeerId}-${own?.status ?? 'forwarded'}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
-        {
+        { v: 4, msgId: `ack-${logicalRecipientPeerId}-${own?.status ?? 'delivered'}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-outside' },
+        toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
             fromPeerId,
             toPeerId: 'self',
             originPeerId: 'self',
             logicalRecipientPeerId,
             carrier: 'rtc',
-            status: own?.status ?? 'forwarded',
+            status: own?.status ?? 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
@@ -328,7 +330,7 @@ describe('a gap NACK on a track the server relays to the audience it admitted (P
     function toGapNack(msg: ALMessage, fromPeerId: string): ALMessage {
         return newALNackControlMessage(
             { v: 4, msgId: `gap-${fromPeerId}`, ts: Date.now(), senderId: fromPeerId, traceId: 'trace-relayed-track' },
-            {
+            toTestALNackPayload({
                 msgId: msg.id.msgId,
                 fromPeerId,
                 toPeerId: 'self',
@@ -338,7 +340,7 @@ describe('a gap NACK on a track the server relays to the audience it admitted (P
                 orderingKey: 'game-1:self:1',
                 expectedSeq: 2,
                 missingRanges: [{ from: 2, to: 2 }]
-            }
+            })
         );
     }
 

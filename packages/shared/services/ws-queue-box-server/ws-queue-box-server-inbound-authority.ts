@@ -448,12 +448,14 @@ export class WsQueueBoxServerInboundAuthority {
             fromPeerId: this.#serverPeerId,
             toPeerId: message.id.senderId,
             logicalRecipientPeerId: this.#serverPeerId,
+            originPeerId: message.id.senderId,
             msgId: message.id.msgId,
             reason: authorization.reason,
             observedAtEpochMs,
             ...(authorization.serverSnapshotVersion === undefined
                 ? {}
-                : { serverSnapshotVersion: authorization.serverSnapshotVersion })
+                : { serverSnapshotVersion: authorization.serverSnapshotVersion }),
+            proof: null
         };
         const prepared = prepareALNackControlMessage(
             {

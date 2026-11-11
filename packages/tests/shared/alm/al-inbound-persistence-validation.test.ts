@@ -13,6 +13,7 @@ import {
     type ALAdmissionWriteContext
 } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALInboundAdmissionStore,
@@ -46,6 +47,8 @@ import {
 } from 'vitest';
 
 import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
+
+import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
 
 /** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
@@ -144,6 +147,7 @@ async function writeCanonicalMessage(transaction: ALAdmissionWriteContext, candi
 
 function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kind: 'release-buffered', trackKey: 'track', seq: 2 }) {
     return computeALInboundWorkEntry({
+        signsForRecipient: false,
         carrier: 'ws',
         namespace: 'inbound',
         effectId,
@@ -612,7 +616,7 @@ describe('inbound admission persisted values', () => {
         { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', retryPeerIds: [''] },
         { kind: 'send-control', msg: message },
         { kind: 'unknown' },
-        { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v2', resource: '{}' } } }
+        { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v3', resource: '{}' } } }
     ])('terminalizes corrupt work payloads at observed reservation', async (payload) => {
         const { store, workQueue, port } = createFixture();
         const entry = {
@@ -681,12 +685,31 @@ describe('inbound admission persisted values', () => {
         expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 2, predecessor: undefined });
     });
 
+    it('refuses a control history the previous build stored, never reading it as unsigned', () => {
+        const { proof: _proof, ...previousAck } = toTestALAckPayload({
+            ackedMsgId: 'message',
+            fromPeerId: 'downstream',
+            toPeerId: 'receiver'
+        });
+        const { originPeerId: _origin, proof: _nackProof, ...previousNack } = toTestALNackPayload({
+            msgId: 'message',
+            fromPeerId: 'downstream',
+            toPeerId: 'receiver',
+            reason: 'not-subscribed'
+        });
+
+        expect(() => decodeALAdmissionControlValue({ kind: 'acks', values: [previousAck] }, 'message', 'acks'))
+            .toThrow(TypeError);
+        expect(() => decodeALAdmissionControlValue({ kind: 'nacks', values: [previousNack] }, 'message', 'nacks'))
+            .toThrow(TypeError);
+    });
+
     it('rejects control history whose message ID differs from the trusted requested slot', async () => {
         const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:acks:message:sender%3Awith%3Adelimiter', {
                 kind: 'acks',
-                values: [{
+                values: [toTestALAckPayload({
                     ackedMsgId: 'different',
                     originPeerId: message.id.senderId,
                     logicalRecipientPeerId: 'downstream',
@@ -695,7 +718,7 @@ describe('inbound admission persisted values', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'rtc'
-                }]
+                })]
             });
         });
 
@@ -753,6 +776,7 @@ describe('inbound admission persisted values', () => {
         const ack = createAcknowledgement('receiver');
         const expiresAtMs = Date.now() + 60_000;
         const retained = computeALInboundWorkEntry({
+            signsForRecipient: false,
             namespace: 'inbound',
             effectId: toALInboundPendingControlId(ack),
             payload: { kind: 'admit-control', msg: ack, carrier: 'ws', expiresAtMs },
@@ -1002,7 +1026,7 @@ describe('inbound admission persisted values', () => {
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `receiver-${index}`);
         await seedPendingAcknowledgement(store, expectedPeerIds, expectedPeerIds.slice(0, -1));
         const values = [
-            ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
+            ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => (toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: fromPeerId,
@@ -1011,8 +1035,8 @@ describe('inbound admission persisted values', () => {
                 status: 'accepted' as const,
                 observedAtEpochMs,
                 carrier: 'ws' as const
-            })),
-            {
+            }))),
+            toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 originPeerId: message.id.senderId,
                 logicalRecipientPeerId: expectedPeerIds[0]!,
@@ -1021,7 +1045,7 @@ describe('inbound admission persisted values', () => {
                 status: 'delivered' as const,
                 observedAtEpochMs: 256,
                 carrier: 'ws' as const
-            }
+            })
         ];
         await backend.write((transaction) =>
             transaction.set(
@@ -1128,7 +1152,7 @@ async function seedPendingAcknowledgement(
 function createAcknowledgement(fromPeerId: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId, traceId: 'trace-al-inbound-persistence-validation' },
-        {
+        toTestALAckPayload({
             ackedMsgId: message.id.msgId,
             originPeerId: message.id.senderId,
             logicalRecipientPeerId: fromPeerId,
@@ -1137,6 +1161,6 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
             status: 'delivered',
             observedAtEpochMs: 1,
             carrier: 'ws'
-        }
+        })
     );
 }

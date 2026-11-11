@@ -40,6 +40,8 @@ import {
     topics
 } from './browser-rallar-runtime-test-harness.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 beforeEach(() => {
     resetFacade();
 });
@@ -713,6 +715,7 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
     expect(diagnostics?.acknowledgementCapture !== undefined).toBe(almDiagnostics !== false);
     const accepted: string[] = [];
     const inbound = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         selfPeerId: 'origin',
         carrier: 'ws',
@@ -729,16 +732,19 @@ it.each([undefined, true, false])('preserves real terminal ACK acceptance with A
         }
     });
     onTestFinished(() => inbound.dispose());
-    const ack = newALAckControlMessage({ v: 4, msgId: 'received-upward-17', senderId: 'relay', ts: 12, traceId: 'trace-diagnostics' }, {
-        ackedMsgId: 'shot-4',
-        originPeerId: 'origin',
-        logicalRecipientPeerId: 'director',
-        fromPeerId: 'relay',
-        toPeerId: 'origin',
-        carrier: 'rtc',
-        status: 'delivered',
-        observedAtEpochMs: 11
-    });
+    const ack = newALAckControlMessage(
+        { v: 4, msgId: 'received-upward-17', senderId: 'relay', ts: 12, traceId: 'trace-diagnostics' },
+        toTestALAckPayload({
+            ackedMsgId: 'shot-4',
+            originPeerId: 'origin',
+            logicalRecipientPeerId: 'director',
+            fromPeerId: 'relay',
+            toPeerId: 'origin',
+            carrier: 'rtc',
+            status: 'delivered',
+            observedAtEpochMs: 11
+        })
+    );
     expect((await inbound.admitIncomingMessage(ack, { kind: 'trusted-server' })).right).toEqual({ kind: 'control', handled: false });
     expect(accepted).toEqual(['received-upward-17']);
     if (almDiagnostics === false) {

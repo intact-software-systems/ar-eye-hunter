@@ -8,20 +8,12 @@ import type {
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
+import type { ALReceiptControl } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { toALInboundEffectId } from './al-inbound-work-entry.ts';
-import type { ALPendingAckTransition } from './transition-al-pending-ack.ts';
-
-/**
- * Whom an ACK or a NACK speaks for: this peer itself, whose ACK ends its own hop and names it whether or not it
- * delivered, or a recipient a child control named, which a relay passes upward as that control arrives (D40).
- */
-export type ALInboundAckRecipient =
-    | Readonly<{ kind: 'self'; }>
-    | Readonly<{ kind: 'relayed'; peerId: string; }>;
 
 export interface ALInboundEffectIntent {
     readonly effectId: string;
@@ -34,16 +26,20 @@ export interface ALInboundEffectIntent {
             readonly toPeerId: string;
             readonly ackedMsgId: string;
             readonly originPeerId: string;
-            readonly logicalRecipient: ALInboundAckRecipient;
             readonly status: ALAckStatus;
         }
         | {
             readonly kind: 'send-nack';
             readonly toPeerId: string;
             readonly msgId: string;
-            readonly logicalRecipient: ALInboundAckRecipient;
             readonly reason: ALNackReason;
             readonly ordering: ALOrderingObservation | undefined;
+        }
+        /** A child's stored control a relay forwards again, readdressed to its parent. */
+        | {
+            readonly kind: 'forward-control';
+            readonly toPeerId: string;
+            readonly control: ALReceiptControl;
         }
         | {
             readonly kind: 'send-repair';
@@ -72,7 +68,6 @@ export interface ALInboundAckEffectInput {
     readonly toPeerId: string;
     readonly ackedMsgId: string;
     readonly originPeerId: string;
-    readonly logicalRecipient: ALInboundAckRecipient;
     readonly status: ALAckStatus;
     readonly expireAtTimestamp: number | undefined;
     readonly carrier: ALDeliveryCarrier;
@@ -161,7 +156,6 @@ export function toALInboundNegativeControlEffects(
             kind: 'send-nack',
             toPeerId,
             msgId: input.msg.id.msgId,
-            logicalRecipient: { kind: 'self' },
             reason,
             ordering: authorityRefusal ? undefined : input.plan.orderingRuntime
         }
@@ -176,36 +170,6 @@ export function toALInboundNegativeControlEffects(
 function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
     return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other' ||
         isALOutsideAudienceNackReason(reason);
-}
-
-/**
- * A relay's NACK again for a recipient below it that its row records outside, answering a retried copy as it answers
- * ACKs. The row records who is outside, not why, so it repeats the outside class as `not-subscribed`.
- */
-export function toALInboundRelayedOutsideAudienceEffect(
-    input: ALInboundControlEffectInput,
-    relayed: Readonly<{ toPeerId: string; peerId: string; }>
-): ALInboundEffectIntent {
-    return {
-        effectId: toALInboundEffectId([
-            'nack',
-            input.msg.id.senderId,
-            input.msg.id.msgId,
-            relayed.toPeerId,
-            'not-subscribed',
-            relayed.peerId
-        ]),
-        expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
-        carrier: input.carrier,
-        payload: {
-            kind: 'send-nack',
-            toPeerId: relayed.toPeerId,
-            msgId: input.msg.id.msgId,
-            logicalRecipient: { kind: 'relayed', peerId: relayed.peerId },
-            reason: 'not-subscribed',
-            ordering: undefined
-        }
-    };
 }
 
 function toRepairEffects(
@@ -238,37 +202,9 @@ function toRepairEffects(
     }];
 }
 
-/** One ACK a relay sends toward the origin: who it speaks for, and whether it relays or ends the subtree. */
-export interface ALInboundUpwardAck {
-    readonly logicalRecipient: ALInboundAckRecipient;
-    readonly status: ALAckStatus;
-}
-
-/**
- * The ACKs a relay transition sends upward (D40): one `forwarded` ACK per recipient the transition relays,
- * then, on the transition that completed the row, the terminal ACK of the relay itself, last.
- */
-export function toALInboundUpwardAcks(
-    transition: Pick<ALPendingAckTransition, 'completed' | 'relayedRecipientPeerIds'>
-): readonly ALInboundUpwardAck[] {
-    const relayed = transition.relayedRecipientPeerIds.map((peerId): ALInboundUpwardAck => ({
-        logicalRecipient: { kind: 'relayed', peerId },
-        status: 'forwarded'
-    }));
-    return transition.completed === undefined
-        ? relayed
-        : [...relayed, { logicalRecipient: { kind: 'self' }, status: transition.completed.status }];
-}
-
 export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundEffectIntent {
     return {
-        effectId: toALInboundEffectId([
-            'ack',
-            input.ackedMsgId,
-            input.toPeerId,
-            input.status,
-            ...(input.logicalRecipient.kind === 'relayed' ? [input.logicalRecipient.peerId] : [])
-        ]),
+        effectId: toALInboundEffectId(['ack', input.ackedMsgId, input.toPeerId, input.status]),
         expireAtTimestamp: input.expireAtTimestamp,
         carrier: input.carrier,
         payload: {
@@ -276,7 +212,6 @@ export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundE
             toPeerId: input.toPeerId,
             ackedMsgId: input.ackedMsgId,
             originPeerId: input.originPeerId,
-            logicalRecipient: input.logicalRecipient,
             status: input.status
         }
     };

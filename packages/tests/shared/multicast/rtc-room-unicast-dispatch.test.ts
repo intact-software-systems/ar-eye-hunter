@@ -12,6 +12,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import { AL_FALLBACK_NOT_READY_ATTEMPTS } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 
+import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import {
     acknowledgeAtOrigin,
     createOriginOverlay,
@@ -52,7 +53,8 @@ describe('a room-naming RTC unicast at its origin, through the unchanged overlay
             msgId: message.id.msgId,
             fromPeerId: 'b',
             logicalRecipientPeerId: 'b',
-            status: 'delivered'
+            status: 'delivered',
+            key: ROOM_PUBLICATION_CRYPTO
         });
         expect(
             fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)

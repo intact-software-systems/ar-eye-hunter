@@ -188,11 +188,11 @@ describe('the inbound runtime and its recovery sink', () => {
         const [rowsAtResync] = owned.workAtResync;
         const nackRows = (rowsAtResync ?? []).filter((row) => row.effectId.startsWith(`resync:${INBOUND_TEST_SENDER_PEER_ID}:message-2`));
         expect(nackRows.map((row) => (row.payload.kind === 'send-control' ? row.payload.msg.payload.typeId : row.payload.kind)))
-            .toEqual(['al.control.nack.v2']);
+            .toEqual(['al.control.nack.v3']);
         await expect.poll(async () => {
             await owned.fixture.queueEngine.executeOnce();
             return owned.fixture.controlSends.flat().map((control) => control.payload.typeId);
-        }).toContain('al.control.nack.v2');
+        }).toContain('al.control.nack.v3');
     });
 
     it('admits and refuses exactly as before where the composition has no sink', async () => {

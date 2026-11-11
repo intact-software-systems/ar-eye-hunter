@@ -137,6 +137,8 @@ export function initialiseRtcOverlayMulticastManager(
 
 export interface InitialiseRtcRxStreamerInput {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
+    /** The session's one key, which signs the receipts its inbound runtime sends for it, never through the manager. */
+    readonly publicationCrypto: PublicationCrypto;
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
     readonly inboundStores: ALInboundRuntimeStores;
@@ -157,6 +159,7 @@ export function initialiseRtcRxStreamer(
     return createDefaultWebRtcRxStreamerService({
         queueEngine: qboxEngine,
         multicast: webRtcOverlayMulticastManager,
+        publicationCrypto: input.publicationCrypto,
         sessionId: clientData.sessionId,
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,

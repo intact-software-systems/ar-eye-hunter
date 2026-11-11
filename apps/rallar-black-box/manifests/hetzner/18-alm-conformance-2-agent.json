@@ -2436,7 +2436,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.nack.v2\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\",\"outcome\":\"committed\""
+              "contains": "\"typeId\":\"al.control.nack.v3\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\",\"outcome\":\"committed\""
             },
             "timeoutMs": 27000
           },
@@ -4555,7 +4555,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.ack.v2\",\"targetMsgId\":\"{resultCache.alm-rtc-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
+              "contains": "\"typeId\":\"al.control.ack.v3\",\"targetMsgId\":\"{resultCache.alm-rtc-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
             },
             "timeoutMs": 27000
           },
@@ -7561,7 +7561,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.ack.v2\",\"targetMsgId\":\"{resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
+              "contains": "\"typeId\":\"al.control.ack.v3\",\"targetMsgId\":\"{resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
             },
             "timeoutMs": 27000
           },

@@ -20,6 +20,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 interface LiveDeliveryFixture {
@@ -61,16 +63,19 @@ describe('public WS unicast scope', () => {
 
     it.each(['targets', 'resolved'] as const)('preserves decoded AL control delivery through %s without generic scope', (entry) => {
         const { native, live } = createLiveDelivery();
-        const message = newALAckControlMessage({ v: 4, msgId: 'ack', senderId: 'server', ts: Date.now(), traceId: 'trace-ws-public-unicast-scope' }, {
-            fromPeerId: 'server',
-            toPeerId: 'peer',
-            ackedMsgId: 'message',
-            originPeerId: 'peer',
-            logicalRecipientPeerId: 'server',
-            carrier: 'ws',
-            status: 'accepted',
-            observedAtEpochMs: Date.now()
-        });
+        const message = newALAckControlMessage(
+            { v: 4, msgId: 'ack', senderId: 'server', ts: Date.now(), traceId: 'trace-ws-public-unicast-scope' },
+            toTestALAckPayload({
+                fromPeerId: 'server',
+                toPeerId: 'peer',
+                ackedMsgId: 'message',
+                originPeerId: 'peer',
+                logicalRecipientPeerId: 'server',
+                carrier: 'ws',
+                status: 'accepted',
+                observedAtEpochMs: Date.now()
+            })
+        );
         expect(entry === 'targets' ? live.sendToTargets(message) : live.sendToResolvedPeer({ peerId: 'peer', message })).toBe(1);
         expect(native.sent).toHaveLength(1);
     });
@@ -119,22 +124,25 @@ describe('public WS unicast scope', () => {
     it('does not treat a control type ID alone as scope exemption at either live boundary', () => {
         const { native, live } = createLiveDelivery();
         const message = createMessage();
-        const forged = { ...message, payload: { ...message.payload, typeId: 'al.control.ack.v2' } };
+        const forged = { ...message, payload: { ...message.payload, typeId: 'al.control.ack.v3' } };
         expect(live.sendToTargetsWithResult({ message: forged, sentPositions: null })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
         expect(live.sendToResolvedPeer({ peerId: 'peer', message: forged })).toBe(0);
         expect(native.sent).toEqual([]);
     });
     it('preserves fully decoded internal control effects without a public scope', () => {
-        const message = newALAckControlMessage({ v: 4, msgId: 'ack', senderId: 'server', ts: Date.now(), traceId: 'trace-ws-public-unicast-scope' }, {
-            fromPeerId: 'server',
-            toPeerId: 'peer',
-            ackedMsgId: 'message',
-            originPeerId: 'peer',
-            logicalRecipientPeerId: 'server',
-            carrier: 'ws',
-            status: 'accepted',
-            observedAtEpochMs: Date.now()
-        });
+        const message = newALAckControlMessage(
+            { v: 4, msgId: 'ack', senderId: 'server', ts: Date.now(), traceId: 'trace-ws-public-unicast-scope' },
+            toTestALAckPayload({
+                fromPeerId: 'server',
+                toPeerId: 'peer',
+                ackedMsgId: 'message',
+                originPeerId: 'peer',
+                logicalRecipientPeerId: 'server',
+                carrier: 'ws',
+                status: 'accepted',
+                observedAtEpochMs: Date.now()
+            })
+        );
         const prepared = { kind: 'recipient', peerId: 'peer', connectionId: 'peer', message: toALOutboundTransportMessage(message) };
         expect(decodeWsQueueBoxServerPreparedMessage(prepared, message, CANONICAL_ROW_KEY)).toEqual(prepared);
     });

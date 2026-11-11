@@ -49,6 +49,8 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 describe('inbound durable effect worker lifecycle', () => {
     beforeEach(() =>
         onTestFinished(() => {
@@ -74,6 +76,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
@@ -93,6 +96,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -126,6 +130,7 @@ describe('inbound durable effect worker lifecycle', () => {
             new ALAdmissionCorruptionError('queuebox:page', new TypeError('invalid stored queue metadata'))
         );
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -165,6 +170,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
@@ -174,6 +180,7 @@ describe('inbound durable effect worker lifecycle', () => {
             })]
         });
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -209,6 +216,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const nowMs = Date.now();
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             observedAtMs: nowMs - 20_000,
@@ -227,6 +235,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -267,6 +276,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const missingSource = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'missing-source', contextId: 'room' }, 'receiver', 'chat', {});
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             observedAtMs: Date.now(),
@@ -278,6 +288,7 @@ describe('inbound durable effect worker lifecycle', () => {
         await resources.workQueue.enqueueIfAbsent(work.entry);
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -315,6 +326,7 @@ describe('inbound durable effect worker lifecycle', () => {
             observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
@@ -336,6 +348,7 @@ describe('inbound durable effect worker lifecycle', () => {
             );
         }
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -368,6 +381,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ...resources,
             carrier: 'ws' as const,
             orderingObserver: 'addressed' as const,
+            receiptProofs: { kind: 'carrier-authenticated' as const },
             planIncomingMessage,
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -388,6 +402,7 @@ describe('inbound durable effect worker lifecycle', () => {
         expect(await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
 
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: store.namespace,
             observedAtMs: Date.now(),
@@ -447,6 +462,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -477,6 +493,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const dispatchStarted = Promise.withResolvers<void>();
         const releaseDispatch = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -509,6 +526,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const sendStarted = Promise.withResolvers<void>();
         const releaseSend = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -528,6 +546,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
         // Retained control work gives the batch a delivery to hold, so the admission below must outlive it.
         const forwarded = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'forwarded-control',
@@ -537,7 +556,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 kind: 'send-control',
                 msg: newALAckControlMessage(
                     { v: 4, msgId: 'forwarded-ack', ts: 1, senderId: 'receiver', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
-                    {
+                    toTestALAckPayload({
                         ackedMsgId: 'tracked-message',
                         originPeerId: 'sender',
                         logicalRecipientPeerId: 'receiver',
@@ -546,7 +565,7 @@ describe('inbound durable effect worker lifecycle', () => {
                         status: 'accepted',
                         observedAtEpochMs: 1,
                         carrier: 'ws'
-                    }
+                    })
                 )
             }
         });
@@ -559,16 +578,19 @@ describe('inbound durable effect worker lifecycle', () => {
             {}
         );
         await seedTrackedAcknowledgement(resources.admissionStore, tracked);
-        const ack = newALAckControlMessage({ v: 4, msgId: 'inbound-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' }, {
-            ackedMsgId: tracked.id.msgId,
-            originPeerId: tracked.id.senderId,
-            logicalRecipientPeerId: 'sender',
-            fromPeerId: 'sender',
-            toPeerId: 'receiver',
-            status: 'accepted',
-            observedAtEpochMs: 1,
-            carrier: 'ws'
-        });
+        const ack = newALAckControlMessage(
+            { v: 4, msgId: 'inbound-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
+            toTestALAckPayload({
+                ackedMsgId: tracked.id.msgId,
+                originPeerId: tracked.id.senderId,
+                logicalRecipientPeerId: 'sender',
+                fromPeerId: 'sender',
+                toPeerId: 'receiver',
+                status: 'accepted',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            })
+        );
 
         const acceptance = await runtime.admitIncomingMessage(ack, INBOUND_TEST_SOURCE);
 
@@ -585,6 +607,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -602,6 +625,7 @@ describe('inbound durable effect worker lifecycle', () => {
         // batch already read. No engine round is ever driven here, so only a commit's own
         // announcement can bring the batch that would claim it.
         const forwarded = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'unannounced-control',
@@ -609,22 +633,25 @@ describe('inbound durable effect worker lifecycle', () => {
             expireAtTimestamp: Date.now() + 60_000,
             payload: {
                 kind: 'send-control',
-                msg: newALAckControlMessage({
-                    v: 4,
-                    msgId: 'unannounced-ack',
-                    ts: 1,
-                    senderId: 'receiver',
-                    traceId: 'trace-al-inbound-effect-worker-lifecycle'
-                }, {
-                    ackedMsgId: 'tracked-message',
-                    originPeerId: 'sender',
-                    logicalRecipientPeerId: 'receiver',
-                    fromPeerId: 'receiver',
-                    toPeerId: 'sender',
-                    status: 'accepted',
-                    observedAtEpochMs: 1,
-                    carrier: 'ws'
-                })
+                msg: newALAckControlMessage(
+                    {
+                        v: 4,
+                        msgId: 'unannounced-ack',
+                        ts: 1,
+                        senderId: 'receiver',
+                        traceId: 'trace-al-inbound-effect-worker-lifecycle'
+                    },
+                    toTestALAckPayload({
+                        ackedMsgId: 'tracked-message',
+                        originPeerId: 'sender',
+                        logicalRecipientPeerId: 'receiver',
+                        fromPeerId: 'receiver',
+                        toPeerId: 'sender',
+                        status: 'accepted',
+                        observedAtEpochMs: 1,
+                        carrier: 'ws'
+                    })
+                )
             }
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
@@ -636,18 +663,21 @@ describe('inbound durable effect worker lifecycle', () => {
             {}
         );
         // Two peers owe this obligation, so one peer's acknowledgement completes none of it; the relay still
-        // passes the recipient it names upward at once, and that row is work the commit announces.
+        // forwards the recipient's own ACK upward at once, and that row is work the commit announces.
         await seedTrackedAcknowledgement(resources.admissionStore, tracked, ['sender', 'second-peer']);
-        const ack = newALAckControlMessage({ v: 4, msgId: 'partial-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' }, {
-            ackedMsgId: tracked.id.msgId,
-            originPeerId: tracked.id.senderId,
-            logicalRecipientPeerId: 'sender',
-            fromPeerId: 'sender',
-            toPeerId: 'receiver',
-            status: 'accepted',
-            observedAtEpochMs: 1,
-            carrier: 'ws'
-        });
+        const ack = newALAckControlMessage(
+            { v: 4, msgId: 'partial-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
+            toTestALAckPayload({
+                ackedMsgId: tracked.id.msgId,
+                originPeerId: tracked.id.senderId,
+                logicalRecipientPeerId: 'sender',
+                fromPeerId: 'sender',
+                toPeerId: 'receiver',
+                status: 'accepted',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            })
+        );
 
         const acceptance = await runtime.admitIncomingMessage(ack, INBOUND_TEST_SOURCE);
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -659,7 +689,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 const parsed = parseALControlMessage(control);
                 return parsed?.type === 'ack' ? [parsed.payload.logicalRecipientPeerId, parsed.payload.status] : [];
             }).toSorted()
-        ).toEqual([['receiver', 'accepted'], ['sender', 'forwarded']]);
+        ).toEqual([['receiver', 'accepted'], ['sender', 'accepted']]);
     });
 
     it('leaves retained work unclaimed when the conflicted admission it retained had already expired', async () => {
@@ -673,6 +703,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const batches = new ALWorkBatchTestObserver();
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -692,6 +723,7 @@ describe('inbound durable effect worker lifecycle', () => {
         // The retained row of the pin above, behind the page the bootstrap batch already read. No
         // engine round is ever driven here, so only an announcement can bring the batch that claims it.
         const forwarded = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'expired-retention-control',
@@ -699,22 +731,25 @@ describe('inbound durable effect worker lifecycle', () => {
             expireAtTimestamp: nowMs + 600_000,
             payload: {
                 kind: 'send-control',
-                msg: newALAckControlMessage({
-                    v: 4,
-                    msgId: 'expired-retention-ack',
-                    ts: 1,
-                    senderId: 'receiver',
-                    traceId: 'trace-al-inbound-effect-worker-lifecycle'
-                }, {
-                    ackedMsgId: 'tracked-message',
-                    originPeerId: 'sender',
-                    logicalRecipientPeerId: 'receiver',
-                    fromPeerId: 'receiver',
-                    toPeerId: 'sender',
-                    status: 'accepted',
-                    observedAtEpochMs: 1,
-                    carrier: 'ws'
-                })
+                msg: newALAckControlMessage(
+                    {
+                        v: 4,
+                        msgId: 'expired-retention-ack',
+                        ts: 1,
+                        senderId: 'receiver',
+                        traceId: 'trace-al-inbound-effect-worker-lifecycle'
+                    },
+                    toTestALAckPayload({
+                        ackedMsgId: 'tracked-message',
+                        originPeerId: 'sender',
+                        logicalRecipientPeerId: 'receiver',
+                        fromPeerId: 'receiver',
+                        toPeerId: 'sender',
+                        status: 'accepted',
+                        observedAtEpochMs: 1,
+                        carrier: 'ws'
+                    })
+                )
             }
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
@@ -774,6 +809,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -818,6 +854,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const read = await readAdmission(store, buffered);
         const trackKey = toALOrderingTrackKey(buffered)!;
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: store.namespace,
             observedAtMs: Date.now(),
@@ -839,6 +876,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -878,6 +916,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -917,6 +956,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -1015,6 +1055,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(external, expireAtTimestamp)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: store.namespace,
                 effectId: 'externally-admitted-work',
@@ -1038,6 +1079,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         let attempts = 0;
         const runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             carrier: 'ws',
             ...resources,
@@ -1077,6 +1119,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const store = resources.admissionStore;
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: stage, contextId: 'room' }, 'receiver', 'chat', {}, { ttlMs: 60_000 });
         const work = computeALInboundWorkEntry({
+            signsForRecipient: false,
             carrier: 'ws',
             namespace: store.namespace,
             effectId: 'paused-delivery',
@@ -1119,6 +1162,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ...resources,
             carrier: 'ws' as const,
             orderingObserver: 'addressed' as const,
+            receiptProofs: { kind: 'carrier-authenticated' as const },
             planIncomingMessage,
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -1223,7 +1267,7 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage, obser
     const expiresAtMs = observedAtMs + 60_000;
     const ack = newALAckControlMessage(
         { v: 4, msgId: 'retained-control-ack', ts: 1, senderId: 'sender', traceId: 'trace-al-inbound-effect-worker-lifecycle' },
-        {
+        toTestALAckPayload({
             ackedMsgId: tracked.id.msgId,
             originPeerId: tracked.id.senderId,
             logicalRecipientPeerId: 'sender',
@@ -1232,9 +1276,10 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage, obser
             status: 'accepted',
             observedAtEpochMs: 1,
             carrier: 'ws'
-        }
+        })
     );
     return computeALInboundWorkEntry({
+        signsForRecipient: false,
         carrier: 'ws',
         namespace,
         effectId: toALInboundPendingControlId(ack),

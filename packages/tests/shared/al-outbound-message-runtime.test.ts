@@ -39,6 +39,8 @@ import {
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
+
 describe('ALOutboundMessageRuntime', () => {
     beforeEach(() =>
         onTestFinished(() => {
@@ -59,6 +61,7 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
             decodePreparedMessage: decodeOutboundTestPayload,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             settlements: undefined,
             admissionStore,
             workQueue: stores.workQueue,
@@ -264,7 +267,7 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
                     logicalRecipientPeerId: 'peer-1',
@@ -273,7 +276,7 @@ describe('ALOutboundMessageRuntime', () => {
                     status: 'accepted',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             'peer'
         );
@@ -291,7 +294,7 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
                     logicalRecipientPeerId: 'peer-1',
@@ -300,7 +303,7 @@ describe('ALOutboundMessageRuntime', () => {
                     status: 'accepted',
                     observedAtEpochMs: 2,
                     carrier: 'ws'
-                }
+                })
             ),
             'peer'
         );
@@ -790,7 +793,7 @@ describe('ALOutboundMessageRuntime', () => {
             await runtime.acceptControlMessage(
                 newALAckControlMessage(
                     { v: 4, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay', traceId: 'trace-al-outbound-message-runtime' },
-                    {
+                    toTestALAckPayload({
                         ackedMsgId: msg.id.msgId,
                         fromPeerId: 'relay',
                         toPeerId: 'self',
@@ -799,7 +802,7 @@ describe('ALOutboundMessageRuntime', () => {
                         carrier: 'ws',
                         status: 'delivered',
                         observedAtEpochMs: Date.now()
-                    }
+                    })
                 ),
                 'peer'
             )
@@ -920,7 +923,7 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALNackPayload({
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
@@ -930,7 +933,7 @@ describe('ALOutboundMessageRuntime', () => {
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
                     missingRanges: [{ from: 1, to: 1 }]
-                }
+                })
             ),
             'peer'
         );
@@ -970,7 +973,7 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
@@ -978,7 +981,7 @@ describe('ALOutboundMessageRuntime', () => {
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1,
                     serverSnapshotVersion: 3
-                }
+                })
             ),
             'peer'
         );
@@ -1042,14 +1045,14 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );
@@ -1091,28 +1094,28 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-not-synced-1', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-not-synced-2', ts: 2, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 2
-                }
+                })
             ),
             'peer'
         );
@@ -1157,7 +1160,7 @@ describe('ALOutboundMessageRuntime', () => {
                     senderId: 'peer-1',
                     traceId: 'trace-al-outbound-message-runtime'
                 },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
@@ -1165,7 +1168,7 @@ describe('ALOutboundMessageRuntime', () => {
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: serverSnapshotVersion,
                     serverSnapshotVersion
-                }
+                })
             );
 
         await enqueueOutboundOrThrow(runtime, msg);
@@ -1372,7 +1375,7 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALAckControlMessage(
                 { v: 4, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
                     logicalRecipientPeerId: 'peer-1',
@@ -1381,7 +1384,7 @@ describe('ALOutboundMessageRuntime', () => {
                     status: 'accepted',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             'peer'
         );
@@ -1461,14 +1464,14 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-persisted-gap', ts: 1, senderId: 'peer-1', traceId: 'trace-al-outbound-message-runtime' },
-                {
+                toTestALNackPayload({
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'gap',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );

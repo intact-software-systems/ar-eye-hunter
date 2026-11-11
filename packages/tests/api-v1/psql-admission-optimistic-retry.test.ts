@@ -208,7 +208,8 @@ describe('PSql admission optimistic retry', () => {
             admissionStore: store,
             workQueue: backend.workQueue,
             nowMs: Date.now,
-            carrier: 'ws'
+            carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' }
         });
 
         await expect(control.scheduleNotYetInSyncRetry({
@@ -321,6 +322,7 @@ function createInboundTestRuntime(
     controls: ALMessage[]
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',
@@ -352,6 +354,7 @@ function createOutboxOnlyTestRuntime(
 ): ALOutboundMessageRuntime<ALMessage> {
     const runtime = createDefaultALOutboundMessageRuntime({
         carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' },
         outbox: stores.workQueue,
         stores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),

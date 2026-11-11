@@ -3,6 +3,7 @@ import { assert, assertEquals } from '@std/assert';
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
     ALM_CONFORMANCE_CARRIERS,
+    ALM_CONFORMANCE_RTC_CARRIERS,
     ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
@@ -336,7 +337,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
     });
 }
 
-for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+for (const carrier of ALM_CONFORMANCE_RTC_CARRIERS) {
     Deno.test(`the ${carrier} repair-exhausted pair keeps the hold, spends the budget and reads the second send skipped`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));

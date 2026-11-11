@@ -1,5 +1,4 @@
 import { toCanonicalGroupRef } from '../../api/group-types.ts';
-import { serializeCanonicalJson, type CanonicalJsonInput } from '../../encoding/canonical-json.ts';
 import { Either } from '../../resilience/Either.ts';
 import {
     signDetached,
@@ -7,6 +6,11 @@ import {
     type SignatureFailure,
     type SigningKeyPair
 } from '../../signature/ecdsa-p256-signature.ts';
+import {
+    toClassifiedSigningInput,
+    type ClassifiedSigningSection,
+    type SignedFieldClass
+} from '../../signature/to-classified-signing-input.ts';
 import type {
     ALActions,
     ALConstraints,
@@ -19,12 +23,6 @@ import type {
     ALTargets
 } from '../al-contract.ts';
 import type { ALQosPolicyRequest } from '../al-policy.ts';
-
-export interface ALPublicationProof {
-    readonly alg: 'ES256';
-    readonly keyId: string;
-    readonly signature: string;
-}
 
 export interface ALPublicationProofFailure {
     readonly kind: 'missing-proof' | 'invalid-key' | 'sign-failed' | 'invalid-signature';
@@ -42,14 +40,6 @@ export interface VerifyALPublicationProofInput {
     readonly publicKey: CryptoKey;
     readonly message: ALMessage;
 }
-
-/**
- * Relay-mutable fields are `excluded`: a forwarder rewrites them, so the proof cannot cover them. A field added after
- * the v1 slots is `signed-when-present`: it signs after every v1 slot as a `[path, value]` pair, only when present, so
- * a message without it signs the v1 bytes and builds on either side of the addition verify each other's such messages.
- * Every later signed field is appended this way, trailing and only when present, for the same reason.
- */
-export type ALPublicationProofFieldClass = 'signed' | 'signed-when-present' | 'excluded';
 
 export const AL_PUBLICATION_PROOF_DOMAIN_TAG = 'rallar-alm-publication-proof-v1';
 
@@ -69,7 +59,7 @@ export const AL_PUBLICATION_PROOF_FIELD_CLASSES = {
         audit: 'excluded',
         diagnostics: 'excluded',
         proof: 'excluded'
-    } as const satisfies Record<keyof ALMessage, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALMessage, SignedFieldClass>,
     id: {
         v: 'signed',
         msgId: 'signed',
@@ -77,12 +67,12 @@ export const AL_PUBLICATION_PROOF_FIELD_CLASSES = {
         senderId: 'signed',
         sessionId: 'signed',
         traceId: 'excluded'
-    } as const satisfies Record<keyof ALMessageId, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALMessageId, SignedFieldClass>,
     route: {
         topicId: 'signed',
         resourceId: 'signed',
         contextId: 'signed'
-    } as const satisfies Record<keyof ALRoute, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALRoute, SignedFieldClass>,
     targets: {
         mode: 'signed',
         groupRef: 'signed',
@@ -94,26 +84,26 @@ export const AL_PUBLICATION_PROOF_FIELD_CLASSES = {
         rosterVersion: 'signed',
         exceptPeerIds: 'signed',
         principalRef: 'signed'
-    } as const satisfies Record<UnionKeys<ALTargets>, ALPublicationProofFieldClass>,
+    } as const satisfies Record<UnionKeys<ALTargets>, SignedFieldClass>,
     constraints: {
         ttlHops: 'excluded',
         expiresAtMs: 'signed'
-    } as const satisfies Record<keyof ALConstraints, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALConstraints, SignedFieldClass>,
     ordering: {
         orderingKey: 'signed',
         epoch: 'signed',
         seq: 'signed',
         priorSeqByRecipient: 'signed-when-present'
-    } as const satisfies Record<keyof ALOrdering, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALOrdering, SignedFieldClass>,
     delivery: {
         ownership: 'signed',
         reliability: 'signed',
         ack: 'signed'
-    } as const satisfies Record<keyof ALDelivery, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALDelivery, SignedFieldClass>,
     actions: {
         corrId: 'signed',
         replyToMsgId: 'signed'
-    } as const satisfies Record<keyof ALActions, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALActions, SignedFieldClass>,
     qos: {
         delivery: 'signed',
         forwarding: 'signed',
@@ -127,23 +117,18 @@ export const AL_PUBLICATION_PROOF_FIELD_CLASSES = {
         congestion: 'signed',
         durability: 'signed',
         ownership: 'signed'
-    } as const satisfies Record<keyof ALQosPolicyRequest, ALPublicationProofFieldClass>,
+    } as const satisfies Record<keyof ALQosPolicyRequest, SignedFieldClass>,
     payload: {
         typeId: 'signed',
         contentType: 'signed',
         resource: 'signed'
-    } as const satisfies Record<keyof ALPayload, ALPublicationProofFieldClass>
+    } as const satisfies Record<keyof ALPayload, SignedFieldClass>
 } as const;
 
 /** `keyof` a union is only its common keys; the targets record classifies every member's keys. */
 type UnionKeys<T> = T extends object ? keyof T : never;
 
-/** One signed section's share of the signing input: its v1 slots, and its later fields that are present. */
-interface ALPublicationProofSectionSigning {
-    readonly slots: readonly CanonicalJsonInput[];
-    readonly trailing: readonly CanonicalJsonInput[];
-}
-
+/** The envelope sections the message table classes `signed`: the signing input is built from exactly these. */
 type ALPublicationProofSignedSection = {
     [Section in keyof ALMessage]-?: (typeof AL_PUBLICATION_PROOF_FIELD_CLASSES.message)[Section] extends 'signed' ?
         Section :
@@ -152,21 +137,8 @@ type ALPublicationProofSignedSection = {
 
 const UTF8_ENCODER = new TextEncoder();
 
-/**
- * The domain tag leads, so a signature over these bytes never verifies as another protocol's; an absent signed field
- * signs as `null`, so dropping one changes the bytes as surely as rewriting it. A present `signed-when-present` field
- * follows every v1 slot as its `[path, value]` pair, so dropping or adding one changes the bytes too.
- */
 export function toALPublicationProofSigningInput(message: ALMessage): string {
-    const sections = toSignedFieldValues<keyof ALMessage, ALPublicationProofSectionSigning>(
-        toALPublicationProofSections(message),
-        AL_PUBLICATION_PROOF_FIELD_CLASSES.message
-    );
-    return serializeCanonicalJson([
-        AL_PUBLICATION_PROOF_DOMAIN_TAG,
-        ...sections.flatMap((section) => section?.slots ?? []),
-        ...sections.flatMap((section) => section?.trailing ?? [])
-    ]);
+    return toClassifiedSigningInput(AL_PUBLICATION_PROOF_DOMAIN_TAG, toALPublicationProofSections(message));
 }
 
 /** A planner never changes a signed field of a signed message: the copies it plans carry the origin's proof. */
@@ -206,49 +178,33 @@ export async function verifyALPublicationProof(
     return verified.mapBoth(toALPublicationProofFailure, () => input.message);
 }
 
-function toALPublicationProofSections(
+/** The signed sections in the table's order: a section classed `signed` that this record lacks fails the build. */
+function toALPublicationProofSections(message: ALMessage): ClassifiedSigningSection[] {
+    const sections = toALPublicationProofSectionsByName(message);
+    const messageClasses = AL_PUBLICATION_PROOF_FIELD_CLASSES.message;
+    return (Object.keys(messageClasses) as (keyof ALMessage)[]).filter(isALPublicationProofSignedSection)
+        .map((name) => sections[name]);
+}
+
+function isALPublicationProofSignedSection(name: keyof ALMessage): name is ALPublicationProofSignedSection {
+    return AL_PUBLICATION_PROOF_FIELD_CLASSES.message[name] === 'signed';
+}
+
+function toALPublicationProofSectionsByName(
     message: ALMessage
-): Readonly<Record<ALPublicationProofSignedSection, ALPublicationProofSectionSigning>> {
+): Readonly<Record<ALPublicationProofSignedSection, ClassifiedSigningSection>> {
     const classes = AL_PUBLICATION_PROOF_FIELD_CLASSES;
     return {
-        id: toSectionSigning('id', message.id, classes.id),
-        route: toSectionSigning('route', message.route, classes.route),
-        targets: toSectionSigning('targets', toSignedTargets(message.targets), classes.targets),
-        constraints: toSectionSigning('constraints', message.constraints, classes.constraints),
-        ordering: toSectionSigning('ordering', message.ordering, classes.ordering),
-        delivery: toSectionSigning('delivery', message.delivery, classes.delivery),
-        actions: toSectionSigning('actions', message.actions, classes.actions),
-        qos: toSectionSigning('qos', message.qos, classes.qos),
-        payload: toSectionSigning('payload', message.payload, classes.payload)
+        id: { name: 'id', fields: { ...message.id }, classes: classes.id },
+        route: { name: 'route', fields: { ...message.route }, classes: classes.route },
+        targets: { name: 'targets', fields: { ...toSignedTargets(message.targets) }, classes: classes.targets },
+        constraints: { name: 'constraints', fields: { ...message.constraints }, classes: classes.constraints },
+        ordering: { name: 'ordering', fields: { ...message.ordering }, classes: classes.ordering },
+        delivery: { name: 'delivery', fields: { ...message.delivery }, classes: classes.delivery },
+        actions: { name: 'actions', fields: { ...message.actions }, classes: classes.actions },
+        qos: { name: 'qos', fields: { ...message.qos }, classes: classes.qos },
+        payload: { name: 'payload', fields: { ...message.payload }, classes: classes.payload }
     };
-}
-
-function toSectionSigning<Key extends string, Value extends CanonicalJsonInput>(
-    section: ALPublicationProofSignedSection,
-    fields: Partial<Readonly<Record<NoInfer<Key>, Value>>> | undefined,
-    classes: Readonly<Record<Key, ALPublicationProofFieldClass>>
-): ALPublicationProofSectionSigning {
-    const trailing: CanonicalJsonInput[] = [];
-    for (const key in classes) {
-        const value = fields?.[key];
-        if (classes[key] === 'signed-when-present' && value !== undefined) {
-            trailing.push([`${section}.${key}`, value]);
-        }
-    }
-    return { slots: toSignedFieldValues(fields, classes), trailing };
-}
-
-function toSignedFieldValues<Key extends string, Value>(
-    fields: Partial<Readonly<Record<NoInfer<Key>, Value>>> | undefined,
-    classes: Readonly<Record<Key, ALPublicationProofFieldClass>>
-): (Value | null)[] {
-    const values: (Value | null)[] = [];
-    for (const key in classes) {
-        if (classes[key] === 'signed') {
-            values.push(fields?.[key] ?? null);
-        }
-    }
-    return values;
 }
 
 function toSignedTargets(targets: ALTargets | undefined): ALTargets | undefined {

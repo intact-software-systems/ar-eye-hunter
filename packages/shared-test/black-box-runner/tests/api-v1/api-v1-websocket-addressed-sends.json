@@ -356,9 +356,9 @@
             "ack": { "algo": "none", "opts": { "timeoutMs": 250 } }
           },
           "payload": {
-            "typeId": "al.control.ack.v2",
+            "typeId": "al.control.ack.v3",
             "contentType": "application/json",
-            "resource": "{\"ackedMsgId\":\"addressed-to-bob-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0}"
+            "resource": "{\"ackedMsgId\":\"addressed-to-bob-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0,\"proof\":null}"
           }
         }
       }
@@ -449,7 +449,7 @@
         "message": {
           "route": { "topicId": "al-control" },
           "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
-          "payload": { "typeId": "al.control.nack.v2" }
+          "payload": { "typeId": "al.control.nack.v3" }
         },
         "consume": true
       }
@@ -513,7 +513,7 @@
           "id": { "senderId": "{serverPeerId}" },
           "route": { "topicId": "al-control" },
           "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
-          "payload": { "typeId": "al.control.ack.v2" }
+          "payload": { "typeId": "al.control.ack.v3" }
         },
         "consume": true
       }
@@ -736,7 +736,7 @@
             "toPeerId": "{aliceElsewhereSessionId}"
           },
           "payload": {
-            "typeId": "al.control.nack.v2"
+            "typeId": "al.control.nack.v3"
           }
         },
         "consume": true

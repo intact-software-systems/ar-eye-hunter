@@ -40,9 +40,28 @@ a receipt. Only the `outbox` fan-out mints on the server; a keyed publish withou
 refused. Each browser carrier mints its own keyed room sends ("Server-minted sequences" below).
 Application consumers select an ordering key for each independent stream and advance its epoch when the stream restarts.
 [`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners share.
+Control acceptance also knows who spoke a recipient's control, as the composition states it in
+`ALOutboundMessageRuntime.Dependencies.recipientAuthentication`: the WS client and the WS server state `carrier`, whose
+socket authenticates its peer; the RTC overlay states `signature`. Under `signature`, a peer ACK or NACK about a
+`receiver` or `leader` send that speaks for a recipient the receipt counts is verified in the read phase
+([`readALOutboundRecipientProof`](./control/read-al-outbound-recipient-proof.ts)) against the key the sent row froze
+for it (`receiptProofKeys`; a row that froze none keys nobody). One that speaks for a peer the receipt does not count
+is a hop fact: carrier-authenticated when that peer is its own sender, so the validators judge it as they judge any
+hop's control, and refused `unknown-key` when it speaks for another. A refusal (`missing-proof`,
+`unknown-key`, `key-mismatch`, `invalid-signature`) is an `unauthorized` issue and a `rejected` admission carrying
+`proofRefusal`, which the control-admission diagnostic states as `proofRefusal`, `claimedRecipientPeerId` and
+`channelPeerId`; nothing is counted, written, retained or answered. A repair request, and a `hop` or `subtree`
+receipt, carry no proof and are admitted as before; a control addressed to another owner than the sent row's is not
+judged, and is refused for its address alone. The RTC planner states the keys, each counted recipient's
+`{ keyId, publicJwk }` from the room snapshot, on the plan that freezes the audience (at admission when the snapshot
+is cached, at the dequeue that first has it otherwise), and the sent policy adopts them once and never replaces them;
+[`computeRtcReceiptKeyRefusal`](../../multicast/receipt-proof/compute-rtc-receipt-key-refusal.ts) refuses that
+plan's leg `unsupported`, so a fallback carrier takes it, when the page holds no WebCrypto, a counted session the
+snapshot names live registered no publication key, or a unicast names no room; a send that counts nobody is not
+judged.
 A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
 most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the
-`al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's NACK plan do;
+`al.control.nack.v3` and `al.control.repair.v2` payloads and the planner's NACK plan do;
 [`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range decoder for the
 wire and the rows. A NACK and a repair request naming the same gap are one hint: the gap --
 requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names the hint's
@@ -503,9 +522,11 @@ with its source (`ALOutboundControlSource`), and trust follows the source, never
 server never relays a peer NACK, so its `resync-required` NACK is the relay's own verdict, admitted
 without an expected peer (every other check stands), and stated as a server relay that is never named.
 Every other control, the WS server's own included, arrives as `peer` and must come from an expected
-receipt peer or the unicast addressee. Over RTC a `forwarded` ACK from any peer of the room confirms
-the frozen recipient it names: RTC relays are trusted to speak for the recipients below them (see
-the inbound README). A retained control keeps its source for its replay.
+receipt peer or the unicast addressee. Over RTC, under `receiver` and `leader`, a control that speaks for a
+counted recipient confirms, excludes or ends nothing until its proof is verified against the key the sent row froze
+for that recipient (above), whichever hop forwarded it: a relay forwards its child's signed control and cannot speak
+for the recipients below it (see the inbound README). A retained control keeps its source for its replay, and its
+replay verifies it again.
 
 A receipt row is keyed by its origin and message id
 (`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
@@ -514,7 +535,7 @@ and types its peer lists: next hops under `hop` and `subtree`, logical recipient
 `receiver` and `leader`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
 `receiver` and `leader`, its sender under `hop`, and under `subtree` its sender only on that hop's own
 completion ACK (a leaf's `delivered`, a relay's terminal `subtree-complete`), never on a
-`forwarded` ACK the hop relays for a recipient below it -- so a hop ACK never stands in for a
+control the hop forwards for a recipient below it -- so a hop ACK never stands in for a
 logical recipient. A control
 is a duplicate only when its sender, logical recipient and status all repeat; an ACK for a peer
 the receipt already counted is refused with its own reason, so an ACK that moves no receipt costs
@@ -1396,16 +1417,21 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   `not-yet-in-sync-exhausted`. It ends nothing on its own -- the receipt budget still ends the message --
   and is one of the declared retryable outcomes below.
 
-A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop re-originated it: it comes from a
+A `not-subscribed` NACK speaks for one recipient, as an ACK does, whichever hop forwarded it: it comes from a
 next hop of the message or from a peer a repair may come from (a recipient the receipt expects, a unicast's addressee,
 a hop every frame passes), and a WS session's NACK speaks only for itself; it moves a recipient the receipt still owes
 into the row's `outsideAudiencePeerIds` and is refused for any other peer, a repeat or a confirmed one, and no ACK
-confirms a recipient after it. A dishonest client can thus remove itself or, as a next hop, a recipient it claims to
-relay for, since the origin does not know a hop's subtree. The recipient's own `subtree-complete-not-subscribed` ACK,
-from a next hop, is admitted as that hop's
-completion and confirms nobody; while the receipt still owes that recipient it also stands for the NACK, so a lost
-NACK records the recipient outside at once, as every relay reads it
-([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)).
+confirms a recipient after it. A dishonest peer can thus remove itself. Under a `receiver` or `leader` receipt on RTC
+a NACK for a counted recipient must carry that recipient's verified signature, so a next hop can no longer remove a
+recipient it claims to relay for, though the origin does not know a hop's subtree. The recipient's own
+`subtree-complete-not-subscribed` ACK, from a next hop, is admitted as that hop's completion and confirms nobody;
+while the receipt still owes that recipient it also stands for the NACK, from that next hop or forwarded by a peer a
+relayed NACK may come from
+([`isALOutboundRecipientControlSender`](./control/is-al-outbound-expected-repair-peer.ts)), so a lost NACK records
+the recipient outside at once, as every relay reads it
+([`isALImpliedNotSubscribedNack`](../delivery/is-al-implied-not-subscribed-nack.ts)). The forwarded form is read
+only under a logical receipt; under `hop` and `subtree` only a hop's own hop-end stands for its NACK
+([`isALOutboundImpliedNotSubscribedAck`](./control/is-al-outbound-implied-not-subscribed-ack.ts)).
 The acknowledgement a NACK states reads its hop view from the ACK history. It ends no receipt and hands nothing over:
 the row completes once every expected recipient is confirmed or outside and one is confirmed, and a receipt whose
 every recipient is outside stays open to its deadline and ends `receipt-exhausted` (PL10, PL16).

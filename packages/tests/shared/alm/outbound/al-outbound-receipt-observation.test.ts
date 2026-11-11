@@ -74,6 +74,7 @@ it.each(['enabled', 'absent', 'construction-throws', 'batch-construction-throws'
         const runtime = new ALOutboundMessageRuntime({
             ...resources,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
             receiptWorkCapture: capture === 'absent' ? undefined : {
                 batchObservations: capture === 'batch-construction-throws' ? FailedObservationBatch : ALWorkBatchObservations,

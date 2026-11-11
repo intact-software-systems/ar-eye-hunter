@@ -51,6 +51,11 @@ export interface ALInboundDurableEffectWrite {
     readonly expireAtTimestamp: number;
     /** Whose runtime claims the row: the carrier the message the effect acts on arrived on. */
     readonly carrier: ALDeliveryCarrier;
+    /**
+     * Never persisted. True on a `send-control` effect whose ACK or NACK a counted recipient authors about itself: its
+     * committer signs it first.
+     */
+    readonly signsForRecipient: boolean;
 }
 
 export interface ALPersistedInboundEffect {
@@ -71,6 +76,8 @@ export interface ALInboundWorkEntryInput {
     readonly observedAtMs: number;
     readonly expireAtTimestamp: number;
     readonly carrier: ALDeliveryCarrier;
+    /** True for a counted recipient's own ACK or NACK, which its committer signs first. */
+    readonly signsForRecipient: boolean;
 }
 
 /** The QueueBox type is the claim partition: each carrier's runtime reserves only its own type. */
@@ -94,6 +101,7 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
         payload: input.payload,
         expireAtTimestamp: input.expireAtTimestamp,
         carrier: input.carrier,
+        signsForRecipient: input.signsForRecipient,
         entry: {
             key: toALInboundWorkKey(input.namespace, input.effectId),
             typeId: toALInboundWorkType(input.namespace, input.carrier),
@@ -113,6 +121,23 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
             db: undefined
         }
     };
+}
+
+/** The same work with `payload` in its place, its entry recomputed as first observed: when it was first due. */
+export function toALInboundWorkEntryWithPayload(
+    write: ALInboundDurableEffectWrite,
+    namespace: string,
+    payload: ALInboundDurableEffect
+): ALInboundDurableEffectWrite {
+    return computeALInboundWorkEntry({
+        namespace,
+        effectId: write.effectId,
+        payload,
+        observedAtMs: resolveALInboundWorkDueAtMs(write.entry),
+        expireAtTimestamp: write.expireAtTimestamp,
+        carrier: write.carrier,
+        signsForRecipient: false
+    });
 }
 
 export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string): ALPersistedInboundEffect {

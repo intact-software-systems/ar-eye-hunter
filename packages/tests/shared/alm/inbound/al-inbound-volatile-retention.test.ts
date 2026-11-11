@@ -22,7 +22,7 @@ import {
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageKey } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import { toALInboundMessageOwnerKey } from '@shared/alm/inbound/al-inbound-source-validation.ts';
-import { toALInboundControlAcksKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
+import { toALInboundControlAcksKey, toALInboundControlNacksKey } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
@@ -35,6 +35,8 @@ import {
     readInboundTestDecisionSurface,
     type InboundTestRuntime
 } from '../inbound-runtime-test-fixture.ts';
+
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
 
 const NAMESPACE = 'inbound-retention';
 
@@ -129,6 +131,37 @@ describe('the owner row a volatile inbound message keeps (D74)', () => {
         vi.setSystemTime(admittedAtMs + 60 * 60_000 - 1);
         expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
             .toEqual({ kind: 'duplicate' });
+    });
+
+    it('keeps reclaimable provenance while a nacks history row names its message', async () => {
+        useFakeDate();
+        const pairs = await createReadyObservedPairs();
+        const message: ALMessage = {
+            ...createPermanentMessage('owner-with-nacks'),
+            targets: { mode: 'unicast', toPeerId: 'another-peer' }
+        };
+        expect((await pairs.fixture.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        const backend = new InMemoryAdmissionBackend(pairs.volatile, Date.now);
+        const nacksKey = toALInboundControlNacksKey(NAMESPACE, message.id.msgId, message.id.senderId);
+        await backend.write((transaction) =>
+            transaction.set(nacksKey, {
+                kind: 'nacks',
+                values: [toTestALNackPayload({
+                    msgId: message.id.msgId,
+                    fromPeerId: 'child',
+                    toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                    originPeerId: message.id.senderId,
+                    reason: 'not-subscribed'
+                })]
+            }, Date.now() + 60_000)
+        );
+        const owner = readRowExpiries(pairs.volatile, message).owner;
+
+        evictTerminalVolatileInboundMessages(backend, NAMESPACE);
+
+        expect(owner).toBeDefined();
+        expect(readRowExpiries(pairs.volatile, message).owner).toBe(owner);
     });
 
     it.each(['replacement', 'checkpoint reload', 'terminal reload', 'replacement reload'] as const)(
@@ -506,7 +539,7 @@ function toSenderAck(tracked: ALMessage): ALMessage {
             ts: Date.now(),
             traceId: 'trace-al-inbound-volatile-retention'
         },
-        {
+        toTestALAckPayload({
             ackedMsgId: tracked.id.msgId,
             fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
             toPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -515,7 +548,7 @@ function toSenderAck(tracked: ALMessage): ALMessage {
             carrier: 'ws',
             status: 'accepted',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

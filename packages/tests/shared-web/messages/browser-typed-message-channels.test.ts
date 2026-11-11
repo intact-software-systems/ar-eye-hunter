@@ -1086,6 +1086,7 @@ function createSharedInboundCarriers(callbacks: {
     const stores = createDefaultInMemoryALInboundRuntimeStores();
     const [ws, rtc] = (['ws', 'rtc'] as const).map((carrier) => {
         const runtime = createDefaultALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             selfPeerId: 'session-1',
             stores,

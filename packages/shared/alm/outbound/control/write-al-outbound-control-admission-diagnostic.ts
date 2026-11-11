@@ -36,6 +36,13 @@ export function writeALOutboundControlAdmissionDiagnostic(
         ...(parsed.type === 'nack' && parsed.payload.orderingKey !== undefined
             ? { nackOrderingKey: parsed.payload.orderingKey }
             : {}),
+        ...(admitted.kind === 'rejected' && admitted.proofRefusal !== undefined
+            ? {
+                proofRefusal: admitted.proofRefusal.kind,
+                claimedRecipientPeerId: admitted.proofRefusal.claimedRecipientPeerId,
+                channelPeerId: admitted.proofRefusal.channelPeerId
+            }
+            : {}),
         ...toALMessageTrace(control)
     });
 }

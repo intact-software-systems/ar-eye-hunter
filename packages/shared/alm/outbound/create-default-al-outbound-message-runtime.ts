@@ -38,6 +38,7 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
         Pick<
             ALOutboundMessageRuntime.Dependencies<TPrepared>,
             | 'carrier'
+            | 'recipientAuthentication'
             | 'toOutboxEntry'
             | 'readMessageFromEntry'
             | 'planOutgoingMessage'
@@ -94,6 +95,7 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
         afterDequeueAdmission: dependencies.afterDequeueAdmission,
         planRepairMessage: dependencies.planRepairMessage,
         hopPeerIds: dependencies.hopPeerIds,
+        recipientAuthentication: dependencies.recipientAuthentication,
         diagnostics: dependencies.diagnostics,
         dequeueTiming: dependencies.dequeueTiming,
         readDequeueAuthority: dependencies.readDequeueAuthority,

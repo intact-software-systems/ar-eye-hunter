@@ -19,6 +19,8 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     enabled: true,
     timeoutMs: 100,
@@ -43,14 +45,14 @@ async function answerNotSubscribed(
                 senderId: logicalRecipientPeerId,
                 traceId: 'trace-outside-retry'
             },
-            {
+            toTestALNackPayload({
                 msgId: msg.id.msgId,
                 fromPeerId: logicalRecipientPeerId,
                 toPeerId: 'self',
                 logicalRecipientPeerId,
                 reason: 'not-subscribed',
                 observedAtEpochMs: Date.now()
-            }
+            })
         );
         expect(await runtime.acceptControlMessage(nack, 'peer')).toEqual({ kind: 'committed' });
     }
@@ -63,7 +65,7 @@ async function acknowledgeAsRelay(
 ): Promise<void> {
     const ack = newALAckControlMessage(
         { v: 4, msgId: `ack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-outside-retry' },
-        {
+        toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
             fromPeerId: 'relay',
             toPeerId: 'self',
@@ -72,7 +74,7 @@ async function acknowledgeAsRelay(
             carrier: 'rtc',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
     expect(await runtime.acceptControlMessage(ack, 'peer')).toEqual({ kind: 'committed' });
 }

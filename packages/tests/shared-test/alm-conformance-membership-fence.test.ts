@@ -275,7 +275,7 @@ describe('fenced-catch-up', () => {
                 kind: 'diagnostic',
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v2",' +
+                contains: '"typeId":"al.control.nack.v3",' +
                     `"targetMsgId":"{resultCache.alm-${carrier}-fenced-catch-up-sender-send-1.value.msgId}"${outcome}`
             },
             timeoutMs: 27_000
@@ -384,7 +384,7 @@ describe('fenced-rejection', () => {
             kind: 'wait',
             match: {
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
-                contains: '"typeId":"al.control.nack.v2",' +
+                contains: '"typeId":"al.control.nack.v3",' +
                     '"targetMsgId":"{resultCache.alm-ws-fenced-rejection-sender-send-1.value.msgId}","outcome":"committed"'
             }
         });

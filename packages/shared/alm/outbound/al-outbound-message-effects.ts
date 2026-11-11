@@ -9,7 +9,10 @@ import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
 } from './admission/al-outbound-admission-store.ts';
-import { toALOutboundCapturedLane } from './admission/al-outbound-admission-validation.ts';
+import {
+    toALOutboundCapturedLane,
+    type ALOutboundCapturedPolicy
+} from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import type {
     ALOutboundDispatchPlan,
@@ -360,9 +363,14 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         recordsSentPositions: pending.policy.recordsSentPositions,
         admittedAudience: pending.policy.admittedAudience,
         admittedConnectionGenerationIds: pending.policy.admittedConnectionGenerationIds,
+        receiptProofKeys: pending.policy.receiptProofKeys,
         recipientScope: pending.policy.recipientScope,
         principalTargetId: pending.policy.principalTargetId,
         sessionInvalidation: pending.policy.sessionInvalidation,
         accountView: pending.policy.accountView
-    };
+    } satisfies
+        & ALOutboundDispatchPlan<TPrepared>
+        & {
+            [Field in Exclude<keyof ALOutboundCapturedPolicy, 'persist'>]: ALOutboundDispatchPlan<TPrepared>[Field];
+        };
 }

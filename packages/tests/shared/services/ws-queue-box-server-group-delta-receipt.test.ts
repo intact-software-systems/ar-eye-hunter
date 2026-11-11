@@ -28,6 +28,8 @@ import {
     type ReceiptServerInstance
 } from './ws-queue-box-server-receipt-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const DELTA_TRACE_ID = 'trace-delta-1';
 const CLOCK_STEP_MS = 1_000;
 
@@ -137,7 +139,7 @@ async function createDeltaServer(
 function sessionAck(delta: ALMessage, recipient: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${delta.id.msgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: delta.id.traceId },
-        {
+        toTestALAckPayload({
             ackedMsgId: delta.id.msgId,
             fromPeerId: recipient,
             toPeerId: delta.id.senderId,
@@ -146,6 +148,6 @@ function sessionAck(delta: ALMessage, recipient: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }

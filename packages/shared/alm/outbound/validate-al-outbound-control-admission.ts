@@ -10,9 +10,15 @@ import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
-import { isALOutboundExpectedRepairPeer } from './control/is-al-outbound-expected-repair-peer.ts';
+import {
+    isALOutboundExpectedRepairPeer,
+    isALOutboundRecipientControlSender
+} from './control/is-al-outbound-expected-repair-peer.ts';
+import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
+import { validateALOutboundRecipientProof } from './control/read-al-outbound-recipient-proof.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
+import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { validateALOutboundOutsideAudienceNack } from './control/validate-al-outbound-outside-audience-nack.ts';
 import { validateALOutboundRelayedNack } from './control/validate-al-outbound-relayed-nack.ts';
 import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
@@ -36,9 +42,13 @@ export function validateALOutboundControlAdmission(
     if (read.parsed.payload.toPeerId !== read.owner) {
         issues.push({ code: 'unauthorized', message: 'AL control is addressed to another outbound message owner' });
     }
+    if (read.parsed.type === 'nack' && read.parsed.payload.originPeerId !== read.owner) {
+        issues.push({ code: 'unauthorized', message: 'AL NACK names another origin than this outbound message owner' });
+    }
     if (isDuplicateControl(read)) {
         issues.push({ code: 'unauthorized', message: 'AL control was already admitted' });
     }
+    issues.push(...validateALOutboundRecipientProof(read.recipientProof));
     if (read.parsed.type === 'ack') {
         return [...issues, ...validateAcknowledgement(read, read.sent, read.parsed.payload)];
     }
@@ -98,12 +108,16 @@ function validateRepairRequest(
  * would move nothing is refused rather than committed, so it costs no write and no version bump. The
  * exception is the terminal ACK of a next hop whose recipient the receipt already counted, or which confirms
  * nobody, having answered `not-subscribed`: it completes that hop, which the hop view records, so a retry never
- * resends into its subtree.
+ * resends into its subtree. A hop-end that confirms nobody, which a relay forwards for a recipient the receipt still
+ * owes, moves that recipient outside the audience when it comes from a peer a relayed NACK may come from.
  */
 function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPayload): readonly ALMessageRejection[] {
     const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
-    if (pending && countedPeerId === undefined && isOpenNextHopCompletion(read, ack)) {
+    if (
+        pending && countedPeerId === undefined &&
+        (isOpenNextHopCompletion(read, ack) || isForwardedOutsideHopEnd(read, pending, ack))
+    ) {
         return [];
     }
     if (
@@ -118,6 +132,15 @@ function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPay
     return pending.ackedPeerIds.includes(countedPeerId) && !isOpenNextHopCompletion(read, ack)
         ? [{ code: 'unauthorized', message: 'AL acknowledgement confirms a peer the receipt already counted' }]
         : [];
+}
+
+function isForwardedOutsideHopEnd(
+    read: ALControlAdmissionRead,
+    pending: NonNullable<ALControlAdmissionRead['pending']>,
+    ack: ALAckPayload
+): boolean {
+    return isALOutboundRecipientControlSender(read, ack.fromPeerId) &&
+        isALOutboundImpliedNotSubscribedAck(pending.mode, ack, toALOutboundReceiptClasses(pending).unconfirmedPeerIds);
 }
 
 function isOpenNextHopCompletion(read: ALControlAdmissionRead, ack: ALAckPayload): boolean {

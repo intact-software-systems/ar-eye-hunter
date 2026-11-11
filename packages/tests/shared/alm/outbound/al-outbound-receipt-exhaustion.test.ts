@@ -70,6 +70,7 @@ async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionF
             clock,
             settlements: (fact) => facts.push(fact),
             carrier: 'rtc',
+            recipientAuthentication: { kind: 'carrier' },
             hopPeerIds: undefined
         }),
         clock,

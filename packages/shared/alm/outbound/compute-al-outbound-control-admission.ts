@@ -9,11 +9,11 @@ import type {
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
+import type { ALReceiptProofRefusal } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
-import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALOutsideAudienceNackReason } from '../delivery/is-al-outside-audience-nack-reason.ts';
 import type {
     ALOutboundRepairHint,
@@ -21,6 +21,7 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
+import { isALOutboundImpliedNotSubscribedAck } from './control/is-al-outbound-implied-not-subscribed-ack.ts';
 import { isALOutboundRelayedGapNack } from './control/is-al-outbound-relayed-gap-nack.ts';
 import {
     resolveALOutboundRelayRejection,
@@ -64,6 +65,8 @@ export interface ALControlAdmissionRead {
     readonly history: ALControlHistory;
     /** The ACKs admitted before this control, which the hop view reads whatever kind of control it is. */
     readonly acknowledgements: readonly ALAckPayload[];
+    /** Who spoke the control: its carrier authenticated its peer, its recipient's frozen key verified it, or why not. */
+    readonly recipientProof: 'carrier-authenticated' | 'verified' | ALReceiptProofRefusal;
 }
 
 export type ALPendingAckWrite =
@@ -243,7 +246,7 @@ function computePendingAckWrite(
         const owedPeerIds = toALOutboundReceiptClasses(next).unconfirmedPeerIds;
         return {
             kind: 'set',
-            value: isALImpliedNotSubscribedNack(ack, owedPeerIds)
+            value: isALOutboundImpliedNotSubscribedAck(next.mode, ack, owedPeerIds)
                 ? acceptALOutboundOutsideAudienceNack(next, ack.logicalRecipientPeerId)
                 : next
         };

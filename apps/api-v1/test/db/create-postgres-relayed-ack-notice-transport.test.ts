@@ -47,7 +47,8 @@ function relayedNotice(ackedMsgId = 'room-message-1'): RelayedAckNotice {
             logicalRecipientPeerId: 'c',
             carrier: 'ws',
             status: 'delivered',
-            observedAtEpochMs: 1
+            observedAtEpochMs: 1,
+            proof: null
         }
     );
     return {

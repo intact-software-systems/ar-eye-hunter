@@ -18,6 +18,8 @@ import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-en
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 const SOURCE: ALInboundMessageRuntime.Source = { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: SCOPE };
@@ -105,6 +107,7 @@ function createRuntime(
 ): InboundControlRuntime {
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'self',
@@ -131,7 +134,7 @@ function createRuntime(
 function createAcknowledgement(): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: 'control-ack', ts: 1, senderId: 'peer-2', traceId: 'trace-al-inbound-control-storage-unavailable' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'acked-msg',
             originPeerId: 'peer-1',
             logicalRecipientPeerId: 'peer-2',
@@ -140,7 +143,7 @@ function createAcknowledgement(): ALMessage {
             status: 'delivered',
             observedAtEpochMs: 1,
             carrier: 'ws'
-        }
+        })
     );
 }
 

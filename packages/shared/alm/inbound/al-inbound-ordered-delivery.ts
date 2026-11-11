@@ -8,7 +8,7 @@ import {
     type ALInboundBufferedRelease
 } from './admission/compute-al-inbound-admission.ts';
 import { validateALInboundCommitBundle } from './admission/validate-al-inbound-commit-bundle.ts';
-import type { ALInboundBufferedReleaseReadDto } from './al-inbound-admission-store.ts';
+import type { ALInboundBufferedReleaseReadDto, ALInboundCommitBundle } from './al-inbound-admission-store.ts';
 import { shouldRetryALInboundDelivery, type ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import {
@@ -21,6 +21,7 @@ import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
 } from './prepare-al-inbound-commit-bundle.ts';
+import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
 export namespace ALInboundOrderedDelivery {
     export type Readiness =
@@ -36,6 +37,8 @@ export namespace ALInboundOrderedDelivery {
             | 'clock'
             | 'effectPreparation'
             | 'onResyncRequired'
+            | 'receiptProofs'
+            | 'diagnostics'
         > {
         readonly signal: AbortSignal;
     }
@@ -102,10 +105,11 @@ export class ALInboundOrderedDelivery {
         if (validated.left) {
             throw new NonRetryableException(validated.left.message);
         }
+        const signed = await this.signReceiptControls(validated.right!, read.namespace);
         if (this.dependencies.signal.aborted) {
             return 'retry';
         }
-        const status = await this.dependencies.admissionStore.commitBundle(computed);
+        const status = await this.dependencies.admissionStore.commitBundle(signed);
         if (status === 'conflict' || this.dependencies.signal.aborted) {
             return 'retry';
         }
@@ -163,9 +167,10 @@ export class ALInboundOrderedDelivery {
         if (validated.left) {
             throw new NonRetryableException(validated.left.message);
         }
+        const signed = await this.signReceiptControls(validated.right!, read.namespace);
         if (
             this.dependencies.signal.aborted ||
-            await this.dependencies.admissionStore.commitBundle(validated.right!) === 'conflict'
+            await this.dependencies.admissionStore.commitBundle(signed) === 'conflict'
         ) {
             return 'retry';
         }
@@ -175,6 +180,18 @@ export class ALInboundOrderedDelivery {
             expectedSeq: completedThrough + 1
         });
         throw new NonRetryableException('Inbound ordered delivery requires resynchronization');
+    }
+
+    private async signReceiptControls(
+        bundle: ALInboundCommitBundle,
+        namespace: string
+    ): Promise<ALInboundCommitBundle> {
+        return await signALInboundReceiptControls({
+            bundle,
+            namespace,
+            receiptProofs: this.dependencies.receiptProofs,
+            diagnostics: this.dependencies.diagnostics
+        });
     }
 
     /** After the NACK commits, so the owner is told of a resynchronization the sender is already told of. */
@@ -263,7 +280,6 @@ function toResyncRequiredNackEffect(
             kind: 'send-nack',
             toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,
             msgId: msg.id.msgId,
-            logicalRecipient: { kind: 'self' },
             reason: 'resync-required',
             ordering
         }

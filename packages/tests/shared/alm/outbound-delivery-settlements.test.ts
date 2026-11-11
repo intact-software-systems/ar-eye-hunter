@@ -45,6 +45,8 @@ import {
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const PREPARED: OutboundTestPayload = { kind: 'send' };
 const BACKEND_KINDS = ['memory', 'indexeddb'] as const;
 /** Short enough that the acknowledgement row falls due inside the test, long enough to stay valid. */
@@ -322,14 +324,14 @@ it.each(BACKEND_KINDS)(
         const admitted = await runtime.acceptControlMessage(
             newALNackControlMessage(
                 { v: 4, msgId: 'control-resync', ts: 1, senderId: 'peer-1', traceId: 'trace-outbound-delivery-settlements' },
-                {
+                toTestALNackPayload({
                     msgId: message.id.msgId,
                     fromPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-1',
                     toPeerId: 'self',
                     reason: 'resync-required',
                     observedAtEpochMs: 1
-                }
+                })
             ),
             'peer'
         );

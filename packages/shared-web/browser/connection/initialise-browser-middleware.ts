@@ -614,6 +614,7 @@ async function initialiseBrowserRtcTransport(
         const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
             {
                 webRtcOverlayMulticastManager,
+                publicationCrypto: input.publicationCrypto,
                 qboxEngine: input.webSocketTransport.qboxEngine,
                 clientData: input.clientData,
                 inboundStores: input.inboundStores,

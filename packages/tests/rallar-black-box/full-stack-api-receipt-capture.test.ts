@@ -21,6 +21,8 @@ import { toError } from '../../shared/resilience/to-error.ts';
 
 import type { ReceiptOwnerScenario, ReceiptOwnerSink } from './full-stack-api-receipt-owner-fixture.ts';
 
+import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+
 interface ReceiptCaptureSummaryDto extends ApiJsonObject {
     readonly retainedRecords: number;
     readonly rejectedLines: number;
@@ -167,7 +169,8 @@ function toReceiptOwnerChildSource(expectedRecipientPeerIds: readonly string[]):
                 { v: 4, msgId: 'ack-1', senderId: 'recipient', ts: 900, traceId: 'trace-full-stack-api-receipt-capture' },
                 {
                     ackedMsgId: 'subject', fromPeerId: 'recipient', toPeerId: 'origin', originPeerId: 'origin',
-                    logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered', observedAtEpochMs: 901
+                    logicalRecipientPeerId: 'recipient', carrier: 'ws', status: 'delivered', observedAtEpochMs: 901,
+                    proof: null
                 }
             ));
         }
@@ -341,7 +344,7 @@ const RECEIPT = {
     confirmedRecipientPeerIds: ['recipient']
 };
 
-const ACK = {
+const ACK = toTestALAckPayload({
     ackedMsgId: 'subject',
     originPeerId: 'origin',
     fromPeerId: 'recipient',
@@ -350,7 +353,7 @@ const ACK = {
     carrier: 'ws',
     status: 'delivered',
     observedAtEpochMs: 900
-};
+});
 
 /** One closed record of every kind, each naming its trace. */
 const TRACED_OBSERVATIONS = [

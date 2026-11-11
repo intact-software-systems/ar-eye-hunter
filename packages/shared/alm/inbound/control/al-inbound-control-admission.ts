@@ -16,8 +16,13 @@ import type {
 } from '../al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
 import { toALInboundPendingControlId } from '../al-inbound-pending-admission.ts';
+import type { ALInboundRuntimeDiagnosticsSink } from '../al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier, toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry } from '../al-inbound-work-entry.ts';
+import {
+    signALInboundReceiptControls,
+    type ALInboundReceiptProofs
+} from '../receipt-proof/sign-al-inbound-receipt-controls.ts';
 import type { ALInboundAcknowledgementEvidence } from './al-inbound-acknowledgement-evidence.ts';
 import type { ALInboundControlSubject } from './al-inbound-control-rows.ts';
 import {
@@ -29,6 +34,7 @@ import {
 import {
     computeALInboundNackAdmission,
     toALInboundNackCommitBundle,
+    type ALInboundNackAdmissionCandidate,
     type ALInboundNackAdmissionRead
 } from './compute-al-inbound-nack-admission.ts';
 import { validateALInboundControlAdmission } from './validate-al-inbound-control-admission.ts';
@@ -40,6 +46,8 @@ export interface ALInboundControlAdmissionDependencies {
     readonly clock: ALInboundMessageRuntime.Clock;
     readonly newControlId: () => string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly receiptProofs: ALInboundReceiptProofs;
+    readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
 }
 
 export type ALInboundControlAdmissionResult =
@@ -88,6 +96,8 @@ export class ALInboundControlAdmission {
     private readonly clock: ALInboundMessageRuntime.Clock;
     private readonly newControlId: () => string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly receiptProofs: ALInboundReceiptProofs;
+    private readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
 
     constructor(dependencies: ALInboundControlAdmissionDependencies) {
         this.admissionStore = dependencies.admissionStore;
@@ -95,6 +105,8 @@ export class ALInboundControlAdmission {
         this.clock = dependencies.clock;
         this.newControlId = dependencies.newControlId;
         this.retention = dependencies.retention;
+        this.receiptProofs = dependencies.receiptProofs;
+        this.diagnostics = dependencies.diagnostics;
     }
 
     async admit(
@@ -180,6 +192,7 @@ export class ALInboundControlAdmission {
             owner: surface.owner,
             pending: surface.pendingAck,
             acks: surface.acks,
+            nacks: surface.nacks,
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId
@@ -190,7 +203,7 @@ export class ALInboundControlAdmission {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         return await this.commitControlAdmission(arrival, {
-            bundle: toALInboundNackCommitBundle(candidate),
+            bundle: toALInboundNackCommitBundle(this.toStoreCandidate(candidate)),
             acceptance: candidate.acceptance,
             nowMs
         }, evidence);
@@ -201,8 +214,14 @@ export class ALInboundControlAdmission {
         admitted: ALInboundControlCommit,
         evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
+        const signed = await signALInboundReceiptControls({
+            bundle: admitted.bundle,
+            namespace: this.admissionStore.namespace,
+            receiptProofs: this.receiptProofs,
+            diagnostics: this.diagnostics
+        });
         evidence?.commit('pending');
-        const status = await this.admissionStore.commitBundle(admitted.bundle);
+        const status = await this.admissionStore.commitBundle(signed);
         evidence?.commit(status);
         if (status === 'committed') {
             return { kind: 'committed', acceptance: admitted.acceptance };
@@ -214,11 +233,13 @@ export class ALInboundControlAdmission {
     }
 
     /**
-     * The volatile pair keeps a message's acknowledgement history no longer than its deadline plus the receipt grace
-     * (D74): the control-owner index that admits an acknowledgement expires at the deadline, and a data copy past it
-     * is refused expired. A relay row of a message that named no deadline carries none, so its history keeps the TTL.
+     * The volatile pair keeps a message's ACK and NACK histories no longer than its deadline plus the receipt grace
+     * (D74): the control-owner index that admits a control expires at the deadline, and a data copy past it is
+     * refused expired. A relay row of a message that named no deadline carries none, so its history keeps the TTL.
      */
-    private toStoreCandidate(candidate: ALInboundControlAdmissionCandidate): ALInboundControlAdmissionCandidate {
+    private toStoreCandidate<C extends ALInboundControlAdmissionCandidate | ALInboundNackAdmissionCandidate>(
+        candidate: C
+    ): C {
         return {
             ...candidate,
             controlExpireAtTimestamp: computeALVolatileControlRowExpiryMs(
@@ -237,7 +258,8 @@ export class ALInboundControlAdmission {
             payload: { kind: 'admit-control', msg: arrival.msg, carrier: arrival.carrier, expiresAtMs },
             observedAtMs: nowMs,
             expireAtTimestamp: expiresAtMs,
-            carrier: arrival.carrier
+            carrier: arrival.carrier,
+            signsForRecipient: false
         });
         await this.port.retainIfAbsent(work.entry);
     }
@@ -259,6 +281,7 @@ export class ALInboundControlAdmission {
             owner: surface.owner,
             pending: surface.pendingAck,
             acks: surface.acks,
+            nacks: surface.nacks,
             nowMs,
             controlMsgId: this.newControlId(),
             traceId: arrival.msg.id.traceId

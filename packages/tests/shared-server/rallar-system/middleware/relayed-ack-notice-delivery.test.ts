@@ -26,6 +26,8 @@ import { createInboundTestStores } from '../../../shared/alm/inbound-runtime-tes
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
 interface MiddlewareInstance {
@@ -158,7 +160,7 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
 function receiverAck(recipient: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-relayed-ack-notice-delivery' },
-        {
+        toTestALAckPayload({
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
             toPeerId: 'a',
@@ -167,7 +169,7 @@ function receiverAck(recipient: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

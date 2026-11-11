@@ -31,6 +31,8 @@ import {
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const SERVER_ID = 'server';
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 const ROOM = { ...SCOPE, groupId: 'room-1' };
@@ -310,7 +312,7 @@ function roomUnicast(input: RoomUnicastInput): ALMessage {
 function addresseeAck(ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
         { v: 4, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now(), traceId: 'trace-ws-queue-box-server-addressed-receipts' },
-        {
+        toTestALAckPayload({
             ackedMsgId,
             fromPeerId: recipient,
             toPeerId: 'a',
@@ -319,7 +321,7 @@ function addresseeAck(ackedMsgId: string, recipient: string): ALMessage {
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 

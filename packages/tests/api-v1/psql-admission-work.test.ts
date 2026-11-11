@@ -48,6 +48,8 @@ import {
 } from '../shared/alm/outbound-runtime-test-fixture.ts';
 import { readInboundTestMessageOwner } from '../shared/alm/read-inbound-test-message-owner.ts';
 
+import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+
 interface IndexedRecord {
     readonly index: number;
 }
@@ -213,7 +215,7 @@ describe('PostgreSQL inbound admission', () => {
         }).admit(
             newALAckControlMessage(
                 { v: 4, msgId: 'ack-msg-1', ts: 1, senderId: 'peer-2', traceId: 'trace-psql-admission-work' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: 'msg-1',
                     originPeerId: 'peer-1',
                     logicalRecipientPeerId: 'peer-2',
@@ -222,7 +224,7 @@ describe('PostgreSQL inbound admission', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
         );
@@ -338,7 +340,8 @@ describe('PostgreSQL outbound admission', () => {
             admissionStore: store,
             workQueue: backend.workQueue,
             nowMs: Date.now,
-            carrier: 'ws'
+            carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' }
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
@@ -374,7 +377,7 @@ describe('PostgreSQL outbound admission', () => {
         const acceptance = await control.admit(
             newALAckControlMessage(
                 { v: 4, msgId: 'ack-outbound-message', ts: 1, senderId: 'peer-1', traceId: 'trace-psql-admission-work' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
                     logicalRecipientPeerId: 'peer-1',
@@ -383,7 +386,7 @@ describe('PostgreSQL outbound admission', () => {
                     status: 'delivered',
                     observedAtEpochMs: 1,
                     carrier: 'ws'
-                }
+                })
             ),
             'peer'
         );

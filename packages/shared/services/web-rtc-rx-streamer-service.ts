@@ -28,11 +28,13 @@ import {
     type RttMeasurementInfo
 } from '../api/api-config.ts';
 import type { RtcCarrierGapAdmission } from '../multicast/compute-rtc-outbound-carrier-availability.ts';
+import { RtcReceiptProofSigner } from '../multicast/receipt-proof/rtc-receipt-proof-signer.ts';
 import type { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import type { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
+import type { PublicationCrypto } from '../signature/publication-crypto.ts';
 import type { QRtcClientCallbacks } from '../webrtc/qrtc-client-callbacks.ts';
 import type { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
 import type { InboxOutboxEngine } from './inbox-outbox-engine.ts';
@@ -72,6 +74,8 @@ export namespace WebRtcRxStreamerService {
         readonly creationNow?: QueueBoxUtilities.CreationClock;
         readonly queueEngine?: InboxOutboxEngine;
         readonly multicast: WebRtcOverlayMulticastManager;
+        /** The page key this session signs the receipts a `receiver` or `leader` send counts it for with. */
+        readonly publicationCrypto: PublicationCrypto;
         readonly sessionId: string;
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
@@ -87,6 +91,8 @@ export namespace WebRtcRxStreamerService {
 
     export interface Dependencies {
         readonly multicast: WebRtcOverlayMulticastManager;
+        /** Reaches the inbound runtime's receipt signer alone: the streamer keeps neither the key nor the signer. */
+        readonly publicationCrypto: PublicationCrypto;
         readonly sessionId: string;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly epochNow: () => number;
@@ -127,7 +133,8 @@ export class WebRtcRxStreamerService {
 
     private readonly heartbeatByPeerId = new Map<PeerId, WebRtcHeartbeatService>();
     private readonly peersByPeerId = new Map<PeerId, WebRtcConnectionService.Peer>();
-    private readonly inboundRuntime: ALInboundMessageRuntime;
+    /** An ES private field: app code reaches the streamer, never the receipt signer its inbound runtime holds. */
+    readonly #inboundRuntime: ALInboundMessageRuntime;
     private disposed = false;
     private rttReportingPeerIds: ReadonlySet<PeerId> | undefined;
     /**
@@ -138,13 +145,14 @@ export class WebRtcRxStreamerService {
 
     public readonly multicast: WebRtcOverlayMulticastManager;
     public readonly sessionId: string;
-    private readonly dependencies: WebRtcRxStreamerService.Dependencies;
+    private readonly dependencies: Omit<WebRtcRxStreamerService.Dependencies, 'publicationCrypto'>;
 
     constructor(dependencies: WebRtcRxStreamerService.Dependencies) {
-        this.dependencies = dependencies;
+        const { publicationCrypto, ...retained } = dependencies;
+        this.dependencies = retained;
         this.multicast = dependencies.multicast;
         this.sessionId = dependencies.sessionId;
-        this.inboundRuntime = new ALInboundMessageRuntime(
+        this.#inboundRuntime = new ALInboundMessageRuntime(
             {
                 ...dependencies.inboundRuntime,
                 carrier: 'rtc',
@@ -153,6 +161,7 @@ export class WebRtcRxStreamerService {
                     return this.multicast.planIncomingMessage(msg, source, observations);
                 },
                 verifyPublicationProof: async (msg) => await this.multicast.verifyPublicationProof(msg),
+                receiptProofs: { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: publicationCrypto }) },
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 dispatchInboxEntry: async (entry, plan) => {
                     return await this.dispatchInboxEntry(entry, plan);
@@ -235,7 +244,7 @@ export class WebRtcRxStreamerService {
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         let admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         try {
-            admitted = await this.inboundRuntime.admitIncomingMessage(admission.message, admission.source);
+            admitted = await this.#inboundRuntime.admitIncomingMessage(admission.message, admission.source);
         }
         catch (caught) {
             admission.observation?.admissionResult({ pass: admission.pass, admitted: 'threw' });
@@ -328,7 +337,7 @@ export class WebRtcRxStreamerService {
         catch (caught) {
             failure = toError(caught);
         }
-        const disposingInbound = this.inboundRuntime.dispose();
+        const disposingInbound = this.#inboundRuntime.dispose();
         try {
             this.stopAllHeartbeats();
         }
@@ -587,6 +596,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
     const creationNow = input.creationNow ?? Temporal.Now.instant;
     return new WebRtcRxStreamerService({
         multicast: input.multicast,
+        publicationCrypto: input.publicationCrypto,
         sessionId: input.sessionId,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,

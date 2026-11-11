@@ -23,6 +23,8 @@ import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/crea
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 interface InboundIngressFixture {
     readonly runtime: ALInboundMessageRuntime;
     readonly admissionStore: ALInboundAdmissionStore;
@@ -81,7 +83,7 @@ describe('AL inbound canonical validation', () => {
         const nowMs = Date.now();
         const control = newALAckControlMessage(
             { v: 4, msgId: 'receipt', senderId: 'sender', ts: nowMs, traceId: 'trace-al-inbound-ingress-validation' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'unknown',
                 originPeerId: 'receiver',
                 logicalRecipientPeerId: 'sender',
@@ -90,7 +92,7 @@ describe('AL inbound canonical validation', () => {
                 status: 'delivered',
                 observedAtEpochMs: nowMs,
                 carrier: 'rtc'
-            }
+            })
         );
         try {
             for (let attempt = 0; attempt < 3; attempt++) {
@@ -217,6 +219,7 @@ function createFixture(carrier: ALDeliveryCarrier): InboundIngressFixture {
         maxDeliveredMarkers: undefined
     });
     const runtime = new ALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier,
         ...createDefaultALInboundRuntimeResources({

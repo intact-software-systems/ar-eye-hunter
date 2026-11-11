@@ -5,9 +5,10 @@ import {
     newALNackControlMessage,
     newALRepairControlMessage
 } from '../../al-contracts/al-control.ts';
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { isALCountedRecipient } from '../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import { computeALInboundWitnessedCompletedThrough } from './admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundAdmissionMutation,
@@ -19,6 +20,8 @@ import type {
 import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
+import { toALForwardedReceiptControlMessage } from './control/to-al-forwarded-receipt-control-message.ts';
+import { isALInboundRecipientReceiptIntent } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 
 export interface ALInboundEffectPreparationDependencies {
     readonly newControlId: () => string;
@@ -49,6 +52,8 @@ interface PrepareALInboundDurableEffectInput {
     readonly payload: ALInboundEffectIntent['payload'];
     readonly facts: ALInboundEffectFacts;
     readonly traceId: string;
+    /** The prepared message's sender, whom a NACK about it names as its origin. */
+    readonly originPeerId: string;
     readonly index: number;
     readonly carrier: ALDeliveryCarrier;
 }
@@ -97,13 +102,17 @@ function toPreparedALInboundMessage(read: PrepareALInboundCommitBundleInput['rea
 
 function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readonly ALInboundDurableEffectWrite[] {
     const { read, facts } = input;
-    const traceId = toPreparedALInboundMessage(read).id.traceId;
+    const msg = toPreparedALInboundMessage(read);
+    const { traceId, senderId: originPeerId } = msg.id;
+    // The message's own receipt decides: a plan that refuses it plans no receipt of its own (`ack.algo: 'none'`).
+    const countsSelf = isALCountedRecipient(msg, toPreparedALInboundPlan(read).effective.ack.algo, facts.selfPeerId);
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({
             payload: effect.payload,
             facts,
             traceId,
+            originPeerId,
             index,
             carrier: effect.carrier
         });
@@ -117,9 +126,14 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
             effectId,
             expireAtTimestamp,
             payload,
-            carrier: effect.carrier
+            carrier: effect.carrier,
+            signsForRecipient: isALInboundRecipientReceiptIntent(effect, countsSelf)
         });
     });
+}
+
+function toPreparedALInboundPlan(read: PrepareALInboundCommitBundleInput['read']): ALMessageHandlingPlan {
+    return read.kind === 'incoming' ? read.plan : read.snapshot.plan;
 }
 
 /** Provenance covers its work; volatile terminal eligibility records the policy actually admitted. */
@@ -129,7 +143,7 @@ function toProvenanceMutations(
     ownedWorkExpiries: readonly number[]
 ): readonly ALInboundAdmissionMutation[] {
     const { read } = input;
-    const effective = read.kind === 'incoming' ? read.plan.effective : read.snapshot.plan.effective;
+    const effective = toPreparedALInboundPlan(read).effective;
     return mutations.flatMap((mutation): readonly ALInboundAdmissionMutation[] => {
         if (mutation.kind !== 'set-msg-owner') {
             return [mutation];
@@ -151,12 +165,12 @@ function toProvenanceMutations(
 /** The rows whose lifetime the canonical message must cover, exactly as the bundle validator reads them. */
 function isOwnedWorkMutation(
     mutation: ALInboundAdmissionMutation
-): mutation is Extract<
-    ALInboundAdmissionMutation,
-    { kind: 'set-buffered' | 'set-control-acks' | 'set-control-pending' | 'set-control-owners'; }
-> {
+): mutation is Extract<ALInboundAdmissionMutation, {
+    kind: 'set-buffered' | 'set-control-acks' | 'set-control-nacks' | 'set-control-pending' | 'set-control-owners';
+}> {
     return mutation.kind === 'set-buffered' || mutation.kind === 'set-control-acks' ||
-        mutation.kind === 'set-control-pending' || mutation.kind === 'set-control-owners';
+        mutation.kind === 'set-control-nacks' || mutation.kind === 'set-control-pending' ||
+        mutation.kind === 'set-control-owners';
 }
 
 /**
@@ -197,12 +211,11 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     toPeerId: payload.toPeerId,
                     ackedMsgId: payload.ackedMsgId,
                     originPeerId: payload.originPeerId,
-                    logicalRecipientPeerId: payload.logicalRecipient.kind === 'self'
-                        ? facts.selfPeerId
-                        : payload.logicalRecipient.peerId,
+                    logicalRecipientPeerId: facts.selfPeerId,
                     status: payload.status,
                     observedAtEpochMs: facts.observedAtEpochMs,
-                    carrier: input.carrier
+                    carrier: input.carrier,
+                    proof: null
                 })
             };
         case 'send-nack':
@@ -212,12 +225,21 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     ...toControlOrdering(payload.ordering),
                     fromPeerId: facts.selfPeerId,
                     toPeerId: payload.toPeerId,
-                    logicalRecipientPeerId: payload.logicalRecipient.kind === 'self'
-                        ? facts.selfPeerId
-                        : payload.logicalRecipient.peerId,
+                    logicalRecipientPeerId: facts.selfPeerId,
+                    originPeerId: input.originPeerId,
                     msgId: payload.msgId,
                     reason: payload.reason,
-                    observedAtEpochMs: facts.observedAtEpochMs
+                    observedAtEpochMs: facts.observedAtEpochMs,
+                    proof: null
+                })
+            };
+        case 'forward-control':
+            return {
+                kind: 'send-control',
+                msg: toALForwardedReceiptControlMessage(id, payload.control, {
+                    fromPeerId: facts.selfPeerId,
+                    toPeerId: payload.toPeerId,
+                    carrier: input.carrier
                 })
             };
         case 'send-repair':

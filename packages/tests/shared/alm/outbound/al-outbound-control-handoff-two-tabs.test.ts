@@ -26,6 +26,8 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
+import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+
 const SENDER_PEER_ID = 'self';
 /**
  * The controls one admission hands off, in hand-off order. Their work keys sort the other way, so a
@@ -271,7 +273,7 @@ function createControlMessage(msgId: string, nowMs: number): ALMessage {
     return {
         ...newALAckControlMessage(
             { v: 4, senderId: SENDER_PEER_ID, msgId, ts: nowMs, traceId: 'trace-al-outbound-control-handoff-two-tabs' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'inbound-admission',
                 fromPeerId: SENDER_PEER_ID,
                 toPeerId: 'peer',
@@ -280,7 +282,7 @@ function createControlMessage(msgId: string, nowMs: number): ALMessage {
                 carrier: 'ws',
                 status: 'delivered',
                 observedAtEpochMs: nowMs
-            }
+            })
         ),
         constraints: { expiresAtMs: nowMs + 5 * 60_000 }
     };

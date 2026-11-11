@@ -38,6 +38,8 @@ export function createTestALInboundControlAdmission(
         port: createTestALInboundWorkPort(input),
         clock: { nowMs: input.nowMs },
         newControlId: input.newControlId,
-        retention: input.admissionStore.retention
+        retention: input.admissionStore.retention,
+        receiptProofs: { kind: 'carrier-authenticated' },
+        diagnostics: undefined
     });
 }

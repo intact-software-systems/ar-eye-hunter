@@ -2431,16 +2431,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'isApiTimingRecord'
     }),
-    Object.freeze({
-        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toWsQueueBoxServerReceiptAckFacts'
-    }),
-    Object.freeze({
-        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isClosedAck'
-    }),
     // Receipt aggregation is one bounded frozen-audience/count/deadline
     // lifecycle, including terminal ACK facts from its existing validator.
     // Count and immutable enqueue projections remain beside their effects;

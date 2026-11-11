@@ -254,6 +254,7 @@ function createCheckpointTestRuntime(input: CheckpointTestRuntimeInput): Checkpo
             durableWorkOwnership: ownership,
             nowMs,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (msg) => ({

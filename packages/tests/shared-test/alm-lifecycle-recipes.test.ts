@@ -87,7 +87,7 @@ describe('ALM lifecycle recipe evidence', () => {
                 commandId: expect.stringMatching(/ack-admitted-1$/),
                 match: {
                     kind: 'diagnostic',
-                    contains: `"typeId":"al.control.ack.v2","targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed"`
+                    contains: `"typeId":"al.control.ack.v3","targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed"`
                 }
             });
             expect(ackAdmitted).toHaveLength(1);

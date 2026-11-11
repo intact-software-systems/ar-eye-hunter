@@ -28,6 +28,8 @@ import {
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const ACK_TIMEOUT_MS = 2_000;
 
 describe('the child hops an RTC relay owns', () => {
@@ -196,7 +198,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
             await chain.c.receive(control, 'd');
         }
         const answer = await chain.c.readSent('a');
-        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'accepted'], ['c', 'subtree-complete'], ['d', 'forwarded']]);
+        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'accepted'], ['c', 'subtree-complete'], ['d', 'delivered']]);
         for (const ack of answer) {
             await chain.origin.manager.acceptControlMessage(ack);
         }
@@ -263,7 +265,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
             await c.receive(control, 'd');
         }
         expect(readAckTuples((await c.readSent('s')).slice(2)).toSorted())
-            .toEqual([['c', 'subtree-complete'], ['d', 'forwarded']]);
+            .toEqual([['c', 'subtree-complete'], ['d', 'delivered']]);
         expect(readAckTuples(await c.readSent('r'))).toEqual([['c', 'accepted']]);
     });
 });
@@ -368,7 +370,14 @@ describe('the RTC subtree targeted repair keeps every unfinished hop expected (R
 
         await origin.manager.acceptControlMessage(newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-rtc-relay-ownership' },
-            { msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+            toTestALNackPayload({
+                msgId: message.id.msgId,
+                fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
+                toPeerId: 'a',
+                reason: 'gap',
+                observedAtEpochMs: Date.now()
+            })
         ));
         await vi.advanceTimersByTimeAsync(100);
 

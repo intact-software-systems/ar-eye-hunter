@@ -40,6 +40,7 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { RtcReceiptProofSigner } from '@shared/multicast/receipt-proof/rtc-receipt-proof-signer.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -61,6 +62,7 @@ import {
     type RtcOriginOverlayFixture
 } from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
 import { openConnectingWebSocket, SimulatedWebSocket } from '../../shared/native-websocket-fixture.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 interface ReceiptLoopPeer {
@@ -489,6 +491,8 @@ async function createReceiptLoopReceiver(
         }
     });
     const rtc = new ALInboundMessageRuntime({
+        // The room key every fixture session registers, so the origin verifies what this recipient signs.
+        receiptProofs: { kind: 'signed', signer: new RtcReceiptProofSigner({ crypto: ROOM_PUBLICATION_CRYPTO }) },
         orderingObserver: 'addressed',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: peerId,

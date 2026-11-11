@@ -203,7 +203,7 @@ describe('ordering-gap-repair', () => {
                 kind: 'diagnostic',
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v2",' +
+                contains: '"typeId":"al.control.nack.v3",' +
                     `"targetMsgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-3.value.msgId}","outcome":"committed"`
             },
             timeoutMs: 27_000

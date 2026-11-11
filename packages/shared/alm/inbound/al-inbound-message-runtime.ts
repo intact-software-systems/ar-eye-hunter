@@ -38,6 +38,7 @@ import {
     toALInboundReceiver,
     type ALInboundReceiver
 } from './read-al-inbound-message-authorization.ts';
+import type { ALInboundReceiptProofs } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -178,6 +179,8 @@ export namespace ALInboundMessageRuntime {
          * its NACK commits. Absence means no recovery owner exists anywhere: the server's case.
          */
         readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
+        /** How this composition authenticates the ACKs and NACKs its counted recipient sends about itself. */
+        readonly receiptProofs: ALInboundReceiptProofs;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }

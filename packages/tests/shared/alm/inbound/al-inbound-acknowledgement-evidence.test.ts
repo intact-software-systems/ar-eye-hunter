@@ -39,6 +39,8 @@ import { createScriptedTransportFaultPort } from '@shared/transport-faults/trans
 
 import { readInboundTestAcknowledgements } from '../read-inbound-test-acknowledgements.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 afterEach(() => vi.restoreAllMocks());
 
 namespace AcknowledgementFixture {
@@ -102,6 +104,7 @@ class AcknowledgementFixture {
     constructor(input: AcknowledgementFixture.Input = {}) {
         this.nowMs = input.nowMs ?? Date.now;
         this.runtime = new ALInboundMessageRuntime({
+            receiptProofs: { kind: 'carrier-authenticated' },
             orderingObserver: 'addressed',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'relay',
@@ -132,16 +135,19 @@ class AcknowledgementFixture {
     }
 
     acknowledgement(originPeerId = 'origin', logicalRecipientPeerId = 'leaf'): ALMessage {
-        return newALAckControlMessage({ v: 4, msgId: 'incoming-control', senderId: 'child', ts: 1, traceId: 'trace-al-inbound-acknowledgement-evidence' }, {
-            ackedMsgId: 'subject',
-            originPeerId,
-            logicalRecipientPeerId,
-            fromPeerId: 'child',
-            toPeerId: 'relay',
-            status: 'subtree-complete',
-            carrier: 'ws',
-            observedAtEpochMs: 2
-        });
+        return newALAckControlMessage(
+            { v: 4, msgId: 'incoming-control', senderId: 'child', ts: 1, traceId: 'trace-al-inbound-acknowledgement-evidence' },
+            toTestALAckPayload({
+                ackedMsgId: 'subject',
+                originPeerId,
+                logicalRecipientPeerId,
+                fromPeerId: 'child',
+                toPeerId: 'relay',
+                status: 'subtree-complete',
+                carrier: 'ws',
+                observedAtEpochMs: 2
+            })
+        );
     }
 
     async seed(): Promise<void> {
@@ -473,17 +479,20 @@ it('associates the exact received ACK with independently stored regenerated cont
 it('names the reason of a gap NACK the relay refused in its evidence', async () => {
     const fixture = new AcknowledgementFixture();
     await fixture.seed();
-    const gap = newALNackControlMessage({ v: 4, msgId: 'incoming-gap', senderId: 'child', ts: 1, traceId: 'trace-al-inbound-acknowledgement-evidence' }, {
-        msgId: 'subject',
-        fromPeerId: 'child',
-        toPeerId: 'relay',
-        logicalRecipientPeerId: 'leaf',
-        reason: 'gap',
-        observedAtEpochMs: 2,
-        orderingKey: 'chat:origin:1',
-        expectedSeq: 1,
-        missingRanges: [{ from: 1, to: 1 }]
-    });
+    const gap = newALNackControlMessage(
+        { v: 4, msgId: 'incoming-gap', senderId: 'child', ts: 1, traceId: 'trace-al-inbound-acknowledgement-evidence' },
+        toTestALNackPayload({
+            msgId: 'subject',
+            fromPeerId: 'child',
+            toPeerId: 'relay',
+            logicalRecipientPeerId: 'leaf',
+            reason: 'gap',
+            observedAtEpochMs: 2,
+            orderingKey: 'chat:origin:1',
+            expectedSeq: 1,
+            missingRanges: [{ from: 1, to: 1 }]
+        })
+    );
 
     expect((await fixture.runtime.admitIncomingMessage(gap, { kind: 'trusted-server' })).right).toEqual({ kind: 'control', handled: false });
 

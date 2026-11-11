@@ -26,6 +26,7 @@ function toBundle(): ALInboundCommitBundle {
         supersedence: {},
         pendingAck: undefined,
         acks: [],
+        nacks: [],
         controlOwners: undefined
     };
     return {
@@ -51,6 +52,7 @@ interface StoredAckEntryFixture {
     readonly status: string;
     readonly observedAtEpochMs: number;
     readonly carrier?: string;
+    readonly proof: null;
 }
 
 interface AcksControlValueFixture {
@@ -80,7 +82,8 @@ describe('validateALInboundAdmissionMutation invalid control value', () => {
                     fromPeerId: 'peer-a',
                     toPeerId: 'peer-b',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    proof: null
                 }
             ]
         });
@@ -102,7 +105,8 @@ describe('validateALInboundAdmissionMutation invalid control value', () => {
                     toPeerId: 'peer-b',
                     status: 'accepted',
                     observedAtEpochMs: 1,
-                    carrier: 'carrier-pigeon'
+                    carrier: 'carrier-pigeon',
+                    proof: null
                 }
             ]
         });

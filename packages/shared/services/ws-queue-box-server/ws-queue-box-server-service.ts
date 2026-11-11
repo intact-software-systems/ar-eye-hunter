@@ -426,6 +426,7 @@ export class WsQueueBoxServerService {
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
             carrier: 'ws',
+            recipientAuthentication: { kind: 'carrier' },
             dequeue: {
                 types: WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
                 resilience: dependencies.dequeueResilience
@@ -506,6 +507,7 @@ export class WsQueueBoxServerService {
             ...dependencies.inboundRuntime,
             carrier: 'ws',
             orderingObserver: 'every-track',
+            receiptProofs: { kind: 'carrier-authenticated' },
             readPendingAdmissionAuthority: (message, source) =>
                 this.inboundAuthority.readPendingAdmissionAuthority(message, source),
             planIncomingMessage: (message, fromPeerId, runtime) =>

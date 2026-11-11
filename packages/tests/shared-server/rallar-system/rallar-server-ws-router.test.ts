@@ -575,8 +575,10 @@ describe('RallarServerWsRouter', () => {
                 throw new Error('Expected a decoded NACK control');
             }
             const nack = control.payload;
+            // The NACK names the refused message's sender as its origin, which the client checks against its own owner row.
             expect(nack).toMatchObject({
                 msgId: message.id.msgId,
+                originPeerId: message.id.senderId,
                 reason: 'not-yet-in-sync',
                 serverSnapshotVersion: 3
             });

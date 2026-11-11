@@ -15,6 +15,7 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ALPublicationStageLimit } from '../../al-contracts/publication/al-publication-stage-limits.ts';
+import type { ALReceiptProofKeys, ALReceiptProofRefusal } from '../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { toALMessageTrace, type ALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -50,6 +51,7 @@ import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admissi
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import type { ALOutboundRecipientAuthentication } from './control/read-al-outbound-recipient-proof.ts';
 import type { ALOutboundReceiptConfirmationDiagnostic } from './control/to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
 import {
@@ -220,6 +222,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly admittedAudience?: readonly string[];
     /** On a granted topic's row, the connection generation each admitted session's subscription asserted at route. */
     readonly admittedConnectionGenerationIds?: Readonly<Record<string, string>>;
+    /** The registered key of each keyed counted recipient of the origin's own logically receipted RTC send; absent: none is known yet. */
+    readonly receiptProofKeys?: ALReceiptProofKeys;
     readonly recipientScope?: StateScope;
     readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
@@ -402,6 +406,12 @@ export type ALOutboundRuntimeDiagnosticsEvent =
             nackReason?: ALNackPayload['reason'];
             /** The track a NACK asks about, present exactly when the NACK names one (a gap's). */
             nackOrderingKey?: string;
+            /** Why the control's proof was refused; this and the next two are present exactly when one was. */
+            proofRefusal?: ALReceiptProofRefusal['kind'];
+            /** The recipient the refused control spoke for. */
+            claimedRecipientPeerId?: string;
+            /** The peer the refused control arrived from. */
+            channelPeerId?: string;
         }>
         /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
         & ALMessageTrace
@@ -627,6 +637,8 @@ export namespace ALOutboundMessageRuntime {
          * its own repairs; the WS server is the hop), so only a plan's tracked next hops are the sender's own.
          */
         readonly hopPeerIds?: readonly string[];
+        /** How this owner knows who spoke a recipient's control: its carrier, or the recipient's own signature. */
+        readonly recipientAuthentication: ALOutboundRecipientAuthentication;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly settlements: ALDeliverySettlementSink | undefined;
     }

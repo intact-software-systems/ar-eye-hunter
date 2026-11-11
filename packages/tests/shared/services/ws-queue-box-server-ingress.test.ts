@@ -19,6 +19,8 @@ import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const PENDING_ADMISSION_DENIALS = ['unauthorized', 'membership-fenced', 'not-yet-in-sync'] as const;
 
 describe('WS server bounded and authorized admission', () => {
@@ -301,7 +303,7 @@ describe('WS server bounded and authorized admission', () => {
                 id: { senderId: 'server' },
                 targets: { mode: 'unicast', toPeerId: 'session-1' },
                 qos: { delivery: { algo: 'best-effort' }, durability: { algo: 'volatile' }, ack: { algo: 'none' } },
-                payload: { typeId: 'al.control.nack.v2' }
+                payload: { typeId: 'al.control.nack.v3' }
             }]);
             expect(decodeALNackPayload(JSON.parse(controls[0].payload.resource))).toMatchObject({
                 fromPeerId: 'server',
@@ -541,7 +543,7 @@ describe('WS server bounded and authorized admission', () => {
         });
         const message = newALAckControlMessage(
             { v: 4, msgId: 'forged-ack', senderId: 'session-1', ts: 1, traceId: 'trace-ws-queue-box-server-ingress' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: 'subject',
                 fromPeerId: 'session-1',
                 toPeerId: 'origin',
@@ -550,7 +552,7 @@ describe('WS server bounded and authorized admission', () => {
                 carrier: 'ws',
                 status: 'delivered',
                 observedAtEpochMs: 1
-            }
+            })
         );
 
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left).toEqual({

@@ -10,7 +10,9 @@ import {
     toALOutboundRepairHintEffectId
 } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 
-const GAP: ALNackPayload = {
+import { toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
+const GAP: ALNackPayload = toTestALNackPayload({
     msgId: 'subject',
     fromPeerId: 'relay',
     toPeerId: 'origin',
@@ -20,7 +22,7 @@ const GAP: ALNackPayload = {
     orderingKey: 'feed:origin:1',
     expectedSeq: 2,
     missingRanges: [{ from: 2, to: 2 }]
-};
+});
 
 /** A hint carries no prepared copy, so its decoder reads none. */
 const NO_PREPARED: ALOutboundPreparedRead<never> = {

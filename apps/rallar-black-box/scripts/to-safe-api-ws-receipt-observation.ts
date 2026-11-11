@@ -486,6 +486,10 @@ function toSafeAck(record: unknown): ApiJsonObject | undefined {
     ) {
         return undefined;
     }
+    const proof = decodeSafeAckProof(record.proof);
+    if (proof === undefined) {
+        return undefined;
+    }
     return {
         ackedMsgId: String(record.ackedMsgId),
         originPeerId: String(record.originPeerId),
@@ -494,8 +498,23 @@ function toSafeAck(record: unknown): ApiJsonObject | undefined {
         logicalRecipientPeerId: String(record.logicalRecipientPeerId),
         carrier: record.carrier,
         status: record.status,
-        observedAtEpochMs: record.observedAtEpochMs
+        observedAtEpochMs: record.observedAtEpochMs,
+        proof
     };
+}
+
+/** An ACK's proof slot: `null`, or an ES256 proof whose key id and signature are safe identities. */
+function decodeSafeAckProof(value: unknown): ApiJsonObject | null | undefined {
+    if (value === null) {
+        return null;
+    }
+    if (
+        !isApiTimingRecord(value) || value.alg !== 'ES256' || !isSafeApiTimingIdentity(value.keyId) ||
+        !isSafeApiTimingIdentity(value.signature)
+    ) {
+        return undefined;
+    }
+    return { alg: value.alg, keyId: value.keyId, signature: value.signature };
 }
 
 /** The ACK, its control and the trace it names; a record without all of them safe has no identity. */

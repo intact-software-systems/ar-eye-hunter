@@ -79,7 +79,7 @@ import {
     type NativeRtcRuntime,
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from '../../shared/signature/publication-crypto-fixtures.ts';
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -1095,7 +1095,7 @@ class NativeAuthorityEndpoint {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             selfPrincipalId: 'sender'
@@ -1103,6 +1103,7 @@ class NativeAuthorityEndpoint {
         onTestFinished(() => this.multicast.dispose());
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             sessionId: input.sessionId,
             inboundStores: this.inboundStores,
             roomAuthorityRefresh: input.refresh,
@@ -1169,6 +1170,7 @@ function createAcceptedRoomSnapshot(): GroupSnapshot {
             ...snapshot.group,
             transportState: 'flowing',
             acceptedLayoutIdentity: toOverlayLayoutIdentity(createOverlay('receiver'))
-        }
+        },
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, publicationKey: ROOM_PUBLICATION_KEY }))
     };
 }

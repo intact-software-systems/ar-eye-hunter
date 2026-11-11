@@ -37,6 +37,7 @@ import {
     readALInboundEffectFacts,
     type ALInboundEffectPreparationDependencies
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
+import type { ALInboundReceiptProofs } from '@shared/alm/inbound/receipt-proof/sign-al-inbound-receipt-controls.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
@@ -63,6 +64,8 @@ export const planInboundTestMessage: ALInboundPlanner = (msg, _source, observati
         selfPeerId: INBOUND_TEST_SELF_PEER_ID,
         fromPeerId: INBOUND_TEST_SENDER_PEER_ID
     });
+
+export const CARRIER_AUTHENTICATED_RECEIPT_PROOFS: ALInboundReceiptProofs = { kind: 'carrier-authenticated' };
 
 export const INBOUND_TEST_EFFECT_PREPARATION: ALInboundEffectPreparationDependencies = {
     newControlId: crypto.randomUUID.bind(crypto),
@@ -176,6 +179,10 @@ export interface CreateInboundTestRuntimeInput {
     readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
     /** Absent preserves uncaptured diagnostics; a measurement may observe the actual batch publication boundary. */
     readonly acknowledgementCapture?: ALInboundRuntimeDiagnosticsSink['acknowledgementCapture'];
+    /** Absent authenticates every control by its carrier, so none is signed. */
+    readonly receiptProofs?: ALInboundReceiptProofs;
+    /** Absent leaves the runtime unable to forward, so no admission here relays its message. */
+    readonly forwardMessage?: ALInboundMessageRuntime.Dependencies['forwardMessage'];
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -201,6 +208,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             return input.plan?.(plan) ?? plan;
         },
         canDispatchMessage: input.canDispatchMessage,
+        forwardMessage: input.forwardMessage,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         dispatchInboxEntry: async (entry) => {
             await input.gateDispatch?.(decodePersistedALMessage(entry.resource));
@@ -216,6 +224,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             }
         },
         onResyncRequired: input.onResyncRequired,
+        receiptProofs: input.receiptProofs ?? CARRIER_AUTHENTICATED_RECEIPT_PROOFS,
         diagnostics: Object.assign((event: ALInboundRuntimeDiagnosticsEvent) => {
             diagnostics.push(event);
         }, {
@@ -310,6 +319,7 @@ export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALIn
     const admission = new ALInboundMessageAdmission({
         orderingObserver: 'addressed',
         diagnostics: undefined,
+        receiptProofs: CARRIER_AUTHENTICATED_RECEIPT_PROOFS,
         effectWorkerId: 'al-inbound:test',
         admissionStore: stores.admissionStore,
         clock: { nowMs: Date.now },

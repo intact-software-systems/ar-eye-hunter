@@ -35,6 +35,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 /** The ordering-resync scenario gap: far wider than any repair window, so the relay asks for a resync. */
 const RESYNC_GAP_SEQ = 300;
@@ -105,7 +107,14 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         const fixture = await createRelayFixture();
         const nack = newALNackControlMessage(
             { v: 4, msgId: 'nack-from-b', senderId: 'b', ts: Date.now(), traceId: 'trace-ws-queue-box-client-relay-rejection' },
-            { msgId: 'ordered-gapped', fromPeerId: 'b', logicalRecipientPeerId: 'b', toPeerId: 'a', reason: 'resync-required', observedAtEpochMs: Date.now() }
+            toTestALNackPayload({
+                msgId: 'ordered-gapped',
+                fromPeerId: 'b',
+                logicalRecipientPeerId: 'b',
+                toPeerId: 'a',
+                reason: 'resync-required',
+                observedAtEpochMs: Date.now()
+            })
         );
 
         const admitted = await fixture.server.acceptIncomingMessage(nack, 'b');
@@ -591,7 +600,7 @@ function serverNack(msgId: string, reason: ALNackReason): ALMessage {
     const observedAtEpochMs = Date.now();
     return newALNackControlMessage(
         { v: 4, msgId: `nack-${msgId}`, senderId: 'server-1', ts: observedAtEpochMs, traceId: 'trace-ws-queue-box-client-relay-rejection' },
-        { msgId, fromPeerId: 'server-1', logicalRecipientPeerId: 'server-1', toPeerId: 'a', reason, observedAtEpochMs }
+        toTestALNackPayload({ msgId, fromPeerId: 'server-1', logicalRecipientPeerId: 'server-1', toPeerId: 'a', reason, observedAtEpochMs })
     );
 }
 

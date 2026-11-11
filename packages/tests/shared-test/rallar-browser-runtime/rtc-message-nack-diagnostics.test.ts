@@ -18,6 +18,8 @@ import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outboun
 import '../../setup-browser-indexeddb.ts';
 import { createOutboundWorkPort, readOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
+import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
 describe('RTC message diagnostic receipts', () => {
@@ -34,6 +36,7 @@ describe('RTC message diagnostic receipts', () => {
                     clock: { nowMs: Date.now },
                     settlements: () => {},
                     carrier: 'rtc',
+                    recipientAuthentication: { kind: 'carrier' },
                     hopPeerIds: undefined
                 });
                 expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
@@ -48,14 +51,14 @@ describe('RTC message diagnostic receipts', () => {
                             senderId: 'receiver',
                             traceId: 'trace-rtc-message-nack-diagnostics'
                         },
-                        {
+                        toTestALNackPayload({
                             msgId: 'attempted',
                             fromPeerId: 'receiver',
                             logicalRecipientPeerId: 'receiver',
                             toPeerId: sessionId,
                             reason,
                             observedAtEpochMs: 1
-                        }
+                        })
                     ),
                     'peer'
                 );

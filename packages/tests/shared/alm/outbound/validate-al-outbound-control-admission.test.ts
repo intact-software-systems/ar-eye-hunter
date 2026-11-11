@@ -10,6 +10,8 @@ import {
     enqueueOutboundOrThrow
 } from '../outbound-runtime-test-fixture.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+
 /** A `receiver` receipt on two frozen recipients, sent through one relay that is neither of them. */
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     enabled: true,
@@ -55,9 +57,10 @@ interface GapNackInput {
     readonly fromPeerId: string;
     readonly logicalRecipientPeerId: string;
     readonly orderingKey?: string;
+    readonly originPeerId?: string;
 }
 
-/** A gap NACK for sequence 2: a recipient's own, or one a relay re-originated for the recipient it names. */
+/** A gap NACK for sequence 2: a recipient's own, or one a relay forwards for the recipient it names. */
 function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
     return newALNackControlMessage(
         {
@@ -67,38 +70,50 @@ function toGapNack(msg: ALMessage, input: GapNackInput): ALMessage {
             senderId: input.fromPeerId,
             traceId: 'trace-relayed-gap'
         },
-        {
+        toTestALNackPayload({
             msgId: msg.id.msgId,
             fromPeerId: input.fromPeerId,
             toPeerId: 'self',
             logicalRecipientPeerId: input.logicalRecipientPeerId,
+            originPeerId: input.originPeerId ?? 'self',
             reason: 'gap',
             observedAtEpochMs: Date.now(),
             orderingKey: input.orderingKey ?? TRACK_KEY,
             expectedSeq: 2,
             missingRanges: [{ from: 2, to: 2 }]
-        }
+        })
     );
 }
 
-/** The relay's `forwarded` ACK confirming a recipient below it. */
-function toForwardedAck(msg: ALMessage, logicalRecipientPeerId: string): ALMessage {
+/** A recipient's own ACK, which the relay forwards readdressed. */
+function toForwardedAck(
+    msg: ALMessage,
+    logicalRecipientPeerId: string,
+    status: 'delivered' | 'subtree-complete-not-subscribed' = 'delivered',
+    fromPeerId = 'relay'
+): ALMessage {
     return newALAckControlMessage(
-        { v: 4, msgId: `ack-${logicalRecipientPeerId}`, ts: Date.now(), senderId: 'relay', traceId: 'trace-relayed-gap' },
         {
+            v: 4,
+            msgId: `ack-${logicalRecipientPeerId}-${status}`,
+            ts: Date.now(),
+            senderId: fromPeerId,
+            traceId: 'trace-relayed-gap'
+        },
+        toTestALAckPayload({
             ackedMsgId: msg.id.msgId,
-            fromPeerId: 'relay',
+            fromPeerId,
             toPeerId: 'self',
             originPeerId: 'self',
             logicalRecipientPeerId,
             carrier: 'rtc',
-            status: 'forwarded',
+            status,
             observedAtEpochMs: Date.now()
-        }
+        })
     );
 }
 
-describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
+describe('a gap NACK a relay forwarded, at the origin (S4ii-R3)', () => {
     it('admits it from a next hop of the message for a recipient the receipt still owes', async () => {
         const origin = await createOrderedOrigin('relayed-gap-owed');
 
@@ -131,6 +146,18 @@ describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
         ).toBe('AL repair ordering hints do not match the retained outbound message');
     });
 
+    it('refuses a NACK that names another origin', async () => {
+        const origin = await createOrderedOrigin('relayed-gap-other-origin');
+
+        expect(
+            await origin.accept(
+                toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r2', originPeerId: 'other' })
+            )
+        ).toBe('AL NACK names another origin than this outbound message owner');
+        expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'relay', logicalRecipientPeerId: 'r2' })))
+            .toBe('committed');
+    });
+
     it('admits the gap NACKs a relay re-sends for two recipients over one range, each its own hint', async () => {
         const origin = await createOrderedOrigin('relayed-gap-two-recipients');
 
@@ -144,14 +171,14 @@ describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
         const origin = await createOrderedOrigin('relayed-terminal-nack');
         const expired = newALNackControlMessage(
             { v: 4, msgId: 'expired-relay-r2', ts: Date.now(), senderId: 'relay', traceId: 'trace-relayed-gap' },
-            {
+            toTestALNackPayload({
                 msgId: origin.msg.id.msgId,
                 fromPeerId: 'relay',
                 toPeerId: 'self',
                 logicalRecipientPeerId: 'r2',
                 reason: 'expired',
                 observedAtEpochMs: Date.now()
-            }
+            })
         );
 
         expect(await origin.accept(expired)).toBe('AL repair sender has no retained outbound obligation');
@@ -163,5 +190,25 @@ describe('a gap NACK a relay re-originated, at the origin (S4ii-R3)', () => {
 
         expect(await origin.accept(toGapNack(origin.msg, { fromPeerId: 'r2', logicalRecipientPeerId: 'r2' })))
             .toBe('committed');
+    });
+});
+
+describe('a forwarded hop-end at the origin', () => {
+    it('admits a forwarded hop-end that confirms nobody for a recipient the receipt still owes', async () => {
+        const origin = await createOrderedOrigin('forwarded-not-subscribed');
+
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2', 'subtree-complete-not-subscribed'))).toBe('committed');
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe(
+            'AL acknowledgement confirms no peer of the pending outbound receipt'
+        );
+    });
+
+    it('refuses a forwarded hop-end from a sender that is neither a next hop nor an expected repair peer', async () => {
+        const origin = await createOrderedOrigin('forwarded-not-subscribed-stranger');
+
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2', 'subtree-complete-not-subscribed', 'x'))).toBe(
+            'AL acknowledgement confirms no peer of the pending outbound receipt'
+        );
+        expect(await origin.accept(toForwardedAck(origin.msg, 'r2'))).toBe('committed');
     });
 });

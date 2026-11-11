@@ -250,6 +250,7 @@ describe('browser canonical outbound cleanup', () => {
         const keyStrings = new Set<string>();
         for (let index = 0; index < expiredCount; index += 1) {
             const entry = computeALInboundWorkEntry({
+                signsForRecipient: false,
                 carrier: 'ws',
                 namespace: stores.admissionStore.namespace,
                 observedAtMs: nowMs - 120_000,
@@ -425,6 +426,7 @@ async function retainPendingForSession(sessionId: string, ttlMs: number) {
         newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, sessionId, 'chat', {}, { ttlMs })
     );
     const work = computeALInboundWorkEntry({
+        signsForRecipient: false,
         carrier: 'ws',
         namespace: store.namespace,
         effectId: toALInboundPendingAdmissionId(msg),
@@ -449,6 +451,7 @@ async function retainPendingUnderNamespace(db: IDBDatabase, namespace: string, e
         newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, 'recipient', 'chat', {}, { ttlMs: 60_000 })
     );
     const work = computeALInboundWorkEntry({
+        signsForRecipient: false,
         carrier: 'ws',
         namespace,
         effectId,

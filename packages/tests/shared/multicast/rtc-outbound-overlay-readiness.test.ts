@@ -45,6 +45,8 @@ import { toOriginFrozenTargets } from './rtc-origin-overlay-fixture.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const overlayId = toScopedOverlayId(roomRef);
 let native: NativeRtcRuntime;
@@ -277,7 +279,7 @@ describe('RTC durable accepted-overlay readiness', () => {
             });
             await fixture.manager.acceptControlMessage(newALAckControlMessage(
                 { v: 4, msgId: 'captured-policy-ack', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-rtc-outbound-overlay-readiness' },
-                {
+                toTestALAckPayload({
                     ackedMsgId: message.id.msgId,
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
@@ -286,7 +288,7 @@ describe('RTC durable accepted-overlay readiness', () => {
                     carrier: 'rtc',
                     status: 'accepted',
                     observedAtEpochMs: Date.now()
-                }
+                })
             ));
         }
         else {
@@ -569,7 +571,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         });
         await fixture.manager.acceptControlMessage(newALAckControlMessage(
             { v: 4, msgId: 'recovered-ack', ts: Date.now(), senderId: 'peer-2', traceId: 'trace-rtc-outbound-overlay-readiness' },
-            {
+            toTestALAckPayload({
                 ackedMsgId: message.id.msgId,
                 fromPeerId: 'peer-2',
                 toPeerId: 'self',
@@ -578,7 +580,7 @@ describe('RTC durable accepted-overlay readiness', () => {
                 carrier: 'rtc',
                 status: 'accepted',
                 observedAtEpochMs: Date.now()
-            }
+            })
         ));
         await vi.advanceTimersByTimeAsync(500);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'self', msgId: message.id.msgId })).toBeUndefined();

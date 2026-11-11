@@ -48,12 +48,14 @@ import {
     runOutboundWorkTask
 } from '../alm/outbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
-import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
+
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 interface RtcTransportManagerOptions {
     readonly qosProvider?: ALQosInputProvider;
@@ -485,7 +487,7 @@ describe('RTC outbound transport results', () => {
         expect(native.sent).toEqual([]);
     });
 
-    it('admits a receiver ack on an RTC unicast and answers a room multicast without room authority no-route', async () => {
+    it('refuses a receiver ack on an RTC unicast that names no room as unsupported and answers a room multicast without room authority no-route', async () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
@@ -498,7 +500,11 @@ describe('RTC outbound transport results', () => {
             targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } }
         });
 
-        expect(unicast.verdict).toMatchObject({ kind: 'admitted' });
+        expect(unicast.verdict).toEqual({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: 'RTC receipt cannot be verified: the message names no room to key its addressee'
+        });
         expect(multicast.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
     });
 
@@ -599,7 +605,7 @@ function createManager(
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
             grantedTopics: NO_RTC_GRANTED_TOPICS,
-            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationCrypto: ROOM_PUBLICATION_CRYPTO,
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
             topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
             selfPrincipalId: 'self'
@@ -650,14 +656,17 @@ function createMessage(resourceId: string, peerId = 'peer-1', ttlMs = 5_000) {
 }
 
 function createAck(msgId: string): ALMessage {
-    return newALAckControlMessage({ v: 4, msgId, senderId: 'self', ts: Date.now(), traceId: 'trace-rtc-outbound-transport-results' }, {
-        ackedMsgId: `${msgId}-acked`,
-        fromPeerId: 'self',
-        toPeerId: 'peer-1',
-        originPeerId: 'peer-1',
-        logicalRecipientPeerId: 'self',
-        carrier: 'rtc',
-        status: 'delivered',
-        observedAtEpochMs: Date.now()
-    });
+    return newALAckControlMessage(
+        { v: 4, msgId, senderId: 'self', ts: Date.now(), traceId: 'trace-rtc-outbound-transport-results' },
+        toTestALAckPayload({
+            ackedMsgId: `${msgId}-acked`,
+            fromPeerId: 'self',
+            toPeerId: 'peer-1',
+            originPeerId: 'peer-1',
+            logicalRecipientPeerId: 'self',
+            carrier: 'rtc',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        })
+    );
 }

@@ -64,6 +64,7 @@ export namespace ALInboundAdmittedDelivery {
             | 'clock'
             | 'effectPreparation'
             | 'onResyncRequired'
+            | 'receiptProofs'
             | 'diagnostics'
             | 'effectWorkerId'
         > {
@@ -87,6 +88,8 @@ export class ALInboundAdmittedDelivery {
             clock: dependencies.clock,
             effectPreparation: dependencies.effectPreparation,
             onResyncRequired: dependencies.onResyncRequired,
+            receiptProofs: dependencies.receiptProofs,
+            diagnostics: dependencies.diagnostics,
             signal: this.shutdown.signal
         });
     }

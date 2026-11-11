@@ -259,6 +259,7 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
 
 function createRuntime(stores: ALInboundRuntimeStores, received: string[], controls: ALMessage[] = []) {
     const runtime = createDefaultALInboundMessageRuntime({
+        receiptProofs: { kind: 'carrier-authenticated' },
         orderingObserver: 'addressed',
         carrier: 'ws',
         selfPeerId: 'receiver',

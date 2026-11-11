@@ -143,7 +143,12 @@ function createMediaFixture(input: MediaFixtureInput = {}): MediaFixture {
         selfPrincipalId: 'self'
     });
     onTestFinished(() => multicast.dispose());
-    const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self', ...input });
+    const service = createDefaultWebRtcRxStreamerService({
+        multicast,
+        publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+        sessionId: 'self',
+        ...input
+    });
     onTestFinished(() => service.dispose());
     service.setRttReportingPeerIds([]);
     return { service, ...createMediaPeerFixture() };
