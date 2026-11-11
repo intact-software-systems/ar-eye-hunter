@@ -376,7 +376,9 @@ function toRawAckRecipientCommands(
 
 /**
  * The hold is in place before the send, since the sender waits for the victim's cue. The mid-window read cannot name
- * a session, so it pins only that the receipt is incomplete; which session is confirmed is the post-run identity pin.
+ * a session, so it pins only that the receipt is incomplete. The refusal wait guards the cell: it waits for the
+ * origin's `rejected` admission of the forged control's authored id with `proofRefusal` `missing-proof`, which a
+ * forged ACK the origin counted never produces.
  */
 function toForgedAckSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const cue = toCueStep(sender);

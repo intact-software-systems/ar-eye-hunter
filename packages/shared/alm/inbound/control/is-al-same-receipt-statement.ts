@@ -25,7 +25,10 @@ export function isALSameReceiptStatement(
         (isSameProofStatement(prior, control) || (isALOwnWord(prior) && isALOwnWord(control)));
 }
 
-/** A stored ACK that confirms `control`'s recipient (`isALRecipientConfirmationAck`) and is the same statement as `control`. */
+/**
+ * A stored ACK that confirms `control`'s recipient (`isALRecipientConfirmationAck`) and is the same statement as
+ * `control`.
+ */
 export function hasALConfirmedStatement(
     acks: readonly ALAckPayload[],
     control: ALAckPayload | ALNackPayload
@@ -34,9 +37,10 @@ export function hasALConfirmedStatement(
 }
 
 /**
- * The row records `control`'s recipient outside by the same statement: the recipient is on `pending.outsideAudiencePeerIds`, and a stored
- * control that records it outside (an outside-audience NACK of the history, or an ACK that confirms nobody) is the same statement as
- * `control`, or the history holds none such any more, so the recipient alone decides.
+ * The row records `control`'s recipient outside by the same statement: the recipient is on
+ * `pending.outsideAudiencePeerIds`, and a stored control that records it outside (an outside-audience NACK of the
+ * history, or an ACK that confirms nobody) is the same statement as `control`, or the history holds none such any
+ * more, so the recipient alone decides.
  */
 export function hasALOutsideStatement(
     pending: ALPendingAckSnapshot,
@@ -54,7 +58,8 @@ export function hasALOutsideStatement(
     return recorders.length === 0 || recorders.some((prior) => isALSameReceiptStatement(prior, control));
 }
 
-function isALOwnWord(control: ALAckPayload | ALNackPayload): boolean {
+/** A control its recipient sent on its own channel: the one kind a relay heard from the recipient itself. */
+export function isALOwnWord(control: ALAckPayload | ALNackPayload): boolean {
     return control.fromPeerId === control.logicalRecipientPeerId;
 }
 

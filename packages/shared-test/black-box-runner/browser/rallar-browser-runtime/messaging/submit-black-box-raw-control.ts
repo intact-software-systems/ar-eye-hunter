@@ -53,7 +53,7 @@ export async function submitBlackBoxRawControl(
     return { msgId: control.msgId, verdict: result.verdict };
 }
 
-export function toBlackBoxRallarRawControl(
+function toBlackBoxRallarRawControl(
     control: BlackBoxRallarControlSubmitInput,
     sessionId: string
 ): BlackBoxRallarRawControl {

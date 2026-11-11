@@ -324,6 +324,8 @@ describe('the RTC room bound on a frozen audience (R-S2c-ii-13)', () => {
                 }
             })
         ]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toBeUndefined();
     });
 
     it.each(['none', 'hop', 'receiver'] as const)('still admits a %s send to a room of 257 sessions', async (ack) => {

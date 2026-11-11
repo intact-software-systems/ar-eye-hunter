@@ -6,7 +6,10 @@ import { computeEcdsaP256JwkThumbprint, importEcdsaP256PublicKey } from './ecdsa
 export class VerificationKeyCache {
     readonly #keys = new LatestRepository<string, CryptoKey>({ maxEntries: 256 });
 
-    /** The imported key; undefined, and nothing cached, when the thumbprint is not `key.keyId` or WebCrypto refuses the JWK. */
+    /**
+     * The imported key; undefined, and nothing cached, when the thumbprint is not `key.keyId` or WebCrypto refuses the
+     * JWK.
+     */
     async readVerificationKey(subtle: SubtleCrypto, key: GroupPresencePublicationKey): Promise<CryptoKey | undefined> {
         const cacheKey = `${key.keyId}|${JSON.stringify(key.publicJwk)}`;
         const cached = this.#keys.read(cacheKey);

@@ -13,7 +13,8 @@ type AlmControlReferenceFields = Pick<
 
 /**
  * A raw control answers a message the recipe cannot know when it is authored, so its `msgId`, `ackedMsgId` and
- * `toPeerId` (and the `logicalRecipientPeerId` it may state) may name `{resultCache.<commandId>.<path>}` tokens, such as the received message event of an earlier wait.
+ * `toPeerId` (and the `logicalRecipientPeerId` it may state) may name `{resultCache.<commandId>.<path>}` tokens, such
+ * as the received message event of an earlier wait.
  */
 export function resolveAlmControlReferences(
     control: AlmControlReferenceFields,

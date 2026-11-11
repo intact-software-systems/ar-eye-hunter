@@ -61,7 +61,7 @@ interface AlmConformanceControlAdmissionWaitInput {
     readonly receiptPhase?: ALReceiptPayload['phase'];
 }
 
-export interface AlmConformanceControlProofRefusalWaitInput {
+interface AlmConformanceControlProofRefusalWaitInput {
     readonly step: AlmConformanceMessageStepInput;
     readonly name: string;
     /** The raw control's authored msgId; it may name result references, which `contains` resolves. */
