@@ -410,6 +410,94 @@ describe('ALM run on an agent per role', () => {
         }
     });
 
+    it('fails the family before the next cell when a role\'s recipe is still live after its cancel', async () => {
+        const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+        const receiverRunId = `${baseline.receiver.recipeId}-run`;
+        const senderRunId = `${baseline.sender.recipeId}-run`;
+        const connect = baseline.receiver.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+        const posted: { readonly commandId: string; readonly kind: string; }[] = [];
+        const server = createServer((_request, response) => {
+            response.writeHead(202, { 'content-type': 'application/json' });
+            response.end('{}');
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const address = server.address();
+        if (address === null || typeof address === 'string') {
+            throw new Error('Expected the owned HTTP server address.');
+        }
+        const request = await Playwright.request.newContext();
+        const post = request.post.bind(request);
+        vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
+            const data = options?.data;
+            if (!isJsonRecordValue(data) || typeof data.commandId !== 'string' || !isJsonRecordValue(data.command)) {
+                throw new Error('Expected the actual control HTTP command body.');
+            }
+            posted.push({ commandId: data.commandId, kind: String(data.command.kind) });
+            return await post(`http://127.0.0.1:${address.port}`, options);
+        });
+        let nowEpochMs = 1_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        // Each read moves the clock 30 s. The receiver connects and its recipe never ends, cancelled or not.
+        const run: AgentRecipeRun = {
+            request,
+            runId: 'stale-run',
+            agents: new Map([
+                ['sender', { agentId: 'sender-agent' }],
+                ['receiver', { agentId: 'receiver-agent' }]
+            ]),
+            readSnapshot: async () => {
+                nowEpochMs += 30_000;
+                return {
+                    runId: 'stale-run',
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 2,
+                    agents: [],
+                    commands: [],
+                    events: [{
+                        kind: 'event',
+                        protocolVersion: 1,
+                        runId: 'stale-run',
+                        agentId: 'receiver-agent',
+                        atEpochMs: 1,
+                        eventId: 'receiver-connected',
+                        commandId: connect,
+                        payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId: connect, payload: { ok: true } }
+                    }],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                    results: posted.filter(({ commandId }) => commandId === senderRunId).map(({ commandId }) => ({
+                        kind: 'result',
+                        protocolVersion: 1,
+                        runId: 'stale-run',
+                        agentId: 'sender-agent',
+                        commandId,
+                        ok: true
+                    }))
+                };
+            }
+        };
+        try {
+            await expect(runRecipesOnAgents(
+                run,
+                new Map([['sender', baseline.sender], ['receiver', baseline.receiver]]),
+                undefined
+            )).rejects.toThrow(`${receiverRunId} is still running after its deadline and cancellation`);
+
+            expect(posted).toEqual([
+                { commandId: receiverRunId, kind: 'recipe.run' },
+                { commandId: senderRunId, kind: 'recipe.run' },
+                { commandId: `cancel-${receiverRunId}`, kind: 'recipe.cancel' }
+            ]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await request.dispose();
+            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+    });
+
     it('throws when an agent\'s close has not passed within the close timeout, reading no snapshot after it', async () => {
         const posted: string[] = [];
         const server = createServer((_request, response) => {
