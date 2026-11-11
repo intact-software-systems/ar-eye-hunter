@@ -397,8 +397,6 @@ jobs:
 
       - name: Run ordering cluster proof
         id: ordering
-        env:
-          DENO_NO_PACKAGE_JSON: '1'
         run: |
           mkdir -p .artifacts/api-v1-black-box/ordering
           git rev-parse HEAD > .artifacts/api-v1-black-box/ordering/validated-sha.txt

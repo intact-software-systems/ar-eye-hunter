@@ -271,7 +271,7 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
     });
 }
 
-Deno.test('a promotion-only topology work writes its outbox rows in one statement with no sidecar', async () => {
+test('a promotion-only topology work writes its outbox rows in one statement with no sidecar', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     try {
@@ -313,7 +313,7 @@ Deno.test('a promotion-only topology work writes its outbox rows in one statemen
     }
 });
 
-Deno.test('a publishing topology work writes its promotion, connect and page rows and one proof per page in one statement', async () => {
+test('a publishing topology work writes its promotion, connect and page rows and one proof per page in one statement', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     try {
