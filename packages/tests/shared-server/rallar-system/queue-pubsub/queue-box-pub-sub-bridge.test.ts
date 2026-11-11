@@ -399,9 +399,9 @@ describe('QueueBoxPubSubBridge', () => {
         let socketOpened = false;
         let heldSendCount = 0;
         const failure = new Error('held send failed');
-        const loggedErrors: unknown[][] = [];
-        const consoleError = vi.spyOn(console, 'error').mockImplementation((...logged) => {
-            loggedErrors.push(logged);
+        const loggedErrors: (readonly [string, Error])[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((message: string, error: Error) => {
+            loggedErrors.push([message, error]);
         });
         onTestFinished(() => consoleError.mockRestore());
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({

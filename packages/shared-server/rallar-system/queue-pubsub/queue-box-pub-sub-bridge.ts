@@ -537,11 +537,12 @@ function deferAwaitedCapturedRecipients(
         policy.admittedAudience ?? [],
         {
             expiresAtEpochMs: input.entry.audit.expiryTs.epochMilliseconds,
-            send: (sessionId) =>
-                sendToCapturedLocalTargets(
+            send: async (sessionId) => {
+                await sendToCapturedLocalTargets(
                     { ...input, policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId) },
                     options
-                )
+                );
+            }
         }
     );
 }

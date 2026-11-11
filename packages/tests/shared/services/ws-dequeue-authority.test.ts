@@ -247,9 +247,9 @@ describe('WS first dequeue authority', () => {
             }
             return input.candidateSessionIds;
         });
-        const loggedErrors: unknown[][] = [];
-        const consoleError = vi.spyOn(console, 'error').mockImplementation((...logged) => {
-            loggedErrors.push(logged);
+        const loggedErrors: (readonly [string, Error])[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((message: string, error: Error) => {
+            loggedErrors.push([message, error]);
         });
         onTestFinished(() => consoleError.mockRestore());
         fixture.socket.expectedConnections.expect({ id: 'awaited', generationId: 'generation', expiresAtEpochMs: Date.now() + 30_000 });

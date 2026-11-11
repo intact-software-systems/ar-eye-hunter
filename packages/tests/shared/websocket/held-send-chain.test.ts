@@ -48,9 +48,9 @@ describe('HeldSendChain', () => {
     });
 
     it('logs a failed send and runs the next', async () => {
-        const loggedErrors: unknown[][] = [];
-        const consoleError = vi.spyOn(console, 'error').mockImplementation((...logged) => {
-            loggedErrors.push(logged);
+        const loggedErrors: (readonly [string, Error])[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((message: string, error: Error) => {
+            loggedErrors.push([message, error]);
         });
         onTestFinished(() => consoleError.mockRestore());
         const chain = new HeldSendChain();

@@ -5,7 +5,7 @@ export namespace HeldSendChain {
     export interface AudienceSend {
         readonly expiresAtEpochMs: number;
         /** Re-checks and sends one awaited session's copy, once its socket opens or its upgrade settles. */
-        readonly send: (sessionId: string) => Promise<unknown>;
+        readonly send: (sessionId: string) => Promise<void>;
     }
 }
 
