@@ -288,6 +288,18 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
         expect(receipt?.ackedPeerIds).not.toContain('c');
     });
 
+    it('Limit: under hop, a next hop\'s unsigned not-subscribed NACK that names another next hop moves it outside', async () => {
+        const { origin } = await createStarOrigin();
+        const message = { ...createOriginReceiverMulticast('hop-nack-other'), qos: { ack: { algo: 'hop' } } } as const;
+        expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
+        const nack = toNackControl({ msgId: message.id.msgId, fromPeerId: 'b', logicalRecipientPeerId: 'c', reason: 'not-subscribed' });
+
+        await origin.manager.acceptControlMessage(toControlMessage(nack, 'hop'));
+
+        // S8-R1 (a) keeps `hop` on channel trust: the next hop's word about another next hop stands, unsigned.
+        expect((await readReceipt(origin, message))?.outsideAudiencePeerIds).toContain('c');
+    });
+
     it('admits a null proof on ws, whose carrier authenticates its peer', async () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),

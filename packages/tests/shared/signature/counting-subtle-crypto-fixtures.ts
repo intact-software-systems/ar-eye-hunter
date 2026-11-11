@@ -1,16 +1,16 @@
 export interface CountingSubtleCrypto {
     readonly subtle: SubtleCrypto;
-    readonly counts: Record<'digest' | 'verify' | 'importKey', number>;
+    readonly counts: Record<'digest' | 'sign' | 'verify' | 'importKey', number>;
     /** Holds the next `verify` call until the returned release runs, so a test orders two verdicts. */
     holdNextVerify(): () => void;
 }
 
 type SubtleCryptoMember = SubtleCrypto[keyof SubtleCrypto];
 
-/** The test runtime's WebCrypto, counting each call of the operations a verdict spends. */
+/** The test runtime's WebCrypto, counting each call of the operations a signature or a verdict spends. */
 export function createCountingSubtleCrypto(): CountingSubtleCrypto {
     const real = globalThis.crypto.subtle;
-    const counts = { digest: 0, verify: 0, importKey: 0 };
+    const counts = { digest: 0, sign: 0, verify: 0, importKey: 0 };
     let held: Promise<void> | undefined;
     const subtle = new Proxy(real, {
         get(target, property) {
@@ -19,7 +19,7 @@ export function createCountingSubtleCrypto(): CountingSubtleCrypto {
                 return member;
             }
             return async (...args: never[]) => {
-                if (property === 'digest' || property === 'verify' || property === 'importKey') {
+                if (property === 'digest' || property === 'sign' || property === 'verify' || property === 'importKey') {
                     counts[property]++;
                 }
                 if (property === 'verify') {

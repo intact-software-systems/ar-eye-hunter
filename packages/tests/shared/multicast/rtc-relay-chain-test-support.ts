@@ -7,6 +7,7 @@ import { toGroupPresencePublicationKey } from '@shared/api/group-presence/to-gro
 import type { GroupPublicationTopicPermissions } from '@shared/api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
+import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import { createAvailablePublicationCryptoFixture, type AvailablePublicationCrypto } from '../signature/publication-crypto-fixtures.ts';
 import { createRtcGrantedTopicsFixture } from './rtc-granted-topic-reader-fixtures.ts';
@@ -39,6 +40,8 @@ export interface ChainHopInput {
     readonly topicSubscriptions?: RtcTopicSubscriptionReader;
     /** The hop's inbound memory pair; absent, the receive pipeline's own. */
     readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
+    /** Absent, the chain's key for the hop. */
+    readonly publicationCrypto?: PublicationCrypto;
 }
 
 export interface OrderedReceiptedPublicationInput {
@@ -112,7 +115,7 @@ export function createChainHop(chain: RelayChain, input: ChainHopInput): RtcRela
         snapshot: chain.snapshot,
         neighbourPeerIds: input.neighbourPeerIds,
         grantedTopics: createRtcGrantedTopicsFixture([PUBLICATION_TOPIC_ID]),
-        publicationCrypto: chain.keys[input.selfPeerId],
+        publicationCrypto: input.publicationCrypto ?? chain.keys[input.selfPeerId],
         topicSubscriptions: input.topicSubscriptions ?? NO_RTC_TOPIC_SUBSCRIPTIONS,
         inboundVolatileStores: input.inboundVolatileStores
     });
