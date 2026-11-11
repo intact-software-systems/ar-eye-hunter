@@ -141,7 +141,7 @@ describe('rallar-bb-test loop until first-success', () => {
         });
 
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED');
-        const last = (result.error?.details as { lastFailedChildResult: { commandId: string; result: unknown; }; })
+        const last = (result.error?.details as { lastFailedChildResult: { commandId: string; result: object; }; })
             .lastFailedChildResult;
         expect(last.commandId).toContain('delivery-threshold');
         expect(JSON.stringify(last.result)).toContain('570');
