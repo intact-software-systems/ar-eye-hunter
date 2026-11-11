@@ -52,7 +52,7 @@ type WorldFleetManifestInput = Readonly<{
     profiles: readonly string[];
     rolePattern: RallarBlackBoxDistributedRolePattern;
     diagnostic?: boolean;
-    metadata: Readonly<Record<string, unknown>>;
+    metadata: RallarBlackBoxDistributedRunManifest['metadata'];
 }>;
 
 const WORLD_FLEET_AGENT_COUNT = 50;
@@ -290,7 +290,7 @@ function multicastMetadata(
         receiverExpectedFrames: number;
         recommendedTerminalTimeoutSeconds: number;
     }>
-): Readonly<Record<string, unknown>> {
+): RallarBlackBoxDistributedRunManifest['metadata'] {
     const streamFrames = input.durationSeconds * input.rateHz * input.senderCount;
     return {
         topologyProfile: input.topologyProfile,
