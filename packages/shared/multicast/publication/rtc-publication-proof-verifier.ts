@@ -4,12 +4,12 @@ import {
     verifyALPublicationProof
 } from '../../al-contracts/publication-proof/al-publication-proof.ts';
 import { resolvePublicationKey } from '../../api/group-presence/resolve-publication-key.ts';
-import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '../../api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '../../api/group-types.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { toBase64Url } from '../../encoding/base64url.ts';
-import { computeEcdsaP256JwkThumbprint, importEcdsaP256PublicKey } from '../../signature/ecdsa-p256-signature.ts';
 import type { PublicationVerificationCrypto } from '../../signature/publication-crypto.ts';
 import type { SignatureProof } from '../../signature/signature-proof.ts';
+import { VerificationKeyCache } from '../../signature/verification-key-cache.ts';
 import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
 
 const UTF8_ENCODER = new TextEncoder();
@@ -36,7 +36,7 @@ export class RtcPublicationProofVerifier implements RtcPublicationProofVerifierP
     readonly #crypto: PublicationVerificationCrypto;
     readonly #findGroupSnapshot: (groupRef: GroupRef) => GroupSnapshot | undefined;
     readonly #nowEpochMs: () => number;
-    readonly #publicKeys = new LatestRepository<string, CryptoKey>({ maxEntries: 256 });
+    readonly #publicKeys = new VerificationKeyCache();
     readonly #verdicts = new LatestRepository<string, true>({ maxEntries: 1024 });
     /** A per-object record, not a keyed cache: an object leaves it when it is collected. */
     readonly #verifiedMessages = new WeakSet<ALMessage>();
@@ -92,27 +92,8 @@ export class RtcPublicationProofVerifier implements RtcPublicationProofVerifierP
         if (registered === null || registered.keyId !== proof.keyId) {
             return false;
         }
-        const publicKey = await this.readPublicKey(subtle, registered);
+        const publicKey = await this.#publicKeys.readVerificationKey(subtle, registered);
         return publicKey !== undefined &&
             (await verifyALPublicationProof({ subtle, publicKey, message })).right !== undefined;
-    }
-
-    /** A registration is imported only under the keyId its own key's thumbprint names. */
-    private async readPublicKey(
-        subtle: SubtleCrypto,
-        registered: GroupPresencePublicationKey
-    ): Promise<CryptoKey | undefined> {
-        const cached = this.#publicKeys.read(registered.keyId);
-        if (cached !== undefined) {
-            return cached;
-        }
-        if (await computeEcdsaP256JwkThumbprint(subtle, registered.publicJwk) !== registered.keyId) {
-            return undefined;
-        }
-        const imported = (await importEcdsaP256PublicKey(subtle, registered.publicJwk)).right;
-        if (imported !== undefined) {
-            this.#publicKeys.accept(registered.keyId, imported);
-        }
-        return imported;
     }
 }
