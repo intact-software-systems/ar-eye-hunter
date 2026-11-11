@@ -265,7 +265,7 @@
         "schemaVersion": 1,
         "recipeId": "rtc-messages-principal-multicast-receiver",
         "name": "RTC messages principal multicast receiver",
-        "description": "Connect RTC messages, hold for 300s, and assert principal multicast delivery.",
+        "description": "Connect RTC messages, poll up to the delivery window around a 300s stream, and assert principal multicast delivery.",
         "continueOnFailure": false,
         "metadata": {
           "profile": "rtc-messages-principal-multicast-receiver",
@@ -386,10 +386,11 @@
           },
           {
             "kind": "loop",
-            "commandId": "rtc-messages-principal-receiver-stats-loop",
-            "count": 62,
+            "commandId": "rtc-messages-principal-receiver-delivery-poll",
+            "count": 82,
             "intervalMs": 5000,
-            "maxCommands": 62,
+            "maxCommands": 164,
+            "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
               "transport": "messages.rtc",
@@ -403,7 +404,9 @@
               "expectedInboundMessages": 3000,
               "minExpectedInboundMessages": 2850,
               "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 87000
+              "logicalFanoutMessages": 87000,
+              "purpose": "delivery-poll",
+              "pollWindowMs": 405000
             },
             "commands": [
               {
@@ -423,6 +426,38 @@
                   "minExpectedInboundMessages": 2850,
                   "minReceiveRatio": 0.95,
                   "logicalFanoutMessages": 87000
+                }
+              },
+              {
+                "kind": "assert",
+                "commandId": "rtc-messages-principal-receiver-delivery-threshold",
+                "source": "stats.counters.messages",
+                "operator": "gte",
+                "expected": 2850,
+                "metadata": {
+                  "profile": "rtc-messages-principal-multicast-receiver",
+                  "transport": "messages.rtc",
+                  "participantCount": 30,
+                  "senderCount": 1,
+                  "receiverCount": 29,
+                  "rateHz": 10,
+                  "intervalMs": 100,
+                  "durationSeconds": 300,
+                  "frameCount": 3000,
+                  "expectedInboundMessages": 3000,
+                  "minExpectedInboundMessages": 2850,
+                  "minReceiveRatio": 0.95,
+                  "logicalFanoutMessages": 87000,
+                  "receiverDelivery": {
+                    "expectedInboundMessages": 3000,
+                    "minExpectedInboundMessages": 2850,
+                    "minReceiveRatio": 0.95
+                  },
+                  "roomRef": {
+                    "applicationId": "rallar-server",
+                    "workspaceId": "default",
+                    "groupId": "hetzner-headless-room"
+                  }
                 }
               }
             ]
@@ -444,38 +479,6 @@
               "minExpectedInboundMessages": 2850,
               "minReceiveRatio": 0.95,
               "logicalFanoutMessages": 87000
-            }
-          },
-          {
-            "kind": "assert",
-            "commandId": "rtc-messages-principal-receiver-delivery-threshold",
-            "source": "stats.counters.messages",
-            "operator": "gte",
-            "expected": 2850,
-            "metadata": {
-              "profile": "rtc-messages-principal-multicast-receiver",
-              "transport": "messages.rtc",
-              "participantCount": 30,
-              "senderCount": 1,
-              "receiverCount": 29,
-              "rateHz": 10,
-              "intervalMs": 100,
-              "durationSeconds": 300,
-              "frameCount": 3000,
-              "expectedInboundMessages": 3000,
-              "minExpectedInboundMessages": 2850,
-              "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 87000,
-              "receiverDelivery": {
-                "expectedInboundMessages": 3000,
-                "minExpectedInboundMessages": 2850,
-                "minReceiveRatio": 0.95
-              },
-              "roomRef": {
-                "applicationId": "rallar-server",
-                "workspaceId": "default",
-                "groupId": "hetzner-headless-room"
-              }
             }
           }
         ]

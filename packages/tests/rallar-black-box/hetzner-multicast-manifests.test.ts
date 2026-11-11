@@ -241,8 +241,9 @@ describe('Hetzner multicast workloads', () => {
             ]
         });
         expect(receiver?.recipe?.commands.find((command) => command.kind === 'loop')).toMatchObject({
-            commandId: 'rtc-messages-principal-receiver-stats-loop',
-            count: 158,
+            commandId: 'rtc-messages-principal-receiver-delivery-poll',
+            until: 'first-success',
+            count: 161,
             intervalMs: 30_000
         });
         for (const selection of entry?.manifest.recipes ?? []) {
@@ -258,6 +259,24 @@ describe('Hetzner multicast workloads', () => {
             .map((entry) => entry.manifest.distributedRunId);
 
         expect(withHistory).toEqual(['hetzner-rtc-messages-principal-15-agent-78m-2hz-tree']);
+    });
+
+    it('recommends a terminal timeout that outlasts every multicast delivery poll window', () => {
+        const polls = createHetznerDistributedManifestCatalog().flatMap((entry) =>
+            entry.manifest.recipes.flatMap((selection) =>
+                (selection.recipe?.commands ?? []).flatMap((command) =>
+                    command.kind === 'loop' && command.commandId?.endsWith('-delivery-poll')
+                        ? [{ entry, windowMs: (command.count ?? 0) * (command.intervalMs ?? 0) }]
+                        : []
+                )
+            )
+        );
+
+        expect(polls.length).toBeGreaterThan(0);
+        for (const { entry, windowMs } of polls) {
+            const terminalSeconds = Number(entry.manifest.metadata?.recommendedTerminalTimeoutSeconds);
+            expect(terminalSeconds * 1_000, entry.manifest.distributedRunId).toBeGreaterThan(windowMs);
+        }
     });
 
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {
