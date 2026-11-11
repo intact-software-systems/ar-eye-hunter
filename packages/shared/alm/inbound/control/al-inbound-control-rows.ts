@@ -99,7 +99,7 @@ export async function readControlDecisionSurface(
  * entries, and a peer that could acknowledge same-ID messages from several senders names none, so
  * both resolve to no sender at all and leave the rest of the surface unread.
  */
-export function resolveALInboundAcknowledgedSenderId(
+function resolveALInboundAcknowledgedSenderId(
     controlOwners: ALInboundControlOwnerIndex,
     fromPeerId: string
 ): string | undefined {

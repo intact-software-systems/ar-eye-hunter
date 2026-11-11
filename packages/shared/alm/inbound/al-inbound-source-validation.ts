@@ -14,7 +14,7 @@ import {
 import type { ALInboundControlOwnerIndex, ALInboundMessageOwner } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
-export const AL_INBOUND_PROVENANCE_LIMITS = {
+const AL_INBOUND_PROVENANCE_LIMITS = {
     /** Bounds one durable provenance row without imposing the AL wire collection limit on a room audience. */
     frozenAudienceBytes: 1024 * 1024
 } as const;

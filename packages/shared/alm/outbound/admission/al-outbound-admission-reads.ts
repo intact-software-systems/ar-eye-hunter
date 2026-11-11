@@ -834,7 +834,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
     }
 }
 
-export function toALOutboundSupersedenceInput<TPrepared>(
+function toALOutboundSupersedenceInput<TPrepared>(
     msg: ALMessage,
     plan: ALOutboundDispatchPlan<TPrepared>
 ): ALSupersedenceInput | undefined {

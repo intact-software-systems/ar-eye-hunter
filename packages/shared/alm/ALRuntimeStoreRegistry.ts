@@ -53,7 +53,7 @@ export function configureALRuntimeStoreScopes<TPrepared>(
     }
 }
 
-export function resolveALRuntimeStoreFactories<TPrepared>(
+function resolveALRuntimeStoreFactories<TPrepared>(
     id: ALRuntimeStoreId<TPrepared>,
     manager: RepositoryManager = defaultRepositoryManager
 ): ALRuntimeStoreFactories<TPrepared> {

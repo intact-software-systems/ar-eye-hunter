@@ -293,19 +293,6 @@ export class TryWithPolicy {
     }
 }
 
-export const RetryPolicies = {
-    optimisticCommit(label: string = 'optimistic-commit'): TryWithPolicy {
-        return TryWithPolicy.defaults()
-            .label(label)
-            .maxAttempts(10)
-            .retryIntervalMsecs(10)
-            .maxRetryIntervalMsecs(50)
-            .maxElapsedMsecs(500)
-            .jitterRatio(0)
-            .retryIf((error) => error instanceof RetryableConflictError);
-    }
-};
-
 export function tryWithPolicy<T>(
     handler: () => T | Promise<T>,
     policy: TryWithPolicy = TryWithPolicy.defaults()

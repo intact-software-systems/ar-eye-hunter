@@ -233,7 +233,7 @@ function toNackReason(reason: ALInboundNackPlanReason): ALNackReason {
     }
 }
 
-export function shouldDeferALInboundLocalDelivery(
+function shouldDeferALInboundLocalDelivery(
     plan: ALMessageHandlingPlan
 ): boolean {
     return plan.localDelivery.enabled &&

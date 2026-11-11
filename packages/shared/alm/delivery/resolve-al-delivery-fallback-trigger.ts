@@ -12,7 +12,7 @@ import type {
 export const AL_FALLBACK_NOT_READY_ATTEMPTS = 3;
 
 /** The unroutable admission verdicts a fallback strategy hands to its other carrier at once: every one (D56 adds `rate-limited`). */
-export const AL_DELIVERY_FALLBACK_UNROUTABLE_REASONS: readonly ALDeliveryUnroutableReason[] = [
+const AL_DELIVERY_FALLBACK_UNROUTABLE_REASONS: readonly ALDeliveryUnroutableReason[] = [
     'no-route',
     'circuit-open',
     'rate-limited'
