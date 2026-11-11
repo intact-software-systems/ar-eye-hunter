@@ -13,9 +13,8 @@ import {
 } from 'vitest';
 
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { parseControlServerMessage, type ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunArtifactBundle, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import {
@@ -37,6 +36,8 @@ import {
 
 import { runRecipesOnAgents } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
 import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
+
+import { openRecordingControlRequest, type RecordingControlRequest } from './recording-control-request-fixture.ts';
 
 let browser: Playwright.Browser;
 
@@ -403,58 +404,6 @@ describe('recipient barrier failure', () => {
 });
 
 describe('control poll timeouts', () => {
-    interface PostedCommand {
-        readonly commandId: string;
-        readonly command: RallarBlackBoxTestCommand;
-    }
-
-    interface AcceptingControlRequest {
-        readonly request: Playwright.APIRequestContext;
-        readonly posted: readonly PostedCommand[];
-        close(): Promise<void>;
-    }
-
-    /** A request whose every command enqueue the control server accepts; it keeps each decoded command in order. */
-    async function openAcceptingControlRequest(): Promise<AcceptingControlRequest> {
-        const server = createServer((_request, response) => {
-            response.writeHead(202, { 'content-type': 'application/json' });
-            response.end('{}');
-        });
-        server.listen(0, '127.0.0.1');
-        await once(server, 'listening');
-        const address = server.address();
-        if (address === null || typeof address === 'string') {
-            throw new Error('Expected the owned HTTP server address.');
-        }
-        const posted: PostedCommand[] = [];
-        const request = await Playwright.request.newContext();
-        const post = request.post.bind(request);
-        vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
-            const data = options?.data;
-            if (!isJsonRecordValue(data)) {
-                throw new Error('Expected the actual control HTTP command body.');
-            }
-            const agentId = decodeURIComponent(new URL(url).pathname.split('/').at(-2)!);
-            const decoded = parseControlServerMessage(
-                { kind: 'command', protocolVersion: 1, runId: 'poll-timeout', agentId, ...data },
-                { runId: 'poll-timeout', agentId }
-            );
-            if (!decoded.ok) {
-                throw new Error(decoded.error);
-            }
-            posted.push({ commandId: decoded.envelope.commandId, command: decoded.envelope.command });
-            return await post(`http://127.0.0.1:${address.port}`, options);
-        });
-        return {
-            request,
-            posted,
-            close: async () => {
-                await request.dispose();
-                await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-            }
-        };
-    }
-
     const baseline = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
         carrier: 'ws',
@@ -506,12 +455,12 @@ describe('control poll timeouts', () => {
         };
     }
 
-    function toPostedKinds(control: AcceptingControlRequest): readonly string[] {
+    function toPostedKinds(control: RecordingControlRequest): readonly string[] {
         return control.posted.map(({ command }) => command.kind);
     }
 
     it('enqueues every recipe root with the role deadline as its own timeoutMs', async () => {
-        const control = await openAcceptingControlRequest();
+        const control = await openRecordingControlRequest('poll-timeout');
         try {
             const { run } = createSilentRun(control.request, 60_000);
             await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
@@ -527,7 +476,7 @@ describe('control poll timeouts', () => {
     });
 
     it('reads the agent\'s own timeout result that arrives inside the grace after the deadline', async () => {
-        const control = await openAcceptingControlRequest();
+        const control = await openRecordingControlRequest('poll-timeout');
         try {
             // The deadline is at 181 000; the agent's own timeout result lands at 201 000, inside the grace.
             const { run } = createSilentRun(
@@ -550,7 +499,7 @@ describe('control poll timeouts', () => {
     });
 
     it('cancels a root with no result after its deadline and grace by a targeted recipe.cancel, and reads the result the cancel brings', async () => {
-        const control = await openAcceptingControlRequest();
+        const control = await openRecordingControlRequest('poll-timeout');
         try {
             // The agent answers only once the lane cancelled the root.
             const { run } = createSilentRun(
@@ -568,7 +517,12 @@ describe('control poll timeouts', () => {
                 ok: false,
                 summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
             });
-            expect(control.posted.filter(({ command }) => command.kind === 'recipe.cancel')).toEqual([
+            expect(
+                control.posted.filter(({ command }) => command.kind === 'recipe.cancel').map(({ commandId, command }) => ({
+                    commandId,
+                    command
+                }))
+            ).toEqual([
                 {
                     commandId: `cancel-${rootCommandId}`,
                     command: { kind: 'recipe.cancel', targetCommandId: rootCommandId, reason: expect.any(String) }
@@ -582,7 +536,7 @@ describe('control poll timeouts', () => {
     });
 
     it('rejects when neither the root nor its cancel settles within the grace, so no later cell runs on the pages', async () => {
-        const control = await openAcceptingControlRequest();
+        const control = await openRecordingControlRequest('poll-timeout');
         try {
             const { run } = createSilentRun(control.request, 30_000);
             const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
@@ -599,7 +553,7 @@ describe('control poll timeouts', () => {
     });
 
     it('warns and releases the sender when the receiver neither connects nor ends within the barrier timeout', async () => {
-        const control = await openAcceptingControlRequest();
+        const control = await openRecordingControlRequest('poll-timeout');
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
             const { run, readCount } = createSilentRun(control.request, 30_000);

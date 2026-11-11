@@ -1,6 +1,3 @@
-import * as Playwright from '@playwright/test';
-import { once } from 'node:events';
-import { createServer } from 'node:http';
 import {
     describe,
     expect,
@@ -11,71 +8,12 @@ import {
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestError
-} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { RallarBlackBoxTestError } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { runRecipePairOnTwoAgents, type RecipePairRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 
-interface PostedCommand {
-    readonly url: string;
-    readonly commandId: string;
-    readonly agentId: string;
-    readonly command: RallarBlackBoxTestCommand;
-}
-
-interface RecordingControl {
-    readonly request: Playwright.APIRequestContext;
-    readonly posted: readonly PostedCommand[];
-    close(): Promise<void>;
-}
-
-/** A request whose every command enqueue the control server accepts; it keeps each decoded command in order. */
-async function openRecordingControl(): Promise<RecordingControl> {
-    const posted: PostedCommand[] = [];
-    const server = createServer((_request, response) => {
-        response.writeHead(202, { 'content-type': 'application/json' });
-        response.end('{}');
-    });
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    const address = server.address();
-    if (address === null || typeof address === 'string') {
-        throw new Error('Expected the owned HTTP server address.');
-    }
-    const request = await Playwright.request.newContext();
-    const post = request.post.bind(request);
-    const responseUrl = `http://127.0.0.1:${address.port}`;
-    vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
-        const data = options?.data;
-        if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-            throw new Error('Expected the actual control HTTP command body.');
-        }
-        const agentId = decodeURIComponent(new URL(url).pathname.split('/').at(-2)!);
-        const decoded = parseControlServerMessage(
-            { kind: 'command', protocolVersion: 1, runId: 'actual-local-run', agentId, ...data },
-            { runId: 'actual-local-run', agentId }
-        );
-        if (!decoded.ok) {
-            throw new Error(decoded.error);
-        }
-        posted.push({ url, commandId: data.commandId, agentId, command: decoded.envelope.command });
-        return await post(responseUrl, options);
-    });
-    return {
-        request,
-        posted,
-        close: async () => {
-            vi.restoreAllMocks();
-            await request.dispose();
-            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-        }
-    };
-}
+import { openRecordingControlRequest, type RecordedControlCommand } from './recording-control-request-fixture.ts';
 
 function toRunSnapshot(results: readonly ControlResultEnvelope[]): ControlRunSnapshot {
     return {
@@ -92,7 +30,7 @@ function toRunSnapshot(results: readonly ControlResultEnvelope[]): ControlRunSna
     };
 }
 
-function toRootResult(command: PostedCommand, error: RallarBlackBoxTestError | undefined): ControlResultEnvelope {
+function toRootResult(command: RecordedControlCommand, error: RallarBlackBoxTestError | undefined): ControlResultEnvelope {
     return {
         kind: 'result',
         protocolVersion: 1,
@@ -124,7 +62,7 @@ describe('local paired reload enqueue', () => {
             async () => {
                 const scenario = reloadScenario;
                 let readBeforeBothEnqueued = false;
-                const control = await openRecordingControl();
+                const control = await openRecordingControlRequest('actual-local-run');
                 const posted = control.posted;
                 const run: RecipePairRun = {
                     request: control.request,
@@ -165,6 +103,7 @@ describe('local paired reload enqueue', () => {
                     });
                 }
                 finally {
+                    vi.restoreAllMocks();
                     await control.close();
                 }
             }
@@ -172,7 +111,7 @@ describe('local paired reload enqueue', () => {
     }
 
     it('stops a reload pair with no result past its grace through each agent\'s untargeted recipe.cancel', async () => {
-        const control = await openRecordingControl();
+        const control = await openRecordingControlRequest('actual-local-run');
         const posted = control.posted;
         let nowEpochMs = 1_000;
         vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
@@ -215,6 +154,7 @@ describe('local paired reload enqueue', () => {
             });
         }
         finally {
+            vi.restoreAllMocks();
             await control.close();
         }
     });
