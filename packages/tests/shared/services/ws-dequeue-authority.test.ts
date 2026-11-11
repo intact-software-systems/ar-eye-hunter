@@ -233,6 +233,49 @@ describe('WS first dequeue authority', () => {
         ]);
     });
 
+    it('delivers an awaited session\'s held rows in hold order, and a failing held send is logged without holding the next', async () => {
+        const messages = [0, 1].map(createIndexedBroadcast);
+        const heldRechecks: string[] = [];
+        const fixture = createFixture(undefined, undefined, async (input) => {
+            if (input.candidateSessionIds.join() !== 'awaited') {
+                return input.candidateSessionIds;
+            }
+            heldRechecks.push(input.message.id.msgId);
+            if (input.message.id.msgId === messages[0]!.id.msgId) {
+                throw new Error('held recheck failed');
+            }
+            return input.candidateSessionIds;
+        });
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        onTestFinished(() => consoleError.mockRestore());
+        fixture.socket.expectedConnections.expect({ id: 'awaited', generationId: 'generation', expiresAtEpochMs: Date.now() + 30_000 });
+        const admitted = [];
+        for (const message of messages) {
+            admitted.push(
+                await fixture.service.enqueueOutboxIfAbsent(message, {
+                    admittedAudience: ['peer', 'awaited'],
+                    recipientScope: undefined,
+                    admittedConnectionGenerationIds: { peer: 'generation-peer', awaited: 'generation-awaited' }
+                })
+            );
+        }
+
+        await fixture.engine.executeOnce();
+        for (const { entries } of admitted) {
+            await expect.poll(async () => (await fixture.stores.workQueue.getItem(entries[0]!.key))?.status)
+                .toBe(EntityStatus.COMPLETED);
+        }
+        const awaitedNative = new TestWebSocket('ws://awaited');
+        fixture.socket.addConnection(new ConnectionContext({ id: 'awaited', socket: awaitedNative, generationId: 'generation' }));
+        awaitedNative.open();
+
+        await expect.poll(() => awaitedNative.sent.length).toBe(1);
+        expect(heldRechecks).toEqual(messages.map((message) => message.id.msgId));
+        expect(awaitedNative.sent[0]).toContain(messages[1]!.id.msgId);
+        expect(consoleError).toHaveBeenCalledTimes(1);
+        expect(consoleError).toHaveBeenCalledWith('Held WebSocket send failed:', expect.any(Error));
+    });
+
     it('refuses a handed policy that does not authorize the row as corruption, without reading the stored one', async () => {
         const fixture = createFixture();
         const storedReads = recordStoredPolicyReads(fixture.stores);
@@ -297,6 +340,15 @@ describe('WS first dequeue authority', () => {
 function createIndexedMessage(index: number): ALMessage {
     const route = { topicId: 'app.message', resourceId: `resource-${index}`, contextId: 'context' };
     return newALUnicastMessage('server', route, 'peer', 'message.v1', {}, { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } });
+}
+
+function createIndexedBroadcast(index: number): ALMessage {
+    const route = { topicId: 'app.message', resourceId: `resource-${index}`, contextId: 'context' };
+    return newALBroadcastMessage('server', route, 'room', 'message.v1', {}, {
+        ttlMs: 30_000,
+        qos: { durability: { algo: 'local-outbox' } },
+        groupRef: { ...SCOPE, groupId: 'room' }
+    });
 }
 
 function createMessage(mode: 'unicast' | 'broadcast'): ALMessage {
