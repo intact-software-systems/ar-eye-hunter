@@ -250,10 +250,11 @@
           },
           {
             "kind": "loop",
-            "commandId": "rtc-messages-all-peer-receiver-stats-loop",
-            "count": 5,
-            "intervalMs": 1000,
-            "maxCommands": 5,
+            "commandId": "rtc-messages-all-peer-delivery-poll",
+            "count": 742,
+            "intervalMs": 5000,
+            "maxCommands": 1484,
+            "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
               "transport": "messages.rtc",
@@ -267,7 +268,9 @@
               "expectedInboundMessages": 3528000,
               "minExpectedInboundMessages": 2822400,
               "minReceiveRatio": 0.8,
-              "logicalFanoutMessages": 176400000
+              "logicalFanoutMessages": 176400000,
+              "purpose": "delivery-poll",
+              "pollWindowMs": 3705000
             },
             "commands": [
               {
@@ -287,6 +290,33 @@
                   "minExpectedInboundMessages": 2822400,
                   "minReceiveRatio": 0.8,
                   "logicalFanoutMessages": 176400000
+                }
+              },
+              {
+                "kind": "assert",
+                "commandId": "rtc-messages-all-peer-delivery-threshold",
+                "source": "stats.counters.messages",
+                "operator": "gte",
+                "expected": 2822400,
+                "metadata": {
+                  "profile": "rtc-messages-all-peer-multicast",
+                  "transport": "messages.rtc",
+                  "participantCount": 50,
+                  "senderCount": 50,
+                  "receiverCount": 50,
+                  "rateHz": 20,
+                  "intervalMs": 50,
+                  "durationSeconds": 3600,
+                  "frameCount": 72000,
+                  "expectedInboundMessages": 3528000,
+                  "minExpectedInboundMessages": 2822400,
+                  "minReceiveRatio": 0.8,
+                  "logicalFanoutMessages": 176400000,
+                  "receiverDelivery": {
+                    "expectedInboundMessages": 3528000,
+                    "minExpectedInboundMessages": 2822400,
+                    "minReceiveRatio": 0.8
+                  }
                 }
               }
             ]
@@ -308,33 +338,6 @@
               "minExpectedInboundMessages": 2822400,
               "minReceiveRatio": 0.8,
               "logicalFanoutMessages": 176400000
-            }
-          },
-          {
-            "kind": "assert",
-            "commandId": "rtc-messages-all-peer-delivery-threshold",
-            "source": "stats.counters.messages",
-            "operator": "gte",
-            "expected": 2822400,
-            "metadata": {
-              "profile": "rtc-messages-all-peer-multicast",
-              "transport": "messages.rtc",
-              "participantCount": 50,
-              "senderCount": 50,
-              "receiverCount": 50,
-              "rateHz": 20,
-              "intervalMs": 50,
-              "durationSeconds": 3600,
-              "frameCount": 72000,
-              "expectedInboundMessages": 3528000,
-              "minExpectedInboundMessages": 2822400,
-              "minReceiveRatio": 0.8,
-              "logicalFanoutMessages": 176400000,
-              "receiverDelivery": {
-                "expectedInboundMessages": 3528000,
-                "minExpectedInboundMessages": 2822400,
-                "minReceiveRatio": 0.8
-              }
             }
           }
         ]

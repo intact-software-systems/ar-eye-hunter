@@ -36,6 +36,21 @@ describe('world fleet distributed manifest catalog', () => {
         }
     });
 
+    it('recommends a terminal timeout that outlasts every multicast delivery poll window', () => {
+        for (const entry of createWorldFleetDistributedManifestCatalog()) {
+            const polls = manifestCommands(entry.manifest).filter(
+                (command) => command.kind === 'loop' && command.commandId?.endsWith('-delivery-poll')
+            );
+            const terminalSeconds = Number(entry.manifest.metadata?.recommendedTerminalTimeoutSeconds);
+
+            expect(polls.length, entry.manifest.distributedRunId).toBeGreaterThan(0);
+            for (const poll of polls) {
+                const windowMs = poll.kind === 'loop' ? (poll.count ?? 0) * (poll.intervalMs ?? 0) : 0;
+                expect(terminalSeconds * 1_000, entry.manifest.distributedRunId).toBeGreaterThan(windowMs);
+            }
+        }
+    });
+
     it('builds no-spawn all-online manifests with expected 50 participants', () => {
         const catalog = createWorldFleetDistributedManifestCatalog();
 
