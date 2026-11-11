@@ -7,7 +7,7 @@ import {
 const SHAPE = 'rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, ' +
     'each a positive integer.';
 
-function decodeWithLimits(almVolatileLimits: unknown) {
+function decodeWithLimits(almVolatileLimits: string | readonly number[] | Record<string, number> | null) {
     return decodeBlackBoxRallarConnectionConfig({
         connection: 'alice',
         rallar: { apiBaseUrl: 'https://api.example.test', almVolatileLimits }

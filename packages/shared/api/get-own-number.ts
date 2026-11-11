@@ -3,15 +3,18 @@
  * `absent`; a present value of another type, or a parent that is not a plain object, reads NaN, which a positive-integer check reports.
  */
 export function getOwnNumber(source: object, path: readonly string[], absent: number): number {
-    let current: unknown = source;
-    for (const field of path) {
-        if (typeof current !== 'object' || current === null || Array.isArray(current)) {
-            return Number.NaN;
-        }
-        current = Object.getOwnPropertyDescriptor(current, field)?.value;
-        if (current === undefined) {
-            return absent;
-        }
+    const [field, ...deeperPath] = path;
+    if (field === undefined) {
+        return Number.NaN;
     }
-    return typeof current === 'number' ? current : Number.NaN;
+    const value = Object.getOwnPropertyDescriptor(source, field)?.value;
+    if (value === undefined) {
+        return absent;
+    }
+    if (deeperPath.length === 0) {
+        return typeof value === 'number' ? value : Number.NaN;
+    }
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? getOwnNumber(value, deeperPath, absent)
+        : Number.NaN;
 }
