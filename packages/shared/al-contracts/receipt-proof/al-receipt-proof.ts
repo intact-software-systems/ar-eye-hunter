@@ -93,6 +93,11 @@ export function toALReceiptProofSigningInput(control: ALReceiptControl): string 
         ]);
 }
 
+/** Whether one proof that verifies for `left` verifies for `right`: one control type over the same signing input. */
+export function isALSameReceiptProofContent(left: ALReceiptControl, right: ALReceiptControl): boolean {
+    return left.type === right.type && toALReceiptProofSigningInput(left) === toALReceiptProofSigningInput(right);
+}
+
 /** The refusal of a control, naming the recipient it speaks for and the peer it arrived from. */
 export function toALReceiptProofRefusal(
     kind: ALReceiptProofRefusal['kind'],

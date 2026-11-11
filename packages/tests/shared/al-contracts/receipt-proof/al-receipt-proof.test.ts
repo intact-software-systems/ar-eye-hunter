@@ -5,6 +5,7 @@ import {
     AL_ACK_PROOF_DOMAIN_TAG,
     AL_NACK_PROOF_DOMAIN_TAG,
     AL_RECEIPT_PROOF_FIELD_CLASSES,
+    isALSameReceiptProofContent,
     signALReceiptProof,
     toALReceiptProofSigningInput,
     verifyALReceiptProof,
@@ -131,6 +132,29 @@ describe('ALM receipt proof signing input', () => {
         expect(classes.ack satisfies Record<keyof ALAckPayload | 'added', SignedFieldClass>).toBeDefined();
         expect(classes.ack).toMatchObject({ carrier: 'excluded', proof: 'excluded', fromPeerId: 'excluded' });
         expect(classes.nack).toMatchObject({ proof: 'excluded', toPeerId: 'excluded' });
+    });
+});
+
+describe('isALSameReceiptProofContent', () => {
+    it.each(RELAY_REWRITES)('is the same content for an ACK whose %s a relay rewrote', (_field, change) => {
+        expect(isALSameReceiptProofContent(ACK, withPayload(ACK, change))).toBe(true);
+    });
+
+    it.each(['fromPeerId', 'toPeerId'] as const)('is the same content for a NACK whose %s a relay rewrote', (field) => {
+        expect(isALSameReceiptProofContent(NACK, withPayload(NACK, { [field]: 'rewritten' }))).toBe(true);
+    });
+
+    it.each(ACK_ALTERATIONS)('is other content for an ACK whose %s was altered', (_field, change) => {
+        expect(isALSameReceiptProofContent(ACK, withPayload(ACK, change))).toBe(false);
+    });
+
+    it.each(NACK_ALTERATIONS)('is other content for a NACK whose %s was altered', (_field, change) => {
+        expect(isALSameReceiptProofContent(NACK, withPayload(NACK, change))).toBe(false);
+    });
+
+    it('is other content for an ACK and a NACK about one recipient', () => {
+        expect(isALSameReceiptProofContent(ACK, NACK)).toBe(false);
+        expect(isALSameReceiptProofContent(NACK, ACK)).toBe(false);
     });
 });
 

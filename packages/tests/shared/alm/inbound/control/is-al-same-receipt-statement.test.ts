@@ -38,12 +38,39 @@ function toNack(fromPeerId: string, logicalRecipientPeerId: string, proof: Signa
 }
 
 describe('isALSameReceiptStatement', () => {
-    it('is one statement for two controls about one recipient under one proof, an ACK and a NACK alike', () => {
+    it('is one statement for two ACKs about one recipient under one proof, and an ACK and a NACK only when both are unsigned', () => {
         const proof = toTestSignatureProof(1);
 
         expect(isALSameReceiptStatement(toAck('child', 'x', proof), toAck('child', 'x', proof))).toBe(true);
-        expect(isALSameReceiptStatement(toNack('child', 'x', proof), toAck('child', 'x', proof))).toBe(true);
-        expect(isALSameReceiptStatement(toAck('child', 'x', proof), toNack('other-child', 'x', proof))).toBe(true);
+        expect(isALSameReceiptStatement(toNack('child', 'x', proof), toNack('other-child', 'x', proof))).toBe(true);
+        expect(isALSameReceiptStatement(toNack('child', 'x', proof), toAck('child', 'x', proof))).toBe(false);
+        expect(isALSameReceiptStatement(toNack('child', 'x', null), toAck('child', 'x', null))).toBe(true);
+    });
+
+    it('is two statements for one proof over different signed content', () => {
+        const proof = toTestSignatureProof(1);
+        const ack = toAck('child', 'x', proof);
+        const nack = toNack('child', 'x', proof);
+
+        expect(isALSameReceiptStatement(ack, { ...ack, status: 'accepted' })).toBe(false);
+        expect(isALSameReceiptStatement(ack, { ...ack, observedAtEpochMs: 2 })).toBe(false);
+        expect(isALSameReceiptStatement(nack, { ...nack, observedAtEpochMs: 2 })).toBe(false);
+    });
+
+    it('is two statements for an ACK and a NACK under one proof', () => {
+        const proof = toTestSignatureProof(1);
+
+        expect(isALSameReceiptStatement(toAck('child', 'x', proof), toNack('other-child', 'x', proof))).toBe(false);
+        expect(isALSameReceiptStatement(toNack('other-child', 'x', proof), toAck('child', 'x', proof))).toBe(false);
+    });
+
+    it('is one statement for one proof when only the hop fields differ', () => {
+        const proof = toTestSignatureProof(1);
+        const ack = toAck('child', 'x', proof);
+        const nack = toNack('child', 'x', proof);
+
+        expect(isALSameReceiptStatement(ack, { ...ack, fromPeerId: 'other-child', toPeerId: 'upstream', carrier: 'ws' })).toBe(true);
+        expect(isALSameReceiptStatement(nack, { ...nack, fromPeerId: 'other-child', toPeerId: 'upstream' })).toBe(true);
     });
 
     it('is one statement for a recipient\'s own words on its own channel, whatever their proofs', () => {
@@ -63,6 +90,13 @@ describe('isALSameReceiptStatement', () => {
     it('is one statement for two unsigned controls about one recipient', () => {
         expect(isALSameReceiptStatement(toAck('child', 'x', null), toNack('x', 'x', null))).toBe(true);
     });
+
+    it('is one statement for two unsigned controls whatever their content', () => {
+        const ack = toAck('child', 'x', null);
+
+        expect(isALSameReceiptStatement(ack, { ...ack, status: 'accepted', observedAtEpochMs: 2 })).toBe(true);
+        expect(isALSameReceiptStatement(ack, toNack('other-child', 'x', null))).toBe(true);
+    });
 });
 
 describe('hasALOutsideStatement', () => {
@@ -77,7 +111,8 @@ describe('hasALOutsideStatement', () => {
         const row = { ...ROW, outsideAudiencePeerIds: ['x'] };
         const history = { acks: [], nacks: [toNack('child', 'x', toTestSignatureProof(1))] };
 
-        expect(hasALOutsideStatement(row, history, toAck('child', 'x', toTestSignatureProof(1)))).toBe(true);
+        expect(hasALOutsideStatement(row, history, toNack('other-child', 'x', toTestSignatureProof(1)))).toBe(true);
+        expect(hasALOutsideStatement(row, history, toAck('child', 'x', toTestSignatureProof(1)))).toBe(false);
         expect(hasALOutsideStatement(row, history, toAck('child', 'x', toTestSignatureProof(2)))).toBe(false);
     });
 });

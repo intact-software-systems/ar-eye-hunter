@@ -229,14 +229,17 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
     });
 
     it('refuses a NACK after a confirmation only when the confirmation is the same statement', () => {
+        const unsigned = computeArrival({ reason: 'not-subscribed' }, ROW, [toConfirmation('leaf')]);
         const confirmed = [toConfirmation('leaf', toTestSignatureProof(1))];
-        const same = computeArrival({ reason: 'not-subscribed', proof: toTestSignatureProof(1) }, ROW, confirmed);
+        // One proof cannot sign an ACK and a NACK, so a NACK under the confirmation's proof is another statement.
+        const sharedProof = computeArrival({ reason: 'not-subscribed', proof: toTestSignatureProof(1) }, ROW, confirmed);
         const distinct = computeArrival({ reason: 'not-subscribed', proof: toTestSignatureProof(2) }, ROW, confirmed);
 
-        expect(validateALInboundNackAdmission(same)).toEqual([{
+        expect(validateALInboundNackAdmission(unsigned)).toEqual([{
             code: 'unauthorized',
             message: 'Inbound NACK names a recipient whose confirmation was already forwarded'
         }]);
+        expect(validateALInboundNackAdmission(sharedProof)).toEqual([]);
         expect(validateALInboundNackAdmission(distinct)).toEqual([]);
     });
 

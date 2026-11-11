@@ -1,4 +1,8 @@
 import type { ALAckPayload, ALNackPayload, ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
+import {
+    isALSameReceiptProofContent,
+    type ALReceiptControl
+} from '../../../al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isSameSignatureProof } from '../../../signature/signature-proof.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 
@@ -8,13 +12,17 @@ export interface ALReceiptStatementHistory {
     readonly nacks: readonly ALNackPayload[];
 }
 
-/** One statement about one recipient: the same proof identity, or both that recipient's own word on its own channel. */
+/**
+ * One statement about one recipient: one proof over one signed content (two absent proofs whatever the content), or
+ * both that recipient's own word on its own channel. A relay verifies nothing, so a proof alone never makes two
+ * contents one statement: a copied proof over another content is its own statement, which the origin judges.
+ */
 export function isALSameReceiptStatement(
     prior: ALAckPayload | ALNackPayload,
     control: ALAckPayload | ALNackPayload
 ): boolean {
     return prior.logicalRecipientPeerId === control.logicalRecipientPeerId &&
-        (isSameSignatureProof(prior.proof, control.proof) || (isALOwnWord(prior) && isALOwnWord(control)));
+        (isSameProofStatement(prior, control) || (isALOwnWord(prior) && isALOwnWord(control)));
 }
 
 /** A stored ACK that confirms `control`'s recipient (`isALRecipientConfirmationAck`) and is the same statement as `control`. */
@@ -48,4 +56,14 @@ export function hasALOutsideStatement(
 
 function isALOwnWord(control: ALAckPayload | ALNackPayload): boolean {
     return control.fromPeerId === control.logicalRecipientPeerId;
+}
+
+function isSameProofStatement(prior: ALAckPayload | ALNackPayload, control: ALAckPayload | ALNackPayload): boolean {
+    return isSameSignatureProof(prior.proof, control.proof) &&
+        (prior.proof === null || isALSameReceiptProofContent(toReceiptControl(prior), toReceiptControl(control)));
+}
+
+/** Only an ACK carries `ackedMsgId`; the strict decoders admit no other key. */
+function toReceiptControl(payload: ALAckPayload | ALNackPayload): ALReceiptControl {
+    return 'ackedMsgId' in payload ? { type: 'ack', payload } : { type: 'nack', payload };
 }

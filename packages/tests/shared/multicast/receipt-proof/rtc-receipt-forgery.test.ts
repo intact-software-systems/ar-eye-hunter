@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    newALAckControlMessage,
-    newALNackControlMessage,
-    type ALAckPayload,
-    type ALNackPayload
-} from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALReceiptControl } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 import { isALCountedRecipient } from '@shared/alm/delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -25,13 +20,24 @@ import {
     ORIGIN_ROOM,
     signRoomNackPayload,
     toOriginDirectedSnapshot,
-    toOriginFrozenTargets,
     type RtcOriginOverlayFixture
 } from '../rtc-origin-overlay-fixture.ts';
-import { createRelayChain, deliverEach, drainUntil, toControlTuples, type RelayChain } from '../rtc-relay-chain-test-support.ts';
+import { createRelayChain, deliverEach, drainUntil, type RelayChain } from '../rtc-relay-chain-test-support.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from '../rtc-relay-overlay-fixture.ts';
 
 import { signTestALReceiptControl, toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import {
+    acceptEach,
+    readProofRefusals,
+    readReceipt,
+    readUpwardTuplesFor,
+    sendFrozenReceipted,
+    toChildAckControl,
+    toChildNackControl,
+    toControlMessage,
+    type ForgedAckInput,
+    type ForgedNackInput
+} from './rtc-receipt-forgery-test-support.ts';
 
 /** A `receiver` receipt a WS client tracks through its server for the one addressee. */
 const WS_RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
@@ -908,30 +914,6 @@ async function sendReceipted(origin: RtcOriginOverlayFixture, resourceId: string
     return message;
 }
 
-/** A receipted send frozen to `recipientPeerIds`, which the receipt counts. */
-async function sendFrozenReceipted(
-    origin: RtcOriginOverlayFixture,
-    resourceId: string,
-    recipientPeerIds: readonly string[]
-): Promise<ALMessage> {
-    const message = { ...createOriginReceiverMulticast(resourceId), targets: toOriginFrozenTargets(recipientPeerIds, 3) };
-    expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
-    expect(await readReceipt(origin, message)).toMatchObject({ expectedPeerIds: recipientPeerIds });
-    return message;
-}
-
-async function readReceipt(origin: RtcOriginOverlayFixture, message: ALMessage) {
-    return await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId });
-}
-
-interface ForgedAckInput {
-    readonly msgId: string;
-    readonly fromPeerId: string;
-    readonly logicalRecipientPeerId: string;
-    readonly status?: ALAckPayload['status'];
-    readonly originPeerId?: string;
-}
-
 function toAckControl(input: ForgedAckInput): ALReceiptControl {
     return {
         type: 'ack',
@@ -945,13 +927,6 @@ function toAckControl(input: ForgedAckInput): ALReceiptControl {
             observedAtEpochMs: Date.now()
         })
     };
-}
-
-interface ForgedNackInput {
-    readonly msgId: string;
-    readonly fromPeerId: string;
-    readonly logicalRecipientPeerId: string;
-    readonly reason: ALNackPayload['reason'];
 }
 
 function toNackControl(input: ForgedNackInput): ALReceiptControl {
@@ -1011,76 +986,4 @@ async function createTwoRelaysWithTwoChildren(resourceId: string) {
     await r.receive((await g.readSent('r'))[0]!, 'g');
     expect((await r.readSent('c')).length).toBeGreaterThan(0);
     return { chain, origin, g, r, message };
-}
-
-/** A child's ACK to the relay `r`; absent, its status is `delivered`. */
-function toChildAckControl(input: Omit<ForgedAckInput, 'originPeerId'>): ALReceiptControl {
-    return {
-        type: 'ack',
-        payload: toTestALAckPayload({
-            ackedMsgId: input.msgId,
-            fromPeerId: input.fromPeerId,
-            toPeerId: 'r',
-            originPeerId: 'a',
-            logicalRecipientPeerId: input.logicalRecipientPeerId,
-            status: input.status ?? 'delivered',
-            observedAtEpochMs: Date.now()
-        })
-    };
-}
-
-/** Hands every control a relay sent its parent to the origin, in order. */
-async function acceptEach(origin: RtcOriginOverlayFixture, controls: readonly ALMessage[]): Promise<void> {
-    for (const control of controls) {
-        await origin.manager.acceptControlMessage(control);
-    }
-}
-
-/** Each control the relay sent `toPeerId` that speaks for `recipientPeerId`, as its type, recipient and status or reason. */
-async function readUpwardTuplesFor(
-    relay: RtcRelayOverlayFixture,
-    toPeerId: string,
-    recipientPeerId: string
-): Promise<readonly (readonly string[])[]> {
-    return toControlTuples(await relay.readSentControls(toPeerId)).filter(([, recipient]) => recipient === recipientPeerId);
-}
-
-/** A child's `not-subscribed` NACK to the relay `r`. */
-function toChildNackControl(input: Omit<ForgedNackInput, 'reason'>): ALReceiptControl {
-    return {
-        type: 'nack',
-        payload: toTestALNackPayload({
-            msgId: input.msgId,
-            fromPeerId: input.fromPeerId,
-            toPeerId: 'r',
-            originPeerId: 'a',
-            logicalRecipientPeerId: input.logicalRecipientPeerId,
-            reason: 'not-subscribed',
-            observedAtEpochMs: Date.now()
-        })
-    };
-}
-
-function toControlMessage(control: ALReceiptControl, variant: string): ALMessage {
-    const id = {
-        v: 4,
-        msgId: `forged-${control.type}-${variant}-${control.payload.fromPeerId}`,
-        senderId: control.payload.fromPeerId,
-        ts: Date.now(),
-        traceId: 'trace-forgery'
-    } as const;
-    return control.type === 'ack' ? newALAckControlMessage(id, control.payload) : newALNackControlMessage(id, control.payload);
-}
-
-/** Each rejected control admission's proof refusal, in order, as the diagnostic states it. */
-function readProofRefusals(origin: RtcOriginOverlayFixture): readonly Readonly<Record<string, string | undefined>>[] {
-    return origin.diagnostics.flatMap((event) =>
-        event.kind === 'control-admission' && event.outcome === 'rejected'
-            ? [{
-                proofRefusal: event.proofRefusal,
-                claimedRecipientPeerId: event.claimedRecipientPeerId,
-                channelPeerId: event.channelPeerId
-            }]
-            : []
-    );
 }
