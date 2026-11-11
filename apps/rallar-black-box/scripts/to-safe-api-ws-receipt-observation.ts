@@ -1,3 +1,10 @@
+import { AL_ACK_STATUSES } from '../../../packages/shared/al-contracts/al-control.ts';
+import {
+    AL_DELIVERY_REFUSAL_REASONS,
+    AL_DELIVERY_SKIPPED_REASONS,
+    AL_DELIVERY_UNROUTABLE_REASONS
+} from '../../../packages/shared/alm/delivery/al-delivery-lifecycle.ts';
+import { AL_STORAGE_UNAVAILABLE_CAUSES } from '../../../packages/shared/alm/storage/al-storage-unavailable.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../../../packages/shared/api/api-json-value.ts';
 
 export interface SafeApiWsReceiptObservationDto extends ApiJsonObject {
@@ -144,34 +151,14 @@ const RECEIPT_RETURN_FIELDS: Readonly<Record<string, readonly ReceiptReturnField
     ]
 };
 
-const OUTBOX_VERDICT_REASONS = [
+const OUTBOX_VERDICT_REASONS: readonly string[] = [
     'not-yet-in-sync',
-    'unauthorized',
-    'malformed',
-    'oversized',
-    'unsupported',
-    'capacity',
-    'no-leader',
-    'congested',
-    'no-route',
-    'rate-limited',
-    'circuit-open',
-    'disposed',
-    'repair-exhausted',
-    'pending-terminated',
-    'planner-drop'
+    ...AL_DELIVERY_REFUSAL_REASONS,
+    ...AL_DELIVERY_UNROUTABLE_REASONS,
+    ...AL_DELIVERY_SKIPPED_REASONS
 ];
 
-const OUTBOX_STORAGE_CAUSES = [
-    'missing',
-    'open-failed',
-    'reset-blocked',
-    'quota',
-    'closed',
-    'evicted',
-    'transaction-failed',
-    'checkpoint-lag'
-];
+const OUTBOX_STORAGE_CAUSES: readonly string[] = AL_STORAGE_UNAVAILABLE_CAUSES;
 
 export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptObservationDto | undefined {
     if (!isApiTimingRecord(value) || !isSafeApiTimingIdentity(value.serverPeerId)) {
@@ -475,13 +462,7 @@ function toSafeAck(record: unknown): ApiJsonObject | undefined {
             isSafeApiTimingIdentity(record[field])
         ) ||
         !isAllowedApiTimingString(record.carrier, ['ws', 'rtc']) ||
-        !isAllowedApiTimingString(record.status, [
-            'accepted',
-            'delivered',
-            'forwarded',
-            'subtree-complete',
-            'subtree-complete-not-subscribed'
-        ]) ||
+        !isAllowedApiTimingString(record.status, AL_ACK_STATUSES) ||
         !isNonNegativeApiTimingNumber(record.observedAtEpochMs)
     ) {
         return undefined;

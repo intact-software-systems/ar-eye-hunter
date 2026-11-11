@@ -7,6 +7,7 @@ import {
     decodeALPendingAckSnapshot
 } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
+    AL_ACK_STATUSES,
     decodeALControlMessage,
     newALAckControlMessage,
     newALNackControlMessage,
@@ -60,6 +61,24 @@ describe('AL control value codec', () => {
 
         expect(decodeALAckPayload(ack)).toEqual(ack);
         expect(decodeALNackPayload(nack)).toEqual(nack);
+    });
+
+    it('accepts exactly the ACK statuses AL_ACK_STATUSES names', () => {
+        const ack = toTestALAckPayload({ ackedMsgId: 'm', fromPeerId: 'b', toPeerId: 'a' });
+
+        expect(AL_ACK_STATUSES).toEqual([
+            'accepted',
+            'delivered',
+            'forwarded',
+            'subtree-complete',
+            'subtree-complete-not-subscribed'
+        ]);
+        for (const status of AL_ACK_STATUSES) {
+            expect(decodeALAckPayload({ ...ack, status }).status).toBe(status);
+        }
+        for (const status of ['accepted ', 'ACCEPTED', 'complete']) {
+            expect(() => decodeALAckPayload({ ...ack, status })).toThrow('Control ACK status is invalid');
+        }
     });
 
     it('round-trips a not-subscribed NACK that speaks for a logical recipient other than its sender', () => {

@@ -60,28 +60,36 @@ export type ALDeliveryAttemptOutcome =
     | 'unroutable'
     | 'refused';
 
+export const AL_DELIVERY_UNROUTABLE_REASONS = ['no-route', 'rate-limited', 'circuit-open'] as const;
+
 /** Why a carrier admission found no route: no peer at all, or the sender's own rate limit or open circuit. */
-export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-open';
+export type ALDeliveryUnroutableReason = typeof AL_DELIVERY_UNROUTABLE_REASONS[number];
+
+export const AL_DELIVERY_REFUSAL_REASONS = [
+    'unauthorized',
+    'malformed',
+    'oversized',
+    'unsupported',
+    'capacity',
+    'no-leader',
+    'congested',
+    'no-publish-grant'
+] as const;
 
 /**
  * `no-leader`: a `group-leader` send whose room has no active leader inside the audience it names (D165).
  * `congested`: the carrier's channel could not take the send and its congestion policy dropped it (D185).
  */
-export type ALDeliveryRefusalReason =
-    | 'unauthorized'
-    | 'malformed'
-    | 'oversized'
-    | 'unsupported'
-    | 'capacity'
-    | 'no-leader'
-    | 'congested'
-    | 'no-publish-grant';
+export type ALDeliveryRefusalReason = typeof AL_DELIVERY_REFUSAL_REASONS[number];
 
-export type ALDeliverySkippedReason =
-    | 'disposed'
-    | 'repair-exhausted'
-    | 'pending-terminated'
-    | 'planner-drop';
+export const AL_DELIVERY_SKIPPED_REASONS = [
+    'disposed',
+    'repair-exhausted',
+    'pending-terminated',
+    'planner-drop'
+] as const;
+
+export type ALDeliverySkippedReason = typeof AL_DELIVERY_SKIPPED_REASONS[number];
 
 /** Why a message an RTC leg had admitted was handed to WS (D56); `rate-limited` hands over at admission instead. */
 export type ALDeliveryFallbackReason =

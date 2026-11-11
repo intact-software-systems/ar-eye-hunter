@@ -1,15 +1,16 @@
 import { isBase64UrlOfByteLength } from '../encoding/base64url.ts';
 import { ECDSA_P256_KEY_ID_BYTES, ECDSA_P256_SIGNATURE_BYTES } from '../signature/ecdsa-p256-signature.ts';
 import type { SignatureProof } from '../signature/signature-proof.ts';
-import type {
-    ALAckPayload,
-    ALAckStatus,
-    ALNackPayload,
-    ALNackReason,
-    ALPendingAckSnapshot,
-    ALReceiptPayload,
-    ALRepairPayload,
-    ALRepairReason
+import {
+    AL_ACK_STATUSES,
+    type ALAckPayload,
+    type ALAckStatus,
+    type ALNackPayload,
+    type ALNackReason,
+    type ALPendingAckSnapshot,
+    type ALReceiptPayload,
+    type ALRepairPayload,
+    type ALRepairReason
 } from './al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
@@ -335,13 +336,11 @@ function readControlArrayEntries(value: unknown, limit: number, label: string): 
 }
 
 function decodeAckStatus(value: unknown): ALAckStatus {
-    if (
-        value !== 'accepted' && value !== 'delivered' && value !== 'forwarded' && value !== 'subtree-complete' &&
-        value !== 'subtree-complete-not-subscribed'
-    ) {
+    const status = AL_ACK_STATUSES.find((candidate) => candidate === value);
+    if (status === undefined) {
         throw new TypeError('Control ACK status is invalid');
     }
-    return value;
+    return status;
 }
 
 /** The one carrier decoder for every persisted or wire `ALDeliveryCarrier` value. */

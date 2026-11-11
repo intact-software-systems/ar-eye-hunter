@@ -1,3 +1,14 @@
+export const AL_STORAGE_UNAVAILABLE_CAUSES = [
+    'missing',
+    'open-failed',
+    'reset-blocked',
+    'quota',
+    'closed',
+    'evicted',
+    'transaction-failed',
+    'checkpoint-lag'
+] as const;
+
 /**
  * Why a browser ALM store cannot persist: IndexedDB is absent (`missing`), its open request failed
  * (`open-failed`), a reset's delete stayed blocked (`reset-blocked`), a write hit the quota (`quota`),
@@ -5,15 +16,7 @@
  * (`evicted`), a transaction failed for another reason (`transaction-failed`), or a checkpoint store's
  * oldest unsaved change outlived its recovery-lag bound (`checkpoint-lag`).
  */
-export type ALStorageUnavailableCause =
-    | 'missing'
-    | 'open-failed'
-    | 'reset-blocked'
-    | 'quota'
-    | 'closed'
-    | 'evicted'
-    | 'transaction-failed'
-    | 'checkpoint-lag';
+export type ALStorageUnavailableCause = typeof AL_STORAGE_UNAVAILABLE_CAUSES[number];
 
 export interface ALStorageUnavailable {
     readonly cause: ALStorageUnavailableCause;

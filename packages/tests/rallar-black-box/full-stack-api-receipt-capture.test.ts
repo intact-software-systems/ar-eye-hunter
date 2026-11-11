@@ -16,6 +16,12 @@ import {
 
 import { toSafeApiTimingRecord } from '../../../apps/rallar-black-box/scripts/to-safe-api-timing-record.ts';
 import { toSafeApiWsReceiptObservation } from '../../../apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts';
+import {
+    AL_DELIVERY_REFUSAL_REASONS,
+    AL_DELIVERY_SKIPPED_REASONS,
+    AL_DELIVERY_UNROUTABLE_REASONS
+} from '../../shared/alm/delivery/al-delivery-lifecycle.ts';
+import { AL_STORAGE_UNAVAILABLE_CAUSES } from '../../shared/alm/storage/al-storage-unavailable.ts';
 import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
 
@@ -420,7 +426,29 @@ const TRACED_OBSERVATIONS = [
     }
 ];
 
+const OUTBOX_OBSERVATION = TRACED_OBSERVATIONS.find((observation) => observation.kind === 'receipt-outbox')!;
+
 describe('full-stack private upstream receipt capture', () => {
+    it.each(AL_STORAGE_UNAVAILABLE_CAUSES)(
+        'keeps an outbox verdict whose reason and storage cause the shared vocabularies name: storage cause %s',
+        (cause) => {
+            const record = { ...OUTBOX_OBSERVATION, verdict: { kind: 'storage-unavailable', cause } };
+            expect(toSafeApiWsReceiptObservation(record)).toEqual(record);
+        }
+    );
+
+    it.each([
+        ...AL_DELIVERY_REFUSAL_REASONS.map((reason) => ['refused', reason] as const),
+        ...AL_DELIVERY_UNROUTABLE_REASONS.map((reason) => ['unroutable', reason] as const),
+        ...AL_DELIVERY_SKIPPED_REASONS.map((reason) => ['skipped', reason] as const)
+    ])(
+        'keeps an outbox verdict whose reason and storage cause the shared vocabularies name: %s reason %s',
+        (kind, reason) => {
+            const record = { ...OUTBOX_OBSERVATION, verdict: { kind, reason } };
+            expect(toSafeApiWsReceiptObservation(record)).toEqual(record);
+        }
+    );
+
     it.each(TRACED_OBSERVATIONS)('keeps the trace of a $kind record and refuses the record for an unsafe one', (observation) => {
         expect(toSafeApiWsReceiptObservation(observation)).toEqual(observation);
         expect(toSafeApiWsReceiptObservation({ ...observation, traceId: 'trace with <script>' })).toBeUndefined();

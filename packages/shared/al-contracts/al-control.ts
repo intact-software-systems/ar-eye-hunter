@@ -27,16 +27,19 @@ import {
 } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
 
+export const AL_ACK_STATUSES = [
+    'accepted',
+    'delivered',
+    'forwarded',
+    'subtree-complete',
+    'subtree-complete-not-subscribed'
+] as const;
+
 /**
  * `subtree-complete-not-subscribed` ends the hop of a frozen recipient that delivered nothing, having answered
  * `not-subscribed`: it completes that hop and confirms no recipient, so no hop relays or counts it as a confirmation.
  */
-export type ALAckStatus =
-    | 'accepted'
-    | 'delivered'
-    | 'forwarded'
-    | 'subtree-complete'
-    | 'subtree-complete-not-subscribed';
+export type ALAckStatus = typeof AL_ACK_STATUSES[number];
 export type ALNackReason =
     | 'duplicate'
     | 'gap'
