@@ -809,8 +809,9 @@ supersedence can remove obsolete buffered values, and a new epoch closes the old
 ordering track.
 
 **PARTIAL:** Ordering tracks include key/sender/epoch; gap buffering, NACK/
-repair, release, expiry, and restart behavior exist. Outbound ACK history uses
-`appendUniqueALAck`, while inbound ACK history can still append duplicates.
+repair, release, expiry, and restart behavior exist. The outbound receipt keeps a set of
+acknowledged peers (`toALOutboundTrackedReceipt`), and the inbound relay row relays a child
+ACK once per statement (`isALSameReceiptStatement`).
 
 **CURRENT — bounded gaps:**
 [`compute-al-ordering-observation.ts`](../../packages/shared/alm/compute-al-ordering-observation.ts)

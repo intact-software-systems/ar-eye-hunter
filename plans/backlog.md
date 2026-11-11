@@ -17,14 +17,14 @@ and it has no status list.
 - One group-formation acceptance scenario remains unpinned in
   `docs/rallar-group-formation-architecture.md`: `pacing-sweep`, which needs a
   headless parallelism sweep over `maxConcurrentEdgeSetups`.
-- Five shared-mechanism consolidations the V1c audit ranked (D278) and the
-  V1c closure recorded, not selected (D420, D421 and D423–D426; the V1c step 2 proposal is in git history), measured on `ab27df0a9`:
+- Four shared-mechanism consolidations the V1c audit ranked (D278) and the
+  V1c closure recorded, not selected (D420, D421 and D423–D426; the V1c step 2 proposal is in git history), counted on `bdbf7b00c`:
   the AL checkpoint writer and the reconnect hydrator keep their own trailing
   flush timers beside `ThrottledFlush`; about 11 serialized promise chains have
-  no shared primitive; three linked abort scope and abortable wait copies sit
-  in the black-box harness; about 20 inline UTF-8 byte length sites have no
-  helper; and about 28 raw `setInterval` calls remain beside `startRepeating`'s
-  nine users. The queuebox-level sibling-row claim (presence summary only) and
+  no shared primitive; 27 inline UTF-8 byte length sites outside the ALM and
+  WS notice paths still encode by hand beside `computeUtf8ByteLength`
+  (`packages/shared/encoding`); and 27 raw `setInterval` calls remain beside
+  `startRepeating`'s 11 callers. The queuebox-level sibling-row claim (presence summary only) and
   the control server's sliced JSON writer have no second consumer yet. Each
   primitive lands in `packages/shared` with its own tests when a slice selects
   it; the checkpoint writer's move keeps its lag and health states.
@@ -66,11 +66,6 @@ and it has no status list.
   field on control-run event evidence rows instead of free-text `data.reason`;
   and the RTC send results (`black-box-rallar-rtc-send-controller.ts`), which
   still echo `sent` outside the payload-free diagnostics class.
-- The `x-request-id` literal beside `AL_TRACE_ID_HTTP_HEADER`
-  (`packages/shared/al-contracts/trace/al-trace-id.ts`): api-v1's
-  `http-timing-middleware.ts` and the CORS lists in
-  `install-api-http-middleware.ts`, shared-web's `send-api-http-request.ts` and
-  the runner's `normalize-black-box-response-headers.ts` each spell it.
 - The api-v1 formation-large and medium-scale gates
   (`.github/workflows/api-v1-formation-gate.yml`,
   `api-v1-medium-scale-gate.yml`) wait 30 s for the managed API's startup
@@ -88,11 +83,45 @@ and it has no status list.
   producer, and the QoS plan's sections 2 and 8 still describe deletion. A
   ruling picks one and aligns D3, those types and the QoS plan (roadmap F9,
   PC10).
-- `packages/shared/alm/al-runtime-state-stores.ts` exports
-  `ALInboundRuntimeStateStore`, `InMemoryALInboundRuntimeStateStore` and
-  `PersistentALInboundRuntimeStateStore`, which nothing constructs; the
-  persistent one's `readAllValues` is the last whole-store read under
-  `packages/shared/alm` (D8; roadmap F15).
+- `packages/shared/alm/al-runtime-state-stores.ts` holds only snapshot
+  interfaces and keeps its name (S9-i, D624): 26 importers and a `mod.ts` line
+  would change for a name alone. Rename it for what it holds, with its
+  importers, in a slice that touches them.
+- `packages/shared/api/auth.ts` keeps one module-global session over Web
+  Storage (S9-R2, D610). Replacing it with an injected session-store port, the
+  browser Storage implementation in shared-web, needs a ruling: 25 importers
+  across both games and the black-box app read it.
+- The black-box proofs keep three raw WebSocket clients, `ClusterProofSocket`,
+  `ApiV1RtcTopologyProofSocket` and the inline `LogoutProofSocket` in
+  `api-v1-auth-logout-cluster-proof.mts` (S9-R5, D613). Their waits differ,
+  so one proof socket may be wider than a fold.
+- Three copies stay beside the shared builders (S9-i, D622, D623):
+  `black-box-runner/preflight/live-preflight.ts` keeps its API-base-path WS URL
+  builder and its own `mutationPath`, and `rallar-bb-test/browser/browser-http-requests.ts`
+  builds a ws-ticket request path by hand; the hosted
+  `scripts/hosted-rallar/controller/authenticated-ws-smoke.ts` keeps its own WS
+  URL builder because it runs on the controller VM without the repository's
+  packages. The preflight and the runner copies fold once the preflight's
+  `unknown` readers are decoders (touching the file re-reports its
+  `boundary.unknown` findings in the changed-style gate) and the browser
+  request id's grammar is confirmed.
+- Production builds its ALM runtimes with `new ALInboundMessageRuntime(` and
+  `new ALOutboundMessageRuntime(`, while `createDefaultALInboundMessageRuntime`,
+  `createDefaultALOutboundMessageRuntime` and
+  `createDefaultInMemoryALInboundRuntimeStores` serve tests only (S9-i hygiene
+  survey): converge production on them, or delete them.
+- `validateALMessageInput` and `assertValidALMessageInput`
+  (`packages/shared/al-contracts/al-validation.ts`) are public with no
+  production caller: adopt or delete.
+- The typed-channel validators
+  (`packages/shared-web/browser/messages/validate-rallar-typed-channel-policy.ts`,
+  `packages/shared-web/browser/messages/publication/validate-browser-live-send.ts`)
+  are candidates for `packages/shared/al-contracts` once a second runtime
+  validates a channel.
+- `packages/shared/services/ws-queue-box-client-service.ts` keeps
+  `qosProvider?:` optional (S9-i, D620), outside the list of inputs S9-i made
+  required; its only browser caller always passes the wrapper, so the field
+  can become required with the remaining callers' review.
 - ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
   peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.
 - ALM topic-policy advertisement (carried from S1-ii, D482, S2-i and S3): a
@@ -106,11 +135,13 @@ and it has no status list.
   reads their declared targets, so it under-refuses when a suppressing rule's
   `authorize` or `targets` would skip at runtime and over-refuses when a rule
   publishing to `outbox` would itself have skipped; neither is reachable today.
-- A product consumer for the publication stage's `readLane` (S1-ii), which
-  only tests read.
-- One owner for the unknown-object field readers that
-  `packages/shared/al-contracts/publication/al-publication-policy.ts` and
-  `al-publication-stage-limits.ts` each keep privately (S1-ii).
+- The browser wrapper `BrowserPublicationStages.readLane` has no product
+  consumer (only its unit test reads it); give it one, or delete it with a new
+  witness for the one assertion that has none. It stays (S9-R3, D611):
+  `browser-publication-stages.test.ts:149` reads the lane's policy and next
+  opportunity, which no report carries, and is the only pin that the owner
+  hands the stage the delivery's policy and the page clock. The core stage's
+  `readLane` is read by the control server's reload fixture (S1-ii).
 - A ruling on the publication stage's `superseded` settlement, which carries
   the replacement's `traceId` where the stage's other settlements carry the
   value's own (S1-ii, Task 2 review).
@@ -179,13 +210,19 @@ and it has no status list.
   `Limit:` test (S8-ii).
 - `toSafeAck` in
   `apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts` is a
-  hand-written ACK shape rule beside the codec's (S8-i).
+  hand-written ACK shape rule beside the codec's (S8-i). Since S9-i its status,
+  storage-cause and verdict-reason lists read the shared tuples, so only the
+  shape rule remains, which redacts where the codec throws. The script's
+  `SOCKET_REJECTION_CODES` is still a local copy of the socket rejection codes.
 - `tests/playwright/**` is in no typecheck project (S8-i): a payload-shape
   change there compiles unchecked.
 - The full-scope RTC ALM lane's pre-existing reds (S8-i): `capacity-tracks`,
   `ordering-resync`, `repair-exhausted` and `granted-rtc-ordered-relay` fail on
   `main` (`664ed19d5`) and on the Slice 8 branch at the same commands; cause
-  unproven.
+  unproven. Re-check at `bdbf7b00c` before diagnosing; the cell files are
+  `capacity-tracks.ts`, `ordering-resync.ts`, `repair-exhausted.ts` and
+  `granted-rtc-ordered-relay.ts` under
+  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios`.
 - A logically receipted RTC unicast that names no room (S8-i, D585) is refused
   `unsupported`, since no presence row can key its addressee; before Slice 8
   it was admitted. No product caller sends one; one that did degrades to WS
@@ -257,8 +294,9 @@ and it has no status list.
   a 90 s cue wait, exceeds the lane's 180 s role deadline (S8-ii).
 - A layout-independent post-run check for `receipted-relay-path` (S8-ii,
   D604): at least one origin's ending receipt confirms two recipients through
-  one hop. Today the cell asserts no relay, so a run whose two sends were
-  routed under different plans can go direct and stay green.
+  one hop. Today the cell asserts neither which agent relays nor the hop count
+  (`receipted-relay-path.ts`), so a run whose two sends were routed under
+  different plans can go direct and stay green.
 - `toRoutedTypeIds` (`packages/tests/shared-test/alm-conformance-recipes.test.ts`)
   ignores `message`-kind waits (S8-ii; pre-existing): cue and arrival waits are
   isolated only by their payload marker, and nothing pins that.

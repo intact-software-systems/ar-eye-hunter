@@ -6,9 +6,10 @@ S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii), Slice
 5 (producer-row positions, as S5-i), Slice 6 (granted unicast, list and
 principal broadcast over RTC, as S6-i and S6-ii), Slice 7 (cross-instance
 positions and outside class, as S7-i and S7-ii) and Slice 8 (signed receipts on
-RTC, as S8-i and S8-ii) are implemented and recorded as applied in §7; the later
-outcomes remain a proposed extension, not implemented behavior or an adopted
-change to `docs/product.md`.
+RTC, as S8-i and S8-ii) are implemented and recorded as applied in §7; Slice 9's
+first part (one owner each, as S9-i) is recorded in §7 and its second part,
+S9-ii, is pending; the later outcomes remain a proposed extension, not
+implemented behavior or an adopted change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -1434,6 +1435,42 @@ routed under different plans can both go direct and the cell stays green. The
 three cells run at the local full scope only: CI's observation job runs the
 smoke scope and the hosted manifests withhold them.
 
+### Slice 9: one owner each, then a lane to trust
+
+Slice 9 has two parts. The first, S9-i, folds the duplicated owners the
+hygiene and actor-alignment surveys found on the ALM surface, and changes no
+behavior: no wire shape, stored shape or OpenAPI document differs from Slice
+8's. Where two places held one fact, one place now holds it:
+
+- the session's QoS provider, volatile limits and publication stage limits are
+  required construction inputs from `createRallarFacade` down to the carriers,
+  and the product root passes `createDefaultBrowserSessionQosInputs()`, whose
+  values are today's: an empty QoS input and the frozen shipped limits. No
+  layer below the root chooses a default, so another root, such as the actor's,
+  passes its own (§4.3). The WS server keeps an absent QoS input;
+- `createBrowserSessionMessaging` composes the session's messaging for the
+  product root and the black-box root;
+- `decodeALVolatileSessionLimits` decodes the volatile limits as the stage
+  limits are decoded, with positive safe integers, and `getOwnNumber` reads a
+  number field for the three decoders;
+- `AL_ACK_STATUSES`, `AL_STORAGE_UNAVAILABLE_CAUSES` and the three delivery
+  reason tuples are the runtime lists the codec, the delivery lifecycle and the
+  black-box script's safe projection share;
+- `HeldSendChain` owns the ordered chain of held sends and the logged failure,
+  one chain each for the WS server and the pub/sub bridge;
+- `computeUtf8ByteLength` counts the UTF-8 bytes of the ALM and WS paths, and
+  `toApiWsUrl` and `toApiMutationRequestPath` build the WS upgrade URL and the
+  runner's topology-proof mutation paths;
+- `DeadlineAbortScope` and `sleepWithAbort` serve the black-box harness's
+  deadline scopes and abortable waits.
+
+The inbound runtime-state stores nothing constructed, six unreferenced queuebox
+and resilience values and fifteen file-private runtime exports are deleted.
+The second part, S9-ii, is a full-scope lane to trust, designed in its own
+plan and pending: the lane's red cells diagnosed, an overrun cancelling its own
+recipe, a layout-independent check of the relay path, the two cluster proofs
+wired into the Postgres lane and `tests/playwright/**` typechecked.
+
 ### Later outcomes
 
 - **Restricted RTC beyond room multicast:** an encrypted publication with key
@@ -1454,12 +1491,26 @@ smoke scope and the hosted manifests withhold them.
   Engine simulation and interest remain application-owned. The actor's ALM
   dependencies are native publication-key custody (above), a re-examined
   per-session budget for a multi-group publishing seat (§4.3), and the local
-  attachment trust boundary kept out of ALM's authority (§1).
+  attachment trust boundary kept out of ALM's authority (§1). Key custody is a
+  composition gap, not missing library code: the `PublicationKeyStore` port,
+  the signer and both verifiers are in `packages/shared/signature`, and only
+  the IndexedDB store and a 39-line memo are browser-side. The per-session
+  stage budget is a construction input resolved at the root (Slice 9), so an
+  actor root passes its own. The lane key is `topicId/typeId` with no group
+  (`packages/shared/al-contracts/publication/to-al-publication-stream-key.ts`),
+  so a multi-group seat shares one lane, one cadence and one stage budget; a
+  per-group key or per-group fairness changes semantics and waits for a
+  measured envelope.
 - **Measured operating envelope:** representative multi-group publishers,
   subscription churn, slow consumers, relay depth, mixed WS/RTC, and sustained
   overload with bounded memory and accurate outcome evidence; server-side
   ordered sends are measured by the 6b probe on room rows (counts in the Release 14
-  record; the principal path is unmeasured).
+  record; the principal path is unmeasured). The path to it, as outcomes in
+  order: a full-scope lane green on every carrier; a fault-step vocabulary for
+  the platform; publication figures in the stage with one shared histogram; a
+  same-regime baseline protocol; a publication workload family on the scale
+  builder; bottleneck probes at the owners; and a first campaign on the
+  three-replica fleet.
 
 Full adoption requires those outcomes relevant to the advertised mode. A
 temporary typed refusal during staged delivery is not evidence that the whole

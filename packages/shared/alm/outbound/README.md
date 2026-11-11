@@ -1341,9 +1341,11 @@ an acknowledgement. Cancellation ends the attempt directly. Submission
 remains separate from receiver acknowledgement and application completion.
 
 A replacement's own admission commit states `superseded` for every predecessor it newly
-marks replaced -- one `ALDeliverySettlement` per predecessor, from
-[`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)'s
-`emitSupersededSettlements`, before that commit call returns to its caller. Only the commit
+marks replaced -- one `ALDeliverySettlement` per predecessor, stated by
+[`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)'s private
+`emitCommitSettlements` from the facts `toALOutboundCommitSettlements`
+([`compute-al-outbound-dispatch.ts`](./compute-al-outbound-dispatch.ts)) computes, before
+that commit call returns to its caller. Only the commit
 that moves the key's latest-supersedence pointer states it; a later commit of the same
 message, or a predecessor the admission observed already replaced, states nothing again. By
 the time a superseded predecessor's own queued work next runs, the lifecycle this settlement
