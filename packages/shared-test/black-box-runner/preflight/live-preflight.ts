@@ -1,6 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
 
-import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { resolveVariableByEnv } from './resolve-variable-by-env.ts';
 
 type JsonRecord = Record<string, unknown>;
@@ -346,7 +345,7 @@ export async function runBlackBoxRunnerLivePreflight(
             }
             else {
                 for (const pair of credentialPairs) {
-                    const loginPath = toApiMutationRequestPath('/api/auth/login', crypto.randomUUID());
+                    const loginPath = mutationPath('/api/auth/login', crypto.randomUUID());
                     const result = await recordAsyncCheck(
                         checks,
                         issues,
@@ -428,7 +427,7 @@ export async function runBlackBoxRunnerLivePreflight(
                         const createPath = `/api/state/apps/${encodeURIComponent(group.applicationId)}/workspaces/${
                             encodeURIComponent(group.workspaceId)
                         }/groups`;
-                        const createMutationPath = toApiMutationRequestPath(createPath, crypto.randomUUID());
+                        const createMutationPath = mutationPath(createPath, crypto.randomUUID());
                         const createResponse = await fetchResponse(
                             fetchImplementation,
                             urlJoin(rallarApiBaseUrl, createMutationPath),
@@ -455,7 +454,7 @@ export async function runBlackBoxRunnerLivePreflight(
                         const joinPath = `${createPath}/${encodeURIComponent(group.groupId)}/members/${
                             encodeURIComponent(primarySession.clientId)
                         }`;
-                        const joinMutationPath = toApiMutationRequestPath(joinPath, crypto.randomUUID());
+                        const joinMutationPath = mutationPath(joinPath, crypto.randomUUID());
                         const joinResponse = await fetchResponse(
                             fetchImplementation,
                             urlJoin(rallarApiBaseUrl, joinMutationPath),
@@ -496,7 +495,7 @@ export async function runBlackBoxRunnerLivePreflight(
                 );
             }
             else {
-                const wsTicketPath = toApiMutationRequestPath('/api/auth/ws-ticket', crypto.randomUUID());
+                const wsTicketPath = mutationPath('/api/auth/ws-ticket', crypto.randomUUID());
                 const result = await recordAsyncCheck(
                     checks,
                     issues,
@@ -733,6 +732,10 @@ export async function runBlackBoxRunnerLivePreflight(
         issues,
         skipReasons: issues.map((issue) => issue.message)
     };
+}
+
+function mutationPath(path: string, requestId: string): string {
+    return `${path}/requests/${encodeURIComponent(requestId)}`;
 }
 
 function livePreflightSpec(config: JsonRecord, requires: BlackBoxRunnerLivePreflightMatrixRequirement): JsonRecord {
