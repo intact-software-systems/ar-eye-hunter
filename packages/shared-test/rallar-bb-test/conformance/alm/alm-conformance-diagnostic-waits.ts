@@ -184,7 +184,7 @@ export function toNoGapRepairWaits(step: AlmConformanceStepInput): readonly Rall
 }
 
 /** No repair dispatched any message of the cell's type from this page: a minted send names no index to pin it by. */
-export function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
+function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
     return toDiagnosticWait({
         step,
         name,
