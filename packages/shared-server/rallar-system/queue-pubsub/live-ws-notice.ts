@@ -4,6 +4,7 @@ import type { ALInboundMessageReference } from '@shared/alm/inbound/al-inbound-c
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { decodeLiveWsNoticeShape } from './decode-live-ws-notice-shape.ts';
 
@@ -129,7 +130,7 @@ export function encodeLiveWsNotice(input: LiveWsPublicationInput): EncodeLiveWsN
         throw new TypeError('An all live WS notice cannot carry a scope.');
     }
     const inlineEncoded = toEncodedLiveWsNotice(toInlineLiveWsNotice(input), input.channel);
-    const inlineBytes = new TextEncoder().encode(inlineEncoded.serialized).length;
+    const inlineBytes = computeUtf8ByteLength(inlineEncoded.serialized);
     if (inlineBytes < MAX_LIVE_WS_NOTICE_BYTES) {
         return { kind: 'inline', ...inlineEncoded };
     }
@@ -152,7 +153,7 @@ export function encodeLiveWsNotice(input: LiveWsPublicationInput): EncodeLiveWsN
         throw new TypeError('Live WS inbound reference does not identify the final message.');
     }
     const keyEncoded = toEncodedLiveWsNotice(toKeyLiveWsNotice(input, input.inbound), input.channel);
-    const keyBytes = new TextEncoder().encode(keyEncoded.serialized).length;
+    const keyBytes = computeUtf8ByteLength(keyEncoded.serialized);
     if (keyBytes >= MAX_LIVE_WS_NOTICE_BYTES) {
         return { kind: 'oversize', inlineBytes, keyBytes };
     }
@@ -221,7 +222,7 @@ export function decodeLiveWsNotice(value: unknown, expectedChannel: string, nowM
     catch {
         return undefined;
     }
-    const size = new TextEncoder().encode(serialized).length;
+    const size = computeUtf8ByteLength(serialized);
     if (size > MAX_FRAGMENTED_LIVE_WS_NOTICE_BYTES) {
         return undefined;
     }

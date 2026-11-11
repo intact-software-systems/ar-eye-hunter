@@ -1,3 +1,4 @@
+import { computeUtf8ByteLength } from '../encoding/compute-utf8-byte-length.ts';
 import { toStrictAppInboxQueueKey } from '../queuebox/AppQueueIdentity.ts';
 import { isKeysEqual } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
@@ -418,5 +419,5 @@ function parseControlPayload(resource: string): unknown {
 function utf8Length(value: string): number {
     return value.length > AL_MESSAGE_RESOURCE_LIMITS.payloadBytes
         ? value.length
-        : new TextEncoder().encode(value).length;
+        : computeUtf8ByteLength(value);
 }

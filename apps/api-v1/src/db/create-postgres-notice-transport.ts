@@ -1,4 +1,5 @@
 import { MAX_LIVE_WS_NOTICE_BYTES } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 
@@ -39,7 +40,7 @@ function readPostgresNotice<Notice>(
     payload: string,
     channel: string
 ): Notice | undefined {
-    if (new TextEncoder().encode(payload).length >= MAX_LIVE_WS_NOTICE_BYTES) {
+    if (computeUtf8ByteLength(payload) >= MAX_LIVE_WS_NOTICE_BYTES) {
         return undefined;
     }
     try {

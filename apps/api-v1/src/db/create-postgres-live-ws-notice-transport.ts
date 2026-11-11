@@ -5,6 +5,7 @@ import {
     type LiveWsNotice,
     type LiveWsNoticeTransport
 } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import { ThrottledFlush } from '@shared/resilience/timing/throttled-flush.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
@@ -48,7 +49,7 @@ export function createPostgresLiveWsNoticeTransport(
                 await repair.stop();
             });
             await notification.listen(channel, async (payload) => {
-                if (stopped || new TextEncoder().encode(payload).length >= MAX_LIVE_WS_NOTICE_BYTES) {
+                if (stopped || computeUtf8ByteLength(payload) >= MAX_LIVE_WS_NOTICE_BYTES) {
                     return;
                 }
                 let value: JsonWireValue;
@@ -83,7 +84,7 @@ async function publishPostgresLiveNotice(
         throw new TypeError('PostgreSQL live WS notice is invalid, expired, or oversized.');
     }
     const serialized = JSON.stringify(notice);
-    if (new TextEncoder().encode(serialized).length < MAX_LIVE_WS_NOTICE_BYTES) {
+    if (computeUtf8ByteLength(serialized) < MAX_LIVE_WS_NOTICE_BYTES) {
         await notification.notify(notice.channel, notice);
         return;
     }
