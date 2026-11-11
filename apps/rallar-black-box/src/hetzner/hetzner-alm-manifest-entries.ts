@@ -28,6 +28,10 @@ import { noLeaderRefused } from '@shared-test/rallar-bb-test/conformance/alm/sce
 import { fencedRejection } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/membership-fence/fenced-rejection.ts';
 import { pacedIsolationLists } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/publication/paced-isolation-lists.ts';
 import { repairExhausted } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/range-repair/repair-exhausted.ts';
+import {
+    forgedRecipientAck,
+    unsignedAckRefused
+} from '@shared-test/rallar-bb-test/conformance/alm/scenarios/receipted-audience.ts';
 import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
@@ -125,7 +129,10 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'server-originated', carriers: serverOriginated.carriers },
     // The paced list-isolation cell waits until a hosted run proves the paced send shape on three agents (D481);
     // manifest 22 stays as recorded.
-    { scenarioKey: 'paced-isolation-lists', carriers: pacedIsolationLists.carriers }
+    { scenarioKey: 'paced-isolation-lists', carriers: pacedIsolationLists.carriers },
+    // The receipt-proof cells' lane evidence is local (S8-R10, D505); manifest 22 stays as recorded.
+    { scenarioKey: 'unsigned-ack-refused', carriers: unsignedAckRefused.carriers },
+    { scenarioKey: 'forged-recipient-ack', carriers: forgedRecipientAck.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

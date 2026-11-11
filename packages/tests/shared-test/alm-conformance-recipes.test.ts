@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
@@ -38,8 +39,21 @@ const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
 /** The three-peer scenarios run on three agents: an origin and two distinguishable recipients (D45). */
 const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
     ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
-    rtc: ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'],
-    'rtc-with-ws-fallback': ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
+    rtc: [
+        'aggregated-receipt',
+        'missing-recipient-retry',
+        'unknown-ack-version',
+        'unsigned-ack-refused',
+        'forged-recipient-ack',
+        'frozen-audience-membership'
+    ],
+    'rtc-with-ws-fallback': [
+        'aggregated-receipt',
+        'missing-recipient-retry',
+        'unknown-ack-version',
+        'unsigned-ack-refused',
+        'frozen-audience-membership'
+    ]
 } as const;
 
 /** The membership fence runs where one hop judges the roster; its rejection only where the server does. */
@@ -570,8 +584,11 @@ describe('alm-conformance recipe family', () => {
                 const routed = toRecipes([scenario])
                     .flatMap((recipe) => recipe.commands.flatMap(toRoutedTypeIds));
 
+                const pairTypeId = `alm.conformance.${carrier}.${scenario.scenarioKey}`;
+
                 expect(routed.length).toBeGreaterThan(0);
-                expect(new Set(routed)).toEqual(new Set([`alm.conformance.${carrier}.${scenario.scenarioKey}`]));
+                // A cell's cues may travel on a type of their own, which is still the pair's.
+                expect(new Set(routed.filter((typeId) => typeId !== `${pairTypeId}-cues`))).toEqual(new Set([pairTypeId]));
             }
         }
     });
@@ -731,6 +748,7 @@ describe('alm-conformance recipe family', () => {
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
+            'receipted-audience',
             ...AUDIENCE_KEYS,
             ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             ...CLAIM_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
@@ -767,6 +785,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
@@ -1002,6 +1022,8 @@ describe('alm-conformance recipe family', () => {
             const tails = {
                 'aggregated-receipt': ['acknowledged', 2, 2, 0, 0],
                 'unknown-ack-version': ['acknowledged', 2, 2, 0, 0],
+                'unsigned-ack-refused': ['acknowledged', 2, 2, 0, 0],
+                'forged-recipient-ack': ['acknowledged', 2, 2, 0, 0],
                 'frozen-audience-membership': ['expired', 2, 1, 1, 0]
             } as const;
             for (const [key, [ending, expected, confirmed, unconfirmed, outside]] of Object.entries(tails)) {
@@ -1142,6 +1164,83 @@ describe('alm-conformance recipe family', () => {
                         '"typeId":"al.control.ack.v2","carrier":"rtc","outcome":"rejected","reason":"unsupported"'
                 })
             }));
+        });
+
+        it('answers the send with an unsigned v3 ACK over the rtc leg, admitted, and waits for the origin to refuse its proof missing-proof', () => {
+            for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
+                const scenario = receiptedOf(carrier, 'unsigned-ack-refused');
+                const arrival = `{resultCache.alm-${carrier}-unsigned-ack-refused-recipient-b-received-send-1.value.event.payload`;
+                const body = bodyOf(scenario.recipientB);
+                expect(body).toMatchObject([
+                    { kind: 'wait' },
+                    {
+                        kind: 'messages.control',
+                        carrier: 'rtc',
+                        typeId: 'al.control.ack.v3',
+                        msgId: `alm-${carrier}-unsigned-ack-refused-unsigned-ack-${arrival}.data.msgId}`,
+                        ackedMsgId: `${arrival}.data.msgId}`,
+                        toPeerId: `${arrival}.senderId}`
+                    },
+                    { kind: 'assert', expected: 'admitted' },
+                    { kind: 'messages.received', count: 2, absent: true }
+                ]);
+                expect(body[1]).not.toHaveProperty('logicalRecipientPeerId');
+            }
+            expect(receiptedOf('rtc', 'unsigned-ack-refused').sender.commands).toContainEqual(expect.objectContaining({
+                kind: 'wait',
+                match: expect.objectContaining({
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    contains: '"msgId":"alm-rtc-unsigned-ack-refused-unsigned-ack-' +
+                        '{resultCache.alm-rtc-unsigned-ack-refused-sender-send-1.value.msgId}",' +
+                        '"typeId":"al.control.ack.v3",' +
+                        '"targetMsgId":"{resultCache.alm-rtc-unsigned-ack-refused-sender-send-1.value.msgId}",' +
+                        '"outcome":"rejected","reason":"',
+                    payloadFields: { 'data.kind': 'control-admission', 'data.proofRefusal': 'missing-proof' }
+                })
+            }));
+        });
+
+        it('has the receiver forge recipient-b\'s ACK from its cue while recipient-b holds its own until the sender read the receipt mid-window', () => {
+            const scenario = receiptedOf('rtc', 'forged-recipient-ack');
+            const forgery = bodyOf(scenario.receiver).find((command) => command.kind === 'messages.control');
+            expect(forgery).toMatchObject({
+                kind: 'messages.control',
+                typeId: 'al.control.ack.v3',
+                logicalRecipientPeerId: '{resultCache.alm-rtc-forged-recipient-ack-cues-receiver-cue-victim-received.value.event.payload.senderId}'
+            });
+            expect(bodyOf(scenario.recipientB).map(shapeOf)).toEqual([
+                'fault.inject:rtc:until-cleared',
+                'messages.send',
+                'messages.observe',
+                'wait:message',
+                'messages.send',
+                'messages.observe',
+                'received:1',
+                'wait:message',
+                'fault.inject:rtc:0'
+            ]);
+            const cueSends = [scenario.sender, scenario.receiver, scenario.recipientB].flatMap((recipe) =>
+                recipe.commands.filter(isRallarBlackBoxTestMessagesSendCommand).filter((command) => command.commandId?.includes('-cue-') === true)
+            );
+            expect(cueSends.length).toBeGreaterThan(0);
+            for (const command of cueSends) {
+                expect(command.typeId, command.commandId).toMatch(/\.forged-recipient-ack-cues$/);
+            }
+            const indexOf = (suffix: string) => scenario.sender.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            const refusal = scenario.sender.commands.findIndex((command) =>
+                command.kind === 'wait' && command.match.kind === 'diagnostic' &&
+                command.match.payloadFields?.['data.proofRefusal'] === 'missing-proof'
+            );
+            const midWindow = indexOf('-sender-receipts-mid-window');
+            const release = indexOf('-sender-cue-release');
+            expect(refusal).toBeGreaterThan(-1);
+            expect(scenario.sender.commands[midWindow]?.kind).toBe('messages.receipts');
+            expect(refusal).toBeLessThan(midWindow);
+            expect(midWindow).toBeLessThan(release);
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
+                expect(keys.includes('forged-recipient-ack'), carrier).toBe(carrier === 'rtc');
+            }
         });
 
         it(

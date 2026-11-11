@@ -38,7 +38,15 @@ function toScenarios(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]) {
 
 describe('ALM run on an agent per role', () => {
     it('selects exactly the exhausted repair, paced list-isolation, receipted-audience, membership fence, leader, claim and reply-first-wins scenarios for the three-agent family on every carrier', () => {
-        const rtcScenarioKeys = ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'];
+        const rtcScenarioKeys = [
+            'aggregated-receipt',
+            'missing-recipient-retry',
+            'unknown-ack-version',
+            'unsigned-ack-refused',
+            'forged-recipient-ack',
+            'frozen-audience-membership'
+        ];
+        const fallbackScenarioKeys = rtcScenarioKeys.filter((key) => key !== 'forged-recipient-ack');
         const expectedKeys = {
             ws: [
                 'paced-isolation-lists',
@@ -68,7 +76,7 @@ describe('ALM run on an agent per role', () => {
             'rtc-with-ws-fallback': [
                 'repair-exhausted',
                 'paced-isolation-lists',
-                ...rtcScenarioKeys,
+                ...fallbackScenarioKeys,
                 'leader-confirms',
                 'claim-first-wins'
             ]
