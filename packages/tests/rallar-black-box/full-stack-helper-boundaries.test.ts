@@ -535,6 +535,34 @@ describe('control poll timeouts', () => {
         }
     });
 
+    it('reads a root once however often its outcome is read, so a later read past the grace cancels nothing', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            // The root's result is there at the first read, which moves the clock past the deadline and the grace.
+            const { run, readCount } = createSilentRun(control.request, 250_000, () => [{
+                kind: 'result',
+                protocolVersion: 1,
+                runId: 'poll-timeout',
+                agentId: 'sender',
+                commandId: rootCommandId,
+                ok: true
+            }]);
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            const first = await started.readOutcome();
+            const second = await started.readOutcome();
+
+            expect(second).toEqual(first);
+            expect(first).toEqual({ commandId: rootCommandId, ok: true, summary: 'ok' });
+            expect(readCount()).toBe(1);
+            expect(toPostedKinds(control)).toEqual(['recipe.run']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
     it('rejects when neither the root nor its cancel settles within the grace, so no later cell runs on the pages', async () => {
         const control = await openRecordingControlRequest('poll-timeout');
         try {

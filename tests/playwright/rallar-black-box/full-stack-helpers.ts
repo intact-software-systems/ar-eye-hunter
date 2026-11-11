@@ -332,7 +332,7 @@ const RUNNER_PANEL_TARGETS: Partial<Readonly<Record<ExhaustiveTabId, RunnerPanel
 const COMMAND_RESULT_TOPIC = 'rallar.bb.command.result';
 const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
 const RECIPE_RUN_TIMEOUT_MS = 180_000;
-/** The agent closes its runtime before it reports an overrun or a cancel; the lane's own close budget is 30 s. */
+/** Covers the agent's dispatch latency (its deadline starts at dispatch, the lane's at enqueue) and its cleanup. */
 const RECIPE_RESULT_GRACE_MS = 30_000;
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
 const CONTROL_POLL_INTERVAL_MS = 250;
@@ -681,7 +681,10 @@ export async function runRecipePairOnTwoAgents(
     return requireRecipePairOutcome(await Promise.allSettled([senderRun.readOutcome(), receiverRun.readOutcome()]));
 }
 
-/** Accepts the root and captures its original result deadline without starting an unowned observer. */
+/**
+ * Accepts the root and captures its original result deadline without starting an unowned observer. Every reader shares
+ * the one read: a later read past the deadline and grace must not cancel a root that already ended.
+ */
 export async function startRecipeRun(
     run: RecipeRun,
     agent: RecipeRunAgent,
@@ -694,7 +697,8 @@ export async function startRecipeRun(
         commandId,
         cancel: { kind: 'recipe.cancel', targetCommandId: commandId, reason: toRecipeCancelReason(commandId) }
     };
-    return { commandId, readOutcome: () => readRecipeRunOutcome(run, root, deadlineAtMs) };
+    let outcome: Promise<RecipeRunOutcome> | undefined;
+    return { commandId, readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs) };
 }
 
 /** Starts a recipient recipe and returns once its connect barrier releases, so a sender can start after it. */

@@ -165,7 +165,8 @@ async function runSuccessorBesideOwner(
         gatingRun: ownerRun,
         timeoutMs: SUCCESSOR_GATE_TIMEOUT_MS
     });
-    return { sender: ownerRun.readOutcome(), successor: await startRecipeRun(run, pages.successor, recipes.successor) };
+    const successor = await startRecipeRun(run, pages.successor, recipes.successor);
+    return { sender: ownerRun.readOutcome(), successor };
 }
 
 function requireOutcome(outcome: PromiseSettledResult<RecipeRunOutcome>): RecipeRunOutcome {
