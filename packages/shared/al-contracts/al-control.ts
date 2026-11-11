@@ -12,6 +12,7 @@ import {
     isALControlTypeId
 } from './al-control-type-ids.ts';
 import {
+    AL_ACK_STATUSES,
     decodeALAckPayload,
     decodeALNackPayload,
     decodeALReceiptPayload,
@@ -26,14 +27,6 @@ import {
     AL_MESSAGE_RESOURCE_LIMITS
 } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
-
-export const AL_ACK_STATUSES = [
-    'accepted',
-    'delivered',
-    'forwarded',
-    'subtree-complete',
-    'subtree-complete-not-subscribed'
-] as const;
 
 /**
  * `subtree-complete-not-subscribed` ends the hop of a frozen recipient that delivered nothing, having answered

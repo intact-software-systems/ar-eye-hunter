@@ -1,4 +1,4 @@
-import { AL_ACK_STATUSES } from '../../../packages/shared/al-contracts/al-control.ts';
+import { AL_ACK_STATUSES } from '../../../packages/shared/al-contracts/al-control-value-codec.ts';
 import {
     AL_DELIVERY_REFUSAL_REASONS,
     AL_DELIVERY_SKIPPED_REASONS,

@@ -1,16 +1,15 @@
 import { isBase64UrlOfByteLength } from '../encoding/base64url.ts';
 import { ECDSA_P256_KEY_ID_BYTES, ECDSA_P256_SIGNATURE_BYTES } from '../signature/ecdsa-p256-signature.ts';
 import type { SignatureProof } from '../signature/signature-proof.ts';
-import {
-    AL_ACK_STATUSES,
-    type ALAckPayload,
-    type ALAckStatus,
-    type ALNackPayload,
-    type ALNackReason,
-    type ALPendingAckSnapshot,
-    type ALReceiptPayload,
-    type ALRepairPayload,
-    type ALRepairReason
+import type {
+    ALAckPayload,
+    ALAckStatus,
+    ALNackPayload,
+    ALNackReason,
+    ALPendingAckSnapshot,
+    ALReceiptPayload,
+    ALRepairPayload,
+    ALRepairReason
 } from './al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from './al-message-resource-limits.ts';
 import type { ALSeqRange } from './al-runtime.ts';
@@ -334,6 +333,14 @@ function readControlArrayEntries(value: unknown, limit: number, label: string): 
     }
     return result;
 }
+
+export const AL_ACK_STATUSES = [
+    'accepted',
+    'delivered',
+    'forwarded',
+    'subtree-complete',
+    'subtree-complete-not-subscribed'
+] as const;
 
 function decodeAckStatus(value: unknown): ALAckStatus {
     const status = AL_ACK_STATUSES.find((candidate) => candidate === value);
