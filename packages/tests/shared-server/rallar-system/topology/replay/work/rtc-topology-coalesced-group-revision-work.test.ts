@@ -626,13 +626,13 @@ describe('a head stamped with an unsupported envelope version (#782)', () => {
 });
 
 function toEntryWithEnvelopeVersion(entry: ResourceEntry, version: number): ResourceEntry {
-    const message = JSON.parse(entry.resource) as { id: Record<string, unknown>; };
+    const message = decodePersistedALMessage(entry.resource);
     return { ...entry, resource: JSON.stringify({ ...message, id: { ...message.id, v: version } }) };
 }
 
 function withoutCoalescedWork(entry: ResourceEntry): ResourceEntry {
-    const message = JSON.parse(entry.resource) as { payload: { resource: string; }; };
-    const envelope = JSON.parse(message.payload.resource) as { data: Record<string, unknown>; };
+    const message = decodePersistedALMessage(entry.resource);
+    const envelope = readPersistedGroupRevisionEnvelope(entry);
     const { [COALESCED_APP_OUTBOX_WORK_FIELD]: _dropped, ...data } = envelope.data;
     const payload = { ...message.payload, resource: JSON.stringify({ ...envelope, data }) };
     return { ...entry, resource: JSON.stringify({ ...message, payload }) };

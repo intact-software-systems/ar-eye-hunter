@@ -29,7 +29,7 @@ function createValidEntry(): ResourceEntry {
 }
 
 function toEntryWithEnvelopeVersion(entry: ResourceEntry, version: number): ResourceEntry {
-    const message = JSON.parse(entry.resource) as { id: Record<string, unknown>; };
+    const message = readRtcTopologyWorkEntry(entry);
     return { ...entry, resource: JSON.stringify({ ...message, id: { ...message.id, v: version } }) };
 }
 
