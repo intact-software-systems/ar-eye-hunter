@@ -1,3 +1,4 @@
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
     describe,
     expect,
@@ -54,9 +55,7 @@ describe('browser IndexedDB terminal ownership', () => {
         vi.spyOn(heartbeat, 'initHeartbeat').mockResolvedValue({ sessionId: session.sessionId, generationId: 'heartbeat', stop: () => {} });
         const options = {
             rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' } as const,
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             onResyncRequired: () => {},
@@ -136,9 +135,7 @@ describe('browser IndexedDB terminal ownership', () => {
             'rtc',
             {
                 rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-                qosProvider: undefined,
-                readVolatileSessionLimits: undefined,
-                readPublicationStageLimits: undefined,
+                ...createDefaultBrowserSessionQosInputs(),
                 deliverySettlements: { ws: () => {}, rtc: () => {} },
                 diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
                 onResyncRequired: () => {},

@@ -105,7 +105,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         });
         await expect(createBrowserWebSocketQueueBox({
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
@@ -141,7 +141,7 @@ describe('createBrowserWebSocketQueueBox', () => {
 
         const initialized = createBrowserWebSocketQueueBox({
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
@@ -199,7 +199,7 @@ describe('createBrowserWebSocketQueueBox', () => {
 
         const initialized = createBrowserWebSocketQueueBox({
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
@@ -245,7 +245,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
@@ -305,7 +305,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
@@ -434,7 +434,7 @@ async function openWsClient(input: OpenWsClientInput): Promise<WsQueueBoxClientS
     onTestFinished(() => qboxEngine.stop());
     const initialized = createBrowserWebSocketQueueBox({
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
+        qosProvider: {},
         submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
         outboundSettlements: () => {},
         newConnectionRequestId: undefined,

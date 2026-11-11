@@ -50,7 +50,7 @@ export async function openRecoveryOwner({
     const settlements: ALDeliverySettlement[] = [];
     const connecting = createBrowserWebSocketQueueBox({
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
+        qosProvider: {},
         submissionReadinessFaultPort: faults,
         outboundSettlements: (event) => settlements.push(event),
         newConnectionRequestId: undefined,

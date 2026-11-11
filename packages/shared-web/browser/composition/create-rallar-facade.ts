@@ -42,6 +42,7 @@ import {
     createBrowserCrdtComposition,
     createBrowserSessionCoreComposition,
     createBrowserStartupComposition,
+    createDefaultBrowserSessionQosInputs,
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition,
     type BrowserStartupComposition
@@ -180,9 +181,7 @@ function createBrowserSessionMessaging(
         topicSubscriptions,
         publicationVerifier,
         sessionDeliveries,
-        qosProvider: undefined,
-        readVolatileSessionLimits: undefined,
-        readPublicationStageLimits: undefined,
+        ...createDefaultBrowserSessionQosInputs(),
         onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
     });
     const sessionPort = session.session;

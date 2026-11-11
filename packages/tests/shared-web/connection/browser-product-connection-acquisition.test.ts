@@ -198,11 +198,10 @@ async function createOwnedSession(): Promise<RallarSessionController> {
     const { browserDeliveryComposition } = await import('@shared-web/browser/composition/browser-delivery-composition.ts');
     const { BrowserSessionDeliveries } = await import('@shared-web/browser/messages/browser-session-deliveries.ts');
     const { createRallarSessionController } = await import('@shared-web/browser/session/rallar-session-controller.ts');
+    const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
     const foundation = createBrowserRuntimeFoundation();
     return createRallarSessionController({
-        qosProvider: undefined,
-        readVolatileSessionLimits: undefined,
-        readPublicationStageLimits: undefined,
+        ...createDefaultBrowserSessionQosInputs(),
         sessionDeliveries: new BrowserSessionDeliveries(browserDeliveryComposition.deliveries, foundation.transportRuntime, mocks.readSession),
         onResyncRequired: () => {},
         subtle: undefined,

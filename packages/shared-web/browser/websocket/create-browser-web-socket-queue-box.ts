@@ -40,7 +40,7 @@ import {
 
 export namespace CreateBrowserWebSocketQueueBox {
     export interface Input {
-        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly qosProvider: ALQosInputProvider;
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly outboundSettlements: ALDeliverySettlementSink;
         readonly qboxEngine: InboxOutboxEngine;

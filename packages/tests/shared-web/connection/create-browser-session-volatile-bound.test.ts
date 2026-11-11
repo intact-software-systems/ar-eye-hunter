@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import { createBrowserSessionVolatileBound } from '@shared-web/browser/connection/create-browser-session-volatile-bound.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -24,10 +25,9 @@ function toAdmission(msgId: string, bytes = 1): ALVolatileSessionBudget.Admissio
 }
 
 describe('the session volatile bound the middleware builds (C3, C13)', () => {
-    it('bounds a session by D74\'s two constants when the composition gives no reader', () => {
+    it('bounds a session by D74\'s two constants under the product\'s default inputs', () => {
         const bound = createBrowserSessionVolatileBound({
-            readVolatileSessionLimits: undefined,
-            qosProvider: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             nowMs: () => NOW_MS
         });
 
@@ -46,7 +46,7 @@ describe('the session volatile bound the middleware builds (C3, C13)', () => {
         const answers = [{ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2, maxBytes: 4_096 }];
         const bound = createBrowserSessionVolatileBound({
             readVolatileSessionLimits: () => answers.shift() ?? { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1_000, maxBytes: 4_096 },
-            qosProvider: undefined,
+            qosProvider: {},
             nowMs: () => NOW_MS
         });
 

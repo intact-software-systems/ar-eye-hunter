@@ -39,7 +39,7 @@ function createBoundQosProvider(atTheBound: boolean): ALQosInputProvider {
             trackKey: undefined
         });
     }
-    return toALVolatileSessionQosProvider(undefined, budget, Date.now);
+    return toALVolatileSessionQosProvider({}, budget, Date.now);
 }
 
 /** The origin `a` whose session budget of one is full exactly when `atTheBound`. */

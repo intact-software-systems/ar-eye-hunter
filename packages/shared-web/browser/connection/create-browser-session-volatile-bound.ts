@@ -1,6 +1,5 @@
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import {
-    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget,
     type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -12,15 +11,15 @@ export interface BrowserSessionVolatileBound {
 }
 
 export interface CreateBrowserSessionVolatileBoundInput {
-    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
-    readonly qosProvider: ALQosInputProvider | undefined;
+    readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
+    readonly qosProvider: ALQosInputProvider;
     readonly nowMs: () => number;
 }
 
 export function createBrowserSessionVolatileBound(
     input: CreateBrowserSessionVolatileBoundInput
 ): BrowserSessionVolatileBound {
-    const budget = new ALVolatileSessionBudget(input.readVolatileSessionLimits?.() ?? AL_VOLATILE_SESSION_LIMITS);
+    const budget = new ALVolatileSessionBudget(input.readVolatileSessionLimits());
     return {
         budget,
         qosProvider: toALVolatileSessionQosProvider(input.qosProvider, budget, input.nowMs)

@@ -150,6 +150,7 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('fences cancelled direct transport construction and snapshots caller configuration', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const firstUp = Promise.withResolvers<BrowserConnectedMiddleware>();
         const secondUp = Promise.withResolvers<BrowserConnectedMiddleware>();
         const configurations: Array<{ readonly mode: string; readonly origin: string; }> = [];
@@ -162,9 +163,7 @@ describe('immutable RTC capture on browser connections', () => {
         const options = {
             rtcCaptureConfiguration: configuration,
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
@@ -214,6 +213,7 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('leaves no pending capture selection when synchronous transport setup fails', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const failure = new Error('channel unavailable');
         let failSetup = true;
         const openSessionChannel = vi.fn<BrowserTransportRuntime.Input['openSessionChannelPort']>().mockReturnValue(undefined);
@@ -227,9 +227,7 @@ describe('immutable RTC capture on browser connections', () => {
         const options = {
             rtcCaptureConfiguration: { mode: 'off' as const, origin: 'step' as const },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
@@ -255,12 +253,11 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('holds the selected mode during synchronous setup reentry', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const options = {
             rtcCaptureConfiguration: { mode: 'off' as const, origin: 'step' as const },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
@@ -288,6 +285,7 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('shares one graph and the original receipt during compatible transport setup reentry', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const configurations: Array<{ readonly mode: string; readonly origin: string; }> = [];
         mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             configurations.push(options.rtcCaptureConfiguration);
@@ -305,9 +303,7 @@ describe('immutable RTC capture on browser connections', () => {
         const options = {
             rtcCaptureConfiguration: { mode: 'off' as const, origin: 'host' as const },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
@@ -341,6 +337,7 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('settles one session lifecycle during compatible synchronous setup reentry', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const { BrowserFacadeRuntimeState } = await import('@shared-web/browser/composition/browser-facade-runtime-state.ts');
         const { BrowserSessionConnectionLifecycle } = await import('@shared-web/browser/session/session-connection-lifecycle.ts');
         const { createRallarLifecycleCoordinator } = await import('@shared-web/browser/session/rallar-lifecycle-coordinator.ts');
@@ -370,9 +367,7 @@ describe('immutable RTC capture on browser connections', () => {
         const phases: string[] = [];
         lifecycle.register({ id: 'capture-proof', order: 0, attach: (middleware) => attachments.push(middleware), connected: () => phases.push('connected') });
         const connection = new BrowserSessionConnectionLifecycle({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
@@ -418,13 +413,12 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('rejects a compatible transport waiter with the original synchronous setup failure', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const failure = new Error('reentrant setup unavailable');
         const options = {
             rtcCaptureConfiguration: { mode: 'off' as const, origin: 'host' as const },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
@@ -462,13 +456,12 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('preserves a replacement transport reservation when the older synchronous setup throws', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const failure = new Error('older setup failed');
         const options = {
             rtcCaptureConfiguration: { mode: 'off' as const, origin: 'host' as const },
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: Promise.resolve(UNAVAILABLE_PUBLICATION_CRYPTO),
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
@@ -505,6 +498,7 @@ describe('immutable RTC capture on browser connections', () => {
 
     it('clears the session reservation and rejects both compatible callers when synchronous setup fails', async () => {
         const { BrowserTransportRuntime } = await import('@shared-web/browser/connection/browser-transport-runtime.ts');
+        const { createDefaultBrowserSessionQosInputs } = await import('@shared-web/browser/composition/browser-session-composition.ts');
         const { BrowserFacadeRuntimeState } = await import('@shared-web/browser/composition/browser-facade-runtime-state.ts');
         const { BrowserSessionConnectionLifecycle } = await import('@shared-web/browser/session/session-connection-lifecycle.ts');
         const { createRallarLifecycleCoordinator } = await import('@shared-web/browser/session/rallar-lifecycle-coordinator.ts');
@@ -521,9 +515,7 @@ describe('immutable RTC capture on browser connections', () => {
         lifecycle.register({ id: 'failure-proof', order: 0, attach: () => phases.push('attach'), connected: () => phases.push('connected') });
         const connectionRuntime = new BrowserFacadeRuntimeState(transport);
         const connection = new BrowserSessionConnectionLifecycle({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             onResyncRequired: () => {},
             publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
             publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,

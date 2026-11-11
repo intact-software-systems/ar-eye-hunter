@@ -8,16 +8,16 @@ import type { ALVolatileSessionBudget } from './al-volatile-session-budget.ts';
  * that read it would stop this session acknowledging, forwarding and delivering for other sessions at its bound.
  */
 export function toALVolatileSessionQosProvider(
-    provider: ALQosInputProvider | undefined,
+    provider: ALQosInputProvider,
     budget: ALVolatileSessionBudget,
     nowMs: () => number
 ): ALQosInputProvider {
     return {
-        defaultsForMessage: (msg, context) => provider?.defaultsForMessage?.(msg, context),
-        capabilitiesForMessage: (msg, context) => provider?.capabilitiesForMessage?.(msg, context),
-        authorizationForMessage: (msg, context) => provider?.authorizationForMessage?.(msg, context),
+        defaultsForMessage: (msg, context) => provider.defaultsForMessage?.(msg, context),
+        capabilitiesForMessage: (msg, context) => provider.capabilitiesForMessage?.(msg, context),
+        authorizationForMessage: (msg, context) => provider.authorizationForMessage?.(msg, context),
         liveForMessage: (msg, context) => {
-            const live = provider?.liveForMessage?.(msg, context);
+            const live = provider.liveForMessage?.(msg, context);
             return isALSessionDataOrigination(msg, context) && budget.readReport(nowMs()).overloaded
                 ? { ...live, overloaded: true }
                 : live;

@@ -46,10 +46,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
-import {
-    AL_PUBLICATION_STAGE_LIMITS,
-    type ALPublicationStageLimits
-} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALCheckpointPort } from '@shared/alm/checkpoint/al-checkpoint.ts';
 import type {
     ALInboundRuntimeStores,
@@ -106,10 +103,10 @@ import type { BrowserDeliverySettlements } from './browser-delivery-settlements.
 
 export interface MiddlewareInitOptions {
     readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
-    readonly qosProvider: ALQosInputProvider | undefined;
-    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
-    /** Read once per connect, as the volatile limits are; absent, the stage holds `AL_PUBLICATION_STAGE_LIMITS`. */
-    readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
+    readonly qosProvider: ALQosInputProvider;
+    readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
+    /** Read once per connect, as the volatile limits are. */
+    readonly readPublicationStageLimits: () => ALPublicationStageLimits;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     /** Where both carriers' inbound runtimes hand a message they can no longer order. */
@@ -367,7 +364,7 @@ export function createBrowserTransportInput(
         ),
         volatileBound,
         inboundOrderingCounters: new BrowserInboundOrderingCountersSink(options.diagnosticsPorts.inboundDiagnostics),
-        publicationStageLimits: options.readPublicationStageLimits?.() ?? AL_PUBLICATION_STAGE_LIMITS,
+        publicationStageLimits: options.readPublicationStageLimits(),
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
         ...publication,
         options,

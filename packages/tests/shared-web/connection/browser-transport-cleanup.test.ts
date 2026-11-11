@@ -1,3 +1,4 @@
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
     describe,
     expect,
@@ -160,9 +161,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => effects.push('disconnected')
         });
         const connection = new BrowserSessionConnectionLifecycle({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
@@ -218,9 +217,7 @@ describe('Browser transport cleanup', () => {
             }
         });
         const connection = new BrowserSessionConnectionLifecycle({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
@@ -274,9 +271,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => effects.push('state-disconnected')
         });
         const connection = new BrowserSessionConnectionLifecycle({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
@@ -331,9 +326,7 @@ describe('Browser transport cleanup', () => {
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const connection = new BrowserSessionConnectionLifecycle({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             onResyncRequired: () => {},
             publicationCrypto: { read: async () => UNAVAILABLE_PUBLICATION_CRYPTO },
@@ -396,9 +389,7 @@ describe('Browser transport cleanup', () => {
 
         const pending = transportRuntime.init({
             rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
             onResyncRequired: () => {},
@@ -482,9 +473,7 @@ describe('Browser transport cleanup', () => {
         });
 
         const sessionController = createRallarSessionController({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
             subtle: undefined,
@@ -547,9 +536,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => cleanupEffects.push('disconnected')
         });
         const sessionController = createRallarSessionController({
-            qosProvider: undefined,
-            readVolatileSessionLimits: undefined,
-            readPublicationStageLimits: undefined,
+            ...createDefaultBrowserSessionQosInputs(),
             ...createDeliveryObservation(transportRuntime),
             onResyncRequired: () => {},
             subtle: undefined,
@@ -608,7 +595,7 @@ describe('the session limit seams', () => {
         const readVolatileSessionLimits = () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 });
         const readPublicationStageLimits = () => ({ ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 });
         const connection = new BrowserSessionConnectionLifecycle({
-            qosProvider: undefined,
+            qosProvider: {},
             readVolatileSessionLimits,
             readPublicationStageLimits,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
@@ -766,9 +753,7 @@ function stubGrantedWebLocks(effects: string[] = []): GrantedWebLocksFixture {
 function toInitOptions(): BrowserTransportInitOptions {
     return {
         rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-        qosProvider: undefined,
-        readVolatileSessionLimits: undefined,
-        readPublicationStageLimits: undefined,
+        ...createDefaultBrowserSessionQosInputs(),
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
         onResyncRequired: () => {},

@@ -1,3 +1,4 @@
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
@@ -132,9 +133,7 @@ function recordFlushes(carrier: string, flushes: string[]): ALCheckpointPort {
 function toInitOptions(): BrowserTransportInitOptions {
     return {
         rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-        qosProvider: undefined,
-        readVolatileSessionLimits: undefined,
-        readPublicationStageLimits: undefined,
+        ...createDefaultBrowserSessionQosInputs(),
         deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
         onResyncRequired: () => {},

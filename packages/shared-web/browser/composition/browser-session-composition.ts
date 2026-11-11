@@ -17,10 +17,16 @@ import {
     type RallarSessionIdentity
 } from '@shared-web/browser/session/session-identity.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
-import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import {
+    AL_PUBLICATION_STAGE_LIMITS,
+    type ALPublicationStageLimits
+} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
-import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
+    AL_VOLATILE_SESSION_LIMITS,
+    type ALVolatileSessionLimits
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
@@ -47,10 +53,16 @@ export interface BrowserCrdtComposition {
     readonly crdt: RallarCrdtFacade;
 }
 
-export interface CreateBrowserSessionCoreCompositionInput {
-    readonly qosProvider: ALQosInputProvider | undefined;
-    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
-    readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
+/** What a composition root decides for its sessions: the application's QoS inputs and the two limit read ports. */
+export interface BrowserSessionQosInputs {
+    readonly qosProvider: ALQosInputProvider;
+    /** Read once per session initialisation (D74). */
+    readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
+    /** Read once per session initialisation (D477). */
+    readonly readPublicationStageLimits: () => ALPublicationStageLimits;
+}
+
+export interface CreateBrowserSessionCoreCompositionInput extends BrowserSessionQosInputs {
     readonly sessionDeliveries: BrowserSessionDeliveries;
     /** Each connect's inbound runtimes hand their resynchronizations here. */
     readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
@@ -71,6 +83,15 @@ export interface CreateBrowserCrdtCompositionInput {
     readonly session: BrowserSessionCoreComposition;
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
+}
+
+/** The product's inputs: no application QoS, the shipped volatile bound and publication stage limits. */
+export function createDefaultBrowserSessionQosInputs(): BrowserSessionQosInputs {
+    return {
+        qosProvider: {},
+        readVolatileSessionLimits: () => AL_VOLATILE_SESSION_LIMITS,
+        readPublicationStageLimits: () => AL_PUBLICATION_STAGE_LIMITS
+    };
 }
 
 export function createBrowserSessionCoreComposition(

@@ -287,7 +287,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
     const manager = initialiseRtcOverlayMulticastManager({
         faultPort: runtime.faults,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
+        qosProvider: {},
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
         outboundSettlements: (event) => runtime.registry.record(event),
@@ -377,7 +377,7 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
 async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) {
     const connecting = createBrowserWebSocketQueueBox({
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
+        qosProvider: {},
         submissionReadinessFaultPort: runtime.faults,
         outboundSettlements: (event) => runtime.registry.record(event),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event),

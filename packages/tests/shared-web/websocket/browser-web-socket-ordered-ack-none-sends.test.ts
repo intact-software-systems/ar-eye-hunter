@@ -104,7 +104,7 @@ async function openOrderedSender(leaseMs: number): Promise<OrderedSender> {
     const budget = createDefaultVolatileSessionBudget();
     const connecting = createBrowserWebSocketQueueBox({
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
+        qosProvider: {},
         submissionReadinessFaultPort: toRallarDiagnosticsPorts(undefined).submissionReadinessFaultPort,
         outboundSettlements: (event) => settlements.push(event),
         newConnectionRequestId: undefined,
