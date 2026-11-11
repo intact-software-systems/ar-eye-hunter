@@ -7,6 +7,7 @@ import {
 import { createRallarBlackBoxRtcSmokeRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
 import {
     computeRtcMessagesDeliveryPollWindowMs,
+    computeRtcMessagesRelayHoldMs,
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
@@ -197,10 +198,43 @@ describe('rallar-bb-test recipe fixtures', () => {
                 }
             ]
         });
+        const pollIndex = receiver.commands.findIndex(
+            (command) => command.commandId === 'rtc-messages-principal-receiver-delivery-poll'
+        );
+        expect(receiver.commands[pollIndex + 1]).toMatchObject({
+            kind: 'loop',
+            commandId: 'rtc-messages-principal-receiver-relay-hold',
+            intervalMs: 1_000,
+            count: 8,
+            maxCommands: 8,
+            commands: [{ kind: 'stats', commandId: 'rtc-messages-principal-receiver-relay-hold-stats' }]
+        });
+        expect(receiver.commands[pollIndex + 2]).toMatchObject({
+            commandId: 'rtc-messages-principal-receiver-final-stats'
+        });
         expect(receiver.commands.filter((command) => command.kind === 'assert')).toEqual([]);
         expect(receiver.commands.find((command) => command.commandId === 'rtc-messages-principal-receiver-stats-loop'))
             .toBeUndefined();
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, receiver).ok).toBe(true);
+    });
+
+    it('derives the relay hold from the delivery shortfall the threshold tolerates plus the tail', () => {
+        const principal = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({ participantCount: 50 })[1];
+        const principalHold = principal.commands.find((command) => command.commandId === 'rtc-messages-principal-receiver-relay-hold');
+
+        expect(computeRtcMessagesRelayHoldMs({
+            frameCount: 600,
+            intervalMs: 50,
+            expectedInboundMessages: 600,
+            minExpectedInboundMessages: 570
+        })).toBe(6_500);
+        expect(computeRtcMessagesRelayHoldMs({
+            frameCount: 150,
+            intervalMs: 200,
+            expectedInboundMessages: 7_350,
+            minExpectedInboundMessages: 6_615
+        })).toBe(8_000);
+        expect(principalHold).toMatchObject({ metadata: { purpose: 'relay-hold', relayHoldMs: 6_500 } });
     });
 
     it('paces the principal delivery poll at the mid-stream stats interval and stays inside the command limits for long runs', () => {
@@ -312,6 +346,19 @@ describe('rallar-bb-test recipe fixtures', () => {
             commandId: 'rtc-messages-all-peer-final-stats'
         });
         expect(pollWindowMs).toBe(135_000);
+        const allPeerPollIndex = recipe.commands.findIndex(
+            (command) => command.commandId === 'rtc-messages-all-peer-delivery-poll'
+        );
+        expect(recipe.commands[allPeerPollIndex + 1]).toMatchObject({
+            kind: 'loop',
+            commandId: 'rtc-messages-all-peer-relay-hold',
+            intervalMs: 1_000,
+            count: 9,
+            commands: [{ kind: 'stats', commandId: 'rtc-messages-all-peer-relay-hold-stats' }]
+        });
+        expect(recipe.commands[allPeerPollIndex + 2]).toMatchObject({
+            commandId: 'rtc-messages-all-peer-final-stats'
+        });
         expect(recipe.commands.filter((command) => command.kind === 'assert')).toEqual([]);
         expect(recipe.commands.find((command) => command.commandId === 'rtc-messages-all-peer-receiver-stats-loop'))
             .toBeUndefined();

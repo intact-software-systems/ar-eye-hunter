@@ -36,18 +36,21 @@ describe('world fleet distributed manifest catalog', () => {
         }
     });
 
-    it('recommends a terminal timeout that outlasts every multicast delivery poll window', () => {
+    it('recommends a terminal timeout that outlasts every multicast delivery poll window and relay hold', () => {
         for (const entry of createWorldFleetDistributedManifestCatalog()) {
-            const polls = manifestCommands(entry.manifest).filter(
-                (command) => command.kind === 'loop' && command.commandId?.endsWith('-delivery-poll')
+            const loops = manifestCommands(entry.manifest).filter(
+                (command) =>
+                    command.kind === 'loop' &&
+                    (command.commandId?.endsWith('-delivery-poll') || command.commandId?.endsWith('-relay-hold'))
+            );
+            const waitMs = loops.reduce(
+                (sum, command) => sum + (command.kind === 'loop' ? (command.count ?? 0) * (command.intervalMs ?? 0) : 0),
+                0
             );
             const terminalSeconds = Number(entry.manifest.metadata?.recommendedTerminalTimeoutSeconds);
 
-            expect(polls.length, entry.manifest.distributedRunId).toBeGreaterThan(0);
-            for (const poll of polls) {
-                const windowMs = poll.kind === 'loop' ? (poll.count ?? 0) * (poll.intervalMs ?? 0) : 0;
-                expect(terminalSeconds * 1_000, entry.manifest.distributedRunId).toBeGreaterThan(windowMs);
-            }
+            expect(loops.length, entry.manifest.distributedRunId).toBe(2);
+            expect(terminalSeconds * 1_000, entry.manifest.distributedRunId).toBeGreaterThan(waitMs);
         }
     });
 

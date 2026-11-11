@@ -220,7 +220,7 @@ function allPeerEntry(
             rateHz: input.rateHz,
             minReceiveRatio: input.minReceiveRatio,
             receiverExpectedFrames: input.receiverExpectedFrames,
-            recommendedTerminalTimeoutSeconds: long ? 4_200 : 330
+            recommendedTerminalTimeoutSeconds: long ? 4_500 : 330
         })
     });
 }

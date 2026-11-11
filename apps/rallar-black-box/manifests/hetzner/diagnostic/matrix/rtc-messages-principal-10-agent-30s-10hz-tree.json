@@ -463,6 +463,51 @@
             ]
           },
           {
+            "kind": "loop",
+            "commandId": "rtc-messages-principal-receiver-relay-hold",
+            "count": 8,
+            "intervalMs": 1000,
+            "maxCommands": 8,
+            "metadata": {
+              "profile": "rtc-messages-principal-multicast-receiver",
+              "transport": "messages.rtc",
+              "participantCount": 10,
+              "senderCount": 1,
+              "receiverCount": 9,
+              "rateHz": 10,
+              "intervalMs": 100,
+              "durationSeconds": 30,
+              "frameCount": 300,
+              "expectedInboundMessages": 300,
+              "minExpectedInboundMessages": 285,
+              "minReceiveRatio": 0.95,
+              "logicalFanoutMessages": 2700,
+              "purpose": "relay-hold",
+              "relayHoldMs": 6500
+            },
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "rtc-messages-principal-receiver-relay-hold-stats",
+                "metadata": {
+                  "profile": "rtc-messages-principal-multicast-receiver",
+                  "transport": "messages.rtc",
+                  "participantCount": 10,
+                  "senderCount": 1,
+                  "receiverCount": 9,
+                  "rateHz": 10,
+                  "intervalMs": 100,
+                  "durationSeconds": 30,
+                  "frameCount": 300,
+                  "expectedInboundMessages": 300,
+                  "minExpectedInboundMessages": 285,
+                  "minReceiveRatio": 0.95,
+                  "logicalFanoutMessages": 2700
+                }
+              }
+            ]
+          },
+          {
             "kind": "stats",
             "commandId": "rtc-messages-principal-receiver-final-stats",
             "metadata": {

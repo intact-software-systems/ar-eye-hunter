@@ -322,6 +322,51 @@
             ]
           },
           {
+            "kind": "loop",
+            "commandId": "rtc-messages-all-peer-relay-hold",
+            "count": 66,
+            "intervalMs": 1000,
+            "maxCommands": 66,
+            "metadata": {
+              "profile": "rtc-messages-all-peer-multicast",
+              "transport": "messages.rtc",
+              "participantCount": 10,
+              "senderCount": 10,
+              "receiverCount": 10,
+              "rateHz": 20,
+              "intervalMs": 50,
+              "durationSeconds": 300,
+              "frameCount": 6000,
+              "expectedInboundMessages": 54000,
+              "minExpectedInboundMessages": 43200,
+              "minReceiveRatio": 0.8,
+              "logicalFanoutMessages": 540000,
+              "purpose": "relay-hold",
+              "relayHoldMs": 65000
+            },
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "rtc-messages-all-peer-relay-hold-stats",
+                "metadata": {
+                  "profile": "rtc-messages-all-peer-multicast",
+                  "transport": "messages.rtc",
+                  "participantCount": 10,
+                  "senderCount": 10,
+                  "receiverCount": 10,
+                  "rateHz": 20,
+                  "intervalMs": 50,
+                  "durationSeconds": 300,
+                  "frameCount": 6000,
+                  "expectedInboundMessages": 54000,
+                  "minExpectedInboundMessages": 43200,
+                  "minReceiveRatio": 0.8,
+                  "logicalFanoutMessages": 540000
+                }
+              }
+            ]
+          },
+          {
             "kind": "stats",
             "commandId": "rtc-messages-all-peer-final-stats",
             "metadata": {

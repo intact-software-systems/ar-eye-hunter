@@ -124,7 +124,7 @@ export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistr
             rateHz: 2,
             minReceiveRatio: 0.95,
             receiverExpectedFrames: 9_360,
-            recommendedTerminalTimeoutSeconds: 5_100,
+            recommendedTerminalTimeoutSeconds: 5_400,
             catalogProfiles: []
         })
     });
@@ -362,7 +362,7 @@ export function createLongAllPeerEntry(rateHz: number): HetznerDistributedManife
             rateHz,
             minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
             receiverExpectedFrames: 49 * 3_600 * rateHz,
-            recommendedTerminalTimeoutSeconds: 4_200,
+            recommendedTerminalTimeoutSeconds: 4_500,
             catalogProfiles: []
         })
     });

@@ -522,6 +522,51 @@
             ]
           },
           {
+            "kind": "loop",
+            "commandId": "rtc-messages-principal-receiver-relay-hold",
+            "count": 9,
+            "intervalMs": 30000,
+            "maxCommands": 9,
+            "metadata": {
+              "profile": "rtc-messages-principal-multicast-receiver",
+              "transport": "messages.rtc",
+              "participantCount": 15,
+              "senderCount": 1,
+              "receiverCount": 14,
+              "rateHz": 2,
+              "intervalMs": 500,
+              "durationSeconds": 4680,
+              "frameCount": 9360,
+              "expectedInboundMessages": 9360,
+              "minExpectedInboundMessages": 8892,
+              "minReceiveRatio": 0.95,
+              "logicalFanoutMessages": 131040,
+              "purpose": "relay-hold",
+              "relayHoldMs": 239000
+            },
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "rtc-messages-principal-receiver-relay-hold-stats",
+                "metadata": {
+                  "profile": "rtc-messages-principal-multicast-receiver",
+                  "transport": "messages.rtc",
+                  "participantCount": 15,
+                  "senderCount": 1,
+                  "receiverCount": 14,
+                  "rateHz": 2,
+                  "intervalMs": 500,
+                  "durationSeconds": 4680,
+                  "frameCount": 9360,
+                  "expectedInboundMessages": 9360,
+                  "minExpectedInboundMessages": 8892,
+                  "minReceiveRatio": 0.95,
+                  "logicalFanoutMessages": 131040
+                }
+              }
+            ]
+          },
+          {
             "kind": "stats",
             "commandId": "rtc-messages-principal-receiver-final-stats",
             "metadata": {
@@ -686,7 +731,7 @@
     "receiverCount": 14,
     "rateHz": 2,
     "expectedDurationSeconds": 4680,
-    "recommendedTerminalTimeoutSeconds": 5100,
+    "recommendedTerminalTimeoutSeconds": 5400,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "16"
     },

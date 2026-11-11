@@ -108,7 +108,7 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerLong20?.manifest.metadata).toMatchObject({
             diagnostic: true,
             expectedDurationSeconds: 3600,
-            recommendedTerminalTimeoutSeconds: 4200,
+            recommendedTerminalTimeoutSeconds: 4500,
             loadEstimate: {
                 streamFrames: 3600000,
                 logicalFanoutMessages: 176400000
@@ -226,7 +226,7 @@ describe('Hetzner multicast workloads', () => {
             senderCount: 1,
             rateHz: 2,
             expectedDurationSeconds: 4_680,
-            recommendedTerminalTimeoutSeconds: 5_100,
+            recommendedTerminalTimeoutSeconds: 5_400,
             receiverDelivery: { expectedInboundMessages: 9_360, minExpectedInboundMessages: 8_892 },
             rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16' }
         });
@@ -261,20 +261,25 @@ describe('Hetzner multicast workloads', () => {
         expect(withHistory).toEqual(['hetzner-rtc-messages-principal-15-agent-78m-2hz-tree']);
     });
 
-    it('recommends a terminal timeout that outlasts every multicast delivery poll window', () => {
-        const polls = createHetznerDistributedManifestCatalog().flatMap((entry) =>
-            entry.manifest.recipes.flatMap((selection) =>
-                (selection.recipe?.commands ?? []).flatMap((command) =>
-                    command.kind === 'loop' && command.commandId?.endsWith('-delivery-poll')
-                        ? [{ entry, windowMs: (command.count ?? 0) * (command.intervalMs ?? 0) }]
-                        : []
-                )
-            )
+    it('recommends a terminal timeout that outlasts every multicast delivery poll window and relay hold', () => {
+        const waits = createHetznerDistributedManifestCatalog().flatMap((entry) =>
+            entry.manifest.recipes.flatMap((selection) => {
+                const loops = (selection.recipe?.commands ?? []).filter((command) =>
+                    command.kind === 'loop' &&
+                    (command.commandId?.endsWith('-delivery-poll') || command.commandId?.endsWith('-relay-hold'))
+                );
+                const windowMs = loops.reduce(
+                    (sum, command) => sum + (command.kind === 'loop' ? (command.count ?? 0) * (command.intervalMs ?? 0) : 0),
+                    0
+                );
+                return loops.length === 0 ? [] : [{ entry, loopCount: loops.length, windowMs }];
+            })
         );
 
-        expect(polls.length).toBeGreaterThan(0);
-        for (const { entry, windowMs } of polls) {
+        expect(waits.length).toBeGreaterThan(0);
+        for (const { entry, loopCount, windowMs } of waits) {
             const terminalSeconds = Number(entry.manifest.metadata?.recommendedTerminalTimeoutSeconds);
+            expect(loopCount, entry.manifest.distributedRunId).toBe(2);
             expect(terminalSeconds * 1_000, entry.manifest.distributedRunId).toBeGreaterThan(windowMs);
         }
     });
