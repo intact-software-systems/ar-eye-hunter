@@ -89,6 +89,7 @@ import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
+import { toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserStartupCleanupFailure
@@ -140,13 +141,6 @@ export interface BrowserConnectedMiddleware {
     readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
     readonly middleware: RallarBrowserMiddleware;
     readonly checkpoints: readonly ALCheckpointPort[];
-}
-
-export interface ToCreateWsUrlInput {
-    readonly apiConfig: ApiConfig;
-    readonly session: AuthSession;
-    readonly ticket: string;
-    readonly scope?: StateScope;
 }
 
 export const BROWSER_RTT_HEARTBEAT_TTL_MS = 15_000;
@@ -409,22 +403,6 @@ function initialiseBrowserHeartbeat(
     return heartbeat.initHeartbeat(input.clientData, toBrowserHeartbeatOptions(input, ownWsConnectionGeneration));
 }
 
-export function toCreateWsUrl(
-    input: ToCreateWsUrlInput
-): string {
-    const path = input.apiConfig.endpoints.createWs.replace(
-        ':id',
-        encodeURIComponent(input.session.sessionId)
-    );
-    const url = new URL(path, input.apiConfig.wsBaseUrl);
-    url.searchParams.set('ticket', input.ticket);
-    if (input.scope) {
-        url.searchParams.set('applicationId', input.scope.applicationId);
-        url.searchParams.set('workspaceId', input.scope.workspaceId);
-    }
-    return url.toString();
-}
-
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
 export function toBrowserMiddleware(
     input: InitialiseBrowserTransportInput,
@@ -580,9 +558,10 @@ async function createBrowserWebSocketUrl(
     if (wsTicket.sessionId !== input.session.sessionId) {
         throw new Error('WebSocket ticket does not match the current session.');
     }
-    return toCreateWsUrl({
-        apiConfig,
-        session: input.session,
+    return toApiWsUrl({
+        wsBaseUrl: apiConfig.wsBaseUrl,
+        createWsPath: apiConfig.endpoints.createWs,
+        sessionId: input.session.sessionId,
         ticket: wsTicket.ticket,
         scope: input.options.scope
     });

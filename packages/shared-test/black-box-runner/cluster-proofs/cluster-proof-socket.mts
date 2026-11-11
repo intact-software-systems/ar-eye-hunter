@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { API_CREATE_WS_PATH, toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 import { assert, assertEquals } from '@std/assert';
 import type { ApiV1RtcTopologyProofApi, ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 
@@ -38,8 +39,13 @@ export class ClusterProofSocket {
 
     protected static async connect(input: ClusterProofSocket.OpenInput): Promise<WebSocket> {
         const ticket = await input.api.issueWebSocketTicket(input.session);
-        const query = new URLSearchParams({ ticket, ...input.scope });
-        return new WebSocket(`${input.session.wsBaseUrl}/api/ws/${input.session.sessionId}?${query}`);
+        return new WebSocket(toApiWsUrl({
+            wsBaseUrl: input.session.wsBaseUrl,
+            createWsPath: API_CREATE_WS_PATH,
+            sessionId: input.session.sessionId,
+            ticket,
+            scope: input.scope
+        }));
     }
 
     protected async waitForOpen(): Promise<void> {
