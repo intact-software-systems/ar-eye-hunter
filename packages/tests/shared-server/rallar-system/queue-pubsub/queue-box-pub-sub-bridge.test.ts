@@ -399,7 +399,10 @@ describe('QueueBoxPubSubBridge', () => {
         let socketOpened = false;
         let heldSendCount = 0;
         const failure = new Error('held send failed');
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const loggedErrors: unknown[][] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((...logged) => {
+            loggedErrors.push(logged);
+        });
         onTestFinished(() => consoleError.mockRestore());
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({
             registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
@@ -434,8 +437,7 @@ describe('QueueBoxPubSubBridge', () => {
 
         await expect.poll(() => held).toEqual([messages[1]]);
         expect(heldSendCount).toBe(2);
-        expect(consoleError).toHaveBeenCalledTimes(1);
-        expect(consoleError).toHaveBeenCalledWith('Held WebSocket send failed:', failure);
+        expect(loggedErrors).toEqual([['Held WebSocket send failed:', failure]]);
     });
 
     it('excludes late joiners from the captured audience on both publishing and receiving instances', async () => {

@@ -48,7 +48,10 @@ describe('HeldSendChain', () => {
     });
 
     it('logs a failed send and runs the next', async () => {
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const loggedErrors: unknown[][] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((...logged) => {
+            loggedErrors.push(logged);
+        });
         onTestFinished(() => consoleError.mockRestore());
         const chain = new HeldSendChain();
         const holds = createHolds('a');
@@ -61,8 +64,7 @@ describe('HeldSendChain', () => {
         deferreds[0]!.reject(failure);
 
         await vi.waitFor(() => expect(started).toEqual(['a:0', 'a:1']));
-        expect(consoleError).toHaveBeenCalledTimes(1);
-        expect(consoleError).toHaveBeenCalledWith('Held WebSocket send failed:', failure);
+        expect(loggedErrors).toEqual([['Held WebSocket send failed:', failure]]);
     });
 
     it('keeps two sessions\' sends independent', async () => {
