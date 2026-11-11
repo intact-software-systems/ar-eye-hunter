@@ -4,20 +4,15 @@ export const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.c
 
 export const RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS = 5_000;
 
+export const RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS = 45_000;
+
 /**
  * Ceiling for the SDK's own connect (WS + RTC establishment) before the readiness wait begins.
  * The 10s SDK socket default is too small for a 50-agent room, so the connect gets its own named
- * budget; the command-level timeout below is the sum of this connect budget, the readiness budget,
- * and the completion margin, because connect and readiness run sequentially inside one command.
+ * budget; computeRtcEstablishAndReadyCommandTimeoutMs adds it to the readiness command timeout,
+ * because connect and readiness run sequentially inside one command.
  */
 export const RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS = 45_000;
-
-export const RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS = 45_000;
-
-export function computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs: number): number {
-    return RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS + readinessTimeoutMs +
-        RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
-}
 
 /**
  * Budget for the idempotent ensure-group + ensure-member HTTP mutation pair. Distributed
@@ -85,6 +80,11 @@ export function rtcConnectReadiness(
     };
 }
 
+function computeReadinessCommandTimeoutMs(readinessTimeoutMs: number): number {
+    return readinessTimeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
+}
+
+// Bounds a command that runs only the readiness wait (the SDK connect is not part of it).
 export function computeRtcConnectCommandTimeoutMs(
     options: Readonly<{
         readyPeerCount?: number;
@@ -95,7 +95,13 @@ export function computeRtcConnectCommandTimeoutMs(
     const readiness = rtcConnectReadiness(options);
     return readiness === undefined
         ? fallbackTimeoutMs
-        : readiness.timeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
+        : computeReadinessCommandTimeoutMs(readiness.timeoutMs);
+}
+
+// Bounds a command that runs the SDK establishment and then the readiness wait sequentially.
+export function computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs: number): number {
+    return RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS +
+        computeReadinessCommandTimeoutMs(readinessTimeoutMs);
 }
 
 export function createRallarBlackBoxEnsureGroupRequestId(
