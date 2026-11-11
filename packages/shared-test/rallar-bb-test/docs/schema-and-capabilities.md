@@ -265,10 +265,12 @@ envelope) fails with `RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE`.
 
 `messages.control` is a harness capability, not a product path. It names `carrier`
 (`ws` or `rtc`), `typeId` (an `al.control.*` id), `msgId`, `ackedMsgId` and `toPeerId`,
-and optionally `connection`. The page builds, under the authored `msgId`, the ACK
-envelope its own session would send for `ackedMsgId` to `toPeerId`, that message's
-sender, and swaps in `typeId`, so the addressee's admission outcome names this one
-control, and so a recipe can send a control version its addressee does not support.
+and optionally `connection` and `logicalRecipientPeerId`, the recipient the ACK speaks
+for; absent, it is the page's own session, which the page fills in once it knows its
+session. The page builds, under the authored `msgId`, the ACK envelope its own session
+would send for `ackedMsgId` to `toPeerId`, that message's sender, naming that
+recipient and carrying `proof: null`, and swaps in `typeId`, so the addressee's
+admission outcome names this one control, and so a recipe can send a control version its addressee does not support.
 The envelope carries the trace of `ackedMsgId`, read from the message the page
 received (the last 16 of each type it holds) or, failing that, from the handle of a
 message this page sent; a control never mints a trace. A page that holds `ackedMsgId`
@@ -280,8 +282,8 @@ trace the envelope carried, and that carrier's verdict, which says only whether 
 page's carrier took the control:
 `admitted`, or another admission verdict such as `duplicate` for a msgId this page's
 store already holds. The addressee records its own `admission-outcome` for the control, which is
-the verdict a recipe asserts on the addressee's page. `msgId`, `ackedMsgId` and
-`toPeerId` may name `{resultCache.<commandId>.<path>}` tokens, the same tokens a
+the verdict a recipe asserts on the addressee's page. `msgId`, `ackedMsgId`, `toPeerId`
+and `logicalRecipientPeerId` may name `{resultCache.<commandId>.<path>}` tokens, the same tokens a
 `wait` resolves in `contains`, such as
 `{resultCache.<wait>.value.event.payload.senderId}` of an earlier message wait. A
 token no earlier command returned fails the command as invalid input. A page with
@@ -320,7 +322,8 @@ recipe metadata `almReceiptRoles` names, per send handle, the recipient roles th
 receipt confirms, leaves unconfirmed and records outside the audience
 (`confirmed`, `unconfirmed`, `outsideAudience`); the expected roles are the three
 together. The identity assessment joins each list to the sessions of those roles
-after the run.
+after the run, reading the receipt the handle ended in: the sender's last read of
+that handle, after any mid-window read.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
   waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
@@ -347,6 +350,29 @@ after the run.
   whose store survived submits a new control rather than a `duplicate`. Over `ws` the
   WS server refuses that frame before any relay, which stays a unit pin of the
   server.
+- `unsigned-ack-refused` (`rtc`, `rtc-with-ws-fallback`, full scope): `recipient-b`
+  answers the send with a raw `al.control.ack.v3` through `messages.control`, naming
+  its own session (the field omitted) with `proof: null`, over the `rtc` leg both
+  carriers admit the send on, and asserts its own carrier took it. The sender waits
+  for its outbound `control-admission` of that authored msgId reading `rejected`
+  with `proofRefusal` `missing-proof` (`toControlProofRefusalWait`: matched up to
+  the reason's start and by `data.proofRefusal`, since the page's own signed ACK
+  usually lands first and the reason then begins "AL control was already
+  admitted"). The signed ACK the page sends of its own completes the receipt in
+  either order: the handle reads `acknowledged` with both recipients confirmed.
+- `forged-recipient-ack` (`rtc`, full scope): `recipient-b` holds its ACK back
+  with a fault it keeps armed until it is released, and cues the receiver, which
+  learns `recipient-b`'s session from the cue's `senderId`. Once the send reaches
+  it, the receiver submits a raw `al.control.ack.v3` whose
+  `logicalRecipientPeerId` names that session, with `proof: null`. The sender waits
+  for the origin's `rejected` `control-admission` of it with `proofRefusal`
+  `missing-proof`, reads its receipt mid-window and asserts it is not yet
+  `acknowledged` (at least one recipient unconfirmed, at most one confirmed), then
+  cues `recipient-b` to release; the receipt ends `acknowledged` with both
+  recipients confirmed. Its cues travel on a type of their own
+  (`<scenarioKey>-cues`), so the cell's type carries the send alone, which the
+  receipt window and the receivers' counts read. Over `rtc` alone, since a WS
+  fallback would complete the held leg and hide it.
 - `frozen-audience-membership`: `recipient-b` holds its ACK back and closes its
   connection once the send reaches it, which clears the fault. The receipt keeps it
   expected and reports it unconfirmed (D43), and the handle reads `expired`.
@@ -647,6 +673,30 @@ reliability. No hosted manifest carries them (D505).
   run's evidence, reported and not asserted; the relay fixture
   (`packages/tests/shared/multicast/rtc-relay-gap-repair.test.ts`) is the blocking proof of the relay's forward: it
   forwards the leaf's own signed gap NACK, which the origin verifies before it repairs the gap.
+
+`receipted-relay-path` (`scenarios/relay-path/`, three-agent, `rtc`, full scope)
+sends a non-granted receipted multicast through the forced path. The receiver owns
+the room, so it PUTs the path config the granted path cells use
+(`{ topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 }`, one shared topology
+command), and every page connects with `connect.minReadyPeers: 1`. Once the sender
+says it listens, the receiver cues that the path is set; then the sender and the
+receiver each send one `receiver`-receipted (`all-logical-recipients`) multicast
+with no grant, hear the other origin's one send, record their overlay next hops in
+a `health` read and read their own receipt after their window: `acknowledged`, two
+recipients expected and confirmed. `recipient-b` is a pure recipient: it hears
+both sends, records its next hops and ends on an absence as long as either origin's
+window. The receiver DELETEs the config once it has read its own receipt and the
+sender has cued that it read its. Three sessions in a tree of degree at most two
+form a path, so whenever both sends route on one planned path at least one origin
+is a leaf and its send is relayed, the far leaf's signed ACK forwarded back. The
+PUT only requests the reshape and the cell waits for no plan version, so two sends
+routed under different plans can both go direct: the cell asserts neither who
+relays nor the hop count, and each origin's receipt names the hops it confirmed
+through, which is where a run shows the relay. Its post-run identity pin describes
+the sender's send. It runs before `granted-rtc-relay-only` and
+`granted-rtc-ordered-relay`, so the cell that can outlast the lane's 180 s role
+deadline stays last in its family. No hosted manifest carries it, nor the two
+`receipted-audience` cells above.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.

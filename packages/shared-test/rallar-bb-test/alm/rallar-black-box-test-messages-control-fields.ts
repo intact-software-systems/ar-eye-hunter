@@ -13,4 +13,6 @@ export type RallarBlackBoxTestMessagesControlFields = Readonly<{
     msgId: string;
     ackedMsgId: string;
     toPeerId: string;
+    /** The recipient the ACK speaks for; absent: the submitting page's own session. */
+    logicalRecipientPeerId?: string;
 }>;

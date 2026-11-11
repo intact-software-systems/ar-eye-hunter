@@ -10,9 +10,9 @@ import type { GroupPresencePublicationKey } from '../../api/group-types.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { toBase64Url } from '../../encoding/base64url.ts';
 import { Either } from '../../resilience/Either.ts';
-import { computeEcdsaP256JwkThumbprint, importEcdsaP256PublicKey } from '../../signature/ecdsa-p256-signature.ts';
 import type { PublicationVerificationCrypto } from '../../signature/publication-crypto.ts';
 import type { SignatureProof } from '../../signature/signature-proof.ts';
+import { VerificationKeyCache } from '../../signature/verification-key-cache.ts';
 
 const UTF8_ENCODER = new TextEncoder();
 
@@ -32,7 +32,7 @@ export namespace RtcReceiptProofVerifier {
 export class RtcReceiptProofVerifier implements ALReceiptProofVerifierPort {
     readonly #subtle: SubtleCrypto | undefined;
     readonly #nowEpochMs: () => number;
-    readonly #publicKeys = new LatestRepository<string, CryptoKey>({ maxEntries: 256 });
+    readonly #publicKeys = new VerificationKeyCache();
     readonly #verdicts = new LatestRepository<string, true>({ maxEntries: 1024 });
 
     constructor(dependencies: RtcReceiptProofVerifier.Dependencies) {
@@ -69,7 +69,7 @@ export class RtcReceiptProofVerifier implements ALReceiptProofVerifierPort {
             return false;
         }
         // The key comes first, so a verdict cached under its key id never answers for a record whose JWK is another key's.
-        const publicKey = await this.readPublicKey(subtle, frozenKey);
+        const publicKey = await this.#publicKeys.readVerificationKey(subtle, frozenKey);
         if (publicKey === undefined) {
             return false;
         }
@@ -85,25 +85,5 @@ export class RtcReceiptProofVerifier implements ALReceiptProofVerifierPort {
         }
         this.#verdicts.acceptAt({ key: verdictKey, value: true, nowEpochMs });
         return true;
-    }
-
-    /** A frozen key is imported only under the keyId its own key's thumbprint names; the cache holds that exact pair. */
-    private async readPublicKey(
-        subtle: SubtleCrypto,
-        frozenKey: GroupPresencePublicationKey
-    ): Promise<CryptoKey | undefined> {
-        const cacheKey = `${frozenKey.keyId}|${JSON.stringify(frozenKey.publicJwk)}`;
-        const cached = this.#publicKeys.read(cacheKey);
-        if (cached !== undefined) {
-            return cached;
-        }
-        if (await computeEcdsaP256JwkThumbprint(subtle, frozenKey.publicJwk) !== frozenKey.keyId) {
-            return undefined;
-        }
-        const imported = (await importEcdsaP256PublicKey(subtle, frozenKey.publicJwk)).right;
-        if (imported !== undefined) {
-            this.#publicKeys.accept(cacheKey, imported);
-        }
-        return imported;
     }
 }

@@ -40,7 +40,7 @@ describe('RtcReceiptProofVerifier', () => {
             'invalid-signature'
         ]);
         expect(missing.left).toEqual({ kind: 'missing-proof', claimedRecipientPeerId: 'c', channelPeerId: 'c' });
-        expect(cryptoBeforeTheLast).toEqual({ digest: 0, verify: 0, importKey: 0 });
+        expect(cryptoBeforeTheLast).toEqual({ digest: 0, sign: 0, verify: 0, importKey: 0 });
         expect(counting.counts.verify).toBe(1);
     });
 

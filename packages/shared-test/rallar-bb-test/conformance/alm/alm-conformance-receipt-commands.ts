@@ -4,6 +4,7 @@ import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle
 
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestMessagesSendCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
@@ -174,7 +175,7 @@ export function toReceiptReadCommands(
     ];
 }
 
-export function toSelfAbsenceCommand(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+export function toSelfAbsenceCommand(sender: AlmConformanceStepInput): RallarBlackBoxTestMessagesReceivedCommand {
     const windowMs = sender.input.deadlineMs - RESPONSE_MARGIN_MS;
     return {
         kind: 'messages.received',

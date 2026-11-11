@@ -407,6 +407,13 @@ export interface BlackBoxRallarControlSubmitInput {
     readonly msgId: string;
     readonly ackedMsgId: string;
     readonly toPeerId: string;
+    /** The recipient the ACK speaks for; absent: this page's own session. */
+    readonly logicalRecipientPeerId?: string;
+}
+
+/** The raw control once the page knows its session: the recipient the ACK speaks for, the session itself when the recipe named none. */
+export interface BlackBoxRallarRawControl extends Omit<BlackBoxRallarControlSubmitInput, 'logicalRecipientPeerId'> {
+    readonly logicalRecipientPeerId: string;
 }
 
 /** The raw control opens no handle: it reports its own identity and the verdict of the carrier admission. */

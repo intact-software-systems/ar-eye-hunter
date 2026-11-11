@@ -6,6 +6,7 @@ import {
     newALNackControlMessage,
     parseALControlMessage,
     type ALAckPayload,
+    type ALAckStatus,
     type ALPendingAckSnapshot
 } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
@@ -34,6 +35,7 @@ import { computeALInboundControlAdmission } from '@shared/alm/inbound/control/co
 import { validateALInboundControlAdmission } from '@shared/alm/inbound/control/validate-al-inbound-control-admission.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type { SignatureProof } from '@shared/signature/signature-proof.ts';
 import {
     describe,
     expect,
@@ -46,7 +48,7 @@ import {
     type InboundTestAcknowledgements
 } from '../read-inbound-test-acknowledgements.ts';
 
-import { toTestALAckPayload, toTestALNackPayload } from '../../../al-control-test-payloads.ts';
+import { toTestALAckPayload, toTestALNackPayload, toTestSignatureProof } from '../../../al-control-test-payloads.ts';
 
 /** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
@@ -656,6 +658,104 @@ describe('inbound control admission', () => {
             'Inbound acknowledgement was already admitted',
             'Inbound acknowledgement candidate exceeds persistence limits'
         ]);
+    });
+});
+
+describe('the relay\'s statement rule (S8ii-R1)', () => {
+    const nowMs = 1_800_000_000_000;
+
+    interface StatementAck {
+        readonly fromPeerId: string;
+        readonly logicalRecipientPeerId: string;
+        readonly status: ALAckStatus;
+        readonly proof: SignatureProof;
+    }
+
+    function toStatementAck(statement: StatementAck): ALAckPayload {
+        return toTestALAckPayload({
+            ...statement,
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            toPeerId: 'self',
+            observedAtEpochMs: nowMs,
+            carrier: 'rtc'
+        });
+    }
+
+    /** The candidate of `ack` at a relay whose row counts every recipient here and already admitted `acks`. */
+    function computeStatementAdmission(acks: readonly ALAckPayload[], ack: ALAckPayload) {
+        return computeALInboundControlAdmission({
+            traceId: 'trace-al-inbound-control-admission',
+            namespace: 'inbound',
+            ack,
+            controlOwners: TRACKED_CONTROL_OWNERS,
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                supersedenceKey: null,
+                deliveredLocally: true
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'subtree-complete',
+                localReady: true,
+                expectedFromPeerIds: ['child-relay', 'child', 'leaf'],
+                ackedFromPeerIds: [],
+                upwardAudiencePeerIds: ['grandchild-1', 'child', 'leaf'],
+                outsideAudiencePeerIds: [],
+                carrier: 'rtc'
+            },
+            acks,
+            nacks: [],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+    }
+
+    it('refuses a forwarded control repeated under its proof, and admits one under another proof as a distinct statement', () => {
+        const forwarded = (proof: SignatureProof) =>
+            toStatementAck({ fromPeerId: 'child-relay', logicalRecipientPeerId: 'grandchild-1', status: 'delivered', proof });
+        const stored = [forwarded(toTestSignatureProof(1))];
+
+        expect(
+            validateALInboundControlAdmission(computeStatementAdmission(stored, forwarded(toTestSignatureProof(1))))
+                .map((issue) => issue.message)
+        ).toEqual(['Inbound acknowledgement was already admitted']);
+        expect(validateALInboundControlAdmission(computeStatementAdmission(stored, forwarded(toTestSignatureProof(2)))))
+            .toEqual([]);
+    });
+
+    it('forwards a recipient relay\'s signed accepted once: its signed terminal ACK completes its hop and is not forwarded again (D40)', () => {
+        const accepted = toStatementAck({
+            fromPeerId: 'child',
+            logicalRecipientPeerId: 'child',
+            status: 'accepted',
+            proof: toTestSignatureProof(1)
+        });
+        const terminal = toStatementAck({
+            fromPeerId: 'child',
+            logicalRecipientPeerId: 'child',
+            status: 'subtree-complete',
+            proof: toTestSignatureProof(2)
+        });
+
+        const candidate = computeStatementAdmission([accepted], terminal);
+
+        expect(validateALInboundControlAdmission(candidate)).toEqual([]);
+        expect(candidate.upwardEffects.flatMap((effect) => toSentAck(effect.payload)).map((ack) => ack.logicalRecipientPeerId))
+            .not.toContain('child');
+        expect(candidate.pending?.value.ackedFromPeerIds).toContain('child');
+    });
+
+    it('refuses a recipient\'s repeated own ACK with a fresh proof as already admitted', () => {
+        const delivered = (proof: SignatureProof) => toStatementAck({ fromPeerId: 'leaf', logicalRecipientPeerId: 'leaf', status: 'delivered', proof });
+
+        expect(
+            validateALInboundControlAdmission(
+                computeStatementAdmission([delivered(toTestSignatureProof(1))], delivered(toTestSignatureProof(2)))
+            ).map((issue) => issue.message)
+        ).toEqual(['Inbound acknowledgement was already admitted']);
     });
 });
 

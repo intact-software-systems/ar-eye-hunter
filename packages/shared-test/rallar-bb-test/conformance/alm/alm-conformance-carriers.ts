@@ -17,3 +17,6 @@ export const ALM_CONFORMANCE_FALLBACK_CARRIERS: readonly AlmConformanceCarrier[]
  * to WS, whose relay never saw the track's other messages and gates the one it received as its own gap.
  */
 export const ALM_CONFORMANCE_SINGLE_HOP_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc'];
+
+/** A cell whose leg under test a WS fallback would complete and hide: the `rtc` strategy alone. */
+export const ALM_CONFORMANCE_RTC_ALONE_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];

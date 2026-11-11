@@ -1444,7 +1444,13 @@ repair, re-plan and dequeue of a signed message, and a re-plan it refuses `no-pu
 ack-timeout retry deletes the pending receipt under the version its decision read, the dequeue and the retransmit end
 it inside the dispatch's own commit, a conflicting commit decides again from a fresh read, and the handle settles
 `rejected` with nothing handed to WS. Only a revoke the snapshot shows ends it: with no readable snapshot the room's
-own planning decides, as for any stored send, and `unsupported` or `unauthorized` re-plans keep their silent drop.
+own planning decides, as for any stored send. A dequeue also ends an `unsupported` re-plan, as it ends `no-publish-grant`
+(S8ii-R2): a held send its carrier cannot take at its freezing dequeue (a keyless counted recipient, a room past the RTC
+room limit, or any other `unsupported` refusal met there) settles `rejected`, its receipt deleted in the dequeue's own
+commit, and the fallback does not take it, since no fallback-capable leg is ever held. The site is the re-plan's own
+(`ALOutboundReplanSite`): the retransmit and the ack-timeout retry keep their silent drop of an `unsupported` re-plan,
+so the receipt still runs on to `receipt-exhausted`, which the fallback takes, and an `unauthorized` re-plan keeps its
+silent drop at every site.
 
 A receipt that a control ends -- a complete ACK or a terminal NACK -- completes the send's `ack-timeout`
 work row in the commit that ends it, so no timeout batch runs for it; a row a batch already leased is

@@ -389,7 +389,11 @@ export function toALOutboundCommitSettlements<TPrepared>(
     const completion = deletesReceipt
         ? toALOutboundDispatchCompletionReceipt(input.read)
         : undefined;
-    const refusal = resolveALOutboundReplanRefusalSettlement(input.msg, toALOutboundAdmissionVerdict(input.read.plan));
+    const refusal = resolveALOutboundReplanRefusalSettlement(
+        input.msg,
+        toALOutboundAdmissionVerdict(input.read.plan),
+        input.intent
+    );
     return [...superseded, emptyAudience, completion, refusal].filter((fact) => fact !== undefined);
 }
 

@@ -7,7 +7,10 @@ import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contract
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
-import type { BlackBoxRallarControlSubmitInput } from '../black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarControlSubmitInput,
+    BlackBoxRallarRawControl
+} from '../black-box-rallar-operation-contracts.ts';
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
 
 export namespace SubmitBlackBoxRawControl {
@@ -44,13 +47,23 @@ export async function submitBlackBoxRawControl(
     const result = await writeCarrierOutboxAdmission(
         context,
         { carrier: control.carrier, canFallback: false, admittedCopy: false },
-        toRawControlMessage(input, sessionId)
+        toRawControlMessage({ ...input, control: toBlackBoxRallarRawControl(control, sessionId) }, sessionId)
     );
     wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, result);
     return { msgId: control.msgId, verdict: result.verdict };
 }
 
-function toRawControlMessage(input: SubmitBlackBoxRawControl.Input, sessionId: string): ALMessage {
+function toBlackBoxRallarRawControl(
+    control: BlackBoxRallarControlSubmitInput,
+    sessionId: string
+): BlackBoxRallarRawControl {
+    return { ...control, logicalRecipientPeerId: control.logicalRecipientPeerId ?? sessionId };
+}
+
+function toRawControlMessage(
+    input: Omit<SubmitBlackBoxRawControl.Input, 'control'> & { readonly control: BlackBoxRallarRawControl; },
+    sessionId: string
+): ALMessage {
     const { control, nowMs } = input;
     const ack = newALAckControlMessage({
         v: AL_MESSAGE_ENVELOPE_VERSION,
@@ -63,7 +76,7 @@ function toRawControlMessage(input: SubmitBlackBoxRawControl.Input, sessionId: s
         fromPeerId: sessionId,
         toPeerId: control.toPeerId,
         originPeerId: control.toPeerId,
-        logicalRecipientPeerId: sessionId,
+        logicalRecipientPeerId: control.logicalRecipientPeerId,
         carrier: control.carrier,
         status: 'delivered',
         observedAtEpochMs: nowMs,

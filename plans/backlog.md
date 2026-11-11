@@ -146,13 +146,17 @@ and it has no status list.
   keeps the topic on `ws`.
 - The measured granted RTC envelope (S3): sign and verify cost per frame and
   hop, and since Slice 8 per receipt control (a counted recipient's sign, the
-  origin's verify; unmeasured, the S8-ii 6f count is a count, not a cost),
-  relay depth and mixed WS/RTC under role churn, beside the refresh
-  amplification of an unknown key: every receiver of a frame whose `keyId` its
-  snapshot does not name runs one scoped snapshot read
-  (`not-yet-in-sync: unknown-key`, collapsed only while one is in flight), the
-  class `minSnapshotVersion` already has on ordinary room frames; measure it,
-  or add a per-room refresh cooldown in `RtcGroupSnapshotRefresh`
+  origin's verify; unmeasured: the 6f count (S8-ii) is 2 and 2 for a direct
+  pair, 3, 0 and 3 through a counted relay, a count, not a cost; two honest
+  extra forwards, each one more verify at the origin: a recipient that
+  re-parents answers its new parent under a fresh proof, and a recipient
+  answers a sibling sender with its own signed terminal ACK), relay depth
+  and mixed WS/RTC under role churn, beside the refresh amplification of an
+  unknown key: every receiver of a frame whose `keyId` its snapshot does not
+  name runs one scoped snapshot read (`not-yet-in-sync: unknown-key`,
+  collapsed only while one is in flight), the class `minSnapshotVersion`
+  already has on ordinary room frames; measure it, or add a per-room refresh
+  cooldown in `RtcGroupSnapshotRefresh`
   (`packages/shared-web/browser/state-read/rtc-group-snapshot-refresh.ts`).
 - Publication keys for native hosts (S3, D513): only a browser session
   registers a key, so a native host signs no granted RTC publication.
@@ -171,23 +175,8 @@ and it has no status list.
   pre-existing): an unsigned outside-audience NACK from a next hop that names
   another owed hop moves it outside the receipt. Closing it needs
   `fromPeerId === logicalRecipientPeerId` for outside-audience controls under a
-  non-logical receipt; an honest relay never forwards one there.
-- A child hop pre-empts another recipient at an honest relay (S8-i, D586,
-  D587): the relay verifies nothing and keys "already forwarded" and "outside"
-  by the recipient alone, so a child that names another recipient with a proof
-  that does not verify blocks that recipient's true control there, and the
-  recipient runs to `receipt-exhausted` and the fallback. Two fix shapes: the
-  relay verifies a child control that names a counted recipient before it moves
-  the row (it holds the same room snapshot; one verify per forwarded control per
-  level), or the relay keys those facts by the control's proof so two different
-  statements about one recipient both go up. Keying by child hop is not enough.
-- One key-import and verdict-cache mechanism (S8-i, D586, D588): the receipt
-  and publication verifiers each import a JWK under its thumbprint and cache a
-  `verified` verdict keyed `keyId|signature|digest`, and they already differ
-  (the receipt key cache is keyed `keyId|JWK`, the publication one `keyId`;
-  the receipt reads the key before the verdict, the publication answers a
-  cached verdict without any registration, which its tests pin). One mechanism
-  in `packages/shared/signature/` needs a ruling on that order.
+  non-logical receipt; an honest relay never forwards one there. Pinned by a
+  `Limit:` test (S8-ii).
 - `toSafeAck` in
   `apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts` is a
   hand-written ACK shape rule beside the codec's (S8-i).
@@ -201,13 +190,6 @@ and it has no status list.
   `unsupported`, since no presence row can key its addressee; before Slice 8
   it was admitted. No product caller sends one; one that did degrades to WS
   under the fallback or is refused under `rtc` alone.
-- A stored-stage `unsupported` refusal is a silent drop (S8-i, D585;
-  pre-existing for the room-limit refusal): a send held until its freeze that
-  then meets a keyless counted recipient is neither settled nor handed to the
-  fallback, and its handle runs to its deadline. The smallest settle:
-  `resolveALOutboundReplanRefusalSettlement` also returns the terminal
-  admission fact for `refused` + `unsupported`, which ends the handle at once
-  but still does not hand the send to WS.
 - A held send frozen before it was held (S8-i, D585) adopts its receipt keys
   at the dequeue that first sees its room, for each counted recipient the room
   keys; one the room does not key there is sent to, its control reads
@@ -219,6 +201,67 @@ and it has no status list.
 - A lost forwarded hop-end (S8-i, D587; pre-existing for the relay-authored
   NACK): a forwarded hop-end lost on the relay-to-origin hop while the relay's
   terminal ACK arrives leaves that recipient unconfirmed until the deadline.
+- The flood of distinct forged statements at a relay (S8-ii, D600, D602): a
+  child may send any number of distinct forged statements about a recipient,
+  and each is stored, forwarded once and refused at the origin; each retried
+  copy re-forwards up to its budget of them again, and the origin's verifier
+  caches positive verdicts only, so a stored forgery costs one verify per
+  retried copy that carries it.
+  The relay keeps the last 256 child ACKs and the last 256 outside-audience
+  NACKs per message, so enough later statements evict a recipient's true
+  control and a retried copy no longer re-forwards it (its first forward had
+  gone up); a retried copy's re-forward is cut to its 256-effect commit cap,
+  own words first, so at a relay above the first one the cut is arbitrary
+  among forwarded words; and a history flood can evict the control that
+  recorded a recipient outside (a forged hop-end records it from the ACK
+  history, where any 256 later child ACKs, honest ones included, evict it),
+  after which the recipient alone decides and its
+  later true control is refused at that relay at first arrival. The origin
+  counts only what verifies. Relay-side verification, which S8ii-R1 declined,
+  would close it at one verify per forwarded control per level.
+- The statement rule's pairwise encode (S8-ii, D606): a child that reuses one
+  well-formed proof over up to 256 altered contents makes a relay encode the
+  signed content on every pair it compares (about 90 ms per retried copy's
+  grouping against about 1.2 ms). Encode each control's signed content once per
+  scan or grouping (measured about 1.05 ms for the grouping when memoized), in
+  `packages/shared/alm/inbound/control/is-al-same-receipt-statement.ts` and
+  `toFirstOfEachStatement`
+  (`packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts`).
+- A permissive fallback at a relay for an outside entry no stored control
+  explains (S8-ii, D601): forward rather than refuse when the history no longer
+  holds any control that recorded the recipient outside. The origin already
+  refuses a confirmation for a recipient it holds outside, in every mode, so
+  this would remove the flood's third face at no cost in truth.
+- The dequeue settle's residual risk (S8-ii, D597): a dequeue can re-plan a
+  message that was already sent (a reload between the dispatch commit and the
+  queue row's completion), and a re-plan refused `unsupported` there now ends
+  the handle `rejected`. The keyless freeze and the room limit cannot newly
+  refuse one, since the audience and its keys freeze once; no concrete trigger
+  was found for the other five `unsupported` producers.
+- A same-statement dedupe at a relay or at the origin reads `unauthorized` in
+  the diagnostics (S8-ii): a recipient's redundant own NACK after its own
+  hop-end, refused as the same statement, shows as a `rejected` row (the 303
+  rejected `not-subscribed` NACK rows of one full-scope RTC run all come from
+  `granted-rtc-ordered-relay`'s probe loop); a `duplicate` label would read
+  truer.
+- `toFirstOfEachStatement`
+  (`packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts`)
+  is quadratic over the stored controls of a retried copy, up to about 512
+  (S8-ii).
+- The ALM lane abandons a role's recipe at its 180 s deadline without
+  cancelling it (S8-ii; pre-existing): the abandoned recipe's later failure
+  cleanup can close a shared connection under the next cell
+  (`tests/playwright/rallar-black-box/full-stack-helpers.ts`). The cell that
+  overruns is kept last in its family.
+- `granted-rtc-ordered-relay`'s authored worst case, a probe of about 95 s plus
+  a 90 s cue wait, exceeds the lane's 180 s role deadline (S8-ii).
+- A layout-independent post-run check for `receipted-relay-path` (S8-ii,
+  D604): at least one origin's ending receipt confirms two recipients through
+  one hop. Today the cell asserts no relay, so a run whose two sends were
+  routed under different plans can go direct and stay green.
+- `toRoutedTypeIds` (`packages/tests/shared-test/alm-conformance-recipes.test.ts`)
+  ignores `message`-kind waits (S8-ii; pre-existing): cue and arrival waits are
+  isolated only by their payload marker, and nothing pins that.
 - Ordered subscription history (the addendum's later outcome after Slice 4):
   a latest-state snapshot with a fenced live cursor, and an authorized replay
   of retained history; Slice 4 delivers live entry and omissions only (D526).

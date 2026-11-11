@@ -1,4 +1,5 @@
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALReceiptProofRefusal } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 import type { ALInboundOrderingPosition } from '@shared/alm/inbound/admission/to-al-inbound-ordering-position.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
@@ -58,6 +59,15 @@ interface AlmConformanceControlAdmissionWaitInput {
     readonly outcome: 'committed' | undefined;
     /** A committed receipt's phase to match; absent, any admission of the control matches (a receipt's first). */
     readonly receiptPhase?: ALReceiptPayload['phase'];
+}
+
+interface AlmConformanceControlProofRefusalWaitInput {
+    readonly step: AlmConformanceMessageStepInput;
+    readonly name: string;
+    /** The raw control's authored msgId; it may name result references, which `contains` resolves. */
+    readonly controlMsgId: string;
+    readonly controlTypeId: string;
+    readonly proofRefusal: ALReceiptProofRefusal['kind'];
 }
 
 /**
@@ -121,6 +131,24 @@ export function toControlAdmissionWait(
 }
 
 /**
+ * The origin's `rejected` admission of one raw control whose proof it refused, whatever issue its reason names first
+ * (a duplicate issue can precede the proof issue), so the refusal kind is matched on the event's `proofRefusal` field.
+ */
+export function toControlProofRefusalWait(
+    { step, name, controlMsgId, controlTypeId, proofRefusal }: AlmConformanceControlProofRefusalWaitInput
+): RallarBlackBoxTestWaitCommand {
+    return toDiagnosticWait({
+        step,
+        name,
+        topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        contains:
+            `"msgId":"${controlMsgId}","typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}",` +
+            '"outcome":"rejected","reason":"',
+        payloadFields: { 'data.kind': 'control-admission', 'data.proofRefusal': proofRefusal }
+    });
+}
+
+/**
  * The `commit-phases` event of the retransmission a repair hint dispatched for the send of `step.index`, matched in
  * its emitted key order (`msgId`, `typeId`, `origin`); the sender's peer id precedes them and is unknown when the
  * recipe is authored. The commit states the event whether or not its frame then leaves, so a hold on the frame does
@@ -156,7 +184,7 @@ export function toNoGapRepairWaits(step: AlmConformanceStepInput): readonly Rall
 }
 
 /** No repair dispatched any message of the cell's type from this page: a minted send names no index to pin it by. */
-export function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
+function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestWaitCommand {
     return toDiagnosticWait({
         step,
         name,

@@ -6,9 +6,9 @@ S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii), Slice
 5 (producer-row positions, as S5-i), Slice 6 (granted unicast, list and
 principal broadcast over RTC, as S6-i and S6-ii), Slice 7 (cross-instance
 positions and outside class, as S7-i and S7-ii) and Slice 8 (signed receipts on
-RTC, as S8-i) are implemented and recorded as applied in §7; the later outcomes
-remain a proposed extension, not implemented behavior or an adopted change to
-`docs/product.md`.
+RTC, as S8-i and S8-ii) are implemented and recorded as applied in §7; the later
+outcomes remain a proposed extension, not implemented behavior or an adopted
+change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -1163,32 +1163,36 @@ Decisions D568–D580 are in the roadmap; Slice 7 is complete (S7-i and S7-ii).
 Authenticate the recipient a receipt control speaks for on RTC, so that
 `acknowledged` means one thing on both carriers and at-least-once over peer
 relays holds against a misbehaving member, not only against faults. As built,
-under `receiver` and `leader`, this holds at the origin: no peer can confirm,
-exclude or end a receipt for another recipient there; through an honest relay a
-child hop can still pre-empt another recipient's true control (a limit below),
-and under `hop` and `subtree` a hop can still exclude another hop (a limit
-below). The premise is corrected (S8-C0b): the candidates survey said the slice
-replaces the trust in an ACK's `fromPeerId`, that the AR Eye games gate proves
-it and that it is client-only, and the code corrects all three. No game-lane
-room relays: below 5 active sessions a room is a `star`, in which every
-recipient ACKs the origin directly, and lane rooms hold 2 to 4 sessions, so the
-games gate runs direct ACKs only. The defect needs no relay: on RTC the channel
-binds a control's `fromPeerId`, but nothing bound its `logicalRecipientPeerId`,
-so under `receiver` and `leader` any room peer with a channel to the origin
-could confirm another recipient (whose true ACK was then refused as already
-counted), move one outside with a forged outside-audience NACK or end everyone's
-receipt with a forged terminal NACK, and a relay could drop a copy and forge its
-ACK, so the timeout and the WS fallback never fired. It is not client-only: the
-WS server decodes the same payloads through its closed decoder and authors three
-of its own, though its behaviour does not change. And it is half a guarantee:
-the publisher proof covers granted sends only, so an ordinary room send's origin
+under `receiver` and `leader`, this holds at the origin and through honest
+relays: no peer can confirm, exclude or end a receipt for another recipient,
+since a relay forwards every distinct statement a child makes about a recipient
+and the origin judges each (S8-ii); a child that floods its relay with distinct
+forged statements, and the two of its effects that need no flood, remain the
+limits there (below), and under `hop` and
+`subtree` a hop can still exclude another hop (a limit below). The premise is
+corrected (S8-C0b): the candidates survey said the slice replaces the trust in
+an ACK's `fromPeerId`, that the AR Eye games gate proves it and that it is
+client-only, and the code corrects all three. No game-lane room relays: below 5
+active sessions a room is a `star`, in which every recipient ACKs the origin
+directly, and lane rooms hold 2 to 4 sessions, so the games gate runs direct
+ACKs only. The defect needs no relay: on RTC the channel binds a control's
+`fromPeerId`, but nothing bound its `logicalRecipientPeerId`, so under
+`receiver` and `leader` any room peer with a channel to the origin could confirm
+another recipient (whose true ACK was then refused as already counted), move one
+outside with a forged outside-audience NACK or end everyone's receipt with a
+forged terminal NACK, and a relay could drop a copy and forge its ACK, so the
+timeout and the WS fallback never fired. It is not client-only: the WS server
+decodes the same payloads through its closed decoder and authors three of its
+own, though its behaviour does not change. And it is half a guarantee: the
+publisher proof covers granted sends only, so an ordinary room send's origin
 stays unauthenticated across relays. It was designed in the Slice 8 design
 proposal, now deleted (git history is the archive), from the candidates survey
 and three read-only surveys at `664ed19d5`, and lands as S8-i (the protocol: the
 shapes, the signing, the relay's forward, the frozen keys, the origin's
 verification, the cutover, every fixture, the blocking units and these
-documents) and S8-ii (the observation cells, the `messages.control` recipient
-field and the 6f count).
+documents) and S8-ii (the relay's statement rule, the settle of a held send
+refused at its dequeue, one shared key import, the observation cells, the
+`messages.control` recipient field and the 6f count).
 
 As applied (S8-i): one encoder, `toClassifiedSigningInput(domainTag, sections)`
 in `packages/shared/signature/`, builds both signing inputs, and
@@ -1246,7 +1250,7 @@ forwarded it. A refusal (`missing-proof`, `unknown-key`, `key-mismatch`,
 `invalid-signature`) is an `unauthorized` issue and a `rejected` admission,
 whose `control-admission` diagnostic states `proofRefusal`,
 `claimedRecipientPeerId` and `channelPeerId`; nothing is counted, written or
-answered, and a true ACK the origin receives still completes the receipt. A
+answered, and a true ACK still completes the receipt. A
 control that speaks for a peer the receipt does not count is a hop fact the
 channel authenticates when it speaks for its own sender, judged by the
 validators as before the slice (a non-counted next hop's own hop-end completes
@@ -1295,32 +1299,140 @@ one counted recipient still ends everyone's receipt, now under its own
 signature; a page without SubtleCrypto (an insecure origin) cannot be a counted
 recipient or the origin of receipted RTC, and the fallback takes such a leg; a
 logically receipted RTC unicast that names no room is refused `unsupported`,
-where before the slice it was admitted. A stored-stage `unsupported` refusal is
-a silent drop: a send held until its freeze that then meets a keyless counted
-recipient (or passes the room limit, as before the slice) is neither settled nor
-handed to the fallback, and its handle runs to its deadline. A held send whose
-audience was frozen before it was held adopts its keys at the dequeue that first
-sees its room, for each counted recipient the room keys; one the room does not
-key there is sent to, reads `unknown-key` and runs to the retry or the fallback.
-When a not-subscribed recipient's hop-end reaches the relay before its NACK, the
-relay forwards the hop-end and refuses the later NACK, so the child's reason
-never reaches the origin, which records the recipient outside in either order. A
-forwarded hop-end lost on the relay-to-origin hop while the relay's terminal ACK
-arrives strands that recipient until the deadline, as the relay-authored NACK
-could before. An honest relay verifies nothing and keys "already forwarded" and
-"outside" by the recipient alone, so a child hop that names another recipient
-with a proof that does not verify pre-empts that recipient's true control at the
-relay: after a forged ACK the true one is stored but not forwarded, and every
-retried copy forwards the forged one again; after a forged `not-subscribed` NACK
-or hop-end the true one is refused at the relay. The origin refuses the forgery
-and counts nobody, so the recipient stays unconfirmed and the receipt runs to
-`receipt-exhausted` and the fallback: truthful, and the forger can no longer
-confirm the recipient as it could before the slice, but that recipient cannot be
-confirmed on RTC for that message. The fix is relay-side verification of a child
-control that names a counted recipient, or relay rows keyed by the control's
-proof. The observation cells, the `messages.control` recipient field and the 6f
-sign and verify count land in S8-ii, observed on the local lane only. Decisions
-D581–D595 are in the roadmap; Slice 8 completes with S8-ii.
+where before the slice it was admitted. A stored-stage `unsupported` refusal was
+a silent drop: a send held until its freeze that then met a keyless counted
+recipient (or passed the room limit, as before the slice) was neither settled
+nor handed to the fallback, and its handle ran to its deadline; settled in S8-ii
+(below). A held send whose audience was frozen before it was held adopts its
+keys at the dequeue that first sees its room, for each counted recipient the
+room keys; one the room does not key there is sent to, reads `unknown-key` and
+runs to the retry or the fallback. When a not-subscribed recipient's hop-end
+reaches the relay before its NACK, the relay forwards the hop-end and refuses
+the later NACK, so the child's reason never reaches the origin, which records
+the recipient outside in either order. A forwarded hop-end lost on the
+relay-to-origin hop while the relay's terminal ACK arrives strands that
+recipient until the deadline, as the relay-authored NACK could before. An honest
+relay verifies nothing, and S8-i keyed "already forwarded" and "outside" by the
+recipient alone, so a child hop that named another recipient with a proof that
+does not verify pre-empted that recipient's true control at the relay; S8-ii
+keys them by statement, which closes that, and the flood limit below replaces
+it. Decisions D581–D595 and D596–D606 are in the roadmap; Slice 8 is complete.
+
+As applied (S8-ii): a relay keys every receipt fact by statement. Two child
+controls are one statement when they name the same recipient and either are
+one proof over one signed content (both ACKs or both NACKs, one proof identity
+`keyId|signature`, and every field the proof signs equal, compared as its
+signing input, `isALSameReceiptProofContent`; D606), or both carry `proof:
+null`, whatever their content, or are both that recipient's own word on its
+own channel (`fromPeerId === logicalRecipientPeerId`); relays still verify
+nothing, and the origin judges each statement as S8-i built it. So a peer that
+held a recipient's real proof and alters what it signs makes another statement,
+which goes up and is refused `invalid-signature`, and the recipient's true
+control forwarded by another child still goes up and is counted. One predicate, `isALSameReceiptStatement` with
+`hasALConfirmedStatement` and `hasALOutsideStatement` in `alm/inbound/control/`,
+over `isSameSignatureProof` beside `SignatureProof`, applies at every site that
+keyed by the recipient: a confirming ACK goes up unless the same statement is
+stored, a recipient is owed relative to the incoming control, and the row's
+outside list gains a recipient only when it is absent; the ACK admission refuses
+a duplicate or an outside recipient, and the NACK admission its two refusals,
+only against the same statement; and a retried copy re-forwards the first of
+each distinct stored statement. When the history no longer holds any control
+that recorded a recipient outside, the recipient alone decides, as before. Since
+`null` is one identity, honest `ws`, `hop` and `subtree` flows key as before
+(under `hop` and `subtree` on `rtc` a child that attaches distinct non-null
+proofs makes distinct statements, no new class, since the upward audience is
+undefined there), and no wire or stored shape changed. A retried copy's re-forward is cut to fit its commit
+bundle's cap of 256 durable effects (`resolveALInboundBoundedRetriedEffects`):
+the relay's own effects always stay, the stored child controls fill the rest
+with a recipient's own words chosen first, and the kept ones go in the order the
+copy would have sent them. Without the cut a flooded history made the relay
+refuse the whole retried copy, its own repeated ACK and retried forward
+included. The cut is not a flood effect only: an honest room at the RTC room
+limit, 256 recipients below one relay, re-forwards 256 statements beside the
+relay's own effects, so one forwarded word is cut, own words being kept first,
+where before S8-ii that retried copy was refused whole. The NACK admission's
+outside-list capacity check spares a recipient
+already on the list, which cannot grow by it. A dequeue now ends an
+`unsupported` re-plan (`resolveALOutboundReplanRefusalSettlement` reads the
+re-plan's site): the handle reads `rejected`, the receipt row is deleted in the
+dequeue's own commit, and the fallback does not take the send, since no
+fallback-capable leg is ever held (pinned); the retransmit and the ack-timeout
+re-plan keep their behaviour, so the ack-timeout still runs to
+`receipt-exhausted`, which the fallback takes, and an `unauthorized` re-plan
+keeps its silent drop. The rule reads only the verdict, so it ends every
+`unsupported` refusal met at a dequeue: the keyless freeze and the room limit,
+and the ACK, ordering, sequence-mint, exclusive and granted-publication
+refusals. The two verifiers share one thumbprint-checked key import,
+`VerificationKeyCache` in `packages/shared/signature/` (256 entries, keyed
+`keyId|JSON(publicJwk)`); each keeps its own order and verdict rules, and no pin
+moved. `messages.control` takes an optional `logicalRecipientPeerId`, which may
+carry a `{resultCache…}` token; absent, the page's own session stands, applied
+where the page knows its session, and `proof` stays `null`. Three observation
+cells, all full scope, three-agent and withheld from the hosted manifests (every
+hosted manifest is byte-identical): `unsigned-ack-refused` (`rtc`,
+`rtc-with-ws-fallback`), whose recipient-b sends a raw unsigned ACK naming its
+own session; `forged-recipient-ack` (`rtc`), whose receiver forges an unsigned
+ACK naming recipient-b while recipient-b holds its own; and
+`receipted-relay-path` (`rtc`), in which the owner reshapes the room into a
+three-session path and the sender and the owner each send one non-granted
+receipted multicast, so that whenever both sends route on one planned path at
+least one is relayed with the far leaf's signed ACK forwarded back. In the two
+cells that send an unsigned ACK the sender waits for its outbound `rejected`
+control admission with `proofRefusal` `missing-proof`, and in all three every
+receipt ends `acknowledged` with both recipients confirmed. The lane's
+receipt-role identity assessment joins the receipt the pinned handle ended in,
+the sender's last read of it. The 6f count on the real fixtures: a direct
+`receiver` room of two recipients signs 2 and the origin verifies 2; through a
+counted relay the relay signs 2 and verifies none, the leaf signs 1 and the
+origin verifies 3; a `leader` send to a leaf director signs 1 and verifies 1.
+The Limit 2 sibling (an unsigned `not-subscribed` NACK under `hop` that names
+another next hop) is pinned by a `Limit:` test. The full-scope RTC lane, local
+and in-memory, ran the three cells green at `e4d5f3058` (the two cells red
+there, `repair-exhausted` and `granted-rtc-ordered-relay`, are red on `main`
+too), and `unsigned-ack-refused` green over `rtc-with-ws-fallback` at
+`9b23ad0ac`; the only proof refusals in either run were the cells'
+`missing-proof`, and in `receipted-relay-path` recipient-b was the middle, so
+both origins' receipts confirmed both recipients through one hop. Bundle figures
+(S8-R11): `browser/rallar.ts` 300.214 → 300.470 KiB brotli (307,681 B) under its
+301 KiB budget, and the headless agent 396.913 → 397.205 KiB, its budget raised
+397 → 398 KiB. Limits: a child may send any number of distinct forged statements
+about a recipient, and each is stored, forwarded once and refused at the origin
+(no refusal bound). Each retried copy re-forwards up to its budget of stored
+statements again, and the origin's verifier caches positive verdicts only, so a
+stored forgery costs the origin one verify per retried copy that carries it. The flood has three effects. The relay
+keeps the last 256 child ACKs and the last 256 outside-audience NACKs per
+message, so enough later statements evict a recipient's true control, and a
+retried copy no longer re-forwards it; its first forward had gone up. A retried
+copy's re-forward is cut to its commit cap with own words first, so at a relay
+above the first one, where every statement is a forwarded word, the cut is
+arbitrary among them. And a history flood can evict the control that recorded a
+recipient outside (a forged hop-end records it from the ACK history, where any
+256 later child ACKs, honest ones included, evict it), after which the
+recipient alone decides, so its
+later true control is refused at that relay at first arrival. Two of these need
+no flood: one forged hop-end and 256 later child ACKs, honest ones included,
+evict the recording control, and in a room at the RTC room limit the cut falls
+anyway, so a few early forged statements can take the place of true forwarded
+words in a re-forward. A child that reuses one well-formed proof over up to 256
+altered contents makes a relay encode the signed content pairwise: about 90 ms
+per retried copy's grouping against about 1.2 ms before, up to about 180 ms
+with the NACK history flooded the same way and about 3 ms per admission on a
+full history, bounded by the histories, paced by the origin's retries and not
+fixed here (D606). In every case the origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
+still moves another next hop outside (pinned); a forger that is the recipient's
+own parent is on its path and can still withhold the copy or its control, which
+the origin's timeout, retry and fallback cover; and a recipient's redundant own
+NACK after its own hop-end is refused at a relay as the same statement, as
+before this slice. A dequeue can re-plan an already-sent message (a reload
+between the dispatch commit and the queue row's completion); the keyless freeze
+and the room limit cannot newly refuse one, since the audience and its keys
+freeze once, and no trigger was found for the other `unsupported` producers.
+`forged-recipient-ack` shows `missing-proof` only (a shape-valid garbage proof
+stays a unit forgery), and `receipted-relay-path` asserts neither who relays nor
+the hop count, since the owner's request only asks for the reshape: two sends
+routed under different plans can both go direct and the cell stays green. The
+three cells run at the local full scope only: CI's observation job runs the
+smoke scope and the hosted manifests withhold them.
 
 ### Later outcomes
 
@@ -1445,6 +1557,15 @@ preserve truthful outcomes:** a refused forgery counts nobody and a true ACK the
 origin receives still completes the receipt; and a receipted RTC leg with a
 keyless counted recipient is refused `unsupported` at admission and handed to
 the fallback, and under `rtc` alone is refused, never admitted to time out.
+S8-ii adds to the first row: at an honest relay a child hop's forged ACK, NACK
+or hop-end about another recipient no longer pre-empts that recipient's true
+control, in either order and through two relays in a row
+(`rtc-receipt-forgery.test.ts`), nor does a child that carries the recipient's
+real proof over an altered ACK or a NACK while another child forwards the true
+ACK, in either order (`rtc-receipt-held-proof.test.ts`), and the full-scope lane's
+`receipted-relay-path` cell recorded two relayed signed receipts in a browser
+run; to the second: a held send refused `unsupported` at its freezing dequeue
+reads `rejected` at once (`rtc-receipt-proof-keys.test.ts`).
 
 Focused shared ALM, browser facade, and server tests run before package
 typechecks/builds. Public exports require API snapshots and bundle-boundary

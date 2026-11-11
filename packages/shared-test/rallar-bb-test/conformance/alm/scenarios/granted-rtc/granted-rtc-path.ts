@@ -1,18 +1,14 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
-import { toCommandId } from '../../alm-conformance-step-identities.ts';
-import { toGroupPath, toUnsubscribeCommands } from '../topic-subscription/topic-subscription-commands.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../topic-subscription/topic-subscription-polls.ts';
+import { toPathTopologyConfigCommand } from '../relay-path/to-path-topology-config-command.ts';
+import { toUnsubscribeCommands } from '../topic-subscription/topic-subscription-commands.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
     toCueWait
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { toGrantedRtcOwnerCommands, toOverlayNextHopsCommand } from './granted-rtc-commands.ts';
-
-/** Three sessions in a tree whose degree is at most two form a path; `meshParamK` may not exceed the degree limit. */
-const PATH_TOPOLOGY = { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } as const;
 
 /**
  * The owner reshapes the room into a path before the sender publishes, so a path leaf's connect waits for its one next
@@ -26,7 +22,7 @@ export function toPathOwnerCommands(
     received: readonly RallarBlackBoxTestCommand[]
 ): readonly RallarBlackBoxTestCommand[] {
     return [
-        toTopologyConfigCommand(owner, 'tree'),
+        toPathTopologyConfigCommand(owner, 'tree'),
         ...toGrantedRtcOwnerCommands(owner, [{
             operation: 'grant',
             grantee: 'recipient-b',
@@ -40,7 +36,7 @@ export function toPathOwnerCommands(
         toOverlayNextHopsCommand(owner),
         toCueWait(owner, 'recorded'),
         ...toUnsubscribeCommands(owner, 'receiver'),
-        toTopologyConfigCommand(owner, 'reset')
+        toPathTopologyConfigCommand(owner, 'reset')
     ];
 }
 
@@ -69,22 +65,4 @@ export function toPathMemberCommands(
         toOverlayNextHopsCommand(recipient),
         ...toCueSendCommands(recipient, 'recorded')
     ];
-}
-
-/** `tree` writes the path's config through the owner's topology route; `reset` deletes it, restoring the defaults. */
-function toTopologyConfigCommand(owner: AlmConformanceStepInput, change: 'tree' | 'reset'): RallarBlackBoxTestCommand {
-    const name = `topology-${change}`;
-    return {
-        kind: 'http.request',
-        commandId: toCommandId(owner, name),
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-        request: {
-            method: change === 'tree' ? 'PUT' : 'DELETE',
-            path: `${toGroupPath(owner)}/topology/config/requests/` +
-                `alm-topology-{runtimeIdentity}-${owner.input.carrier}-${owner.scenarioKey}-${name}`,
-            ...(change === 'tree' ? { body: { config: PATH_TOPOLOGY } } : {})
-        },
-        response: { body: 'json', acceptedStatusCodes: [200] },
-        metadata: { purpose: `The room owner's ${change} of the room's topology config.` }
-    };
 }

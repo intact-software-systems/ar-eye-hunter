@@ -178,8 +178,10 @@ export interface ALPendingAckSnapshot {
      */
     readonly upwardAudiencePeerIds?: readonly string[];
     /**
-     * The recipients a `not-subscribed` NACK named, each relayed upward once and again on a retried copy: recipients
-     * that delivered nothing, for whom no confirming ACK is admitted after it; a row stored before it reads none.
+     * The recipients a stored control recorded outside the audience (a `not-subscribed` NACK, or a hop-end that
+     * confirms nobody): each distinct statement about one is relayed upward once and again on a retried copy, and a
+     * recipient stays listed after a confirming ACK of another statement was admitted and forwarded; a row stored
+     * before it reads none.
      */
     readonly outsideAudiencePeerIds: readonly string[];
     readonly expireAtTimestamp?: number;

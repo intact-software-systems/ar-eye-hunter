@@ -14,6 +14,7 @@ import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts'
 import { toALInboundAckEffect, type ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { toALInboundEffectId } from '../al-inbound-work-entry.ts';
+import { isALOwnWord, isALSameReceiptStatement } from '../control/is-al-same-receipt-statement.ts';
 import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
 import { isALInboundNotSubscribedPlan } from './al-inbound-not-subscribed-plan.ts';
 
@@ -82,6 +83,39 @@ export function computeALInboundDuplicateChanges(
             ...(input.recordedParentPresent ? [toFormerParentRelease(read, pendingAck)] : [])
         ]
     };
+}
+
+/**
+ * The effects of a copy cut to the commit bundle's `limit` (S8ii-R5): this peer's own effects always stay, and the
+ * stored child controls it re-forwards fill what remains, a recipient's own word before the other statements, each in
+ * history order. A copy that fits keeps every effect in its order; a cut keeps the survivors in their order.
+ */
+export function resolveALInboundBoundedRetriedEffects(
+    effects: readonly ALInboundEffectIntent[],
+    limit: number
+): readonly ALInboundEffectIntent[] {
+    const reforwards = effects.filter(isStoredReforward);
+    const budget = limit - (effects.length - reforwards.length);
+    if (reforwards.length <= budget) {
+        return effects;
+    }
+    const kept = new Set(
+        [...reforwards.filter(isOwnWordReforward), ...reforwards.filter((effect) => !isOwnWordReforward(effect))]
+            .slice(0, Math.max(budget, 0))
+    );
+    return effects.filter((effect) => !isStoredReforward(effect) || kept.has(effect));
+}
+
+function isStoredReforward(effect: ALInboundEffectIntent): boolean {
+    return effect.payload.kind === 'forward-control';
+}
+
+/**
+ * A re-forwarded control its recipient sent on its own channel: the one kind this relay heard from the recipient
+ * itself.
+ */
+function isOwnWordReforward(effect: ALInboundEffectIntent): boolean {
+    return effect.payload.kind === 'forward-control' && isALOwnWord(effect.payload.control.payload);
 }
 
 /** A retried hop copy names this peer as its one next hop (D25). */
@@ -156,33 +190,43 @@ function toParentAnswer(
 }
 
 /**
- * The stored child controls the row forwarded, each as its recipient signed it: per upward recipient the first
- * confirming ACK that names it, and per recipient recorded outside its NACK, else the hop-end that implied it.
+ * The stored child controls the row forwarded, each as its child sent it: each distinct statement of the confirming
+ * ACKs that name an upward recipient, then per recipient recorded outside each distinct statement of the NACKs and
+ * hop-ends that named it (S8ii-R1).
  */
 function toStoredUpwardControls(
     read: ALInboundMessageReadDto,
     pendingAck: ALPendingAckSnapshot
 ): readonly ALReceiptControl[] {
-    const confirmations = read.acks.filter((ack) =>
-        isALRecipientConfirmationAck(ack) && isALPendingAckUpwardRecipient(pendingAck, ack.logicalRecipientPeerId)
-    );
-    const confirmed = confirmations.filter((ack, index) =>
-        confirmations.findIndex((prior) => prior.logicalRecipientPeerId === ack.logicalRecipientPeerId) === index
-    );
-    const outside = pendingAck.outsideAudiencePeerIds.flatMap((peerId) => toStoredOutsideControl(read, peerId));
-    return [...confirmed.map((ack): ALReceiptControl => ({ type: 'ack', payload: ack })), ...outside];
+    const confirmations = read.acks
+        .filter((ack) =>
+            isALRecipientConfirmationAck(ack) && isALPendingAckUpwardRecipient(pendingAck, ack.logicalRecipientPeerId)
+        )
+        .map((ack): ALReceiptControl => ({ type: 'ack', payload: ack }));
+    const outside = pendingAck.outsideAudiencePeerIds.flatMap((peerId) => toStoredOutsideControls(read, peerId));
+    return [...toFirstOfEachStatement(confirmations), ...outside];
 }
 
-/** The stored NACK that recorded a recipient outside, else the hop-end that implied it; none once both expired. */
-function toStoredOutsideControl(read: ALInboundMessageReadDto, peerId: string): readonly ALReceiptControl[] {
-    const nack = read.nacks.find((stored) => stored.logicalRecipientPeerId === peerId);
-    if (nack !== undefined) {
-        return [{ type: 'nack', payload: nack }];
-    }
-    const hopEnd = read.acks.find((stored) =>
-        stored.logicalRecipientPeerId === peerId && stored.status === 'subtree-complete-not-subscribed'
+/**
+ * Each distinct statement that recorded a recipient outside, a NACK before a hop-end of the same statement; none once
+ * all expired.
+ */
+function toStoredOutsideControls(read: ALInboundMessageReadDto, peerId: string): readonly ALReceiptControl[] {
+    const nacks = read.nacks
+        .filter((stored) => stored.logicalRecipientPeerId === peerId)
+        .map((nack): ALReceiptControl => ({ type: 'nack', payload: nack }));
+    const hopEnds = read.acks
+        .filter((stored) =>
+            stored.logicalRecipientPeerId === peerId && stored.status === 'subtree-complete-not-subscribed'
+        )
+        .map((hopEnd): ALReceiptControl => ({ type: 'ack', payload: hopEnd }));
+    return toFirstOfEachStatement([...nacks, ...hopEnds]);
+}
+
+function toFirstOfEachStatement(controls: readonly ALReceiptControl[]): readonly ALReceiptControl[] {
+    return controls.filter((control, index) =>
+        controls.findIndex((prior) => isALSameReceiptStatement(prior.payload, control.payload)) === index
     );
-    return hopEnd === undefined ? [] : [{ type: 'ack', payload: hopEnd }];
 }
 
 /**

@@ -236,9 +236,9 @@ function validateMessagesControlCommand(command: RallarBlackBoxTestRecord): read
     const path = 'messages.control';
     const typeId = command.typeId;
     return [
-        ...(['connection', 'typeId', 'msgId', 'ackedMsgId', 'toPeerId'] as const).flatMap((key) =>
-            validateStringField(command, key, path)
-        ),
+        ...(['connection', 'typeId', 'msgId', 'ackedMsgId', 'toPeerId', 'logicalRecipientPeerId'] as const).flatMap((
+            key
+        ) => validateStringField(command, key, path)),
         ...validateEnumField({
             record: command,
             key: 'carrier',

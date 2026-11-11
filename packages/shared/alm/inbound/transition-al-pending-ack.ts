@@ -12,6 +12,11 @@ import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { isALImpliedNotSubscribedNack } from '../delivery/is-al-implied-not-subscribed-nack.ts';
 import { isALRecipientConfirmationAck } from '../delivery/is-al-recipient-confirmation-ack.ts';
 import { resolveALCountedRecipientPeerIds } from '../delivery/resolve-al-counted-recipient-peer-ids.ts';
+import {
+    hasALConfirmedStatement,
+    hasALOutsideStatement,
+    isALSameReceiptStatement
+} from './control/is-al-same-receipt-statement.ts';
 
 export interface TrackALPendingAckSnapshotInput {
     readonly msgId: string;
@@ -36,6 +41,8 @@ export interface AcceptALPendingAckPayloadInput {
     readonly current: ALPendingAckSnapshot | undefined;
     /** The child ACKs the row admitted before this one. */
     readonly acks: readonly ALAckPayload[];
+    /** The outside-audience NACKs the row admitted before this ACK. */
+    readonly nacks: readonly ALNackPayload[];
     readonly ack: ALAckPayload;
 }
 
@@ -119,12 +126,14 @@ export function isALPendingAckUpwardRecipient(pending: ALPendingAckSnapshot, rec
 }
 
 /**
- * An admitted child ACK is relayed upward when it confirms a recipient the origin counts and no earlier child ACK
- * named it already: a recipient relay's terminal ACK follows its `accepted` one. Only the completion ACK of the child
- * hop itself completes it, a not-subscribed one's included. A hop-end that confirms nobody for a recipient the row
- * still owes implies that recipient's `not-subscribed` NACK: the row records it outside and the relay forwards the
- * hop-end as it came, so a lost NACK still reaches the origin, as a delivering relay's terminal ACK still confirms it
- * when its `accepted` one was lost (R-S2c-ii-14).
+ * An admitted child ACK is relayed upward when it confirms a recipient the origin counts and no earlier child ACK made
+ * the same statement about it (`isALSameReceiptStatement`): a recipient relay's terminal ACK follows its `accepted`
+ * one as its own word, while a word forwarded under another proof is another statement the origin judges, so a forged
+ * control never pre-empts the recipient's true one. Only the completion ACK of the child hop itself completes it, a
+ * not-subscribed one's included. A hop-end that confirms nobody for a recipient the row still owes by its statement
+ * implies that recipient's `not-subscribed` NACK: the row records it outside once and the relay forwards the hop-end
+ * as it came, so a lost NACK still reaches the origin, as a delivering relay's terminal ACK still confirms it when its
+ * `accepted` one was lost (R-S2c-ii-14).
  */
 export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
@@ -138,15 +147,19 @@ export function acceptALPendingAckPayload(
         : current.ackedFromPeerIds;
     const relayed = isALRecipientConfirmationAck(ack) &&
         isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId) &&
-        !input.acks.some((prior) => prior.logicalRecipientPeerId === ack.logicalRecipientPeerId);
-    const outside = isALImpliedNotSubscribedNack(ack, toOwedUpwardRecipientPeerIds(current, input.acks));
+        !input.acks.some((prior) => isALSameReceiptStatement(prior, ack));
+    const outside = isALImpliedNotSubscribedNack(
+        ack,
+        isALOwedByStatement(current, input) ? [ack.logicalRecipientPeerId] : []
+    );
+    const recipientRecordedOutside = current.outsideAudiencePeerIds.includes(ack.logicalRecipientPeerId);
     return toALPendingAckTransition({
         msgId: ack.ackedMsgId,
         previous: current,
         pending: {
             ...current,
             ackedFromPeerIds,
-            outsideAudiencePeerIds: outside
+            outsideAudiencePeerIds: outside && !recipientRecordedOutside
                 ? [...current.outsideAudiencePeerIds, ack.logicalRecipientPeerId]
                 : current.outsideAudiencePeerIds
         },
@@ -155,26 +168,29 @@ export function acceptALPendingAckPayload(
     });
 }
 
-/** The frozen recipients of the row's upward audience not yet recorded outside, and never confirmed. */
-function toOwedUpwardRecipientPeerIds(
-    current: ALPendingAckSnapshot,
-    acks: readonly ALAckPayload[]
-): readonly string[] {
-    return (current.upwardAudiencePeerIds ?? []).filter((recipientPeerId) =>
-        !current.outsideAudiencePeerIds.includes(recipientPeerId) &&
-        !acks.some((prior) => prior.logicalRecipientPeerId === recipientPeerId && isALRecipientConfirmationAck(prior))
-    );
+/**
+ * The ACK's recipient is of the row's frozen upward audience, and no earlier control of the same statement confirmed
+ * it or recorded it outside.
+ */
+function isALOwedByStatement(current: ALPendingAckSnapshot, input: AcceptALPendingAckPayloadInput): boolean {
+    const { ack } = input;
+    return (current.upwardAudiencePeerIds ?? []).includes(ack.logicalRecipientPeerId) &&
+        !hasALConfirmedStatement(input.acks, ack) &&
+        !hasALOutsideStatement(current, { acks: input.acks, nacks: input.nacks }, ack);
 }
 
 /**
- * An admitted outside-audience NACK names a recipient that delivered nothing, which the row relays upward and records.
- * It completes no hop: the child's own hop-completion ACK does, once its subtree answered.
+ * An admitted outside-audience NACK names a recipient that delivered nothing, which the row relays upward and records
+ * once, however many distinct statements name it. It completes no hop: the child's own hop-completion ACK does, once its
+ * subtree answered.
  */
 export function acceptALPendingOutsideAudienceNack(
     current: ALPendingAckSnapshot,
     nack: ALNackPayload
 ): ALPendingAckSnapshot {
-    return { ...current, outsideAudiencePeerIds: [...current.outsideAudiencePeerIds, nack.logicalRecipientPeerId] };
+    return current.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId)
+        ? current
+        : { ...current, outsideAudiencePeerIds: [...current.outsideAudiencePeerIds, nack.logicalRecipientPeerId] };
 }
 
 export function isALPendingAckComplete(pending: ALPendingAckSnapshot): boolean {

@@ -301,6 +301,33 @@ describe('the RTC room bound on a frozen audience (R-S2c-ii-13)', () => {
         }
     );
 
+    it('settles a send held without a room snapshot rejected at its dequeue when its room exceeds the RTC room limit', async () => {
+        const fixture = createFixture();
+        fixture.groups.delete('room');
+        const message: ALMessage = { ...createOriginReceiverMulticast('held-oversize'), qos: { durability: { algo: 'local-outbox' } } };
+        const held = await fixture.manager.enqueueLegIfAbsent(message, 'hold');
+        await vi.advanceTimersByTimeAsync(0);
+
+        fixture.groups.accept('room', createOriginSnapshot(toRoomSessionIds(300), 4));
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
+        expect(fixture.channels.b!.sent).toEqual([]);
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'admission')).toEqual([
+            expect.objectContaining({
+                kind: 'admission',
+                msgId: message.id.msgId,
+                verdict: {
+                    kind: 'refused',
+                    reason: 'unsupported',
+                    detail: 'RTC room multicast audience of 299 recipients exceeds the RTC room limit of 256'
+                }
+            })
+        ]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toBeUndefined();
+    });
+
     it.each(['none', 'hop', 'receiver'] as const)('still admits a %s send to a room of 257 sessions', async (ack) => {
         const fixture = createFixture({ snapshot: createOriginSnapshot(toRoomSessionIds(257), 4), nextHopPeerIds: ['b', 'c'] });
         const message = { ...createOriginReceiverMulticast(`at-bound-${ack}`), qos: { ack: { algo: ack } } } as const;

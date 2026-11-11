@@ -92,6 +92,7 @@ export type AlmConformanceScenarioId =
     | 'receipt-exhausted-fallback'
     | 'repair-exhausted'
     | 'receipted-audience'
+    | 'receipted-relay-path'
     | 'reply-correlated'
     | 'reply-first-wins'
     | 'reply-timeout-late'

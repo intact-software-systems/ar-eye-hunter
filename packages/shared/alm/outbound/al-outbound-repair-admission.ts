@@ -233,7 +233,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return;
         }
         const refusal = read.plan &&
-            resolveALOutboundReplanRefusalSettlement(msg, toALOutboundAdmissionVerdict(read.plan));
+            resolveALOutboundReplanRefusalSettlement(msg, toALOutboundAdmissionVerdict(read.plan), 'ack-timeout');
         if (refusal) {
             await this.commitRefusedReceipt(msg, refusal, read.clientRecord?.version);
             return;

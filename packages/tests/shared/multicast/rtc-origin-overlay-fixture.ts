@@ -120,7 +120,7 @@ export const ORIGIN_PRINCIPAL_REF = {
     principalId: 'principal-1'
 } as const;
 
-const CHANNEL_PEER_IDS = ['b', 'c', 'd', 'r'];
+const CHANNEL_PEER_IDS = ['b', 'c', 'd', 'g', 'r'];
 
 export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInput): RtcOriginOverlayFixture {
     const ready = { peerIds: input.nextHopPeerIds };

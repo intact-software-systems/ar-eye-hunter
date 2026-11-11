@@ -32,7 +32,7 @@ import {
 
 import { INBOUND_TEST_EFFECT_PREPARATION } from '../inbound-runtime-test-fixture.ts';
 
-import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+import { toTestALAckPayload, toTestSignatureProof } from '../../../al-control-test-payloads.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const DIRECTOR_SOURCE: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'relay' };
@@ -69,6 +69,7 @@ describe('inbound pending ACK transition', () => {
         const transition = acceptALPendingAckPayload({
             current: RELAY_ROW,
             acks: [],
+            nacks: [],
             ack: toChildAck('child-relay', 'grandchild', 'delivered')
         });
 
@@ -81,11 +82,13 @@ describe('inbound pending ACK transition', () => {
         const afterRelay = acceptALPendingAckPayload({
             current: { ...RELAY_ROW, ackedFromPeerIds: ['leaf'] },
             acks: [],
+            nacks: [],
             ack: toChildAck('child-relay', 'child-relay', 'subtree-complete')
         });
         const late = acceptALPendingAckPayload({
             current: afterRelay.pending,
             acks: [],
+            nacks: [],
             ack: toChildAck('child-relay', 'grandchild', 'delivered')
         });
 
@@ -116,6 +119,7 @@ describe('inbound pending ACK transition', () => {
         const transition = acceptALPendingAckPayload({
             current: { ...RELAY_ROW, upwardAudiencePeerIds: ['grandchild'] },
             acks: [],
+            nacks: [],
             ack: toChildAck('child-relay', 'grandchild', 'subtree-complete-not-subscribed')
         });
 
@@ -123,6 +127,33 @@ describe('inbound pending ACK transition', () => {
         expect(transition.relayedRecipientPeerIds).toEqual([]);
         expect(transition.pending).toMatchObject({ ackedFromPeerIds: [], outsideAudiencePeerIds: ['grandchild'] });
         expect(transition.completed).toBeUndefined();
+    });
+
+    it('relays a second statement about one recipient under another proof, and never the same statement twice', () => {
+        const current = { ...RELAY_ROW, upwardAudiencePeerIds: ['X'] };
+        const first = { ...toChildAck('child-relay', 'X', 'delivered'), proof: toTestSignatureProof(1) };
+        const second = { ...first, proof: toTestSignatureProof(2) };
+
+        expect(acceptALPendingAckPayload({ current, acks: [first], nacks: [], ack: second }).relayedRecipientPeerIds)
+            .toEqual(['X']);
+        expect(acceptALPendingAckPayload({ current, acks: [first, second], nacks: [], ack: { ...first } }).relayedRecipientPeerIds)
+            .toEqual([]);
+    });
+
+    it('records a recipient outside once whichever distinct statements imply it', () => {
+        const first = { ...toChildAck('child-relay', 'X', 'subtree-complete-not-subscribed'), proof: toTestSignatureProof(1) };
+        const second = { ...first, proof: toTestSignatureProof(2) };
+
+        const afterFirst = acceptALPendingAckPayload({
+            current: { ...RELAY_ROW, upwardAudiencePeerIds: ['X'] },
+            acks: [],
+            nacks: [],
+            ack: first
+        });
+        const afterSecond = acceptALPendingAckPayload({ current: afterFirst.pending, acks: [first], nacks: [], ack: second });
+
+        expect([afterFirst.relayedOutsidePeerIds, afterSecond.relayedOutsidePeerIds]).toEqual([['X'], ['X']]);
+        expect(afterSecond.pending?.outsideAudiencePeerIds).toEqual(['X']);
     });
 });
 
@@ -173,6 +204,7 @@ describe('a logical recipient that relays a group-leader send', () => {
             const transition = acceptALPendingAckPayload({
                 current,
                 acks: [],
+                nacks: [],
                 ack: { ...toChildAck(childPeerId, childPeerId, 'subtree-complete'), toPeerId: 'director' }
             });
             relayed.push(...transition.relayedRecipientPeerIds, ...transition.relayedOutsidePeerIds);
@@ -280,6 +312,7 @@ function acceptChildCompletions(pending: ALPendingAckSnapshot, childPeerIds: rea
         transition = acceptALPendingAckPayload({
             current: transition.pending,
             acks: [],
+            nacks: [],
             ack: { ...toChildAck(childPeerId, childPeerId, 'subtree-complete'), toPeerId: 'director' }
         });
     }

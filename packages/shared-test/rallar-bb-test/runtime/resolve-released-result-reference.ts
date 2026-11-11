@@ -141,7 +141,12 @@ function toReferenceTexts(command: RallarBlackBoxTestCommand): readonly string[]
         case 'wait':
             return command.match?.contains === undefined ? [] : [command.match.contains];
         case 'messages.control':
-            return [command.msgId, command.ackedMsgId, command.toPeerId];
+            return [
+                command.msgId,
+                command.ackedMsgId,
+                command.toPeerId,
+                ...(command.logicalRecipientPeerId === undefined ? [] : [command.logicalRecipientPeerId])
+            ];
         case 'fault.inject':
             return (command.carrier === 'ws' || command.carrier === 'rtc') && command.match?.msgId !== undefined
                 ? [command.match.msgId]

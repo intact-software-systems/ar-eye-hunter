@@ -26,7 +26,10 @@ import {
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
-/** The re-plan refusals compared: a revoked publisher ends its handle; every other refusal keeps its silent drop. */
+/**
+ * The re-plan refusals compared: a revoked publisher ends its handle, and a dequeue also ends an `unsupported` re-plan;
+ * every other refusal keeps its silent drop.
+ */
 type ReplanRefusal = Extract<ALOutboundDropReasonCode, 'no-publish-grant' | 'unsupported' | 'unauthorized'>;
 
 const DEQUEUE_TYPE = 'WS_OUTBOX';
@@ -34,6 +37,12 @@ const DEQUEUE_TYPE = 'WS_OUTBOX';
 const REFUSAL_CASES: readonly [ReplanRefusal, boolean][] = [
     ['no-publish-grant', true],
     ['unsupported', false],
+    ['unauthorized', false]
+];
+
+const DEQUEUE_REFUSAL_CASES: readonly [ReplanRefusal, boolean][] = [
+    ['no-publish-grant', true],
+    ['unsupported', true],
     ['unauthorized', false]
 ];
 
@@ -138,7 +147,7 @@ describe('a re-plan of a stored own message its sender may no longer publish', (
         ]);
     });
 
-    it.each(REFUSAL_CASES)('a dequeue refused %s completes its row and states that refusal: %s', async (code, stated) => {
+    it.each(DEQUEUE_REFUSAL_CASES)('a dequeue refused %s completes its row and states that refusal: %s', async (code, stated) => {
         const outbox = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
         const settlements: ALDeliverySettlement[] = [];
         const message = createOutboundMessage(`dequeue-${code}`);

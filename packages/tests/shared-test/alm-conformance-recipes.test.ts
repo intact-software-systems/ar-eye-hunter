@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
@@ -14,6 +15,7 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
@@ -38,8 +40,21 @@ const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
 /** The three-peer scenarios run on three agents: an origin and two distinguishable recipients (D45). */
 const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
     ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
-    rtc: ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'],
-    'rtc-with-ws-fallback': ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
+    rtc: [
+        'aggregated-receipt',
+        'missing-recipient-retry',
+        'unknown-ack-version',
+        'unsigned-ack-refused',
+        'forged-recipient-ack',
+        'frozen-audience-membership'
+    ],
+    'rtc-with-ws-fallback': [
+        'aggregated-receipt',
+        'missing-recipient-retry',
+        'unknown-ack-version',
+        'unsigned-ack-refused',
+        'frozen-audience-membership'
+    ]
 } as const;
 
 /** The membership fence runs where one hop judges the roster; its rejection only where the server does. */
@@ -106,15 +121,22 @@ const GRANTED_RTC_TWO_AGENT_KEYS = [
     'granted-rtc-unicast-delivered'
 ] as const;
 
-const GRANTED_RTC_THREE_AGENT_KEYS = [
+/** The granted three-agent cells that keep the room's default topology. */
+const GRANTED_RTC_ROOM_KEYS = [
     'granted-rtc-forged-sender',
     'granted-rtc-not-subscribed',
     'granted-rtc-list-delivered',
     'granted-rtc-list-non-holder',
-    'granted-rtc-list-lane-roles',
-    'granted-rtc-relay-only',
-    'granted-rtc-ordered-relay'
+    'granted-rtc-list-lane-roles'
 ] as const;
+
+/** The granted cells that reshape the room's topology; the ordered relay stays last. */
+const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-relay'] as const;
+
+const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_RELAY_KEYS] as const;
+
+/** The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells. */
+const RTC_THREE_AGENT_KEYS_IN_ORDER = [...GRANTED_RTC_ROOM_KEYS, 'receipted-relay-path', ...GRANTED_RTC_RELAY_KEYS] as const;
 
 /** The granted principal broadcast runs on the same-principal family, beside the audience cells. */
 const GRANTED_RTC_PRINCIPAL_KEY = 'granted-rtc-principal-delivered';
@@ -392,7 +414,8 @@ describe('alm-conformance recipe family', () => {
                     ...(carrier === 'ws'
                         ? ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)
                         : []),
-                    ...(carrier === 'rtc' ? GRANTED_RTC_THREE_AGENT_KEYS : []).flatMap((key) =>
+                    // The path cells close the list; the one that can outlast the lane's per-role deadline runs last.
+                    ...(carrier === 'rtc' ? RTC_THREE_AGENT_KEYS_IN_ORDER : []).flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     )
                 ]);
@@ -414,7 +437,8 @@ describe('alm-conformance recipe family', () => {
             'reply-first-wins',
             'paced-isolation-lists',
             'repair-exhausted',
-            ...GRANTED_RTC_THREE_AGENT_KEYS
+            ...GRANTED_RTC_THREE_AGENT_KEYS,
+            'receipted-relay-path'
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -570,8 +594,11 @@ describe('alm-conformance recipe family', () => {
                 const routed = toRecipes([scenario])
                     .flatMap((recipe) => recipe.commands.flatMap(toRoutedTypeIds));
 
+                const pairTypeId = `alm.conformance.${carrier}.${scenario.scenarioKey}`;
+
                 expect(routed.length).toBeGreaterThan(0);
-                expect(new Set(routed)).toEqual(new Set([`alm.conformance.${carrier}.${scenario.scenarioKey}`]));
+                // A cell's cues may travel on a type of their own, which is still the pair's.
+                expect(new Set(routed.filter((typeId) => typeId !== `${pairTypeId}-cues`))).toEqual(new Set([pairTypeId]));
             }
         }
     });
@@ -731,6 +758,7 @@ describe('alm-conformance recipe family', () => {
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
+            'receipted-audience',
             ...AUDIENCE_KEYS,
             ...LEADER_ACK_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
             ...CLAIM_KEYS_BY_CARRIER['rtc-with-ws-fallback'],
@@ -786,10 +814,14 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full'],
             ['full'],
+            ['full'],
+            ['full'],
             // The granted rtc cells.
             ...[...GRANTED_RTC_TWO_AGENT_KEYS, GRANTED_RTC_PRINCIPAL_KEY, ...GRANTED_RTC_THREE_AGENT_KEYS].map(() => ['full']),
             // The topic subscription cells, now that a receipted granted send rides rtc.
-            ...FOUR_ROLE_KEYS.map(() => ['full'])
+            ...FOUR_ROLE_KEYS.map(() => ['full']),
+            // The receipted relay-path cell, after the granted relay cells.
+            ['full']
         ]);
     });
 
@@ -1002,6 +1034,8 @@ describe('alm-conformance recipe family', () => {
             const tails = {
                 'aggregated-receipt': ['acknowledged', 2, 2, 0, 0],
                 'unknown-ack-version': ['acknowledged', 2, 2, 0, 0],
+                'unsigned-ack-refused': ['acknowledged', 2, 2, 0, 0],
+                'forged-recipient-ack': ['acknowledged', 2, 2, 0, 0],
                 'frozen-audience-membership': ['expired', 2, 1, 1, 0]
             } as const;
             for (const [key, [ending, expected, confirmed, unconfirmed, outside]] of Object.entries(tails)) {
@@ -1142,6 +1176,170 @@ describe('alm-conformance recipe family', () => {
                         '"typeId":"al.control.ack.v2","carrier":"rtc","outcome":"rejected","reason":"unsupported"'
                 })
             }));
+        });
+
+        it('answers the send with an unsigned v3 ACK over the rtc leg, admitted, and waits for the origin to refuse its proof missing-proof', () => {
+            for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
+                const scenario = receiptedOf(carrier, 'unsigned-ack-refused');
+                const arrival = `{resultCache.alm-${carrier}-unsigned-ack-refused-recipient-b-received-send-1.value.event.payload`;
+                const body = bodyOf(scenario.recipientB);
+                expect(body).toMatchObject([
+                    { kind: 'wait' },
+                    {
+                        kind: 'messages.control',
+                        carrier: 'rtc',
+                        typeId: 'al.control.ack.v3',
+                        msgId: `alm-${carrier}-unsigned-ack-refused-unsigned-ack-${arrival}.data.msgId}`,
+                        ackedMsgId: `${arrival}.data.msgId}`,
+                        toPeerId: `${arrival}.senderId}`
+                    },
+                    { kind: 'assert', expected: 'admitted' },
+                    { kind: 'messages.received', count: 2, absent: true }
+                ]);
+                expect(body[1]).not.toHaveProperty('logicalRecipientPeerId');
+            }
+            expect(receiptedOf('rtc', 'unsigned-ack-refused').sender.commands).toContainEqual(expect.objectContaining({
+                kind: 'wait',
+                match: expect.objectContaining({
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    contains: '"msgId":"alm-rtc-unsigned-ack-refused-unsigned-ack-' +
+                        '{resultCache.alm-rtc-unsigned-ack-refused-sender-send-1.value.msgId}",' +
+                        '"typeId":"al.control.ack.v3",' +
+                        '"targetMsgId":"{resultCache.alm-rtc-unsigned-ack-refused-sender-send-1.value.msgId}",' +
+                        '"outcome":"rejected","reason":"',
+                    payloadFields: { 'data.kind': 'control-admission', 'data.proofRefusal': 'missing-proof' }
+                })
+            }));
+        });
+
+        it('has the receiver forge recipient-b\'s ACK from its cue while recipient-b holds its own until the sender read the receipt mid-window', () => {
+            const scenario = receiptedOf('rtc', 'forged-recipient-ack');
+            const forgery = bodyOf(scenario.receiver).find((command) => command.kind === 'messages.control');
+            expect(forgery).toMatchObject({
+                kind: 'messages.control',
+                typeId: 'al.control.ack.v3',
+                logicalRecipientPeerId: '{resultCache.alm-rtc-forged-recipient-ack-cues-receiver-cue-victim-received.value.event.payload.senderId}'
+            });
+            expect(bodyOf(scenario.recipientB).map(shapeOf)).toEqual([
+                'fault.inject:rtc:until-cleared',
+                'messages.send',
+                'messages.observe',
+                'wait:message',
+                'messages.send',
+                'messages.observe',
+                'received:1',
+                'wait:message',
+                'fault.inject:rtc:0'
+            ]);
+            const cueSends = [scenario.sender, scenario.receiver, scenario.recipientB].flatMap((recipe) =>
+                recipe.commands.filter(isRallarBlackBoxTestMessagesSendCommand).filter((command) => command.commandId?.includes('-cue-') === true)
+            );
+            expect(cueSends.length).toBeGreaterThan(0);
+            for (const command of cueSends) {
+                expect(command.typeId, command.commandId).toMatch(/\.forged-recipient-ack-cues$/);
+            }
+            const indexOf = (suffix: string) => scenario.sender.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            const refusal = scenario.sender.commands.findIndex((command) =>
+                command.kind === 'wait' && command.match.kind === 'diagnostic' &&
+                command.match.payloadFields?.['data.proofRefusal'] === 'missing-proof'
+            );
+            const midWindow = indexOf('-sender-receipts-mid-window');
+            const release = indexOf('-sender-cue-release');
+            expect(refusal).toBeGreaterThan(-1);
+            expect(scenario.sender.commands[midWindow]?.kind).toBe('messages.receipts');
+            expect(refusal).toBeLessThan(midWindow);
+            expect(midWindow).toBeLessThan(release);
+            // The pin describes the receipt the handle ended in: the last read of the pinned handle is the window read.
+            const [pin] = readAlmReceiptRolesEntries(scenario.sender);
+            const pinnedReads = scenario.sender.commands.filter((command) => command.kind === 'messages.receipts' && command.handleId === pin?.handleId);
+            expect(pinnedReads.map((command) => command.commandId)).toEqual([
+                'alm-rtc-forged-recipient-ack-sender-receipts-mid-window',
+                'alm-rtc-forged-recipient-ack-sender-receipts-1'
+            ]);
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
+                expect(keys.includes('forged-recipient-ack'), carrier).toBe(carrier === 'rtc');
+            }
+        });
+
+        it('reshapes the room into a path, has the sender and the owner each send a non-granted receipted multicast and read its own receipt after its window, and resets the config after both read', () => {
+            const scenario = receiptedOf('rtc', 'receipted-relay-path');
+            const cellTypeId = 'alm.conformance.rtc.receipted-relay-path';
+            const receiver = bodyOf(scenario.receiver);
+            expect(receiver[0]).toMatchObject({
+                kind: 'http.request',
+                request: { method: 'PUT', body: { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } } }
+            });
+            expect(receiver.at(-1)).toMatchObject({ kind: 'http.request', request: { method: 'DELETE' } });
+            expect(receiver.at(-1)).not.toHaveProperty(['request', 'body']);
+            const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
+                recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            for (const recipe of [scenario.sender, scenario.receiver]) {
+                const cellSends = recipe.commands.filter(isRallarBlackBoxTestMessagesSendCommand)
+                    .filter((command) => command.typeId === cellTypeId);
+                expect(cellSends, recipe.recipeId).toEqual([
+                    expect.objectContaining({ ack: 'all-logical-recipients', topicId: CONFORMANCE_TOPIC_ID })
+                ]);
+                const received = recipe.commands.filter((command): command is RallarBlackBoxTestMessagesReceivedCommand =>
+                    command.kind === 'messages.received' && command.typeId === cellTypeId
+                );
+                expect(received.map((command) => [command.count, command.absent === true]), recipe.recipeId)
+                    .toEqual([[1, false], [2, true]]);
+                expect(received[1]?.commandId, recipe.recipeId).toBe(`${recipe.recipeId}-received-self-1`);
+                expect(recipe.commands.filter((command) => command.kind === 'health'), recipe.recipeId)
+                    .toEqual([expect.objectContaining({ commandId: `${recipe.recipeId}-overlay-next-hops` })]);
+                const absence = indexOf(recipe, '-received-self-1');
+                const reads = recipe.commands.filter((command) => command.kind === 'messages.receipts');
+                expect(reads, recipe.recipeId).toHaveLength(1);
+                const read = recipe.commands.indexOf(reads[0]!);
+                expect(read, recipe.recipeId).toBeGreaterThan(absence);
+                expect(
+                    recipe.commands.slice(read + 1, read + 7).map((command) => command.kind === 'assert' ? command.expected : command.kind),
+                    recipe.recipeId
+                ).toEqual(['acknowledged', 'receiver', 2, 2, 0, 0]);
+            }
+            const recipientB = bodyOf(scenario.recipientB);
+            expect(recipientB.filter((command) => command.kind === 'messages.send')).toEqual([]);
+            expect(recipientB.filter((command) => command.kind === 'health'))
+                .toEqual([expect.objectContaining({ commandId: `${scenario.recipientB.recipeId}-overlay-next-hops` })]);
+            expect(recipientB.filter((command) => command.kind === 'messages.received').map(shapeOf))
+                .toEqual(['received:2', 'received:3:absent']);
+            expect(shapeOf(recipientB.at(-1)!)).toBe('received:3:absent');
+            // Each origin sends only once the path is set: the owner after it sent `tree`, the sender after it heard it.
+            const ownerTree = indexOf(scenario.receiver, '-receiver-cue-tree');
+            expect(scenario.receiver.commands[ownerTree]?.kind).toBe('messages.send');
+            expect(ownerTree).toBeGreaterThan(-1);
+            expect(indexOf(scenario.receiver, '-receiver-send-1')).toBeGreaterThan(ownerTree);
+            const senderTree = indexOf(scenario.sender, '-sender-cue-tree-received');
+            expect(senderTree).toBeGreaterThan(-1);
+            expect(indexOf(scenario.sender, '-sender-send-1')).toBeGreaterThan(senderTree);
+            // The owner resets the path only after its own receipt assertions and the sender's `sender-read` cue.
+            const ownerAsserts = scenario.receiver.commands.map((command, index) => command.kind === 'assert' ? index : -1);
+            const senderRead = indexOf(scenario.receiver, '-receiver-cue-sender-read-received');
+            const reset = indexOf(scenario.receiver, '-receiver-topology-reset');
+            expect(senderRead).toBeGreaterThan(Math.max(...ownerAsserts));
+            expect(reset).toBeGreaterThan(senderRead);
+            expect(bodyOf(scenario.sender).at(-2)?.commandId).toMatch(/-cues-sender-cue-sender-read$/);
+            const cueCommands = [scenario.sender, scenario.receiver, scenario.recipientB].flatMap((recipe) =>
+                recipe.commands.filter((command) => command.commandId?.includes('-cue-') === true)
+            );
+            expect(cueCommands.length).toBeGreaterThan(0);
+            expect(scenario.recipientB.commands.filter((command) => command.commandId?.includes('-cue-') === true)).toEqual([]);
+            for (const command of cueCommands.filter(isRallarBlackBoxTestMessagesSendCommand)) {
+                expect(command.typeId, command.commandId).toMatch(/\.receipted-relay-path-cues$/);
+            }
+            for (const recipe of [scenario.sender, scenario.receiver, scenario.recipientB]) {
+                // No principal is granted or named: the sends need no grant, and the owner's PUT no principal token.
+                expect(JSON.stringify(recipe), recipe.recipeId).not.toContain('{principal:');
+            }
+            expect(scenario.sender.commands.find((command) => command.kind === 'rtc.connect'))
+                .toMatchObject({ readiness: { minReadyPeers: 1 } });
+            const unprincipaled = createAlmConformanceRecipes({ ...toConformanceInput('rtc'), principalIdsByRole: {} });
+            expect(unprincipaled.map((candidate) => candidate.scenarioKey)).toContain('receipted-relay-path');
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
+                expect(keys.includes('receipted-relay-path'), carrier).toBe(carrier === 'rtc');
+            }
         });
 
         it(

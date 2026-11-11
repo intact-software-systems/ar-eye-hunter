@@ -90,4 +90,42 @@ describe('submitBlackBoxRawControl', () => {
             });
         }
     });
+
+    it('names another session when the field is stated', async () => {
+        const submitted: ALMessage[] = [];
+        await submitBlackBoxRawControl({
+            control: { ...CONTROL, typeId: 'al.control.ack.v3', logicalRecipientPeerId: 'recipient-c' },
+            sessionId: 'recipient-b',
+            context: toAdmittingContext(submitted, () => undefined),
+            nowMs: 1_000,
+            traceId: 'trace-acked-received'
+        });
+
+        expect(JSON.parse(submitted[0]!.payload.resource)).toMatchObject({
+            fromPeerId: 'recipient-b',
+            logicalRecipientPeerId: 'recipient-c',
+            proof: null
+        });
+    });
+
+    it('names its own session when it is not', async () => {
+        const submitted: ALMessage[] = [];
+        await submitBlackBoxRawControl({
+            control: CONTROL,
+            sessionId: 'recipient-b',
+            context: toAdmittingContext(submitted, () => undefined),
+            nowMs: 1_000,
+            traceId: 'trace-acked-received'
+        });
+
+        expect(JSON.parse(submitted[0]!.payload.resource)).toMatchObject({ logicalRecipientPeerId: 'recipient-b' });
+    });
+
+    it('decodes a stated recipient and refuses one that is not a string', () => {
+        const stated = { ...CONTROL, logicalRecipientPeerId: 'recipient-c' };
+        expect(decodeBlackBoxRallarControlSubmitInput(stated).right).toEqual(stated);
+        expect(decodeBlackBoxRallarControlSubmitInput({ ...CONTROL, logicalRecipientPeerId: 7 }).left).toEqual({
+            message: 'messages.control logicalRecipientPeerId must name a session when it is stated.'
+        });
+    });
 });
