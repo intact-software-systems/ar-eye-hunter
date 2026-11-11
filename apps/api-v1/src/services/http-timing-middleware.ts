@@ -1,7 +1,7 @@
 import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
 
 import { nowMs, recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { decodeALTraceId, newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { AL_TRACE_ID_HTTP_HEADER, decodeALTraceId, newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 export interface HttpTimingMiddlewareOptions {
@@ -51,7 +51,7 @@ export function createHttpTimingMiddleware(
 
 function readHttpTimingRequest(c: Context): HttpTimingRequest {
     return {
-        traceId: decodeALTraceId(c.req.header('x-request-id')).right ?? newALTraceId(),
+        traceId: decodeALTraceId(c.req.header(AL_TRACE_ID_HTTP_HEADER)).right ?? newALTraceId(),
         method: c.req.method,
         path: c.req.path,
         isWebSocketUpgrade: c.req.header('upgrade')?.trim().toLowerCase() === 'websocket',
@@ -71,7 +71,7 @@ function writeHttpRequestTiming(c: Context, timing: RallarTimingSink, outcome: H
         c.header('server-timing', `total;dur=${Math.round(durationMs * 100) / 100}`);
     }
     if (!request.isWebSocketUpgrade) {
-        c.header('x-request-id', request.traceId);
+        c.header(AL_TRACE_ID_HTTP_HEADER, request.traceId);
     }
     recordRallarTiming({
         sink: timing,

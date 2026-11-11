@@ -1,5 +1,6 @@
 import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -401,7 +402,7 @@ export class OrderingClusterScenario {
             headers: {
                 ...toAuthHeaders(session),
                 'Content-Type': 'application/json',
-                'x-request-id': request.requestId
+                [AL_TRACE_ID_HTTP_HEADER]: request.requestId
             },
             body: JSON.stringify(request.body)
         });

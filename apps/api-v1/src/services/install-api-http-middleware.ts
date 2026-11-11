@@ -2,6 +2,7 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import { cors } from 'jsr:@hono/hono@4.11.9/cors';
 
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
 
 import type {
     ApiV1HttpConfiguration,
@@ -24,11 +25,11 @@ export function installApiHttpMiddleware(app: Hono, input: InstallApiHttpMiddlew
     const apiCors = cors({
         origin: (origin) => resolveCorsOrigin(origin, input.http.corsOrigins),
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id', 'If-None-Match', 'x-request-id'],
+        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id', 'If-None-Match', AL_TRACE_ID_HTTP_HEADER],
         exposeHeaders: [
             'Content-Length',
             'Server-Timing',
-            'x-request-id',
+            AL_TRACE_ID_HTTP_HEADER,
             'Retry-After',
             'ETag',
             ...STATE_SNAPSHOT_READ_EXPOSED_HEADERS

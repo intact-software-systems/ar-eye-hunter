@@ -1,4 +1,5 @@
 import type { WsOutboxProvenance } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { decodeFriendsView, type FriendsView } from '@shared/api/friends/friends-view.ts';
@@ -181,7 +182,11 @@ export class ViewPushClusterScenario {
             `${session.apiBaseUrl}${scopePath}/groups/${this.#scope.groupId}/sessions/${session.sessionId}/requests/${requestId}`,
             {
                 method: 'PUT',
-                headers: { ...authHeaders(session), 'Content-Type': 'application/json', 'x-request-id': requestId },
+                headers: {
+                    ...authHeaders(session),
+                    'Content-Type': 'application/json',
+                    [AL_TRACE_ID_HTTP_HEADER]: requestId
+                },
                 body: JSON.stringify({
                     generationId: crypto.randomUUID(),
                     connectionGenerationId: connected.generationId,
@@ -245,7 +250,11 @@ export class ViewPushClusterScenario {
         const requestId = `view-push-${crypto.randomUUID()}`;
         const response = await fetch(`${session.apiBaseUrl}/api/friends/requests/${requestId}`, {
             method: 'POST',
-            headers: { ...authHeaders(session), 'Content-Type': 'application/json', 'x-request-id': requestId },
+            headers: {
+                ...authHeaders(session),
+                'Content-Type': 'application/json',
+                [AL_TRACE_ID_HTTP_HEADER]: requestId
+            },
             body: JSON.stringify({ action: 'visibility', shareOnline })
         });
         assertEquals(response.status, 200, 'Visibility mutation applies through AppInbox');
