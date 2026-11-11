@@ -7,6 +7,7 @@ import {
     readRtcTopologyWorkEntry
 } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createRtcTopologyGroupSnapshot } from '../../shared-server/rallar-system/topology/rtc-topology-test-fixtures.ts';
+import { toEarlierALEnvelopeVersionResource } from '../al-contracts/to-earlier-al-envelope-version-resource.ts';
 
 const REQUESTED_AT_EPOCH_MS = 1_000;
 
@@ -29,8 +30,7 @@ function createValidEntry(): ResourceEntry {
 }
 
 function toEntryWithEnvelopeVersion(entry: ResourceEntry, version: number): ResourceEntry {
-    const message = readRtcTopologyWorkEntry(entry);
-    return { ...entry, resource: JSON.stringify({ ...message, id: { ...message.id, v: version } }) };
+    return { ...entry, resource: toEarlierALEnvelopeVersionResource(entry.resource, version) };
 }
 
 describe('decodeRtcTopologyWorkEntry', () => {

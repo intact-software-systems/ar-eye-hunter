@@ -48,6 +48,7 @@ import {
     readRtcTopologyWorkEntry
 } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
+import { toEarlierALEnvelopeVersionResource } from '../../../../../shared/al-contracts/to-earlier-al-envelope-version-resource.ts';
 
 const GROUP_REF = {
     applicationId: 'app-1',
@@ -626,8 +627,7 @@ describe('a head stamped with an unsupported envelope version (#782)', () => {
 });
 
 function toEntryWithEnvelopeVersion(entry: ResourceEntry, version: number): ResourceEntry {
-    const message = decodePersistedALMessage(entry.resource);
-    return { ...entry, resource: JSON.stringify({ ...message, id: { ...message.id, v: version } }) };
+    return { ...entry, resource: toEarlierALEnvelopeVersionResource(entry.resource, version) };
 }
 
 function withoutCoalescedWork(entry: ResourceEntry): ResourceEntry {

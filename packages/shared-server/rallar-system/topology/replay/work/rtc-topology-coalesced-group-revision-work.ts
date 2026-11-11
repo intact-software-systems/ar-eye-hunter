@@ -40,8 +40,8 @@ import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-o
 import type { TopologyWorkOrigin } from '../../planning/resolve-topology-plan-action.ts';
 import type { TopologyReplanWindow } from '../../planning/resolve-topology-replan-window.ts';
 import {
-    readCoalescedGroupRevisionPredecessor,
-    readCurrentCoalescedGroupRevisionWork,
+    decodeCoalescedGroupRevisionPredecessor,
+    decodeCurrentCoalescedGroupRevisionWork,
     type CoalescedMessageIdentity,
     type CurrentCoalescedGroupRevisionPredecessor,
     type UnsupportedCoalescedGroupRevisionPredecessor
@@ -147,7 +147,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
             successorEntry
         );
     }
-    const predecessor = readCoalescedGroupRevisionPredecessor(input.previousEntry);
+    const predecessor = decodeCoalescedGroupRevisionPredecessor(input.previousEntry);
     return computeCoalescedAppOutboxWork(
         input.previousEntry,
         predecessor.kind === 'unsupported'
@@ -294,7 +294,7 @@ export async function readPendingTopologyReplan(
     if (entry === null || !isPendingCoalescedStatus(entry.status)) {
         return null;
     }
-    const metadata = readCurrentCoalescedGroupRevisionWork(entry)?.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    const metadata = decodeCurrentCoalescedGroupRevisionWork(entry)?.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
     return {
         reconfigureQueued: true,
         dueAtEpochMs: metadata?.dueAtEpochMs ?? null,
@@ -393,7 +393,7 @@ export function resolveQueuedRtcTopologySuccessor(
     request: RtcTopologySuccessorRequest,
     observed: ResourceEntry
 ): QueuedRtcTopologySuccessor {
-    const queued = readCurrentCoalescedGroupRevisionWork(observed)?.envelope.data;
+    const queued = decodeCurrentCoalescedGroupRevisionWork(observed)?.envelope.data;
     if (
         queued === undefined ||
         queued.overlayId !== request.overlayId ||

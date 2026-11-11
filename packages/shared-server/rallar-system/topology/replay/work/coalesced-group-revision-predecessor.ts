@@ -51,11 +51,11 @@ export type CoalescedGroupRevisionPredecessor =
  * work contract that release idempotency checks. The latest request and due
  * times live in the coalesced metadata, not the message identity.
  */
-export function readCoalescedGroupRevisionPredecessor(entry: ResourceEntry): CoalescedGroupRevisionPredecessor {
+export function decodeCoalescedGroupRevisionPredecessor(entry: ResourceEntry): CoalescedGroupRevisionPredecessor {
     try {
         const decoded = decodeRtcTopologyWorkEntry(entry);
         if (decoded.left?.code === 'unsupported') {
-            return { kind: 'unsupported', entry, generation: readUnsupportedCoalescedGeneration(entry) };
+            return { kind: 'unsupported', entry, generation: decodeUnsupportedCoalescedGeneration(entry) };
         }
         if (decoded.left) {
             throw new TypeError(decoded.left.message);
@@ -83,9 +83,11 @@ export function readCoalescedGroupRevisionPredecessor(entry: ResourceEntry): Coa
 }
 
 /** The stored row's current coalesced work, or null when it is unsupported or corrupt. */
-export function readCurrentCoalescedGroupRevisionWork(entry: ResourceEntry): PreviousCoalescedGroupRevisionWork | null {
+export function decodeCurrentCoalescedGroupRevisionWork(
+    entry: ResourceEntry
+): PreviousCoalescedGroupRevisionWork | null {
     try {
-        const predecessor = readCoalescedGroupRevisionPredecessor(entry);
+        const predecessor = decodeCoalescedGroupRevisionPredecessor(entry);
         return predecessor.kind === 'current' ? predecessor.work : null;
     }
     catch {
@@ -93,7 +95,7 @@ export function readCurrentCoalescedGroupRevisionWork(entry: ResourceEntry): Pre
     }
 }
 
-function readUnsupportedCoalescedGeneration(entry: ResourceEntry): number {
+function decodeUnsupportedCoalescedGeneration(entry: ResourceEntry): number {
     const generation = tryReadCoalescedAppOutboxWorkEnvelope(entry)?.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
     if (generation === undefined || !Number.isSafeInteger(generation) || generation < 1) {
         throw new TypeError('Unsupported coalesced group-revision predecessor has no coalescing generation');

@@ -45,6 +45,7 @@ import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { toEarlierALEnvelopeVersionResource } from '../../../../shared/al-contracts/to-earlier-al-envelope-version-resource.ts';
 import { createPSqlAdmissionTestStorage } from '../../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
@@ -245,7 +246,7 @@ describe('group presence summary coalescing', () => {
         await fixture.processAlone(seeded.entries[0]!);
         await fixture.reserveTopologyHead(seeded.ref);
         await fixture.processAlone(seeded.entries[1]!);
-        await fixture.failStoredRow((await fixture.readTopologyRows(seeded.ref))[1]!.key);
+        await fixture.failStoredRow((await fixture.readTopologyRows(seeded.ref))[1]!.key, EntityStatus.FAILED);
         const [third] = await fixture.enqueue([seeded.entries[2]!]);
 
         const outcome = await fixture.process(third!);
@@ -287,17 +288,19 @@ describe('group presence summary coalescing', () => {
     });
 
     // #782: a head persisted under an older AL envelope version must not block its room's summaries.
+    // A current topology dequeuer leaves such a head NON_RETRYABLE; an exhausted older attempt budget leaves it FAILED.
     it.each([
-        { head: 'settled', settle: true },
-        { head: 'pending', settle: false }
-    ])('commits on the first attempt over a $head head stamped with an unsupported envelope version', async ({ settle }) => {
+        { head: 'non-retryable', settledAs: EntityStatus.NON_RETRYABLE },
+        { head: 'failed', settledAs: EntityStatus.FAILED },
+        { head: 'pending', settledAs: null }
+    ])('commits on the first attempt over a $head head stamped with an unsupported envelope version', async ({ head: headState, settledAs }) => {
         const fixture = await createCoalescingFixture();
-        const seeded = await fixture.seedConnectedGroup(`unsupported-head-room-${settle ? 'settled' : 'pending'}`, 2);
+        const seeded = await fixture.seedConnectedGroup(`unsupported-head-room-${headState}`, 2);
         await fixture.processAlone(seeded.entries[0]!);
         const [head] = await fixture.readTopologyRows(seeded.ref);
-        await fixture.replaceStoredResource(head!.key, toEnvelopeVersionResource(head!.resource, 3));
-        if (settle) {
-            await fixture.failStoredRow(head!.key);
+        await fixture.replaceStoredResource(head!.key, toEarlierALEnvelopeVersionResource(head!.resource, 3));
+        if (settledAs !== null) {
+            await fixture.failStoredRow(head!.key, settledAs);
         }
         const [second] = await fixture.enqueue([seeded.entries[1]!]);
 
@@ -401,7 +404,7 @@ interface CoalescingFixture {
     /** Overwrites a stored row's resource, as a row of another request under the same key would read. */
     replaceStoredResource(key: Key, resource: string): Promise<void>;
     /** Marks a stored row as failed for good, as an exhausted attempt budget leaves it. */
-    failStoredRow(key: Key): Promise<void>;
+    failStoredRow(key: Key, status: EntityStatus): Promise<void>;
 }
 
 /**
@@ -497,7 +500,7 @@ async function createCoalescingFixture(
         readCommittedDeltas: async (ref) => await readCommittedDeltas(sql, ref),
         readCommittedOutbox: async (ref) => await readCommittedOutbox(sql, ref),
         readTopologyRows: async (ref) => await readTopologyRows(sql, ref),
-        failStoredRow: async (key) => await failStoredRow(sql, key),
+        failStoredRow: async (key, status) => await failStoredRow(sql, key, status),
         replaceStoredResource: async (key, resource) => await replaceStoredResource(sql, key, resource),
         reserveTopologyHead: async (ref) => await reserveTopologyHead(sql, ref)
     };
@@ -511,8 +514,8 @@ async function readSummary(repository: PSqlRuntimeStateRepository, ref: GroupRef
     return summary.value;
 }
 
-async function failStoredRow(sql: PSqlSql, key: Key): Promise<void> {
-    await sql`update resource_inbox set ri_status = ${EntityStatus.FAILED}, ri_attempts = 20,
+async function failStoredRow(sql: PSqlSql, key: Key, status: EntityStatus): Promise<void> {
+    await sql`update resource_inbox set ri_status = ${status}, ri_attempts = 20,
             start_ts = now() at time zone 'UTC', end_ts = now() at time zone 'UTC', next_ts = null
         where ri_topic_id = ${key.topicId} and ri_resource_id = ${key.resourceId}
           and fk_ext_bank_id = ${key.contextId}`;
@@ -724,11 +727,6 @@ function toOtherRevisionSuccessorResource(resource: string): string {
             })
         }
     });
-}
-
-function toEnvelopeVersionResource(resource: string, version: number): string {
-    const message = JSON.parse(resource) as ALMessage;
-    return JSON.stringify({ ...message, id: { ...message.id, v: version } });
 }
 
 function readStoredCoalescedGeneration(resource: string): number {

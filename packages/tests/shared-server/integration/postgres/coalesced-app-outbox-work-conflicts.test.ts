@@ -21,6 +21,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 
+import { toEarlierALEnvelopeVersionResource } from '../../../shared/al-contracts/to-earlier-al-envelope-version-resource.ts';
 import {
     createPostgresSql,
     topologyGroupSnapshot,
@@ -220,10 +221,9 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
     async function stampHeadEnvelopeVersion(ref: GroupRef, version: number, failed: boolean): Promise<ResourceEntry> {
         const head: Key = toCoalescedGroupRevisionKey(ref);
         const [stored] = await readRevisionRows(ref);
-        const message = JSON.parse(stored!.resource) as ALMessage;
         await requireSql()`
             update resource_inbox
-            set ri_resource = ${JSON.stringify({ ...message, id: { ...message.id, v: version } })}
+            set ri_resource = ${toEarlierALEnvelopeVersionResource(stored!.resource, version)}
             where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
               and fk_ext_bank_id = ${head.contextId}
         `;
