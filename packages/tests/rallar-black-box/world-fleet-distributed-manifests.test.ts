@@ -9,28 +9,23 @@ import type {
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-type ManifestCommand = Readonly<{
-    kind?: string;
-    transport?: string;
-    rallar?: Readonly<Record<string, unknown>>;
-    commands?: readonly ManifestCommand[];
-    groups?: readonly Readonly<{
-        commands?: readonly ManifestCommand[];
-    }>[];
-}>;
+function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly RallarBlackBoxTestCommand[] {
+    const walk = (commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] =>
+        commands.flatMap((command) => {
+            if (command.kind === 'loop') {
+                return [command, ...walk(command.commands)];
+            }
+            if (command.kind === 'parallel') {
+                return [command, ...command.groups.flatMap((group) => walk(group.commands))];
+            }
+            return [command];
+        });
 
-function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
-    const walk = (commands: readonly ManifestCommand[]): readonly ManifestCommand[] =>
-        commands.flatMap((command) => [
-            command,
-            ...walk(command.commands ?? []),
-            ...(command.groups ?? []).flatMap((group) => walk(group.commands ?? []))
-        ]);
-
-    return manifest.recipes.flatMap((selection) => walk((selection.recipe?.commands ?? []) as readonly ManifestCommand[]));
+    return manifest.recipes.flatMap((selection) => walk(selection.recipe?.commands ?? []));
 }
 
 describe('world fleet distributed manifest catalog', () => {
