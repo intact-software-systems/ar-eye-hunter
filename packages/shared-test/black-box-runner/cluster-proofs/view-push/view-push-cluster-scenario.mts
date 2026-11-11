@@ -4,6 +4,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { decodeFriendsView, type FriendsView } from '@shared/api/friends/friends-view.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { assert, assertEquals } from '@std/assert';
 import type {
@@ -179,7 +180,12 @@ export class ViewPushClusterScenario {
         assert(connected, 'Current websocket has canonical client presence');
         const requestId = `view-push-presence-${crypto.randomUUID()}`;
         const presence = await fetch(
-            `${session.apiBaseUrl}${scopePath}/groups/${this.#scope.groupId}/sessions/${session.sessionId}/requests/${requestId}`,
+            `${session.apiBaseUrl}${
+                toApiMutationRequestPath(
+                    `${scopePath}/groups/${this.#scope.groupId}/sessions/${session.sessionId}`,
+                    requestId
+                )
+            }`,
             {
                 method: 'PUT',
                 headers: {
@@ -248,7 +254,7 @@ export class ViewPushClusterScenario {
 
     async #changeVisibility(session: ProofSession, shareOnline: boolean): Promise<{ readonly requestId: string; }> {
         const requestId = `view-push-${crypto.randomUUID()}`;
-        const response = await fetch(`${session.apiBaseUrl}/api/friends/requests/${requestId}`, {
+        const response = await fetch(`${session.apiBaseUrl}${toApiMutationRequestPath('/api/friends', requestId)}`, {
             method: 'POST',
             headers: {
                 ...authHeaders(session),

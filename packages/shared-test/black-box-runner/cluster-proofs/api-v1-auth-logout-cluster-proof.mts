@@ -7,6 +7,7 @@ import {
     decodeWsOutboxProvenance,
     type WsOutboxProvenance
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { API_CREATE_WS_PATH, toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 import {
     parseApiV1BlackBoxArgs,
@@ -98,7 +99,7 @@ async function assertLogoutClusterDelivery(scenario: LogoutClusterScenario): Pro
     const requestId = `auth-logout-proof-${crypto.randomUUID()}`;
     try {
         const delivery = waitForLogoutFrame(target.socket);
-        const response = await fetch(`${primary.baseUrl}/api/auth/logout/requests/${requestId}`, {
+        const response = await fetch(`${primary.baseUrl}${toApiMutationRequestPath('/api/auth/logout', requestId)}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${recipient.accessToken}`, 'x-client-id': recipient.clientId }
         });
