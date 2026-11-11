@@ -147,7 +147,10 @@ and it has no status list.
 - The measured granted RTC envelope (S3): sign and verify cost per frame and
   hop, and since Slice 8 per receipt control (a counted recipient's sign, the
   origin's verify; unmeasured: the 6f count (S8-ii) is 2 and 2 for a direct
-  pair, 3, 0 and 3 through a counted relay, a count, not a cost), relay depth
+  pair, 3, 0 and 3 through a counted relay, a count, not a cost; two honest
+  extra forwards, each one more verify at the origin: a recipient that
+  re-parents answers its new parent under a fresh proof, and a recipient
+  answers a sibling sender with its own signed terminal ACK), relay depth
   and mixed WS/RTC under role churn, beside the refresh amplification of an
   unknown key: every receiver of a frame whose `keyId` its snapshot does not
   name runs one scoped snapshot read (`not-yet-in-sync: unknown-key`,
@@ -200,17 +203,27 @@ and it has no status list.
   terminal ACK arrives leaves that recipient unconfirmed until the deadline.
 - The flood of distinct forged statements at a relay (S8-ii, D600, D602): a
   child may send any number of distinct forged statements about a recipient,
-  and each is stored, forwarded once and refused at the origin at one verify.
+  and each is stored, forwarded once and refused at the origin; each retried
+  copy re-forwards up to its budget of them again, and the origin's verifier
+  caches positive verdicts only, so a stored forgery costs one verify per
+  retried copy that carries it.
   The relay keeps the last 256 child ACKs and the last 256 outside-audience
   NACKs per message, so enough later statements evict a recipient's true
   control and a retried copy no longer re-forwards it (its first forward had
   gone up); a retried copy's re-forward is cut to its 256-effect commit cap,
   own words first, so at a relay above the first one the cut is arbitrary
-  among forwarded words; and a NACK-history flood can evict the control that
-  recorded a recipient outside, after which the recipient alone decides and its
+  among forwarded words; and a history flood can evict the control that
+  recorded a recipient outside (a forged hop-end records it from the ACK
+  history, where any 256 later child ACKs, honest ones included, evict it),
+  after which the recipient alone decides and its
   later true control is refused at that relay at first arrival. The origin
   counts only what verifies. Relay-side verification, which S8ii-R1 declined,
   would close it at one verify per forwarded control per level.
+- A permissive fallback at a relay for an outside entry no stored control
+  explains (S8-ii, D601): forward rather than refuse when the history no longer
+  holds any control that recorded the recipient outside. The origin already
+  refuses a confirmation for a recipient it holds outside, in every mode, so
+  this would remove the flood's third face at no cost in truth.
 - The dequeue settle's residual risk (S8-ii, D597): a dequeue can re-plan a
   message that was already sent (a reload between the dispatch commit and the
   queue row's completion), and a re-plan refused `unsupported` there now ends

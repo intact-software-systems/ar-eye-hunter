@@ -228,15 +228,21 @@ admits as the child sent it, readdressed by
 which keeps every signed field and the proof and rewrites only `fromPeerId`,
 `toPeerId` and an ACK's `carrier`: once per distinct statement about a
 recipient and, under `receiver` and `leader`, only for a member of the frozen
-audience, the only recipients the origin counts. Two child controls, ACK or
-NACK, are one statement when they name the same recipient and either carry one
-proof identity (`keyId|signature`, two `null` proofs being one identity) or are
-both that recipient's own word on its own channel
-(`fromPeerId === logicalRecipientPeerId`)
-([`isALSameReceiptStatement`](./control/is-al-same-receipt-statement.ts)), so
+audience, the only recipients the origin counts. Two child controls are one
+statement when they name the same recipient and either are one signed
+statement -- both ACKs or both NACKs, one proof identity (`keyId|signature`)
+and the same signed content, compared as the proof's own signing input
+([`isALSameReceiptProofContent`](../../al-contracts/receipt-proof/al-receipt-proof.ts)) --
+or both carry `proof: null`, whatever their content, or are both that
+recipient's own word on its own channel (`fromPeerId === logicalRecipientPeerId`)
+([`isALSameReceiptStatement`](./control/is-al-same-receipt-statement.ts)). So
 above the first relay, where every forward carries the relay's `fromPeerId`,
-the proof still tells two statements apart, and every unsigned flow keys by the
-recipient as before. It authors only its own word: its `accepted`, its terminal
+the proof and what it signs still tell two statements apart, a copied proof
+over another content is its own statement, and every honest unsigned flow keys
+by the recipient as before; under `hop` and `subtree` on `rtc` a child that
+attaches distinct non-null proofs makes distinct statements, which adds no
+class there, since such a row has no upward audience and its child could
+already name any recipient. It authors only its own word: its `accepted`, its terminal
 ACK (below) and its NACKs about itself. The relay refuses a child's ACK as a
 duplicate only when its sender, whether it completes the child's hop and its
 statement all repeat, so a child relay's ACKs for different recipients are each
@@ -342,7 +348,10 @@ retried copy of the message is answered from it
   ([`resolveALInboundBoundedRetriedEffects`](./admission/compute-al-inbound-duplicate-changes.ts)):
   the relay's own effects always stay, and the stored child controls fill the
   rest, a recipient's own words first, in the order the copy would have sent
-  them;
+  them. The cut is not a flood effect only: an honest room at the RTC room
+  limit, 256 recipients below one relay, re-forwards 256 statements beside the
+  relay's own effects, so one forwarded word is cut, own words being kept
+  first; before S8-ii that retried copy was refused whole;
 - from the origin, or from any sender that is not one of its child hops once
   the recorded parent left (no longer a member of the room, or no longer
   reachable), the relay writes that sender as the parent of its row and
@@ -384,8 +393,9 @@ recipient below it; it can only withhold the copy, which the origin's timeout,
 retry and fallback cover. An honest relay verifies nothing: it forwards every
 distinct statement a child makes about a recipient (above) and the origin
 judges each, so a child hop that names another recipient with a proof that does
-not verify no longer pre-empts that recipient's true control here; the origin
-refuses the forgery and counts the true control. A parent on the recipient's
+not verify, or that carries the recipient's real proof over another content (a
+peer that held it), no longer pre-empts that recipient's true control here; the
+origin refuses the forgery and counts the true control. A parent on the recipient's
 path can still withhold the copy or its control. The flood is the limit that
 remains: a child may send any number of distinct forged statements, each stored,
 forwarded once and refused at the origin. The relay keeps the last 256 child
@@ -393,7 +403,9 @@ ACKs and the last 256 outside-audience NACKs per message, so enough later
 statements evict a recipient's true control and a retried copy no longer
 re-forwards it, though its first forward had gone up; at a relay above the
 first one the cut of a retried copy is arbitrary among forwarded words; and a
-NACK-history flood can evict the control that recorded a recipient outside,
+history flood can evict the control that recorded a recipient outside (a forged
+hop-end records it from the ACK history, where any 256 later child ACKs, honest
+ones included, evict it),
 after which the recipient alone decides, so its later true control is refused
 here at first arrival. The origin counts only what verifies. The
 signing runs in

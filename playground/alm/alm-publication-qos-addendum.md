@@ -1315,14 +1315,19 @@ relay verifies nothing, and S8-i keyed "already forwarded" and "outside" by the
 recipient alone, so a child hop that named another recipient with a proof that
 does not verify pre-empted that recipient's true control at the relay; S8-ii
 keys them by statement, which closes that, and the flood limit below replaces
-it. Decisions D581–D595 and D596–D605 are in the roadmap; Slice 8 is complete.
+it. Decisions D581–D595 and D596–D606 are in the roadmap; Slice 8 is complete.
 
 As applied (S8-ii): a relay keys every receipt fact by statement. Two child
-controls, ACK or NACK, are one statement when they name the same recipient and
-either carry one proof identity (`keyId|signature`, two `null` proofs being one
-identity) or are both that recipient's own word on its own channel
-(`fromPeerId === logicalRecipientPeerId`); relays still verify nothing, and the
-origin judges each statement as S8-i built it. One predicate, `isALSameReceiptStatement` with
+controls are one statement when they name the same recipient and either are
+one proof over one signed content (both ACKs or both NACKs, one proof identity
+`keyId|signature`, and every field the proof signs equal, compared as its
+signing input, `isALSameReceiptProofContent`; D606), or both carry `proof:
+null`, whatever their content, or are both that recipient's own word on its
+own channel (`fromPeerId === logicalRecipientPeerId`); relays still verify
+nothing, and the origin judges each statement as S8-i built it. So a peer that
+held a recipient's real proof and alters what it signs makes another statement,
+which goes up and is refused `invalid-signature`, and the recipient's true
+control forwarded by another child still goes up and is counted. One predicate, `isALSameReceiptStatement` with
 `hasALConfirmedStatement` and `hasALOutsideStatement` in `alm/inbound/control/`,
 over `isSameSignatureProof` beside `SignatureProof`, applies at every site that
 keyed by the recipient: a confirming ACK goes up unless the same statement is
@@ -1332,14 +1337,20 @@ a duplicate or an outside recipient, and the NACK admission its two refusals,
 only against the same statement; and a retried copy re-forwards the first of
 each distinct stored statement. When the history no longer holds any control
 that recorded a recipient outside, the recipient alone decides, as before. Since
-`null` is one identity, `ws`, `hop` and `subtree` key as before, and no wire or
-stored shape changed. A retried copy's re-forward is cut to fit its commit
+`null` is one identity, honest `ws`, `hop` and `subtree` flows key as before
+(under `hop` and `subtree` on `rtc` a child that attaches distinct non-null
+proofs makes distinct statements, no new class, since the upward audience is
+undefined there), and no wire or stored shape changed. A retried copy's re-forward is cut to fit its commit
 bundle's cap of 256 durable effects (`resolveALInboundBoundedRetriedEffects`):
 the relay's own effects always stay, the stored child controls fill the rest
 with a recipient's own words chosen first, and the kept ones go in the order the
 copy would have sent them. Without the cut a flooded history made the relay
 refuse the whole retried copy, its own repeated ACK and retried forward
-included. The NACK admission's outside-list capacity check spares a recipient
+included. The cut is not a flood effect only: an honest room at the RTC room
+limit, 256 recipients below one relay, re-forwards 256 statements beside the
+relay's own effects, so one forwarded word is cut, own words being kept first,
+where before S8-ii that retried copy was refused whole. The NACK admission's
+outside-list capacity check spares a recipient
 already on the list, which cannot grow by it. A dequeue now ends an
 `unsupported` re-plan (`resolveALOutboundReplanRefusalSettlement` reads the
 re-plan's site): the handle reads `rejected`, the receipt row is deleted in the
@@ -1385,14 +1396,18 @@ both origins' receipts confirmed both recipients through one hop. Bundle figures
 301 KiB budget, and the headless agent 396.913 → 397.205 KiB, its budget raised
 397 → 398 KiB. Limits: a child may send any number of distinct forged statements
 about a recipient, and each is stored, forwarded once and refused at the origin
-at one verify each (no refusal bound). The flood has three effects. The relay
+(no refusal bound). Each retried copy re-forwards up to its budget of stored
+statements again, and the origin's verifier caches positive verdicts only, so a
+stored forgery costs the origin one verify per retried copy that carries it. The flood has three effects. The relay
 keeps the last 256 child ACKs and the last 256 outside-audience NACKs per
 message, so enough later statements evict a recipient's true control, and a
 retried copy no longer re-forwards it; its first forward had gone up. A retried
 copy's re-forward is cut to its commit cap with own words first, so at a relay
 above the first one, where every statement is a forwarded word, the cut is
-arbitrary among them. And a NACK-history flood can evict the control that
-recorded a recipient outside, after which the recipient alone decides, so its
+arbitrary among them. And a history flood can evict the control that recorded a
+recipient outside (a forged hop-end records it from the ACK history, where any
+256 later child ACKs, honest ones included, evict it), after which the
+recipient alone decides, so its
 later true control is refused at that relay at first arrival. In every case the
 origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
 still moves another next hop outside (pinned); a forger that is the recipient's
@@ -1536,7 +1551,9 @@ the fallback, and under `rtc` alone is refused, never admitted to time out.
 S8-ii adds to the first row: at an honest relay a child hop's forged ACK, NACK
 or hop-end about another recipient no longer pre-empts that recipient's true
 control, in either order and through two relays in a row
-(`rtc-receipt-forgery.test.ts`), and the full-scope lane's
+(`rtc-receipt-forgery.test.ts`), nor does a child that carries the recipient's
+real proof over an altered ACK or a NACK while another child forwards the true
+ACK, in either order (`rtc-receipt-held-proof.test.ts`), and the full-scope lane's
 `receipted-relay-path` cell recorded two relayed signed receipts in a browser
 run; to the second: a held send refused `unsupported` at its freezing dequeue
 reads `rejected` at once (`rtc-receipt-proof-keys.test.ts`).
