@@ -219,6 +219,14 @@ and it has no status list.
   later true control is refused at that relay at first arrival. The origin
   counts only what verifies. Relay-side verification, which S8ii-R1 declined,
   would close it at one verify per forwarded control per level.
+- The statement rule's pairwise encode (S8-ii, D606): a child that reuses one
+  well-formed proof over up to 256 altered contents makes a relay encode the
+  signed content on every pair it compares (about 90 ms per retried copy's
+  grouping against about 1.2 ms). Encode each control's signed content once per
+  scan or grouping (measured about 1.05 ms for the grouping when memoized), in
+  `packages/shared/alm/inbound/control/is-al-same-receipt-statement.ts` and
+  `toFirstOfEachStatement`
+  (`packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts`).
 - A permissive fallback at a relay for an outside entry no stored control
   explains (S8-ii, D601): forward rather than refuse when the history no longer
   holds any control that recorded the recipient outside. The origin already

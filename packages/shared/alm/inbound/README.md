@@ -396,8 +396,8 @@ judges each, so a child hop that names another recipient with a proof that does
 not verify, or that carries the recipient's real proof over another content (a
 peer that held it), no longer pre-empts that recipient's true control here; the
 origin refuses the forgery and counts the true control. A parent on the recipient's
-path can still withhold the copy or its control. The flood is the limit that
-remains: a child may send any number of distinct forged statements, each stored,
+path can still withhold the copy or its control. The flood and its three
+faces remain, and two need no flood by the forger (below): a child may send any number of distinct forged statements, each stored,
 forwarded once and refused at the origin. The relay keeps the last 256 child
 ACKs and the last 256 outside-audience NACKs per message, so enough later
 statements evict a recipient's true control and a retried copy no longer
@@ -407,7 +407,14 @@ history flood can evict the control that recorded a recipient outside (a forged
 hop-end records it from the ACK history, where any 256 later child ACKs, honest
 ones included, evict it),
 after which the recipient alone decides, so its later true control is refused
-here at first arrival. The origin counts only what verifies. The
+here at first arrival. That eviction needs only one forged hop-end and 256
+later child ACKs, honest ones included, and in a room at the RTC room limit the
+cut falls even without a flood, so a few early forged statements can take the
+place of true forwarded words in a re-forward. A child that reuses one
+well-formed proof over many altered contents also makes the relay encode the
+signed content of each pair it compares: about 90 ms per retried copy's
+grouping against about 1.2 ms, bounded by the histories. The origin counts only
+what verifies. The
 signing runs in
 [`signALInboundReceiptControls`](./receipt-proof/sign-al-inbound-receipt-controls.ts)
 at the four commit sites (the message admission, both ordered-delivery

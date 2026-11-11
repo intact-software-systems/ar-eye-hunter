@@ -1167,7 +1167,8 @@ under `receiver` and `leader`, this holds at the origin and through honest
 relays: no peer can confirm, exclude or end a receipt for another recipient,
 since a relay forwards every distinct statement a child makes about a recipient
 and the origin judges each (S8-ii); a child that floods its relay with distinct
-forged statements is the remaining limit there (below), and under `hop` and
+forged statements, and the two of its effects that need no flood, remain the
+limits there (below), and under `hop` and
 `subtree` a hop can still exclude another hop (a limit below). The premise is
 corrected (S8-C0b): the candidates survey said the slice replaces the trust in
 an ACK's `fromPeerId`, that the AR Eye games gate proves it and that it is
@@ -1408,8 +1409,16 @@ arbitrary among them. And a history flood can evict the control that recorded a
 recipient outside (a forged hop-end records it from the ACK history, where any
 256 later child ACKs, honest ones included, evict it), after which the
 recipient alone decides, so its
-later true control is refused at that relay at first arrival. In every case the
-origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
+later true control is refused at that relay at first arrival. Two of these need
+no flood: one forged hop-end and 256 later child ACKs, honest ones included,
+evict the recording control, and in a room at the RTC room limit the cut falls
+anyway, so a few early forged statements can take the place of true forwarded
+words in a re-forward. A child that reuses one well-formed proof over up to 256
+altered contents makes a relay encode the signed content pairwise: about 90 ms
+per retried copy's grouping against about 1.2 ms before, up to about 180 ms
+with the NACK history flooded the same way and about 3 ms per admission on a
+full history, bounded by the histories, paced by the origin's retries and not
+fixed here (D606). In every case the origin counts only what verifies. An unsigned `not-subscribed` NACK under `hop`
 still moves another next hop outside (pinned); a forger that is the recipient's
 own parent is on its path and can still withhold the copy or its control, which
 the origin's timeout, retry and fallback cover; and a recipient's redundant own
