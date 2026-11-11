@@ -121,27 +121,22 @@ const GRANTED_RTC_TWO_AGENT_KEYS = [
     'granted-rtc-unicast-delivered'
 ] as const;
 
-const GRANTED_RTC_THREE_AGENT_KEYS = [
+/** The granted three-agent cells that keep the room's default topology. */
+const GRANTED_RTC_ROOM_KEYS = [
     'granted-rtc-forged-sender',
     'granted-rtc-not-subscribed',
     'granted-rtc-list-delivered',
     'granted-rtc-list-non-holder',
-    'granted-rtc-list-lane-roles',
-    'granted-rtc-relay-only',
-    'granted-rtc-ordered-relay'
+    'granted-rtc-list-lane-roles'
 ] as const;
 
+/** The granted cells that reshape the room's topology; the ordered relay stays last. */
+const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-relay'] as const;
+
+const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_RELAY_KEYS] as const;
+
 /** The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells. */
-const RTC_THREE_AGENT_KEYS_IN_ORDER = [
-    'granted-rtc-forged-sender',
-    'granted-rtc-not-subscribed',
-    'granted-rtc-list-delivered',
-    'granted-rtc-list-non-holder',
-    'granted-rtc-list-lane-roles',
-    'receipted-relay-path',
-    'granted-rtc-relay-only',
-    'granted-rtc-ordered-relay'
-] as const;
+const RTC_THREE_AGENT_KEYS_IN_ORDER = [...GRANTED_RTC_ROOM_KEYS, 'receipted-relay-path', ...GRANTED_RTC_RELAY_KEYS] as const;
 
 /** The granted principal broadcast runs on the same-principal family, beside the audience cells. */
 const GRANTED_RTC_PRINCIPAL_KEY = 'granted-rtc-principal-delivered';

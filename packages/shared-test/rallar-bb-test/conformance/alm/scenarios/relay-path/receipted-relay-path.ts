@@ -28,10 +28,11 @@ import { toPathTopologyConfigCommand } from './to-path-topology-config-command.t
 
 /**
  * The owner reshapes the room into a path, then the sender and the owner each send one receipted multicast to the
- * other two pages. Three sessions in a tree whose degree is at most two form a path with one middle: if the middle is
- * `recipient-b`, both origins are leaves and both sends are relayed; if it is one origin, the other origin's send is
- * relayed, and the middle forwards the far leaf's signed ACK back. So every run witnesses a relayed receipt, whoever
- * the middle is. Each page records its next hops, which name the layout the run drew; the cell asserts neither which
+ * other two pages. Three sessions in a tree whose degree is at most two form a path with one middle, so whenever both
+ * sends route on one planned path at least one origin is a leaf: its send is relayed, and the middle forwards the far
+ * leaf's signed ACK back. The owner's PUT only requests the reshape and the cell waits for no plan version, so two
+ * sends routed under different plans can both go direct. Each page records its next hops and each origin's receipt
+ * names the hops it confirmed through, which is where a run shows whether it relayed; the cell asserts neither which
  * agent relays nor the hop count. Over `rtc` alone: a WS fallback would complete a relayed leg and hide it. The owner
  * resets the topology only once both origins read their receipts, so no reshape lands inside either receipt.
  */
@@ -64,8 +65,8 @@ function toRelayPathSenderCommands(sender: AlmConformanceStepInput): readonly Ra
 
 /**
  * The receiver owns the run's group, so it PUTs the path; it says the path is set only once the sender, which starts
- * last, says it listens. Its own window started before the sender's, so once the sender has read both origins have,
- * and only then does it reset the path.
+ * last, says it listens. It reads its own receipt before it waits for the sender's `sender-read` cue, so by the reset
+ * both origins have read.
  */
 function toRelayPathOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const cue = toCueStep(owner);
