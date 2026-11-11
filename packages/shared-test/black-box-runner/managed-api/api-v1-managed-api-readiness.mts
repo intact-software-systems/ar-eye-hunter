@@ -1,3 +1,5 @@
+import { sleepWithAbortReason } from '@shared/resilience/timing/sleep-with-abort-reason.ts';
+
 import {
     BEARER_CREDENTIAL,
     MANAGED_SECRET_ENV_KEY,
@@ -390,28 +392,5 @@ function toManagedApiReadinessError<Value>(value: Value): Error {
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve, reject) => {
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        const cleanup = (): void => {
-            if (timeout !== undefined) {
-                clearTimeout(timeout);
-            }
-            signal?.removeEventListener('abort', onAbort);
-        };
-        const onAbort = (): void => {
-            cleanup();
-            reject(signal ? abortReason(signal) : new Error('Operation aborted'));
-        };
-
-        if (signal?.aborted) {
-            onAbort();
-            return;
-        }
-
-        signal?.addEventListener('abort', onAbort, { once: true });
-        timeout = setTimeout(() => {
-            cleanup();
-            resolve();
-        }, ms);
-    });
+    return sleepWithAbortReason(ms, signal, abortReason);
 }

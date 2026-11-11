@@ -3,6 +3,7 @@ export function sleepWithAbortReason<Reason>(
     signal: AbortSignal | undefined,
     toAbortReason: (signal: AbortSignal) => Reason
 ): Promise<void> {
+    // A non-positive wait resolves even when the signal is already aborted.
     if (ms <= 0) {
         return Promise.resolve();
     }

@@ -44,6 +44,7 @@ export class DeadlineAbortScope<Reason> {
         return this.#origin;
     }
 
+    /** True once the timer fires, even when another abort came first; `origin()` names the first abort. */
     deadlineReached(): boolean {
         return this.#deadlineReached;
     }
