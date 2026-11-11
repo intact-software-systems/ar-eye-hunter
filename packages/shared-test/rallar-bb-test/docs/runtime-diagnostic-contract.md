@@ -294,9 +294,14 @@ every session the page opens. The event's `data` is the event itself:
   repair authority failed, or a NACK the origin leaves to its hop: the WS
   server's advisory `not-yet-in-sync` NACK on a room send, which the server
   retains and delivers itself once its room meets the floor). `reason` is the
-  rejection's reasons, or `none` for every other outcome — for an ACK whose
+  rejection's reasons, every issue in the validator's order, joined by a
+  semicolon and a space, or `none` for every other outcome — for an ACK whose
   receipt is gone it reads
-  `AL acknowledgement sender has no pending outbound obligation`. Its bounded
+  `AL acknowledgement sender has no pending outbound obligation`, and a
+  duplicate control whose proof is also refused reads its proof refusal
+  (`AL control proof is refused: <kind>`) after
+  `AL control was already admitted`, so a wait that matches a proof refusal
+  reads `proofRefusal` rather than the reason's start. Its bounded
   dimensions are `outcome`, `phase` and `nackReason`; `nackOrderingKey`,
   `targetMsgId` and the free-text `reason` are not. A gap NACK a relay forwarded
   reads `nackReason: gap` at the origin, like the recipient's own, since it is
@@ -515,7 +520,10 @@ publication succeed. The event's `data` is the event itself:
 - a raw control a recipe submits through `messages.control` is decided by its
   addressee's ingress like any control. When this event is captured, it carries
   the recipe's authored `msgId`: a retired `al.control.ack.v2` reads
-  carrier `rtc`, `rejected`/`unsupported`. The `messages.control` result is the
+  carrier `rtc`, `rejected`/`unsupported`. An unsigned `al.control.ack.v3` on
+  `rtc` (the step's `proof: null`) that speaks for a counted recipient reaches
+  the origin's outbound owner, whose `control-admission` reads it `rejected`
+  with `proofRefusal: missing-proof`. The `messages.control` result is the
   submitting page's own carrier verdict (`admitted` when that carrier took the
   frame), never the addressee's
 - `receipt-sign` carries `msgId` (the control's own id), `typeId`,

@@ -226,17 +226,26 @@ receiver's own control speaks for itself; a relay forwards a child control it
 admits as the child sent it, readdressed by
 [`toALForwardedReceiptControlMessage`](./control/to-al-forwarded-receipt-control-message.ts),
 which keeps every signed field and the proof and rewrites only `fromPeerId`,
-`toPeerId` and an ACK's `carrier`: once per recipient and, under `receiver` and
-`leader`, only for a member of the frozen audience, the only recipients the
-origin counts. It authors only its own word: its `accepted`, its terminal ACK
-(below) and its NACKs about itself. The relay refuses a child's ACK as a
-duplicate only when its sender, its logical recipient and whether it completes
-the child's hop all repeat, so a child relay's ACKs for different recipients are
-each admitted, and so is a recipient relay's terminal ACK after its `accepted`
-one. A relay's own ACK names its message-owner row's sender as the origin, and
-a forwarded control keeps the origin its child signed: both the relay's inbound
-control admission and the origin's outbound control admission refuse an ACK
-or a NACK whose `originPeerId` names another origin. An
+`toPeerId` and an ACK's `carrier`: once per distinct statement about a
+recipient and, under `receiver` and `leader`, only for a member of the frozen
+audience, the only recipients the origin counts. Two child controls, ACK or
+NACK, are one statement when they name the same recipient and either carry one
+proof identity (`keyId|signature`, two `null` proofs being one identity) or are
+both that recipient's own word on its own channel
+(`fromPeerId === logicalRecipientPeerId`)
+([`isALSameReceiptStatement`](./control/is-al-same-receipt-statement.ts)), so
+above the first relay, where every forward carries the relay's `fromPeerId`,
+the proof still tells two statements apart, and every unsigned flow keys by the
+recipient as before. It authors only its own word: its `accepted`, its terminal
+ACK (below) and its NACKs about itself. The relay refuses a child's ACK as a
+duplicate only when its sender, whether it completes the child's hop and its
+statement all repeat, so a child relay's ACKs for different recipients are each
+admitted, and so is a recipient relay's terminal ACK after its `accepted` one,
+while a recipient's repeated own ACK, under a fresh proof, is refused. A relay's
+own ACK names its message-owner row's sender as the origin, and a forwarded
+control keeps the origin its child signed: both the relay's inbound control
+admission and the origin's outbound control admission refuse an ACK or a NACK
+whose `originPeerId` names another origin. An
 `al.control.ack.v1` or `al.control.ack.v2` envelope is refused `unsupported`
 like any unknown control id. The same file defines `al.control.receipt.v1`, the
 WS server's word to an origin, addressed and routed to `originPeerId`.
@@ -274,7 +283,8 @@ group exists at every key site (R-S2c-i-2, amending D40; see the outbound
 README). A relay's inbound `pending` row tracks the child hops it forwarded
 to (S2c-ii). A child's confirming ACK it admits is forwarded upward at once,
 with the child's own status, time and proof, when the origin counts that
-recipient and no earlier child ACK named it, so a far recipient is never lost
+recipient and no earlier child ACK made the same statement about it, so a far
+recipient is never lost
 behind a relay whose row already completed. Under `receiver` and `leader` a
 relay that is itself a logical recipient confirms itself at once with
 `accepted` beside its row, when it delivers or when an ordering gap releases its
@@ -302,28 +312,37 @@ recipient that receives a recorded frozen copy below the position it entered the
 for itself, which places it outside the audience as `not-subscribed` does. A relay admits a child's relayed NACK
 (`not-subscribed`, `before-entry`, `gap` -- the NACKs inbound control admission handles; every other NACK stays its
 outbound owner's) from a child hop its row waits on and for a recipient of the frozen audience it has neither
-recorded outside nor relayed a confirmation for. A `gap` NACK must carry its `orderingKey`, `expectedSeq` and
-`missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it to its parent as
-the recipient signed it, so the origin repairs that recipient through the relay (S4ii-R3). Only a receipted send
-leaves a relay row, so a gap NACK on an `ack: 'none'` track is not handled at the relay and that track stalls
-until resync or expiry; the leaf's paired `repair` control is not relayed. An
-outside-audience NACK the relay records in the row's `outsideAudiencePeerIds` and in a `nacks` control history
-beside `acks` (`set-control-nacks`, bounded and expired as `acks` is), and forwards to its parent, once per
-recipient; its answer to a retried copy forwards the stored NACK again, with the child's own reason, else the
-hop-end that implied it. The NACK completes no hop, and no confirming ACK for that recipient is admitted after it
-(PL9, PL16). When a not-subscribed recipient's hop-end reaches the relay before its NACK, the relay forwards the
-hop-end and refuses the later NACK: the origin records the recipient outside in either order, but the child's
+recorded outside nor relayed a confirmation for by the same statement. When the history no longer holds any control
+that recorded the recipient outside, the recipient alone decides, as before the statement rule. A non-gap NACK is
+refused as past the persistence limits when the row's outside list is full (256) and does not already name its
+recipient, since the list gains a recipient only when it is absent. A `gap` NACK must carry its `orderingKey`,
+`expectedSeq` and `missingRanges` (else it is refused as malformed); the relay writes no row for it and forwards it
+to its parent as the recipient signed it, so the origin repairs that recipient through the relay (S4ii-R3). Only a
+receipted send leaves a relay row, so a gap NACK on an `ack: 'none'` track is not handled at the relay and that
+track stalls until resync or expiry; the leaf's paired `repair` control is not relayed. An outside-audience NACK the
+relay records in the row's `outsideAudiencePeerIds` and in a `nacks` control history beside `acks`
+(`set-control-nacks`, bounded and expired as `acks` is), and forwards to its parent, once per distinct statement;
+its answer to a retried copy forwards again the first of each distinct statement among the stored NACKs and hop-ends
+that named the recipient, a NACK, with the child's own reason, before a hop-end of the same statement. The NACK
+completes no hop, and no confirming ACK for that recipient that is the same statement is admitted after it (PL9,
+PL16). When a not-subscribed recipient's hop-end reaches the relay before its NACK, the relay forwards the hop-end
+and refuses the later NACK: the origin records the recipient outside in either order, but the child's
 reason reaches it only when the NACK comes first. A row stored before `outsideAudiencePeerIds` existed reads none.
 The row stays until it expires, so a child ACK that arrives after completion is still relayed, and a
 retried copy of the message is answered from it
 ([`computeALInboundDuplicateChanges`](./admission/compute-al-inbound-duplicate-changes.ts)):
 
 - from the relay's recorded parent, the relay forwards again each child
-  control it already forwarded (per recipient the first confirming ACK, and per
-  recipient recorded outside its stored NACK, else the hop-end that implied
-  it), since any of them may be the one the origin lost, then its terminal
-  ACK when its subtree completed or the copy onward to the child hops it still
-  waits on (R-S2c-ii-4);
+  control it already forwarded (per recipient the first of each distinct
+  confirming statement, and per recipient recorded outside the first of each
+  distinct NACK or hop-end statement that named it), since any of them may be
+  the one the origin lost, then its terminal ACK when its subtree completed or
+  the copy onward to the child hops it still waits on (R-S2c-ii-4). The copy is
+  cut to its commit bundle's cap of 256 durable effects
+  ([`resolveALInboundBoundedRetriedEffects`](./admission/compute-al-inbound-duplicate-changes.ts)):
+  the relay's own effects always stay, and the stored child controls fill the
+  rest, a recipient's own words first, in the order the copy would have sent
+  them;
 - from the origin, or from any sender that is not one of its child hops once
   the recorded parent left (no longer a member of the room, or no longer
   reachable), the relay writes that sender as the parent of its row and
@@ -362,13 +381,21 @@ verifying that signature against the key it froze for that recipient when it
 froze the audience, whichever peer forwarded it (outbound README). A relay
 therefore cannot make the origin confirm, exclude or end a receipt for a
 recipient below it; it can only withhold the copy, which the origin's timeout,
-retry and fallback cover. An honest relay verifies nothing and keys "already
-forwarded" and "outside" by the recipient alone, so a child hop that names
-another recipient with a proof that does not verify pre-empts that recipient's
-true control here (a limit): after a forged ACK the true one is stored but not
-forwarded, after a forged `not-subscribed` NACK or hop-end it is refused. The
-origin refuses the forgery, so the recipient stays unconfirmed and the receipt
-runs to its retry budget and the fallback. The
+retry and fallback cover. An honest relay verifies nothing: it forwards every
+distinct statement a child makes about a recipient (above) and the origin
+judges each, so a child hop that names another recipient with a proof that does
+not verify no longer pre-empts that recipient's true control here; the origin
+refuses the forgery and counts the true control. A parent on the recipient's
+path can still withhold the copy or its control. The flood is the limit that
+remains: a child may send any number of distinct forged statements, each stored,
+forwarded once and refused at the origin. The relay keeps the last 256 child
+ACKs and the last 256 outside-audience NACKs per message, so enough later
+statements evict a recipient's true control and a retried copy no longer
+re-forwards it, though its first forward had gone up; at a relay above the
+first one the cut of a retried copy is arbitrary among forwarded words; and a
+NACK-history flood can evict the control that recorded a recipient outside,
+after which the recipient alone decides, so its later true control is refused
+here at first arrival. The origin counts only what verifies. The
 signing runs in
 [`signALInboundReceiptControls`](./receipt-proof/sign-al-inbound-receipt-controls.ts)
 at the four commit sites (the message admission, both ordered-delivery
