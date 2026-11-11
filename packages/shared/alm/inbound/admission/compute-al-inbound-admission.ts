@@ -53,7 +53,10 @@ import {
     isALInboundNotSubscribedPlan,
     toALInboundHopCompletionStatus
 } from './al-inbound-not-subscribed-plan.ts';
-import { computeALInboundDuplicateChanges } from './compute-al-inbound-duplicate-changes.ts';
+import {
+    computeALInboundDuplicateChanges,
+    resolveALInboundBoundedRetriedEffects
+} from './compute-al-inbound-duplicate-changes.ts';
 
 interface ALInboundAdmissionChanges {
     readonly read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto;
@@ -175,7 +178,10 @@ function computeALInboundAdmissionChanges(
         return {
             read,
             mutations: duplicate.mutations,
-            effects: [...toALInboundNegativeControlEffects(controls), ...duplicate.effects]
+            effects: resolveALInboundBoundedRetriedEffects(
+                [...toALInboundNegativeControlEffects(controls), ...duplicate.effects],
+                AL_MESSAGE_RESOURCE_LIMITS.collectionEntries
+            )
         };
     }
 

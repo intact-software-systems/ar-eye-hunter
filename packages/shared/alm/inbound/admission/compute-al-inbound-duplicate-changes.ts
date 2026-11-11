@@ -85,6 +85,40 @@ export function computeALInboundDuplicateChanges(
     };
 }
 
+/**
+ * The effects of a copy cut to the commit bundle's `limit` (S8ii-R5): this peer's own effects always stay, and the stored child
+ * controls it re-forwards fill what remains, a recipient's own word before the other statements, each in history order. A
+ * copy that fits keeps every effect in its order; a cut keeps the survivors in their order.
+ */
+export function resolveALInboundBoundedRetriedEffects(
+    effects: readonly ALInboundEffectIntent[],
+    limit: number
+): readonly ALInboundEffectIntent[] {
+    const reforwards = effects.filter(isStoredReforward);
+    const budget = limit - (effects.length - reforwards.length);
+    if (reforwards.length <= budget) {
+        return effects;
+    }
+    const kept = new Set(
+        [...reforwards.filter(isOwnWordReforward), ...reforwards.filter((effect) => !isOwnWordReforward(effect))]
+            .slice(0, Math.max(budget, 0))
+    );
+    return effects.filter((effect) => !isStoredReforward(effect) || kept.has(effect));
+}
+
+function isStoredReforward(effect: ALInboundEffectIntent): boolean {
+    return effect.payload.kind === 'forward-control';
+}
+
+/** A re-forwarded control its recipient sent on its own channel: the one kind this relay heard from the recipient itself. */
+function isOwnWordReforward(effect: ALInboundEffectIntent): boolean {
+    if (effect.payload.kind !== 'forward-control') {
+        return false;
+    }
+    const { payload } = effect.payload.control;
+    return payload.fromPeerId === payload.logicalRecipientPeerId;
+}
+
 /** A retried hop copy names this peer as its one next hop (D25). */
 function isAddressedToSelf(msg: ALMessage, selfPeerId: string): boolean {
     const nextHopPeerIds = msg.forwarding?.nextHopPeerIds ?? [];

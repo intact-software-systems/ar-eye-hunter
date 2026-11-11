@@ -38,7 +38,8 @@ export function validateALInboundNackAdmission(
     }
     if (
         nack.reason !== 'gap' &&
-        (pending.outsideAudiencePeerIds.length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
+        ((pending.outsideAudiencePeerIds.length >= AL_MESSAGE_RESOURCE_LIMITS.collectionEntries &&
+            !pending.outsideAudiencePeerIds.includes(nack.logicalRecipientPeerId)) ||
             (candidate.nacks?.values.length ?? 0) > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
             !Number.isSafeInteger(candidate.controlExpireAtTimestamp) ||
             !Number.isSafeInteger(candidate.pendingExpireAtTimestamp))

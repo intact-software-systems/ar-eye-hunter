@@ -656,6 +656,9 @@ describe('a child hop at an honest relay that speaks for another recipient (S8-R
         const receipt = await readReceipt(origin, message);
         expect(receipt?.ackedPeerIds).toContain('c');
         expect(receipt?.outsideAudiencePeerIds).toEqual([]);
+        expect(readProofRefusals(origin).filter((refusal) => refusal.claimedRecipientPeerId === 'c')).toEqual([
+            { proofRefusal: 'key-mismatch', claimedRecipientPeerId: 'c', channelPeerId: 'r' }
+        ]);
     });
 
     it('a recipient\'s true NACK after a forged ACK about it is forwarded and the origin records it outside', async () => {

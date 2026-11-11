@@ -239,4 +239,27 @@ describe('a child\'s gap NACK at a relay (S4ii-R3)', () => {
         }]);
         expect(validateALInboundNackAdmission(distinct)).toEqual([]);
     });
+
+    it('admits a distinct statement about a recipient already recorded outside when the outside list is full', () => {
+        const full = ['leaf', ...Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1 }, (_, index) => `outside-${index}`)];
+        const stored = toChildNack({ reason: 'not-subscribed', proof: toTestSignatureProof(1) });
+        const candidate = computeArrival(
+            { reason: 'not-subscribed', proof: toTestSignatureProof(2) },
+            { ...ROW, outsideAudiencePeerIds: full },
+            [],
+            [stored]
+        );
+
+        expect(validateALInboundNackAdmission(candidate)).toEqual([]);
+    });
+
+    it('refuses a NACK for a new recipient when the outside list is full', () => {
+        const full = Array.from({ length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries }, (_, index) => `outside-${index}`);
+        const candidate = computeArrival({ reason: 'not-subscribed' }, { ...ROW, outsideAudiencePeerIds: full });
+
+        expect(validateALInboundNackAdmission(candidate)).toEqual([{
+            code: 'unauthorized',
+            message: 'Inbound NACK candidate exceeds persistence limits'
+        }]);
+    });
 });
