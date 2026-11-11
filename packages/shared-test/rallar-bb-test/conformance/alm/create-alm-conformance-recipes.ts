@@ -272,10 +272,12 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcListDelivered,
     grantedRtcListNonHolder,
     grantedRtcListLaneRoles,
-    // The room's three-agent cells share it, and these three reshape its topology until each one's own last step.
+    // The room's three-agent cells share it, and these three reshape its topology until each one's own last step. The
+    // one whose authored worst case can outlast the lane's per-role deadline stays last, so nothing runs on its pages
+    // after it.
+    receiptedRelayPath,
     grantedRtcRelayOnly,
-    grantedRtcOrderedRelay,
-    receiptedRelayPath
+    grantedRtcOrderedRelay
 ];
 
 export function createAlmConformanceRecipes(

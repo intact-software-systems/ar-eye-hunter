@@ -131,6 +131,18 @@ const GRANTED_RTC_THREE_AGENT_KEYS = [
     'granted-rtc-ordered-relay'
 ] as const;
 
+/** The rtc-only three-agent cells at the catalog's end: the relay path runs before the two granted relay cells. */
+const RTC_THREE_AGENT_KEYS_IN_ORDER = [
+    'granted-rtc-forged-sender',
+    'granted-rtc-not-subscribed',
+    'granted-rtc-list-delivered',
+    'granted-rtc-list-non-holder',
+    'granted-rtc-list-lane-roles',
+    'receipted-relay-path',
+    'granted-rtc-relay-only',
+    'granted-rtc-ordered-relay'
+] as const;
+
 /** The granted principal broadcast runs on the same-principal family, beside the audience cells. */
 const GRANTED_RTC_PRINCIPAL_KEY = 'granted-rtc-principal-delivered';
 
@@ -407,10 +419,8 @@ describe('alm-conformance recipe family', () => {
                     ...(carrier === 'ws'
                         ? ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)
                         : []),
-                    ...(carrier === 'rtc' ? GRANTED_RTC_THREE_AGENT_KEYS : []).flatMap((key) =>
-                        ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
-                    ),
-                    ...(carrier === 'rtc' ? ['receipted-relay-path'] : []).flatMap((key) =>
+                    // The path cells close the list; the one that can outlast the lane's per-role deadline runs last.
+                    ...(carrier === 'rtc' ? RTC_THREE_AGENT_KEYS_IN_ORDER : []).flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     )
                 ]);
@@ -1257,8 +1267,9 @@ describe('alm-conformance recipe family', () => {
             }
         });
 
-        it('reshapes the room into a path for a non-granted receipted send, records every page\'s next hops, and resets the config after the sender read its receipt', () => {
+        it('reshapes the room into a path, has the sender and the owner each send a non-granted receipted multicast and read its own receipt after its window, and resets the config after both read', () => {
             const scenario = receiptedOf('rtc', 'receipted-relay-path');
+            const cellTypeId = 'alm.conformance.rtc.receipted-relay-path';
             const receiver = bodyOf(scenario.receiver);
             expect(receiver[0]).toMatchObject({
                 kind: 'http.request',
@@ -1266,34 +1277,68 @@ describe('alm-conformance recipe family', () => {
             });
             expect(receiver.at(-1)).toMatchObject({ kind: 'http.request', request: { method: 'DELETE' } });
             expect(receiver.at(-1)).not.toHaveProperty(['request', 'body']);
-            for (const recipe of [scenario.sender, scenario.receiver, scenario.recipientB]) {
+            const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
+                recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            for (const recipe of [scenario.sender, scenario.receiver]) {
+                const cellSends = recipe.commands.filter(isRallarBlackBoxTestMessagesSendCommand)
+                    .filter((command) => command.typeId === cellTypeId);
+                expect(cellSends, recipe.recipeId).toEqual([
+                    expect.objectContaining({ ack: 'all-logical-recipients', topicId: CONFORMANCE_TOPIC_ID })
+                ]);
+                const received = recipe.commands.filter((command): command is RallarBlackBoxTestMessagesReceivedCommand =>
+                    command.kind === 'messages.received' && command.typeId === cellTypeId
+                );
+                expect(received.map((command) => [command.count, command.absent === true]), recipe.recipeId)
+                    .toEqual([[1, false], [2, true]]);
+                expect(received[1]?.commandId, recipe.recipeId).toBe(`${recipe.recipeId}-received-self-1`);
                 expect(recipe.commands.filter((command) => command.kind === 'health'), recipe.recipeId)
                     .toEqual([expect.objectContaining({ commandId: `${recipe.recipeId}-overlay-next-hops` })]);
-                // No principal is granted or named: the send needs no grant, and the owner's PUT no principal token.
+                const absence = indexOf(recipe, '-received-self-1');
+                const reads = recipe.commands.filter((command) => command.kind === 'messages.receipts');
+                expect(reads, recipe.recipeId).toHaveLength(1);
+                const read = recipe.commands.indexOf(reads[0]!);
+                expect(read, recipe.recipeId).toBeGreaterThan(absence);
+                expect(
+                    recipe.commands.slice(read + 1, read + 7).map((command) => command.kind === 'assert' ? command.expected : command.kind),
+                    recipe.recipeId
+                ).toEqual(['acknowledged', 'receiver', 2, 2, 0, 0]);
+            }
+            const recipientB = bodyOf(scenario.recipientB);
+            expect(recipientB.filter((command) => command.kind === 'messages.send')).toEqual([]);
+            expect(recipientB.filter((command) => command.kind === 'health'))
+                .toEqual([expect.objectContaining({ commandId: `${scenario.recipientB.recipeId}-overlay-next-hops` })]);
+            expect(recipientB.filter((command) => command.kind === 'messages.received').map(shapeOf))
+                .toEqual(['received:2', 'received:3:absent']);
+            expect(shapeOf(recipientB.at(-1)!)).toBe('received:3:absent');
+            // Each origin sends only once the path is set: the owner after it sent `tree`, the sender after it heard it.
+            const ownerTree = indexOf(scenario.receiver, '-receiver-cue-tree');
+            expect(scenario.receiver.commands[ownerTree]?.kind).toBe('messages.send');
+            expect(ownerTree).toBeGreaterThan(-1);
+            expect(indexOf(scenario.receiver, '-receiver-send-1')).toBeGreaterThan(ownerTree);
+            const senderTree = indexOf(scenario.sender, '-sender-cue-tree-received');
+            expect(senderTree).toBeGreaterThan(-1);
+            expect(indexOf(scenario.sender, '-sender-send-1')).toBeGreaterThan(senderTree);
+            // The owner resets the path only after its own receipt assertions and the sender's `sender-read` cue.
+            const ownerAsserts = scenario.receiver.commands.map((command, index) => command.kind === 'assert' ? index : -1);
+            const senderRead = indexOf(scenario.receiver, '-receiver-cue-sender-read-received');
+            const reset = indexOf(scenario.receiver, '-receiver-topology-reset');
+            expect(senderRead).toBeGreaterThan(Math.max(...ownerAsserts));
+            expect(reset).toBeGreaterThan(senderRead);
+            expect(bodyOf(scenario.sender).at(-2)?.commandId).toMatch(/-cues-sender-cue-sender-read$/);
+            const cueCommands = [scenario.sender, scenario.receiver, scenario.recipientB].flatMap((recipe) =>
+                recipe.commands.filter((command) => command.commandId?.includes('-cue-') === true)
+            );
+            expect(cueCommands.length).toBeGreaterThan(0);
+            expect(scenario.recipientB.commands.filter((command) => command.commandId?.includes('-cue-') === true)).toEqual([]);
+            for (const command of cueCommands.filter(isRallarBlackBoxTestMessagesSendCommand)) {
+                expect(command.typeId, command.commandId).toMatch(/\.receipted-relay-path-cues$/);
+            }
+            for (const recipe of [scenario.sender, scenario.receiver, scenario.recipientB]) {
+                // No principal is granted or named: the sends need no grant, and the owner's PUT no principal token.
                 expect(JSON.stringify(recipe), recipe.recipeId).not.toContain('{principal:');
             }
-            const sends = scenario.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand);
-            expect(sends.find((command) => command.commandId?.endsWith('-sender-send-1') === true))
-                .toMatchObject({ ack: 'all-logical-recipients', topicId: CONFORMANCE_TOPIC_ID });
-            expect(new Set(sends.map((command) => command.topicId))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
             expect(scenario.sender.commands.find((command) => command.kind === 'rtc.connect'))
                 .toMatchObject({ readiness: { minReadyPeers: 1 } });
-            const senderTail = bodyOf(scenario.sender).slice(-10);
-            expect(senderTail.map(shapeOf)).toEqual([
-                'received:1:absent',
-                'messages.receipts',
-                'assert',
-                'assert',
-                'assert',
-                'assert',
-                'assert',
-                'assert',
-                'messages.send',
-                'messages.observe'
-            ]);
-            expect(senderTail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []))
-                .toEqual(['acknowledged', 'receiver', 2, 2, 0, 0]);
-            expect(senderTail.at(-2)?.commandId).toMatch(/-cues-sender-cue-read$/);
             const unprincipaled = createAlmConformanceRecipes({ ...toConformanceInput('rtc'), principalIdsByRole: {} });
             expect(unprincipaled.map((candidate) => candidate.scenarioKey)).toContain('receipted-relay-path');
             for (const carrier of ALM_CONFORMANCE_CARRIERS) {
