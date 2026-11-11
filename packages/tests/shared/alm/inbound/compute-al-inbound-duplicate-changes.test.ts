@@ -559,7 +559,7 @@ describe('a relay re-forwarding what its children signed on a retried copy', () 
         }
     );
 
-    it('a flooded history never makes the retried copy\'s bundle exceed the commit bundle\'s cap: the relay still answers and retries, and re-forwards its children\'s own words first', async () => {
+    it('a flooded history never makes the retried copy\'s bundle exceed the commit bundle\'s cap: the relay still answers and retries', async () => {
         const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
         const msg = createFrozenRelayedMessage('flooded-cap');
         const [victim, forger] = DOWNSTREAM_PEER_IDS;
@@ -598,6 +598,41 @@ describe('a relay re-forwarding what its children signed on a retried copy', () 
             type: 'ack',
             payload: { ...own.payload, fromPeerId: INBOUND_TEST_SELF_PEER_ID, toPeerId: INBOUND_TEST_SENDER_PEER_ID, carrier: 'rtc' }
         });
+    });
+
+    it('keeps a child\'s own word when the cut falls before it in history order', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const msg = createFrozenRelayedMessage('own-word-past-cut');
+        const [victim, forger] = DOWNSTREAM_PEER_IDS;
+        expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, { peer: RELAY_PEER, carrier: 'rtc' }))).toBe('committed');
+        const named = {
+            ackedMsgId: msg.id.msgId,
+            toPeerId: INBOUND_TEST_SELF_PEER_ID,
+            originPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            logicalRecipientPeerId: victim
+        };
+        const hop = { fromPeerId: INBOUND_TEST_SELF_PEER_ID, toPeerId: INBOUND_TEST_SENDER_PEER_ID };
+        const toReforwarded = (control: Readonly<{ payload: ALAckPayload; }>) => ({ type: 'ack', payload: { ...control.payload, ...hop, carrier: 'rtc' } });
+        // The relay's own effects are its `accepted` ACK and its retried forward, so 254 re-forwards fit: 254 forged ACKs fill
+        // that budget in history order, and the recipient's own ACK is the 255th entry of the 256-entry history.
+        const reforwardBudget = AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 2;
+        const forgeries = Array.from({ length: reforwardBudget }, (_, index) => ({
+            type: 'ack' as const,
+            payload: { ...toTestALAckPayload({ ...named, fromPeerId: forger, status: 'delivered' }), proof: toTestSignatureProof(index + 1) }
+        }));
+        for (const forgery of forgeries) {
+            await commitChildControl(admissionStore, forgery);
+        }
+        const own = await signTestALReceiptControl(await createAvailablePublicationCryptoFixture(), {
+            type: 'ack',
+            payload: toTestALAckPayload({ ...named, fromPeerId: victim, status: 'delivered' })
+        });
+        await commitChildControl(admissionStore, own);
+
+        const retried = await commitRetriedCopy(admissionStore, msg);
+
+        expect(retried.durableEffects.length).toBeLessThanOrEqual(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries);
+        expect(toSentControlsNaming(retried, victim)).toEqual([...forgeries.slice(0, reforwardBudget - 1), own].map(toReforwarded));
     });
 
     it('Limit: a child that floods distinct forged statements about a recipient evicts its true control from the history, so a retried copy no longer re-forwards it; its first forward had already gone up', async () => {
