@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { sleepWithAbort } from '@shared/resilience/timing/sleep-with-abort.ts';
+import { sleepWithAbortReason } from '@shared/resilience/timing/sleep-with-abort-reason.ts';
 
 const toAbortReason = (signal: AbortSignal) => new Error(`aborted: ${String(signal.reason)}`);
 
-describe('sleep with abort', () => {
+describe('sleep with abort reason', () => {
     beforeEach(() => {
         vi.useFakeTimers();
     });
@@ -17,8 +17,8 @@ describe('sleep with abort', () => {
         const controller = new AbortController();
         controller.abort('gone');
 
-        await expect(sleepWithAbort(0, controller.signal, toAbortReason)).resolves.toBeUndefined();
-        await expect(sleepWithAbort(-1, controller.signal, toAbortReason)).resolves.toBeUndefined();
+        await expect(sleepWithAbortReason(0, controller.signal, toAbortReason)).resolves.toBeUndefined();
+        await expect(sleepWithAbortReason(-1, controller.signal, toAbortReason)).resolves.toBeUndefined();
         expect(vi.getTimerCount()).toBe(0);
     });
 
@@ -26,13 +26,13 @@ describe('sleep with abort', () => {
         const controller = new AbortController();
         controller.abort('gone');
 
-        await expect(sleepWithAbort(10, controller.signal, toAbortReason)).rejects.toEqual(new Error('aborted: gone'));
+        await expect(sleepWithAbortReason(10, controller.signal, toAbortReason)).rejects.toEqual(new Error('aborted: gone'));
         expect(vi.getTimerCount()).toBe(0);
     });
 
     it('rejects through the mapping when aborted during the wait and clears its timer', async () => {
         const controller = new AbortController();
-        const sleeping = sleepWithAbort(10, controller.signal, toAbortReason);
+        const sleeping = sleepWithAbortReason(10, controller.signal, toAbortReason);
 
         expect(vi.getTimerCount()).toBe(1);
         controller.abort('during');
@@ -44,7 +44,7 @@ describe('sleep with abort', () => {
     it('removes its listener once it resolves', async () => {
         const controller = new AbortController();
         const removeEventListener = vi.spyOn(controller.signal, 'removeEventListener');
-        const sleeping = sleepWithAbort(10, controller.signal, toAbortReason);
+        const sleeping = sleepWithAbortReason(10, controller.signal, toAbortReason);
 
         await vi.advanceTimersByTimeAsync(10);
         await expect(sleeping).resolves.toBeUndefined();

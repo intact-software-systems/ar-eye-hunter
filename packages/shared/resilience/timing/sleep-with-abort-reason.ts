@@ -1,4 +1,4 @@
-export function sleepWithAbort<Reason>(
+export function sleepWithAbortReason<Reason>(
     ms: number,
     signal: AbortSignal | undefined,
     toAbortReason: (signal: AbortSignal) => Reason

@@ -1,5 +1,5 @@
 import { DeadlineAbortScope } from '@shared/resilience/timing/deadline-abort-scope.ts';
-import { sleepWithAbort } from '@shared/resilience/timing/sleep-with-abort.ts';
+import { sleepWithAbortReason } from '@shared/resilience/timing/sleep-with-abort-reason.ts';
 
 export interface RtcConnectReadinessAbortScope {
     readonly signal: AbortSignal;
@@ -63,7 +63,7 @@ export function raceWithRtcConnectReadinessAbort<T>(promise: Promise<T>, signal:
 }
 
 export function waitForRtcConnectReadinessPoll(ms: number, signal: AbortSignal): Promise<void> {
-    return sleepWithAbort(ms, signal, (aborted) => aborted.reason);
+    return sleepWithAbortReason(ms, signal, (aborted) => aborted.reason);
 }
 
 export function createRtcConnectReadinessAbortScope(

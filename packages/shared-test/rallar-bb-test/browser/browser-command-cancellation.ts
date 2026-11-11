@@ -1,5 +1,5 @@
 import { DeadlineAbortScope } from '@shared/resilience/timing/deadline-abort-scope.ts';
-import { sleepWithAbort } from '@shared/resilience/timing/sleep-with-abort.ts';
+import { sleepWithAbortReason } from '@shared/resilience/timing/sleep-with-abort-reason.ts';
 
 import type { RallarBlackBoxTestCommandContext } from '../rallar-black-box-test-contracts.ts';
 
@@ -13,7 +13,7 @@ export interface BrowserCommandAbortScope {
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    return sleepWithAbort(ms, signal, (aborted) => decodeAbortReason(aborted.reason));
+    return sleepWithAbortReason(ms, signal, (aborted) => decodeAbortReason(aborted.reason));
 }
 
 export function decodeAbortReason(reason: unknown): Error {

@@ -1,4 +1,4 @@
-import { sleepWithAbort as sleepWithAbortReason } from '@shared/resilience/timing/sleep-with-abort.ts';
+import { sleepWithAbortReason } from '@shared/resilience/timing/sleep-with-abort-reason.ts';
 
 const ABORT_ERROR_NAME = 'RALLAR_BLACK_BOX_ABORTED';
 
