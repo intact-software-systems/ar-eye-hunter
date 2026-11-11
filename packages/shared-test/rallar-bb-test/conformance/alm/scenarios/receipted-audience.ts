@@ -68,7 +68,7 @@ interface RawAckControlInput extends RawAckAnswer {
     readonly logicalRecipientPeerId?: string;
 }
 
-const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
+export const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
     confirmed: ['receiver', 'recipient-b'],
     unconfirmed: [],
     outsideAudience: []
@@ -279,7 +279,7 @@ function toArrivalWait(recipient: AlmConformanceStepInput): RallarBlackBoxTestWa
 }
 
 /** The cell's cues travel on a type of their own, which no receipt window or received count of the cell reads. */
-function toCueStep(step: AlmConformanceStepInput): AlmConformanceStepInput {
+export function toCueStep(step: AlmConformanceStepInput): AlmConformanceStepInput {
     return { ...step, scenarioKey: `${step.scenarioKey}-cues` };
 }
 

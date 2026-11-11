@@ -32,6 +32,7 @@ import {
     forgedRecipientAck,
     unsignedAckRefused
 } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/receipted-audience.ts';
+import { receiptedRelayPath } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/relay-path/receipted-relay-path.ts';
 import { replyCorrelated } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/reply/reply-timeout-late.ts';
@@ -132,7 +133,8 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     { scenarioKey: 'paced-isolation-lists', carriers: pacedIsolationLists.carriers },
     // The receipt-proof cells' lane evidence is local (S8-R10, D505); manifest 22 stays as recorded.
     { scenarioKey: 'unsigned-ack-refused', carriers: unsignedAckRefused.carriers },
-    { scenarioKey: 'forged-recipient-ack', carriers: forgedRecipientAck.carriers }
+    { scenarioKey: 'forged-recipient-ack', carriers: forgedRecipientAck.carriers },
+    { scenarioKey: 'receipted-relay-path', carriers: receiptedRelayPath.carriers }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {

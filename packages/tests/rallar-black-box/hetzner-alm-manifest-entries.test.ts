@@ -239,7 +239,8 @@ describe('ALM conformance hosted lane families', () => {
             ...ALM_CONFORMANCE_RTC_CARRIERS.map((carrier) => `alm-${carrier}-repair-exhausted`),
             'alm-rtc-unsigned-ack-refused',
             'alm-rtc-with-ws-fallback-unsigned-ack-refused',
-            'alm-rtc-forged-recipient-ack'
+            'alm-rtc-forged-recipient-ack',
+            'alm-rtc-receipted-relay-path'
         ];
         const defined = toFamilyCells(['three-agent']);
 

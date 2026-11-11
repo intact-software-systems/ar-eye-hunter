@@ -71,7 +71,8 @@ describe('ALM run on an agent per role', () => {
                 'fenced-catch-up',
                 'leader-confirms',
                 'no-leader-refused',
-                'claim-refused-on-rtc'
+                'claim-refused-on-rtc',
+                'receipted-relay-path'
             ],
             'rtc-with-ws-fallback': [
                 'repair-exhausted',

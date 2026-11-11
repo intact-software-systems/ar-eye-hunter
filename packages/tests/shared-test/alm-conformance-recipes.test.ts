@@ -408,6 +408,9 @@ describe('alm-conformance recipe family', () => {
                         : []),
                     ...(carrier === 'rtc' ? GRANTED_RTC_THREE_AGENT_KEYS : []).flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
+                    ),
+                    ...(carrier === 'rtc' ? ['receipted-relay-path'] : []).flatMap((key) =>
+                        ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     )
                 ]);
         }
@@ -428,7 +431,8 @@ describe('alm-conformance recipe family', () => {
             'reply-first-wins',
             'paced-isolation-lists',
             'repair-exhausted',
-            ...GRANTED_RTC_THREE_AGENT_KEYS
+            ...GRANTED_RTC_THREE_AGENT_KEYS,
+            'receipted-relay-path'
         ];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -809,7 +813,9 @@ describe('alm-conformance recipe family', () => {
             // The granted rtc cells.
             ...[...GRANTED_RTC_TWO_AGENT_KEYS, GRANTED_RTC_PRINCIPAL_KEY, ...GRANTED_RTC_THREE_AGENT_KEYS].map(() => ['full']),
             // The topic subscription cells, now that a receipted granted send rides rtc.
-            ...FOUR_ROLE_KEYS.map(() => ['full'])
+            ...FOUR_ROLE_KEYS.map(() => ['full']),
+            // The receipted relay-path cell, after the granted relay cells.
+            ['full']
         ]);
     });
 
@@ -1240,6 +1246,51 @@ describe('alm-conformance recipe family', () => {
             for (const carrier of ALM_CONFORMANCE_CARRIERS) {
                 const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
                 expect(keys.includes('forged-recipient-ack'), carrier).toBe(carrier === 'rtc');
+            }
+        });
+
+        it('reshapes the room into a path for a non-granted receipted send, records every page\'s next hops, and resets the config after the sender read its receipt', () => {
+            const scenario = receiptedOf('rtc', 'receipted-relay-path');
+            const receiver = bodyOf(scenario.receiver);
+            expect(receiver[0]).toMatchObject({
+                kind: 'http.request',
+                request: { method: 'PUT', body: { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } } }
+            });
+            expect(receiver.at(-1)).toMatchObject({ kind: 'http.request', request: { method: 'DELETE' } });
+            expect(receiver.at(-1)).not.toHaveProperty(['request', 'body']);
+            for (const recipe of [scenario.sender, scenario.receiver, scenario.recipientB]) {
+                expect(recipe.commands.filter((command) => command.kind === 'health'), recipe.recipeId)
+                    .toEqual([expect.objectContaining({ commandId: `${recipe.recipeId}-overlay-next-hops` })]);
+                // No principal is granted or named: the send needs no grant, and the owner's PUT no principal token.
+                expect(JSON.stringify(recipe), recipe.recipeId).not.toContain('{principal:');
+            }
+            const sends = scenario.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand);
+            expect(sends.find((command) => command.commandId?.endsWith('-sender-send-1') === true))
+                .toMatchObject({ ack: 'all-logical-recipients', topicId: CONFORMANCE_TOPIC_ID });
+            expect(new Set(sends.map((command) => command.topicId))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
+            expect(scenario.sender.commands.find((command) => command.kind === 'rtc.connect'))
+                .toMatchObject({ readiness: { minReadyPeers: 1 } });
+            const senderTail = bodyOf(scenario.sender).slice(-10);
+            expect(senderTail.map(shapeOf)).toEqual([
+                'received:1:absent',
+                'messages.receipts',
+                'assert',
+                'assert',
+                'assert',
+                'assert',
+                'assert',
+                'assert',
+                'messages.send',
+                'messages.observe'
+            ]);
+            expect(senderTail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []))
+                .toEqual(['acknowledged', 'receiver', 2, 2, 0, 0]);
+            expect(senderTail.at(-2)?.commandId).toMatch(/-cues-sender-cue-read$/);
+            const unprincipaled = createAlmConformanceRecipes({ ...toConformanceInput('rtc'), principalIdsByRole: {} });
+            expect(unprincipaled.map((candidate) => candidate.scenarioKey)).toContain('receipted-relay-path');
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
+                expect(keys.includes('receipted-relay-path'), carrier).toBe(carrier === 'rtc');
             }
         });
 

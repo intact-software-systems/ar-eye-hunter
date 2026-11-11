@@ -96,6 +96,7 @@ import { orderingGapRepair } from './scenarios/range-repair/ordering-gap-repair.
 import { repairExhausted } from './scenarios/range-repair/repair-exhausted.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
+import { receiptedRelayPath } from './scenarios/relay-path/receipted-relay-path.ts';
 import { replyCorrelated } from './scenarios/reply/reply-correlated.ts';
 import { replyFirstWins } from './scenarios/reply/reply-first-wins.ts';
 import { replyTimeoutLate } from './scenarios/reply/reply-timeout-late.ts';
@@ -271,9 +272,10 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcListDelivered,
     grantedRtcListNonHolder,
     grantedRtcListLaneRoles,
-    // The room's three-agent cells share it, and these two reshape its topology until each one's own last step.
+    // The room's three-agent cells share it, and these three reshape its topology until each one's own last step.
     grantedRtcRelayOnly,
-    grantedRtcOrderedRelay
+    grantedRtcOrderedRelay,
+    receiptedRelayPath
 ];
 
 export function createAlmConformanceRecipes(
