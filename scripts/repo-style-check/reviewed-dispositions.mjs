@@ -732,13 +732,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'asNodes',
         maximumMagnitude: 1
     }),
-    // The caught boundary preserves an original Error's identity and otherwise
-    // normalizes through String into Error; no raw exception feeds domain policy.
-    Object.freeze({
-        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toNativeReceiptFailure'
-    }),
     // This caught/framework boundary immediately normalizes Error.message or
     // String into response text and derives status only from RequestAuthFailure.
     // No raw exception reaches domain logic; only this exact owner is reviewed.

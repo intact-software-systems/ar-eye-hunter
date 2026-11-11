@@ -49,9 +49,6 @@ export interface NativeGroupSessionFlow {
 }
 
 const NATIVE_HTTP_ALLOWANCE_MS = 5_000;
-// The first group write pays one-time server and database costs that the steady-state allowance does not measure.
-const NATIVE_COLD_START_ALLOWANCE_MS = 30_000;
-const NATIVE_WARMUP_REQUEST_INDEX = 1_000;
 
 const PRINCIPAL_REF = {
     applicationId: 'rallar-server',
@@ -162,19 +159,7 @@ export async function createNativeSessionTestFixture(): Promise<NativeSessionTes
     });
 }
 
-export async function warmNativeGroupCreatePath(flow: NativeGroupSessionFlow): Promise<void> {
-    const warmup = await writeNativeGroupCreate({
-        ...flow,
-        groupRef: { ...flow.groupRef, groupId: `${flow.groupRef.groupId}-warmup` },
-        index: NATIVE_WARMUP_REQUEST_INDEX
-    }, NATIVE_COLD_START_ALLOWANCE_MS);
-    assert.equal(warmup.status, 201, JSON.stringify(warmup.body));
-}
-
-export async function writeNativeGroupCreate(
-    flow: NativeGroupSessionFlow,
-    allowanceMs = NATIVE_HTTP_ALLOWANCE_MS
-): Promise<NativeGroupRequestResult> {
+export async function writeNativeGroupCreate(flow: NativeGroupSessionFlow): Promise<NativeGroupRequestResult> {
     const { baseUrl, session, groupRef, index } = flow;
     const scope = { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId };
     const groupPath = `/api/state/apps/${groupRef.applicationId}/workspaces/${groupRef.workspaceId}/groups`;
@@ -196,7 +181,7 @@ export async function writeNativeGroupCreate(
                 createdByPrincipalId: 'alice'
             }
         }
-    }, allowanceMs);
+    });
 }
 
 export async function writeNativeGroupJoin(flow: NativeGroupSessionFlow): Promise<NativeGroupRequestResult> {
@@ -244,10 +229,7 @@ export async function writeNativeGroupPresence(flow: NativeGroupSessionFlow): Pr
     });
 }
 
-export async function writeNativeGroupRequest(
-    request: NativeGroupRequest,
-    allowanceMs = NATIVE_HTTP_ALLOWANCE_MS
-): Promise<NativeGroupRequestResult> {
+export async function writeNativeGroupRequest(request: NativeGroupRequest): Promise<NativeGroupRequestResult> {
     const startedAt = performance.now();
     const { requestId, ...body } = request.command.request;
     assertApiMutationRequestId(requestId);
@@ -259,13 +241,16 @@ export async function writeNativeGroupRequest(
             'x-client-id': request.command.authSession.clientId
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(allowanceMs)
+        signal: AbortSignal.timeout(NATIVE_HTTP_ALLOWANCE_MS)
     }).catch((cause) => {
-        throw new Error(`${requestId} failed inside its ${allowanceMs} ms HTTP allowance`, { cause });
+        throw new Error(`${requestId} failed inside its ${NATIVE_HTTP_ALLOWANCE_MS} ms HTTP allowance`, { cause });
     });
     const decoded = decodeJsonWireValue(await response.json(), `HTTP response for ${requestId}`);
     const elapsedMs = performance.now() - startedAt;
-    assert.ok(elapsedMs < allowanceMs, `${requestId} exceeded ${allowanceMs} ms HTTP allowance`);
+    assert.ok(
+        elapsedMs < NATIVE_HTTP_ALLOWANCE_MS,
+        `${requestId} exceeded ${NATIVE_HTTP_ALLOWANCE_MS} ms HTTP allowance`
+    );
     console.log(JSON.stringify({ requestId, status: response.status, elapsedMs }));
     return { command: request.command, status: response.status, body: decoded, elapsedMs };
 }

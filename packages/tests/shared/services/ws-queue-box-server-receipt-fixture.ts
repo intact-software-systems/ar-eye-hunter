@@ -11,7 +11,7 @@ import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
-import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -25,6 +25,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { captureOutboundWorkRunnable } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 export interface ReceiptClock {
     nowMs: number;
@@ -92,6 +94,8 @@ interface CreateClusterInstanceInput {
     readonly bus: QueueBoxPubSubBridge;
     readonly publisherId: string;
     readonly engine: InboxOutboxEngine;
+    /** The room's sessions: a room message is authorized to and broadcast among exactly these. */
+    readonly roomPeerIds: readonly string[];
 }
 
 /** A clock the test advances by hand; the test's end restores the real one. */
@@ -175,14 +179,14 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
         targetResolver: {
             requiresFrozenAudience: () => false,
             resolvePeerRecipients: (peerId) => openRecipients().filter((recipient) => recipient.peerId === peerId),
-            resolveBroadcastRecipients: () => openRecipients().filter((recipient) => ['a', 'b', 'c'].includes(recipient.peerId))
+            resolveBroadcastRecipients: () => openRecipients().filter((recipient) => input.roomPeerIds.includes(recipient.peerId))
         }
     });
     service.authorizeInboundMessagesWith({
         sendNacks: true,
         authorize: async (message) =>
             isRoomScopedALMessage(message)
-                ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION } }
+                ? { authorized: true, roomAudience: { recipientPeerIds: [...input.roomPeerIds], snapshotVersion: SNAPSHOT_VERSION } }
                 : { authorized: true }
     });
     service.onAnyInboxMessageDo('router', {
@@ -231,6 +235,23 @@ export function roomMessage(nowMs: number): ALMessage {
     };
 }
 
+/** The ACK `recipient` sends for `roomMessage`, naming origin `a`. */
+export function receiverAck(recipient: string, nowMs: number): ALMessage {
+    return newALAckControlMessage(
+        { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs, traceId: 'trace-ws-queue-box-server-receipt-fixture' },
+        toTestALAckPayload({
+            ackedMsgId: 'room-message-1',
+            fromPeerId: recipient,
+            toPeerId: 'a',
+            originPeerId: 'a',
+            logicalRecipientPeerId: recipient,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: nowMs
+        })
+    );
+}
+
 export function readSentReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {
     return socket.sent
         .map((frame) => decodePersistedALMessage(frame))
@@ -245,8 +266,16 @@ export async function runReceiptWorkerHandoff(input: ReceiptWorkerHandoffInput):
     const engineB = new InboxOutboxEngine();
     const runA = captureOutboundWorkRunnable(engineA);
     const runB = captureOutboundWorkRunnable(engineB);
-    const local = await createClusterInstance({ name: 'server', outboundStores: input.storesA, bus, publisherId: 'local', engine: engineA });
-    const remote = await createClusterInstance({ name: 'remote-server', outboundStores: input.storesB, bus, publisherId: 'remote', engine: engineB });
+    const roomPeerIds = ['a', 'b', 'c'];
+    const local = await createClusterInstance({ name: 'server', outboundStores: input.storesA, bus, publisherId: 'local', engine: engineA, roomPeerIds });
+    const remote = await createClusterInstance({
+        name: 'remote-server',
+        outboundStores: input.storesB,
+        bus,
+        publisherId: 'remote',
+        engine: engineB,
+        roomPeerIds
+    });
     const alice = await connect(local, 'a');
     const wrong = await connect(remote, 'wrong');
     const claims: ReceiptWorkClaim[] = [];
