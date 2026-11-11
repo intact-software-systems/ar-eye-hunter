@@ -18,13 +18,19 @@ and it has no status list.
   `docs/rallar-group-formation-architecture.md`: `pacing-sweep`, which needs a
   headless parallelism sweep over `maxConcurrentEdgeSetups`.
 - Four shared-mechanism consolidations the V1c audit ranked (D278) and the
-  V1c closure recorded, not selected (D420, D421 and D423–D426; the V1c step 2 proposal is in git history), counted on `bdbf7b00c`:
+  V1c closure recorded, not selected (D420, D421 and D423–D426; the V1c step 2 proposal is in git history):
   the AL checkpoint writer and the reconnect hydrator keep their own trailing
   flush timers beside `ThrottledFlush`; about 11 serialized promise chains have
-  no shared primitive; 27 inline UTF-8 byte length sites outside the ALM and
-  WS notice paths still encode by hand beside `computeUtf8ByteLength`
-  (`packages/shared/encoding`); and 27 raw `setInterval` calls remain beside
-  `startRepeating`'s 11 callers. The queuebox-level sibling-row claim (presence summary only) and
+  no shared primitive; and, counted after S9-i over non-test source under
+  `packages` and `apps`, 31 lines still count UTF-8 bytes with
+  `.encode(…).length` or `.byteLength` beside `computeUtf8ByteLength`
+  (`packages/shared/encoding`), none of them in the folders S9-i swept (the
+  ALM, AL contracts, websocket, services, queue pub/sub and browser messages
+  folders, where the publication and receipt proofs keep encoders because they
+  sign the bytes); the nearest are the snapshot pages in
+  `packages/shared/api/state-snapshot-page.ts`;
+  and 27 raw `setInterval` calls remain beside `startRepeating`'s 17 call
+  lines. The queuebox-level sibling-row claim (presence summary only) and
   the control server's sliced JSON writer have no second consumer yet. Each
   primitive lands in `packages/shared` with its own tests when a slice selects
   it; the checkpoint writer's move keeps its lag and health states.
@@ -98,13 +104,37 @@ and it has no status list.
 - Three copies stay beside the shared builders (S9-i, D622, D623):
   `black-box-runner/preflight/live-preflight.ts` keeps its API-base-path WS URL
   builder and its own `mutationPath`, and `rallar-bb-test/browser/browser-http-requests.ts`
-  builds a ws-ticket request path by hand; the hosted
+  builds a ws-ticket request path by hand from an injected request id; the hosted
   `scripts/hosted-rallar/controller/authenticated-ws-smoke.ts` keeps its own WS
   URL builder because it runs on the controller VM without the repository's
   packages. The preflight and the runner copies fold once the preflight's
   `unknown` readers are decoders (touching the file re-reports its
   `boundary.unknown` findings in the changed-style gate) and the browser
-  request id's grammar is confirmed.
+  request id's grammar is confirmed. The recipe builders in `rallar-bb-test`
+  (`conformance/alm/alm-conformance-session-commands.ts`,
+  `conformance/alm/scenarios/server-ordered-entry.ts`,
+  `conformance/alm/scenarios/topic-subscription/topic-subscription-commands.ts`,
+  `fixtures/live-rtc-setup.ts`, `fixtures/create-view-push-recipe.ts`) write
+  mutation request paths into recipe JSON, some with placeholders the
+  runner resolves later, so the grammar cannot be asserted where they are built.
+- The black-box harness keeps five "race a promise against an abort signal"
+  copies (S9-i final review): `headless-worker-runtime.ts`,
+  `rtc-connect-readiness-abort.ts`, `browser-command-cancellation.ts`,
+  `api-v1-managed-api-readiness.mts` and
+  `refresh-black-box-browser-room-state.ts`. One owner belongs in
+  `packages/shared/resilience/timing/` beside `DeadlineAbortScope` and
+  `sleepWithAbortReason`; the headless worker's poll wait, an injected sleep
+  raced against its scope, folds with it.
+- `packages/shared/api` holds 27 production files directly, past its
+  directory-density finding, which is why `getOwnNumber` sits in
+  `exact-object-decoding.ts` (D615) and `API_CREATE_WS_PATH` in
+  `packages/shared/websocket/` (D622). A reviewed split of the folder by
+  feature lets both move to their owners.
+- 11 test files under `packages/tests/shared-web` import the composition
+  module `browser-session-composition.ts` only for
+  `createDefaultBrowserSessionQosInputs` (D620). A shared test fixture for the
+  browser session defaults lets the leaf-module tests stop importing the
+  composition root.
 - Production builds its ALM runtimes with `new ALInboundMessageRuntime(` and
   `new ALOutboundMessageRuntime(`, while `createDefaultALInboundMessageRuntime`,
   `createDefaultALOutboundMessageRuntime` and

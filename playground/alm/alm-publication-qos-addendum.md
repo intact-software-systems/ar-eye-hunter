@@ -1458,11 +1458,15 @@ behavior: no wire shape, stored shape or OpenAPI document differs from Slice
   black-box script's safe projection share;
 - `HeldSendChain` owns the ordered chain of held sends and the logged failure,
   one chain each for the WS server and the pub/sub bridge;
-- `computeUtf8ByteLength` counts the UTF-8 bytes of the ALM and WS paths, and
-  `toApiWsUrl` and `toApiMutationRequestPath` build the WS upgrade URL and the
-  runner's topology-proof mutation paths;
-- `DeadlineAbortScope` and `sleepWithAbort` serve the black-box harness's
-  deadline scopes and abortable waits.
+- `computeUtf8ByteLength` counts the UTF-8 bytes of the ALM and WS paths
+  (the publication and receipt proofs keep their encoders, since they sign
+  the bytes), and `toApiWsUrl` and `toApiMutationRequestPath` build the WS
+  upgrade URL and the mutation paths of the topology, ordering, view-push and
+  logout proofs;
+- `DeadlineAbortScope` and `sleepWithAbortReason` serve five of the black-box
+  harness's deadline scopes and four of its abortable waits; the headless
+  worker's poll wait and five promise-against-signal races stay on the
+  backlog.
 
 The inbound runtime-state stores nothing constructed, six unreferenced queuebox
 and resilience values and fifteen file-private runtime exports are deleted.

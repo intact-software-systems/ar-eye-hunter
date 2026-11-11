@@ -810,8 +810,9 @@ ordering track.
 
 **PARTIAL:** Ordering tracks include key/sender/epoch; gap buffering, NACK/
 repair, release, expiry, and restart behavior exist. The outbound receipt keeps a set of
-acknowledged peers (`toALOutboundTrackedReceipt`), and the inbound relay row relays a child
-ACK once per statement (`isALSameReceiptStatement`).
+acknowledged peers (`toALOutboundTrackedReceipt`), and inbound admission refuses an ACK whose
+sender, hop role and statement it already admitted
+(`packages/shared/alm/inbound/control/validate-al-inbound-control-admission.ts`).
 
 **CURRENT — bounded gaps:**
 [`compute-al-ordering-observation.ts`](../../packages/shared/alm/compute-al-ordering-observation.ts)
