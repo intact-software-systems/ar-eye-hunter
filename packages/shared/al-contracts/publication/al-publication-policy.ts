@@ -1,4 +1,4 @@
-import { getOwnNumber } from '../../api/get-own-number.ts';
+import { getOwnNumber } from '../../api/exact-object-decoding.ts';
 import type { RallarValidationIssue } from '../../api/rallar-validation.ts';
 import { Either } from '../../resilience/Either.ts';
 

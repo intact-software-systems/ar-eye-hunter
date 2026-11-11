@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getOwnNumber } from '@shared/api/get-own-number.ts';
+import { getOwnNumber } from '@shared/api/exact-object-decoding.ts';
 
 describe('getOwnNumber', () => {
     it('reads an own number along a path', () => {
