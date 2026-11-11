@@ -4,6 +4,7 @@ import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-code
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { PersistedALRecord } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { StateScope } from '../../api/state-types.ts';
+import { computeUtf8ByteLength } from '../../encoding/compute-utf8-byte-length.ts';
 import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import {
     decodeALAdmissionArray,
@@ -125,7 +126,6 @@ function decodeFrozenGroupAudience(value: unknown): readonly string[] {
     if (keys.length !== value.length + 1) {
         throw new TypeError('Stored frozen group audience must contain dense data entries');
     }
-    const encoder = new TextEncoder();
     const audience: string[] = [];
     let bytes = 2;
     for (let index = 0; index < value.length; index++) {
@@ -134,7 +134,7 @@ function decodeFrozenGroupAudience(value: unknown): readonly string[] {
             throw new TypeError('Stored frozen group audience must contain dense data entries');
         }
         const peerId = decodeALAdmissionString(descriptor.value);
-        bytes += encoder.encode(JSON.stringify(peerId)).length + (index === 0 ? 0 : 1);
+        bytes += computeUtf8ByteLength(JSON.stringify(peerId)) + (index === 0 ? 0 : 1);
         if (bytes > AL_INBOUND_PROVENANCE_LIMITS.frozenAudienceBytes) {
             throw new TypeError('Stored frozen group audience exceeds the provenance byte limit');
         }

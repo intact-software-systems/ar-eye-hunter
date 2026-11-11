@@ -20,6 +20,7 @@ import type {
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import { computeStateSnapshotPages, type StateSnapshotEnvelope } from '@shared/api/state-snapshot-page.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -145,10 +146,8 @@ export function computeGroupStateSyncEntries(
 
 /** Whether an effect's payload fits the AL payload bound its state-sync message is decoded against. */
 export function isWithinStateSyncPayloadLimit(payload: ComputedGroupStateSyncEffect['payload']): boolean {
-    return UTF8_ENCODER.encode(JSON.stringify(payload)).byteLength <= AL_MESSAGE_RESOURCE_LIMITS.payloadBytes;
+    return computeUtf8ByteLength(JSON.stringify(payload)) <= AL_MESSAGE_RESOURCE_LIMITS.payloadBytes;
 }
-
-const UTF8_ENCODER = new TextEncoder();
 
 type ComputedStateSync = ComputedClientStateSync | ComputedGroupStateSync;
 type ComputedStateSyncEffect =

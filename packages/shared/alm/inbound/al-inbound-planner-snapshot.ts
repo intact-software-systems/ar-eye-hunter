@@ -6,6 +6,7 @@ import {
     type ALOrderingObservationStatus,
     type ALOrderingTrackSnapshot
 } from '../../al-contracts/al-runtime.ts';
+import { computeUtf8ByteLength } from '../../encoding/compute-utf8-byte-length.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
 import { computeALOrderingObservation, type ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
 import {
@@ -183,10 +184,9 @@ function canRetainOrderedMessage(read: ALInboundPlannerSnapshot): boolean {
     if (read.bufferedSnapshots.length >= AL_MESSAGE_RESOURCE_LIMITS.bufferedMessages) {
         return false;
     }
-    const encoder = new TextEncoder();
-    let bytes = encoder.encode(JSON.stringify(read.msg)).length;
+    let bytes = computeUtf8ByteLength(JSON.stringify(read.msg));
     for (const buffered of read.bufferedSnapshots) {
-        bytes += encoder.encode(JSON.stringify(buffered.msg)).length;
+        bytes += computeUtf8ByteLength(JSON.stringify(buffered.msg));
         if (bytes > AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes) {
             return false;
         }
