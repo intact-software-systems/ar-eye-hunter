@@ -21,7 +21,7 @@ and it has no status list.
   V1c closure recorded, not selected (D420, D421 and D423–D426; the V1c step 2 proposal is in git history):
   the AL checkpoint writer and the reconnect hydrator keep their own trailing
   flush timers beside `ThrottledFlush`; about 11 serialized promise chains have
-  no shared primitive; and, counted after S9-i over non-test source under
+  no shared primitive; and, counted on `9f6b214a6` over non-test source under
   `packages` and `apps`, 31 lines still count UTF-8 bytes with
   `.encode(…).length` or `.byteLength` beside `computeUtf8ByteLength`
   (`packages/shared/encoding`), none of them in the folders S9-i swept (the
@@ -244,6 +244,21 @@ and it has no status list.
   storage-cause and verdict-reason lists read the shared tuples, so only the
   shape rule remains, which redacts where the codec throws. The script's
   `SOCKET_REJECTION_CODES` is still a local copy of the socket rejection codes.
+- The Recipe Console's pixel baselines
+  (`tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts-snapshots`,
+  eight `-chromium-darwin.png` files, last refreshed with #570) predate the
+  "Room operations and recovery" block #771 added to the Advanced view. The
+  pixel comparisons are skipped off macOS (the two
+  `test.skip(process.platform !== 'darwin', …)` sites in
+  `recipe-console-concept-fidelity.spec.ts`), so no gate runs them, and five
+  fail on a macOS run of `npm run test:rallar:recipe-console` by 1–4 % of
+  pixels against a 1 % limit. Refresh them on the controlled platform, or give
+  the comparison a platform a gate runs.
+- `npm run format:check` (`dprint check`) reports 25 unformatted files on
+  `main`, among them `CLAUDE.md`, `apps/api-v1/src/middleware-resilience.ts`
+  and `scripts/hosted-rallar/controller/rallar-controller-lock.sh`, and no
+  workflow under `.github/workflows` runs it. Format them in a commit listed in
+  `.git-blame-ignore-revs` and give the check a lane.
 - `tests/playwright/**` is in no typecheck project (S8-i): a payload-shape
   change there compiles unchecked.
 - The full-scope RTC ALM lane's pre-existing reds (S8-i): `capacity-tracks`,
