@@ -135,7 +135,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     'messages.receipts': { required: ['handleId'], optional: ['connection'] },
     'messages.control': {
         required: ['carrier', 'typeId', 'msgId', 'ackedMsgId', 'toPeerId'],
-        optional: ['connection']
+        optional: ['connection', 'logicalRecipientPeerId']
     },
     'messages.awaitReply': { required: ['handleId', 'timeoutMs'], optional: ['connection'] },
     'messages.reply': { required: ['typeId', 'index', 'payload', 'handleId'], optional: ['connection'] },

@@ -29,5 +29,11 @@ export function decodeBlackBoxRallarControlSubmitInput(
                 'messages.control must name a ws or rtc carrier, an al.control.* typeId, msgId, ackedMsgId and toPeerId.'
         });
     }
-    return Either.ofRight({ carrier, typeId, msgId, ackedMsgId, toPeerId });
+    if (record.logicalRecipientPeerId === undefined) {
+        return Either.ofRight({ carrier, typeId, msgId, ackedMsgId, toPeerId });
+    }
+    const logicalRecipientPeerId = decodeBlackBoxCommandString(record.logicalRecipientPeerId);
+    return logicalRecipientPeerId === undefined
+        ? Either.ofLeft({ message: 'messages.control logicalRecipientPeerId must name a session when it is stated.' })
+        : Either.ofRight({ carrier, typeId, msgId, ackedMsgId, toPeerId, logicalRecipientPeerId });
 }

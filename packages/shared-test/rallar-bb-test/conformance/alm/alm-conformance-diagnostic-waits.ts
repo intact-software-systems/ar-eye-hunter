@@ -1,4 +1,5 @@
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALReceiptProofRefusal } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 import type { ALInboundOrderingPosition } from '@shared/alm/inbound/admission/to-al-inbound-ordering-position.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
@@ -60,6 +61,15 @@ interface AlmConformanceControlAdmissionWaitInput {
     readonly receiptPhase?: ALReceiptPayload['phase'];
 }
 
+export interface AlmConformanceControlProofRefusalWaitInput {
+    readonly step: AlmConformanceMessageStepInput;
+    readonly name: string;
+    /** The raw control's authored msgId; it may name result references, which `contains` resolves. */
+    readonly controlMsgId: string;
+    readonly controlTypeId: string;
+    readonly proofRefusal: ALReceiptProofRefusal['kind'];
+}
+
 /**
  * One runtime diagnostic event of the page that runs the step. The diagnostics carry no connection to route on, so
  * the text must scope the match itself. The wait starts before the other role's sends, so it owns the verdict budget.
@@ -117,6 +127,24 @@ export function toControlAdmissionWait(
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
         contains: `"typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}"${admitted}${phase}`
+    });
+}
+
+/**
+ * The origin's `rejected` admission of one raw control whose proof it refused, whatever issue its reason names first
+ * (a duplicate issue can precede the proof issue), so the refusal kind is matched on the event's `proofRefusal` field.
+ */
+export function toControlProofRefusalWait(
+    { step, name, controlMsgId, controlTypeId, proofRefusal }: AlmConformanceControlProofRefusalWaitInput
+): RallarBlackBoxTestWaitCommand {
+    return toDiagnosticWait({
+        step,
+        name,
+        topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        contains:
+            `"msgId":"${controlMsgId}","typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}",` +
+            '"outcome":"rejected","reason":"',
+        payloadFields: { 'data.kind': 'control-admission', 'data.proofRefusal': proofRefusal }
     });
 }
 

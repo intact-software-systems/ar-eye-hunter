@@ -745,6 +745,22 @@ describe('ALM recipe commands', () => {
         expect(validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, msgId: undefined }).ok).toBe(false);
     });
 
+    it('accepts a raw messages.control that names the recipient it speaks for, and refuses one that is not a string', () => {
+        const stated = { ...RAW_CONTROL_COMMAND, logicalRecipientPeerId: 'recipient-b-session' };
+        const valid = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('raw-control-recipient', stated));
+        expect(valid.ok, formatJsonSchemaValidationErrors(valid.errors)).toBe(true);
+        expect(validateRallarBlackBoxTestCommand(stated).ok).toBe(true);
+
+        const refused = { ...RAW_CONTROL_COMMAND, logicalRecipientPeerId: 7 };
+        const result = validateRallarBlackBoxTestCommand(refused);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+            expect(result.error).toBe('messages.control.logicalRecipientPeerId must be a string.');
+        }
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('raw-control-recipient-7', refused)).ok)
+            .toBe(false);
+    });
+
     it('accepts a reply wait and a reply, and refuses a wait without its budget and a reply without its arrival or payload', () => {
         const accepted = [
             { kind: 'messages.awaitReply', connection: 'alice', handleId: 'h-1', timeoutMs: 1_750 },
@@ -1146,6 +1162,36 @@ describe('ALM browser adapter execution', () => {
             code: 'RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT',
             message: 'messages.control names resultCache.alm-send.value.msgId, which no earlier command of this recipe returned.'
         });
+    });
+
+    it('resolves the recipient a raw control speaks for from an earlier result, and fails naming a reference none returned', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ readSession: () => undefined, rallarRuntime: createAlmBrowserRuntimeFake(captures) });
+        const answer = { ...RAW_CONTROL_COMMAND, logicalRecipientPeerId: 'session-{resultCache.alm-send.value.carrier}' };
+        const send = { kind: 'messages.send', commandId: 'alm-send', carrier: 'ws', typeId: 'alm.test', payload: {} } as const;
+
+        const resolved = await runtime.execute({
+            kind: 'recipe.run',
+            recipe: { schemaVersion: 1, recipeId: 'raw-control-recipient', name: 'raw control recipient', commands: [send, answer] }
+        });
+
+        expect(resolved.ok, resolved.error?.message).toBe(true);
+        expect(captures.submitControl[0]).toMatchObject({ logicalRecipientPeerId: 'session-ws' });
+
+        const missingCaptures = createAlmRuntimeCaptures();
+        const unresolved = await createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(missingCaptures)
+        }).execute({
+            ...RAW_CONTROL_COMMAND,
+            commandId: 'alm-raw-control-missing-recipient',
+            logicalRecipientPeerId: '{resultCache.alm-missing.value.senderId}'
+        });
+        expect(unresolved.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT',
+            message: 'messages.control names resultCache.alm-missing.value.senderId, which no earlier command of this recipe returned.'
+        });
+        expect(missingCaptures.submitControl).toEqual([]);
     });
 
     it('carries a rejected send through as a successful command value with its envelope msgId', async () => {

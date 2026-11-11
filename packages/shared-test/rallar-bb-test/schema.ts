@@ -772,7 +772,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         typeId: stringSchema,
         msgId: stringSchema,
         ackedMsgId: stringSchema,
-        toPeerId: stringSchema
+        toPeerId: stringSchema,
+        logicalRecipientPeerId: stringSchema
     }),
     'messages.awaitReply': strictCommandSchema('messages.awaitReply', {
         connection: stringSchema,

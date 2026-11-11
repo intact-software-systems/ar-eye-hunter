@@ -166,6 +166,29 @@ it('defers active work and owned recipe leases, rejects reset receipts, and fail
     expect((await runtime.releaseResults(request)).status).toBe('rejected');
 });
 
+it('fails a messages.control whose recipient names a released result explicitly', async () => {
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
+        commandExecutor: async () => undefined
+    });
+    const first = await runtime.execute({ kind: 'health', commandId: 'first' }, identity);
+    const receipt = (await computeResultCaptureReceipt(first, identity))!;
+    expect((await runtime.releaseResults({ ...identity, requestId: 'release-recipient', receipts: [receipt] })).status)
+        .toBe('released');
+
+    const control = await runtime.execute({
+        kind: 'messages.control',
+        commandId: 'control',
+        carrier: 'rtc',
+        typeId: 'al.control.ack.v3',
+        msgId: 'control-1',
+        ackedMsgId: 'msg-1',
+        toPeerId: 'origin',
+        logicalRecipientPeerId: '{resultCache.first.value}'
+    }, identity);
+
+    expect(control.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+});
+
 it('rejects digest budget failures explicitly and retains original payloads', async () => {
     const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: () => ({ status: 'ok', value: 'x'.repeat(RESULT_CAPTURE_LIMITS.stringCharacters + 1) })

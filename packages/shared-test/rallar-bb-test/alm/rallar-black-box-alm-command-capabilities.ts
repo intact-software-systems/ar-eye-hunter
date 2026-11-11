@@ -130,7 +130,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         kind: 'messages.control',
         title: 'Submit Raw ALM Control',
         description: 'Harness-only: submits, as msgId, the ACK of ackedMsgId to its sender toPeerId under an ' +
-            'al.control.* typeId, through the carrier admission a product control takes; returns the carrier verdict.',
+            'al.control.* typeId, through the carrier admission a product control takes; returns the carrier verdict. ' +
+            'Optionally `logicalRecipientPeerId`, the recipient the ACK speaks for, absent this page\'s session.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
