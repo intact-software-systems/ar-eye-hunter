@@ -1,3 +1,4 @@
+import { getOwnNumber } from '../../api/get-own-number.ts';
 import type { RallarValidationIssue } from '../../api/rallar-validation.ts';
 import { Either } from '../../resilience/Either.ts';
 
@@ -57,11 +58,11 @@ export function decodeALPublicationPolicy(
         }]);
     }
     const policy: ALPublicationPolicy = {
-        cadenceMs: getNumber(value, 'cadenceMs'),
-        retainNewest: getNumber(value, 'retainNewest'),
+        cadenceMs: getOwnNumber(value, ['cadenceMs'], Number.NaN),
+        retainNewest: getOwnNumber(value, ['retainNewest'], Number.NaN),
         drain: {
-            messages: getNumber(value, 'drain', 'messages'),
-            bytes: getNumber(value, 'drain', 'bytes')
+            messages: getOwnNumber(value, ['drain', 'messages'], Number.NaN),
+            bytes: getOwnNumber(value, ['drain', 'bytes'], Number.NaN)
         }
     };
     const issues = validateALPublicationPolicy(policy);
@@ -87,15 +88,6 @@ function validateField(value: number, rule: ALPublicationFieldRule): RallarValid
 
 function isWithinLimit(value: number, limit: number): boolean {
     return Number.isSafeInteger(value) && value >= 1 && value <= limit;
-}
-
-function getNumber(source: object, key: string, ...nestedKeys: readonly string[]): number {
-    const field = Object.getOwnPropertyDescriptor(source, key)?.value;
-    const [nestedKey, ...deeperKeys] = nestedKeys;
-    if (nestedKey === undefined) {
-        return typeof field === 'number' ? field : Number.NaN;
-    }
-    return isObject(field) ? getNumber(field, nestedKey, ...deeperKeys) : Number.NaN;
 }
 
 function isObject(value: unknown): value is object {
