@@ -6,12 +6,13 @@ import type { ALMessageRejection } from '../../../al-contracts/al-message-persis
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { isALRecipientConfirmationAck } from '../../delivery/is-al-recipient-confirmation-ack.ts';
 import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-control-admission.ts';
+import { hasALOutsideStatement, isALSameReceiptStatement } from './is-al-same-receipt-statement.ts';
 
 /** Every reason this acknowledgement may not be admitted; an absent obligation makes the rest moot. */
 export function validateALInboundControlAdmission(
     candidate: ALInboundControlAdmissionCandidate
 ): readonly ALMessageRejection[] {
-    const { ack, pending, acks, owner } = candidate.read;
+    const { ack, pending, acks, nacks, owner } = candidate.read;
     if (!pending) {
         return [rejectInboundControl('Inbound acknowledgement sender has no pending obligation')];
     }
@@ -27,7 +28,7 @@ export function validateALInboundControlAdmission(
     if (acks.some((prior) => isSameAckIdentity(prior, ack))) {
         issues.push(rejectInboundControl('Inbound acknowledgement was already admitted'));
     }
-    if (isALRecipientConfirmationAck(ack) && pending.outsideAudiencePeerIds.includes(ack.logicalRecipientPeerId)) {
+    if (isALRecipientConfirmationAck(ack) && hasALOutsideStatement(pending, { acks, nacks }, ack)) {
         issues.push(
             rejectInboundControl('Inbound acknowledgement names a recipient that answered it is not subscribed')
         );
@@ -44,11 +45,12 @@ export function validateALInboundControlAdmission(
 
 /**
  * A recipient relay speaks for itself twice: `accepted` once it delivered, then its terminal ACK once its
- * subtree completed. Only the terminal one completes its hop, so the two never duplicate each other.
+ * subtree completed. Only the terminal one completes its hop, so the two never duplicate each other. A word a child
+ * forwards for another recipient repeats only under its own proof: another proof is another statement.
  */
 function isSameAckIdentity(prior: ALAckPayload, ack: ALAckPayload): boolean {
-    return prior.fromPeerId === ack.fromPeerId && prior.logicalRecipientPeerId === ack.logicalRecipientPeerId &&
-        isALHopCompletionAck(prior) === isALHopCompletionAck(ack);
+    return prior.fromPeerId === ack.fromPeerId && isALHopCompletionAck(prior) === isALHopCompletionAck(ack) &&
+        isALSameReceiptStatement(prior, ack);
 }
 
 function rejectInboundControl(message: string): ALMessageRejection {

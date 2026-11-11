@@ -6,6 +6,7 @@ import {
     type ALReceiptControl
 } from '@shared/al-contracts/receipt-proof/al-receipt-proof.ts';
 import { importEcdsaP256PublicKey } from '@shared/signature/ecdsa-p256-signature.ts';
+import type { SignatureProof } from '@shared/signature/signature-proof.ts';
 
 import type { AvailablePublicationCrypto } from './shared/signature/publication-crypto-fixtures.ts';
 
@@ -42,6 +43,11 @@ export function toTestALNackPayload(fields: TestALNackFields): ALNackPayload {
         proof: null,
         ...fields
     };
+}
+
+/** A proof of the persisted ES256 shape that verifies under no key: key id 43 × 'A', signature `index.toString(36).padStart(85, 'A') + 'A'`. */
+export function toTestSignatureProof(index: number): SignatureProof {
+    return { alg: 'ES256', keyId: 'A'.repeat(43), signature: `${index.toString(36).padStart(85, 'A')}A` };
 }
 
 /** The control with the proof a real signer over the crypto's key gives it; a refused signature fails the test. */
