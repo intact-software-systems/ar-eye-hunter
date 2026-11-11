@@ -158,8 +158,6 @@ const OUTBOX_VERDICT_REASONS: readonly string[] = [
     ...AL_DELIVERY_SKIPPED_REASONS
 ];
 
-const OUTBOX_STORAGE_CAUSES: readonly string[] = AL_STORAGE_UNAVAILABLE_CAUSES;
-
 export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptObservationDto | undefined {
     if (!isApiTimingRecord(value) || !isSafeApiTimingIdentity(value.serverPeerId)) {
         return undefined;
@@ -568,7 +566,7 @@ function toSafeOutboxVerdict(record: unknown): ApiJsonObject | undefined {
             safe.queuedAttempts = record.queuedAttempts;
             break;
         case 'storage-unavailable':
-            if (!isAllowedApiTimingString(record.cause, OUTBOX_STORAGE_CAUSES)) {
+            if (!isAllowedApiTimingString(record.cause, AL_STORAGE_UNAVAILABLE_CAUSES)) {
                 return undefined;
             }
             safe.cause = record.cause;

@@ -26,7 +26,10 @@ const LIMIT_FIELD_CODES: Readonly<Record<keyof ALPublicationStageLimits, string>
     maxStagedBytes: 'invalid-max-staged-bytes'
 };
 
-/** Every issue names its field under `path`, the place the caller read the limits from; a missing or non-number field becomes NaN, which `validateLimitFields` reports at that field's path. */
+/**
+ * Every issue names its field under `path`, the place the caller read the limits from; a missing or non-number
+ * field becomes NaN, which `validateLimitFields` reports at that field's path.
+ */
 export function decodeALPublicationStageLimits(
     value: unknown,
     path: string

@@ -233,7 +233,7 @@ describe('WS first dequeue authority', () => {
         ]);
     });
 
-    it('delivers an awaited session\'s held rows in hold order, and a failing held send is logged without holding the next', async () => {
+    it('re-checks an awaited session\'s two held rows, and a failing held send is logged while the next is still sent', async () => {
         const messages = [0, 1].map(createIndexedBroadcast);
         const heldRechecks: string[] = [];
         const failure = new Error('held recheck failed');
