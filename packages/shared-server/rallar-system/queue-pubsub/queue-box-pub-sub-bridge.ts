@@ -17,7 +17,6 @@ import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { ExclusionKeyedAdmission } from '@shared/resilience/exclusion-keyed-admission.ts';
 import { readWsQueueBoxServerEligibleAudience } from '@shared/services/ws-queue-box-server/scope/read-ws-queue-box-server-eligible-audience.ts';
 import { validateWsQueueBoxServerRecipientAuthority } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 import {
@@ -38,6 +37,7 @@ import {
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
 import type { WsOutsideAudienceJudgement } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
 import type { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
+import { HeldSendChain } from '@shared/websocket/held-send-chain.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
     recordRallarTiming,
@@ -107,7 +107,7 @@ interface RegisterQueueBoxOutboxPublisherInput {
     readonly timing?: RallarTimingSink;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
     /** One session's held sends, run one after the other so they reach it in the order they were held. */
-    readonly heldSends: ExclusionKeyedAdmission;
+    readonly heldSends: HeldSendChain;
 }
 
 interface ReceiveQueueBoxPubSubMessageDependencies {
@@ -122,7 +122,7 @@ interface ReceiveQueueBoxPubSubMessageDependencies {
     readonly wakeQueueEngine?: () => void;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
     /** One session's held sends, run one after the other so they reach it in the order they were held. */
-    readonly heldSends: ExclusionKeyedAdmission;
+    readonly heldSends: HeldSendChain;
 }
 
 interface SendRemoteQueueBoxOutboxEntryDependencies {
@@ -134,7 +134,7 @@ interface SendRemoteQueueBoxOutboxEntryDependencies {
     readonly wakeQueueEngine?: () => void;
     readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
     /** One session's held sends, run one after the other so they reach it in the order they were held. */
-    readonly heldSends: ExclusionKeyedAdmission;
+    readonly heldSends: HeldSendChain;
 }
 
 interface RequeueFailedRemoteOutboxEntryInput {
@@ -184,7 +184,7 @@ export function installQueueBoxPubSubBridge(
         jitterUnit = Math.random,
         clock = { nowMs: Date.now }
     } = options;
-    const heldSends = new ExclusionKeyedAdmission({ maxConcurrent: Number.MAX_SAFE_INTEGER, keyedChainsFirst: false });
+    const heldSends = new HeldSendChain();
 
     registerQueueBoxOutboxPublisher({
         wsQBoxServerService,
@@ -532,20 +532,18 @@ function deferAwaitedCapturedRecipients(
     if (result.failedCount > 0 || policy === undefined) {
         return { heldCount: 0, evictedCount: 0 };
     }
-    return options.wsQBoxServerService.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
-        expiresAtEpochMs: input.entry.audit.expiryTs.epochMilliseconds,
-        send: (sessionId) => {
-            // One session's held rows re-check one after the other, so they reach it in the order they were held.
-            void options.heldSends.admit(
-                sessionId,
-                () =>
-                    sendToCapturedLocalTargets(
-                        { ...input, policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId) },
-                        options
-                    )
-            ).catch((error) => console.error('Held WebSocket send failed:', error));
+    return options.heldSends.holdForAudience(
+        options.wsQBoxServerService.socket.expectedConnections,
+        policy.admittedAudience ?? [],
+        {
+            expiresAtEpochMs: input.entry.audit.expiryTs.epochMilliseconds,
+            send: (sessionId) =>
+                sendToCapturedLocalTargets(
+                    { ...input, policy: toWsQueueBoxServerHeldSessionPolicy(policy, sessionId) },
+                    options
+                )
         }
-    });
+    );
 }
 
 async function sendToCapturedLocalTargets(
