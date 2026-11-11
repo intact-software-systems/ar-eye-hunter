@@ -3,13 +3,7 @@ import { browserDeliveryComposition } from './browser-delivery-composition.ts';
 
 import {
     createBrowserMediaComposition,
-    createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
-    createBrowserResyncRecoveryComposition,
-    createDefaultBrowserGrantedTopics,
-    createDefaultBrowserTopicSubscriptions,
-    createDefaultRtcPublicationProofVerifier,
-    readBrowserSessionInboundDiagnostics,
     type BrowserMediaComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
@@ -33,20 +27,19 @@ import {
 import {
     createBrowserRuntimeFoundation,
     createBrowserStateComposition,
-    createBrowserStateEventComposition,
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
     type BrowserStateEventComposition
 } from './browser-runtime-composition.ts';
 import {
     createBrowserCrdtComposition,
-    createBrowserSessionCoreComposition,
     createBrowserStartupComposition,
     createDefaultBrowserSessionQosInputs,
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition,
     type BrowserStartupComposition
 } from './browser-session-composition.ts';
+import { createBrowserSessionMessaging } from './create-browser-session-messaging.ts';
 
 interface BrowserFacadeCompositions {
     readonly session: BrowserSessionCoreComposition;
@@ -90,7 +83,12 @@ function createBrowserFacadeCompositions(
     state: BrowserStateComposition,
     delivery: typeof browserDeliveryComposition
 ): BrowserFacadeCompositions {
-    const { session, stateEvents, messaging } = createBrowserSessionMessaging(foundation, state, delivery);
+    const { session, stateEvents, messaging } = createBrowserSessionMessaging({
+        foundation,
+        state,
+        delivery,
+        ...createDefaultBrowserSessionQosInputs()
+    });
     const sessionPort = session.session;
     const realtime = createBrowserRealtimeCoreComposition({
         runtime: foundation.runtime,
@@ -162,45 +160,4 @@ function registerBrowserFacadeLifecycle(
         localMediaSources: compositions.media.localMediaSources,
         remoteMediaStreams: compositions.media.remoteMediaStreams
     });
-}
-
-function createBrowserSessionMessaging(
-    foundation: BrowserRuntimeFoundation,
-    state: BrowserStateComposition,
-    delivery: typeof browserDeliveryComposition
-): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
-    const { nowMs, publicationStages, deliveries, sessionDeliveries } = delivery;
-    const recovery = createBrowserResyncRecoveryComposition({ nowMs });
-    const grantedTopics = createDefaultBrowserGrantedTopics(state);
-    const topicSubscriptions = createDefaultBrowserTopicSubscriptions();
-    const publicationVerifier = createDefaultRtcPublicationProofVerifier(foundation, state);
-    const session = createBrowserSessionCoreComposition({
-        foundation,
-        state,
-        grantedTopics,
-        topicSubscriptions,
-        publicationVerifier,
-        sessionDeliveries,
-        ...createDefaultBrowserSessionQosInputs(),
-        onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
-    });
-    const sessionPort = session.session;
-    const stateEvents = createBrowserStateEventComposition({
-        connectionRuntime: foundation.connectionRuntime,
-        session: sessionPort
-    });
-    const messaging = createBrowserMessagingComposition({
-        wsInbox: stateEvents.wsInbox,
-        deliveries,
-        sessionDeliveries,
-        publicationStages,
-        nowMs,
-        recoveryOwners: recovery.recoveryOwners,
-        state,
-        session: sessionPort,
-        grantedTopics,
-        topicSubscriptions,
-        readInboundDiagnostics: () => readBrowserSessionInboundDiagnostics(foundation)
-    });
-    return { session, stateEvents, messaging };
 }
