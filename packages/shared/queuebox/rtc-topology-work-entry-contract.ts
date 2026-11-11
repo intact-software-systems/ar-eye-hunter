@@ -3,7 +3,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     decodeALMessageEnvelope,
-    decodeALMessageEnvelopeValue
+    decodeALMessageEnvelopeValue,
+    type ALMessageRejection
 } from '../al-contracts/al-message-persistence-validation.ts';
 import {
     decodePersistedALRecord,
@@ -11,6 +12,7 @@ import {
     type PersistedALValue
 } from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
+import type { Either } from '../resilience/Either.ts';
 import { toAppQueueKey } from './AppQueueIdentity.ts';
 import {
     EntityStatus,
@@ -48,7 +50,8 @@ export function readRtcTopologyWorkMessage(value: unknown): ALMessage {
     return message;
 }
 
-export function readRtcTopologyWorkEntry(entry: ResourceEntry): ALMessage {
+/** An envelope that does not decode, an unsupported version among them, is a left; a malformed row shape or scope throws. */
+export function decodeRtcTopologyWorkEntry(entry: ResourceEntry): Either<ALMessageRejection, ALMessage> {
     requireResourceEntryShape(entry);
     if (entry.typeId !== EnqueuedType.APP_OUTBOX || entry.key.topicId !== RTC_TOPOLOGY_OUTBOX_TOPIC) {
         throw new TypeError('RTC topology work queue identity is invalid');
@@ -58,13 +61,21 @@ export function readRtcTopologyWorkEntry(entry: ResourceEntry): ALMessage {
         byteLimits: RTC_TOPOLOGY_WORK_BYTE_LIMITS
     });
     if (decoded.left) {
-        throw new TypeError(decoded.left.message);
+        return decoded;
     }
     const message = decoded.right!;
     requireRtcTopologyMessageScope(message);
     requireRtcTopologyWorkIdentity(entry, message);
     requireRtcTopologyWorkAudit(entry, message);
-    return message;
+    return decoded;
+}
+
+export function readRtcTopologyWorkEntry(entry: ResourceEntry): ALMessage {
+    const decoded = decodeRtcTopologyWorkEntry(entry);
+    if (decoded.left) {
+        throw new TypeError(decoded.left.message);
+    }
+    return decoded.right!;
 }
 
 export function isCanonicalRtcTopologyWorkEntry(entry: ResourceEntry): boolean {

@@ -19,6 +19,7 @@ import {
     isChangeGatedGroupRevisionWork,
     mergeRtcTopologyGroupRevisionWork,
     readPendingTopologyReplan,
+    resolveQueuedRtcTopologySuccessor,
     TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON,
     toRtcTopologyCoalescedGroupRevisionResourceId,
     type TopologyReplanTiming
@@ -29,6 +30,7 @@ import {
     toRtcTopologyExecutionId,
     type PersistedRtcTopologyWork
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
@@ -41,7 +43,10 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
+import {
+    isCanonicalRtcTopologyWorkEntry,
+    readRtcTopologyWorkEntry
+} from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 
 const GROUP_REF = {
@@ -507,6 +512,136 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         ).toThrow(/not coalesced topology work/);
     });
 });
+
+describe('a head stamped with an unsupported envelope version (#782)', () => {
+    function createRevision(
+        previousEntry: ResourceEntry | null,
+        overrides: { readonly presenceRevision: number; readonly offsetMs: number; readonly commanded?: boolean; }
+    ) {
+        return computeCoalescedRtcTopologyGroupRevisionWork({
+            traceId: 'trace-rtc-topology-coalesced-group-revision-work',
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, overrides.presenceRevision),
+            requestedAtEpochMs: BASE_EPOCH_MS + overrides.offsetMs,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            timing: createServerTopologyReplanTiming(DEBOUNCE_MS),
+            senderId: 'server-1',
+            origin: overrides.commanded === true ? 'commanded' : 'automatic',
+            previousEntry
+        });
+    }
+
+    // A commanded generation-2 head: its origin, series anchor and generation all differ from a fresh write's.
+    function createStoredHead(): ResourceEntry {
+        const first = createRevision(null, { presenceRevision: 1, offsetMs: 0, commanded: true });
+        return createRevision(first.entryWrite.entry, { presenceRevision: 3, offsetMs: 100 }).entryWrite.entry;
+    }
+
+    const next = { presenceRevision: 5, offsetMs: 1_000 } as const;
+
+    it('replaces a finished head at the stored generation plus one, carrying nothing from its payload', () => {
+        const stale = { ...toEntryWithEnvelopeVersion(createStoredHead(), 3), status: EntityStatus.COMPLETED };
+        const replaced = createRevision(stale, next);
+        const fresh = createRevision(null, next);
+
+        expect(replaced.operation).toBe('replace-finished');
+        expect(replaced.expectedEntry).toEqual(stale);
+        expect(readRtcTopologyWorkEntry(replaced.entryWrite.entry).id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);
+        expect(isCanonicalRtcTopologyWorkEntry(replaced.entryWrite.entry)).toBe(true);
+        const data = readPersistedGroupRevisionEnvelope(replaced.entryWrite.entry).data;
+        expect(data[COALESCED_APP_OUTBOX_WORK_FIELD].generation).toBe(3);
+        expect(withoutGeneration(data)).toEqual(
+            withoutGeneration(readPersistedGroupRevisionEnvelope(fresh.entryWrite.entry).data)
+        );
+        expect(replaced.entryWrite.entry.status).toBe(fresh.entryWrite.entry.status);
+        expect(replaced.entryWrite.entry.dequeueAudit).toEqual(fresh.entryWrite.entry.dequeueAudit);
+    });
+
+    it('replaces a pending head with the new replan, keeping the attempts the compare-and-set guards', () => {
+        const stale: ResourceEntry = {
+            ...toEntryWithEnvelopeVersion(createStoredHead(), 3),
+            status: EntityStatus.RETRY,
+            dequeueAudit: { attempts: 2, nextTs: Temporal.Instant.fromEpochMilliseconds(BASE_EPOCH_MS + 9_000) }
+        };
+        const replaced = createRevision(stale, next);
+
+        expect(replaced.operation).toBe('replace-pending');
+        expect(replaced.expectedEntry).toEqual(stale);
+        expect(readRtcTopologyWorkEntry(replaced.entryWrite.entry).id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);
+        const data = readPersistedGroupRevisionEnvelope(replaced.entryWrite.entry).data;
+        expect(data.sourceGroupStateCausalRevision).toEqual({ groupRevision: 4, presenceRevision: 5 });
+        expect(data.origin).toBe('automatic');
+        expect(data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
+            generation: 3,
+            windowOpenedAtEpochMs: BASE_EPOCH_MS + 1_000,
+            reasons: ['group-revision']
+        });
+        expect(replaced.entryWrite.entry.status).toBe(EntityStatus.RETRY);
+        expect(replaced.entryWrite.entry.dequeueAudit).toEqual({
+            attempts: 2,
+            nextTs: Temporal.Instant.fromEpochMilliseconds(BASE_EPOCH_MS + 9_000)
+        });
+    });
+
+    it('writes the new replan as a successor behind a reserved head', () => {
+        const stale = { ...toEntryWithEnvelopeVersion(createStoredHead(), 3), status: EntityStatus.RESERVED };
+        const behind = createRevision(stale, next);
+
+        expect(behind.operation).toBe('write-successor');
+        expect(readRtcTopologyWorkEntry(behind.successorWrite.entry).id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);
+        expect(readPersistedGroupRevisionEnvelope(behind.successorWrite.entry).data).toMatchObject({
+            sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 5 },
+            [COALESCED_APP_OUTBOX_WORK_FIELD]: { generation: 1 }
+        });
+    });
+
+    it('merges the next revision onto the repaired head at the stored generation plus two', () => {
+        const stale = { ...toEntryWithEnvelopeVersion(createStoredHead(), 3), status: EntityStatus.COMPLETED };
+        const repaired = createRevision(stale, next);
+        const third = createRevision(repaired.entryWrite.entry, { presenceRevision: 7, offsetMs: 1_200 });
+
+        expect(third.operation).toBe('replace-pending');
+        expect(readPersistedGroupRevisionEnvelope(third.entryWrite.entry).data[COALESCED_APP_OUTBOX_WORK_FIELD])
+            .toMatchObject({ generation: 4, windowOpenedAtEpochMs: BASE_EPOCH_MS + 1_000 });
+    });
+
+    it('still fails closed when the unsupported head carries no readable coalescing generation', () => {
+        const stale = {
+            ...toEntryWithEnvelopeVersion(withoutCoalescedWork(createStoredHead()), 3),
+            status: EntityStatus.COMPLETED
+        };
+
+        expect(() => createRevision(stale, next)).toThrow(/not coalesced topology work/);
+    });
+
+    it('still answers an unsupported queued successor as a different request', () => {
+        const stale = toEntryWithEnvelopeVersion(createRevision(null, next).successorWrite.entry, 3);
+
+        expect(resolveQueuedRtcTopologySuccessor({
+            overlayId: OVERLAY_ID,
+            sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 5 },
+            origin: 'automatic'
+        }, stale)).toBe('different-request');
+    });
+});
+
+function toEntryWithEnvelopeVersion(entry: ResourceEntry, version: number): ResourceEntry {
+    const message = JSON.parse(entry.resource) as { id: Record<string, unknown>; };
+    return { ...entry, resource: JSON.stringify({ ...message, id: { ...message.id, v: version } }) };
+}
+
+function withoutCoalescedWork(entry: ResourceEntry): ResourceEntry {
+    const message = JSON.parse(entry.resource) as { payload: { resource: string; }; };
+    const envelope = JSON.parse(message.payload.resource) as { data: Record<string, unknown>; };
+    const { [COALESCED_APP_OUTBOX_WORK_FIELD]: _dropped, ...data } = envelope.data;
+    const payload = { ...message.payload, resource: JSON.stringify({ ...envelope, data }) };
+    return { ...entry, resource: JSON.stringify({ ...message, payload }) };
+}
+
+function withoutGeneration(data: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>) {
+    const { generation: _generation, ...metadata } = data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    return { ...data, [COALESCED_APP_OUTBOX_WORK_FIELD]: metadata };
+}
 
 function readPersistedEnvelope(entry: ResourceEntry) {
     return readRtcTopologyWorkEnvelope(
