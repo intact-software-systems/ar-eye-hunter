@@ -15,6 +15,7 @@ import {
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
@@ -1243,6 +1244,13 @@ describe('alm-conformance recipe family', () => {
             expect(scenario.sender.commands[midWindow]?.kind).toBe('messages.receipts');
             expect(refusal).toBeLessThan(midWindow);
             expect(midWindow).toBeLessThan(release);
+            // The pin describes the receipt the handle ended in: the last read of the pinned handle is the window read.
+            const [pin] = readAlmReceiptRolesEntries(scenario.sender);
+            const pinnedReads = scenario.sender.commands.filter((command) => command.kind === 'messages.receipts' && command.handleId === pin?.handleId);
+            expect(pinnedReads.map((command) => command.commandId)).toEqual([
+                'alm-rtc-forged-recipient-ack-sender-receipts-mid-window',
+                'alm-rtc-forged-recipient-ack-sender-receipts-1'
+            ]);
             for (const carrier of ALM_CONFORMANCE_CARRIERS) {
                 const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
                 expect(keys.includes('forged-recipient-ack'), carrier).toBe(carrier === 'rtc');

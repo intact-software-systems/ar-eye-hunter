@@ -1,7 +1,7 @@
 import type { RallarBlackBoxTestRecipe } from '../../../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
 import { isAlmConformanceRole, type AlmConformanceRole } from '../alm-conformance-roles.ts';
-import { toConnectedSessionIds } from './assess-alm-acknowledged-identity.ts';
+import { resolveAlmEndingReceiptResult, toConnectedSessionIds } from './assess-alm-acknowledged-identity.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
 
 export interface AlmReceiptRoleIdentityInput {
@@ -47,11 +47,9 @@ function validateAlmReceiptRolesMetadata(recipe: RallarBlackBoxTestRecipe): read
         : [`${recipe.recipeId}: ${malformed} receipt role pin(s) do not name a handle and three role lists.`];
 }
 
+/** The pin names the state the handle ended in, so it is joined to the sender's ending read of that handle. */
 function assessReceiptRolesEntry(entry: AlmReceiptRolesEntry, input: AlmReceiptRoleIdentityInput): readonly string[] {
-    const receipts = input.sender.participant.recipe.commands.find((command) =>
-        command.kind === 'messages.receipts' && command.handleId === entry.handleId
-    );
-    const value = receipts ? input.sender.results.get(receipts.commandId!)?.value : undefined;
+    const value = resolveAlmEndingReceiptResult(input.sender, entry.handleId)?.value;
     if (!isJsonRecordValue(value)) {
         return [`${entry.handleId}: sender receipts are missing.`];
     }

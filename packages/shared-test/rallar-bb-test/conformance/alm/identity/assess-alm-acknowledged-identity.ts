@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestMessagesSendCommand } from '../../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestMessagesSendCommand,
+    RallarBlackBoxTestResult
+} from '../../../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
 
@@ -19,10 +22,7 @@ export function assessAlmAcknowledgedIdentity(
     if (!send.handleId) {
         return [];
     }
-    const receipts = sender.participant.recipe.commands.find((command) =>
-        command.kind === 'messages.receipts' && command.handleId === send.handleId
-    );
-    const value = receipts ? sender.results.get(receipts.commandId!)?.value : undefined;
+    const value = resolveAlmEndingReceiptResult(sender, send.handleId)?.value;
     const peerLists = send.carrier === 'ws' ? 'RecipientPeerIds' : 'HopPeerIds';
     const confirmed = isJsonRecordValue(value) ? value[`confirmed${peerLists}`] : undefined;
     const unconfirmed = isJsonRecordValue(value) ? value[`unconfirmed${peerLists}`] : undefined;
@@ -36,6 +36,20 @@ export function assessAlmAcknowledgedIdentity(
             : [`${send.commandId}: sender receipts do not confirm the receiver as the one logical recipient.`];
     }
     return confirmed.length > 0 ? [] : [`${send.commandId}: sender receipts do not confirm an acknowledged hop.`];
+}
+
+/**
+ * D28: the origin reads a handle's receipt after its window and may read it earlier too, mid-window. A join describes
+ * the receipt the handle ended in, so it reads the sender's ending read of the handle: the last one its recipe makes.
+ */
+export function resolveAlmEndingReceiptResult(
+    sender: RecordedAlmConformanceParticipant,
+    handleId: string
+): RallarBlackBoxTestResult | undefined {
+    const ending = sender.participant.recipe.commands.filter((command) =>
+        command.kind === 'messages.receipts' && command.handleId === handleId
+    ).at(-1);
+    return ending ? sender.results.get(ending.commandId!) : undefined;
 }
 
 /** Every session the participant connected as; a reconnect of the same page keeps its session. */

@@ -320,7 +320,8 @@ recipe metadata `almReceiptRoles` names, per send handle, the recipient roles th
 receipt confirms, leaves unconfirmed and records outside the audience
 (`confirmed`, `unconfirmed`, `outsideAudience`); the expected roles are the three
 together. The identity assessment joins each list to the sessions of those roles
-after the run.
+after the run, reading the receipt the handle ended in: the sender's last read of
+that handle, after any mid-window read.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
   waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
