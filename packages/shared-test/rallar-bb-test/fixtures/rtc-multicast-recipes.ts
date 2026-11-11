@@ -6,12 +6,13 @@ import type {
     RallarBlackBoxTestRtcStreamThresholds
 } from '../rallar-black-box-test-contracts.ts';
 import {
+    computeRtcEstablishAndReadyCommandTimeoutMs,
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS,
-    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
 } from './live-rtc-setup.ts';
 import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
 
@@ -144,7 +145,7 @@ function messagesRtcConnectCommand(
     }>
 ): RallarBlackBoxTestCommand {
     const roomRef = groupRoomRef(options.group);
-    const readinessTimeoutMs = options.readyTimeoutMs ?? 45_000;
+    const readinessTimeoutMs = options.readyTimeoutMs ?? RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS;
     return {
         kind: 'rtc.connect',
         commandId: options.commandId,
@@ -162,8 +163,7 @@ function messagesRtcConnectCommand(
             // named budget instead of failing at the SDK default.
             timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
         },
-        timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS +
-            readinessTimeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS,
+        timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs),
         readiness: {
             minReadyPeers: options.minReadyPeers,
             timeoutMs: readinessTimeoutMs,

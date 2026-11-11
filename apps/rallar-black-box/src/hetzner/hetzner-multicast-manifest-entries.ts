@@ -1,3 +1,4 @@
+import { RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
@@ -28,7 +29,7 @@ export function createDiagnosticRtcMessagesPrincipal50Agent60m20hzTreeEntry(): H
             rateHz: 20,
             minReceiveRatio: 0.95,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: {
                 progressEveryMs: 30_000,
                 sampleEvery: 100,
@@ -90,7 +91,7 @@ export function createRtcMessagesPrincipal15Agent78m2hzTreeEntry(): HetznerDistr
             rateHz: 2,
             minReceiveRatio: 0.95,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             midStreamStatsIntervalMs: 30_000,
             stream: {
                 progressEveryMs: 30_000,
@@ -142,7 +143,7 @@ export function createDiagnosticRtcMessagesAllPeer50Agent30s20hzTreeEntry(): Het
             rateHz: 20,
             minReceiveRatio: 0.8,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
         })],
         agentCount: 50,
         profiles: ['rtc', 'messages.rtc', 'all-peer', 'multicast', 'tree', 'diagnostic'],
@@ -183,7 +184,7 @@ export function createRtcMessagesAllPeer50Agent30s5hzTreeEntry(): HetznerDistrib
             rateHz: 5,
             minReceiveRatio: 0.9,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: {
                 maxP95SendDurationMs: 2_500,
                 maxP99SendDurationMs: 4_000
@@ -229,7 +230,7 @@ export function createRtcMessagesPrincipal50Agent30s20hzMeshEntry(): HetznerDist
             rateHz: 20,
             minReceiveRatio: 0.95,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: {
                 maxP95SendDurationMs: 2_500,
                 maxP99SendDurationMs: 4_000
@@ -274,7 +275,7 @@ export function createRtcMessagesPrincipal50Agent30s20hzTreeEntry(): HetznerDist
             rateHz: 20,
             minReceiveRatio: 0.95,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: {
                 maxP95SendDurationMs: 2_500,
                 maxP99SendDurationMs: 4_000
@@ -330,7 +331,7 @@ export function createLongAllPeerEntry(rateHz: number): HetznerDistributedManife
             rateHz,
             minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: {
                 progressEveryMs: 30_000,
                 sampleEvery: 100,
@@ -483,7 +484,7 @@ function createAllPeerTreeAlternative(
             rateHz: 5,
             minReceiveRatio: 0.9,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: {
                 maxP95SendDurationMs: 2_500,
                 maxP99SendDurationMs: 4_000
@@ -540,7 +541,7 @@ export function createRtcMessagesMainlineAlternativeEntries(): readonly HetznerD
             rateHz: 20,
             minReceiveRatio: 0.95,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: 45_000,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: {
                 maxP95SendDurationMs: 2_500,
                 maxP99SendDurationMs: 4_000
@@ -611,7 +612,7 @@ function createRtcMessagesMatrixEntry(
         rateHz: input.rateHz,
         minReceiveRatio,
         group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-        readyTimeoutMs: 45_000,
+        readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
         stream
     };
     const roleFields = toRtcMessagesMatrixRoles(input, baseInput);

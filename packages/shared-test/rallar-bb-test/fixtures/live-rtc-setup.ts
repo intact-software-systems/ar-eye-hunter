@@ -12,6 +12,13 @@ export const RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS = 5_000;
  */
 export const RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS = 45_000;
 
+export const RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS = 45_000;
+
+export function computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs: number): number {
+    return RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS + readinessTimeoutMs +
+        RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
+}
+
 /**
  * Budget for the idempotent ensure-group + ensure-member HTTP mutation pair. Distributed
  * runs race dozens of agents onto the same group at once; the AppInbox completion wait

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import {
+    computeRtcEstablishAndReadyCommandTimeoutMs,
+    RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
+} from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { createRallarBlackBoxRtcSmokeRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
@@ -79,9 +83,10 @@ describe('rallar-bb-test recipe fixtures', () => {
             frameCount: 600
         });
         expect(senderConnect).toMatchObject({
-            timeoutMs: 95_000,
-            readiness: { timeoutMs: 45_000 }
+            timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS),
+            readiness: { timeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS }
         });
+        expect(computeRtcEstablishAndReadyCommandTimeoutMs(45_000)).toBe(95_000);
         expect(sender.metadata?.expectedInboundMessages).toBeUndefined();
         expect(sender.metadata?.minExpectedInboundMessages).toBeUndefined();
         expect(receiver.metadata).toMatchObject({

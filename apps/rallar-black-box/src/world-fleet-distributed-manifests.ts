@@ -5,6 +5,7 @@ import type {
     RallarBlackBoxDistributedRolePattern,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes
@@ -56,6 +57,7 @@ type WorldFleetManifestInput = Readonly<{
 
 const WORLD_FLEET_AGENT_COUNT = 50;
 const DEFAULT_CONTROL_RUN_ID = 'world-fleet-template-control-run';
+// Bounds the agent acknowledgement and the start barrier, not the RTC readiness wait.
 const DEFAULT_ACK_TIMEOUT_MS = 45_000;
 
 export function createWorldFleetDistributedManifestCatalog(): readonly WorldFleetDistributedManifestEntry[] {
@@ -138,7 +140,7 @@ function principalEntry(
             rateHz: 20,
             minReceiveRatio: 0.95,
             group: WORLD_FLEET_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: long
                 ? {
                     progressEveryMs: 30_000,
@@ -196,7 +198,7 @@ function allPeerEntry(
             rateHz: input.rateHz,
             minReceiveRatio: input.minReceiveRatio,
             group: WORLD_FLEET_DISTRIBUTED_MANIFEST_GROUP,
-            readyTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
+            readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
             stream: long
                 ? {
                     progressEveryMs: 30_000,
