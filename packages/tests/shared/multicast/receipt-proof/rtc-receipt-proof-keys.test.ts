@@ -313,6 +313,25 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
             .toBeUndefined();
     });
 
+    it('a fallback-capable leg is never held: a hand-over send without its room snapshot is answered no-route at admission and stores nothing', async () => {
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b', 'c'], 4),
+            nextHopPeerIds: ['b', 'c'],
+            publicationCrypto: await createAvailablePublicationCryptoFixture()
+        });
+        fixture.groups.delete('room');
+        const message: ALMessage = {
+            ...createOriginReceiverMulticast('hand-over-without-room'),
+            qos: { durability: { algo: 'local-outbox' } }
+        };
+
+        const result = await fixture.manager.enqueueLegIfAbsent(message, 'hand-over');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+        expect(await fixture.resources.admissionStore.readStoredMessage(message.id.msgId)).toBeUndefined();
+    });
+
     it('a send held without a room snapshot states its counted recipients\' keys when the snapshot arrives', async () => {
         const keys = await createPageKeys(['b', 'c']);
         const { fixture, message, held } = await holdWithoutRoomSnapshot('held-keyed');
@@ -326,8 +345,7 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
             .toEqual(keys);
     });
 
-    it('Limit: a send held without a room snapshot is dropped unsettled at its freezing dequeue if a counted recipient is keyless', async () => {
-        // Limit (S8-i): a stored-stage unsupported refusal is not settled and not handed to the fallback; the room-limit refusal shares it.
+    it('a send held without a room snapshot is settled rejected at its freezing dequeue if a counted recipient is keyless', async () => {
         const { fixture, message, held } = await holdWithoutRoomSnapshot('held-keyless');
 
         fixture.groups.accept('room', createKeyedRoom(await createPageKeys(['b'])));
@@ -339,8 +357,13 @@ describe('an RTC origin\'s receipted leg over a keyless recipient', () => {
         expect(held.verdict).toMatchObject({ kind: 'admitted', queuedAttempts: 0 });
         expect(keys).toBeUndefined();
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent, ...fixture.channels.d!.sent]).toEqual([]);
-        expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['attempt-settled']);
-        expect(fixture.settlements[0]).toMatchObject({ outcome: 'not-ready', willRetry: true });
+        expect(fixture.settlements.map((settlement) => settlement.kind)).toEqual(['attempt-settled', 'admission']);
+        expect(fixture.settlements[1]).toMatchObject({
+            kind: 'admission',
+            verdict: { kind: 'refused', reason: 'unsupported', detail: expect.stringContaining('registered no publication key') }
+        });
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toBeUndefined();
     });
 
     it('a held already-frozen send states its keys at the dequeue that first sees its room', async () => {
