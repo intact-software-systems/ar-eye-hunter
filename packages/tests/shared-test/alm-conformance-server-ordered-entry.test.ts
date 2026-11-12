@@ -76,16 +76,18 @@ describe('ALM server-ordered-entry cell', () => {
         }
     });
 
-    it('waits on every page for the last write, its entry at prior 0 and no before-entry; the sender at seq 2 and the receiver on the sender principal track', () => {
+    it('waits on every page for the last write, its entry at prior 0 and no before-entry; the sender above seq 1 and the receiver on the sender principal track', () => {
         const scenario = readServerOrderedEntry();
         const expectations = [
-            ['sender', scenario.sender, { track: true, seq: 2 }],
-            ['sibling', scenario.sibling!, { track: false, seq: undefined }],
-            ['receiver', scenario.receiver, { track: true, seq: undefined }]
+            ['sender', scenario.sender, { track: true, aboveFirstSeq: true }],
+            ['sibling', scenario.sibling!, { track: false, aboveFirstSeq: false }],
+            ['receiver', scenario.receiver, { track: true, aboveFirstSeq: false }]
         ] as const;
         for (const [role, recipe, entry] of expectations) {
             const names = ['last-write-arrived', 'entered', 'no-before-entry'].map((name) => `${PREFIX}-${role}-${name}`);
-            expect(recipe.commands.slice(-4, -1).map(({ commandId }) => commandId), role).toEqual(names);
+            const aboveFirst = `${PREFIX}-${role}-entered-above-first`;
+            const entryCommands = recipe.commands.slice(entry.aboveFirstSeq ? -5 : -4, -1).map(({ commandId }) => commandId);
+            expect(entryCommands, role).toEqual(entry.aboveFirstSeq ? [names[0], names[1], aboveFirst, names[2]] : names);
             const arrival = `resultCache.${names[0]}.value.event.payload`;
             expect(findCommand(recipe, names[0]!), role).toEqual({
                 kind: 'wait',
@@ -113,12 +115,22 @@ describe('ALM server-ordered-entry cell', () => {
                     payloadFields: {
                         'data.kind': 'ordering-position',
                         'data.status': 'entered',
-                        'data.priorSeq': 0,
-                        ...(entry.seq === undefined ? {} : { 'data.seq': entry.seq })
+                        'data.priorSeq': 0
                     }
                 },
                 timeoutMs: 27_000
             });
+            if (entry.aboveFirstSeq) {
+                // The principal's track carries every earlier lane connect of it on the same API, so only "above 1" is stable.
+                expect(findCommand(recipe, aboveFirst), role).toEqual({
+                    kind: 'assert',
+                    commandId: aboveFirst,
+                    source: `resultCache.${names[1]}.value.event.payload.data.seq`,
+                    operator: 'gt',
+                    expected: 1,
+                    timeoutMs: 2_000
+                });
+            }
             expect(findCommand(recipe, names[2]!), role).toEqual({
                 kind: 'wait',
                 commandId: names[2],
