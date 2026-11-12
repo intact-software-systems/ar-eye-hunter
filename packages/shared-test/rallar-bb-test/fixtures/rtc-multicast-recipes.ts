@@ -11,7 +11,6 @@ import {
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
 } from './live-rtc-setup.ts';
 import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
@@ -216,13 +215,7 @@ function messagesRtcConnectCommand(
         workspaceId: options.group.workspaceId,
         roomRef,
         transport: 'messages.rtc',
-        rallar: {
-            ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR,
-            // The browser SDK connect (WS + RTC establishment) defaults to a 10s socket timeout when
-            // rallar.timeoutMs is absent; a 50-agent room exceeds that, so the connect gets its own
-            // named budget instead of failing at the SDK default.
-            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
-        },
+        rallar: { ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR },
         timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs),
         readiness: {
             minReadyPeers: options.minReadyPeers,

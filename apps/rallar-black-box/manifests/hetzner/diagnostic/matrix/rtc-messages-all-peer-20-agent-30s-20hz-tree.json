@@ -109,10 +109,9 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position",
-              "timeoutMs": 45000
+              "topicId": "black-box.group.multicast.position"
             },
-            "timeoutMs": 95000,
+            "timeoutMs": 60000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -251,9 +250,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-delivery-poll",
-            "count": 28,
+            "count": 21,
             "intervalMs": 5000,
-            "maxCommands": 56,
+            "maxCommands": 42,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
@@ -270,7 +269,7 @@
               "minReceiveRatio": 0.8,
               "logicalFanoutMessages": 228000,
               "purpose": "delivery-poll",
-              "pollWindowMs": 135000
+              "pollWindowMs": 100000
             },
             "commands": [
               {
@@ -324,9 +323,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-relay-hold",
-            "count": 101,
+            "count": 66,
             "intervalMs": 1000,
-            "maxCommands": 101,
+            "maxCommands": 66,
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
               "transport": "messages.rtc",
@@ -342,7 +341,7 @@
               "minReceiveRatio": 0.8,
               "logicalFanoutMessages": 228000,
               "purpose": "relay-hold",
-              "relayHoldMs": 100000
+              "relayHoldMs": 65000
             },
             "commands": [
               {
@@ -430,7 +429,7 @@
       "streamFrames": 12000,
       "logicalFanoutMessages": 228000
     },
-    "recommendedTerminalTimeoutSeconds": 485
+    "recommendedTerminalTimeoutSeconds": 380
   },
   "description": "Diagnostic 20-agent all-peer RTC messages multicast run at 20 Hz for 30s through a forced tree topology."
 }

@@ -107,8 +107,7 @@ describe('world fleet distributed manifest catalog', () => {
 
                 expect(command.rallar, entry.filePath).toEqual({
                     typeId: 'black-box.group.multicast.position',
-                    topicId: 'black-box.group.multicast.position',
-                    timeoutMs: 45_000
+                    topicId: 'black-box.group.multicast.position'
                 });
             }
         }

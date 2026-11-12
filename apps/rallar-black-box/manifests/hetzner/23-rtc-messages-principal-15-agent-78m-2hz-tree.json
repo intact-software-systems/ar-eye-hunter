@@ -110,10 +110,9 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position",
-              "timeoutMs": 45000
+              "topicId": "black-box.group.multicast.position"
             },
-            "timeoutMs": 95000,
+            "timeoutMs": 60000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -418,10 +417,9 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position",
-              "timeoutMs": 45000
+              "topicId": "black-box.group.multicast.position"
             },
-            "timeoutMs": 95000,
+            "timeoutMs": 60000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -446,9 +444,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-principal-receiver-delivery-poll",
-            "count": 161,
+            "count": 160,
             "intervalMs": 30000,
-            "maxCommands": 322,
+            "maxCommands": 320,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
@@ -465,7 +463,7 @@
               "minReceiveRatio": 0.95,
               "logicalFanoutMessages": 131040,
               "purpose": "delivery-poll",
-              "pollWindowMs": 4785000
+              "pollWindowMs": 4750000
             },
             "commands": [
               {
@@ -743,7 +741,7 @@
       "streamFrames": 9360,
       "logicalFanoutMessages": 131040
     },
-    "recommendedTerminalTimeoutSeconds": 5250
+    "recommendedTerminalTimeoutSeconds": 5185
   },
   "description": "One principal headless sender multicasts RTC messages at 2 Hz to 14 receivers for 78 minutes through a forced tree, every agent reading its ALM ledger every 30 s. 78 minutes outlast the growth proof's 75-minute window; 2 Hz keeps them at 9,360 frames, inside the 10,000-frame bound the agents enforce on one rtc.stream."
 }

@@ -51,8 +51,8 @@ describe('Hetzner multicast workloads', () => {
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
             // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 35 s each, connect
-            // 95 s, 27 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
-            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + 95 + 135 + 7,
+            // 60 s, 20 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
+            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + 60 + 100 + 7,
             transport: 'messages.rtc',
             participantCount: 50,
             rateHz: 20,
@@ -78,10 +78,10 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerShort?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 95 s, 5 settle
-            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 27 delivery-poll pauses of 5 s and 100
+            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 60 s, 5 settle
+            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 20 delivery-poll pauses of 5 s and 65
             // relay-hold pauses of 1 s, rounded up to the second.
-            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + 95 + 5 + 29.8 + 5 + 135 + 100),
+            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + 60 + 5 + 29.8 + 5 + 100 + 65),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
                 minExpectedInboundMessages: 6615,
@@ -245,7 +245,7 @@ describe('Hetzner multicast workloads', () => {
         expect(receiver?.recipe?.commands.find((command) => command.kind === 'loop')).toMatchObject({
             commandId: 'rtc-messages-principal-receiver-delivery-poll',
             until: 'first-success',
-            count: 161,
+            count: 160,
             intervalMs: 30_000
         });
         for (const selection of entry?.manifest.recipes ?? []) {

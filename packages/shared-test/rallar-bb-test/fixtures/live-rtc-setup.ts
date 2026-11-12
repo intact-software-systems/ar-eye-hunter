@@ -1,4 +1,5 @@
 import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
+import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 export const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
@@ -7,13 +8,9 @@ export const RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS = 5_000;
 
 export const RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS = 45_000;
 
-/**
- * Ceiling for the SDK's own connect (WS + RTC establishment) before the readiness wait begins.
- * The 10s SDK socket default is too small for a 50-agent room, so the connect gets its own named
- * budget; computeRtcEstablishAndReadyCommandTimeoutMs adds it to the readiness command timeout,
- * because connect and readiness run sequentially inside one command.
- */
-export const RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS = 45_000;
+/** The SDK's own connect bound when its caller names none, as an app connects. */
+export const RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS =
+    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs;
 
 /**
  * Each ensure-group and ensure-member request answers once its mutation completes or the server's completion wait
