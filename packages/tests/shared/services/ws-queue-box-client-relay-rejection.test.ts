@@ -692,7 +692,7 @@ function readSentNacks(socket: SimulatedWebSocket): readonly ALMessage[] {
 function toSentControlSummaries(socket: SimulatedWebSocket): readonly SentControlSummary[] {
     return socket.sent
         .map((frame) => decodePersistedALMessage(frame))
-        .flatMap((message) => {
+        .flatMap((message): readonly SentControlSummary[] => {
             if (message.payload.typeId === AL_CONTROL_NACK_TYPE_ID) {
                 const nack = decodeALNackPayload(JSON.parse(message.payload.resource));
                 return [{ typeId: AL_CONTROL_NACK_TYPE_ID, msgId: nack.msgId, verdict: nack.reason }];

@@ -857,7 +857,7 @@ test('surfaces direct RTC, Rallar Data, and Media tabs with real-backend guardra
     await expect(mediaPanel.getByRole('button', { name: 'Attach local stream' })).toBeDisabled();
 });
 
-/** What the page script reads of the fixtures; Playwright's serialized-argument type cannot unfold the full domain types. */
+/** Playwright's serialized-argument type cannot unfold the full domain types. */
 interface PageGroupSnapshot {
     readonly group: { readonly groupId: string; };
 }
@@ -877,7 +877,7 @@ interface WsProbeScriptArg {
     readonly sentLifecycle: PageSentLifecycle;
 }
 
-/** The body `enqueueBulkControlCommand` posts; this spec reads only the command's `kind`, so that is all it decodes of it. */
+/** The bulk enqueue body as far as this spec reads it: of the command, only its `kind`. */
 interface ControlBulkEnqueueBody {
     readonly agentIds: readonly string[];
     readonly commandIdPrefix?: string;

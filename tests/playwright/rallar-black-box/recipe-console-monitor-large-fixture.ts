@@ -142,7 +142,7 @@ export async function installRecipeConsoleLargeMonitorFixture(
             await fulfillJson(route, createLargeArtifact(distributedRun, controlRun));
             return;
         }
-        await fulfillJson(route, {
+        await fulfillRawJson(route, {
             error: `Unhandled ${request.method()} ${url.pathname}`
         }, 404);
     });
@@ -594,16 +594,19 @@ async function fulfillJson(
         | ControlServerSnapshot
         | ControlRunSnapshot
         | Pick<ControlServerSnapshot, 'distributedRuns'>
-        | ControlDistributedRunArtifactBundle
-        | ApiJsonValue,
+        | ControlDistributedRunArtifactBundle,
     status = 200
 ): Promise<void> {
-    await route.fulfill({
-        status,
-        contentType: 'application/json',
-        headers: corsHeaders(),
-        body: JSON.stringify(body)
-    });
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+/** A body that is no control DTO: an error or a deliberately malformed payload. */
+async function fulfillRawJson(route: Route, body: ApiJsonValue, status = 200): Promise<void> {
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+function toJsonFulfillment(status: number, body: string) {
+    return { status, contentType: 'application/json', headers: corsHeaders(), body };
 }
 
 function corsHeaders(): Record<string, string> {

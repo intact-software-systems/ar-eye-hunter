@@ -168,20 +168,21 @@ function liveBoardSnapshot(): ControlServerSnapshot {
     };
 }
 
-/** `ApiJsonValue` covers the error bodies, the deliberately malformed snapshots and the untrusted token broker's reply. */
 async function fulfillJson(
     route: Route,
     status: number,
-    body: ControlServerSnapshot | ControlRunSnapshot | Pick<ControlServerSnapshot, 'distributedRuns'> | ApiJsonValue
+    body: ControlServerSnapshot | ControlRunSnapshot | Pick<ControlServerSnapshot, 'distributedRuns'>
 ): Promise<void> {
-    await route.fulfill({
-        status,
-        contentType: 'application/json',
-        headers: {
-            'access-control-allow-origin': '*'
-        },
-        body: JSON.stringify(body)
-    });
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+/** An error body, a deliberately malformed snapshot or the untrusted token broker's reply: no control DTO. */
+async function fulfillRawJson(route: Route, status: number, body: ApiJsonValue): Promise<void> {
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+function toJsonFulfillment(status: number, body: string) {
+    return { status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body };
 }
 
 async function installControlRouteMock(
@@ -206,7 +207,7 @@ async function installControlRouteMock(
                 return;
             }
             if (step.kind === 'http-error') {
-                await fulfillJson(route, step.status, { error: step.message });
+                await fulfillRawJson(route, step.status, { error: step.message });
                 return;
             }
             latestSnapshot = step.snapshot;
@@ -217,29 +218,28 @@ async function installControlRouteMock(
         if (request.method() === 'GET' && runDetailMatch) {
             const runId = decodeURIComponent(runDetailMatch[1]);
             const run = controlRunFromSnapshot(latestSnapshot, runId);
-            await fulfillJson(
-                route,
-                run ? 200 : 404,
-                run ?? {
-                    error: 'Control run not found.'
-                }
-            );
+            if (run) {
+                await fulfillJson(route, 200, run);
+            }
+            else {
+                await fulfillRawJson(route, 404, { error: 'Control run not found.' });
+            }
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             const status = options.distributedRunsStatus ?? 200;
-            await fulfillJson(
-                route,
-                status,
-                status === 200
-                    ? options.distributedRunsPayload ?? {
-                        distributedRuns: options.distributedRunsFallback ?? []
-                    }
-                    : { error: 'Distributed-run context unavailable.' }
-            );
+            if (status !== 200) {
+                await fulfillRawJson(route, status, { error: 'Distributed-run context unavailable.' });
+            }
+            else if (options.distributedRunsPayload !== undefined) {
+                await fulfillRawJson(route, status, options.distributedRunsPayload);
+            }
+            else {
+                await fulfillJson(route, status, { distributedRuns: options.distributedRunsFallback ?? [] });
+            }
             return;
         }
-        await fulfillJson(route, 404, {
+        await fulfillRawJson(route, 404, {
             error: `Unhandled ${request.method()} ${url.pathname}`
         });
     });
@@ -571,7 +571,7 @@ test('retains partial authorization when the configured token broker is unavaila
             return;
         }
         brokerAuthorizations.push(route.request().headers().authorization ?? 'missing');
-        await fulfillJson(route, 503, { error: 'Configured token broker unavailable.' });
+        await fulfillRawJson(route, 503, { error: 'Configured token broker unavailable.' });
     });
     await installControlRouteMock(context, [{
         kind: 'snapshot',
@@ -794,11 +794,11 @@ test('keeps stored credentials away from URL-selected control and API origins', 
             await fulfillJson(route, 200, { runs: [], distributedRuns: [] });
             return;
         }
-        await fulfillJson(route, 401, { error: 'Operator token required.' });
+        await fulfillRawJson(route, 401, { error: 'Operator token required.' });
     });
     await context.route('https://untrusted-api.test/**', async (route) => {
         brokerAuthorizations.push(route.request().headers().authorization ?? null);
-        await fulfillJson(route, 200, {
+        await fulfillRawJson(route, 200, {
             tokenType: 'Bearer',
             token: 'brokered-operator-secret',
             issuedAtEpochMs: Date.now(),
