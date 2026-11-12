@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GroupPresenceSummaryWorkRead } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
+import {
+    computeGroupPresenceSummaryState,
+    resolveGroupStateDeltaPredecessorCausalRevision,
+    type GroupPresenceSummaryWorkRead
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -165,6 +169,25 @@ describe('group presence summary coalesced slices', () => {
             { event: writeB.causalRevision, predecessor: writeB.causalRevision, resulting: writeB.causalRevision },
             { event: writeA.causalRevision, predecessor: writeB.causalRevision, resulting: writeB.causalRevision }
         ]);
+    });
+
+    it('claims no range for a page that defers an older group write and holds only the newer one', async () => {
+        const { runtime, work, writeA, writeB } = await seedTwoGrantWrites('deferred-older-write-room');
+        const command = toSummaryCommand(writeB);
+        const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 10_000);
+        const state = computeGroupPresenceSummaryState(command, read);
+
+        // The page carries only B; A's row, one group revision older, waits in the deferred part of the claim.
+        const predecessor = resolveGroupStateDeltaPredecessorCausalRevision({
+            coalescedEvents: [writeB],
+            state,
+            presence: read.presence
+        });
+
+        expect(read.presence.current?.value.causalRevision.groupRevision).toBe(writeA.causalRevision.groupRevision - 1);
+        expect(state.snapshot.causalRevision.groupRevision).toBe(writeB.causalRevision.groupRevision);
+        expect(predecessor).toEqual(state.snapshot.causalRevision);
+        expect(await listEvents(runtime, 'deferred-older-write-room')).toContain(writeA);
     });
 
     it('claims the write of a presence event that read an older group revision than its predecessor', async () => {

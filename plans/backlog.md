@@ -449,3 +449,12 @@ and it has no status list.
   `computeResourceInboxFailureDecision`): the outbox reader sets no exhaustion
   finalizer (`outbox-queue-reader.ts`), so its delta is never sent and nothing
   reports it. Waits on a finalizer or a counted terminal outcome for outbox work.
+- The presence-summary delta stamp relies on each event-bearing group write
+  advancing `snapshotVersion` by exactly one, and on presence writes keeping the
+  revision they read. The event-log pin in `group-mutation-result.test.ts`
+  exercises membership, grant, group-update and presence writes; lifecycle,
+  activation, transport, planned-layout, schedule and retention writers rest on
+  code reading. The stronger form is a rule in `computeGroupMutationWriteResult`
+  that refuses any other advance, plus one retention case (retention builds its
+  own result). Waits on a ruling that first tells fence rewrites, which keep the
+  version, apart from event-bearing writes.
