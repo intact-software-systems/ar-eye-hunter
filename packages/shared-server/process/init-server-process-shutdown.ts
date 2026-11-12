@@ -2,7 +2,7 @@ export type ServerProcessSignal = 'SIGTERM' | 'SIGINT';
 
 /** The slice of `process` a server's signal shutdown needs. */
 export interface ServerProcessSignals {
-    on(signal: ServerProcessSignal, listener: () => void): unknown;
+    on(signal: ServerProcessSignal, listener: () => void): void;
     exit(code: number): void;
 }
 
