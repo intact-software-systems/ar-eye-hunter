@@ -114,7 +114,6 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
-        'capacity-tracks',
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',

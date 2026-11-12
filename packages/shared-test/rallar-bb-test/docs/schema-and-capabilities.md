@@ -963,18 +963,24 @@ s wait alone cannot establish headroom because state can arrive after reconnect 
 check accounts for those late admissions and fails setup if headroom never becomes available. The limit is three fillers, so the two counted sends
 alone refuse the third, and the second keeps at least 9 180 bytes of headroom. Its receiver's window adds one readiness
 budget, the 31 s initial window and the 30 s headroom bound, since the sender reconnects and waits before it sends. In manifest 18 the three `capacity`
-blocks run after every other block. Two more cells of the family prove the age and track limits over every carrier, and
+blocks run after every other block. Two more cells of the family prove the age limit over every carrier and the track limit over `ws` and
+`rtc-with-ws-fallback`, and
 manifest 18 withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and
 sends one message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with `failure: {
 kind: 'refused', reason: 'capacity', limit: 'age' }` and `attempts` 0, and the receiver proves for the whole window that
-nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits` naming the four production
-limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key
-of its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
+nothing reaches it. `capacity-tracks` fills the track bound with ordered world broadcasts: an ordered room send is minted on the
+durable lane (D529) and a peer send carries no ordering, so a world broadcast is the one browser send the outbound
+volatile track bound judges, and an RTC page sends none, so the cell runs over `ws` and `rtc-with-ws-fallback` only. It
+closes, reconnects with `rallar.almVolatileLimits` naming the four production limits but `maxTracks: 2` and sends three
+at-least-once world broadcasts on `app.alm-conformance.world` with `ack: 'none'` (a world broadcast names no logical
+recipient to acknowledge it), each `seq` 1 on an ordering key of its own (`alm-<carrier>-capacity-tracks-<index>`), so
+each would open one track: the third ends `rejected` with
 `limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads `stats`
 and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false (a ledger
-reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it reconnects
-without the field. A received message never opens a counted track, so it needs no wait for the rejoin's state sync, and
-its receiver's window adds only the readiness budget. The three cells live in
+reading at a bound, as `own-share-under-inbound` reads its pools); the first two end `transport-accepted`; then it
+reconnects without the field. A received message never opens a counted track, so it needs no wait for the rejoin's
+state sync. Its receiver listens on the room's topic, so it runs no command of its own: it completes the room the
+sender's connect waits for. The three cells live in
 `conformance/alm/scenarios/volatile-bound/`.
 
 The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its

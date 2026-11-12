@@ -198,6 +198,10 @@ function toTopicCell(scenario: AlmConformanceScenario): 'world' | 'granted' | 'm
         : 'members';
 }
 
+function isWorldSend(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.scope === 'world';
+}
+
 /** The WS topic every command routes over, which the product admits only under `app.` or `room.`. */
 function toRoutedTopicIds(command: RallarBlackBoxTestCommand): readonly string[] {
     switch (command.kind) {
@@ -285,7 +289,6 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
-        'capacity-tracks',
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
@@ -374,7 +377,7 @@ describe('alm-conformance recipe family', () => {
                 carrier === 'ws'
                     ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS, ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws]
                     : carrier === 'rtc'
-                    ? ['ws-unicast-receipt', ...VOLATILE_BOUND_KEYS]
+                    ? ['ws-unicast-receipt', 'capacity', 'capacity-age']
                     : [
                         'ws-unicast-receipt',
                         'unicast-fallback',
@@ -607,11 +610,14 @@ describe('alm-conformance recipe family', () => {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
             const topicIdsOf = (cell: 'world' | 'granted' | 'members') =>
                 toAllRoleRecipes(scenarios.filter((scenario) => toTopicCell(scenario) === cell))
-                    .flatMap((recipe) => recipe.commands.flatMap(toRoutedTopicIds));
+                    .flatMap((recipe) => recipe.commands.filter((command) => !isWorldSend(command)).flatMap(toRoutedTopicIds));
+            const worldSends = toAllRoleRecipes(scenarios).flatMap((recipe) => recipe.commands.filter(isWorldSend));
 
             expect(topicIdsOf('members').length).toBeGreaterThan(0);
             expect(new Set(topicIdsOf('members'))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
             expect(new Set(topicIdsOf('world'))).toEqual(new Set([WORLD_TOPIC_ID]));
+            // A world send names no room, so every cell publishes it on the world topic.
+            expect(new Set(worldSends.flatMap(toRoutedTopicIds))).toEqual(new Set([WORLD_TOPIC_ID]));
             // A cell's cues travel on the members topic, beside its granted publications.
             expect(new Set(topicIdsOf('granted'))).toEqual(new Set([GRANTED_TOPIC_ID, CONFORMANCE_TOPIC_ID]));
         }
@@ -632,9 +638,9 @@ describe('alm-conformance recipe family', () => {
                     command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
                 // R-S3b-20: durable-opt-in's received-1 carries the durable path's own budget; pinned separately below.
                 const durableOptInReceived1 = command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true;
-                // The capacity and capacity-tracks senders reconnect before they send; those waits are pinned in
+                // The capacity sender reconnects before it sends; that wait is pinned in
                 // alm-conformance-addressed-scenarios.
-                const capacityReceived1 = /-capacity(-tracks)?-receiver-received-1$/.test(command.commandId ?? '');
+                const capacityReceived1 = /-capacity-receiver-received-1$/.test(command.commandId ?? '');
                 // The fairness cells' reconnect and lifetime windows are pinned in alm-conformance-fairness.
                 const fairnessWindow =
                     /-(own-share-under-inbound-sender-received-1|buffered-track-drains-receiver-received-1|churn-bounded-tracks-receiver-received-1)$/
@@ -772,7 +778,6 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
-            ['full'],
             ['full'],
             ['full'],
             ['full'],

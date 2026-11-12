@@ -18,6 +18,7 @@ import {
 } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
+    ALM_CONFORMANCE_WORLD_TOPIC_ID,
     toCommandId,
     toConnectionName,
     toRoomRef,
@@ -42,7 +43,7 @@ interface AlmConformanceSendDelivery {
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
     /** Absent, the send addresses its room. */
     readonly toPeer?: RallarBlackBoxTestMessagesSendCommand['toPeer'];
-    /** Absent, the room. */
+    /** Absent, the room. A world send publishes on the world topic: the product refuses it on a `room.` topic. */
     readonly scope?: RallarBlackBoxTestMessagesSendCommand['scope'];
     readonly principalId?: string;
     /** Absent, the send names no fixed audience by lane role. */
@@ -107,7 +108,7 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
         connection: toConnectionName(send),
         carrier: input.carrier,
         typeId,
-        topicId: toScenarioTopicId(send),
+        topicId: delivery.scope === 'world' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : toScenarioTopicId(send),
         payload: send.payload,
         handleId: toSendHandleId(send),
         timeoutMs: toBudgetMs(

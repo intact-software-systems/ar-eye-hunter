@@ -13,6 +13,7 @@ import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { capacityTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-tracks.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
@@ -174,16 +175,13 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, and the reply and the server-originated cells where they run', () => {
+    it('withholds exactly the named cells: both checkpoint cells and the age bound cell everywhere, the track bound cell where it runs, the gap repair, the congestion, the fairness, and the reply and the server-originated cells where they run', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair, volatile
         // bound, congestion and fairness cells keep manifest 18 as recorded.
         const withheld = [
-            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-                ['checkpoint-recovery', 'checkpoint-lag', 'capacity-age', 'capacity-tracks'].map((
-                    key
-                ) => `alm-${carrier}-${key}`)
-            ),
+            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => ['checkpoint-recovery', 'checkpoint-lag', 'capacity-age'].map((key) => `alm-${carrier}-${key}`)),
+            ...capacityTracks.carriers.map((carrier) => `alm-${carrier}-capacity-tracks`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`),
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',
