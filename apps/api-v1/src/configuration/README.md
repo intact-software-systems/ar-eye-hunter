@@ -80,6 +80,10 @@ The configuration reader recognizes only these operational overrides:
   `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`, `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
   `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`, `RALLAR_APP_INBOX_FINISHED_RETENTION_MS`, `RALLAR_TIMING_LOGS`.
+  No committed resource names the completion wait (`appInbox.completionWait.maxElapsedMs`): the
+  decoder applies `API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS` from
+  `packages/shared/api/mutation/api-mutation-completion-wait.ts`, the ceiling black-box recipes
+  derive their mutation budgets from, and a profile or the environment variable overrides it.
 - ICE: `RALLAR_ICE_MODE`, `RALLAR_ICE_RATE_LIMIT_REQUESTS`, `METERED_APP_NAME`, `METERED_REGION`.
   The request allowance must be a positive integer and overrides `ice.rateLimit.requests`.
   All committed profiles retain 20 requests per 60000ms; cache lifetime remains 300000ms.
