@@ -327,13 +327,13 @@ function toFullStackApiInvocation(
     appInboxPhaseTiming: boolean
 ): string {
     if (directory === undefined) {
-        return 'bun';
+        return 'bun --no-env-file';
     }
     if (mode !== 'memory' || !path.isAbsolute(directory)) {
         throw new Error('Setup timing capture requires the local memory API and an absolute recorder directory.');
     }
     const quotedDirectory = toShellValue(directory);
-    return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=${appInboxPhaseTiming} node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- bun`;
+    return `RALLAR_TIMING_LOGS=true RALLAR_APP_INBOX_PHASE_TIMING=${appInboxPhaseTiming} node --import tsx apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts ${quotedDirectory} -- bun --no-env-file`;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

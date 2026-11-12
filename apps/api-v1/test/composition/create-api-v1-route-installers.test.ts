@@ -18,14 +18,16 @@ import {
 } from '../../src/composition/create-api-v1-route-installers.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
-test('route installers mount representative API behavior in order', async () => {
+test('route installers mount representative API and websocket behavior in order', async () => {
     const app = new Hono();
     const installers = constructApiV1RouteInstallers(createInput(), TEST_OPERATIONS);
 
+    installers.webSocket(app);
     for (const install of installers.rest) {
         install(app);
     }
 
+    assert.equal((await app.request('/api/ws/session-1')).status, 426);
     const config = await (await app.request('/api/config')).json();
     assert.deepEqual(config, {
         apiBaseUrl: 'http://localhost:8080',
@@ -75,7 +77,8 @@ test('route installers mount representative API behavior in order', async () => 
 const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
     requireApiAuthSession: rejectUnauthenticated,
     readWsConnectTicket: rejectUnusedOperation,
-    readWsConnectSession: rejectUnusedOperation
+    readWsConnectSession: rejectUnusedOperation,
+    upgradeWebSocket: rejectUnusedOperation
 };
 
 function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology> {

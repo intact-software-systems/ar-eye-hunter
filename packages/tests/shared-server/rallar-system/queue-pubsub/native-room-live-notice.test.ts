@@ -13,6 +13,7 @@ import { validateWsQueueBoxServerRecipientAuthority } from '@shared/services/ws-
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshot } from '../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 
@@ -63,7 +64,7 @@ it('writes only frozen generations, and drops a failed socket so its replacement
     for (const [id, generationId] of [['alice', 'generation-a'], ['spectator', 'generation-s'], ['outsider', 'generation-o']]) {
         const native = new TestWebSocket('ws://test/socket');
         native.open();
-        socket.addConnection(new ConnectionContext({ id, generationId, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, generationId, socket: native }));
         clients.set(id, native);
     }
     const engine = new InboxOutboxEngine();
@@ -104,7 +105,7 @@ it('writes only frozen generations, and drops a failed socket so its replacement
     expect(spectator.closedWith?.code).toBe(1011);
     const replacement = new TestWebSocket('ws://test/reconnect');
     replacement.open();
-    socket.addConnection(new ConnectionContext({ id: 'spectator', generationId: 'new-generation', socket: replacement }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'spectator', generationId: 'new-generation', socket: replacement }));
     expect(service.sendToTargetsWithResult(send).sentCount).toBe(1);
     expect(replacement.sent).toEqual([]);
     expect(service.sendToTargetsWithResult({ ...send, roomSessionGenerations: { ...generations, spectator: 'new-generation' } }).sentCount).toBe(2);
@@ -179,7 +180,7 @@ it('publishes a registered server topic only for its listed producer, only live,
     for (const [id, generationId] of [['current', 'ws-generation-current'], ['reconnected', 'replacement']]) {
         const native = new TestWebSocket('ws://test/socket');
         native.open();
-        socket.addConnection(new ConnectionContext({ id, generationId, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, generationId, socket: native }));
         clients.set(id, native);
     }
     const engine = new InboxOutboxEngine();

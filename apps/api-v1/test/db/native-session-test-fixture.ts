@@ -1,20 +1,19 @@
 import type { Hono } from 'hono';
+import { websocket, type BunWebSocketData } from 'hono/bun';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
-import { createApiWebSocketRouteDependencies } from '../../src/composition/create-api-v1-route-installers.ts';
 import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import type { GroupStateRouteCommandInput } from '../../src/group-state/group-state-route-contracts.ts';
-import { createApiWebSocketServeHandlers, type ApiWebSocketConnectionData } from '../../src/routes/ws-routes.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 import {
@@ -49,6 +48,10 @@ export interface NativeGroupSessionFlow {
 }
 
 const NATIVE_HTTP_ALLOWANCE_MS = 5_000;
+const NATIVE_STATE_WAIT_MS = 45_000;
+// The first group write pays one-time server and database costs that the steady-state allowance does not measure.
+const NATIVE_COLD_START_ALLOWANCE_MS = 30_000;
+const NATIVE_WARMUP_REQUEST_INDEX = 1_000;
 
 const PRINCIPAL_REF = {
     applicationId: 'rallar-server',
@@ -65,7 +68,6 @@ interface NativeSessionTestFixtureDependencies {
     readonly backgroundProducersStopped: PromiseWithResolvers<void>;
     readonly queueEngineStopped: PromiseWithResolvers<void>;
     readonly queueEngineLifecycle: { started: boolean; };
-    readonly wsHandlers: ReturnType<typeof createApiWebSocketServeHandlers>;
 }
 
 export class NativeSessionTestFixture {
@@ -73,7 +75,7 @@ export class NativeSessionTestFixture {
     readonly databaseLifecycle: ApiV1TestPGliteDatabaseLifecycle;
     readonly sessionTtlMs: number;
     private readonly dependencies: NativeSessionTestFixtureDependencies;
-    private listener: Bun.Server<ApiWebSocketConnectionData> | undefined;
+    private listener: Bun.Server<BunWebSocketData> | undefined;
 
     constructor(dependencies: NativeSessionTestFixtureDependencies) {
         this.dependencies = dependencies;
@@ -89,8 +91,8 @@ export class NativeSessionTestFixture {
         this.listener = Bun.serve({
             hostname: '127.0.0.1',
             port: 0,
-            fetch: this.dependencies.wsHandlers.fetch,
-            websocket: this.dependencies.wsHandlers.websocket
+            fetch: this.dependencies.app.fetch,
+            websocket
         });
         return `http://127.0.0.1:${this.listener.port}`;
     }
@@ -141,11 +143,8 @@ export async function createNativeSessionTestFixture(): Promise<NativeSessionTes
     const app = createTracedApiTestApp();
     rallar.installSystemTopics();
     rallar.installWebSocketLifecycle();
+    rallar.mountWebSocket(app);
     rallar.mountRest(app);
-    const wsHandlers = createApiWebSocketServeHandlers(
-        createApiWebSocketRouteDependencies(rallar.runtime, Date.now),
-        app
-    );
     return new NativeSessionTestFixture({
         runtime: rallar.runtime,
         databaseLifecycle,
@@ -154,12 +153,23 @@ export async function createNativeSessionTestFixture(): Promise<NativeSessionTes
         sessionTtlMs: configuration.authentication.sessionTtlMs,
         backgroundProducersStopped,
         queueEngineStopped,
-        queueEngineLifecycle,
-        wsHandlers
+        queueEngineLifecycle
     });
 }
 
-export async function writeNativeGroupCreate(flow: NativeGroupSessionFlow): Promise<NativeGroupRequestResult> {
+export async function warmNativeGroupCreatePath(flow: NativeGroupSessionFlow): Promise<void> {
+    const warmup = await writeNativeGroupCreate({
+        ...flow,
+        groupRef: { ...flow.groupRef, groupId: `${flow.groupRef.groupId}-warmup` },
+        index: NATIVE_WARMUP_REQUEST_INDEX
+    }, NATIVE_COLD_START_ALLOWANCE_MS);
+    assert.equal(warmup.status, 201, JSON.stringify(warmup.body));
+}
+
+export async function writeNativeGroupCreate(
+    flow: NativeGroupSessionFlow,
+    allowanceMs = NATIVE_HTTP_ALLOWANCE_MS
+): Promise<NativeGroupRequestResult> {
     const { baseUrl, session, groupRef, index } = flow;
     const scope = { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId };
     const groupPath = `/api/state/apps/${groupRef.applicationId}/workspaces/${groupRef.workspaceId}/groups`;
@@ -181,7 +191,7 @@ export async function writeNativeGroupCreate(flow: NativeGroupSessionFlow): Prom
                 createdByPrincipalId: 'alice'
             }
         }
-    });
+    }, allowanceMs);
 }
 
 export async function writeNativeGroupJoin(flow: NativeGroupSessionFlow): Promise<NativeGroupRequestResult> {
@@ -229,7 +239,10 @@ export async function writeNativeGroupPresence(flow: NativeGroupSessionFlow): Pr
     });
 }
 
-export async function writeNativeGroupRequest(request: NativeGroupRequest): Promise<NativeGroupRequestResult> {
+export async function writeNativeGroupRequest(
+    request: NativeGroupRequest,
+    allowanceMs = NATIVE_HTTP_ALLOWANCE_MS
+): Promise<NativeGroupRequestResult> {
     const startedAt = performance.now();
     const { requestId, ...body } = request.command.request;
     assertApiMutationRequestId(requestId);
@@ -241,16 +254,13 @@ export async function writeNativeGroupRequest(request: NativeGroupRequest): Prom
             'x-client-id': request.command.authSession.clientId
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(NATIVE_HTTP_ALLOWANCE_MS)
+        signal: AbortSignal.timeout(allowanceMs)
     }).catch((cause) => {
-        throw new Error(`${requestId} failed inside its ${NATIVE_HTTP_ALLOWANCE_MS} ms HTTP allowance`, { cause });
+        throw new Error(`${requestId} failed inside its ${allowanceMs} ms HTTP allowance`, { cause });
     });
     const decoded = decodeJsonWireValue(await response.json(), `HTTP response for ${requestId}`);
     const elapsedMs = performance.now() - startedAt;
-    assert.ok(
-        elapsedMs < NATIVE_HTTP_ALLOWANCE_MS,
-        `${requestId} exceeded ${NATIVE_HTTP_ALLOWANCE_MS} ms HTTP allowance`
-    );
+    assert.ok(elapsedMs < allowanceMs, `${requestId} exceeded ${allowanceMs} ms HTTP allowance`);
     console.log(JSON.stringify({ requestId, status: response.status, elapsedMs }));
     return { command: request.command, status: response.status, body: decoded, elapsedMs };
 }
@@ -323,16 +333,23 @@ export async function waitForSocketOpen(socket: WebSocket): Promise<void> {
 }
 
 export async function readAdmittedSnapshot(runtime: ApiV1Runtime): Promise<ClientSnapshot> {
-    const deadline = performance.now() + 45_000;
-    do {
-        const snapshot = await runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF);
-        if (snapshot?.activeSessions.length === 15) {
-            return snapshot;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    while (performance.now() < deadline);
-    throw new Error('Automatic AppInbox queues did not admit all fifteen sessions within 45000 ms');
+    return await readNativeStateUntil(
+        () => runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF),
+        (snapshot): snapshot is ClientSnapshot => snapshot?.activeSessions.length === 15,
+        'Automatic AppInbox queues did not admit all fifteen sessions'
+    );
+}
+
+/**
+ * The room audience a published message freezes: the current group snapshot lists a session only once the presence
+ * summary worker has folded its committed presence in, which can trail the presence response.
+ */
+export async function readPresentGroupSnapshot(runtime: ApiV1Runtime, groupRef: GroupRef): Promise<GroupSnapshot> {
+    return await readNativeStateUntil(
+        () => runtime.groupStateService.readCurrentSnapshot(groupRef),
+        (snapshot): snapshot is GroupSnapshot => snapshot?.activeSessions.length === 15,
+        'The presence summary did not list all fifteen sessions'
+    );
 }
 
 export async function closeSocket(socket: WebSocket): Promise<void> {
@@ -347,14 +364,27 @@ export async function closeSocket(socket: WebSocket): Promise<void> {
 }
 
 async function waitForSessionDisconnects(runtime: ApiV1Runtime): Promise<void> {
-    const deadline = performance.now() + 45_000;
+    await readNativeStateUntil(
+        () => runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF),
+        (snapshot): snapshot is ClientSnapshot | undefined =>
+            snapshot === undefined || snapshot.activeSessionCount === 0,
+        'Automatic AppInbox queues did not complete owned session disconnects'
+    );
+}
+
+async function readNativeStateUntil<T, A extends T>(
+    read: () => Promise<T>,
+    accept: (value: T) => value is A,
+    failure: string
+): Promise<A> {
+    const deadline = performance.now() + NATIVE_STATE_WAIT_MS;
     do {
-        const snapshot = await runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF);
-        if (snapshot === undefined || snapshot.activeSessionCount === 0) {
-            return;
+        const value = await read();
+        if (accept(value)) {
+            return value;
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
     }
     while (performance.now() < deadline);
-    throw new Error('Automatic AppInbox queues did not complete owned session disconnects within 45000 ms');
+    throw new Error(`${failure} within ${NATIVE_STATE_WAIT_MS} ms`);
 }

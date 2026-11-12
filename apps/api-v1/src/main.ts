@@ -1,4 +1,3 @@
-import { config } from 'dotenv';
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 
@@ -10,8 +9,6 @@ import { myServerId } from './runtime/runtime-identity.ts';
 import { serveApiApplication } from './runtime/serve-api-application.ts';
 import { installApiHttpMiddleware } from './services/install-api-http-middleware.ts';
 import { createApiTimingSink } from './services/timing-service.ts';
-
-config({ path: '.env' });
 
 const configuration = await readApiV1Configuration({
     environment: process.env,

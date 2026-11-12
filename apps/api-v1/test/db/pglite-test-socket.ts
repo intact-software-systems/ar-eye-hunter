@@ -43,7 +43,9 @@ export class PGliteTestSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(): void {}
+    send(text: string): number {
+        return text.length;
+    }
 
     async dispatchMessage(message: ALMessage): Promise<void> {
         const event = new MessageEvent('message', { data: JSON.stringify(message) });

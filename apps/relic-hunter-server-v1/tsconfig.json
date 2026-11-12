@@ -8,8 +8,7 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true,
-    "types": ["bun"],
+    "types": ["bun", "emscripten"],
     "paths": {
       "@api-v1/*": ["../api-v1/*"],
       "@relic-hunters/*": ["../../packages/relic-hunters/*"],

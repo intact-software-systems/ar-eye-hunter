@@ -2998,21 +2998,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'toErrorResponse',
         maximumMagnitude: 1
     }),
-    // runtime-boundary cast: Bun ServerWebSocket is stored in the shared DOM WebSocket contract; a runtime abstraction is forbidden.
-    Object.freeze({
-        path: 'apps/api-v1/src/routes/ws-routes.ts',
-        rule: 'boundary.unknown',
-        symbol: 'createApiWebSocketHandlers',
-        maximumMagnitude: 4
-    }),
-    // Bun's ServerWebSocket has no addEventListener; the cluster node bridges it to the shared
-    // JsonWebSocketServer connection context with a narrowed unknown→WebSocket cast in open/close.
-    Object.freeze({
-        path: 'apps/ar-eye-hunter-server-v1/test/arena-tournament-cluster-node.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined,
-        maximumMagnitude: 2
-    }),
     // Captured route/dependency calls are typed unknown[] and asserted per call; the array never leaves the test.
     Object.freeze({
         path: 'apps/api-v1/test/client-state/client-state-read-routes.test.ts',

@@ -53,6 +53,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
@@ -276,7 +277,7 @@ function createFanoutDequeueFixture(sql: PGliteSql): FanoutDequeueFixture {
     ].map((id) => {
         const native = new TestWebSocket(`ws://${id}`);
         native.open();
-        socket.addConnection(new ConnectionContext({ id, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
         return { id, native };
     });
     const reader = new WsOutboxProvenanceReader({

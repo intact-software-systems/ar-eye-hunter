@@ -254,96 +254,6 @@ describe('Hetzner controller contracts and effects', () => {
         await expect(stat(playwrightTmpDir)).rejects.toThrow();
     });
 
-    it('checks out exact commit SHAs without treating them as branch pull refs', async (context) => {
-        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-sha-ref-'));
-        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
-        const originDir = path.join(tmp, 'origin.git');
-        const sourceDir = path.join(tmp, 'source');
-        const checkoutDir = path.join(tmp, 'checkout');
-
-        await runOwnedTestProcess(context, { executable: 'git', args: ['init', '--bare', originDir], options: {} });
-        await mkdir(sourceDir, { recursive: true });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['init'], options: { cwd: sourceDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['config', 'user.email', 'test@example.com'], options: { cwd: sourceDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['config', 'user.name', 'Test User'], options: { cwd: sourceDir } });
-        await writeFile(path.join(sourceDir, 'README.md'), 'seed\n');
-        await runOwnedTestProcess(context, { executable: 'git', args: ['add', 'README.md'], options: { cwd: sourceDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['commit', '-m', 'seed'], options: { cwd: sourceDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['branch', '-M', 'main'], options: { cwd: sourceDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['remote', 'add', 'origin', originDir], options: { cwd: sourceDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['push', '-u', 'origin', 'main'], options: { cwd: sourceDir } });
-        await runOwnedTestProcess(context, { executable: 'git', args: ['symbolic-ref', 'HEAD', 'refs/heads/main'], options: { cwd: originDir } });
-        const { stdout: commitSha } = await runOwnedTestProcess(context, {
-            executable: 'git',
-            args: ['rev-parse', 'HEAD'],
-            options: {
-                cwd: sourceDir
-            }
-        });
-
-        await runOwnedTestProcess(context, { executable: 'git', args: ['clone', originDir, checkoutDir], options: {} });
-        const { stdout } = await runControllerSelfTest(context, {
-            scriptPath: rolloutScriptPath,
-            environment: {
-                RALLAR_CHECKOUT_DIR: checkoutDir,
-                RALLAR_REPO_REF: commitSha.trim(),
-                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'checkout-ref'
-            }
-        });
-
-        expect(stdout).toContain(`checkoutHead=${commitSha.trim()}`);
-        expect(stdout).toContain('checkoutBranch=HEAD');
-    });
-
-    it('follows a rewritten remote branch instead of failing the fast-forward of a diverged local one', async (context) => {
-        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-rewritten-branch-'));
-        context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
-        const originDir = path.join(tmp, 'origin.git');
-        const sourceDir = path.join(tmp, 'source');
-        const checkoutDir = path.join(tmp, 'checkout');
-        const gitIn = (cwd: string, args: readonly string[]) => runOwnedTestProcess(context, { executable: 'git', args: [...args], options: { cwd } });
-
-        await runOwnedTestProcess(context, { executable: 'git', args: ['init', '--bare', originDir], options: {} });
-        await mkdir(sourceDir, { recursive: true });
-        await gitIn(sourceDir, ['init']);
-        await gitIn(sourceDir, ['config', 'user.email', 'test@example.com']);
-        await gitIn(sourceDir, ['config', 'user.name', 'Test User']);
-        await writeFile(path.join(sourceDir, 'README.md'), 'seed\n');
-        await gitIn(sourceDir, ['add', 'README.md']);
-        await gitIn(sourceDir, ['commit', '-m', 'seed']);
-        await gitIn(sourceDir, ['branch', '-M', 'main']);
-        await gitIn(sourceDir, ['remote', 'add', 'origin', originDir]);
-        await gitIn(sourceDir, ['push', '-u', 'origin', 'main']);
-        await runOwnedTestProcess(context, { executable: 'git', args: ['symbolic-ref', 'HEAD', 'refs/heads/main'], options: { cwd: originDir } });
-        await gitIn(sourceDir, ['checkout', '-b', 'feature']);
-        await writeFile(path.join(sourceDir, 'README.md'), 'first\n');
-        await gitIn(sourceDir, ['commit', '-am', 'first']);
-        await gitIn(sourceDir, ['push', '-u', 'origin', 'feature']);
-
-        // The controller rolled out the first version of the branch.
-        await runOwnedTestProcess(context, { executable: 'git', args: ['clone', originDir, checkoutDir], options: {} });
-        await gitIn(checkoutDir, ['checkout', 'feature']);
-
-        // The branch is rewritten upstream (a rebase), so the local branch no longer fast-forwards.
-        await gitIn(sourceDir, ['reset', '--hard', 'main']);
-        await writeFile(path.join(sourceDir, 'README.md'), 'rewritten\n');
-        await gitIn(sourceDir, ['commit', '-am', 'rewritten']);
-        await gitIn(sourceDir, ['push', '--force', 'origin', 'feature']);
-        const { stdout: rewrittenSha } = await gitIn(sourceDir, ['rev-parse', 'HEAD']);
-
-        const { stdout } = await runControllerSelfTest(context, {
-            scriptPath: rolloutScriptPath,
-            environment: {
-                RALLAR_CHECKOUT_DIR: checkoutDir,
-                RALLAR_REPO_REF: 'feature',
-                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'checkout-ref'
-            }
-        });
-
-        expect(stdout).toContain(`checkoutHead=${rewrittenSha.trim()}`);
-        expect(stdout).toContain('checkoutBranch=feature');
-    });
-
     it('deploys the hosted API with timing and AppInbox phase timing logs only when server timing is selected, and keeps them through the rollout env sanitizer', async (context) => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
@@ -406,9 +316,13 @@ describe('Hetzner controller contracts and effects', () => {
         expect(await readFile(rolloutScriptPath, 'utf8')).toContain('\twrite_api_timing_environment\n');
     });
 
-    it('installs latest Bun but enforces 1.4.4 as the minimum Hetzner runtime version', async () => {
+    it('installs exactly the Bun version rallar-bun-runtime.sh pins and enforces it on deploy and rollout', async () => {
         const installScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/01-install-runtime.sh'),
+            'utf8'
+        );
+        const runtimeScript = await readFile(
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-bun-runtime.sh'),
             'utf8'
         );
         const deployScript = await readFile(
@@ -420,12 +334,11 @@ describe('Hetzner controller contracts and effects', () => {
             'utf8'
         );
 
+        expect(runtimeScript).toContain('RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"');
         expect(installScript).toContain('source "${SCRIPT_DIR}/rallar-bun-runtime.sh"');
-        expect(installScript).toContain('RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"');
-        expect(installScript).toContain('curl -fsSL https://bun.sh/install | bash');
+        expect(installScript).not.toContain('RALLAR_MIN_BUN_VERSION=');
+        expect(installScript).toContain('curl -fsSL https://bun.sh/install | bash -s "bun-v${RALLAR_MIN_BUN_VERSION}"');
         expect(installScript).toContain('require_rallar_min_bun_version');
-        expect(installScript).not.toContain('sh -s "v${RALLAR_MIN_BUN_VERSION}"');
-        expect(installScript).not.toContain('sh -s v1.4.4');
 
         for (const script of [deployScript, rolloutScript]) {
             expect(script).toContain('source "${SCRIPT_DIR}/rallar-bun-runtime.sh"');

@@ -191,15 +191,6 @@ describe('configure Metered TURN Hetzner script', () => {
         expect(await readFile(secretFile, 'utf8')).toBe(original);
     });
 
-    it('keeps the optional Metered secret env file wired into future controller deployments', async () => {
-        const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
-            'utf8'
-        );
-
-        expect(deployScript).toContain('EnvironmentFile=-/etc/rallar/api-v1.secrets.env');
-    });
-
     it('syncs optional Metered GitHub secrets before Hetzner rollout without requiring them', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'),

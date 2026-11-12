@@ -13,6 +13,7 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { attachTestWebSocket } from '../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createRallarServerAiTestResult, RALLAR_SERVER_AI_TEST_ROOM_REF } from './rallar-server-ai-test-fixtures.ts';
 
@@ -151,7 +152,7 @@ function createScopedRouterFixture(): ScopedRouterFixture {
     for (const sessionId of ['in-scope', 'foreign']) {
         const native = new TestWebSocket(`ws://${sessionId}`);
         native.open();
-        server.addConnection(new ConnectionContext({ id: sessionId, socket: native }));
+        attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket: native }));
         sockets.set(sessionId, native);
     }
     const service = createDefaultWsQueueBoxServerService({

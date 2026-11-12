@@ -1,3 +1,4 @@
+import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
@@ -31,6 +32,8 @@ export interface BlackBoxControlServerConfiguration {
     readonly deadlineSweepIntervalMs: number;
     readonly snapshotPersistenceBounds: ControlRunSnapshotBounds;
     readonly runtimeRetentionBounds: ControlRunSnapshotBounds;
+    /** The bound on the whole graceful stop after SIGTERM or SIGINT. */
+    readonly shutdownDeadlineMs: number;
 }
 
 type SnapshotBoundsPrefix = 'SNAPSHOT_PERSIST' | 'RUNTIME_RETAIN';
@@ -104,7 +107,12 @@ export function readBlackBoxControlServerConfiguration(
             'SNAPSHOT_PERSIST',
             DEFAULT_SNAPSHOT_PERSISTENCE_BOUNDS
         ),
-        runtimeRetentionBounds: readSnapshotBounds(environment, 'RUNTIME_RETAIN', DEFAULT_RUNTIME_RETENTION_BOUNDS)
+        runtimeRetentionBounds: readSnapshotBounds(environment, 'RUNTIME_RETAIN', DEFAULT_RUNTIME_RETENTION_BOUNDS),
+        shutdownDeadlineMs: readEnvironmentNumber(
+            environment,
+            'RALLAR_SHUTDOWN_DEADLINE_MS',
+            DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS
+        )
     };
 }
 

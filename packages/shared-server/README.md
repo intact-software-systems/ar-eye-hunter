@@ -24,6 +24,7 @@ documents describe the current implementation.
 | `game/`          | Reusable authoritative game command decoding and publication.                                                                                 |
 | `http/`          | Reusable request authentication and HTTP boundary helpers.                                                                                    |
 | `postgres/`      | The shared `PSqlSql` port and transaction helper only.                                                                                        |
+| `process/`       | Server process lifecycle shared by every Bun server: signal-driven graceful stop and exit.                                                    |
 | `queuebox/`      | QueueBox and ResourceInbox PostgreSQL entry, reservation, retry, finalization, results, and maintenance owners.                               |
 | `rallar-ai/`     | RallarAI generation, provider policy, persistence, publication, and HTTP/WebSocket installers.                                                |
 | `rallar-server/` | Final reusable server application assembly.                                                                                                   |

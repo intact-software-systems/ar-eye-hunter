@@ -21,6 +21,7 @@ import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
@@ -58,7 +59,7 @@ describe('auth logout exact-session cluster delivery', () => {
         if (replace) {
             const encode = fixture.remoteSocket.encode.bind(fixture.remoteSocket);
             vi.spyOn(fixture.remoteSocket, 'encode').mockImplementation((message) => {
-                fixture.remoteSocket.addConnection(new ConnectionContext({ id: fixture.session.sessionId, socket: replacement }));
+                attachTestWebSocket(fixture.remoteSocket, new ConnectionContext({ id: fixture.session.sessionId, socket: replacement }));
                 return encode(message);
             });
         }
@@ -98,7 +99,7 @@ describe('auth logout exact-session cluster delivery', () => {
         replacement.open();
         const encode = fixture.remoteSocket.encode.bind(fixture.remoteSocket);
         vi.spyOn(fixture.remoteSocket, 'encode').mockImplementation((message) => {
-            fixture.remoteSocket.addConnection(new ConnectionContext({ id: fixture.session.sessionId, socket: replacement }));
+            attachTestWebSocket(fixture.remoteSocket, new ConnectionContext({ id: fixture.session.sessionId, socket: replacement }));
             return encode(message);
         });
         await fixture.remoteBridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'A', entry }));
@@ -306,7 +307,7 @@ async function createCluster(repository: FakeRuntimeStateRepository, sessionId: 
 function addSocket(server: JsonWebSocketServer, id: string): TestWebSocket {
     const socket = new TestWebSocket(`ws://${id}`);
     socket.open();
-    server.addConnection(new ConnectionContext({ id, socket }));
+    attachTestWebSocket(server, new ConnectionContext({ id, socket }));
     return socket;
 }
 

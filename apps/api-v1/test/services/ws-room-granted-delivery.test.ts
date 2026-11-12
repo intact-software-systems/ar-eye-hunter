@@ -34,6 +34,7 @@ import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import { API_V1_LIVE_WS_NOTICE_CHANNEL, createApiV1LiveWsNoticeTransport } from '../../src/db/api-v1-live-ws-notice-transport.ts';
 import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
@@ -927,14 +928,14 @@ function addAudience(server: JsonWebSocketServer): Readonly<Record<'alice' | 'bo
 function addConnection(server: JsonWebSocketServer, sessionId: string): string[] {
     const socket = new TestWebSocket(`ws://${sessionId}`);
     socket.open();
-    server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket }));
     return socket.sent;
 }
 
 /** A socket whose upgrade the server awaited, opened now: its held sends follow. */
 function openLateConnection(server: JsonWebSocketServer, sessionId: string): string[] {
     const socket = new TestWebSocket(`ws://${sessionId}`);
-    server.addConnection(new ConnectionContext({ id: sessionId, socket, generationId: 'generation' }));
+    attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket, generationId: 'generation' }));
     socket.open();
     return socket.sent;
 }

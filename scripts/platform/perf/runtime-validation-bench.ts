@@ -545,33 +545,17 @@ async function benchRateLimiter(results: BenchResult[]): Promise<void> {
     }
 }
 
-class BenchmarkSocket extends EventTarget implements WebSocket {
-    readonly CONNECTING = WebSocket.CONNECTING;
-    readonly OPEN = WebSocket.OPEN;
-    readonly CLOSING = WebSocket.CLOSING;
-    readonly CLOSED = WebSocket.CLOSED;
-    readonly binaryType: BinaryType = 'blob';
-    readonly bufferedAmount = 0;
-    readonly extensions = '';
-    readonly protocol = '';
+class BenchmarkSocket implements ConnectionContext.Socket {
     readonly readyState = WebSocket.OPEN;
-    readonly url = 'ws://runtime-validation-benchmark';
-    onclose = null;
-    onerror = null;
-    onmessage = null;
-    onopen = null;
     sentBytes = 0;
     sentCount = 0;
 
     close(): void {}
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
-        this.sentBytes += typeof data === 'string'
-            ? data.length
-            : data instanceof Blob
-            ? data.size
-            : data.byteLength;
+    send(text: string): number {
+        this.sentBytes += text.length;
         this.sentCount += 1;
+        return text.length;
     }
 }
 
@@ -730,7 +714,7 @@ function makeAuditStamp(): AuditStamp {
 function makeWsServer(connectionIds: readonly string[]): JsonWebSocketServer {
     const server = new JsonWebSocketServer();
     for (const id of connectionIds) {
-        server.addConnection(new ConnectionContext({ id, socket: new BenchmarkSocket() }));
+        server.registerConnection(new ConnectionContext({ id, socket: new BenchmarkSocket() }));
     }
     return server;
 }

@@ -181,6 +181,23 @@ EOF
 	rm -f "${tmp_file}"
 }
 
+# The app directory each of the role's services runs, once each.
+rallar_role_app_dirs() {
+	local service
+	for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+		case "${service}" in
+		rallar-api-v1.service | rallar-api-v1-*.service) echo apps/api-v1 ;;
+		rallar-black-box-control.service) echo apps/rallar-black-box-control-server ;;
+		"${RALLAR_RELIC_SERVICE}") echo "${RALLAR_RELIC_APP_DIR}" ;;
+		"${RALLAR_AR_EYE_SERVICE}") echo "${RALLAR_AR_EYE_APP_DIR}" ;;
+		*)
+			echo "No app directory is known for ${service}." >&2
+			return 1
+			;;
+		esac
+	done | sort -u
+}
+
 run_rallar_controller_role_self_test() {
 	case "${RALLAR_CONTROLLER_ROLE_SELF_TEST:-}" in
 	resolve)

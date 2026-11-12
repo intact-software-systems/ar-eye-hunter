@@ -16,6 +16,8 @@ export interface ApiV1HttpConfiguration {
     readonly port: number;
     readonly corsOrigins: readonly string[];
     readonly preflightMaxAgeSeconds: number;
+    /** The bound on the whole graceful stop after SIGTERM or SIGINT. */
+    readonly shutdownDeadlineMs: number;
 }
 
 export interface ApiV1PublicApiConfiguration {

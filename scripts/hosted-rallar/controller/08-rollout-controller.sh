@@ -21,6 +21,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
 source "${SCRIPT_DIR}/rallar-controller-role.sh"
 source "${SCRIPT_DIR}/rallar-games-prod-profile.sh"
+source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 apply_rallar_controller_role
 
 rallar_user_home() {
@@ -137,25 +138,6 @@ cleanup_rollout_disk_pressure() {
 	print_rollout_disk_summary "after rollout cleanup"
 }
 
-is_full_git_sha() {
-	[[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
-}
-
-update_rollout_checkout() {
-	local checkout_dir="$1"
-	local repo_ref="$2"
-
-	git -C "${checkout_dir}" fetch --prune origin
-	if is_full_git_sha "${repo_ref}"; then
-		git -C "${checkout_dir}" checkout --detach "${repo_ref}"
-		return
-	fi
-
-	# A branch may have been rewritten since the last rollout (a rebased PR branch), so the checkout
-	# follows the remote branch exactly instead of fast-forwarding a diverged local one.
-	git -C "${checkout_dir}" checkout -B "${repo_ref}" "origin/${repo_ref}"
-}
-
 sanitize_api_environment_file() {
 	local env_file="$1"
 	local tmp_file key line
@@ -239,6 +221,24 @@ write_api_prod_profile_environment() {
 	operator_client_ids="$(resolve_rallar_api_operator_client_ids "${RALLAR_API_ENV_FILE}" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}")" || return 1
 	update_env_value "${RALLAR_API_ENV_FILE}" "DATABASE_URL" "${database_url}"
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${operator_client_ids}"
+}
+
+# The role's Bun server units, written by every rollout so a unit never starts a checkout it was not written for.
+write_rollout_role_units() {
+	case "${RALLAR_CONTROLLER_ROLE}" in
+	api)
+		write_rallar_api_v1_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_STORE_FAILURE_FILE}"
+		;;
+	control)
+		write_rallar_control_server_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_ROLLOUT_CONTROL_STATE_DIR}"
+		;;
+	games)
+		write_rallar_game_server_unit "${RALLAR_RELIC_SERVICE}" "${RALLAR_RELIC_APP_DIR}" "${RALLAR_RELIC_ENV_FILE}" \
+			"${RALLAR_RELIC_STORE_FAILURE_FILE}" "${RALLAR_CHECKOUT_DIR}"
+		write_rallar_game_server_unit "${RALLAR_AR_EYE_SERVICE}" "${RALLAR_AR_EYE_APP_DIR}" "${RALLAR_AR_EYE_ENV_FILE}" \
+			"${RALLAR_AR_EYE_STORE_FAILURE_FILE}" "${RALLAR_CHECKOUT_DIR}"
+		;;
+	esac
 }
 
 stopped_services=0
@@ -326,7 +326,7 @@ resolve_operator_token_ttl_ms() {
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
-		update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
+		update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 		printf 'checkoutHead=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse HEAD)"
 		printf 'checkoutBranch=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" symbolic-ref --short -q HEAD || echo HEAD)"
 		;;
@@ -354,6 +354,10 @@ run_rollout_self_test() {
 		update_api_rtc_topology_env
 		echo "wroteApiOptionalEnvironment=true"
 		;;
+	write-role-units)
+		write_rollout_role_units
+		echo "wroteRoleUnits=true"
+		;;
 	preflight-api-overrides)
 		require_writable_api_diagnostic_configuration
 		echo "writableApiDiagnosticConfiguration=true"
@@ -377,7 +381,6 @@ fi
 
 source "${SCRIPT_DIR}/rallar-controller-lock.sh"
 rallar_lock_controller
-source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 source "${SCRIPT_DIR}/rallar-headless-worker-env.sh"
@@ -547,7 +550,7 @@ trap restart_stopped_services_on_error ERR
 
 echo "==> Updating git checkout"
 rallar_playwright_operation_stage "rollout-checkout"
-update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
+update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 current_revision="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --short HEAD)"
@@ -577,6 +580,10 @@ if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
 	rallar_playwright_operation_stage "rollout-postgres-server"
 	install_rallar_api_postgres_server
 fi
+
+echo "==> Writing systemd units"
+write_rollout_role_units
+systemctl daemon-reload
 
 echo "==> Stopping services for publish/start"
 stopped_services=1

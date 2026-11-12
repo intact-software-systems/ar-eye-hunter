@@ -37,6 +37,7 @@ import {
 } from '@shared/websocket/json-web-socket-server.ts';
 
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
+import { attachTestWebSocket } from './websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 const RAW_ENTRY_KEY = { topicId: 'app.crdt', resourceId: 'reply-1', contextId: 'rallar-server' };
@@ -556,7 +557,7 @@ function createSocket(): WsOutboxTestSocket {
     for (const id of ['writer-session', 'local-session', 'remote-session']) {
         const connection = new TestWebSocket(`ws://${id}.invalid`);
         connection.open();
-        socket.addConnection(new ConnectionContext({ id, socket: connection }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, socket: connection }));
         connections.set(id, connection);
     }
     return { socket, connections };

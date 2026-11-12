@@ -1,8 +1,6 @@
 import { serveApiApplication } from '@api-v1/src/runtime/serve-api-application.ts';
-import { config } from 'dotenv';
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { reportApiV1Configuration } from '@api-v1/src/configuration/report-api-v1-configuration.ts';
@@ -20,8 +18,6 @@ import { installRelicHunterGame } from './relic-game-service.ts';
 import { readRelicHunterServerConfiguration } from './relic-hunter-server-configuration.ts';
 import { installRelicPlanningAiTopic } from './relic-planning-ai-topic.ts';
 import { initRelicSwaggerRoutes } from './relic-swagger-routes.ts';
-
-loadEnvironment();
 
 const app: Hono = new Hono();
 const configuration = await readRelicHunterServerConfiguration({
@@ -114,22 +110,3 @@ initRelicGameRoutes(app, { relicGame, sessions: rallar.runtime.authSessionReposi
 
 await serveApiApplication({ app, rallar, configuration: configuration.apiV1 });
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
-
-function loadEnvironment(): void {
-    loadEnvFileIfPresent(new URL('../.env', import.meta.url));
-    loadEnvFileIfPresent(new URL('../.env.local', import.meta.url));
-    loadEnvFileIfPresent(new URL('../../api-v1/.env', import.meta.url));
-    loadEnvFileIfPresent(new URL('../../api-v1/.env.local', import.meta.url));
-}
-
-function loadEnvFileIfPresent(envUrl: URL): void {
-    const result = config({ path: fileURLToPath(envUrl), quiet: true, override: true });
-    if (result.error === undefined) {
-        return;
-    }
-    const error = result.error as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT') {
-        return;
-    }
-    throw result.error;
-}

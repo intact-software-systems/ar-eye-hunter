@@ -48,6 +48,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { createApiCrdtDocumentAuthorizer } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxService } from '../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -307,7 +308,7 @@ async function addCurrentCrdtSession(ports: CrdtAuthoritySessionPorts, sessionId
     await clients.insertSession(clientSession(sessionId));
     const socket = new PGliteTestSocket();
     sockets.set(sessionId, socket);
-    socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    attachTestWebSocket(socketServer, new ConnectionContext({ id: sessionId, socket }));
 }
 
 async function drain(

@@ -63,6 +63,7 @@ import {
 } from '../../shared/multicast/rtc-origin-overlay-fixture.ts';
 import { openConnectingWebSocket, SimulatedWebSocket } from '../../shared/native-websocket-fixture.ts';
 import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { attachTestWebSocket } from '../../shared/websocket/attach-test-web-socket.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 interface ReceiptLoopPeer {
@@ -391,7 +392,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
     const sockets = { a: new SimulatedWebSocket('ws://server/a'), b: new SimulatedWebSocket('ws://server/b'), c: new SimulatedWebSocket('ws://server/c') };
     for (const [peerId, native] of Object.entries(sockets)) {
         await native.open();
-        socket.addConnection(new ConnectionContext({ id: peerId, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: peerId, socket: native }));
     }
     const engine = new InboxOutboxEngine();
     registerReceiptLoopCleanup([() => engine.stop()]);
