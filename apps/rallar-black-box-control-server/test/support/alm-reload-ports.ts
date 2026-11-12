@@ -19,6 +19,10 @@ import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-ev
 import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
 import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
+import {
+    AL_PUBLICATION_STAGE_LIMITS,
+    type ALPublicationStageLimits
+} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -236,7 +240,8 @@ export class AlmReloadPorts {
             clock: { nowMs: () => this.now, setNowMs: (nowMs) => this.now = nowMs },
             submit: (msgIds) => msgIds.forEach((msgId) => this.routeAdmitted(this.findMessage(msgId))),
             settle: (settlement) => this.settleStaged(settlement),
-            diagnostics: (event) => recordOutboundDiagnostic(this.sender, event)
+            diagnostics: (event) => recordOutboundDiagnostic(this.sender, event),
+            idleLimits: AL_PUBLICATION_STAGE_LIMITS
         });
         this.receiver = this.createRuntime('receiver');
         this.recipientB = this.createRuntime('recipient-b');
@@ -337,9 +342,9 @@ export class AlmReloadPorts {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
                 }
                 if (role === 'sender') {
-                    const limits = decodeAlmReloadPublicationLimits(command.rallar?.almPublicationLimits);
-                    assert(limits.right, limits.left);
-                    this.publicationLane.connect(limits.right);
+                    this.publicationLane.connect(
+                        resolveAlmReloadPublicationLimits(command.rallar?.almPublicationLimits)
+                    );
                 }
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
@@ -1593,4 +1598,13 @@ function toPortDeliveryLifecycle(message: PortMessage): ALDeliveryLifecycle {
             reason: message.reason
         }
     };
+}
+
+function resolveAlmReloadPublicationLimits(value: unknown): ALPublicationStageLimits {
+    if (value === undefined) {
+        return AL_PUBLICATION_STAGE_LIMITS;
+    }
+    const limits = decodeAlmReloadPublicationLimits(value);
+    assert(limits.right, limits.left);
+    return limits.right;
 }
