@@ -86,6 +86,14 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "bun-server-start-scripts-list-api-v1-env-files",
+      "domain": "Bun server env-file loading",
+      "owner": "Rallar platform maintainers",
+      "summary": "Starts outside apps/api-v1 pass the API-v1 env files as --env-file flags, lowest precedence first, because Bun reads only the working directory's files otherwise.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1",
+      "coverageRelation": "The flag lists are the developer-facing start commands themselves; the sibling Bun precedence cases in the same file prove what those flags make Bun load and that the process environment still wins."
+    },
+    {
       "id": "arena-spectator-controls-send-no-player-effects",
       "domain": "AR Eye Hunter spectator command isolation",
       "owner": "AR Eye Hunter maintainers",
@@ -6121,6 +6129,50 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-0d77ec7cc60473eb",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "production-source-read",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Reads the Relic package.json scripts, the start and dev commands that launch the Relic server outside apps/api-v1.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
+    {
+      "id": "test-structure-coupling-bc10281bd6dc039c",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Asserts in one observation that the root dev:rallar:api and start:rallar:api scripts and both Relic scripts carry their env-file lists, lowest precedence first.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
+    {
+      "id": "test-structure-coupling-4ef0b4d443fb22d5",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Asserts the Relic start script lists the API-v1 env files before its own, lowest precedence first.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
+    {
+      "id": "test-structure-coupling-552232e44bc63d77",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Asserts the Relic dev script lists the same env files as its start script.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
     {
       "id": "test-structure-coupling-6e72e4f321808af7",
       "path": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts",
