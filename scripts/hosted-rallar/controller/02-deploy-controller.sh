@@ -72,15 +72,11 @@ stop_controller_service_for_store_change() {
 echo "==> Deploying ${RALLAR_REPO_URL} ref ${RALLAR_REPO_REF} for role ${RALLAR_CONTROLLER_ROLE}"
 # Re-runs operate on a checkout the first deploy chowned to the rallar user; allow git to trust it.
 git config --global --add safe.directory "${RALLAR_CHECKOUT_DIR}"
-if [[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
-	git -C "${RALLAR_CHECKOUT_DIR}" fetch --prune origin
-else
+if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
 	install -d -m 0755 -o rallar -g rallar "$(dirname "${RALLAR_CHECKOUT_DIR}")"
 	git clone "${RALLAR_REPO_URL}" "${RALLAR_CHECKOUT_DIR}"
 fi
-
-git -C "${RALLAR_CHECKOUT_DIR}" checkout "${RALLAR_REPO_REF}"
-git -C "${RALLAR_CHECKOUT_DIR}" pull --ff-only origin "${RALLAR_REPO_REF}" || true
+update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 echo "==> Installing npm dependencies"

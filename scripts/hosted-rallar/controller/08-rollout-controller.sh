@@ -138,25 +138,6 @@ cleanup_rollout_disk_pressure() {
 	print_rollout_disk_summary "after rollout cleanup"
 }
 
-is_full_git_sha() {
-	[[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
-}
-
-update_rollout_checkout() {
-	local checkout_dir="$1"
-	local repo_ref="$2"
-
-	git -C "${checkout_dir}" fetch --prune origin
-	if is_full_git_sha "${repo_ref}"; then
-		git -C "${checkout_dir}" checkout --detach "${repo_ref}"
-		return
-	fi
-
-	# A branch may have been rewritten since the last rollout (a rebased PR branch), so the checkout
-	# follows the remote branch exactly instead of fast-forwarding a diverged local one.
-	git -C "${checkout_dir}" checkout -B "${repo_ref}" "origin/${repo_ref}"
-}
-
 sanitize_api_environment_file() {
 	local env_file="$1"
 	local tmp_file key line
@@ -345,7 +326,7 @@ resolve_operator_token_ttl_ms() {
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
-		update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
+		update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 		printf 'checkoutHead=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse HEAD)"
 		printf 'checkoutBranch=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" symbolic-ref --short -q HEAD || echo HEAD)"
 		;;
@@ -569,7 +550,7 @@ trap restart_stopped_services_on_error ERR
 
 echo "==> Updating git checkout"
 rallar_playwright_operation_stage "rollout-checkout"
-update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
+update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 current_revision="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --short HEAD)"
