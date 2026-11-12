@@ -199,7 +199,6 @@ ar-eye.example.test {
         expect(await readFile(envFile, 'utf8')).toBe([
             `RALLAR_AUTH_CREDENTIAL_SECRET=${authSecret}`,
             `DATABASE_URL=${databaseUrl}`,
-            'PORT=8080',
             'RALLAR_API_CONFIGURATION_PROFILE=prod',
             'RALLAR_ICE_MODE=local',
             ''

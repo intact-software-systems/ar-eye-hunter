@@ -141,7 +141,7 @@ cleanup_rollout_disk_pressure() {
 sanitize_api_environment_file() {
 	local env_file="$1"
 	local tmp_file key line
-	local allowed_names="|PORT|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|DATABASE_URL|"
+	local allowed_names="|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|DATABASE_URL|"
 	allowed_names+="RALLAR_LOGIN_USER_RATE_LIMIT|RALLAR_TIMING_LOGS|RALLAR_APP_INBOX_PHASE_TIMING|"
 	allowed_names+="RALLAR_REGISTRATION_IP_RATE_LIMIT|RALLAR_LOGIN_IP_RATE_LIMIT|"
 	allowed_names+="RALLAR_AUTH_CREDENTIAL_SECRET|RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET|"
