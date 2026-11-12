@@ -11,6 +11,7 @@ import {
 import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { browserStateCacheLifecycle, type BrowserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
 import { setBrowserStateReadDiagnosticsSink, type BrowserStateReadDiagnosticEvent } from '@shared-web/browser/state-read/diagnostics.ts';
 import {
     newALBroadcastMessage,
@@ -426,6 +427,28 @@ describe('browser group-state delta reconciliation', () => {
         }
     );
 
+    it.each(['two grants', 'an activation and a revoke'] as const)(
+        'holds the server snapshot after the next heartbeat when an older server stamped a delta past its slice: %s',
+        async (shape) => {
+            const runtime = new StateCacheRuntime();
+            const race = createExpansionRaceSequence(shape);
+            await runtime.hydrate([race.predecessor]);
+            vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => groupSnapshotResponse(race.resulting)));
+            await runtime.receiveDeltaMessage(race.stampedPastSliceDelta);
+            await runtime.receiveDeltaMessage(race.laterEventDelta);
+            const divergent = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(race.resulting.group);
+
+            expect(divergent?.causalRevision).toEqual(race.resulting.causalRevision);
+            expect(() => adoptGroupSnapshotsFromHeartbeat([divergent!], [race.resulting])).not.toThrow();
+            await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+            expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(race.resulting.group)).toEqual(race.resulting);
+            expect(diagnostics.filter((event) => event.operation === 'heartbeat').map((event) => event.result)).toEqual([
+                'revision-conflict'
+            ]);
+        }
+    );
+
     function deltaApplyResults(): readonly string[] {
         return diagnostics
             .filter((event) => event.operation === 'delta-apply')
@@ -516,6 +539,8 @@ class StateCacheRuntime {
 interface ExpansionRaceSequence {
     readonly predecessor: GroupSnapshot;
     readonly resulting: GroupSnapshot;
+    /** What a server before the coverage rule sent: the earlier event's slice stamped with the later write's revision. */
+    readonly stampedPastSliceDelta: GroupStateDeltaEnvelope;
     /** What the server sends for that batch now: a write-nothing delta for the earlier event at the snapshot's revision. */
     readonly uncoveredBatchDelta: GroupStateDeltaEnvelope;
     /** The later write's own delta, expanded after the summary reached its revision: write-nothing for its event. */
@@ -553,6 +578,7 @@ function createExpansionRaceSequence(shape: 'two grants' | 'an activation and a 
     return {
         predecessor,
         resulting,
+        stampedPastSliceDelta: createDeltaEnvelope({ ...earlierEvent, predecessorCausalRevision: predecessor.causalRevision }),
         uncoveredBatchDelta: createDeltaEnvelope({ ...earlierEvent, predecessorCausalRevision: resulting.causalRevision }),
         laterEventDelta: createDeltaEnvelope({
             resulting,

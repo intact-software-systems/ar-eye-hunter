@@ -42,6 +42,10 @@ heartbeat targeting, and overlay adoption all hang off cache writes.
    refreshes full snapshots for
    joined groups every 20 s — the standing self-heal loop that must keep
    working under any dissemination mode.
+   [adoptGroupSnapshotsFromHeartbeat](./group-heartbeat-snapshot-adoption.ts#adoptGroupSnapshotsFromHeartbeat)
+   adopts the returned snapshot when the cache holds other content at the same
+   causal tuple, and reports it as a `heartbeat` `revision-conflict` state-read
+   diagnostic; the renewal goes on.
 
 ## Boundaries
 

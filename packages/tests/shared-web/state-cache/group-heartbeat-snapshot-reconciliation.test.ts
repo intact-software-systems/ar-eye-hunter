@@ -62,4 +62,36 @@ describe('group heartbeat snapshot reconciliation', () => {
             unsubscribe();
         }
     });
+
+    it('adopts the server\'s snapshot when the cached one holds other content at the same causal revision', async () => {
+        const group = createGroupSnapshot({
+            groupId: 'heartbeat-divergent-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b', 'session-c'],
+            snapshotVersion: 5
+        });
+        const grantOf = (principalId: string) => ({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            groupId: 'heartbeat-divergent-room',
+            principalId,
+            topics: { 'room.feed': { publish: true, subscribe: false } },
+            updated: group.group.updated
+        });
+        const observed = { ...group, publicationGrants: [grantOf('session-b')] };
+        const returned = { ...group, publicationGrants: [grantOf('session-b'), grantOf('session-c')] };
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: createWebRtcGroupManager(),
+            clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
+            clientSnapshots: [],
+            groupSnapshots: [observed],
+            options: { scope: { applicationId: 'app-1', workspaceId: 'workspace-b' } }
+        });
+
+        expect(() => adoptGroupSnapshotsFromHeartbeat([observed], [returned])).not.toThrow();
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(group.group)).toEqual(returned);
+    });
 });
