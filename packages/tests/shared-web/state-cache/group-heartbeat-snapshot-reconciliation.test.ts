@@ -1,5 +1,6 @@
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
@@ -42,6 +43,7 @@ describe('group heartbeat snapshot reconciliation', () => {
 
         try {
             await browserStateCacheLifecycle.hydrate({
+                groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
                 webRtcGroupManager: manager,
                 clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
                 clientSnapshots: [],

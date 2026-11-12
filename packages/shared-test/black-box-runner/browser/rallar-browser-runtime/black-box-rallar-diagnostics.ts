@@ -203,6 +203,12 @@ export function createBlackBoxRallarDiagnosticsPorts(
             })
             : undefined,
         signalingDiagnostics: (event) => publishBlackBoxRallarSignalingDiagnostic(diagnostics, event),
+        groupStateDiagnostics: (revision) =>
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.group_state.applied',
+                data: { ...revision }
+            }),
         storage: (event) => {
             effects.inboundStoreCounts.observe(event);
             if (almDiagnostics) {

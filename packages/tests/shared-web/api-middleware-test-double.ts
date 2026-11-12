@@ -12,6 +12,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
@@ -21,17 +22,17 @@ import {
 
 import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
 
-/** The volatile ledger, the ordering counters and the diagnostics sink are replaced whole: none has a meaningful partial. */
+/** The volatile ledger, the ordering counters and the diagnostics sinks are replaced whole: none has a meaningful partial. */
 export type MiddlewareTestOverrides =
     & {
-        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'orderingCounters' | 'outboundDiagnostics'>]?: Partial<
-            RallarBrowserMiddleware[K]
-        >;
+        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'orderingCounters' | 'outboundDiagnostics' | 'groupStateDiagnostics'>]?:
+            Partial<RallarBrowserMiddleware[K]>;
     }
     & {
         readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
         readonly orderingCounters?: RallarBrowserMiddleware['orderingCounters'];
         readonly outboundDiagnostics?: RallarBrowserMiddleware['outboundDiagnostics'];
+        readonly groupStateDiagnostics?: RallarBrowserMiddleware['groupStateDiagnostics'];
     };
 
 export interface ApiMiddlewareTestOverrides {
@@ -80,7 +81,8 @@ export function createDefaultApiMiddlewareTestDouble(
             orderingCounters: middlewareOverrides.orderingCounters ??
                 new BrowserInboundOrderingCountersSink(createPassThroughALInboundRuntimeDiagnosticsSink()),
             publicationStageLimits: { ...AL_PUBLICATION_STAGE_LIMITS, ...middlewareOverrides.publicationStageLimits },
-            outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
+            outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
+            groupStateDiagnostics: middlewareOverrides.groupStateDiagnostics ?? createPassThroughGroupStateAppliedRevisionSink()
         }
     };
 }

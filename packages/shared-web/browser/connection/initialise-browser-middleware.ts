@@ -408,7 +408,11 @@ export function toBrowserMiddleware(
     input: InitialiseBrowserTransportInput,
     carriers: Omit<
         RallarBrowserMiddleware,
-        'volatileBudget' | 'orderingCounters' | 'publicationStageLimits' | 'outboundDiagnostics'
+        | 'volatileBudget'
+        | 'orderingCounters'
+        | 'publicationStageLimits'
+        | 'outboundDiagnostics'
+        | 'groupStateDiagnostics'
     >
 ): RallarBrowserMiddleware {
     return {
@@ -416,7 +420,8 @@ export function toBrowserMiddleware(
         volatileBudget: input.volatileBound.budget,
         orderingCounters: input.inboundOrderingCounters,
         publicationStageLimits: input.publicationStageLimits,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        groupStateDiagnostics: input.options.diagnosticsPorts.groupStateDiagnostics
     };
 }
 
@@ -785,7 +790,8 @@ async function initialiseBrowserStateTransport(
         inbox: input.webSocketQueueBox,
         webRtcGroupManager: input.webRtcGroupManager,
         clientData: input.clientData,
-        options: stateCacheOptions
+        options: stateCacheOptions,
+        groupStateDiagnostics: input.options.diagnosticsPorts.groupStateDiagnostics
     });
     const snapshots = await refreshStateSnapshots(input.options.scope, {
         command: toCommandOptions(input.options)
@@ -805,7 +811,8 @@ async function hydrateBrowserStateCaches(
         clientData: input.clientData,
         clientSnapshots: snapshots.clients,
         groupSnapshots: snapshots.groups,
-        options: stateCacheOptions
+        options: stateCacheOptions,
+        groupStateDiagnostics: input.options.diagnosticsPorts.groupStateDiagnostics
     });
 }
 

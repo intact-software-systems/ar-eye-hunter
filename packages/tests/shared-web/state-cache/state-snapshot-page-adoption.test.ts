@@ -13,6 +13,7 @@ import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/brow
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import * as groups from '@shared/repository/group-state-snapshots-repository.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -106,6 +107,7 @@ function createLargeGroupPublication(): LargeGroupPublication {
 function installInbox(): (message: ALMessage) => Promise<void> {
     let receiver: OnMessageCallback | undefined;
     browserStateCacheLifecycle.initialise({
+        groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
         inbox: {
             onAllInboxMessagesDo(callback) {
                 receiver = callback;

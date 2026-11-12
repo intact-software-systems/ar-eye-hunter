@@ -23,6 +23,7 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestrator, CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
+import type { GroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
@@ -70,6 +71,8 @@ export interface RallarBrowserMiddleware {
      * hand-overs there (D186).
      */
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
+    /** The connect's group-state diagnostics sink, which every hydration of its group cache states to. */
+    readonly groupStateDiagnostics: GroupStateAppliedRevisionSink;
 }
 
 /** Authenticated browser connection returned by setup and connect operations. */

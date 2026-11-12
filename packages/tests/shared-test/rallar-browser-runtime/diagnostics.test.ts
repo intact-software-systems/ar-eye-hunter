@@ -573,6 +573,31 @@ it('records an AL inbound admission diagnostics event into the agent event log',
     ]));
 });
 
+it('bridges an applied group revision to rallar.browser.group_state.applied', async () => {
+    const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const applied = {
+        group: { applicationId: 'app-1', workspaceId: 'default', groupId: 'room-1' },
+        groupRevision: 5,
+        presenceRevision: 6,
+        rosterVersion: 2,
+        activeSessionCount: 2,
+        change: 'held'
+    } as const;
+
+    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.groupStateDiagnostics?.(applied);
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'diagnostic', topic: 'rallar.browser.group_state.applied', data: applied })
+    ]));
+});
+
 it('records an AL storage reset diagnostics event into the agent event log', async () => {
     const runtime = await loadRuntime();
     onTestFinished(async () => {

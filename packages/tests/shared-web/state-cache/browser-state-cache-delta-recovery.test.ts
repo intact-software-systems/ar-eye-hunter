@@ -10,6 +10,7 @@ import {
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findPlannedOverlayById, setPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 // dprint-ignore
@@ -73,6 +74,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
         vi.stubGlobal('fetch', fetchMock);
 
         browserStateCacheLifecycle.initialise({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             inbox: webSocketQueueBox,
             webRtcGroupManager: manager,
             clientData
@@ -122,6 +124,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -181,6 +184,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             snapshotVersion: 5
         });
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],

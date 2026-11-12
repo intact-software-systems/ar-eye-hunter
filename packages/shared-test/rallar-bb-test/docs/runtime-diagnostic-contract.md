@@ -137,6 +137,29 @@ The summary is a projection, not a pass-through. It drops the peers array, the
 lane id, the reason and the read-time clock the room status carries, so a pin
 never asserts on a value that changes with every read.
 
+## Group State Diagnostics
+
+The browser's `RallarDiagnosticsPorts.groupStateDiagnostics` port receives a
+`GroupStateAppliedRevision` (`packages/shared/repository/group-state-applied-revision.ts`)
+each time the connect's group cache changes what it holds: the cache the RTC
+admission reads when it compares a frame's room floor. The harness publishes it
+on `rallar.browser.group_state.applied`; the event's `data` is the fact itself:
+
+- `group`: the `GroupRef` (`applicationId`, `workspaceId`, `groupId`)
+- `groupRevision` and `presenceRevision`: the held snapshot's causal revision;
+  `groupRevision` is the `snapshotVersion` a room send's floor names
+- `rosterVersion`: the held group's roster version
+- `activeSessionCount`: the held snapshot's active sessions
+- `change`: `held` when the cache now holds this revision, `removed` when it
+  dropped the group (the fields are then the removed snapshot's)
+
+Every adoption path states through the one cache change stream: a delta, a
+snapshot page, a point read, a heartbeat adoption, a reopen resync. A lease
+refresh states nothing, and neither does a replacement that leaves all four
+numbers equal, so one event names one change of the held tuple. The event is
+emitted after the cache write, so an event never precedes the state it names.
+A sink that throws is logged and changes no adoption.
+
 ## Outbound Admission Diagnostics
 
 `rallar.browser.alm.outbound_diagnostics` carries one AL outbound runtime

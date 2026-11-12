@@ -8,6 +8,7 @@ import {
 } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { setClientStateSnapshots } from '@shared/repository/client-state-snapshots-repository.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import {
     onGroupStateSnapshotChange,
     setGroupStateSnapshots,
@@ -33,7 +34,10 @@ describe('Rallar state store', () => {
     it.each([false, true])('preserves explicit selection during attached-cache hydration with session superseded=%s', async (superseded) => {
         const context = {
             session: createDefaultTestSession(),
-            middleware: { webRtcGroupManager: createWebRtcGroupManager() }
+            middleware: {
+                webRtcGroupManager: createWebRtcGroupManager(),
+                groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink()
+            }
         };
         const { roomStateStore, stateStore } = createStateStoreFixture({}, () => context.session);
         const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };

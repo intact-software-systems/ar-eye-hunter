@@ -37,7 +37,10 @@ export interface RallarStateCacheReadPort {
 export interface RallarStateSnapshotAcceptanceInput {
     readonly context: {
         readonly session: AuthSession;
-        readonly middleware: Pick<BrowserStateCacheLifecycle.HydrateInput, 'webRtcGroupManager'>;
+        readonly middleware: Pick<
+            BrowserStateCacheLifecycle.HydrateInput,
+            'webRtcGroupManager' | 'groupStateDiagnostics'
+        >;
     };
     readonly clients: readonly ClientSnapshot[];
     readonly groups: readonly GroupSnapshot[];
@@ -124,7 +127,8 @@ export class RallarStateStore implements RallarStatePort {
             clientData: toClientInfo(input.context.session),
             clientSnapshots: input.clients,
             groupSnapshots: input.groups,
-            options: { scope: input.scope }
+            options: { scope: input.scope },
+            groupStateDiagnostics: input.context.middleware.groupStateDiagnostics
         });
         input.assertCurrent?.();
         if (input.currentRoom) {

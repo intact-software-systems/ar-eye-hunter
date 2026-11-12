@@ -16,6 +16,7 @@ import {
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
@@ -27,6 +28,7 @@ describe('authoritative group observation freshness', () => {
         const snapshot = seedObservation();
         const manager = createWebRtcGroupManager();
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: manager,
             clientData: { clientId: 'sender', sessionId: 'sender', isOnline: true },
             clientSnapshots: [],
@@ -123,6 +125,7 @@ describe('guarded authoritative session lease acquisition', () => {
         const expected = seedObservation();
         const manager = createWebRtcGroupManager();
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: manager,
             clientData: { clientId: 'sender', sessionId: 'sender', isOnline: true },
             clientSnapshots: [],

@@ -12,6 +12,7 @@ import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-
 import type { GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     findAcceptedOverlayById,
@@ -103,6 +104,7 @@ describe('browser overlay adoption deferred until the own session is in the cach
 
         // A room refresh hydrates with its own options, which replaces the observer context.
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: browser.manager,
             clientData: CLIENT,
             clientSnapshots: [],
@@ -122,6 +124,7 @@ describe('browser overlay adoption deferred until the own session is in the cach
 
         await browser.receivePage(first);
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: browser.manager,
             clientData: CLIENT,
             clientSnapshots: [],
@@ -337,6 +340,7 @@ function installBrowser(): InstalledBrowser {
     let receive: ((message: ALMessage) => Promise<void>) | undefined;
     let receivePage: ((page: ALMessage) => Promise<void>) | undefined;
     browserStateCacheLifecycle.initialise({
+        groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
         inbox: {
             onAllInboxMessagesDo: vi.fn((callback: { onMessage: (message: ALMessage) => Promise<void>; }) => {
                 receive = createPagedSnapshotReceiver(callback.onMessage);
@@ -356,6 +360,7 @@ function installBrowser(): InstalledBrowser {
         },
         hydrate: async (groupSnapshots) => {
             await browserStateCacheLifecycle.hydrate({
+                groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
                 webRtcGroupManager: manager,
                 clientData: CLIENT,
                 clientSnapshots: [],

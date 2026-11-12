@@ -33,6 +33,7 @@ import type {
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -410,6 +411,7 @@ class StateCacheRuntime {
     private onInboxMessage: ((message: ALMessage) => Promise<void>) | undefined;
     constructor() {
         browserStateCacheLifecycle.initialise({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             inbox: {
                 onAllInboxMessagesDo: (callback) => {
                     this.onInboxMessage = async (message) => {
@@ -429,6 +431,7 @@ class StateCacheRuntime {
     }
     hydrate = async (snapshots: readonly GroupSnapshot[]): Promise<void> => {
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
             clientSnapshots: [],

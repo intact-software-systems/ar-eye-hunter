@@ -23,6 +23,7 @@ import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -247,6 +248,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
 
     constructor() {
         this.cache.initialise({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             inbox: this,
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
@@ -289,6 +291,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
 
     async hydrate(snapshot: GroupSnapshot): Promise<void> {
         await this.cache.hydrate({
+            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
             clientSnapshots: [],
