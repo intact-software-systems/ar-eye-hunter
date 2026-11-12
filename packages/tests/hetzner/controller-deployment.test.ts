@@ -316,9 +316,13 @@ describe('Hetzner controller contracts and effects', () => {
         expect(await readFile(rolloutScriptPath, 'utf8')).toContain('\twrite_api_timing_environment\n');
     });
 
-    it('installs latest Bun but enforces 1.4.4 as the minimum Hetzner runtime version', async () => {
+    it('installs exactly the Bun version rallar-bun-runtime.sh pins and enforces it on deploy and rollout', async () => {
         const installScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/01-install-runtime.sh'),
+            'utf8'
+        );
+        const runtimeScript = await readFile(
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-bun-runtime.sh'),
             'utf8'
         );
         const deployScript = await readFile(
@@ -330,12 +334,11 @@ describe('Hetzner controller contracts and effects', () => {
             'utf8'
         );
 
+        expect(runtimeScript).toContain('RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"');
         expect(installScript).toContain('source "${SCRIPT_DIR}/rallar-bun-runtime.sh"');
-        expect(installScript).toContain('RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"');
-        expect(installScript).toContain('curl -fsSL https://bun.sh/install | bash');
+        expect(installScript).not.toContain('RALLAR_MIN_BUN_VERSION=');
+        expect(installScript).toContain('curl -fsSL https://bun.sh/install | bash -s "bun-v${RALLAR_MIN_BUN_VERSION}"');
         expect(installScript).toContain('require_rallar_min_bun_version');
-        expect(installScript).not.toContain('sh -s "v${RALLAR_MIN_BUN_VERSION}"');
-        expect(installScript).not.toContain('sh -s v1.4.4');
 
         for (const script of [deployScript, rolloutScript]) {
             expect(script).toContain('source "${SCRIPT_DIR}/rallar-bun-runtime.sh"');
