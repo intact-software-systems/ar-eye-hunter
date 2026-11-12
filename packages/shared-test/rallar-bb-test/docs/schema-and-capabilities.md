@@ -689,14 +689,17 @@ window. The receiver DELETEs the config once it has read its own receipt and the
 sender has cued that it read its. Three sessions in a tree of degree at most two
 form a path, so whenever both sends route on one planned path at least one origin
 is a leaf and its send is relayed, the far leaf's signed ACK forwarded back. The
-PUT only requests the reshape and the cell waits for no plan version, so two sends
-routed under different plans can both go direct: the cell asserts neither who
-relays nor the hop count, and each origin's receipt names the hops it confirmed
-through, which is where a run shows the relay. Its post-run identity pin describes
-the sender's send. It runs before `granted-rtc-relay-only` and
-`granted-rtc-ordered-relay`, so the cell that can outlast the lane's 180 s role
-deadline stays last in its family. No hosted manifest carries it, nor the two
-`receipted-audience` cells above.
+PUT only requests the reshape, so each origin reads its page's health until the
+accepted overlay is the tree, and only then sends. Each origin's receipt names the
+hops it confirmed through; the cell asserts neither which agent relays nor through
+which hop. After the run the identity assessment fails the cell unless at least one
+origin's ending receipt confirms both recipients through one hop: the sender
+recipe's metadata `almRelayedReceiptOrigins` names each origin by its role and the
+handle of its send, as `almReceiptRoles` names a send's recipient roles. Its
+`almReceiptRoles` pin describes the sender's send. It runs before
+`granted-rtc-relay-only` and `granted-rtc-ordered-relay`: the three close their
+family because each reshapes the room's topology until its own last step. No hosted
+manifest carries it, nor the two `receipted-audience` cells above.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.

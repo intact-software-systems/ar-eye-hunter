@@ -499,7 +499,8 @@ publication succeed. The event's `data` is the event itself:
   ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control
   the runtime handled), `pending` (retained for an asynchronous authority
-  recheck or conditional control replay), `unauthorized`
+  recheck or conditional control replay, or a data admission retained on a
+  commit conflict, whose verdict its replay does not record), `unauthorized`
   (ingress authority or the plan refused it), `rejected` (decode, validation,
   expiry, or a plan drop that is not an authority refusal), or `not-handled`
   (duplicate, resync-required, disposed, an unhandled control, or a control

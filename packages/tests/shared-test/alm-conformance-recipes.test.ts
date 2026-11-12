@@ -134,7 +134,7 @@ const GRANTED_RTC_ROOM_KEYS = [
     'granted-rtc-list-lane-roles'
 ] as const;
 
-/** The granted cells that reshape the room's topology; the ordered relay stays last. */
+/** The granted cells that reshape the room's topology, in catalog order. */
 const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-relay'] as const;
 
 const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_RELAY_KEYS] as const;
@@ -437,7 +437,7 @@ describe('alm-conformance recipe family', () => {
                     ...(carrier === 'ws'
                         ? ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)
                         : []),
-                    // The path cells close the list; the one that can outlast the lane's per-role deadline runs last.
+                    // The path cells close the list: each reshapes the room's topology until its own last step.
                     ...(carrier === 'rtc' ? RTC_THREE_AGENT_KEYS_IN_ORDER : []).flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     )

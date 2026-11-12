@@ -274,9 +274,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcListDelivered,
     grantedRtcListNonHolder,
     grantedRtcListLaneRoles,
-    // The room's three-agent cells share it, and these three reshape its topology until each one's own last step.
-    // `granted-rtc-ordered-relay`, whose authored worst case is the longest, stays last, so no cell runs on its pages
-    // after it.
+    // The room's three-agent cells share it, and these three reshape its topology until each one's own last step, so
+    // they close the list: no cell that keeps the room's default topology runs after them.
     receiptedRelayPath,
     grantedRtcRelayOnly,
     grantedRtcOrderedRelay

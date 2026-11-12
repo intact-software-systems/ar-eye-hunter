@@ -1474,9 +1474,14 @@ The inbound runtime-state stores nothing constructed, six unreferenced queuebox
 and resilience values and fifteen file-private runtime exports are deleted.
 The second part, S9-ii, made the full-scope lane one to trust (D627–D641). It
 changes one product path: a conflicted inbound admission is always retained and
-replayed (D640), where a `resync-required` drop that lost a commit race had
-rolled back its NACK and left the sender unanswered. The rest corrects the lane,
-and no window, constant or assertion was widened:
+replayed (D640), so a `resync-required` drop that loses a commit race still
+reaches its sender as a NACK. On the WS server such a drop of a receipted room
+send first answers `pending-admission` and starts its `admitted` receipt, which
+can precede or follow the replay's NACK at the origin; a late one settles an
+`acknowledgement` after `relay-rejected`, and the handle reads `rejected`. The
+rest corrects the lane. No window, timeout or budget was widened; three cells
+assert what the product documents instead of what they asserted before (D630,
+D633, D641), and each row states its cost:
 
 - an overrun fails its own cell, its recipe is cancelled, and a recipe still
   live after its cancel stops the family (D628);
@@ -1499,15 +1504,16 @@ in-memory API, three runs per carrier gave `ws` three green, `rtc` one green and
 two red, and `rtc-with-ws-fallback` two green and one red. With Postgres on a
 fresh database per run, one run per carrier gave three green. The three reds are
 the four-role family, `subscription-ordered-omission` and
-`subscription-ordered-entry`, from one group-state sync race outside ALM: the
-`ws` carrier is green in every run, and the RTC carriers are green except that
-family, which failed in three of six in-memory runs and none of two on Postgres.
-Every cell S9-ii corrected was green in all twelve runs, and no role ended
-`RALLAR_BLACK_BOX_RECIPE_TIMEOUT`. `missing-recipient-retry` over `rtc` stays a
-known intermittent, about one run in four and on `main` too: a first copy
-refused `not-yet-in-sync` at both recipients meets the honest retry inside the
-receiver's absence window, and no page diagnostic lets a recipe wait to be in
-sync. `repair-exhausted` over `rtc-with-ws-fallback` is not asserted.
+`subscription-ordered-entry`, from one group-state sync race outside ALM
+(recorded as a backlog line): the `ws` carrier is green in every run, and the
+RTC carriers are green except that family, which failed in three of six
+in-memory runs and none of two on Postgres. Every cell S9-ii corrected was green
+in all twelve runs, and no role ended `RALLAR_BLACK_BOX_RECIPE_TIMEOUT`.
+`missing-recipient-retry` over `rtc` stays a known intermittent, about one run
+in four and on `main` too: a first copy refused `not-yet-in-sync` at both
+recipients meets the honest retry inside the receiver's absence window, and no
+page diagnostic lets a recipe wait to be in sync. `repair-exhausted` over
+`rtc-with-ws-fallback` is not asserted.
 
 The lane stays a non-blocking observation. A later slice may promote one
 carrier on a recorded streak of about ten consecutive green full runs per
