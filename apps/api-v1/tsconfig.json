@@ -11,7 +11,6 @@
     "skipLibCheck": true,
     "types": ["bun"],
     "paths": {
-      "@/*": ["./src/*"],
       "@shared/*": ["../../packages/shared/*"],
       "@shared-server/*": ["../../packages/shared-server/*"],
       "@shared-graph/*": ["../../packages/shared-graph/*"],
