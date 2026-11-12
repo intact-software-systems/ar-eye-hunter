@@ -76,8 +76,7 @@ describe('RTC enqueue protection', () => {
             { kind: 'rtc-handoff-refusal', reason: 'rate-limited', messageCount: 1 }
         ]);
 
-        // The existing 1,000 ms limiter retains an overlapping 250 ms bucket at its edge.
-        vi.setSystemTime(Date.now() + 1_251);
+        vi.setSystemTime(Date.now() + 50);
         const recovered = await fixture.manager.enqueueIfAbsent(createOriginReceiverMulticast('own-21'));
         expect(recovered.verdict.kind, recovered.reason).toBe('admitted');
     });
@@ -112,15 +111,34 @@ describe('RTC enqueue protection', () => {
         });
         const waiting = createOriginReceiverMulticast('own-waiting');
         admissionAtMs += 10_000;
-        quotaAtMs = quotaStartMs + 1250;
+        quotaAtMs = quotaStartMs + 49;
         expect((await fixture.manager.enqueueIfAbsent(waiting)).verdict)
             .toMatchObject({ kind: 'unroutable', reason: 'rate-limited' });
         expect(await fixture.resources.admissionStore.hasSentMessageAdmission(waiting.id.msgId)).toBe(false);
 
-        quotaAtMs = quotaStartMs + 1251;
+        quotaAtMs = quotaStartMs + 50;
         creationNow.mockImplementation(() => creationInstant);
         const recovered = await fixture.manager.enqueueIfAbsent(waiting);
         expect(recovered.verdict.kind, recovered.reason).toBe('admitted');
+    });
+
+    it('admits every own send of a jittered 20 Hz stream under the default 20 per second limiter', async () => {
+        const quotaStartMs = 1791883286866;
+        let quotaAtMs = quotaStartMs;
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 1),
+            nextHopPeerIds: ['b'],
+            quotaNow: () => quotaAtMs,
+            rateLimiter: RateLimiter.initWithTs(1_000, 20, quotaStartMs)
+        });
+        const lateJitterMs = [0, 7, 25, 3, 18, 11, 0, 22, 5, 14];
+
+        for (let sequence = 0; sequence < 200; sequence++) {
+            quotaAtMs = quotaStartMs + sequence * 50 + lateJitterMs[sequence % lateJitterMs.length]!;
+            const result = await fixture.manager.enqueueIfAbsent(createOriginReceiverMulticast(`stream-${sequence}`));
+            expect(result.verdict.kind, `send ${sequence}: ${result.reason}`).toBe('admitted');
+        }
+        expect(fixture.diagnostics.filter((event) => event.kind === 'rtc-handoff-refusal')).toEqual([]);
     });
 
     it('keeps real enqueue failures across neutral quota refusals and recovers through half-open', async () => {
