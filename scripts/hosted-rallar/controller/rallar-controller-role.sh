@@ -38,6 +38,11 @@ RALLAR_AR_EYE_APP_DIR_DEFAULT="apps/ar-eye-hunter-server-v1"
 
 RALLAR_GAME_CORS_ORIGINS_DEFAULT="https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev"
 
+# The api role's replica units, one per line: the units the role installs and every reader of their journals.
+rallar_api_replica_services() {
+	printf '%s\n' "${RALLAR_API_REPLICA_SERVICES[@]:-${RALLAR_API_REPLICA_SERVICES_DEFAULT[@]}}"
+}
+
 apply_rallar_controller_role() {
 	local role="${RALLAR_CONTROLLER_ROLE:-api}"
 
@@ -45,7 +50,10 @@ apply_rallar_controller_role() {
 	api)
 		RALLAR_ROLE_HAS_POSTGRES=1
 		RALLAR_ROLE_WRITES_HEADLESS_WORKER=0
-		RALLAR_ROLE_APP_SERVICES=("${RALLAR_API_REPLICA_SERVICES[@]:-${RALLAR_API_REPLICA_SERVICES_DEFAULT[@]}}")
+		RALLAR_ROLE_APP_SERVICES=()
+		while IFS= read -r api_replica_service; do
+			RALLAR_ROLE_APP_SERVICES+=("${api_replica_service}")
+		done < <(rallar_api_replica_services)
 		RALLAR_ROLE_HOST="${RALLAR_API_HOST:-${RALLAR_API_HOST_DEFAULT}}"
 		RALLAR_ROLE_PORT="${RALLAR_API_PORT:-${RALLAR_API_PORT_DEFAULT}}"
 		RALLAR_API_REPLICA_PORTS=("${RALLAR_API_REPLICA_PORTS[@]:-${RALLAR_API_REPLICA_PORTS_DEFAULT[@]}}")
@@ -127,9 +135,10 @@ rallar_controller_role_url_origin() {
 # loopback port (from RALLAR_API_REPLICA_PORTS) and shares the one Postgres store in the env file.
 write_rallar_api_replica_units() {
 	local api_replica_index=0 api_replica_port
+	local unit_dir="${RALLAR_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 	for api_replica_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
 		api_replica_port="${RALLAR_API_REPLICA_PORTS[${api_replica_index}]}"
-		cat >"/etc/systemd/system/${api_replica_service}" <<EOF
+		cat >"${unit_dir}/${api_replica_service}" <<EOF
 [Unit]
 Description=Rallar API-v1 controller replica ${api_replica_port}
 After=network-online.target postgresql.service
@@ -144,6 +153,7 @@ WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
 EnvironmentFile=/etc/rallar/api-v1.env
 EnvironmentFile=-/etc/rallar/api-v1.secrets.env
 ExecStart=/usr/bin/env PORT=${api_replica_port} /usr/local/bin/bun run src/main.ts
+SyslogIdentifier=${api_replica_service%.service}
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

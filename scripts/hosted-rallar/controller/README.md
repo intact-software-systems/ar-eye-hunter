@@ -275,6 +275,8 @@ installs:
 
 ```text
 api     rallar-api-v1.service
+        rallar-api-v1-2.service
+        rallar-api-v1-3.service
 control rallar-black-box-control.service
 games   rallar-relic-hunter-server-v1.service
         rallar-ar-eye-hunter-server-v1.service
@@ -1066,9 +1068,11 @@ before distributed artifacts exist. No AI analysis is required to distinguish
 those failures.
 
 For the `run` and `full` phases the same artifact also carries `api-journal.log`
-and `control-journal.log`: the redacted raw journals of `rallar-api-v1.service`
-and `rallar-black-box-control.service` since the run phase began on the
-controller, each capped at its last 50 000 lines. The remote run phase records
+and `control-journal.log`: the redacted raw journals of every API replica unit
+the api role installs (`rallar-api-v1.service`, `rallar-api-v1-2.service`,
+`rallar-api-v1-3.service`, interleaved in one file, each line naming its replica
+in its syslog identifier) and of `rallar-black-box-control.service` since the
+run phase began on the controller, each file capped at its last 50 000 lines. The remote run phase records
 its start and exports both through `17-export-run-journals.sh` when it exits,
 whatever the recipe's outcome. The agents disconnect after the recipe reports
 its terminal state, so the export re-reads the API journal every 5 s until every

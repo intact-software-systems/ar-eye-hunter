@@ -113,6 +113,31 @@ fi
 service_spec="${service_spec:-${DEFAULT_SERVICES}}"
 declare -a units=()
 
+# The directory of this script itself; hosts run it through the /usr/local/bin/rallar-logs symlink.
+resolve_script_dir() {
+	local script_path="${BASH_SOURCE[0]:-}"
+	local link_target
+	[[ -n "${script_path}" && -e "${script_path}" ]] || return 1
+	while [[ -L "${script_path}" ]]; do
+		link_target="$(readlink "${script_path}")"
+		if [[ "${link_target}" != /* ]]; then
+			link_target="$(dirname -- "${script_path}")/${link_target}"
+		fi
+		script_path="${link_target}"
+	done
+	cd -P -- "$(dirname -- "${script_path}")" && pwd
+}
+
+# Every api replica unit the role installs; streamed without its role helper, only the primary replica.
+declare -a api_units=(rallar-api-v1.service)
+if script_dir="$(resolve_script_dir)" && [[ -r "${script_dir}/rallar-controller-role.sh" ]]; then
+	source "${script_dir}/rallar-controller-role.sh"
+	api_units=()
+	while IFS= read -r api_unit; do
+		api_units+=("${api_unit}")
+	done < <(rallar_api_replica_services)
+fi
+
 add_unit() {
 	local unit="$1"
 	local existing
@@ -130,7 +155,9 @@ expand_service() {
 	local service="$1"
 	case "${service}" in
 	api)
-		add_unit "rallar-api-v1.service"
+		for api_unit in "${api_units[@]}"; do
+			add_unit "${api_unit}"
+		done
 		;;
 	control)
 		add_unit "rallar-black-box-control.service"

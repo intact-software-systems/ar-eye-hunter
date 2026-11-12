@@ -23,7 +23,7 @@ async function runExportDry(context: TestContext, args: readonly string[]): Prom
 }
 
 describe('Hetzner run journal export script', () => {
-    it('writes the API and control-server journals since the run start, bounded to 50 000 raw lines each', async (context) => {
+    it('writes the journals of every API replica and of the control server since the run start, bounded to 50 000 raw lines each', async (context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-journals-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
         const outputDirectory = path.join(directory, 'operation');
@@ -32,7 +32,7 @@ describe('Hetzner run journal export script', () => {
 
         const apiJournal = await readFile(path.join(outputDirectory, 'api-journal.log'), 'utf8');
         const controlJournal = await readFile(path.join(outputDirectory, 'control-journal.log'), 'utf8');
-        expect(apiJournal).toContain('units=rallar-api-v1.service\n');
+        expect(apiJournal).toContain('units=rallar-api-v1.service,rallar-api-v1-2.service,rallar-api-v1-3.service\n');
         expect(controlJournal).toContain('units=rallar-black-box-control.service\n');
         for (const journal of [apiJournal, controlJournal]) {
             expect(journal).toContain('lines=50000\n');
