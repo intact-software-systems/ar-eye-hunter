@@ -172,29 +172,7 @@ EOF
 	echo "API-v1 uses the prod profile on this VM's Postgres store ${RALLAR_API_DATABASE_NAME}; deploy and rollout preserve existing data."
 
 	echo "==> Writing systemd services"
-	cat >/etc/systemd/system/rallar-api-v1.service <<EOF
-[Unit]
-Description=Rallar API-v1 controller
-After=network-online.target postgresql.service
-Wants=network-online.target postgresql.service
-ConditionPathExists=!${RALLAR_API_STORE_FAILURE_FILE}
-
-[Service]
-Type=simple
-User=rallar
-Group=rallar
-WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
-EnvironmentFile=/etc/rallar/api-v1.env
-EnvironmentFile=-/etc/rallar/api-v1.secrets.env
-ExecStart=/usr/local/bin/bun run src/main.ts
-Restart=always
-RestartSec=5
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
+	write_rallar_api_v1_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_STORE_FAILURE_FILE}"
 
 	echo "==> Writing Caddyfile"
 	write_rallar_role_caddyfile
@@ -220,7 +198,8 @@ EOF
 control)
 	echo "==> Writing environment files"
 	install -d -m 0700 -o root -g root /etc/rallar
-	install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
+	RALLAR_CONTROL_STORAGE_DIR=/var/lib/rallar-black-box-control
+	install -d -m 0755 -o rallar -g rallar "${RALLAR_CONTROL_STORAGE_DIR}"
 
 	if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/control-server.env ]]; then
 		RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
@@ -252,7 +231,7 @@ RALLAR_BLACK_BOX_REQUIRE_TLS=1
 RALLAR_BLACK_BOX_ALLOWED_ORIGINS=${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}
 RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS=${RALLAR_API_HOST}
 RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS=${RALLAR_API_HOST},${RALLAR_CONTROL_HOST}
-RALLAR_BLACK_BOX_STORAGE_DIR=/var/lib/rallar-black-box-control
+RALLAR_BLACK_BOX_STORAGE_DIR=${RALLAR_CONTROL_STORAGE_DIR}
 RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=${RALLAR_RETENTION_MAX_RUNS}
 RALLAR_BLACK_BOX_RUNTIME_RETAIN_COMMANDS=1000
 RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS=1000
@@ -266,27 +245,7 @@ EOF
 	chmod 0600 /etc/rallar/control-server.env
 
 	echo "==> Writing systemd services"
-	cat >/etc/systemd/system/rallar-black-box-control.service <<EOF
-[Unit]
-Description=Rallar Black Box control server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=rallar
-Group=rallar
-WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server
-EnvironmentFile=/etc/rallar/control-server.env
-ExecStart=/usr/local/bin/bun run src/main.ts
-Restart=always
-RestartSec=5
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
+	write_rallar_control_server_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_CONTROL_STORAGE_DIR}"
 	write_rallar_headless_worker_unit \
 		"rallar-black-box-headless-worker.service" \
 		"${RALLAR_HEADLESS_ENV_FILE:-/etc/rallar/headless-worker.env}" \

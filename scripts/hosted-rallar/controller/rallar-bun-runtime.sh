@@ -68,6 +68,86 @@ require_rallar_min_bun_version() {
 	echo "Bun ${version} satisfies minimum ${minimum}."
 }
 
+# The sandbox every Bun server unit runs in, in place of Deno's --allow-net/--allow-env/--allow-read: the system,
+# the checkout and the service user's home are read-only, devices, kernel and cgroup settings are out of reach, no
+# privilege can be gained, and only IP and UNIX sockets open. Each argument is a directory the service writes; the
+# transpiler cache would write under the read-only home, so it is off.
+print_rallar_bun_service_hardening() {
+	cat <<'EOF'
+Environment=BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+EOF
+	local writable_dir
+	for writable_dir in "$@"; do
+		printf 'ReadWritePaths=%s\n' "${writable_dir}"
+	done
+}
+
+write_rallar_api_v1_unit() {
+	local checkout_dir="$1"
+	local store_failure_file="$2"
+
+	cat >"${RALLAR_SYSTEMD_UNIT_DIR:-/etc/systemd/system}/rallar-api-v1.service" <<EOF
+[Unit]
+Description=Rallar API-v1 controller
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+ConditionPathExists=!${store_failure_file}
+
+[Service]
+Type=simple
+User=rallar
+Group=rallar
+WorkingDirectory=${checkout_dir}/apps/api-v1
+EnvironmentFile=/etc/rallar/api-v1.env
+EnvironmentFile=-/etc/rallar/api-v1.secrets.env
+ExecStart=/usr/local/bin/bun run src/main.ts
+Restart=always
+RestartSec=5
+$(print_rallar_bun_service_hardening)
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+write_rallar_control_server_unit() {
+	local checkout_dir="$1"
+	local storage_dir="$2"
+
+	cat >"${RALLAR_SYSTEMD_UNIT_DIR:-/etc/systemd/system}/rallar-black-box-control.service" <<EOF
+[Unit]
+Description=Rallar Black Box control server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rallar
+Group=rallar
+WorkingDirectory=${checkout_dir}/apps/rallar-black-box-control-server
+EnvironmentFile=/etc/rallar/control-server.env
+ExecStart=/usr/local/bin/bun run src/main.ts
+Restart=always
+RestartSec=5
+$(print_rallar_bun_service_hardening "${storage_dir}")
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
 run_rallar_bun_runtime_self_test() {
 	case "${RALLAR_BUN_RUNTIME_SELF_TEST:-}" in
 	version-check)

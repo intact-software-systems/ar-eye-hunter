@@ -21,6 +21,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
 source "${SCRIPT_DIR}/rallar-controller-role.sh"
 source "${SCRIPT_DIR}/rallar-games-prod-profile.sh"
+source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 apply_rallar_controller_role
 
 rallar_user_home() {
@@ -241,6 +242,24 @@ write_api_prod_profile_environment() {
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${operator_client_ids}"
 }
 
+# The role's Bun server units, written by every rollout so a unit never starts a checkout it was not written for.
+write_rollout_role_units() {
+	case "${RALLAR_CONTROLLER_ROLE}" in
+	api)
+		write_rallar_api_v1_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_STORE_FAILURE_FILE}"
+		;;
+	control)
+		write_rallar_control_server_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_ROLLOUT_CONTROL_STATE_DIR}"
+		;;
+	games)
+		write_rallar_game_server_unit "${RALLAR_RELIC_SERVICE}" "${RALLAR_RELIC_APP_DIR}" "${RALLAR_RELIC_ENV_FILE}" \
+			"${RALLAR_RELIC_STORE_FAILURE_FILE}" "${RALLAR_CHECKOUT_DIR}"
+		write_rallar_game_server_unit "${RALLAR_AR_EYE_SERVICE}" "${RALLAR_AR_EYE_APP_DIR}" "${RALLAR_AR_EYE_ENV_FILE}" \
+			"${RALLAR_AR_EYE_STORE_FAILURE_FILE}" "${RALLAR_CHECKOUT_DIR}"
+		;;
+	esac
+}
+
 stopped_services=0
 
 restart_stopped_services_on_error() {
@@ -354,6 +373,10 @@ run_rollout_self_test() {
 		update_api_rtc_topology_env
 		echo "wroteApiOptionalEnvironment=true"
 		;;
+	write-role-units)
+		write_rollout_role_units
+		echo "wroteRoleUnits=true"
+		;;
 	preflight-api-overrides)
 		require_writable_api_diagnostic_configuration
 		echo "writableApiDiagnosticConfiguration=true"
@@ -377,7 +400,6 @@ fi
 
 source "${SCRIPT_DIR}/rallar-controller-lock.sh"
 rallar_lock_controller
-source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 source "${SCRIPT_DIR}/rallar-headless-worker-env.sh"
@@ -577,6 +599,10 @@ if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
 	rallar_playwright_operation_stage "rollout-postgres-server"
 	install_rallar_api_postgres_server
 fi
+
+echo "==> Writing systemd units"
+write_rollout_role_units
+systemctl daemon-reload
 
 echo "==> Stopping services for publish/start"
 stopped_services=1
