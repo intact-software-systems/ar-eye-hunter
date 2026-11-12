@@ -168,10 +168,11 @@ function liveBoardSnapshot(): ControlServerSnapshot {
     };
 }
 
-async function fulfillJson<Body>(
+/** `ApiJsonValue` covers the error bodies, the deliberately malformed snapshots and the untrusted token broker's reply. */
+async function fulfillJson(
     route: Route,
     status: number,
-    body: Body
+    body: ControlServerSnapshot | ControlRunSnapshot | Pick<ControlServerSnapshot, 'distributedRuns'> | ApiJsonValue
 ): Promise<void> {
     await route.fulfill({
         status,
@@ -944,9 +945,9 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
         const nativeClearTimeout = window.clearTimeout.bind(window);
         Object.defineProperty(window, 'setTimeout', {
             configurable: true,
-            value: (handler: TimerHandler, timeout?: number, ...args: never[]): number => {
+            value: (...[handler, timeout, ...args]: Parameters<typeof nativeSetTimeout>): number => {
                 let id = 0;
-                const wrapped = (...callbackArgs: never[]): void => {
+                const wrapped = (...callbackArgs: typeof args): void => {
                     active.delete(id);
                     if (typeof handler === 'function') {
                         handler(...callbackArgs);
@@ -974,7 +975,14 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
             }
         });
     });
-    const activePolls = (): Promise<number> => page.evaluate(() => window.__recipeConsoleTimeoutProbe.activePolls());
+    const activePolls = (): Promise<number> =>
+        page.evaluate(() => {
+            const probe = window.__recipeConsoleTimeoutProbe;
+            if (probe === undefined) {
+                throw new Error('The timeout probe init script did not run in this page.');
+            }
+            return probe.activePolls();
+        });
     const mock = await installControlRouteMock(context, [{
         kind: 'snapshot',
         snapshot: liveBoardSnapshot()

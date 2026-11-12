@@ -1,3 +1,3 @@
 interface Window {
-    __recipeConsoleTimeoutProbe: { activePolls(): number; };
+    __recipeConsoleTimeoutProbe?: { activePolls(): number; };
 }

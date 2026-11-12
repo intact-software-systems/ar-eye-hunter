@@ -5,12 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
-import type { RallarMessageHandler, RallarWsSendInput } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import type { RallarWsMessageLane } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarDefaults, RallarStartOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarCreateRoomInput } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject } from '@shared/api/api-json-value.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 
@@ -724,9 +724,9 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             rooms: {
                 current: () => undefined,
                 list: () => [],
-                create: async (input: RallarCreateRoomInput) => {
+                create: async (input: Parameters<BrowserRallarRooms['create']>[0]) => {
                     (window as any).__quickCreateInputs.push(input);
-                    const groupId = typeof input.groupId === 'string'
+                    const groupId = typeof input !== 'string' && typeof input.groupId === 'string'
                         ? input.groupId
                         : 'generated-server-group-id';
                     return {
@@ -734,7 +734,9 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                         group: {
                             ...groupSnapshot.group,
                             groupId,
-                            displayName: typeof input.displayName === 'string' ? input.displayName : groupId
+                            displayName: typeof input !== 'string' && typeof input.displayName === 'string'
+                                ? input.displayName
+                                : groupId
                         }
                     };
                 },
@@ -755,7 +757,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             },
             messages: {
                 ws: {
-                    send: async (input: RallarWsSendInput<ApiJsonValue>) => {
+                    send: async (input: Parameters<RallarWsMessageLane['send']>[0]) => {
                         (window as any).__quickSendInputs.push(input);
                         return {
                             msgId: sentLifecycle.msgId,
@@ -875,10 +877,26 @@ interface WsProbeScriptArg {
     readonly sentLifecycle: PageSentLifecycle;
 }
 
-interface BulkCommandRequest {
+/** The body `enqueueBulkControlCommand` posts; this spec reads only the command's `kind`, so that is all it decodes of it. */
+interface ControlBulkEnqueueBody {
     readonly agentIds: readonly string[];
-    readonly commandIdPrefix: string;
+    readonly commandIdPrefix?: string;
     readonly command: Readonly<{ kind: string; }>;
+}
+
+function decodeControlBulkEnqueueBody(value: unknown): Either<string, ControlBulkEnqueueBody> {
+    if (!isApiJsonObject(value) || !Array.isArray(value.agentIds) || !isApiJsonObject(value.command)) {
+        return Either.ofLeft('The bulk enqueue body is not { agentIds, command }.');
+    }
+    const { agentIds, commandIdPrefix, command } = value;
+    const kind = command.kind;
+    if (!agentIds.every((agentId): agentId is string => typeof agentId === 'string') || typeof kind !== 'string') {
+        return Either.ofLeft('The bulk enqueue body carries a non-string agent id or a command without a kind.');
+    }
+    if (commandIdPrefix !== undefined && typeof commandIdPrefix !== 'string') {
+        return Either.ofLeft('The bulk enqueue body carries a non-string commandIdPrefix.');
+    }
+    return Either.ofRight({ agentIds, commandIdPrefix, command: { kind } });
 }
 
 interface QueuedDemoCommand {
@@ -951,7 +969,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
         reports: [],
         heartbeats: []
     };
-    let bulkBody: BulkCommandRequest | undefined;
+    let bulkBody: ControlBulkEnqueueBody | undefined;
     let resetCalled = false;
 
     await page.route('http://localhost:5180/**', async (route) => {
@@ -974,7 +992,12 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             return;
         }
         if (request.method() === 'POST' && url.pathname === '/runs/demo-run/commands') {
-            const body: BulkCommandRequest = await request.postDataJSON();
+            const body = decodeControlBulkEnqueueBody(await request.postDataJSON()).fold(
+                (issue) => {
+                    throw new Error(issue);
+                },
+                (decoded) => decoded
+            );
             bulkBody = body;
             run = {
                 ...run,
@@ -1779,11 +1802,11 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 rooms: {
                     current: () => undefined,
                     list: () => [],
-                    create: async (input: RallarCreateRoomInput) => ({
+                    create: async (input: Parameters<BrowserRallarRooms['create']>[0]) => ({
                         ...joinedGroupSnapshot,
                         group: {
                             ...joinedGroupSnapshot.group,
-                            groupId: typeof input.groupId === 'string'
+                            groupId: typeof input !== 'string' && typeof input.groupId === 'string'
                                 ? input.groupId
                                 : joinedGroupSnapshot.group.groupId
                         }
@@ -1798,7 +1821,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 },
                 messages: {
                     ws: {
-                        send: async (input: RallarWsSendInput<ApiJsonValue>) => {
+                        send: async (input: Parameters<RallarWsMessageLane['send']>[0]) => {
                             if (!connected) {
                                 throw new Error('Rallar direct facade is not connected.');
                             }
@@ -1817,8 +1840,8 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                             };
                         },
                         onMessage: (
-                            _selector: RallarMessageSelectorInput,
-                            handler: RallarMessageHandler<ApiJsonValue>
+                            _selector: Parameters<RallarWsMessageLane['onMessage']>[0],
+                            handler: Parameters<RallarWsMessageLane['onMessage']>[1]
                         ) => {
                             (window as any).__rallarWsMessageHandler = handler;
                             return () => {

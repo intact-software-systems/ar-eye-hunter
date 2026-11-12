@@ -1,4 +1,5 @@
 import type { BrowserContext, Page, Route } from '@playwright/test';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { ControlEventEnvelope } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ControlAgentSnapshot,
@@ -163,6 +164,12 @@ export async function installRecipeConsoleFleetFixture(
             collectionMode = mode;
         }
     };
+}
+
+/** The `schema-error` collection mode serves a report this console must quarantine, so it is not a `ControlFleetRunReport`. */
+interface QuarantinedFleetReportSnapshot extends Omit<ControlServerSnapshot, 'fleetReports'> {
+    readonly fleetReports:
+        readonly (ControlFleetRunReport | Readonly<{ fleetReportSchemaVersion: number; distributedRunId: string; }>)[];
 }
 
 function rootSnapshotForCollection(
@@ -541,7 +548,15 @@ function pad(value: number): string {
     return String(value).padStart(2, '0');
 }
 
-async function fulfillJson<Body>(route: Route, body: Body): Promise<void> {
+async function fulfillJson(
+    route: Route,
+    body:
+        | ControlServerSnapshot
+        | QuarantinedFleetReportSnapshot
+        | ControlRunSnapshot
+        | ControlFleetReportBundle
+        | ApiJsonValue
+): Promise<void> {
     await route.fulfill({
         status: 200,
         contentType: 'application/json',

@@ -1,4 +1,5 @@
 import type { BrowserContext, Route } from '@playwright/test';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     ControlEventEnvelope,
     ControlResultEnvelope
@@ -587,7 +588,16 @@ function largeCompositeCommandId(index: number): string {
     return `monitor-large-composite-command-${String(index).padStart(3, '0')}`;
 }
 
-async function fulfillJson<Body>(route: Route, body: Body, status = 200): Promise<void> {
+async function fulfillJson(
+    route: Route,
+    body:
+        | ControlServerSnapshot
+        | ControlRunSnapshot
+        | Pick<ControlServerSnapshot, 'distributedRuns'>
+        | ControlDistributedRunArtifactBundle
+        | ApiJsonValue,
+    status = 200
+): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',
