@@ -196,19 +196,19 @@ export class ControlAgentSockets {
         const commandsByAgentId = this.controlService.takeDispatchableCommandsForAgents(runId, [...openSockets.keys()]);
         for (const [agentId, socket] of openSockets) {
             for (const command of commandsByAgentId.get(agentId) ?? []) {
-                sendControlFrame(socket, runId, agentId, command);
+                sendControlFrame(socket, { runId, agentId }, command);
             }
             for (const resolution of this.controlService.takeBarrierResolutions(runId, agentId)) {
-                sendControlFrame(socket, runId, agentId, resolution);
+                sendControlFrame(socket, { runId, agentId }, resolution);
             }
         }
     }
 }
 
 /** A dispatched frame Bun dropped is already taken from the queue, so the loss is reported, never silent. */
-function sendControlFrame(socket: ControlAgentSocket, runId: string, agentId: string, frame: object): void {
+function sendControlFrame(socket: ControlAgentSocket, agent: ControlAgentIdentity, frame: object): void {
     if (socket.send(JSON.stringify(frame)) === DROPPED_FRAME) {
-        console.error(`Control socket dropped a dispatched frame for run ${runId} agent ${agentId}.`);
+        console.error(`Control socket dropped a dispatched frame for run ${agent.runId} agent ${agent.agentId}.`);
     }
 }
 
