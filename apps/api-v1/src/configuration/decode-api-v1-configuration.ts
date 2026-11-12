@@ -48,6 +48,8 @@ import {
 import { decodeApiV1GrantedWsTopics } from './decode-api-v1-granted-ws-topics.ts';
 import { validateApiV1ConfigurationInvariants } from './validate-api-v1-configuration-invariants.ts';
 
+const ALL_INTERFACES_HOSTNAME = '0.0.0.0';
+
 export type { DecodeApiV1ConfigurationInput } from './decode-api-v1-configuration-source.ts';
 
 export function decodeApiV1Configuration(
@@ -126,11 +128,21 @@ function decodeHttp(
     structuredValues: ApiV1ConfigurationStructuredValueDecoder
 ): ApiV1HttpConfiguration {
     return {
+        hostname: decodeHttpHostname(decoder),
         port: decoder.integer('http.port', 1, 65_535),
         corsOrigins: structuredValues.originSet('http.corsOrigins'),
         preflightMaxAgeSeconds: decoder.integer('http.preflightMaxAgeSeconds', 0),
         shutdownDeadlineMs: decodeShutdownDeadlineMs(decoder)
     };
+}
+
+/**
+ * Local dev, CI and containers reach the server on every interface, as Bun binds by default; a host that fronts the
+ * server with its own proxy names its loopback address instead.
+ */
+function decodeHttpHostname(values: ApiV1ConfigurationValueDecoder): string {
+    const path = 'http.hostname';
+    return values.hasValue(path) ? values.nonEmptyString(path) : ALL_INTERFACES_HOSTNAME;
 }
 
 /** The hosted units name the deadline; elsewhere the Bun servers share one default. */

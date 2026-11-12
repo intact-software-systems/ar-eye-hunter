@@ -114,6 +114,9 @@ describe('Hetzner SPA public env wiring', () => {
 \t\tlb_try_duration 5s
 \t\thealth_uri /api/config
 \t\thealth_interval 5s
+\t\theader_up X-Real-IP {remote_host}
+\t\theader_up -Cf-Connecting-Ip
+\t\theader_up -Forwarded
 \t}
 }
 

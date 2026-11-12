@@ -178,6 +178,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.group.roomOwnedAppDataBindings = value
     },
     {
+        name: 'RALLAR_HTTP_HOSTNAME',
+        decode: decodeString,
+        apply: (source, value) => source.http.hostname = value
+    },
+    {
         name: 'PORT',
         decode: decodeNumber,
         apply: (source, value) => source.http.port = value

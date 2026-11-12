@@ -13,6 +13,8 @@ export interface ApiV1ConfigurationProfile {
 }
 
 export interface ApiV1HttpConfiguration {
+    /** The address the server binds; a host whose proxy reaches it over loopback binds only loopback. */
+    readonly hostname: string;
     readonly port: number;
     readonly corsOrigins: readonly string[];
     readonly preflightMaxAgeSeconds: number;

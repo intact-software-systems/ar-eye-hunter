@@ -13,12 +13,16 @@ RALLAR_API_PORT_DEFAULT="8080"
 RALLAR_CONTROL_PORT_DEFAULT="5180"
 
 # The api role runs three api-v1 replicas behind one shared Postgres store. Each replica
-# binds a distinct port; Caddy round-robins the public host across the replicas its active
+# binds a distinct loopback port; Caddy round-robins the public host across the replicas its active
 # health check (the unauthenticated, store-free GET /api/config) finds up, and retries a
 # request whose dial fails on the next replica, so a replica that is down or in its
 # RestartSec loop costs neither HTTP requests nor WS upgrades.
+# The API's per-client limits key on the first client-address header they find, so Caddy sets X-Real-IP from the
+# connection and drops the client-supplied headers read before or instead of it.
 # Multi-instance correctness (cross-instance WS/RTC fanout) relies on RALLAR_DB_PUBSUB=postgres.
 RALLAR_API_REPLICA_PORTS_DEFAULT=(8080 8081 8082)
+# Caddy reaches the replicas over loopback, so they bind only loopback and nothing reaches them around Caddy.
+RALLAR_API_REPLICA_HOSTNAME="127.0.0.1"
 RALLAR_API_REPLICA_SERVICES_DEFAULT=(rallar-api-v1.service rallar-api-v1-2.service rallar-api-v1-3.service)
 
 RALLAR_API_STORE_FAILURE_FILE_DEFAULT="/etc/rallar/api-v1.store-failure"
@@ -62,7 +66,7 @@ apply_rallar_controller_role() {
 		RALLAR_API_REPLICA_PORTS=("${RALLAR_API_REPLICA_PORTS[@]:-${RALLAR_API_REPLICA_PORTS_DEFAULT[@]}}")
 		RALLAR_API_REPLICA_PORTS_UPSTREAMS=''
 		for port in "${RALLAR_API_REPLICA_PORTS[@]}"; do
-			RALLAR_API_REPLICA_PORTS_UPSTREAMS="${RALLAR_API_REPLICA_PORTS_UPSTREAMS:+${RALLAR_API_REPLICA_PORTS_UPSTREAMS} }127.0.0.1:${port}"
+			RALLAR_API_REPLICA_PORTS_UPSTREAMS="${RALLAR_API_REPLICA_PORTS_UPSTREAMS:+${RALLAR_API_REPLICA_PORTS_UPSTREAMS} }${RALLAR_API_REPLICA_HOSTNAME}:${port}"
 		done
 		;;
 	control)
@@ -139,7 +143,7 @@ rallar_controller_role_url_origin() {
 }
 
 # Writes the api role's api-v1 replica systemd units and removes those the list no longer names.
-# Each replica binds its own port (from RALLAR_API_REPLICA_PORTS) and shares the one Postgres
+# Each replica binds its own loopback port (from RALLAR_API_REPLICA_PORTS) and shares the one Postgres
 # store in the env file.
 write_rallar_api_replica_units() {
 	local api_replica_index=0 api_replica_port
@@ -160,6 +164,7 @@ Group=rallar
 WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
 EnvironmentFile=/etc/rallar/api-v1.env
 EnvironmentFile=-/etc/rallar/api-v1.secrets.env
+Environment=RALLAR_HTTP_HOSTNAME=${RALLAR_API_REPLICA_HOSTNAME}
 ExecStart=/usr/bin/env PORT=${api_replica_port} /usr/local/bin/bun run src/main.ts
 SyslogIdentifier=${api_replica_service%.service}
 Restart=always
@@ -219,6 +224,9 @@ ${RALLAR_API_HOST:-${RALLAR_API_HOST_DEFAULT}} {
 		lb_try_duration 5s
 		health_uri /api/config
 		health_interval 5s
+		header_up X-Real-IP {remote_host}
+		header_up -Cf-Connecting-Ip
+		header_up -Forwarded
 	}
 }
 

@@ -42,8 +42,11 @@ public addresses belong in the two configuration settings, independently of the 
 The configuration reader recognizes only these operational overrides:
 
 - Profile: `RALLAR_API_CONFIGURATION_PROFILE`.
-- HTTP and public URLs: `PORT`, `CORS_ORIGINS`, `RALLAR_API_BASE_URL`,
-  `RALLAR_WS_BASE_URL`, `RALLAR_SHUTDOWN_DEADLINE_MS`. No committed profile
+- HTTP and public URLs: `RALLAR_HTTP_HOSTNAME`, `PORT`, `CORS_ORIGINS`, `RALLAR_API_BASE_URL`,
+  `RALLAR_WS_BASE_URL`, `RALLAR_SHUTDOWN_DEADLINE_MS`. `RALLAR_HTTP_HOSTNAME`
+  (`http.hostname`) is the bind address. No committed profile names it: the
+  decoder binds every interface (`0.0.0.0`), as local dev, CI and containers
+  need, and the Hetzner replica units set `127.0.0.1` because Caddy fronts them. No committed profile
   names the shutdown deadline (`http.shutdownDeadlineMs`): the decoder applies
   the shared Bun server default from `packages/shared-server/process`, and the
   hosted units set the variable with their `TimeoutStopSec`. Its drain (the

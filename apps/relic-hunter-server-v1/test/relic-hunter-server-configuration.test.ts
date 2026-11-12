@@ -49,6 +49,7 @@ describe('Relic Hunter server configuration', () => {
 
         expect(configuration.http).toBe(configuration.apiV1.http);
         expect(configuration.http).toEqual({
+            hostname: '0.0.0.0',
             port: 8090,
             corsOrigins: ['http://localhost:5175', 'https://relic.example.test'],
             preflightMaxAgeSeconds: 600,
