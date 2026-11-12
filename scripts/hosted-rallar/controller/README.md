@@ -98,14 +98,15 @@ shell history (api role):
 ```
 
 The script prompts for `METERED_APP_NAME` and a silent `METERED_API_KEY`, writes
-`/etc/rallar/api-v1.secrets.env` as a root-only `0600` file, installs a systemd
-drop-in for `rallar-api-v1.service`, reloads systemd, and restarts API-v1.
+`/etc/rallar/api-v1.secrets.env` as a root-only `0600` file, and restarts every
+API replica the role lists (each replica unit already reads that file, and reads
+it only at start).
 When the secret file already exists, it updates only Metered-owned assignments
 and preserves other supported assignments; an unreadable or unsupported file
 blocks synchronization without replacing it. New Metered values must use the
 same simple unquoted assignment format.
-`02-deploy-controller.sh` also references this optional secret file so future
-redeploys keep Metered enabled when the file exists.
+Every replica unit that `rallar-controller-role.sh` writes names this optional
+secret file, so redeploys keep Metered enabled when the file exists.
 
 Run public smoke checks (api checks the API, control checks the control server
 and SPA, games checks the two game servers):
@@ -1242,6 +1243,8 @@ Systemd services (per role):
 
 ```text
 api     /etc/systemd/system/rallar-api-v1.service
+        /etc/systemd/system/rallar-api-v1-2.service
+        /etc/systemd/system/rallar-api-v1-3.service
 control /etc/systemd/system/rallar-black-box-control.service
         /etc/systemd/system/rallar-black-box-headless-worker.service
 games   /etc/systemd/system/rallar-relic-hunter-server-v1.service
@@ -1258,7 +1261,7 @@ Control server persisted runs (control):
 Useful inspection commands on the VM:
 
 ```sh
-systemctl cat rallar-api-v1                       # api
+systemctl cat 'rallar-api-v1*'                    # api, every replica
 systemctl cat rallar-black-box-control            # control
 systemctl cat rallar-relic-hunter-server-v1       # games
 systemctl cat rallar-ar-eye-hunter-server-v1      # games
@@ -1269,10 +1272,10 @@ ls -la /var/www/rallar-black-box                  # api
 ## Useful Status Commands
 
 ```sh
-systemctl status rallar-api-v1 --no-pager
+systemctl status 'rallar-api-v1*' --no-pager
 systemctl status rallar-black-box-control --no-pager
 systemctl status caddy --no-pager
-journalctl -u rallar-api-v1 -n 80 --no-pager
+journalctl -u 'rallar-api-v1*' -n 80 --no-pager
 journalctl -u rallar-black-box-control -n 80 --no-pager
 ```
 

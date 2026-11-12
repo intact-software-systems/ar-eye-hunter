@@ -43,4 +43,23 @@ describe('Hetzner api replica units', () => {
         ]);
         expect(units.map((unit) => unit.match(/PORT=(\d+)/)?.[1])).toEqual(['8080', '8081', '8082']);
     });
+
+    // The store-failure fence keeps every replica of the shared store down, whatever the replica list names.
+    it('resolves the API store-failure fence for every replica the role lists', async (context) => {
+        const outcome = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [
+                '-c',
+                'set -euo pipefail; source "$1"; RALLAR_API_REPLICA_SERVICES=(rallar-api-v1.service rallar-api-v1-4.service); ' +
+                'for service in $(rallar_api_replica_services); do printf "%s=%s\\n" "${service}" "$(rallar_role_service_failure_file "${service}")"; done',
+                'api-replica-failure-file',
+                roleHelper
+            ],
+            options: { env: { PATH: process.env.PATH, RALLAR_API_STORE_FAILURE_FILE: '/etc/rallar/api-v1.store-failure' } }
+        });
+
+        expect(outcome.stdout).toBe(
+            'rallar-api-v1.service=/etc/rallar/api-v1.store-failure\nrallar-api-v1-4.service=/etc/rallar/api-v1.store-failure\n'
+        );
+    });
 });

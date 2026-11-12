@@ -107,10 +107,14 @@ apply_rallar_controller_role() {
 
 # The store-failure fence for a DB-bearing service; empty for services without a Postgres store.
 rallar_role_service_failure_file() {
+	local api_replica_service
+	while IFS= read -r api_replica_service; do
+		if [[ "$1" == "${api_replica_service}" ]]; then
+			printf '%s' "${RALLAR_API_STORE_FAILURE_FILE:-${RALLAR_API_STORE_FAILURE_FILE_DEFAULT}}"
+			return 0
+		fi
+	done < <(rallar_api_replica_services)
 	case "$1" in
-	rallar-api-v1.service | rallar-api-v1-2.service | rallar-api-v1-3.service)
-		printf '%s' "${RALLAR_API_STORE_FAILURE_FILE:-${RALLAR_API_STORE_FAILURE_FILE_DEFAULT}}"
-		;;
 	rallar-relic-hunter-server-v1.service) printf '%s' "${RALLAR_RELIC_STORE_FAILURE_FILE:-${RALLAR_RELIC_STORE_FAILURE_FILE_DEFAULT}}" ;;
 	rallar-ar-eye-hunter-server-v1.service) printf '%s' "${RALLAR_AR_EYE_STORE_FAILURE_FILE:-${RALLAR_AR_EYE_STORE_FAILURE_FILE_DEFAULT}}" ;;
 	*) return 1 ;;
