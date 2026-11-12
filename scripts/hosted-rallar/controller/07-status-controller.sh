@@ -216,23 +216,25 @@ COMMIT;" 2>/dev/null)" || {
 }
 
 inspect_services() {
-	local api_state control_state postgres_state caddy_state headless_state
-	local api_process control_process headless_process services processes
-	local api_replicas_json replica_state
-	api_state="$(inspect_service_state rallar-api-v1.service)" || return 1
+	local control_state postgres_state caddy_state headless_state
+	local control_process headless_process services processes
+	local api_replica_service api_replica_states='{}' api_replica_processes='{}' replica_state replica_process
 	postgres_state="$(inspect_service_state postgresql.service)" || return 1
 	caddy_state="$(inspect_service_state caddy.service)" || return 1
 	control_state='not-local'
 	headless_state='not-local'
-	api_process="$(inspect_service_process rallar-api-v1.service)" || return 1
 	control_process='"not-local"'
 	headless_process='"not-local"'
-	api_replicas_json='{}'
-	for api_replica_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
-		replica_state="$(inspect_service_state "${api_replica_service}")" || return 1
-		api_replicas_json="$(jq -cn --argjson acc "${api_replicas_json}" --arg service "${api_replica_service}" --arg state "${replica_state}" \
-			'$acc + {($service): $state}')" || return 1
-	done
+	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'api' ]]; then
+		for api_replica_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+			replica_state="$(inspect_service_state "${api_replica_service}")" || return 1
+			replica_process="$(inspect_service_process "${api_replica_service}")" || return 1
+			api_replica_states="$(jq -cn --argjson acc "${api_replica_states}" --arg service "${api_replica_service}" \
+				--arg state "${replica_state}" '$acc + {($service): $state}')" || return 1
+			api_replica_processes="$(jq -cn --argjson acc "${api_replica_processes}" --arg service "${api_replica_service}" \
+				--argjson process "${replica_process}" '$acc + {($service): $process}')" || return 1
+		done
+	fi
 	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'control' ]]; then
 		control_state="$(inspect_service_state rallar-black-box-control.service)" || return 1
 		headless_state="$(inspect_service_state rallar-black-box-headless-worker.service)" || return 1
@@ -240,12 +242,11 @@ inspect_services() {
 		headless_process="$(inspect_service_process rallar-black-box-headless-worker.service)" || return 1
 	fi
 	services="$(jq -cn \
-		--arg api "${api_state}" --arg control "${control_state}" \
-		--arg postgres "${postgres_state}" --arg caddy "${caddy_state}" \
-		--arg headless "${headless_state}" --argjson apiReplicas "${api_replicas_json}" \
-		'{api: $api, control: $control, postgres: $postgres, caddy: $caddy, headless: $headless, apiReplicas: $apiReplicas}')" || return 1
-	processes="$(jq -cn --argjson api "${api_process}" --argjson control "${control_process}" \
-		--argjson headless "${headless_process}" '{api: $api, control: $control, headless: $headless}')" || return 1
+		--arg control "${control_state}" --arg postgres "${postgres_state}" --arg caddy "${caddy_state}" \
+		--arg headless "${headless_state}" --argjson apiReplicas "${api_replica_states}" \
+		'{control: $control, postgres: $postgres, caddy: $caddy, headless: $headless, apiReplicas: $apiReplicas}')" || return 1
+	processes="$(jq -cn --argjson apiReplicas "${api_replica_processes}" --argjson control "${control_process}" \
+		--argjson headless "${headless_process}" '{apiReplicas: $apiReplicas, control: $control, headless: $headless}')" || return 1
 	jq -cn --argjson services "${services}" --argjson processes "${processes}" '{services: $services, processes: $processes}'
 }
 

@@ -221,7 +221,20 @@ describe('hosted operator inspect', () => {
         expect(evidence.operatorSettings.VITE_RALLAR_APPLICATION_ID).toEqual({ present: true, value: 'prior-app', source: 'spa-environment' });
         expect(Object.keys(evidence.operatorSettings)).toHaveLength(10);
         // The api role no longer probes the co-located control/headless services (moved to a separate host).
-        expect(evidence.processes).toEqual({ api: true, control: 'not-local', headless: 'not-local' });
+        // Every API replica is described by its own unit; no field speaks for replica 1 alone.
+        const apiReplicas = ['rallar-api-v1.service', 'rallar-api-v1-2.service', 'rallar-api-v1-3.service'];
+        expect(evidence.processes).toEqual({
+            apiReplicas: Object.fromEntries(apiReplicas.map((unit) => [unit, true])),
+            control: 'not-local',
+            headless: 'not-local'
+        });
+        expect(evidence.services).toEqual({
+            apiReplicas: Object.fromEntries(apiReplicas.map((unit) => [unit, 'active'])),
+            control: 'not-local',
+            postgres: 'active',
+            caddy: 'active',
+            headless: 'not-local'
+        });
         expect(evidence.database).toEqual({
             databaseOid: 1,
             roleOid: 2,
