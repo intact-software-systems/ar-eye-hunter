@@ -1,5 +1,8 @@
 import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts';
-import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestMessagesSendCommand,
+    RallarBlackBoxTestRecord
+} from '../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
@@ -7,8 +10,8 @@ import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './
 /** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
 export const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 
-/** A `room.` topic makes any send room-scoped, so the world cell publishes under `app.`. */
-export const ALM_CONFORMANCE_WORLD_TOPIC_ID = 'app.alm-conformance.world';
+/** A `room.` topic makes any send room-scoped, so a world send publishes under `app.`. */
+const ALM_CONFORMANCE_WORLD_TOPIC_ID = 'app.alm-conformance.world';
 
 /** The granted topic the lanes' API profiles install; only a session that elected to receive it is sent its messages. */
 export const ALM_CONFORMANCE_GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
@@ -19,6 +22,14 @@ export function toScenarioTopicId(step: AlmConformanceStepInput): string {
         return step.messageSelector.topicId;
     }
     return step.scenarioId === 'world-routing' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : ALM_CONFORMANCE_TOPIC_ID;
+}
+
+/** A world send names no room, so it publishes on the world topic; any other send on its scenario's topic. */
+export function toSendTopicId(
+    step: AlmConformanceStepInput,
+    scope: RallarBlackBoxTestMessagesSendCommand['scope']
+): string {
+    return scope === 'world' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : toScenarioTopicId(step);
 }
 
 export function toScenarioTypeId(step: AlmConformanceStepInput): string {

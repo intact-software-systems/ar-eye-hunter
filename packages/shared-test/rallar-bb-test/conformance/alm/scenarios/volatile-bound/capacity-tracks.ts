@@ -8,11 +8,10 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import {
     toAdmissionCommands,
-    toObserveCommand,
     toResultAssertion,
     toSendCommand
 } from '../../alm-conformance-message-commands.ts';
-import { toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
+import { toOrderingKey, toSettledStateCommands } from '../../alm-conformance-ordering-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -64,7 +63,7 @@ function toCapacityTracksSenderCommands(
         toTrackOpeningSend(sender, REFUSED_INDEX),
         ...toBoundRefusalCommands(sender, REFUSED_INDEX, toLimitRefusalFacts('tracks')),
         ...toLedgerAtTheBoundCommands(sender),
-        ...ADMITTED_INDEXES.flatMap((index) => toTransportAcceptedCommands(sender, index)),
+        ...ADMITTED_INDEXES.flatMap((index) => toSettledStateCommands({ ...sender, index }, 'transport-accepted')),
         ...toBoundReconnectCommands(sender, 'restored', undefined)
     ];
 }
@@ -88,24 +87,6 @@ function toLedgerAtTheBoundCommands(sender: AlmConformanceStepInput): readonly R
                 expected
             })
         )
-    ];
-}
-
-/** A receipt-less send ends at the transport's acceptance. */
-function toTransportAcceptedCommands(
-    sender: AlmConformanceStepInput,
-    index: number
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toObserveCommand({ ...sender, index, state: 'transport-accepted' }),
-        toResultAssertion({
-            step: sender,
-            name: `assert-transport-accepted-${index}`,
-            resultName: `observe-transport-accepted-${index}`,
-            field: 'state',
-            operator: 'equals',
-            expected: 'transport-accepted'
-        })
     ];
 }
 

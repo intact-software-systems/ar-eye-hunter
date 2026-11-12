@@ -11,14 +11,13 @@ import {
 } from '../alm-conformance-diagnostic-waits.ts';
 import { toHeldSendCommands } from '../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
-import { toOrderedSendCommands, toOrderingKey } from '../alm-conformance-ordering-commands.ts';
+import { toOrderedSendCommands, toOrderingKey, toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toAdmissionOutcomeWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-import { toAcknowledgedCommands } from './volatile-bound/volatile-bound-commands.ts';
 
 const RESYNC_GAP_SEQ = 300;
 /** The frame the receiver never receives over RTC: seq 300's record names it as the receiver's prior. */
@@ -55,7 +54,7 @@ function toOrderingResyncSenderCommands(
 function toPriorGapSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toOrderedSendCommands(sender, 1),
-        ...toAcknowledgedCommands(sender, 1),
+        ...toSettledStateCommands({ ...sender, index: 1 }, 'acknowledged'),
         ...toHeldSendCommands({ ...sender, index: RESYNC_PRIOR_SEQ }, toOrderedSendCommands(sender, RESYNC_PRIOR_SEQ)),
         ...toOrderedSendCommands(sender, RESYNC_GAP_SEQ)
     ];

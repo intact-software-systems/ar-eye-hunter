@@ -1,4 +1,5 @@
 import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
@@ -39,6 +40,24 @@ export function toSentCommands(step: AlmConformanceMessageStepInput): readonly R
             field: 'state',
             operator: 'matches',
             expected: '^(transport-accepted|acknowledged)$'
+        })
+    ];
+}
+
+/** The send of `step.index` settled in exactly `state`, which its observation must name. */
+export function toSettledStateCommands(
+    step: AlmConformanceMessageStepInput,
+    state: ALDeliveryState
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...step, state }),
+        toResultAssertion({
+            step,
+            name: `assert-${state}-${step.index}`,
+            resultName: `observe-${state}-${step.index}`,
+            field: 'state',
+            operator: 'equals',
+            expected: state
         })
     ];
 }
