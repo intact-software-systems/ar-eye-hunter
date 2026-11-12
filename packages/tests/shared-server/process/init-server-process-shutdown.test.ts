@@ -21,9 +21,15 @@ class RecordingProcess {
 
 const silent = { log: () => undefined, error: () => undefined };
 
+class ManualClock {
+    epochMs = 1_000;
+    readonly nowMs = (): number => this.epochMs;
+}
+
 describe('initServerProcessShutdown', () => {
     it('exits 0 only after the graceful stop resolves', async () => {
         const process = new RecordingProcess();
+        const clock = new ManualClock();
         const effects: string[] = [];
         let finishStop!: () => void;
         initServerProcessShutdown({
@@ -35,7 +41,8 @@ describe('initServerProcessShutdown', () => {
                     finishStop = resolve;
                 });
             },
-            log: silent
+            log: silent,
+            nowMs: clock.nowMs
         });
 
         process.send('SIGTERM');
@@ -49,11 +56,13 @@ describe('initServerProcessShutdown', () => {
 
     it('exits 1 when a stop step failed', async () => {
         const process = new RecordingProcess();
+        const clock = new ManualClock();
         initServerProcessShutdown({
             process,
             signals: ['SIGINT'],
             stop: () => Promise.reject(new Error('drain failed')),
-            log: silent
+            log: silent,
+            nowMs: clock.nowMs
         });
 
         process.send('SIGINT');
@@ -64,13 +73,15 @@ describe('initServerProcessShutdown', () => {
 
     it('treats a stop that throws before returning its promise as a failed stop', async () => {
         const process = new RecordingProcess();
+        const clock = new ManualClock();
         initServerProcessShutdown({
             process,
             signals: ['SIGTERM'],
             stop: () => {
                 throw new Error('stop step threw synchronously');
             },
-            log: silent
+            log: silent,
+            nowMs: clock.nowMs
         });
 
         expect(() => process.send('SIGTERM')).not.toThrow();
@@ -81,6 +92,7 @@ describe('initServerProcessShutdown', () => {
 
     it('forces exit 1 on a second signal without starting a second stop', async () => {
         const process = new RecordingProcess();
+        const clock = new ManualClock();
         const stops: string[] = [];
         initServerProcessShutdown({
             process,
@@ -89,14 +101,46 @@ describe('initServerProcessShutdown', () => {
                 stops.push('stop');
                 return new Promise(() => undefined);
             },
-            log: silent
+            log: silent,
+            nowMs: clock.nowMs
         });
 
         process.send('SIGTERM');
         await Promise.resolve();
+        clock.epochMs += 1_000;
         process.send('SIGINT');
         await Promise.resolve();
 
         expect({ stops, exits: process.exits }).toEqual({ stops: ['stop'], exits: [1] });
+    });
+
+    it('treats a repeat delivered within a second, as Ctrl+C under npm delivers SIGINT twice, as the same request', async () => {
+        const process = new RecordingProcess();
+        const clock = new ManualClock();
+        const stops: string[] = [];
+        let finishStop!: () => void;
+        initServerProcessShutdown({
+            process,
+            signals: ['SIGINT'],
+            stop: () => {
+                stops.push('stop');
+                return new Promise((resolve) => {
+                    finishStop = resolve;
+                });
+            },
+            log: silent,
+            nowMs: clock.nowMs
+        });
+
+        process.send('SIGINT');
+        await Promise.resolve();
+        clock.epochMs += 999;
+        process.send('SIGINT');
+        await Promise.resolve();
+        expect({ stops, exits: process.exits }).toEqual({ stops: ['stop'], exits: [] });
+
+        finishStop();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(process.exits).toEqual([0]);
     });
 });

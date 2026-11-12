@@ -34,7 +34,8 @@ export async function serveApiApplication(
         process,
         signals: ['SIGTERM', 'SIGINT'],
         stop: () => stopApiApplication(input, startup.httpServer),
-        log: console
+        log: console,
+        nowMs: Date.now
     });
     return startup.httpServer;
 }

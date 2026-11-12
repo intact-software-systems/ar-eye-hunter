@@ -125,7 +125,13 @@ const server = Bun.serve<ControlSocketData>({
 
 console.log(`Rallar black-box control server listening on http://localhost:${port}`);
 console.log(`Agent WebSocket endpoint: ws://localhost:${port}/control`);
-initServerProcessShutdown({ process, signals: ['SIGTERM', 'SIGINT'], stop: stopControlServer, log: console });
+initServerProcessShutdown({
+    process,
+    signals: ['SIGTERM', 'SIGINT'],
+    stop: stopControlServer,
+    log: console,
+    nowMs: timers.nowMs
+});
 
 /** Control state lives in memory until the flush, so sockets are cut first and the flush sees every last change. */
 async function stopControlServer(): Promise<void> {
