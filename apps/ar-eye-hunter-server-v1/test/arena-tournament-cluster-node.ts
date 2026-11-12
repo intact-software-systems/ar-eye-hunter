@@ -71,7 +71,7 @@ export class ArenaTournamentClusterNode {
                     const connection = new ConnectionContext({
                         id: ws.data.id,
                         generationId: ws.data.generationId,
-                        socket: ws as unknown as WebSocket
+                        socket: ws
                     });
                     this.socket.registerConnection(connection);
                     this.socket.dispatchConnectionOpen(connection);
@@ -86,7 +86,7 @@ export class ArenaTournamentClusterNode {
                     const connection = this.socket.connections.get(ws.data.id) ?? new ConnectionContext({
                         id: ws.data.id,
                         generationId: ws.data.generationId,
-                        socket: ws as unknown as WebSocket
+                        socket: ws
                     });
                     this.socket.dispatchConnectionClose(connection, code, reason);
                 }

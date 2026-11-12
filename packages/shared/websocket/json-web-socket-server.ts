@@ -23,10 +23,14 @@ export interface EncodedJsonWebSocketMessage {
 }
 
 export namespace ConnectionContext {
-    /** The server side of one socket as the runtime boundary (Bun's `ServerWebSocket`) exposes it. */
+    /**
+     * The server side of one socket as the runtime boundary (Bun's `ServerWebSocket`) exposes it. `send` returns
+     * Bun's status: the bytes written, `-1` when the frame is queued behind backpressure (it is still sent), or `0`
+     * when the socket dropped the frame.
+     */
     export interface Socket {
         readonly readyState: number;
-        send(text: string): void;
+        send(text: string): number;
         close(code?: number, reason?: string): void;
     }
 
@@ -35,6 +39,20 @@ export namespace ConnectionContext {
         readonly socket: Socket;
         readonly generationId?: string;
         readonly generationStartedAtEpochMs?: number;
+    }
+}
+
+/** Bun's `send` status for a frame the socket dropped instead of writing or queueing. */
+const DROPPED_FRAME = 0;
+
+/** A frame the socket refused: the send fails exactly as a throwing native send does. */
+export class JsonWebSocketDroppedFrameError extends Error {
+    override readonly name = 'JsonWebSocketDroppedFrameError';
+    readonly connectionId: string;
+
+    constructor(connectionId: string) {
+        super(`JsonWebSocketServer: the socket dropped the frame for ${connectionId}`);
+        this.connectionId = connectionId;
     }
 }
 
@@ -294,7 +312,10 @@ export class JsonWebSocketServer {
         if (evidence !== undefined) {
             evidence.nativeCall = 'invoked';
         }
-        send.call(socket, text);
+        // A dropped frame never reached submission, so the evidence keeps `invoked`, as for a native throw.
+        if (send.call(socket, text) === DROPPED_FRAME) {
+            throw new JsonWebSocketDroppedFrameError(connectionId);
+        }
         if (evidence !== undefined) {
             evidence.nativeCall = 'returned';
         }
@@ -306,14 +327,7 @@ export class JsonWebSocketServer {
             return false;
         }
 
-        try {
-            ctx.socket.send(encoded.text);
-            return true;
-        }
-        catch (error) {
-            console.error(`WebSocket send failed for ${connectionId}`, error);
-            return false;
-        }
+        return this.trySendText(ctx, encoded.text);
     }
 
     trySendEncodedToContext(
@@ -324,14 +338,7 @@ export class JsonWebSocketServer {
             return false;
         }
 
-        try {
-            context.socket.send(encoded.text);
-            return true;
-        }
-        catch (error) {
-            console.error(`WebSocket send failed for ${context.id}`, error);
-            return false;
-        }
+        return this.trySendText(context, encoded.text);
     }
 
     broadcast(data: unknown, filter?: (ctx: ConnectionContext) => boolean): number {
@@ -346,14 +353,24 @@ export class JsonWebSocketServer {
                 continue;
             }
 
-            try {
-                ctx.socket.send(encoded.text);
+            if (this.trySendText(ctx, encoded.text)) {
                 count += 1;
-            }
-            catch (e) {
-                console.error('Broadcast send failed:', e);
             }
         }
         return count;
+    }
+
+    private trySendText(ctx: ConnectionContext, text: string): boolean {
+        try {
+            if (ctx.socket.send(text) === DROPPED_FRAME) {
+                console.error(`WebSocket frame dropped for ${ctx.id}`);
+                return false;
+            }
+            return true;
+        }
+        catch (error) {
+            console.error(`WebSocket send failed for ${ctx.id}`, error);
+            return false;
+        }
     }
 }

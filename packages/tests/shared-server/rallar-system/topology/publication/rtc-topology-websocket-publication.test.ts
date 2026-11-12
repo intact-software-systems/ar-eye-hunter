@@ -411,11 +411,12 @@ class FakeSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('RTC topology publication tests require JSON text messages');
         }
         this.sent.push(decodePersistedALMessage(data));
+        return data.length;
     }
 
     async dispatchMessage(message: ALMessage): Promise<void> {

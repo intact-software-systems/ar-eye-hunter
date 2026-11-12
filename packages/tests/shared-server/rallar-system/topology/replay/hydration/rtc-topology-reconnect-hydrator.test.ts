@@ -638,11 +638,12 @@ class FakeWebSocket extends EventTarget implements WebSocket {
     readyState: WebSocket['readyState'] = FakeWebSocket.OPEN;
     readonly sent: string[] = [];
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('Fake RTC topology WebSocket accepts text only');
         }
         this.sent.push(data);
+        return data.length;
     }
 
     close(_code?: number, _reason?: string): void {

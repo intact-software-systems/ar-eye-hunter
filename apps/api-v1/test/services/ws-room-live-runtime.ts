@@ -57,6 +57,7 @@ export function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
         webSocket.send = (data) => {
             assert.ok(typeof data === 'string');
             sent.push({ sessionId, encoded: data });
+            return data.length;
         };
         attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: webSocket }));
     }

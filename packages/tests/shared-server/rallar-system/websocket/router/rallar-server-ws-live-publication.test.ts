@@ -344,7 +344,7 @@ describe('Rallar server WS live cluster publication', () => {
 
     it('retains normal local socket failure details after successful cluster publication', async () => {
         class FailingWebSocket extends TestWebSocket {
-            override send(): void {
+            override send(): number {
                 throw new Error('socket send failed');
             }
         }

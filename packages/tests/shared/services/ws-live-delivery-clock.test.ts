@@ -40,8 +40,9 @@ it('uses the service clock for live admission and rechecks message expiry before
     const service = createClockService(fixture);
     const send = fixture.first.send.bind(fixture.first);
     vi.spyOn(fixture.first, 'send').mockImplementation((data) => {
-        send(data);
+        const written = send(data);
         fixture.clock.epochMs = 2000;
+        return written;
     });
     onTestFinished(() => {
         vi.restoreAllMocks();

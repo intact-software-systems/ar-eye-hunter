@@ -183,7 +183,7 @@ function rejectUnusedOperation<T>(): Promise<T> {
     return Promise.reject(new Error('operation not used'));
 }
 
-function createSocket(readyState: WebSocket['readyState']): WebSocket {
+function createSocket(readyState: WebSocket['readyState']): TestWebSocket {
     return new TestWebSocket(readyState);
 }
 
@@ -210,5 +210,7 @@ class TestWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(): void {}
+    send(): number {
+        return 1;
+    }
 }

@@ -294,7 +294,7 @@ class ReceiptOwnerFixture {
             if (scenario === 'native-throw' || scenario === 'direct-failure') {
                 throw new Error('native fixture failure');
             }
-            nativeSend(data);
+            return nativeSend(data);
         };
         if (scenario === 'later-throw') {
             const encode = this.socket.encode.bind(this.socket);

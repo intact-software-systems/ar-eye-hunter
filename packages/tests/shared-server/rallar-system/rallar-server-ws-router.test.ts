@@ -1519,11 +1519,12 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('Router ingress test expects JSON text');
         }
         this.sent.push(decodePersistedALMessage(data));
+        return data.length;
     }
 
     async receive(message: ALMessage): Promise<void> {
@@ -1630,6 +1631,7 @@ function createRecordingWsServer(options: RecordingWsServerInput = {}): Recordin
                 throw new TypeError('Router fixture expects a serialized AL frame');
             }
             sent.push({ connectionId, data: decodePersistedALMessage(data) });
+            return data.length;
         };
         attachTestWebSocket(server, new ConnectionContext({ id: connectionId, socket }));
     }

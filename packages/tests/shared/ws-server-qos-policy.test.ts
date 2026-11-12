@@ -287,6 +287,36 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         }
     });
 
+    it('counts a frame the Bun socket dropped as a failed live send, not a delivery', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const socket = createRecordingWsServer({ droppingConnectionIds: ['conn-3'] });
+        const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
+            readAuthenticatedConnectionScope: () => undefined,
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
+        onTestFinished(() => service.dispose());
+        const msg = shared.newALBroadcastMessage(
+            'server-1',
+            { topicId: 'chat', resourceId: 'msg-dropped-frame', contextId: 'room-1' },
+            'room',
+            'chat.message.v1',
+            { text: 'dropped' },
+            { groupRef: groupRef('room-1') }
+        );
+
+        const result = service.sendToTargetsWithResult({ message: msg, sentPositions: null });
+
+        expect({
+            status: result.status,
+            sentCount: result.sentCount,
+            failedPeers: result.failures.map((failure) => failure.peerId)
+        }).toEqual({ status: 'partial-failure', sentCount: 2, failedPeers: ['peer-3'] });
+    });
+
     it('treats targeted broadcast messages with no recipients as a successful no-op', async () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
@@ -830,10 +860,11 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
 interface RecordingWsServerInput {
     readonly failingConnectionIds?: readonly string[];
+    readonly droppingConnectionIds?: readonly string[];
 }
 
 function createRecordingWsServer(options: RecordingWsServerInput = {}): RecordingJsonWebSocketServer {
-    return new RecordingJsonWebSocketServer(options.failingConnectionIds ?? []);
+    return new RecordingJsonWebSocketServer(options.failingConnectionIds ?? [], options.droppingConnectionIds ?? []);
 }
 
 function readTestAuthenticatedScope(
@@ -859,9 +890,10 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
     readonly sent: RecordingJsonWebSocketServer.RecordedSend[] = [];
     private readonly sockets = new Map<string, ReceivingWebSocket>();
 
-    constructor(failingConnectionIds: readonly string[]) {
+    constructor(failingConnectionIds: readonly string[], droppingConnectionIds: readonly string[]) {
         super();
         const failing = new Set(failingConnectionIds);
+        const dropping = new Set(droppingConnectionIds);
         for (const connectionId of ['conn-1', 'conn-2', 'conn-3']) {
             const socket = new ReceivingWebSocket();
             socket.send = (data) => {
@@ -871,7 +903,11 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
                 if (typeof data !== 'string') {
                     throw new TypeError('Expected serialized AL message');
                 }
+                if (dropping.has(connectionId)) {
+                    return 0;
+                }
                 this.sent.push({ connectionId, data: decodePersistedALMessage(data) });
+                return data.length;
             };
             this.sockets.set(connectionId, socket);
             attachTestWebSocket(this, new ConnectionContext({ id: connectionId, socket }));
@@ -923,7 +959,9 @@ class ReceivingWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(_data: string | ArrayBufferLike | Blob | ArrayBufferView): void {}
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
+        return typeof data === 'string' ? data.length : 0;
+    }
 
     async receive(message: ALMessage): Promise<void> {
         const event = new MessageEvent('message', { data: JSON.stringify(message) });

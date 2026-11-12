@@ -196,8 +196,9 @@ class RecordingOpenSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(data: string): void {
+    send(data: string): number {
         this.sentPayloads.push(data);
+        return data.length;
     }
 
     async dispatchMessage(message: ALMessage): Promise<void> {

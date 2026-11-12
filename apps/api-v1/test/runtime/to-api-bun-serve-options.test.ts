@@ -51,3 +51,10 @@ test('a completion wait that no Bun idle bound can outlast is a configuration er
             error.issues.some((issue) => issue.path === 'appInbox.completionWait.maxElapsedMs')
     );
 });
+
+test('a WebSocket past its backpressure limit closes instead of silently dropping frames into an open stream', () => {
+    const options = toApiBunServeOptions(decodeWithCompletionWait(undefined), handlers);
+
+    assert.equal(options.websocket.closeOnBackpressureLimit, true);
+    assert.equal(options.websocket.message, handlers.websocket.message);
+});

@@ -280,7 +280,9 @@ class CloseSocket extends EventTarget implements WebSocket {
         this.dispatchClose();
     }
 
-    send(): void {}
+    send(): number {
+        return 1;
+    }
 
     dispatchClose(): void {
         this.dispatchEvent(new CloseEvent('close', { code: 1000, reason: 'closed' }));

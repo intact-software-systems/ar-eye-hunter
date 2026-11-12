@@ -174,7 +174,9 @@ class OpenSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(): void {}
+    send(): number {
+        return 1;
+    }
 }
 
 function createClientSnapshot(

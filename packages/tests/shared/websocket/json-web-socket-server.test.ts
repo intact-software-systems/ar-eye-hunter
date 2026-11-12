@@ -6,7 +6,11 @@ import {
     vi
 } from 'vitest';
 
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import {
+    ConnectionContext,
+    JsonWebSocketDroppedFrameError,
+    JsonWebSocketServer
+} from '@shared/websocket/json-web-socket-server.ts';
 
 import { attachTestWebSocket } from './attach-test-web-socket.ts';
 import { TestWebSocket } from './test-web-socket.ts';
@@ -304,4 +308,77 @@ describe('JsonWebSocketServer', () => {
         });
         expect(socket.readyState).toBe(TestWebSocket.CLOSED);
     });
+
+    describe('Bun send outcomes', () => {
+        it('fails a send whose frame the socket dropped and keeps the native call unreturned', () => {
+            const server = new JsonWebSocketServer();
+            const socket = new SendOutcomeSocket(DROPPED);
+            server.registerConnection(new ConnectionContext({ id: 'slow', socket }));
+            const evidence: JsonWebSocketServer.SendEvidence = { nativeCall: 'not-called' };
+
+            expect(() => server.sendEncoded('slow', server.encode({ frame: 1 }), evidence)).toThrow(
+                JsonWebSocketDroppedFrameError
+            );
+            expect({ sent: socket.sent, nativeCall: evidence.nativeCall }).toEqual({
+                sent: ['{"frame":1}'],
+                nativeCall: 'invoked'
+            });
+        });
+
+        it('treats a frame queued behind backpressure as sent', () => {
+            const server = new JsonWebSocketServer();
+            const socket = new SendOutcomeSocket(BACKPRESSURED);
+            server.registerConnection(new ConnectionContext({ id: 'busy', socket }));
+            const evidence: JsonWebSocketServer.SendEvidence = { nativeCall: 'not-called' };
+
+            server.sendEncoded('busy', server.encode({ frame: 1 }), evidence);
+
+            expect(evidence.nativeCall).toBe('returned');
+        });
+
+        it('reports a dropped frame as unsent from every best-effort send', () => {
+            vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            const server = new JsonWebSocketServer();
+            const dropped = new ConnectionContext({ id: 'dropped', socket: new SendOutcomeSocket(DROPPED) });
+            const queued = new ConnectionContext({ id: 'queued', socket: new SendOutcomeSocket(BACKPRESSURED) });
+            server.registerConnection(dropped);
+            server.registerConnection(queued);
+            const encoded = server.encode({ frame: 2 });
+
+            expect({
+                tryDropped: server.trySendEncoded('dropped', encoded),
+                tryQueued: server.trySendEncoded('queued', encoded),
+                contextDropped: server.trySendEncodedToContext(dropped, encoded),
+                contextQueued: server.trySendEncodedToContext(queued, encoded),
+                broadcastCount: server.broadcast({ frame: 3 })
+            }).toEqual({
+                tryDropped: false,
+                tryQueued: true,
+                contextDropped: false,
+                contextQueued: true,
+                broadcastCount: 1
+            });
+        });
+    });
 });
+
+/** Bun's `ServerWebSocket.send` statuses. */
+const DROPPED = 0;
+const BACKPRESSURED = -1;
+
+class SendOutcomeSocket implements ConnectionContext.Socket {
+    readonly readyState = 1;
+    readonly sent: string[] = [];
+    readonly #outcome: number;
+
+    constructor(outcome: number) {
+        this.#outcome = outcome;
+    }
+
+    send(text: string): number {
+        this.sent.push(text);
+        return this.#outcome;
+    }
+
+    close(): void {}
+}

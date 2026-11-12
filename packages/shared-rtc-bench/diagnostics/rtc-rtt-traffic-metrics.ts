@@ -40,7 +40,9 @@ class RtcRttTrafficWebSocket implements ConnectionContext.Socket {
 
     close(): void {}
 
-    send(): void {}
+    send(): number {
+        return 1;
+    }
 }
 
 function parseArgs(args: readonly string[]): RtcRttTrafficArgs {

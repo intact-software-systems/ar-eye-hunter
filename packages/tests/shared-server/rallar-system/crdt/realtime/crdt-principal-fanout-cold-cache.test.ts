@@ -231,8 +231,9 @@ class RecordingWebSocket extends EventTarget implements WebSocket {
         this.sent = sent;
     }
 
-    send(data: string): void {
+    send(data: string): number {
         this.sent.push(data);
+        return data.length;
     }
 
     close(): void {}

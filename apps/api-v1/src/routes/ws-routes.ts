@@ -107,10 +107,10 @@ export function createApiWebSocketHandlers(
     // A session id maps to at most one live socket, but a Bun server socket is its own instance. A
     // replaced socket's close must dispatch to its own context so it never evicts the replacement:
     // dispatchConnectionClose deletes only when the map still points at that context.
-    const connectionBySocket = new WeakMap<WebSocket, ConnectionContext>();
+    const connectionBySocket = new WeakMap<ConnectionContext.Socket, ConnectionContext>();
     return {
         open(ws) {
-            const socket = ws as unknown as WebSocket;
+            const socket = ws;
             const connection = new ConnectionContext({
                 id: ws.data.sessionId,
                 socket,
@@ -122,13 +122,13 @@ export function createApiWebSocketHandlers(
             socketServer.dispatchConnectionOpen(connection);
         },
         message(ws, data) {
-            const connection = connectionBySocket.get(ws as unknown as WebSocket);
+            const connection = connectionBySocket.get(ws);
             if (connection !== undefined) {
                 void socketServer.dispatchConnectionMessage(connection, data);
             }
         },
         close(ws, code, reason) {
-            const socket = ws as unknown as WebSocket;
+            const socket = ws;
             const connection = connectionBySocket.get(socket) ?? new ConnectionContext({
                 id: ws.data.sessionId,
                 socket,

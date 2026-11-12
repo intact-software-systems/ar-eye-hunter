@@ -552,9 +552,10 @@ class BenchmarkSocket implements ConnectionContext.Socket {
 
     close(): void {}
 
-    send(text: string): void {
+    send(text: string): number {
         this.sentBytes += text.length;
         this.sentCount += 1;
+        return text.length;
     }
 }
 

@@ -1093,6 +1093,7 @@ function addRecordingConnection(server: JsonWebSocketServer, sessionId: string):
     socket.send = (frame) => {
         assert.equal(typeof frame, 'string');
         frames.push(String(frame));
+        return frame.length;
     };
     attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket }));
     return frames;

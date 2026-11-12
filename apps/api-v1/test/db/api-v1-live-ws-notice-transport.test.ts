@@ -125,7 +125,7 @@ test('a separate local receiver sends only to its currently authenticated addres
         'remote-session',
         new ConnectionContext({
             id: 'remote-session',
-            socket: { readyState: WebSocket.OPEN } as WebSocket,
+            socket: { readyState: WebSocket.OPEN, send: (text: string) => text.length, close: () => undefined },
             generationId: 'generation',
             generationStartedAtEpochMs: 100
         })
