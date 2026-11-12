@@ -128,7 +128,6 @@
     "newLaneConcurrency": 4,
     "newLaneHeldRows": 16,
     "completionWait": {
-      "maxElapsedMs": 30000,
       "retryIntervalMs": 250,
       "maxRetryIntervalMs": 1000,
       "jitterRatio": 0.1

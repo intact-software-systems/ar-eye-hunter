@@ -2,6 +2,8 @@ import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait.ts';
+
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
@@ -747,6 +749,19 @@ test('configuration decoder bounds password derivations by the host cores minus 
         environmentSource: { authentication: { maxConcurrentPasswordDerivations: 7 }, group: { roomOwnedAppDataBindings: [] } }
     });
     assert.equal(fromEnvironment.authentication.maxConcurrentPasswordDerivations, 7);
+});
+
+test('the AppInbox completion wait defaults to the shared API mutation ceiling unless a source names one', async () => {
+    const defaultsSource = await readJsonResource('defaults-config.json');
+    const fromDefault = decodeApiV1Configuration({ ...validDecodeApiV1ConfigurationInput(), defaultsSource });
+    assert.equal(fromDefault.appInbox.completionWait.maxElapsedMs, API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS);
+
+    const fromEnvironment = decodeApiV1Configuration({
+        ...validDecodeApiV1ConfigurationInput(),
+        defaultsSource,
+        environmentSource: { appInbox: { completionWait: { maxElapsedMs: 5_000 } }, group: { roomOwnedAppDataBindings: [] } }
+    });
+    assert.equal(fromEnvironment.appInbox.completionWait.maxElapsedMs, 5_000);
 });
 
 test('configuration decoder rejects a host core count that is not a positive safe integer', async () => {

@@ -37,7 +37,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-group",
-            "timeoutMs": 15000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -69,7 +69,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-member",
-            "timeoutMs": 15000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -344,7 +344,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-group",
-            "timeoutMs": 15000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -376,7 +376,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-member",
-            "timeoutMs": 15000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,

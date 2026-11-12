@@ -4,6 +4,7 @@ import {
     MIN_APP_INBOX_FINISHED_RETENTION_MS
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { decodeApiV1Matchmaking } from './decode-api-v1-matchmaking.ts';
@@ -287,6 +288,12 @@ function decodePasswordDerivationBound(
     return Math.max(1, hardwareConcurrency - 1);
 }
 
+/** No committed resource names the wait: a mutation client derives its own budget from the same shared ceiling. */
+function decodeCompletionWaitMaxElapsedMs(values: ApiV1ConfigurationValueDecoder): number {
+    const path = 'appInbox.completionWait.maxElapsedMs';
+    return values.hasValue(path) ? values.integer(path, 0) : API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS;
+}
+
 function decodeDatabasePool(
     decoder: ApiV1ConfigurationValueDecoder,
     path: 'database.applicationPool' | 'database.listenerPool'
@@ -529,7 +536,7 @@ function decodeAppInbox(
         newLaneConcurrency,
         newLaneHeldRows: decodeAppInboxNewLaneHeldRows(decoder, newLaneConcurrency),
         completionWait: {
-            maxElapsedMs: decoder.integer('appInbox.completionWait.maxElapsedMs', 0),
+            maxElapsedMs: decodeCompletionWaitMaxElapsedMs(decoder),
             retryIntervalMs: decoder.integer(
                 'appInbox.completionWait.retryIntervalMs',
                 0

@@ -1,6 +1,8 @@
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait.ts';
+
 import defaultsSource from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
@@ -28,7 +30,7 @@ test('the HTTP idle bound outlasts the default AppInbox completion wait that a m
     const configuration = decodeWithCompletionWait(undefined);
     const options = toApiBunServeOptions(configuration, handlers);
 
-    assert.equal(configuration.appInbox.completionWait.maxElapsedMs, 30_000);
+    assert.equal(configuration.appInbox.completionWait.maxElapsedMs, API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS);
     assert.ok(options.idleTimeout > BUN_DEFAULT_IDLE_TIMEOUT_SECONDS);
     assert.ok(options.idleTimeout * 1000 > configuration.appInbox.completionWait.maxElapsedMs);
     assert.equal(options.port, configuration.http.port);
