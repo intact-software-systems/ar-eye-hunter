@@ -587,7 +587,7 @@ function largeCompositeCommandId(index: number): string {
     return `monitor-large-composite-command-${String(index).padStart(3, '0')}`;
 }
 
-async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
+async function fulfillJson<Body>(route: Route, body: Body, status = 200): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',

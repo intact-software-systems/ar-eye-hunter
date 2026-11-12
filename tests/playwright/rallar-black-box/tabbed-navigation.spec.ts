@@ -4,7 +4,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
+import type { RallarMessageHandler, RallarWsSendInput } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import type { RallarDefaults, RallarStartOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarCreateRoomInput } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 
@@ -718,7 +724,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             rooms: {
                 current: () => undefined,
                 list: () => [],
-                create: async (input: Record<string, unknown>) => {
+                create: async (input: RallarCreateRoomInput) => {
                     (window as any).__quickCreateInputs.push(input);
                     const groupId = typeof input.groupId === 'string'
                         ? input.groupId
@@ -749,7 +755,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             },
             messages: {
                 ws: {
-                    send: async (input: Record<string, unknown>) => {
+                    send: async (input: RallarWsSendInput<ApiJsonValue>) => {
                         (window as any).__quickSendInputs.push(input);
                         return {
                             msgId: sentLifecycle.msgId,
@@ -869,8 +875,21 @@ interface WsProbeScriptArg {
     readonly sentLifecycle: PageSentLifecycle;
 }
 
+interface BulkCommandRequest {
+    readonly agentIds: readonly string[];
+    readonly commandIdPrefix: string;
+    readonly command: Readonly<{ kind: string; }>;
+}
+
 interface QueuedDemoCommand {
-    readonly envelope: Readonly<Record<string, unknown>>;
+    readonly envelope: Readonly<{
+        kind: 'command';
+        protocolVersion: 1;
+        runId: string;
+        agentId: string;
+        commandId: string;
+        command: Readonly<{ kind: string; }>;
+    }>;
     readonly queuedAtEpochMs: number;
     readonly dispatchCount: number;
 }
@@ -932,7 +951,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
         reports: [],
         heartbeats: []
     };
-    let bulkBody: unknown;
+    let bulkBody: BulkCommandRequest | undefined;
     let resetCalled = false;
 
     await page.route('http://localhost:5180/**', async (route) => {
@@ -955,12 +974,8 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             return;
         }
         if (request.method() === 'POST' && url.pathname === '/runs/demo-run/commands') {
-            bulkBody = await request.postDataJSON();
-            const body = bulkBody as {
-                agentIds: string[];
-                commandIdPrefix: string;
-                command: { kind: string; };
-            };
+            const body: BulkCommandRequest = await request.postDataJSON();
+            bulkBody = body;
             run = {
                 ...run,
                 updatedAtEpochMs: Date.now(),
@@ -1093,7 +1108,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
     await expect(panel).toContainText('agent-b');
 
     await panel.getByRole('button', { name: 'Enqueue Selected' }).click();
-    await expect.poll(() => (bulkBody as { agentIds?: string[]; } | undefined)?.agentIds?.length).toBe(2);
+    await expect.poll(() => bulkBody?.agentIds.length).toBe(2);
     await expect(panel).toContainText('agent-a - health');
     await expect(panel).toContainText('agent-b - health');
 
@@ -1727,13 +1742,13 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 expiresAtEpochMs: Date.now() + 60_000
             };
             (window as any).__rallarDirectFacade = {
-                configure: (config: unknown) => {
+                configure: (config: RallarApiClientConfig) => {
                     (window as any).__rallarCallLog.push({
                         kind: 'configure',
                         config
                     });
                 },
-                setDefaults: (defaults: unknown) => {
+                setDefaults: (defaults?: RallarDefaults) => {
                     (window as any).__rallarCallLog.push({
                         kind: 'setDefaults',
                         defaults
@@ -1746,7 +1761,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 auth: {
                     restore: () => session
                 },
-                start: async (config: unknown) => {
+                start: async (config?: RallarStartOptions) => {
                     connected = true;
                     (window as any).__rallarCallLog.push({
                         kind: 'start',
@@ -1764,7 +1779,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 rooms: {
                     current: () => undefined,
                     list: () => [],
-                    create: async (input: Record<string, unknown>) => ({
+                    create: async (input: RallarCreateRoomInput) => ({
                         ...joinedGroupSnapshot,
                         group: {
                             ...joinedGroupSnapshot.group,
@@ -1783,7 +1798,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 },
                 messages: {
                     ws: {
-                        send: async (input: unknown) => {
+                        send: async (input: RallarWsSendInput<ApiJsonValue>) => {
                             if (!connected) {
                                 throw new Error('Rallar direct facade is not connected.');
                             }
@@ -1801,7 +1816,10 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                                 cancel: () => undefined
                             };
                         },
-                        onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
+                        onMessage: (
+                            _selector: RallarMessageSelectorInput,
+                            handler: RallarMessageHandler<ApiJsonValue>
+                        ) => {
                             (window as any).__rallarWsMessageHandler = handler;
                             return () => {
                                 (window as any).__rallarWsMessageHandler = undefined;

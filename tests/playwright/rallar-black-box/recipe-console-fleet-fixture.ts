@@ -169,7 +169,7 @@ function rootSnapshotForCollection(
     snapshot: ControlServerSnapshot,
     reports: readonly ControlFleetRunReport[],
     mode: 'present' | 'absent' | 'empty' | 'schema-error'
-): unknown {
+) {
     if (mode === 'absent') {
         const { fleetReports: _fleetReports, ...core } = snapshot;
         return core;
@@ -541,7 +541,7 @@ function pad(value: number): string {
     return String(value).padStart(2, '0');
 }
 
-async function fulfillJson(route: Route, body: unknown): Promise<void> {
+async function fulfillJson<Body>(route: Route, body: Body): Promise<void> {
     await route.fulfill({
         status: 200,
         contentType: 'application/json',

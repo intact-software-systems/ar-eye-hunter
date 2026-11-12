@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
+import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
@@ -27,7 +28,7 @@ const TARGET_REASONS = {
 
 type ControlMockStep =
     | Readonly<{ kind: 'snapshot'; snapshot: ControlServerSnapshot; }>
-    | Readonly<{ kind: 'raw-snapshot'; snapshot: unknown; }>
+    | Readonly<{ kind: 'raw-snapshot'; snapshot: ApiJsonObject; }>
     | Readonly<{ kind: 'http-error'; status: number; message: string; }>
     | Readonly<{ kind: 'network-error'; }>;
 
@@ -167,10 +168,10 @@ function liveBoardSnapshot(): ControlServerSnapshot {
     };
 }
 
-async function fulfillJson(
+async function fulfillJson<Body>(
     route: Route,
     status: number,
-    body: unknown
+    body: Body
 ): Promise<void> {
     await route.fulfill({
         status,
@@ -187,12 +188,12 @@ async function installControlRouteMock(
     steps: readonly ControlMockStep[],
     options: Readonly<{
         distributedRunsFallback?: readonly ControlDistributedRunSnapshot[];
-        distributedRunsPayload?: unknown;
+        distributedRunsPayload?: ApiJsonValue;
         distributedRunsStatus?: number;
     }> = {}
 ): Promise<ControlRouteMock> {
     let runRequestCount = 0;
-    let latestSnapshot: unknown;
+    let latestSnapshot: ControlServerSnapshot | ApiJsonObject | undefined;
     await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -245,22 +246,14 @@ async function installControlRouteMock(
 }
 
 function controlRunFromSnapshot(
-    snapshot: unknown,
+    snapshot: ControlServerSnapshot | ApiJsonObject | undefined,
     runId: string
 ): ControlRunSnapshot | undefined {
-    if (!snapshot || typeof snapshot !== 'object') {
-        return undefined;
-    }
-    const runs = (snapshot as { runs?: unknown; }).runs;
+    const runs = snapshot?.runs;
     if (!Array.isArray(runs)) {
         return undefined;
     }
-    return runs.find((run): run is ControlRunSnapshot =>
-        Boolean(
-            run && typeof run === 'object' &&
-                (run as { runId?: unknown; }).runId === runId
-        )
-    );
+    return runs.find((run): run is ControlRunSnapshot => isApiJsonObject(run) && run.runId === runId);
 }
 
 function commandContextItem(page: Page, label: string) {
@@ -951,9 +944,9 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
         const nativeClearTimeout = window.clearTimeout.bind(window);
         Object.defineProperty(window, 'setTimeout', {
             configurable: true,
-            value: (handler: TimerHandler, timeout?: number, ...args: unknown[]): number => {
+            value: (handler: TimerHandler, timeout?: number, ...args: never[]): number => {
                 let id = 0;
-                const wrapped = (...callbackArgs: unknown[]): void => {
+                const wrapped = (...callbackArgs: never[]): void => {
                     active.delete(id);
                     if (typeof handler === 'function') {
                         handler(...callbackArgs);
