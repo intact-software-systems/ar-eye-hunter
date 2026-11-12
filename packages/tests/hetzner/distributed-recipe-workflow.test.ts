@@ -17,6 +17,7 @@ import {
 } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { decodeDistributedRunManifest, toDistributedRunManifestValidationText } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
@@ -1295,9 +1296,8 @@ describe('Hetzner workflow contracts and effects', () => {
     it('derives terminal timeout and prints load estimate from manifest metadata', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-manifest-timeout-gh-', secretResponses: completeSecretResponses });
         const manifestPath = 'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json';
-        const { metadata } = JSON.parse(await readFile(path.join(repoRoot, manifestPath), 'utf8')) as {
-            metadata: { recommendedTerminalTimeoutSeconds: number; };
-        };
+        const terminalTimeoutSeconds = createHetznerDistributedManifestCatalog()
+            .find((entry) => entry.filePath === manifestPath)?.manifest.metadata?.recommendedTerminalTimeoutSeconds;
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -1314,9 +1314,9 @@ describe('Hetzner workflow contracts and effects', () => {
         });
 
         const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
-        expect(args).toContain(`terminal_timeout_seconds=${metadata.recommendedTerminalTimeoutSeconds}`);
+        expect(args).toContain(`terminal_timeout_seconds=${terminalTimeoutSeconds}`);
         expect(args).toContain('agent_count=50');
-        expect(stdout).toContain(`Timeout  : ${metadata.recommendedTerminalTimeoutSeconds}`);
+        expect(stdout).toContain(`Timeout  : ${terminalTimeoutSeconds}`);
         expect(stdout).toContain('Topology : RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=51');
         expect(stdout).toContain('Load     : stream frames=72000, logical fanout=3528000');
     });
