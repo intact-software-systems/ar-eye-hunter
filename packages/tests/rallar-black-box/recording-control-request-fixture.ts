@@ -23,9 +23,13 @@ export interface RecordingControlRequest {
 
 /**
  * A request whose every command enqueue an owned HTTP server accepts with 202. The agent comes from the actual
- * `/runs/<run>/agents/<agent>/commands` URL; a body the control server would refuse fails the enqueue.
+ * `/runs/<run>/agents/<agent>/commands` URL; a body the control server would refuse fails the enqueue. A test that
+ * orders the enqueues among its other events passes `onPosted`, told of each command as it is recorded.
  */
-export async function openRecordingControlRequest(runId: string): Promise<RecordingControlRequest> {
+export async function openRecordingControlRequest(
+    runId: string,
+    onPosted: (posted: RecordedControlCommand) => void = () => {}
+): Promise<RecordingControlRequest> {
     const server = createServer((_request, response) => {
         response.writeHead(202, { 'content-type': 'application/json' });
         response.end('{}');
@@ -52,7 +56,9 @@ export async function openRecordingControlRequest(runId: string): Promise<Record
         if (!decoded.ok) {
             throw new Error(decoded.error);
         }
-        posted.push({ url, agentId, commandId: data.commandId, command: decoded.envelope.command });
+        const recorded = { url, agentId, commandId: data.commandId, command: decoded.envelope.command };
+        posted.push(recorded);
+        onPosted(recorded);
         return await post(`http://127.0.0.1:${address.port}`, options);
     });
     return {

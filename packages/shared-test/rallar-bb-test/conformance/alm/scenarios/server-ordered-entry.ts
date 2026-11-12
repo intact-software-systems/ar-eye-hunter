@@ -41,7 +41,7 @@ interface AlmOrderingEntry {
  * `tests/playwright/rallar-black-box/full-stack-helpers.ts:686` `startRecipientRecipeRun`), so the sender principal's
  * track carries at least the sibling's connect event before the sender's own: the sender enters above seq 1, prior 0,
  * the nonzero-entry witness that before Slice 5 read a gap from 1. The exact seq is not the cell's: on one API the
- * track also carries every earlier lane connect of the principal (revision 2 on a fresh API, 41 in a full ws lane run).
+ * track also carries every earlier lane connect of the principal.
  * The sibling, the principal's second session, enters at its first copy, its own connect event at revision 1.
  * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
  * No page states `before-entry` in the window after the last write's copy arrived.

@@ -446,15 +446,21 @@ export class AlmReloadPorts {
 
     /**
      * A recipient page's own send is a WS room publication, a cue: every other page of the room reads it at once and
-     * its handle has left the page. It rides no ordering track and holds no receipt, so the sender's model never sees it.
+     * its handle has left the page. It rides no ordering track and holds no receipt, so the sender's model never sees
+     * it; a recipient send of any other shape is one this port does not model.
      */
     private publishMemberSend(
         role: PortRole,
         command: RallarBlackBoxTestMessagesSendCommand
     ): RallarBlackBoxTestCommandOutcome {
         assert(command.handleId);
+        assert(
+            command.carrier === 'ws' && command.ack === 'none' && command.orderingKey === undefined &&
+                command.seq === undefined && command.toPeer === undefined && command.recipientPeers === undefined,
+            `${command.commandId}: a recipient's send is modelled only as an unordered, unreceipted WS room cue`
+        );
         this.memberSendHandles.add(command.handleId);
-        const msgId = `port-member-message-${this.memberSendHandles.size}`;
+        const msgId = `port-member-message-${command.handleId}`;
         for (const { role: reader } of this.participants.filter((participant) => participant.role !== role)) {
             this.toRuntime(reader).recordEvent(toMemberMessageEvent(reader, msgId, command));
         }

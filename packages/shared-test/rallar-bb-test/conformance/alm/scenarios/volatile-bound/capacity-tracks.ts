@@ -6,6 +6,7 @@ import {
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
+import { ALM_CONFORMANCE_WORLD_SEND_CARRIERS } from '../../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
     toResultAssertion,
@@ -44,7 +45,7 @@ export const capacityTracks: AlmConformanceScenarioDefinition = {
     scenarioId: 'capacity-tracks',
     scenarioKey: 'capacity-tracks',
     tags: FULL_TAGS,
-    carriers: ['ws', 'rtc-with-ws-fallback'],
+    carriers: ALM_CONFORMANCE_WORLD_SEND_CARRIERS,
     roles: ['sender', 'receiver'],
     laneFamily: 'addressed',
     toSenderCommands: toCapacityTracksSenderCommands,

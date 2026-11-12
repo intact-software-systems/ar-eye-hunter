@@ -14,7 +14,7 @@ import type {
 import { toRallarConnectionConfig } from '@shared-test/rallar-bb-test/browser/browser-rallar-command-input.ts';
 import * as AlmRecipes from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { snapshotExecutableRecipe } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { toMergedRuntimeConfig } from '@shared-test/rallar-bb-test/runtime/to-merged-runtime-config.ts';
@@ -24,6 +24,7 @@ import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-sche
 import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 
 const ALM_TOPICS = [
     'rallar.browser.alm.outbound_diagnostics',
@@ -420,16 +421,4 @@ class DeliveryLane {
             attemptRefusalReasons: []
         };
     }
-}
-
-function toNestedCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
-    return commands.flatMap((command) => {
-        if (command.kind === 'loop') {
-            return [command, ...toNestedCommands(command.commands)];
-        }
-        if (command.kind === 'parallel') {
-            return [command, ...command.groups.flatMap((group) => toNestedCommands(group.commands))];
-        }
-        return [command];
-    });
 }

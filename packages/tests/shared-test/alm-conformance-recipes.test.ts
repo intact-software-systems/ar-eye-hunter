@@ -7,7 +7,7 @@ import {
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
@@ -32,6 +32,7 @@ import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { toFaultInjectShape } from './to-fault-inject-shape.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 
 const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 /** A `room.` topic makes any send room-scoped, so the world cell publishes under `app.`. */
@@ -186,33 +187,21 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
     }
 }
 
-/** A recipe's commands with the children of every loop and parallel group, in order. */
-function toNestedCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
-    return commands.flatMap((command) => [
-        command,
-        ...toNestedCommands(
-            command.kind === 'loop'
-                ? command.commands
-                : command.kind === 'parallel'
-                ? command.groups.flatMap((group) => group.commands)
-                : []
-        )
-    ]);
-}
-
 /**
  * A message wait matches no typeId of its own, so it names its pair through what it matches: the marker and carrier
  * of the payload it equals (a cue marker is the pair's key with `-cues`), the pair's typeId as a payload field or in
- * the text it contains, or a payload field naming an identity the pair authored (`alm-<carrier>-<key>-...`).
+ * the text it contains, or a trace or request id field naming an identity one of the pair's roles authored
+ * (`alm-<carrier>-<key>-<role>-...`, so no key matches the ids of a key it prefixes).
  */
 function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: AlmConformanceCarrier, key: string): boolean {
     const typeId = `alm.conformance.${carrier}.${key}`;
     const equals = match.equals;
-    const fields = Object.values(match.payloadFields ?? {});
+    const fields = Object.entries(match.payloadFields ?? {});
+    const authoredIds = ALM_CONFORMANCE_ROLES.map((role) => `alm-${carrier}-${key}-${role}-`);
     return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
-        fields.includes(typeId) ||
+        fields.some(([, value]) => value === typeId) ||
         match.contains?.includes(`"typeId":"${typeId}"`) === true ||
-        fields.some((value) => typeof value === 'string' && value.startsWith(`alm-${carrier}-${key}-`));
+        fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id)));
 }
 
 /** An admission-outcome wait routes on the typeId its `contains` names; a control is scoped by its own protocol id. */
@@ -637,7 +626,17 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('scopes every message wait to its pair by the payload marker it matches', () => {
+    it('claims no wait for a key whose authored ids another key\'s prefix would match', () => {
+        const ageWait: RallarBlackBoxTestWaitMatch = {
+            kind: 'message',
+            payloadFields: { 'data.traceId': 'alm-ws-capacity-age-sender-trace-active' }
+        };
+
+        expect(isPairScopedMessageWait(ageWait, 'ws', 'capacity-age')).toBe(true);
+        expect(isPairScopedMessageWait(ageWait, 'ws', 'capacity')).toBe(false);
+    });
+
+    it('scopes every message wait to its pair: its payload marker and carrier, the pair typeId in a field or its text, or an id the pair authored', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
             for (const scenario of scenarios) {

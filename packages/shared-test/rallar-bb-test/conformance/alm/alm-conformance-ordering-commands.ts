@@ -44,13 +44,14 @@ export function toSentCommands(step: AlmConformanceMessageStepInput): readonly R
     ];
 }
 
-/** The send of `step.index` settled in exactly `state`, which its observation must name. */
+/** The send of `step.index` settled in exactly `state`, which its observation must name; absent, the state's own budget. */
 export function toSettledStateCommands(
     step: AlmConformanceMessageStepInput,
-    state: ALDeliveryState
+    state: ALDeliveryState,
+    budgetMs?: number
 ): readonly RallarBlackBoxTestCommand[] {
     return [
-        toObserveCommand({ ...step, state }),
+        toObserveCommand({ ...step, state, ...(budgetMs === undefined ? {} : { budgetMs }) }),
         toResultAssertion({
             step,
             name: `assert-${state}-${step.index}`,

@@ -510,6 +510,9 @@ describe('ordering-resync authors a real gap over the RTC carriers', () => {
                     seq
                 }))
             );
+            // The gap opens on the receiver's acknowledgement of seq 1, not on a weaker settled state.
+            expect(sender.commands.find((command) => command.commandId === `alm-${carrier}-ordering-resync-sender-assert-acknowledged-1`))
+                .toMatchObject({ kind: 'assert', operator: 'equals', expected: 'acknowledged' });
             for (const command of sender.commands) {
                 expect(validateRallarBlackBoxTestCommand(command), command.commandId).toEqual({ ok: true });
             }

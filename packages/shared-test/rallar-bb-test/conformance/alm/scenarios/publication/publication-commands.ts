@@ -11,7 +11,8 @@ import type {
 
 import { createStableRtcLayoutWait } from '../../../../fixtures/create-stable-rtc-layout-wait.ts';
 import { CONNECT_READINESS_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
-import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
+import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
+import { toSettledStateCommands } from '../../alm-conformance-ordering-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toLoopIterationSendHandleId } from '../../alm-conformance-step-identities.ts';
 
@@ -199,15 +200,7 @@ export function toPublicationVerdictCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     const resultName = `observe-${state}-${index}`;
     return [
-        toObserveCommand({ ...step, index, state, ...(budgetMs === undefined ? {} : { budgetMs }) }),
-        toResultAssertion({
-            step,
-            name: `assert-${state}-${index}`,
-            resultName,
-            field: 'state',
-            operator: 'equals',
-            expected: state
-        }),
+        ...toSettledStateCommands({ ...step, index }, state, budgetMs),
         ...facts.map(([field, expected, operator]) =>
             toResultAssertion({
                 step,

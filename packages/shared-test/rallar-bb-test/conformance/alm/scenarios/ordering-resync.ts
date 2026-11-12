@@ -134,8 +134,7 @@ function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly Ralla
             step: receiver,
             name: 'recovery-owner-invoked',
             topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
-            contains:
-                `"kind":"recovery-owner-invoked","orderingKey":"alm-${receiver.input.carrier}-${receiver.scenarioId}",`
+            contains: `"kind":"recovery-owner-invoked","orderingKey":"${toOrderingKey(receiver)}",`
         }),
         toDiagnosticWait({
             step: receiver,

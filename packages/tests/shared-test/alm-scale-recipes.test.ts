@@ -12,18 +12,9 @@ import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { isRallarGameEnvelope } from '../../shared-web/game/envelopes.ts';
 
-const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
+import { toNestedCommands } from './to-nested-commands.ts';
 
-function flattenCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
-    return commands.flatMap((command) => [
-        command,
-        ...(command.kind === 'loop'
-            ? flattenCommands(command.commands)
-            : command.kind === 'parallel'
-            ? command.groups.flatMap((group) => flattenCommands(group.commands))
-            : [])
-    ]);
-}
+const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
 
 function createExpectedMatch(): ArenaMatchState {
     const baseline: Record<string, ArenaMatchPlayerBaseline> = {};
@@ -118,7 +109,7 @@ describe('ALM scale recipes', () => {
         });
         for (const recipe of scale.recipes) {
             expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
-            const commands = flattenCommands(recipe.commands);
+            const commands = toNestedCommands(recipe.commands);
             const connect = commands.find((command) => command.kind === 'rtc.connect');
             expect(connect).toMatchObject({
                 roomRef: GROUP,
@@ -201,7 +192,7 @@ describe('ALM scale recipes', () => {
         expect(scale.groupAssertions).toHaveLength(231);
         for (const assertion of scale.groupAssertions) {
             const recipe = scale.recipes.find((recipe) => recipe.recipeId === assertion.source.recipeId)!;
-            const sources = flattenCommands(recipe.commands).filter((command) => command.commandId === assertion.source.commandId);
+            const sources = toNestedCommands(recipe.commands).filter((command) => command.commandId === assertion.source.commandId);
             expect(sources).toHaveLength(1);
             expect(assertion.source.commandId).not.toMatch(/sample-stats|shot-receipt/);
         }
@@ -218,7 +209,7 @@ describe('ALM scale recipes', () => {
             response: { acceptedStatusCodes: [200] },
             timeoutMs: 45_000
         });
-        const groupRequests = flattenCommands(recipe.commands).filter((command) => command.kind === 'http.request').slice(1);
+        const groupRequests = toNestedCommands(recipe.commands).filter((command) => command.kind === 'http.request').slice(1);
         expect(groupRequests.map((command) => [command.commandId, command.timeoutMs])).toEqual(
             role === 'director'
                 ? [['alm-scale-director-ensure-group', 8_750], ['alm-scale-director-ensure-member', 8_750]]
@@ -230,7 +221,7 @@ describe('ALM scale recipes', () => {
         'creates the %i-member scale group under the default replanning with the cohort as its capacity, so its last join replans at once (D288)',
         (participantCount) => {
             const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
-            const ensureGroup = flattenCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
+            const ensureGroup = toNestedCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
 
             expect(ensureGroup).toMatchObject({
                 request: {
@@ -243,7 +234,7 @@ describe('ALM scale recipes', () => {
 
     it('creates the scale group under the default replanning, one plan after the join stream, because hosted acceptances of capped-debounce plans queued behind the joins', () => {
         const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
-        const ensureGroup = flattenCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
+        const ensureGroup = toNestedCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
 
         expect(ensureGroup?.kind === 'http.request' ? ensureGroup.request.body : undefined).not.toHaveProperty('lifecyclePolicy');
     });
@@ -252,7 +243,7 @@ describe('ALM scale recipes', () => {
         'allows the %i-member cohort\'s player connect and connected barrier %i ms, 650 ms per participant beyond the setup allowance, because the hosted lane serves about 1.5 joining players per second at 50 members',
         (participantCount, allowanceMs) => {
             const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
-            const [director, player] = scale.recipes.map((recipe) => flattenCommands(recipe.commands));
+            const [director, player] = scale.recipes.map((recipe) => toNestedCommands(recipe.commands));
             const byId = (commands: readonly RallarBlackBoxTestCommand[], commandId: string) => commands.find((command) => command.commandId === commandId);
 
             expect(byId(player, 'alm-scale-player-connect')).toMatchObject({
@@ -282,7 +273,7 @@ describe('ALM scale recipes', () => {
             'alm-scale-director-group-created'
         ]);
         expect(director.commands[3]).not.toHaveProperty('readiness');
-        expect(flattenCommands(director.commands).filter((command) => command.kind === 'director.appoint')).toHaveLength(1);
+        expect(toNestedCommands(director.commands).filter((command) => command.kind === 'director.appoint')).toHaveLength(1);
         expect(player.commands.slice(0, 3).map((command) => command.commandId)).toEqual([
             'alm-scale-player-sign-in',
             'alm-scale-player-group-created',
@@ -298,7 +289,7 @@ describe('ALM scale recipes', () => {
             const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
             const prefix = `alm-scale-${role}`;
             const connected = recipe.commands.findIndex((command) => command.commandId === `${prefix}-connected`);
-            const groupReads = flattenCommands(recipe.commands).filter((command) =>
+            const groupReads = toNestedCommands(recipe.commands).filter((command) =>
                 command.kind === 'http.request' && command.request.method === 'GET' && command.request.path?.includes('/groups/') === true
             );
 
@@ -328,11 +319,11 @@ describe('ALM scale recipes', () => {
             const hostedJoinsPerSecond = 4;
             const serialJoinCostMs = participantCount / hostedJoinsPerSecond * 1_000;
             const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
-            const requests = scale.recipes.flatMap((recipe) => flattenCommands(recipe.commands))
+            const requests = scale.recipes.flatMap((recipe) => toNestedCommands(recipe.commands))
                 .filter((command) => command.kind === 'http.request');
             const timeoutOf = (suffix: string) => requests.filter((command) => command.commandId?.endsWith(suffix)).map((command) => command.timeoutMs);
 
-            const roomJoins = flattenCommands(scale.recipes[1].commands)
+            const roomJoins = toNestedCommands(scale.recipes[1].commands)
                 .filter((command) => command.kind === 'rtc.connect')
                 .map((command) => command.rallar?.timeoutMs);
             expect(roomJoins).toHaveLength(1);
@@ -350,7 +341,7 @@ describe('ALM scale recipes', () => {
             const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
 
             for (const [role, recipe] of [['director', scale.recipes[0]], ['player', scale.recipes[1]]] as const) {
-                const commands = flattenCommands(recipe.commands);
+                const commands = toNestedCommands(recipe.commands);
                 expect(commands.find((command) => command.commandId === `alm-scale-${role}-ready-status`)).toMatchObject({
                     kind: 'director.status',
                     refresh: 'when-absent',
@@ -426,7 +417,7 @@ describe('ALM scale recipes', () => {
 
     it('authors coherent AR Eye shot and completed-match wire specimens', () => {
         const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
-        const playerCommands = flattenCommands(scale.recipes[1].commands);
+        const playerCommands = toNestedCommands(scale.recipes[1].commands);
         const shots = playerCommands.filter((command) => command.kind === 'messages.send');
         expect(shots).toHaveLength(6);
         expect(shots.map((command) => 'handleId' in command ? command.handleId : undefined)).toEqual(
@@ -480,7 +471,7 @@ describe('ALM scale recipes', () => {
             throw new Error('Invalid shot relay envelope');
         }
         expect(isRallarGameEnvelope(shot.payload.payload, 'ar-eye-hunter.v1')).toBe(true);
-        const events = flattenCommands(scale.recipes[0].commands).filter((command) => command.kind === 'messages.send');
+        const events = toNestedCommands(scale.recipes[0].commands).filter((command) => command.kind === 'messages.send');
         expect(events).toHaveLength(2);
         const messages = events.map((event) => {
             expect(event).toMatchObject({
@@ -503,7 +494,7 @@ describe('ALM scale recipes', () => {
         expect(playerCommands).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: 'messages.received', typeId: 'room.ar-eye-hunter.director.event.v1', count: 2 })
         ]));
-        expect(flattenCommands(scale.recipes[0].commands)).toEqual(expect.arrayContaining([
+        expect(toNestedCommands(scale.recipes[0].commands)).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: 'messages.received', typeId: 'room.ar-eye-hunter.director.intent.v1', count: 84 })
         ]));
     });

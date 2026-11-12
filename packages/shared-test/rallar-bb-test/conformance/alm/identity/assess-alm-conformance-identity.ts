@@ -67,7 +67,10 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         return issues;
     }
     if (!hasAlmIdentityEvidence(sender.participant.recipe)) {
-        return ['ALM lifecycle, reload, fallback, pinned receipt or traced request sender evidence is missing.'];
+        return [
+            'ALM lifecycle, reload, fallback, pinned receipt, relayed receipt pin or traced request sender evidence ' +
+            'is missing.'
+        ];
     }
     const sends = sender.participant.recipe.commands.filter(isIdentitySend);
     issues.push(...assessAlmReceiptRoleIdentity({
