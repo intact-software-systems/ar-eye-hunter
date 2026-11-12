@@ -172,6 +172,8 @@ interface AlmConformanceRecipeInput extends AlmConformanceStepInput {
     readonly receiptRoles: AlmConformanceReceiptRoles | undefined;
     /** Set on both roles of a scenario whose sender reloads its page. */
     readonly reloadCheckpoint: AlmReloadCheckpoint | undefined;
+    /** Set only on the sender of a scenario at least one of whose origins must relay its send. */
+    readonly relayedReceiptOrigins: readonly AlmConformanceRole[] | undefined;
 }
 
 const ALM_DIAGNOSTIC_TOPICS = [
@@ -336,8 +338,16 @@ function toAlmConformanceScenario(
             : definition.toRecipientCommands(step);
         const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
         const reloadCheckpoint = definition.toReloadCheckpoint?.(step);
+        const relayedReceiptOrigins = role === 'sender' ? definition.relayedReceiptOrigins : undefined;
         return resolveAlmConformancePrincipals(
-            toAlmConformanceRecipe({ ...step, ...diagnostics, commands, receiptRoles, reloadCheckpoint }),
+            toAlmConformanceRecipe({
+                ...step,
+                ...diagnostics,
+                commands,
+                receiptRoles,
+                reloadCheckpoint,
+                relayedReceiptOrigins
+            }),
             input.principalIdsByRole
         );
     };
@@ -442,7 +452,6 @@ function toContinuationRecipe(
 function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
     const carrier = recipe.input.carrier;
     const connect = toConnectCommand(recipe);
-    const profile = recipe.deliveryDiagnostics ? 'alm-delivery-diagnostics' : 'alm-conformance';
     return {
         schemaVersion: 1,
         recipeId: `alm-${carrier}-${recipe.scenarioKey}-${recipe.role}`,
@@ -450,21 +459,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             ? `ALM delivery diagnostics ${recipe.almDiagnostics ? 'On' : 'Off'} ${recipe.role} over ${carrier}`
             : `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,
         continueOnFailure: false,
-        metadata: {
-            profile,
-            ...(recipe.deliveryDiagnostics
-                ? { almDiagnostics: recipe.almDiagnostics, freshRuntimeRequired: true }
-                : {}),
-            carrier,
-            scenarioId: recipe.scenarioId,
-            group: toRoomRef(recipe.input.group),
-            ...(recipe.reloadCheckpoint === undefined
-                ? {}
-                : { almReloadCheckpoints: [{ ...recipe.reloadCheckpoint }] }),
-            ...(recipe.receiptRoles === undefined
-                ? {}
-                : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] })
-        },
+        metadata: toAlmConformanceRecipeMetadata(recipe),
         commands: [
             ...(recipe.deliveryDiagnostics ? toFreshDiagnosticHistoryCommands(recipe) : []),
             toEnsureGroupCommand(recipe),
@@ -477,6 +472,27 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             toStatsCommand(recipe, 'stats'),
             ...(recipe.deliveryDiagnostics ? toDeliveryDiagnosticEvidenceCommands(recipe) : [])
         ]
+    };
+}
+
+function toAlmConformanceRecipeMetadata(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecord {
+    return {
+        profile: recipe.deliveryDiagnostics ? 'alm-delivery-diagnostics' : 'alm-conformance',
+        ...(recipe.deliveryDiagnostics
+            ? { almDiagnostics: recipe.almDiagnostics, freshRuntimeRequired: true }
+            : {}),
+        carrier: recipe.input.carrier,
+        scenarioId: recipe.scenarioId,
+        group: toRoomRef(recipe.input.group),
+        ...(recipe.reloadCheckpoint === undefined
+            ? {}
+            : { almReloadCheckpoints: [{ ...recipe.reloadCheckpoint }] }),
+        ...(recipe.receiptRoles === undefined
+            ? {}
+            : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] }),
+        ...(recipe.relayedReceiptOrigins === undefined
+            ? {}
+            : { almRelayedReceiptOrigins: toRelayedReceiptOriginsMetadata(recipe, recipe.relayedReceiptOrigins) })
     };
 }
 
@@ -502,6 +518,14 @@ function toReceiptRolesMetadata(
         unconfirmed: roles.unconfirmed,
         outsideAudience: roles.outsideAudience
     };
+}
+
+/** Names the first send of each origin, the handle whose ending receipt shows whether that send was relayed. */
+function toRelayedReceiptOriginsMetadata(
+    step: AlmConformanceStepInput,
+    origins: readonly AlmConformanceRole[]
+): readonly RallarBlackBoxTestRecord[] {
+    return origins.map((role) => ({ role, handleId: toSendHandleId({ ...step, role, index: 1 }) }));
 }
 
 function toFreshDiagnosticHistoryCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {

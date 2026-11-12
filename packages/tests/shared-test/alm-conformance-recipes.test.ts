@@ -21,9 +21,12 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestRecipe,
-    RallarBlackBoxTestRtcConnectCommand
+    RallarBlackBoxTestRtcConnectCommand,
+    RallarBlackBoxTestWaitCommand,
+    RallarBlackBoxTestWaitMatch
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
@@ -181,6 +184,35 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
         default:
             return [];
     }
+}
+
+/** A recipe's commands with the children of every loop and parallel group, in order. */
+function toNestedCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
+    return commands.flatMap((command) => [
+        command,
+        ...toNestedCommands(
+            command.kind === 'loop'
+                ? command.commands
+                : command.kind === 'parallel'
+                ? command.groups.flatMap((group) => group.commands)
+                : []
+        )
+    ]);
+}
+
+/**
+ * A message wait matches no typeId of its own, so it names its pair through what it matches: the marker and carrier
+ * of the payload it equals (a cue marker is the pair's key with `-cues`), the pair's typeId as a payload field or in
+ * the text it contains, or a payload field naming an identity the pair authored (`alm-<carrier>-<key>-...`).
+ */
+function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: AlmConformanceCarrier, key: string): boolean {
+    const typeId = `alm.conformance.${carrier}.${key}`;
+    const equals = match.equals;
+    const fields = Object.values(match.payloadFields ?? {});
+    return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
+        fields.includes(typeId) ||
+        match.contains?.includes(`"typeId":"${typeId}"`) === true ||
+        fields.some((value) => typeof value === 'string' && value.startsWith(`alm-${carrier}-${key}-`));
 }
 
 /** An admission-outcome wait routes on the typeId its `contains` names; a control is scoped by its own protocol id. */
@@ -601,6 +633,23 @@ describe('alm-conformance recipe family', () => {
                 expect(routed.length).toBeGreaterThan(0);
                 // A cell's cues may travel on a type of their own, which is still the pair's.
                 expect(new Set(routed.filter((typeId) => typeId !== `${pairTypeId}-cues`))).toEqual(new Set([pairTypeId]));
+            }
+        }
+    });
+
+    it('scopes every message wait to its pair by the payload marker it matches', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+            for (const scenario of scenarios) {
+                const recipes = [
+                    ...toAllRoleRecipes([scenario]),
+                    ...(scenario.continuation ? [scenario.continuation.recipe] : [])
+                ];
+                const waits = recipes.flatMap((recipe) => toNestedCommands(recipe.commands))
+                    .filter((command): command is RallarBlackBoxTestWaitCommand => command.kind === 'wait' && command.match.kind === 'message');
+                for (const wait of waits) {
+                    expect(isPairScopedMessageWait(wait.match, carrier, scenario.scenarioKey), wait.commandId).toBe(true);
+                }
             }
         }
     });
@@ -1343,6 +1392,32 @@ describe('alm-conformance recipe family', () => {
                 const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
                 expect(keys.includes('receipted-relay-path'), carrier).toBe(carrier === 'rtc');
             }
+        });
+
+        it('sends from each relay-path origin only once its own accepted overlay is the tree, and pins that one origin relayed', () => {
+            const scenario = receiptedOf('rtc', 'receipted-relay-path');
+            const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
+                recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            const treeCues = { sender: '-sender-cue-tree-received', receiver: '-receiver-cue-tree-sent' } as const;
+            for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
+                const poll = indexOf(recipe, `-${role}-tree-in-force`);
+                const command = recipe.commands[poll];
+                expect(poll, recipe.recipeId).toBeGreaterThan(indexOf(recipe, treeCues[role]));
+                expect(indexOf(recipe, `-${role}-send-1`), recipe.recipeId).toBe(poll + 1);
+                expect(command, recipe.recipeId).toMatchObject({ kind: 'loop', until: 'first-success', count: 360, intervalMs: 250 });
+                const [read, fact, ...rest] = command?.kind === 'loop' ? command.commands : [];
+                expect(rest).toEqual([]);
+                expect(read).toMatchObject({ kind: 'health', commandId: `${recipe.recipeId}-tree-in-force-read` });
+                expect(fact).toMatchObject({ kind: 'assert', operator: 'equals', expected: 'tree' });
+                expect(fact?.kind === 'assert' ? fact.source : undefined)
+                    .toMatch(/-tree-in-force-read\.value\.rallar\.formation\.accepted\.overlay\.topology$/);
+            }
+            expect(scenario.sender.metadata?.almRelayedReceiptOrigins).toEqual([
+                { role: 'sender', handleId: 'alm-rtc-receipted-relay-path-send-1' },
+                { role: 'receiver', handleId: 'alm-rtc-receipted-relay-path-receiver-send-1' }
+            ]);
+            expect(scenario.receiver.metadata?.almRelayedReceiptOrigins).toBeUndefined();
+            expect(scenario.recipientB.metadata?.almRelayedReceiptOrigins).toBeUndefined();
         });
 
         it(

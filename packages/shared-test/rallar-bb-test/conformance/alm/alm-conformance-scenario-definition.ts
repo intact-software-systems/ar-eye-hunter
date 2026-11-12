@@ -223,6 +223,11 @@ export interface AlmConformanceScenarioDefinition {
      * confirms and leaves unconfirmed, which the identity assessment joins to their sessions after the run.
      */
     readonly toReceiptRoles?: (carrier: AlmConformanceCarrier) => AlmConformanceReceiptRoles;
+    /**
+     * Absent when the cell needs no relayed send. Otherwise the roles whose first sends the identity assessment reads
+     * after the run: at least one of them must have reached both of its recipients through one hop.
+     */
+    readonly relayedReceiptOrigins?: readonly AlmConformanceRole[];
     /** Absent when the sender keeps its page. Otherwise the sync points both roles carry around its one reload. */
     readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
     /** Absent when the successor starts once the owner page ended; otherwise the owner's step it starts after. */
