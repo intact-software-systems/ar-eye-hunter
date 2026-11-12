@@ -31,8 +31,11 @@ registration, invocation, and cleanup without consulting a historical plan.
 
 1. [createRallarFacade](./rallar.ts) delegates to
    [createRallarFacade](./composition/create-rallar-facade.ts).
-2. [createBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
-   creates the per-facade runtime ports and lifecycle coordinator.
+2. [createDefaultBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
+   reads the page's WebCrypto and builds the IndexedDB publication-key store;
+   [createBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
+   takes those two platform inputs and creates the per-facade runtime ports and
+   lifecycle coordinator.
 3. [createBrowserStateComposition](./composition/browser-runtime-composition.ts)
    creates [createRallarStateCacheReadPort](./state-cache/rallar-state-store.ts)
    before constructing both the room-state store and aggregate state store from

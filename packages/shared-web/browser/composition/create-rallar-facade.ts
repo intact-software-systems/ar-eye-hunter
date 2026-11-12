@@ -25,8 +25,8 @@ import {
     type BrowserRoomsComposition
 } from './browser-product-composition.ts';
 import {
-    createBrowserRuntimeFoundation,
     createBrowserStateComposition,
+    createDefaultBrowserRuntimeFoundation,
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
     type BrowserStateEventComposition
@@ -56,7 +56,7 @@ interface BrowserFacadeCompositions {
 }
 
 export function createRallarFacade(): RallarFacade {
-    const foundation = createBrowserRuntimeFoundation();
+    const foundation = createDefaultBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime

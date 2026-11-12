@@ -1,5 +1,8 @@
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
-import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
+import {
+    createBrowserRuntimeFoundation,
+    createDefaultBrowserRuntimeFoundation
+} from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     normalizeALQosPolicy,
@@ -27,6 +30,7 @@ import {
 
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { InMemoryPublicationKeyStore } from '../../shared/signature/publication-key-store-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -79,9 +83,23 @@ describe('browser runtime construction', () => {
     });
 
     it('keeps browser runtime state isolated per completed facade foundation', () => {
-        const foundation = createBrowserRuntimeFoundation();
+        const foundation = createDefaultBrowserRuntimeFoundation();
 
         expect(foundation.connectionRuntime.readMiddleware()).toBeUndefined();
+    });
+
+    it('composes the foundation from the platform inputs it is given, not from the page', () => {
+        const publicationKeyStore = new InMemoryPublicationKeyStore();
+
+        const foundation = createBrowserRuntimeFoundation({ subtle: undefined, publicationKeyStore });
+
+        expect(globalThis.crypto.subtle).toBeDefined();
+        expect(foundation.subtle).toBeUndefined();
+        expect(foundation.publicationKeyStore).toBe(publicationKeyStore);
+    });
+
+    it('gives the default foundation the page\'s WebCrypto', () => {
+        expect(createDefaultBrowserRuntimeFoundation().subtle).toBe(globalThis.crypto.subtle);
     });
 
     it('selects the conformance policy at black-box construction while ordinary facade construction keeps defaults', async () => {

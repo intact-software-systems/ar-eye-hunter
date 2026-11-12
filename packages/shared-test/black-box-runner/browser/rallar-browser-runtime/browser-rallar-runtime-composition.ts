@@ -16,8 +16,8 @@ import {
     type BrowserRoomsComposition
 } from '@shared-web/browser/composition/browser-product-composition.ts';
 import {
-    createBrowserRuntimeFoundation,
     createBrowserStateComposition,
+    createDefaultBrowserRuntimeFoundation,
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
     type BrowserStateEventComposition
@@ -470,7 +470,7 @@ function toBlackBoxBrowserRuntimeDependency(
 function createBlackBoxBrowserTransportComposition(
     input: CreateBlackBoxBrowserRallarRuntimeDependencyInput
 ): BlackBoxBrowserTransportComposition {
-    const foundation = createBrowserRuntimeFoundation();
+    const foundation = createDefaultBrowserRuntimeFoundation();
     const state = createBrowserStateComposition({
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
