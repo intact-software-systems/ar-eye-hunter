@@ -1,6 +1,7 @@
 import { assert, assertEquals } from '@std/assert';
 
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import { decodeBlackBoxRallarConfigFields } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type { RallarBlackBoxTestMessagesReceivedResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -39,6 +40,7 @@ import {
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { AlmReloadLiveArrivals } from './alm-reload-live-arrivals.ts';
 import {
@@ -201,9 +203,9 @@ export class AlmReloadPorts {
     recoveryOwnerInstalled = false;
     private deliveries = 0;
     private readonly volatileSessions: Readonly<Record<PortRole, AlmReloadVolatileSession>> = {
-        sender: new AlmReloadVolatileSession(),
-        receiver: new AlmReloadVolatileSession(),
-        'recipient-b': new AlmReloadVolatileSession()
+        sender: new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS),
+        receiver: new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS),
+        'recipient-b': new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS)
     };
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
@@ -326,7 +328,10 @@ export class AlmReloadPorts {
             case 'http.request':
                 return this.requestGroup(role, command);
             case 'rtc.connect':
-                this.volatileSessions[role].connect(command);
+                this.volatileSessions[role].connect(
+                    decodeBlackBoxRallarConfigFields(command.rallar ?? {}).almVolatileLimits ??
+                        AL_VOLATILE_SESSION_LIMITS
+                );
                 this.acceptedLayoutSince.set(role, this.now);
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
