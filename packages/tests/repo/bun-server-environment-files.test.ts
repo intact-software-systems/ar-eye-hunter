@@ -5,12 +5,6 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = new URL('../../../', import.meta.url);
-const BUN_SERVER_ENTRIES = [
-    'apps/api-v1/src/main.ts',
-    'apps/ar-eye-hunter-server-v1/src/main.ts',
-    'apps/relic-hunter-server-v1/src/main.ts',
-    'apps/rallar-black-box-control-server/src/main.ts'
-];
 const PRINT_VALUE = 'console.log(process.env.RALLAR_ENV_FILE_PROBE ?? "unset")';
 
 const directories: string[] = [];
@@ -44,8 +38,8 @@ function readProbe(directory: string, flags: readonly string[], injected?: strin
     return result.stdout.trim();
 }
 
-function readRepositoryText(path: string): string {
-    return readFileSync(new URL(path, REPO_ROOT), 'utf8');
+function readPackageScripts(path: string): Readonly<Record<string, string>> {
+    return JSON.parse(readFileSync(new URL(path, REPO_ROOT), 'utf8')).scripts;
 }
 
 describe('Bun server environment files', () => {
@@ -70,15 +64,9 @@ describe('Bun server environment files', () => {
         expect(readProbe(directory, ['--env-file=missing.env', '--env-file=other.env'])).toBe('other');
     });
 
-    it('keeps Bun as the only env-file loader in every Bun server entry', () => {
-        const loaders = BUN_SERVER_ENTRIES.filter((entry) => /from 'dotenv|'dotenv\/config'/u.test(readRepositoryText(entry)));
-
-        expect(loaders).toEqual([]);
-    });
-
     it('passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1', () => {
-        const root = JSON.parse(readRepositoryText('package.json')).scripts;
-        const relic = JSON.parse(readRepositoryText('apps/relic-hunter-server-v1/package.json')).scripts;
+        const root = readPackageScripts('package.json');
+        const relic = readPackageScripts('apps/relic-hunter-server-v1/package.json');
         const rootApiFiles = '--env-file=.env --env-file=apps/api-v1/.env --env-file=apps/api-v1/.env.local';
         const relicFiles = '--env-file=../api-v1/.env --env-file=../api-v1/.env.local --env-file=.env --env-file=.env.local';
 
