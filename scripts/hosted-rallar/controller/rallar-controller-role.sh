@@ -138,8 +138,9 @@ rallar_controller_role_url_origin() {
 	printf '%s://%s' "${scheme}" "${host}"
 }
 
-# Writes the api role's three api-v1 replica systemd units. Each replica binds its own
-# loopback port (from RALLAR_API_REPLICA_PORTS) and shares the one Postgres store in the env file.
+# Writes the api role's api-v1 replica systemd units and removes those the list no longer names.
+# Each replica binds its own port (from RALLAR_API_REPLICA_PORTS) and shares the one Postgres
+# store in the env file.
 write_rallar_api_replica_units() {
 	local api_replica_index=0 api_replica_port
 	local unit_dir="${RALLAR_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
@@ -170,6 +171,28 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 		api_replica_index=$((api_replica_index + 1))
+	done
+	remove_stale_rallar_api_replica_units "${unit_dir}"
+}
+
+# Disables, stops and deletes every api-v1 replica unit the current list no longer names. A
+# rollback or a shorter list otherwise leaves a Restart=always replica on a swapped checkout,
+# still claiming AppInbox work from the shared store.
+remove_stale_rallar_api_replica_units() {
+	local unit_dir="$1" unit_path unit_name listed_service is_listed
+	for unit_path in "${unit_dir}"/rallar-api-v1*.service; do
+		[[ -f "${unit_path}" ]] || continue
+		unit_name="${unit_path##*/}"
+		is_listed=0
+		for listed_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+			if [[ "${unit_name}" == "${listed_service}" ]]; then
+				is_listed=1
+			fi
+		done
+		if [[ "${is_listed}" == "0" ]]; then
+			systemctl disable --now "${unit_name}"
+			rm -f "${unit_path}"
+		fi
 	done
 }
 

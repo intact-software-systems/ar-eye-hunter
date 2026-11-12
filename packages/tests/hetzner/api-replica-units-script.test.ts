@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -61,5 +61,53 @@ describe('Hetzner api replica units', () => {
         expect(outcome.stdout).toBe(
             'rallar-api-v1.service=/etc/rallar/api-v1.store-failure\nrallar-api-v1-4.service=/etc/rallar/api-v1.store-failure\n'
         );
+    });
+
+    // A rollback or a shorter replica list must not leave a replica running AppInbox work on a swapped checkout.
+    it('disables, stops and removes every api replica unit outside the current list, idempotently', async (context) => {
+        const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-api-replica-stale-'));
+        context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
+        const unitDirectory = path.join(fixture, 'system');
+        const binDirectory = path.join(fixture, 'bin');
+        const systemctlLog = path.join(fixture, 'systemctl.log');
+        await mkdir(unitDirectory);
+        await mkdir(binDirectory);
+        await writeFile(path.join(binDirectory, 'systemctl'), '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >>"$SYSTEMCTL_LOG"\n');
+        await chmod(path.join(binDirectory, 'systemctl'), 0o755);
+        for (const stale of ['rallar-api-v1-2.service', 'rallar-api-v1-3.service']) {
+            await writeFile(path.join(unitDirectory, stale), '[Service]\n');
+        }
+        await writeFile(path.join(unitDirectory, 'rallar-black-box-control.service'), '[Service]\n');
+
+        const writeShorterList = async () =>
+            await runOwnedTestProcess(context, {
+                executable: 'bash',
+                args: [
+                    '-c',
+                    'set -euo pipefail; source "$1"; RALLAR_API_REPLICA_SERVICES=(rallar-api-v1.service rallar-api-v1-2.service); ' +
+                    'RALLAR_API_REPLICA_PORTS=(8080 8081); apply_rallar_controller_role; write_rallar_api_replica_units',
+                    'api-replica-stale-units',
+                    roleHelper
+                ],
+                options: {
+                    env: {
+                        PATH: `${binDirectory}:${process.env.PATH}`,
+                        SYSTEMCTL_LOG: systemctlLog,
+                        RALLAR_CONTROLLER_ROLE: 'api',
+                        RALLAR_SYSTEMD_UNIT_DIR: unitDirectory,
+                        RALLAR_CHECKOUT_DIR: '/opt/rallar/ar-eye-hunter',
+                        RALLAR_API_STORE_FAILURE_FILE: '/etc/rallar/api-v1.store-failure'
+                    }
+                }
+            });
+        await writeShorterList();
+        await writeShorterList();
+
+        expect((await readdir(unitDirectory)).sort()).toEqual([
+            'rallar-api-v1-2.service',
+            'rallar-api-v1.service',
+            'rallar-black-box-control.service'
+        ]);
+        await expect(readFile(systemctlLog, 'utf8')).resolves.toBe('disable --now rallar-api-v1-3.service\n');
     });
 });

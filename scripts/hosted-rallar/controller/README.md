@@ -352,11 +352,26 @@ the services remain running on the previous process. If failure happens after
 the services are stopped, the script attempts to start them again, except
 API-v1 after a failed database connection check or migration: the script reports it as an
 `::error::`, writes `/etc/rallar/api-v1.store-failure` (shown by
-`07-status-controller.sh`), and leaves `rallar-api-v1.service` stopped until a
-rollout succeeds. The unit that `02-deploy-controller.sh` installs carries
+`07-status-controller.sh`), and leaves every API replica stopped until a
+rollout succeeds. Each replica unit that `rallar-controller-role.sh` writes carries
 `ConditionPathExists=!/etc/rallar/api-v1.store-failure`, so systemd skips
-starting API-v1 at boot or by hand while that file exists; `08-rollout-controller.sh`
-does not rewrite the unit, so re-run `02-deploy-controller.sh` once to install it.
+starting API-v1 at boot or by hand while that file exists.
+
+On the api role, `02-deploy-controller.sh` and `08-rollout-controller.sh` write one
+unit per replica the role lists, and disable, stop and delete every
+`rallar-api-v1*.service` the list no longer names, so a shorter replica list
+leaves no stray replica claiming AppInbox work from the shared store.
+
+Rollback past the API replica split: a ref older than the replica split knows
+only `rallar-api-v1.service`, so its rollout neither stops nor removes the other
+replicas, and they keep running (`Restart=always`) on the swapped checkout. Before
+rolling back to such a ref, stop and remove them by hand:
+
+```sh
+systemctl disable --now rallar-api-v1-2.service rallar-api-v1-3.service
+rm -f /etc/systemd/system/rallar-api-v1-2.service /etc/systemd/system/rallar-api-v1-3.service
+systemctl daemon-reload
+```
 
 The local retention proof uses an owned, disposable PostgreSQL container and
 checks auth, group, and unrelated rows plus database and role identity after two
