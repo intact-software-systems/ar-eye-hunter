@@ -9,6 +9,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -77,7 +78,7 @@ function createFixture(connectionScope: StateScope) {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: native }));
     const settled: string[] = [];
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,

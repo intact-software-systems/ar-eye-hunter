@@ -6,8 +6,13 @@ import {
     vi
 } from 'vitest';
 
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import {
+    ConnectionContext,
+    JsonWebSocketDroppedFrameError,
+    JsonWebSocketServer
+} from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from './attach-test-web-socket.ts';
 import { TestWebSocket } from './test-web-socket.ts';
 
 const FAR_FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
@@ -42,7 +47,7 @@ describe('JsonWebSocketServer', () => {
 
         const socket = new TestWebSocket('server');
         const connection = new ConnectionContext({ id: 'c1', socket });
-        server.addConnection(connection);
+        attachTestWebSocket(server, connection);
 
         socket.open();
         socket.receive(JSON.stringify({ ok: 1 }));
@@ -70,9 +75,9 @@ describe('JsonWebSocketServer', () => {
         second.readyState = TestWebSocket.OPEN;
         closed.readyState = TestWebSocket.CLOSED;
 
-        server.addConnection(new ConnectionContext({ id: 'one', socket: first }));
-        server.addConnection(new ConnectionContext({ id: 'two', socket: second }));
-        server.addConnection(new ConnectionContext({ id: 'three', socket: closed }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket: first }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'two', socket: second }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'three', socket: closed }));
 
         server.send('one', { hello: true });
 
@@ -99,8 +104,8 @@ describe('JsonWebSocketServer', () => {
         first.readyState = TestWebSocket.OPEN;
         second.readyState = TestWebSocket.OPEN;
 
-        server.addConnection(new ConnectionContext({ id: 'one', socket: first }));
-        server.addConnection(new ConnectionContext({ id: 'two', socket: second }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket: first }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'two', socket: second }));
 
         const encoded = server.encode({ fanout: true });
         server.sendEncoded('one', encoded);
@@ -115,7 +120,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('native');
         const evidence: { nativeCall: 'not-called' | 'invoked' | 'returned'; } = { nativeCall: 'not-called' };
-        server.addConnection(new ConnectionContext({ id: 'one', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket }));
         const encoded = server.encode({ receipt: true });
         expect(() => server.sendEncoded('one', encoded, evidence)).toThrow('connection not open');
         expect(evidence.nativeCall).toBe('not-called');
@@ -150,7 +155,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('native');
         socket.readyState = TestWebSocket.OPEN;
-        server.addConnection(new ConnectionContext({ id: 'one', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket }));
         const evidence: JsonWebSocketServer.SendEvidence = { nativeCall: 'not-called' };
         const original = new Error('encoded argument failure');
         const order: string[] = [];
@@ -189,10 +194,10 @@ describe('JsonWebSocketServer', () => {
         replacement.readyState = TestWebSocket.OPEN;
         const captured = new ConnectionContext({ id: 'session-1', socket: first, generationId: 'generation-1' });
         const current = new ConnectionContext({ id: 'session-1', socket: replacement, generationId: 'generation-2' });
-        server.addConnection(captured);
+        attachTestWebSocket(server, captured);
         const encoded = server.encode({ topology: true });
 
-        server.addConnection(current);
+        attachTestWebSocket(server, current);
 
         expect(server.trySendEncodedToContext(captured, encoded)).toBe(false);
         expect(server.trySendEncodedToContext(current, encoded)).toBe(true);
@@ -218,8 +223,8 @@ describe('JsonWebSocketServer', () => {
             }
         });
 
-        server.addConnection(firstContext);
-        server.addConnection(secondContext);
+        attachTestWebSocket(server, firstContext);
+        attachTestWebSocket(server, secondContext);
 
         expect(first.closedWith).toEqual({
             code: 1000,
@@ -250,7 +255,7 @@ describe('JsonWebSocketServer', () => {
         expect(holds.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => sent.push('first') })).toBe('held');
         expect(holds.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => sent.push('second') })).toBe('held');
         const socket = new TestWebSocket('session-1');
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...generation }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket, ...generation }));
         expect(sent).toEqual([]);
         expect(holds.isAwaiting('session-1')).toBe(true);
 
@@ -269,7 +274,7 @@ describe('JsonWebSocketServer', () => {
         server.expectedConnections.expect({ id: 'session-1', generationId: generation.generationId, expiresAtEpochMs: FAR_FUTURE_MS });
         server.expectedConnections.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => settled.push('held') });
         const socket = new TestWebSocket('session-1');
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...generation }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket, ...generation }));
 
         socket.disconnect(1006, 'client-gone');
 
@@ -293,7 +298,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('session');
         socket.readyState = TestWebSocket.OPEN;
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket }));
 
         expect(server.closeConnection('missing-session')).toBe(false);
         expect(server.closeConnection('session-1', 1000, 'auth-logout')).toBe(true);
@@ -303,4 +308,104 @@ describe('JsonWebSocketServer', () => {
         });
         expect(socket.readyState).toBe(TestWebSocket.CLOSED);
     });
+
+    it('closes every connection once shutdown begins and refuses a socket that upgrades after it', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const server = new JsonWebSocketServer();
+        const live = new TestWebSocket('live');
+        live.readyState = TestWebSocket.OPEN;
+        server.registerConnection(new ConnectionContext({ id: 'live', socket: live }));
+
+        server.stopAcceptingConnections(1001, 'server-shutting-down');
+        const late = new TestWebSocket('late');
+        late.readyState = TestWebSocket.OPEN;
+        const registered = server.registerConnection(new ConnectionContext({ id: 'late', socket: late }));
+
+        expect({
+            accepting: server.isAcceptingConnections,
+            registered,
+            liveClosed: live.closedWith,
+            lateClosed: late.closedWith,
+            lateTracked: server.connections.has('late')
+        }).toEqual({
+            accepting: false,
+            registered: false,
+            liveClosed: { code: 1001, reason: 'server-shutting-down' },
+            lateClosed: { code: 1001, reason: 'server-shutting-down' },
+            lateTracked: false
+        });
+    });
+
+    describe('Bun send outcomes', () => {
+        it('fails a send whose frame the socket dropped and keeps the native call unreturned', () => {
+            const server = new JsonWebSocketServer();
+            const socket = new SendOutcomeSocket(DROPPED);
+            server.registerConnection(new ConnectionContext({ id: 'slow', socket }));
+            const evidence: JsonWebSocketServer.SendEvidence = { nativeCall: 'not-called' };
+
+            expect(() => server.sendEncoded('slow', server.encode({ frame: 1 }), evidence)).toThrow(
+                JsonWebSocketDroppedFrameError
+            );
+            expect({ sent: socket.sent, nativeCall: evidence.nativeCall }).toEqual({
+                sent: ['{"frame":1}'],
+                nativeCall: 'invoked'
+            });
+        });
+
+        it('treats a frame queued behind backpressure as sent', () => {
+            const server = new JsonWebSocketServer();
+            const socket = new SendOutcomeSocket(BACKPRESSURED);
+            server.registerConnection(new ConnectionContext({ id: 'busy', socket }));
+            const evidence: JsonWebSocketServer.SendEvidence = { nativeCall: 'not-called' };
+
+            server.sendEncoded('busy', server.encode({ frame: 1 }), evidence);
+
+            expect(evidence.nativeCall).toBe('returned');
+        });
+
+        it('reports a dropped frame as unsent from every best-effort send', () => {
+            vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            const server = new JsonWebSocketServer();
+            const dropped = new ConnectionContext({ id: 'dropped', socket: new SendOutcomeSocket(DROPPED) });
+            const queued = new ConnectionContext({ id: 'queued', socket: new SendOutcomeSocket(BACKPRESSURED) });
+            server.registerConnection(dropped);
+            server.registerConnection(queued);
+            const encoded = server.encode({ frame: 2 });
+
+            expect({
+                tryDropped: server.trySendEncoded('dropped', encoded),
+                tryQueued: server.trySendEncoded('queued', encoded),
+                contextDropped: server.trySendEncodedToContext(dropped, encoded),
+                contextQueued: server.trySendEncodedToContext(queued, encoded),
+                broadcastCount: server.broadcast({ frame: 3 })
+            }).toEqual({
+                tryDropped: false,
+                tryQueued: true,
+                contextDropped: false,
+                contextQueued: true,
+                broadcastCount: 1
+            });
+        });
+    });
 });
+
+/** Bun's `ServerWebSocket.send` statuses. */
+const DROPPED = 0;
+const BACKPRESSURED = -1;
+
+class SendOutcomeSocket implements ConnectionContext.Socket {
+    readonly readyState = 1;
+    readonly sent: string[] = [];
+    readonly #outcome: number;
+
+    constructor(outcome: number) {
+        this.#outcome = outcome;
+    }
+
+    send(text: string): number {
+        this.sent.push(text);
+        return this.#outcome;
+    }
+
+    close(): void {}
+}

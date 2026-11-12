@@ -205,7 +205,8 @@ export class ViewPushClusterScenario {
         const node = this.#input.plans[2]!;
         input.socket.assertOpen();
         await this.#assertVisibility({ ...input.session, apiBaseUrl: node.baseUrl }, !input.shareOnline);
-        await this.#input.controls.stop(node.port);
+        // Abrupt death, as a crashed process gives no close frame and no drain; recovery must not depend on either.
+        await this.#input.controls.stop(node.port, 'crash');
         await waitForProofCondition(() => input.socket.closeCodes.length === 1, 'C socket closes during process stop');
         const change = await this.#changeVisibility(input.session, input.shareOnline);
         await this.#database.waitForPublication(change.requestId);

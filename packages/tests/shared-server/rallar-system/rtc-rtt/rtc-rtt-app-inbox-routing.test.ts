@@ -23,6 +23,7 @@ import {
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 
 describe('RTC RTT websocket AppInbox routing', () => {
     it('acknowledges persisted RTT ingress after durable enqueue, under the measurement\'s trace, without result effects', async () => {
@@ -87,7 +88,7 @@ async function createHarness(options: InstallRtcRttSystemTopicOptions): Promise<
     const server = new JsonWebSocketServer();
     const socket = new SimulatedWebSocket('ws://rtt-topic-test');
     await socket.open();
-    server.addConnection(new ConnectionContext({ id: 'session-a', socket }));
+    attachTestWebSocket(server, new ConnectionContext({ id: 'session-a', socket }));
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),

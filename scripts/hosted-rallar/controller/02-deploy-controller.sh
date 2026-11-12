@@ -72,15 +72,11 @@ stop_controller_service_for_store_change() {
 echo "==> Deploying ${RALLAR_REPO_URL} ref ${RALLAR_REPO_REF} for role ${RALLAR_CONTROLLER_ROLE}"
 # Re-runs operate on a checkout the first deploy chowned to the rallar user; allow git to trust it.
 git config --global --add safe.directory "${RALLAR_CHECKOUT_DIR}"
-if [[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
-	git -C "${RALLAR_CHECKOUT_DIR}" fetch --prune origin
-else
+if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
 	install -d -m 0755 -o rallar -g rallar "$(dirname "${RALLAR_CHECKOUT_DIR}")"
 	git clone "${RALLAR_REPO_URL}" "${RALLAR_CHECKOUT_DIR}"
 fi
-
-git -C "${RALLAR_CHECKOUT_DIR}" checkout "${RALLAR_REPO_REF}"
-git -C "${RALLAR_CHECKOUT_DIR}" pull --ff-only origin "${RALLAR_REPO_REF}" || true
+update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 echo "==> Installing npm dependencies"
@@ -204,7 +200,8 @@ EOF
 control)
 	echo "==> Writing environment files"
 	install -d -m 0700 -o root -g root /etc/rallar
-	install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
+	RALLAR_CONTROL_STORAGE_DIR=/var/lib/rallar-black-box-control
+	install -d -m 0755 -o rallar -g rallar "${RALLAR_CONTROL_STORAGE_DIR}"
 
 	if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/control-server.env ]]; then
 		RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
@@ -236,7 +233,7 @@ RALLAR_BLACK_BOX_REQUIRE_TLS=1
 RALLAR_BLACK_BOX_ALLOWED_ORIGINS=${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}
 RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS=${RALLAR_API_HOST}
 RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS=${RALLAR_API_HOST},${RALLAR_CONTROL_HOST}
-RALLAR_BLACK_BOX_STORAGE_DIR=/var/lib/rallar-black-box-control
+RALLAR_BLACK_BOX_STORAGE_DIR=${RALLAR_CONTROL_STORAGE_DIR}
 RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=${RALLAR_RETENTION_MAX_RUNS}
 RALLAR_BLACK_BOX_RUNTIME_RETAIN_COMMANDS=1000
 RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS=1000
@@ -250,27 +247,7 @@ EOF
 	chmod 0600 /etc/rallar/control-server.env
 
 	echo "==> Writing systemd services"
-	cat >/etc/systemd/system/rallar-black-box-control.service <<EOF
-[Unit]
-Description=Rallar Black Box control server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=rallar
-Group=rallar
-WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server
-EnvironmentFile=/etc/rallar/control-server.env
-ExecStart=/usr/local/bin/bun run src/main.ts
-Restart=always
-RestartSec=5
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
+	write_rallar_control_server_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_CONTROL_STORAGE_DIR}"
 	write_rallar_headless_worker_unit \
 		"rallar-black-box-headless-worker.service" \
 		"${RALLAR_HEADLESS_ENV_FILE:-/etc/rallar/headless-worker.env}" \

@@ -14,6 +14,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from './attach-test-web-socket.ts';
 import { TestWebSocket } from './test-web-socket.ts';
 
 describe('JSON websocket subscription wire limits', () => {
@@ -21,7 +22,7 @@ describe('JSON websocket subscription wire limits', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('server');
-        server.addConnection(new ConnectionContext({ id: 'self', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'self', socket }));
         const errors: string[] = [];
         server.onWebsocketCallbacksDo('parse-errors', {
             onParseError: (_context, raw) => {
@@ -72,7 +73,7 @@ describe('JSON websocket subscription wire limits', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('server');
-        server.addConnection(new ConnectionContext({ id: 'self', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'self', socket }));
         const rejected: string[] = [];
         const delivered: unknown[] = [];
         server.onMessageDo('alm', {
@@ -107,7 +108,7 @@ describe('JSON websocket subscription wire limits', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('server');
-        server.addConnection(new ConnectionContext({ id: 'self', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'self', socket }));
         const rejected: string[] = [];
         const delivered: unknown[] = [];
         server.onMessageDo('alm', {

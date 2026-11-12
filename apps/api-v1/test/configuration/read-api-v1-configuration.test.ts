@@ -2,6 +2,8 @@ import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
+
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import {
@@ -415,7 +417,7 @@ test('single-process prod-in-memory polls AppInbox completion only as a five-sec
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.deepEqual(configuration.appInbox.completionWait, {
-            maxElapsedMs: 30_000,
+            maxElapsedMs: API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS,
             retryIntervalMs: 250,
             maxRetryIntervalMs: profile === 'prod-in-memory' ? 5_000 : 1_000,
             jitterRatio: 0.1

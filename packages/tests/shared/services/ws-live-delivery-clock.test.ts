@@ -23,6 +23,7 @@ import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -39,8 +40,9 @@ it('uses the service clock for live admission and rechecks message expiry before
     const service = createClockService(fixture);
     const send = fixture.first.send.bind(fixture.first);
     vi.spyOn(fixture.first, 'send').mockImplementation((data) => {
-        send(data);
+        const written = send(data);
         fixture.clock.epochMs = 2000;
+        return written;
     });
     onTestFinished(() => {
         vi.restoreAllMocks();
@@ -104,8 +106,8 @@ function createClockFixture(): LiveClockFixture {
     const second = new TestWebSocket('ws://second');
     first.open();
     second.open();
-    socket.addConnection(new ConnectionContext({ id: 'first', socket: first }));
-    socket.addConnection(new ConnectionContext({ id: 'second', socket: second }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'first', socket: first }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'second', socket: second }));
     return { socket, first, second, clock: new LiveTestClock() };
 }
 

@@ -12,7 +12,6 @@
   "dependencies": {
     "@electric-sql/pglite": "0.5.4",
     "@js-temporal/polyfill": "^0.5.1",
-    "dotenv": "^16.6.1",
     "graphology": "0.26.0",
     "hono": "4.11.9",
     "postgres": "^3.4.9"

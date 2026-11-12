@@ -98,7 +98,11 @@ case "${name}" in
 		;;
 	git)
 		if [[ "$*" == *'rev-parse --short HEAD'* ]]; then printf 'abcdef0\n';
-		elif [[ "$*" == *'rev-parse HEAD'* ]]; then printf 'abcdef0123456789abcdef0123456789abcdef01\n'; fi
+		elif [[ "$*" == *'rev-parse HEAD'* || "$*" == *'rev-parse --verify'* ]]; then printf 'abcdef0123456789abcdef0123456789abcdef01\n';
+		elif [[ "$*" == *'cat-file -e '*'/deno.json' ]]; then exit 1;
+		elif [[ "$*" == *'show '*':scripts/hosted-rallar/controller/rallar-bun-runtime.sh' ]]; then
+			grep -m 1 '^RALLAR_MIN_BUN_VERSION=' /repo/scripts/hosted-rallar/controller/rallar-bun-runtime.sh
+		fi
 		;;
 	dpkg-query) printf 'installed' ;;
 	curl)

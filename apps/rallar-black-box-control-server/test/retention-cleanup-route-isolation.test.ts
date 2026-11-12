@@ -136,7 +136,7 @@ function createRetentionRouteDependencies(
     });
     const agentSockets = new ControlAgentSockets(controlService);
     agentSockets.register(
-        { readyState: 1, send: () => undefined, close: (code, reason) => closedSockets.push(`${code}:${reason}`) },
+        { readyState: 1, send: (text) => text.length, close: (code, reason) => closedSockets.push(`${code}:${reason}`) },
         { runId: 'run-old', agentId: 'agent-old' }
     );
 

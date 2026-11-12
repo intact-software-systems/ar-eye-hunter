@@ -183,6 +183,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.http.port = value
     },
     {
+        name: 'RALLAR_SHUTDOWN_DEADLINE_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.http.shutdownDeadlineMs = value
+    },
+    {
         name: 'CORS_ORIGINS',
         decode: decodeCsv,
         apply: (source, value) => source.http.corsOrigins = value

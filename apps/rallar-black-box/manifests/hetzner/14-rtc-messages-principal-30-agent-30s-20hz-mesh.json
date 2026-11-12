@@ -33,7 +33,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-group",
-            "timeoutMs": 30000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -65,7 +65,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-member",
-            "timeoutMs": 30000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -286,7 +286,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-group",
-            "timeoutMs": 30000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -318,7 +318,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-principal-ensure-member",
-            "timeoutMs": 30000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -788,7 +788,7 @@
       "streamFrames": 600,
       "logicalFanoutMessages": 17400
     },
-    "recommendedTerminalTimeoutSeconds": 342
+    "recommendedTerminalTimeoutSeconds": 352
   },
   "description": "One principal headless sender multicasts RTC messages at 20 Hz to 29 receivers through the default mesh topology."
 }

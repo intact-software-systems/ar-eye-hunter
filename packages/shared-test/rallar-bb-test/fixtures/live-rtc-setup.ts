@@ -1,3 +1,4 @@
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 export const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
@@ -15,13 +16,11 @@ export const RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS = 45_000;
 export const RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS = 45_000;
 
 /**
- * Budget for the idempotent ensure-group + ensure-member HTTP mutation pair. Distributed
- * runs race dozens of agents onto the same group at once; the AppInbox completion wait
- * can legitimately take several poll cycles under that contention (per-poll ceiling
- * completionWait.maxRetryIntervalMs and a 30s max-elapsed budget), so the command timeout
- * sits at the AppInbox max-elapsed ceiling rather than the 5s RTC connect margin.
+ * Each ensure-group and ensure-member request answers once its mutation completes or the server's completion wait
+ * ends, so its budget is that wait plus the same completion margin the RTC connect gets.
  */
-export const RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS = 30_000;
+export const RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS = API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS +
+    RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS;
 
 export interface RallarBlackBoxLiveRecipeOptions {
     readonly group?: RallarBlackBoxDistributedGroupRef;

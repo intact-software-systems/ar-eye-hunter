@@ -11,6 +11,7 @@ import { createRallarAiMockProvider } from '@shared/rallar-ai/mod.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { describe, expect, expectTypeOf, it, onTestFinished } from 'vitest';
+import { attachTestWebSocket } from '../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import {
     createRallarServerAiTestMessage,
@@ -172,7 +173,7 @@ function createRouterWithSessions(sessionIds: readonly string[]) {
     for (const sessionId of sessionIds) {
         const native = new TestWebSocket(`ws://${sessionId}`);
         native.open();
-        socket.addConnection(new ConnectionContext({ id: sessionId, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: native }));
         sockets.set(sessionId, native);
     }
     const service = createDefaultWsQueueBoxServerService({

@@ -41,11 +41,11 @@ interface TestLifecycleDependencies {
         artifactDir: string,
         serverLogPaths: readonly string[]
     ) => Promise<void>;
-    readonly stopServer: (child: TestChild) => Promise<void>;
+    readonly stopServer: (child: TestChild, mode: 'crash' | 'graceful') => Promise<void>;
 }
 
 interface TestLifecycleControls {
-    readonly stop: (port: number) => Promise<void>;
+    readonly stop: (port: number, mode: 'crash' | 'graceful') => Promise<void>;
     readonly restart: (port: number, replacementPlan: TestServerPlan) => Promise<void>;
     readonly suspend: (port: number) => Promise<void>;
     readonly resume: (port: number) => Promise<void>;
@@ -228,7 +228,7 @@ describe('managed API-v1 server-plan lifecycle', () => {
             },
             toDiagnosticSecrets: () => [],
             runRecipes: async (controls) => {
-                await controls.stop(18082);
+                await controls.stop(18082, 'graceful');
                 await controls.restart(18082, replacementPlan);
             },
             verifyFairness: async (_artifactDir, serverLogPaths) => {
@@ -277,7 +277,7 @@ describe('managed API-v1 server-plan lifecycle', () => {
                 waitForReady: async () => undefined,
                 toDiagnosticSecrets: () => [],
                 runRecipes: async (controls) => {
-                    await controls.stop(18082);
+                    await controls.stop(18082, 'graceful');
                 },
                 verifyFairness: async () => undefined,
                 stopServer: async (child) => {

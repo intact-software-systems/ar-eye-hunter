@@ -8,10 +8,8 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true,
-    "types": ["bun"],
+    "types": ["bun", "emscripten"],
     "paths": {
-      "@/*": ["./src/*"],
       "@shared/*": ["../../packages/shared/*"],
       "@shared-server/*": ["../../packages/shared-server/*"],
       "@shared-graph/*": ["../../packages/shared-graph/*"],

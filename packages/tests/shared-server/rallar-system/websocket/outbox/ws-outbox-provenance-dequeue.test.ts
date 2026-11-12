@@ -31,6 +31,7 @@ import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -199,7 +200,7 @@ describe('producer provenance through WS dequeue', () => {
             const encode = fixture.socket.encode.bind(fixture.socket);
             vi.spyOn(fixture.socket, 'encode').mockImplementation((message) => {
                 if (recipient === 'replaced-session') {
-                    fixture.socket.addConnection(new ConnectionContext({ id: 'peer', socket: replacement }));
+                    attachTestWebSocket(fixture.socket, new ConnectionContext({ id: 'peer', socket: replacement }));
                 }
                 return encode(message);
             });
@@ -262,7 +263,7 @@ async function createFixture(): Promise<ProvenanceDequeueFixture> {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: native }));
     const authentication = { scope: SCOPE, principalId: 'principal', expiresAtEpochMs: Date.now() + 30_000 };
     const engine = new InboxOutboxEngine();
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });

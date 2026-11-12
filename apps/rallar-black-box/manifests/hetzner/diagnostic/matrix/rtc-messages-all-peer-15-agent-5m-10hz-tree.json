@@ -36,7 +36,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-all-peer-ensure-group",
-            "timeoutMs": 30000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -68,7 +68,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-all-peer-ensure-member",
-            "timeoutMs": 30000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -430,7 +430,7 @@
       "streamFrames": 45000,
       "logicalFanoutMessages": 630000
     },
-    "recommendedTerminalTimeoutSeconds": 1040
+    "recommendedTerminalTimeoutSeconds": 1050
   },
   "description": "Diagnostic 15-agent all-peer RTC messages multicast run at 10 Hz for 5m through a forced tree topology."
 }

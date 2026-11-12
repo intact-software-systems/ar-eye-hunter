@@ -1,4 +1,4 @@
-export function createOpenTestWebSocket(): WebSocket {
+export function createOpenTestWebSocket(): OpenTestWebSocket {
     return new OpenTestWebSocket();
 }
 
@@ -20,5 +20,7 @@ class OpenTestWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(): void {}
+    send(text: string): number {
+        return text.length;
+    }
 }

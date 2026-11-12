@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 
+import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
 
 import {
@@ -46,4 +47,11 @@ test('the control server keeps five runs unless told otherwise, and keeps every 
     expect(maxRunsFor({})).toEqual(5);
     expect(maxRunsFor({ RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '20' })).toEqual(20);
     expect(maxRunsFor({ RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '0' })).toEqual(0);
+});
+
+test('the control server bounds its graceful stop by the shared deadline unless its unit names one', () => {
+    expect([
+        readBlackBoxControlServerConfiguration({}).shutdownDeadlineMs,
+        readBlackBoxControlServerConfiguration({ RALLAR_SHUTDOWN_DEADLINE_MS: '75000' }).shutdownDeadlineMs
+    ]).toEqual([DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS, 75_000]);
 });

@@ -50,6 +50,7 @@ import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } fr
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
@@ -182,7 +183,7 @@ describe('client snapshot producer provenance', () => {
             if (kind === 'replaced-session') {
                 const encode = foreign.socket.encode.bind(foreign.socket);
                 const spy = vi.spyOn(foreign.socket, 'encode').mockImplementation((message) => {
-                    foreign.socket.addConnection(new ConnectionContext({ id: 'alice-session', socket: replacement }));
+                    attachTestWebSocket(foreign.socket, new ConnectionContext({ id: 'alice-session', socket: replacement }));
                     return encode(message);
                 });
                 onTestFinished(() => spy.mockRestore());
@@ -329,7 +330,7 @@ describe('client snapshot producer provenance', () => {
         if (kind === 'replaced-session') {
             const encode = foreign.socket.encode.bind(foreign.socket);
             const spy = vi.spyOn(foreign.socket, 'encode').mockImplementation((message) => {
-                foreign.socket.addConnection(new ConnectionContext({ id: 'alice-session', socket: replacement }));
+                attachTestWebSocket(foreign.socket, new ConnectionContext({ id: 'alice-session', socket: replacement }));
                 return encode(message);
             });
             onTestFinished(() => spy.mockRestore());
@@ -364,7 +365,7 @@ describe('client snapshot producer provenance', () => {
         const foreign = createForeignReceiver(producer.repository);
         const late = new TestWebSocket('ws://late');
         late.open();
-        foreign.socket.addConnection(new ConnectionContext({ id: 'late-session', socket: late }));
+        attachTestWebSocket(foreign.socket, new ConnectionContext({ id: 'late-session', socket: late }));
         const indexes: number[] = [];
         for (const entry of pages) {
             const message = decodePersistedALMessage(entry.resource);
@@ -716,7 +717,7 @@ function createForeignReceiver(repository: FakeRuntimeStateRepository, sessionId
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://foreign');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: sessionId, socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: native }));
     const engine = new InboxOutboxEngine();
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({

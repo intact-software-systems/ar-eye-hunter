@@ -50,9 +50,9 @@ describe('Hetzner multicast workloads', () => {
         expect(principalTree?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 30 s each, connect
+            // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 35 s each, connect
             // 95 s, 27 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
-            recommendedTerminalTimeoutSeconds: 30 + 15 + 30 + 30 + 95 + 135 + 7,
+            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + 95 + 135 + 7,
             transport: 'messages.rtc',
             participantCount: 50,
             rateHz: 20,
@@ -78,10 +78,10 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerShort?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 30 s each, connect 95 s, 5 settle
+            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 95 s, 5 settle
             // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 27 delivery-poll pauses of 5 s and 100
             // relay-hold pauses of 1 s, rounded up to the second.
-            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 30 + 30 + 95 + 5 + 29.8 + 5 + 135 + 100),
+            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + 95 + 5 + 29.8 + 5 + 135 + 100),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
                 minExpectedInboundMessages: 6615,

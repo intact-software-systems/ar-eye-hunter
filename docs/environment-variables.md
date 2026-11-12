@@ -9,6 +9,8 @@ Last reviewed: 2026-08-28.
 ## Conventions
 
 - Bun server apps read environment variables at runtime through `process.env`.
+  Bun itself is the only env-file loader; no server imports `dotenv`. See
+  [Bun server env files](#bun-server-env-files).
 - Vite browser apps read variables through `import.meta.env`. Those values are
   embedded into the browser bundle and are public. Do not put production secrets
   in `VITE_*`, `API_*`, or any prefix exposed by a Vite app.
@@ -25,6 +27,28 @@ Last reviewed: 2026-08-28.
   its separate explicit `RALLAR_PRODUCTION_HARDENING=1` switch. See
   [Production Env Hardening Checklist](./production-env-hardening-checklist.md).
 
+## Bun server env files
+
+Every Bun server (API-v1, the AR Eye and Relic game servers, and the black-box
+control server) and every script that starts one follows one rule:
+
+1. The process environment always wins. A value injected by systemd
+   (`EnvironmentFile=`), CI, Playwright, or the shell is never replaced by a
+   file.
+2. Bun reads the files before any code runs. With no `--env-file` flag it reads
+   the working directory's `.env`, then `.env.<NODE_ENV>`, then `.env.local`
+   (skipped when `NODE_ENV=test`); a later file wins.
+3. A script that needs files outside its working directory passes them as
+   `--env-file` flags, lowest precedence first. That list replaces the automatic
+   set, and a missing file is skipped. `--no-env-file` reads none.
+
+The scripts that pass a list are root `dev:rallar:api` and `start:rallar:api`
+(`.env`, `apps/api-v1/.env`, `apps/api-v1/.env.local`) and the Relic
+`start`/`dev` scripts (`../api-v1/.env`, `../api-v1/.env.local`, `.env`,
+`.env.local`). The full-stack Playwright API passes `--no-env-file`. Every other
+server start, including the systemd units, reads its own working directory.
+`packages/tests/repo/bun-server-environment-files.test.ts` pins the rule.
+
 ## Environment Files Found
 
 None of these files is tracked; all are ignored by `.gitignore` (`**.env**`) and exist only as optional local
@@ -35,20 +59,18 @@ files that local runs load, or set `RALLAR_ICE_MODE=metered` for that run.
 | File                                     | Variables present                                                                                                                         | Notes                                                                                                                                                                                                                               |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.env`                                   | `VITE_RALLAR_PROVIDER`, `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_ROOM_ID`, `VITE_RALLAR_USERNAME`, `VITE_RALLAR_PASSWORD`, `CORS_ORIGINS` | Read from repo root by some Vite and root scripts. `apps/rallar-black-box` now exposes only `VITE_*` values to the browser bundle. API-v1 may receive this file through root npm scripts.                                           |
-| `apps/api-v1/.env`                       | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`, `CORS_ORIGINS`                                                                     | Loaded by API-v1 when run from `apps/api-v1`; also passed by `dev:rallar:api` and `start:rallar:api` and loaded by Relic server startup.                                                                                            |
-| `apps/api-v1/.env.local`                 | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`, `CORS_ORIGINS`                                                                     | Local override file loaded by `dev:rallar:api`, `start:rallar:api` and Relic server startup.                                                                                                                                        |
+| `apps/api-v1/.env`                       | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`, `CORS_ORIGINS`                                                                     | Read by Bun when API-v1 runs from `apps/api-v1`; also listed by `dev:rallar:api`, `start:rallar:api` and the Relic scripts.                                                                                                         |
+| `apps/api-v1/.env.local`                 | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`, `CORS_ORIGINS`                                                                     | Local override, read after `apps/api-v1/.env` by the same starts.                                                                                                                                                                   |
 | `apps/rallar-black-box/.env.local`       | `VITE_RALLAR_PROVIDER`, `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_ROOM_ID`, `VITE_RALLAR_USERNAME`, `VITE_RALLAR_PASSWORD`, `CORS_ORIGINS` | Present, but current `apps/rallar-black-box/vite.config.ts` uses repo-root `envDir`, so this file is not loaded by Vite unless the config changes or variables are exported by the shell. Only `VITE_*` values are browser-exposed. |
-| `apps/relic-hunter-server-v1/.env.local` | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`                                                                                     | Loaded explicitly by `apps/relic-hunter-server-v1/src/main.ts`.                                                                                                                                                                     |
+| `apps/relic-hunter-server-v1/.env.local` | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`                                                                                     | Read last, and so winning among files, by the Relic `start` and `dev` scripts.                                                                                                                                                      |
 | `apps/relic-hunters-v1/.env`             | `API_BASE_URL`                                                                                                                            | Loaded by Vite for the Relic Hunters browser app.                                                                                                                                                                                   |
 | `apps/relic-hunters-v1/.env.local`       | `API_BASE_URL`                                                                                                                            | Local Vite override for the Relic Hunters browser app.                                                                                                                                                                              |
 
 ## apps/api-v1
 
-API-v1 is a Bun/Hono server. `src/main.ts` imports `config` from
-`dotenv`, so `.env` in the current working directory is loaded
-when the app starts. The root `dev:rallar:api` and `start:rallar:api` scripts additionally pass
-`--env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env`.
-The full-stack Playwright Postgres API loads no env files: it requires `DATABASE_URL` in the launching
+API-v1 is a Bun/Hono server. Its env files follow
+[Bun server env files](#bun-server-env-files).
+The full-stack Playwright Postgres API loads no env files (`--no-env-file`): it requires `DATABASE_URL` in the launching
 environment and takes `RALLAR_ICE_MODE` (and, for `metered`, the `METERED_*` variables) only from
 there; unset means the profile's local ICE.
 
@@ -126,14 +148,15 @@ readers.
 
 ### Server
 
-| Variable                           | Required | Default          | Usage                                                                                                                                                                        |
-| ---------------------------------- | -------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALLAR_API_CONFIGURATION_PROFILE` | No       | `dev`            | Selects one exact committed profile.                                                                                                                                         |
-| `PORT`                             | No       | Profile/defaults | HTTP listen port from `1` through `65535`.                                                                                                                                   |
-| `CORS_ORIGINS`                     | No       | Profile/defaults | Exact comma-separated browser origins. Hardened production requires exact HTTPS origins.                                                                                     |
-| `RALLAR_API_BASE_URL`              | No       | Profile/defaults | Canonical public HTTP API URL.                                                                                                                                               |
-| `RALLAR_WS_BASE_URL`               | No       | Profile/defaults | Canonical public WebSocket URL.                                                                                                                                              |
-| `RALLAR_STATE_STRICT_READ_AUTH`    | No       | Profile/defaults | Applies full-state read authorization to client/group list, snapshot, and event reads. SPA statistics retain independent route-local authentication and group-policy checks. |
+| Variable                           | Required | Default          | Usage                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | -------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALLAR_API_CONFIGURATION_PROFILE` | No       | `dev`            | Selects one exact committed profile.                                                                                                                                                                                                                                                                  |
+| `PORT`                             | No       | Profile/defaults | HTTP listen port from `1` through `65535`.                                                                                                                                                                                                                                                            |
+| `RALLAR_SHUTDOWN_DEADLINE_MS`      | No       | `60000`          | Bound on the whole graceful stop after SIGTERM/SIGINT; past it the process exits 1. The HTTP drain is force-closed 15 s before it, and that drain must outlast the HTTP idle bound or startup is rejected. The hosted units set it with `TimeoutStopSec` 10 s later. The control server reads it too. |
+| `CORS_ORIGINS`                     | No       | Profile/defaults | Exact comma-separated browser origins. Hardened production requires exact HTTPS origins.                                                                                                                                                                                                              |
+| `RALLAR_API_BASE_URL`              | No       | Profile/defaults | Canonical public HTTP API URL.                                                                                                                                                                                                                                                                        |
+| `RALLAR_WS_BASE_URL`               | No       | Profile/defaults | Canonical public WebSocket URL.                                                                                                                                                                                                                                                                       |
+| `RALLAR_STATE_STRICT_READ_AUTH`    | No       | Profile/defaults | Applies full-state read authorization to client/group list, snapshot, and event reads. SPA statistics retain independent route-local authentication and group-policy checks.                                                                                                                          |
 
 The two public URL settings must have the same normalized host, including non-default ports.
 `prod-hardened` rejects a mismatch at startup; other profiles log a warning. The browser also
@@ -227,7 +250,7 @@ Startup also rejects:
 | `RALLAR_APP_INBOX_PHASE_TIMING`               | No       | `false`    | Enables phase timing in app inbox processing.                                                                                                                                                                                                                                                                                                                                               |
 | `RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY`       | No       | `4`        | Distinct-context AppInbox heads one NEW round claims in one statement and runs together, 1–8. Invalid values reject startup.                                                                                                                                                                                                                                                                |
 | `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`         | No       | `16`       | Claimed AppInbox rows the standing flight holds across passes, NEW lane concurrency to 64. Invalid values reject startup.                                                                                                                                                                                                                                                                   |
-| `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`        | No       | `30000`    | Max app inbox wait time. Invalid values reject startup.                                                                                                                                                                                                                                                                                                                                     |
+| `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`        | No       | `30000`    | Max app inbox wait time. It also sets the Bun HTTP idle timeout (this wait in whole seconds plus 10 s), so a waiting request keeps its connection; a value above 245000 or an invalid value rejects startup.                                                                                                                                                                                |
 | `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`     | No       | `250`      | Initial app inbox retry interval. Invalid values reject startup.                                                                                                                                                                                                                                                                                                                            |
 | `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS` | No       | `1000`     | Max app inbox retry interval. Invalid values reject startup.                                                                                                                                                                                                                                                                                                                                |
 | `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`          | No       | `0.1`      | App inbox retry jitter ratio. Invalid values reject startup.                                                                                                                                                                                                                                                                                                                                |
@@ -302,13 +325,11 @@ the internal server on port 8090.
 
 ## apps/relic-hunter-server-v1
 
-This is a Bun/Hono server for the Relic Hunters game. It explicitly attempts
-to load:
-
-1. `apps/relic-hunter-server-v1/.env`
-2. `apps/relic-hunter-server-v1/.env.local`
-3. `apps/api-v1/.env`
-4. `apps/api-v1/.env.local`
+This is a Bun/Hono server for the Relic Hunters game. Its `start` and `dev`
+scripts list, lowest precedence first, `apps/api-v1/.env`,
+`apps/api-v1/.env.local`, `apps/relic-hunter-server-v1/.env` and
+`apps/relic-hunter-server-v1/.env.local`; the process environment beats them all
+(see [Bun server env files](#bun-server-env-files)).
 
 The server imports API-v1 Rallar server wiring, so API-v1 database, auth, ICE,
 and timing variables also apply to this app when those shared routes and

@@ -164,8 +164,7 @@ ExecStart=/usr/bin/env PORT=${api_replica_port} /usr/local/bin/bun run src/main.
 SyslogIdentifier=${api_replica_service%.service}
 Restart=always
 RestartSec=5
-NoNewPrivileges=true
-PrivateTmp=true
+$(print_rallar_bun_service_hardening)
 
 [Install]
 WantedBy=multi-user.target
@@ -270,6 +269,23 @@ EOF
 	install -d -m 0755 "${caddy_dir}"
 	install -m 0644 "${tmp_file}" "${caddyfile}"
 	rm -f "${tmp_file}"
+}
+
+# The app directory each of the role's services runs, once each.
+rallar_role_app_dirs() {
+	local service
+	for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+		case "${service}" in
+		rallar-api-v1.service | rallar-api-v1-*.service) echo apps/api-v1 ;;
+		rallar-black-box-control.service) echo apps/rallar-black-box-control-server ;;
+		"${RALLAR_RELIC_SERVICE}") echo "${RALLAR_RELIC_APP_DIR}" ;;
+		"${RALLAR_AR_EYE_SERVICE}") echo "${RALLAR_AR_EYE_APP_DIR}" ;;
+		*)
+			echo "No app directory is known for ${service}." >&2
+			return 1
+			;;
+		esac
+	done | sort -u
 }
 
 run_rallar_controller_role_self_test() {

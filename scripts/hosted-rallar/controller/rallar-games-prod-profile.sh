@@ -63,18 +63,17 @@ EOF
 }
 
 # Writes a game server's systemd unit, mirroring the api-v1 unit shape (Bun entry point in the
-# app dir, env-file from /etc/rallar, rallar user, restart policy, and a store-failure fence).
+# app dir, env-file from /etc/rallar, rallar user, restart policy, the Bun sandbox, and a store-failure fence).
 write_rallar_game_server_unit() {
 	local service="$1"
 	local app_dir="$2"
 	local env_file="$3"
 	local failure_file="$4"
 	local checkout_dir="$5"
-	local description="$6"
 
-	cat >"/etc/systemd/system/${service}" <<EOF
+	cat >"${RALLAR_SYSTEMD_UNIT_DIR:-/etc/systemd/system}/${service}" <<EOF
 [Unit]
-Description=${description}
+Description=Rallar ${service%%.service} game server
 After=network-online.target postgresql.service
 Wants=network-online.target postgresql.service
 ConditionPathExists=!${failure_file}
@@ -88,8 +87,7 @@ EnvironmentFile=${env_file}
 ExecStart=/usr/local/bin/bun run src/main.ts
 Restart=always
 RestartSec=5
-NoNewPrivileges=true
-PrivateTmp=true
+$(print_rallar_bun_service_hardening)
 
 [Install]
 WantedBy=multi-user.target
@@ -131,7 +129,7 @@ write_rallar_game_server_surface() {
 	operator_token_secret="${existing_operator_token:-${RALLAR_GAME_OPERATOR_TOKEN_SECRET:-$(openssl rand -hex 32)}}"
 	operator_client_ids="${existing_operator_ids:-${RALLAR_GAME_OPERATOR_CLIENT_IDS:-hosted-operator-$(openssl rand -hex 8)}}"
 	write_rallar_game_server_env_file "${env_file}" "${host}" "${port}" "${cors_origins}" "${database_url}" "${auth_secret}" "${operator_token_secret}" "${operator_client_ids}" "${bindings_json}"
-	write_rallar_game_server_unit "${service}" "${app_dir}" "${env_file}" "${failure_file}" "${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}" "Rallar ${service%%.service} game server"
+	write_rallar_game_server_unit "${service}" "${app_dir}" "${env_file}" "${failure_file}" "${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 }
 
 rallar_games_prod_profile_self_test() {

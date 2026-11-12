@@ -327,12 +327,16 @@ It performs:
    configuration (api/games), and a clean git checkout before changing the
    selected ref.
 2. Fetch origin and check out RALLAR_REPO_REF, default main; a full commit SHA is
-   checked out detached, while a branch follows its current remote head.
+   checked out detached, while a branch follows its current remote head. The ref
+   is refused, with the checkout and services untouched, unless it carries
+   `package-lock.json`, each role app's `src/main.ts` and no `deno.json`, and
+   pins a Bun no newer than the installed one. `02-deploy-controller.sh` uses
+   the same checkout step.
 3. Run npm ci.
 4. On api: build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
 5. On api/games: install the Ubuntu `postgresql` server if absent and keep it
    enabled.
-6. Stop the role's services.
+6. Rewrite the role's systemd units, then stop the role's services.
 7. On api: publish static SPA files to /var/www/rallar-black-box.
 8. On api: write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
 9. On api: refresh API-v1 browser origin policy; on control: refresh

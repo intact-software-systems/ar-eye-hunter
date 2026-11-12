@@ -32,6 +32,7 @@ import {
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const SERVER_ID = 'server';
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -244,7 +245,7 @@ async function createAddressedFixture(sendNacks = true): Promise<AddressedFixtur
     };
     for (const [peerId, socket] of Object.entries(sockets)) {
         await socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: peerId, socket }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: peerId, socket }));
     }
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();

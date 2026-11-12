@@ -21,6 +21,7 @@ import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-
 import { WsQueueBoxServerTrackOrder } from '@shared/services/ws-queue-box-server/ws-queue-box-server-track-order.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const NAMESPACE = 'outbound';
@@ -214,7 +215,7 @@ describe('the WS outside-audience writer', () => {
 
         const native = new TestWebSocket('ws://b');
         native.open();
-        socket.addConnection(new ConnectionContext({ id: 'b', socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'b', socket: native }));
         await fixture.trackOrder.writeOutsideAudience(rowFrom('origin'), ['b'], 'open-here');
         expect(fixture.outsideAcks).toEqual(['b']);
     });

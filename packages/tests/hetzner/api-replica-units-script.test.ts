@@ -7,6 +7,7 @@ import { runOwnedTestProcess } from './owned-test-process.ts';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const roleHelper = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-controller-role.sh');
+const bunRuntime = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-bun-runtime.sh');
 
 describe('Hetzner api replica units', () => {
     // The replicas share one executable, so only the identifier tells their raw journal lines apart.
@@ -18,9 +19,10 @@ describe('Hetzner api replica units', () => {
             executable: 'bash',
             args: [
                 '-c',
-                'set -euo pipefail; source "$1"; apply_rallar_controller_role; write_rallar_api_replica_units; rallar_api_replica_services',
+                'set -euo pipefail; source "$1"; source "$2"; apply_rallar_controller_role; write_rallar_api_replica_units; rallar_api_replica_services',
                 'api-replica-units',
-                roleHelper
+                roleHelper,
+                bunRuntime
             ],
             options: {
                 env: {
@@ -50,10 +52,11 @@ describe('Hetzner api replica units', () => {
             executable: 'bash',
             args: [
                 '-c',
-                'set -euo pipefail; source "$1"; RALLAR_API_REPLICA_SERVICES=(rallar-api-v1.service rallar-api-v1-4.service); ' +
+                'set -euo pipefail; source "$1"; source "$2"; RALLAR_API_REPLICA_SERVICES=(rallar-api-v1.service rallar-api-v1-4.service); ' +
                 'for service in $(rallar_api_replica_services); do printf "%s=%s\\n" "${service}" "$(rallar_role_service_failure_file "${service}")"; done',
                 'api-replica-failure-file',
-                roleHelper
+                roleHelper,
+                bunRuntime
             ],
             options: { env: { PATH: process.env.PATH, RALLAR_API_STORE_FAILURE_FILE: '/etc/rallar/api-v1.store-failure' } }
         });
@@ -84,10 +87,11 @@ describe('Hetzner api replica units', () => {
                 executable: 'bash',
                 args: [
                     '-c',
-                    'set -euo pipefail; source "$1"; RALLAR_API_REPLICA_SERVICES=(rallar-api-v1.service rallar-api-v1-2.service); ' +
+                    'set -euo pipefail; source "$1"; source "$2"; RALLAR_API_REPLICA_SERVICES=(rallar-api-v1.service rallar-api-v1-2.service); ' +
                     'RALLAR_API_REPLICA_PORTS=(8080 8081); apply_rallar_controller_role; write_rallar_api_replica_units',
                     'api-replica-stale-units',
-                    roleHelper
+                    roleHelper,
+                    bunRuntime
                 ],
                 options: {
                     env: {

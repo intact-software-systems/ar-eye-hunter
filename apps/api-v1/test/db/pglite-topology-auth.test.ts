@@ -48,6 +48,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import {
     readPGliteDatabaseEpochMs,
@@ -521,7 +522,7 @@ test(
             const wsServer = new JsonWebSocketServer();
             const wsSocket = new PGliteTestSocket();
             const wsConnection = new ConnectionContext({ id: authority.sessionId, socket: wsSocket });
-            wsServer.addConnection(wsConnection);
+            attachTestWebSocket(wsServer, wsConnection);
             const wsService = createDefaultWsQueueBoxServerService({
                 inboundVolatileStores: undefined,
                 outbox: new InMemoryQueueBox(new Map()),
@@ -599,7 +600,8 @@ test(
                     clearTimeout(captureDeadline);
                 }
 
-                wsServer.addConnection(
+                attachTestWebSocket(
+                    wsServer,
                     new ConnectionContext({
                         id: authority.sessionId,
                         socket: new PGliteTestSocket()

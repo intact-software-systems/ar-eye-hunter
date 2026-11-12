@@ -27,6 +27,7 @@ import { captureOutboundWorkRunnable } from '../alm/outbound-runtime-test-fixtur
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 export interface ReceiptClock {
     nowMs: number;
@@ -119,7 +120,7 @@ export async function createReceiptServer(input: CreateReceiptServerInput): Prom
     for (const peerId of input.peerIds) {
         const socket = new SimulatedWebSocket(`ws://${peerId}`);
         await socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: peerId, socket }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: peerId, socket }));
         sockets[peerId] = socket;
     }
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
@@ -208,7 +209,7 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
 export async function connect(instance: ClusterInstance, peerId: string): Promise<SimulatedWebSocket> {
     const socket = new SimulatedWebSocket(`ws://${peerId}-on-${instance.service.name}`);
     await socket.open();
-    instance.server.addConnection(new ConnectionContext({ id: peerId, socket }));
+    attachTestWebSocket(instance.server, new ConnectionContext({ id: peerId, socket }));
     return socket;
 }
 

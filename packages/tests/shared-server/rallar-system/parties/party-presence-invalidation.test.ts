@@ -169,7 +169,7 @@ function connect(now: number, sessionId: string, generationId: string): ClientMu
     });
 }
 
-describe('party views follow semantic client presence', { timeout: 30_000 }, () => {
+describe('party views follow semantic client presence', () => {
     it('keeps live heartbeats quiet, notifies only members on last-session loss, and does not republish replay', async () => {
         const storage = await createResourceInboxTestStorage('party_presence');
         try {

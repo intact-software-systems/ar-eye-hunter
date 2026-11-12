@@ -11,9 +11,9 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true,
     "types": [
-      "bun"
+      "bun",
+      "emscripten"
     ],
     "paths": {
       "@shared-graph/*": [

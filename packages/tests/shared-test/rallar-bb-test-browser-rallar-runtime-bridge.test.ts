@@ -266,12 +266,12 @@ describe('browser Rallar runtime bridge', () => {
                 super(url);
                 constructed.push({ socket: this, protocols });
             }
-            override send(data: Parameters<WebSocket['send']>[0]): void {
+            override send(data: Parameters<WebSocket['send']>[0]): number {
                 if (this.readyState === WebSocket.OPEN && ArrayBuffer.isView(data)) {
                     binarySends.push(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-                    return;
+                    return data.byteLength;
                 }
-                super.send(data);
+                return super.send(data);
             }
         }
         vi.stubGlobal('WebSocket', NativeBridgeSocket);

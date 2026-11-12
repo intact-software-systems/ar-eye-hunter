@@ -41,6 +41,7 @@ interface TypeScriptConfig {
         baseUrl?: unknown;
         ignoreDeprecations?: unknown;
         paths?: Record<string, string[]>;
+        skipLibCheck?: unknown;
         types?: unknown;
     };
 }
@@ -134,6 +135,10 @@ describe('native TypeScript 7 repository boundaries', () => {
 
             if ('ignoreDeprecations' in compilerOptions) {
                 problems.push('declares forbidden ignoreDeprecations fallback');
+            }
+
+            if (compilerOptions.skipLibCheck === true) {
+                problems.push('enables forbidden skipLibCheck suppression');
             }
 
             if (!Array.isArray(compilerOptions.types)) {
@@ -235,56 +240,7 @@ function findFilesMatching(
 }
 
 function readJson<T>(filePath: string): T {
-    return JSON.parse(stripJsonComments(readFileSync(filePath, 'utf8'))) as T;
-}
-
-// tsconfig files carry `//` justification comments; strip them (while preserving quoted strings)
-// so JSON.parse can read the migrated apps' configs and packages/tests/tsconfig.json.
-function stripJsonComments(text: string): string {
-    let result = '';
-    let inString = false;
-    let inBlockComment = false;
-    for (let index = 0; index < text.length; index += 1) {
-        const character = text[index]!;
-        const next = text[index + 1];
-        if (inBlockComment) {
-            if (character === '*' && next === '/') {
-                inBlockComment = false;
-                index += 1;
-            }
-            continue;
-        }
-        if (inString) {
-            result += character;
-            if (character === '\\') {
-                result += next ?? '';
-                index += 1;
-            }
-            else if (character === '"') {
-                inString = false;
-            }
-            continue;
-        }
-        if (character === '"') {
-            inString = true;
-            result += character;
-            continue;
-        }
-        if (character === '/' && next === '/') {
-            while (index < text.length && text[index] !== '\n') {
-                index += 1;
-            }
-            index -= 1;
-            continue;
-        }
-        if (character === '/' && next === '*') {
-            inBlockComment = true;
-            index += 1;
-            continue;
-        }
-        result += character;
-    }
-    return result;
+    return JSON.parse(readFileSync(filePath, 'utf8')) as T;
 }
 
 function relativePath(filePath: string): string {

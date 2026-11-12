@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-RALLAR_MIN_BUN_VERSION="${RALLAR_MIN_BUN_VERSION:-1.4.4}"
 source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-apt-sources.sh"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
@@ -59,9 +58,9 @@ write_rallar_apt_profile nodesource "${nodesource_apt_config}"
 env APT_CONFIG="${nodesource_apt_config}" apt update
 env APT_CONFIG="${nodesource_apt_config}" apt install -y nodejs
 
-echo "==> Installing Bun >= ${RALLAR_MIN_BUN_VERSION} into /usr/local/bin"
+echo "==> Installing Bun ${RALLAR_MIN_BUN_VERSION} into /usr/local/bin"
 export BUN_INSTALL=/usr/local
-curl -fsSL https://bun.sh/install | bash
+curl -fsSL https://bun.sh/install | bash -s "bun-v${RALLAR_MIN_BUN_VERSION}"
 hash -r
 require_rallar_min_bun_version
 

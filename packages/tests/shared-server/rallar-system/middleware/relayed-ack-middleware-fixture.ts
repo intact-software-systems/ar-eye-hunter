@@ -22,6 +22,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
@@ -68,7 +69,7 @@ export async function createRelayedAckMiddlewareInstance(
     for (const sessionId of input.sessionIds) {
         sockets[sessionId] = new TestWebSocket(`ws://${sessionId}`);
         sockets[sessionId].open();
-        socket.addConnection(new ConnectionContext({ id: sessionId, socket: sockets[sessionId] }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: sockets[sessionId] }));
     }
     const engine = new InboxOutboxEngine();
     engine.start();

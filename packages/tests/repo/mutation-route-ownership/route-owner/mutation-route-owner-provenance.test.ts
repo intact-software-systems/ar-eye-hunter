@@ -134,7 +134,7 @@ it('rejects a cross-file auth handoff discriminator and owner reroute', () => {
 });
 
 it('rejects a websocket connect handoff moved to an unreachable helper', () => {
-    const item = requireEntry(AppInboxType.CLIENT_AUTHORISED_WS_CONNECT, 'WS_UPGRADE');
+    const item = requireEntry(AppInboxType.CLIENT_AUTHORISED_WS_CONNECT, 'HTTP');
     const source = readFileSync(item.sourcePath, 'utf8');
     const live = 'return await input.appClientInboxService.writeAuthorisedWsClientConnect(connect.enqueue);';
     const mutated = source.replace(live, 'return undefined;') +
