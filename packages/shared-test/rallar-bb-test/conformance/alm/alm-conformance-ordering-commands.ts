@@ -44,7 +44,10 @@ export function toSentCommands(step: AlmConformanceMessageStepInput): readonly R
     ];
 }
 
-/** The send of `step.index` settled in exactly `state`, which its observation must name; absent, the state's own budget. */
+/**
+ * The send of `step.index` settled in exactly `state`, which its observation must name; with no `budgetMs`, the state's
+ * own observe budget.
+ */
 export function toSettledStateCommands(
     step: AlmConformanceMessageStepInput,
     state: ALDeliveryState,

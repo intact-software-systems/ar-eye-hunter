@@ -476,6 +476,19 @@ and it has no status list.
   (S9-ii, D637): the control protocol exports no body contract or decoder both
   could use; its owner is
   `packages/shared-test/rallar-bb-test/control-protocol.ts`.
+- `toSettledStateCommands` lives in
+  `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`
+  though five of its nine callers are not ordering cells (S9-ii). Its owner is
+  `alm-conformance-message-commands.ts`, whose 11 runtime exports make the
+  move a split review.
+- Two catalog tests keep a loop-only recipe flattener of their own
+  (`toFlatCommands` in
+  `packages/tests/shared-test/alm-conformance-granted-rtc.test.ts` and
+  `packages/tests/shared-test/alm-conformance-topic-subscription.test.ts`)
+  beside `toNestedCommands`
+  (`packages/tests/shared-test/to-nested-commands.ts`) (S9-ii). The shared one
+  also walks `parallel` children, so replacing them changes what each test
+  reads and needs its assertions checked, not a rename.
 - The ALM lane does not read a `recipe.cancel` command's own answer (S9-ii,
   D628), so a cancel answered `target-not-exclusively-active` costs a needless
   30 s before the family fails; owner
