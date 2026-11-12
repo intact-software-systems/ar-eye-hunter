@@ -261,7 +261,7 @@ test('restores versioned view selection filters comparison and timing metric fro
     advancedHref.searchParams.set('view', 'advanced');
     advancedHref.searchParams.set('legacySurface', 'rtc-diagnostics');
     await page.evaluate((href) => {
-        history.pushState({}, '', href);
+        window.history.pushState({}, '', href);
         dispatchEvent(new PopStateEvent('popstate'));
     }, advancedHref.toString());
     await expectVisibleView(page, 'advanced');

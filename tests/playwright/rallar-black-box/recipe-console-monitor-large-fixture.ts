@@ -345,6 +345,9 @@ function createLargeDistributedRun(
                 recipes: LARGE_MONITOR_COUNTS.recipes,
                 passedRecipes: LARGE_MONITOR_COUNTS.recipes - 1,
                 failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: LARGE_MONITOR_FAILURE_COUNT
             },
             failures: []

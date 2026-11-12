@@ -327,7 +327,8 @@ async function ensureWorkerMemberships(
             commandPrefix: agent.agentId,
             requestPrefix: agent.agentId,
             group: run.group,
-            actor: '{auth.clientId}'
+            actor: '{auth.clientId}',
+            timeoutMs: 45_000
         });
         if (index === 0) {
             const created = await run.control.executeOk({

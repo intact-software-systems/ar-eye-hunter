@@ -194,6 +194,8 @@ function augmentControlRun(base: ControlRunSnapshot): ControlRunSnapshot {
         ...agent,
         identity: {
             ...agent.identity,
+            sessionLabel: agent.identity?.sessionLabel ?? `${agent.agentId}-principal:${agent.agentId}-session`,
+            updatedAtEpochMs: agent.identity?.updatedAtEpochMs ?? BASE_EPOCH_MS + 900,
             ...GROUP,
             providerMode: 'browser-rallar',
             region: index === 0 ? 'region-00' : FLEET_SELECTED_REGION,

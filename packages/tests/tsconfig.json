@@ -52,7 +52,8 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    "**/*.d.ts"
+    "**/*.d.ts",
+    "../../tests/playwright/**/*.ts"
   ],
   "exclude": [
     "shared-server/rallar-system/websocket/native-receiver-receipts-child.ts",

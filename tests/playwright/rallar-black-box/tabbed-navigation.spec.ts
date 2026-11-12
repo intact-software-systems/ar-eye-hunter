@@ -690,7 +690,7 @@ test('does not poll control runs while direct Rallar tabs are active', async ({ 
 });
 
 test('keeps Quick Test group stable after create subscribe and send', async ({ page }) => {
-    await page.addInitScript(({ groupSnapshot, sentLifecycle }) => {
+    await page.addInitScript<QuickTestInitScriptArg>(({ groupSnapshot, sentLifecycle }) => {
         const session = {
             clientId: 'alice-client',
             accessToken: 'secret-token-value',
@@ -849,8 +849,34 @@ test('surfaces direct RTC, Rallar Data, and Media tabs with real-backend guardra
     await expect(mediaPanel.getByRole('button', { name: 'Attach local stream' })).toBeDisabled();
 });
 
+/** What the page script reads of the fixtures; Playwright's serialized-argument type cannot unfold the full domain types. */
+interface PageGroupSnapshot {
+    readonly group: { readonly groupId: string; };
+}
+
+interface PageSentLifecycle {
+    readonly msgId: string;
+    readonly typeId: string;
+}
+
+interface QuickTestInitScriptArg {
+    readonly groupSnapshot: PageGroupSnapshot;
+    readonly sentLifecycle: PageSentLifecycle;
+}
+
+interface WsProbeScriptArg {
+    readonly joinedGroupSnapshot: PageGroupSnapshot;
+    readonly sentLifecycle: PageSentLifecycle;
+}
+
+interface QueuedDemoCommand {
+    readonly envelope: Readonly<Record<string, unknown>>;
+    readonly queuedAtEpochMs: number;
+    readonly dispatchCount: number;
+}
+
 test('inspects control-server runs and enqueues a bulk command', async ({ page }) => {
-    let run: any = {
+    let run = {
         runId: 'demo-run',
         createdAtEpochMs: Date.now() - 5_000,
         updatedAtEpochMs: Date.now() - 1_000,
@@ -884,7 +910,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
                 resumeCompletedCommandIds: []
             }
         ],
-        commands: [],
+        commands: [] as QueuedDemoCommand[],
         results: [{
             kind: 'result',
             protocolVersion: 1,
@@ -1687,7 +1713,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
     await expect(runState.locator('.metric').filter({ hasText: 'RTC' })).toContainText('ready');
     await expect(runState.locator('.metric').filter({ hasText: 'Room' })).toContainText('awesome');
 
-    await page.evaluate(
+    await page.evaluate<void, WsProbeScriptArg>(
         ({ joinedGroupSnapshot, sentLifecycle }) => {
             (window as any).__lastRallarWsSend = undefined;
             (window as any).__rallarCallLog = [];

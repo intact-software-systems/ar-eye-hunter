@@ -65,7 +65,9 @@ function controlAgent(
                 groupId: options.groupId ?? GROUP.groupId,
                 providerMode: 'browser-rallar',
                 browserName: 'chromium',
-                region: 'eu-north'
+                region: 'eu-north',
+                sessionLabel: `${agentId}:${agentId}-session`,
+                updatedAtEpochMs: atEpochMs
             },
         connectionSequence: 1,
         reconnectCount: 0,
@@ -140,6 +142,9 @@ function activeDistributedRun(
                 recipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0
             },
             failures: []
@@ -976,12 +981,7 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
             }
         });
     });
-    const activePolls = (): Promise<number> =>
-        page.evaluate(() =>
-            (window as Window & {
-                __recipeConsoleTimeoutProbe: { activePolls(): number; };
-            }).__recipeConsoleTimeoutProbe.activePolls()
-        );
+    const activePolls = (): Promise<number> => page.evaluate(() => window.__recipeConsoleTimeoutProbe.activePolls());
     const mock = await installControlRouteMock(context, [{
         kind: 'snapshot',
         snapshot: liveBoardSnapshot()
