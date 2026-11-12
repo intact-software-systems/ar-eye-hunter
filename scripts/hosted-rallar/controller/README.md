@@ -18,13 +18,13 @@ Run every script as `root`.
 Intended DNS records (documented here; live DNS is not managed by these
 scripts):
 
-| Host                           | Role    | Backend                                  |
-| ------------------------------ | ------- | ---------------------------------------- |
-| `api.rallar.intactss.com`      | api     | `127.0.0.1:8080`                         |
-| `blackbox.rallar.intactss.com` | api     | static SPA (`/var/www/rallar-black-box`) |
-| `control.rallar.intactss.com`  | control | `127.0.0.1:5180`                         |
-| `relic.rallar.intactss.com`    | games   | `127.0.0.1:8090`                         |
-| `ar-eye.rallar.intactss.com`   | games   | `127.0.0.1:8091`                         |
+| Host                           | Role    | Backend                                                                                                        |
+| ------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `api.rallar.intactss.com`      | api     | `127.0.0.1:8080`, `:8081`, `:8082` (round robin over the replicas whose `GET /api/config` health check passes) |
+| `blackbox.rallar.intactss.com` | api     | static SPA (`/var/www/rallar-black-box`)                                                                       |
+| `control.rallar.intactss.com`  | control | `127.0.0.1:5180`                                                                                               |
+| `relic.rallar.intactss.com`    | games   | `127.0.0.1:8090`                                                                                               |
+| `ar-eye.rallar.intactss.com`   | games   | `127.0.0.1:8091`                                                                                               |
 
 Each role's script set reads `RALLAR_CONTROLLER_ROLE` from the environment.
 Every script defaults to `api`, so an unset role on the api server preserves the

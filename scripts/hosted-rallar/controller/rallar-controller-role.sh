@@ -13,7 +13,10 @@ RALLAR_API_PORT_DEFAULT="8080"
 RALLAR_CONTROL_PORT_DEFAULT="5180"
 
 # The api role runs three api-v1 replicas behind one shared Postgres store. Each replica
-# binds a distinct loopback port; Caddy round-robins the public host across all three.
+# binds a distinct port; Caddy round-robins the public host across the replicas its active
+# health check (the unauthenticated, store-free GET /api/config) finds up, and retries a
+# request whose dial fails on the next replica, so a replica that is down or in its
+# RestartSec loop costs neither HTTP requests nor WS upgrades.
 # Multi-instance correctness (cross-instance WS/RTC fanout) relies on RALLAR_DB_PUBSUB=postgres.
 RALLAR_API_REPLICA_PORTS_DEFAULT=(8080 8081 8082)
 RALLAR_API_REPLICA_SERVICES_DEFAULT=(rallar-api-v1.service rallar-api-v1-2.service rallar-api-v1-3.service)
@@ -189,7 +192,12 @@ write_rallar_role_caddyfile() {
 		api)
 			cat <<EOF
 ${RALLAR_API_HOST:-${RALLAR_API_HOST_DEFAULT}} {
-	reverse_proxy ${RALLAR_API_REPLICA_PORTS_UPSTREAMS}
+	reverse_proxy ${RALLAR_API_REPLICA_PORTS_UPSTREAMS} {
+		lb_policy round_robin
+		lb_try_duration 5s
+		health_uri /api/config
+		health_interval 5s
+	}
 }
 
 ${RALLAR_BLACKBOX_HOST:-${RALLAR_BLACKBOX_HOST_DEFAULT}} {
