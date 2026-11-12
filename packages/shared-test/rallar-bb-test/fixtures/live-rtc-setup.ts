@@ -1,4 +1,4 @@
-import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait.ts';
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 export const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';

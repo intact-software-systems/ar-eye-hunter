@@ -18,7 +18,7 @@ import type {
     RallarBlackBoxTestRtcConnectCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
-import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '../../../packages/shared/api/mutation/api-mutation-completion-wait.ts';
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '../../../packages/shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
