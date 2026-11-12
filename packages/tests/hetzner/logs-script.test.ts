@@ -24,6 +24,7 @@ import { runOwnedTestProcess } from './owned-test-process.ts';
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
 const logsScriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/15-logs.sh');
+const roleHelperPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-controller-role.sh');
 /** The api role's replica units, in the order the role installs them. */
 const API_REPLICA_UNITS = 'rallar-api-v1.service,rallar-api-v1-2.service,rallar-api-v1-3.service';
 
@@ -116,15 +117,23 @@ describe('Hetzner logs script', () => {
         expect(stdout).toContain(`units=${API_REPLICA_UNITS}\n`);
     });
 
-    // A workflow streams the script over SSH stdin, where no sibling role helper exists.
-    it('selects the primary api unit when streamed without its role helper', async (context) => {
+    // A workflow streams the script over SSH stdin, where no sibling role helper exists, so the helper streams ahead of it.
+    it('reads every api replica unit when streamed after its role helper', async (context) => {
         const outcome = await runOwnedTestProcess(context, {
             executable: 'bash',
-            args: ['-c', 'bash -s -- --services api <"$1"', 'streamed-logs', logsScriptPath],
+            args: ['-c', 'cat "$1" "$2" | bash -s -- --services api', 'streamed-logs', roleHelperPath, logsScriptPath],
             options: { env: { ...process.env, RALLAR_LOGS_SELF_TEST: '1' } }
         });
 
-        expect(outcome.stdout).toContain('units=rallar-api-v1.service\n');
+        expect(outcome.stdout).toContain(`units=${API_REPLICA_UNITS}\n`);
+    });
+
+    it('refuses to read the api units when streamed without its role helper', async (context) => {
+        await expect(runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', 'bash -s -- --services api <"$1"', 'streamed-logs', logsScriptPath],
+            options: { env: { ...process.env, RALLAR_LOGS_SELF_TEST: '1' } }
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('rallar-controller-role.sh') });
     });
 
     it('reports missing option values clearly', async () => {

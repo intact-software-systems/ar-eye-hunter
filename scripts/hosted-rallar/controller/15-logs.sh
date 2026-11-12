@@ -128,14 +128,10 @@ resolve_script_dir() {
 	cd -P -- "$(dirname -- "${script_path}")" && pwd
 }
 
-# Every api replica unit the role installs; streamed without its role helper, only the primary replica.
-declare -a api_units=(rallar-api-v1.service)
-if script_dir="$(resolve_script_dir)" && [[ -r "${script_dir}/rallar-controller-role.sh" ]]; then
+# The role helper names every api replica unit: sourced beside the script, or streamed ahead of it over SSH stdin.
+if ! declare -F rallar_api_replica_services >/dev/null && script_dir="$(resolve_script_dir)" &&
+	[[ -r "${script_dir}/rallar-controller-role.sh" ]]; then
 	source "${script_dir}/rallar-controller-role.sh"
-	api_units=()
-	while IFS= read -r api_unit; do
-		api_units+=("${api_unit}")
-	done < <(rallar_api_replica_services)
 fi
 
 add_unit() {
@@ -155,9 +151,13 @@ expand_service() {
 	local service="$1"
 	case "${service}" in
 	api)
-		for api_unit in "${api_units[@]}"; do
+		if ! declare -F rallar_api_replica_services >/dev/null; then
+			echo "The api units come from rallar-controller-role.sh; keep it beside this script or stream it ahead." >&2
+			exit 2
+		fi
+		while IFS= read -r api_unit; do
 			add_unit "${api_unit}"
-		done
+		done < <(rallar_api_replica_services)
 		;;
 	control)
 		add_unit "rallar-black-box-control.service"
