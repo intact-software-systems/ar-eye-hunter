@@ -7,6 +7,7 @@ import {
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     computeGroupStateDeltaEnvelope,
+    resolveGroupStateDeltaPredecessorCausalRevision,
     type GroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryWorkRead
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
@@ -57,7 +58,11 @@ describe('group presence summary delta emission', () => {
                 event: result.command.event,
                 coalescedEvents: result.read.coalescedEvents,
                 summary: result.computed.summary,
-                summaryPredecessor: result.read.presence.current?.value ?? null,
+                predecessorCausalRevision: resolveGroupStateDeltaPredecessorCausalRevision({
+                    coalescedEvents: result.read.coalescedEvents,
+                    state: { summary: result.computed.summary, snapshot: result.computed.snapshot },
+                    presence: result.read.presence
+                }),
                 snapshot: result.computed.snapshot
             })
         );

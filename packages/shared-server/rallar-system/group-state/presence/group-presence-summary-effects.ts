@@ -120,7 +120,7 @@ export interface ComputeGroupPresenceSummaryOutboxInput {
     readonly work: GroupPresenceSummaryWorkData;
     readonly coalescedEvents: readonly GroupEvent[];
     readonly summary: GroupPresenceSummaryComputed;
-    readonly summaryPredecessor: GroupPresenceSummary | null;
+    readonly predecessorCausalRevision: GroupStateCausalRevision;
     readonly snapshot: GroupSnapshot;
     readonly audience: StateSyncAudience;
     readonly senderPeerId: string;
@@ -131,8 +131,7 @@ export interface ComputeGroupStateDeltaEnvelopeInput {
     readonly event: GroupEvent;
     readonly coalescedEvents: readonly GroupEvent[];
     readonly summary: GroupPresenceSummaryComputed;
-    /** The stored summary the expansion read, the state a consumer at the predecessor revision holds; null before the first. */
-    readonly summaryPredecessor: GroupPresenceSummary | null;
+    readonly predecessorCausalRevision: GroupStateCausalRevision;
     readonly snapshot: GroupSnapshot;
 }
 
@@ -141,7 +140,17 @@ export interface GroupPresenceSummaryExpansionInput {
     readonly work: GroupPresenceSummaryWorkData;
     readonly read: GroupPresenceSummaryWorkRead;
     readonly state: GroupPresenceSummaryState;
+    /** The predecessor every delta of the page names, resolved once for the page. */
+    readonly deltaPredecessorCausalRevision: GroupStateCausalRevision;
     readonly traceId: string;
+}
+
+export interface ResolveGroupStateDeltaPredecessorInput {
+    /** The page's events in causal order. */
+    readonly coalescedEvents: readonly GroupEvent[];
+    readonly state: GroupPresenceSummaryState;
+    /** The rows the page read; their stored summary is the state a consumer at the predecessor revision holds. */
+    readonly presence: GroupPresenceSummaryRead;
 }
 
 export interface ValidateGroupPresenceSummaryComputedWorkInput {
@@ -155,6 +164,7 @@ interface ToGroupPresenceSummaryOutboxInputInput {
     readonly read: GroupPresenceSummaryWorkRead;
     readonly summary: GroupPresenceSummaryComputed;
     readonly snapshot: GroupSnapshot;
+    readonly predecessorCausalRevision: GroupStateCausalRevision;
     readonly options: ComputeGroupPresenceSummaryWorkOptions;
     readonly traceId: string;
 }
@@ -173,14 +183,16 @@ export function computeGroupPresenceSummaryWork(
     options: ComputeGroupPresenceSummaryWorkOptions
 ): GroupPresenceSummaryComputedWork {
     const { work, read, state: { summary, snapshot }, traceId } = expansion;
-    const outboxInput = toGroupPresenceSummaryOutboxInput({
+    const expansionInput = {
         work,
         read,
         summary,
         snapshot,
+        predecessorCausalRevision: expansion.deltaPredecessorCausalRevision,
         options,
         traceId
-    });
+    };
+    const outboxInput = toGroupPresenceSummaryOutboxInput(expansionInput);
     const downstreamOutboxEntries = computeGroupPresenceSummaryOutboxEntries(outboxInput);
     return {
         work,
@@ -192,7 +204,7 @@ export function computeGroupPresenceSummaryWork(
             groupRef: work.aggregateRef,
             activeSessionIds: summary.summary.activeSessionIds
         }),
-        topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options, traceId }),
+        topologyReplan: computeTopologyReplan(expansionInput),
         reservationFinish: {
             key: { ...read.reservation.key },
             expectedAttempts: read.reservation.expectedAttempts,
@@ -237,7 +249,7 @@ export function validateGroupPresenceSummaryState(
 }
 
 /** The summary a delta names as its predecessor: the stored one, or none before the first summary. */
-export function toGroupPresenceSummaryPredecessor(presence: GroupPresenceSummaryRead): GroupPresenceSummary | null {
+function toGroupPresenceSummaryPredecessor(presence: GroupPresenceSummaryRead): GroupPresenceSummary | null {
     return presence.current?.value ?? null;
 }
 
@@ -378,8 +390,24 @@ function computeExpectedMembersArrived(
 export function validateGroupPresenceSummaryComputedWork(
     input: ValidateGroupPresenceSummaryComputedWorkInput
 ): readonly ComputedDataValidationIssue[] {
-    const expected = computeGroupPresenceSummaryWork(input.expansion, input.options);
-    return validateComputedProjection(expected, input.computed, 'computed');
+    const { expansion } = input;
+    const deltaPredecessorCausalRevision = resolveGroupStateDeltaPredecessorCausalRevision({
+        coalescedEvents: expansion.read.coalescedEvents,
+        state: expansion.state,
+        presence: expansion.read.presence
+    });
+    return [
+        ...validateComputedProjection(
+            deltaPredecessorCausalRevision,
+            expansion.deltaPredecessorCausalRevision,
+            'deltaPredecessorCausalRevision'
+        ),
+        ...validateComputedProjection(
+            computeGroupPresenceSummaryWork(expansion, input.options),
+            input.computed,
+            'computed'
+        )
+    ];
 }
 
 function toGroupPresenceSummaryOutboxInput(
@@ -390,7 +418,7 @@ function toGroupPresenceSummaryOutboxInput(
         work,
         coalescedEvents: read.coalescedEvents,
         summary,
-        summaryPredecessor: toGroupPresenceSummaryPredecessor(read.presence),
+        predecessorCausalRevision: input.predecessorCausalRevision,
         snapshot,
         audience: {
             kind: 'group',
@@ -432,7 +460,7 @@ function computeGroupStateEventEffect(
             event: input.work.event,
             coalescedEvents: input.coalescedEvents,
             summary: input.summary,
-            summaryPredecessor: input.summaryPredecessor,
+            predecessorCausalRevision: input.predecessorCausalRevision,
             snapshot: input.snapshot
         })
     };
@@ -446,7 +474,7 @@ export function computeGroupStateDeltaEnvelope(
     const activeSessionIds = snapshot.activeSessions.map((session) => session.sessionId);
     return {
         event,
-        predecessorCausalRevision: resolveGroupStateDeltaPredecessorCausalRevision(input),
+        predecessorCausalRevision: input.predecessorCausalRevision,
         resultingCausalRevision: snapshot.causalRevision,
         members: snapshot.members.filter((member) =>
             sliceEvents.some((sliced) => isGroupMemberWrittenByEvent(member, sliced))
@@ -516,19 +544,21 @@ function computeGroupStateDeltaRemovedSessionIds(
 }
 
 /**
- * A delta claims the write from its summary predecessor to the snapshot only when its batch carries that range: a
- * summary no-op, or a batch that does not cover the snapshot, stamps a write-nothing delta. A consumer behind the
- * snapshot then pulls it instead of labelling rows the batch does not carry with the snapshot's revision.
+ * The predecessor every delta of a page names. A delta claims the write from the summary predecessor to the snapshot
+ * only when the page's batch carries it: a summary no-op, or a snapshot the batch does not cover, names the snapshot
+ * itself, and a consumer behind it pulls the snapshot rather than label rows the batch does not carry.
  */
-function resolveGroupStateDeltaPredecessorCausalRevision(
-    input: ComputeGroupStateDeltaEnvelopeInput
+export function resolveGroupStateDeltaPredecessorCausalRevision(
+    input: ResolveGroupStateDeltaPredecessorInput
 ): GroupStateCausalRevision {
-    const resulting = input.snapshot.causalRevision;
-    if (input.summary.outcome === 'no-op' || !isSnapshotCoveredByDeltaBatch(input)) {
+    const { coalescedEvents, state: { summary, snapshot } } = input;
+    const summaryPredecessor = toGroupPresenceSummaryPredecessor(input.presence);
+    const resulting = snapshot.causalRevision;
+    if (summary.outcome === 'no-op' || !isSnapshotCoveredByDeltaBatch(coalescedEvents, snapshot, summaryPredecessor)) {
         return resulting;
     }
-    if (input.summaryPredecessor !== null) {
-        return input.summaryPredecessor.causalRevision;
+    if (summaryPredecessor !== null) {
+        return summaryPredecessor.causalRevision;
     }
     return {
         groupRevision: resulting.groupRevision,
@@ -537,15 +567,27 @@ function resolveGroupStateDeltaPredecessorCausalRevision(
 }
 
 /**
- * Whether the batch's events wrote everything the snapshot holds beyond the summary predecessor: no group write newer
- * than the batch's newest event, and no active session record changed by a principal outside the batch's session
- * events. A write that committed after the batch was claimed and before its read fails both.
+ * Every group revision after the predecessor's is a group write of the batch, which relies on each such write advancing
+ * the group revision by exactly one; and every session whose content changed belongs to a principal whose session event
+ * is in the batch. Before the first summary there is no predecessor revision, so the batch's newest event bounds the
+ * range.
  */
-function isSnapshotCoveredByDeltaBatch(input: ComputeGroupStateDeltaEnvelopeInput): boolean {
-    const { coalescedEvents, snapshot, summaryPredecessor } = input;
-    const newestGroupRevision = Math.max(...coalescedEvents.map((event) => event.causalRevision.groupRevision));
-    if (snapshot.causalRevision.groupRevision > newestGroupRevision) {
-        return false;
+function isSnapshotCoveredByDeltaBatch(
+    coalescedEvents: readonly GroupEvent[],
+    snapshot: GroupSnapshot,
+    summaryPredecessor: GroupPresenceSummary | null
+): boolean {
+    const writtenGroupRevisions = new Set(
+        coalescedEvents.filter((event) => !isGroupSessionEvent(event)).map((event) =>
+            event.causalRevision.groupRevision
+        )
+    );
+    const floor = summaryPredecessor?.causalRevision.groupRevision ??
+        Math.max(...coalescedEvents.map((event) => event.causalRevision.groupRevision));
+    for (let revision = floor + 1; revision <= snapshot.causalRevision.groupRevision; revision += 1) {
+        if (!writtenGroupRevisions.has(revision)) {
+            return false;
+        }
     }
     const writtenPrincipalIds = toGroupStateDeltaSessionPrincipalIds(coalescedEvents);
     const previousSessions = new Map(
@@ -575,12 +617,17 @@ function computeGroupStateDeltaSessions(
 function toGroupStateDeltaSessionPrincipalIds(events: readonly GroupEvent[]): ReadonlySet<string> {
     return new Set(
         events.flatMap((event) =>
-            (event.eventType === 'session-connected' ||
-                    event.eventType === 'session-heartbeat' ||
-                    event.eventType === 'session-disconnected') &&
-                event.actor.kind !== 'service'
-                ? [event.actor.principalId]
-                : []
+            isGroupSessionEvent(event) && event.actor.kind !== 'service' ? [event.actor.principalId] : []
         )
     );
+}
+
+/**
+ * A presence write's event: it keeps the group revision it read. Every other group event is the write that advanced
+ * the group to its revision.
+ */
+export function isGroupSessionEvent(event: GroupEvent): boolean {
+    return event.eventType === 'session-connected' ||
+        event.eventType === 'session-heartbeat' ||
+        event.eventType === 'session-disconnected';
 }

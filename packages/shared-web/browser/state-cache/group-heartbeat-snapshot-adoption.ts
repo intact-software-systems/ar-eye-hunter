@@ -52,7 +52,8 @@ export function adoptGroupSnapshotsFromHeartbeat(
 /**
  * The cache holds other content than the server at the same causal tuple, so it labels a revision with rows the
  * server never wrote there. The heartbeat's snapshot is the server's content at that tuple: it replaces a cached one
- * still live, without reviving one the cache TTL expired, and the divergence is reported.
+ * still live, without reviving one the cache TTL expired. The diagnostic reports the divergence observed, whether or
+ * not a replacement happened.
  */
 function adoptDivergentGroupSnapshot(observed: GroupSnapshot, returned: GroupSnapshot): void {
     if (groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group) !== undefined) {

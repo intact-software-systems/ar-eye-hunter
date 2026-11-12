@@ -6,11 +6,12 @@ import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import type { GroupEvent } from '@shared/api/group-types.ts';
+import type { GroupEvent, GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
+import { RFC_7517_PUBLICATION_KEY } from '../../../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
 import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 import { createService, readSummaryWork, requireSnapshot, summaryReservationRead, toSummaryExpansion } from './group-presence-test-runtime.ts';
@@ -154,17 +155,75 @@ describe('group presence summary coalesced slices', () => {
         ]);
     });
 
-    it('ends the mirrored order, the later grant expanded first, with a write-nothing delta for the earlier event', async () => {
+    it('claims no write in the mirrored order, the later grant expanded alone first, for either delta', async () => {
         const { runtime, work, writeA, writeB } = await seedTwoGrantWrites('mirrored-race-room');
 
-        await expandAndCommitAlone(runtime, work, writeB);
+        const envelopeB = await expandAndCommitAlone(runtime, work, writeB);
         const envelopeA = await expandAndCommitAlone(runtime, work, writeA);
 
-        expect(toStamps(envelopeA)).toEqual({
-            event: writeA.causalRevision,
-            predecessor: writeB.causalRevision,
-            resulting: writeB.causalRevision
+        expect([envelopeB, envelopeA].map(toStamps)).toEqual([
+            { event: writeB.causalRevision, predecessor: writeB.causalRevision, resulting: writeB.causalRevision },
+            { event: writeA.causalRevision, predecessor: writeB.causalRevision, resulting: writeB.causalRevision }
+        ]);
+    });
+
+    it('claims the write of a presence event that read an older group revision than its predecessor', async () => {
+        const { runtime, work, groupId } = await seedConvergedGroup('older-read-presence-room');
+        await grantFeedPublish(runtime, { groupId, principalId: 'bob', nowEpochMs: BASE_EPOCH_MS + 1_000 });
+        const grant = (await listEvents(runtime, groupId)).at(-1)!;
+        await expandAndCommitAlone(runtime, work, grant);
+        await connect(runtime, { groupId, principalId: 'alice', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 2_000 });
+        const connected = (await listEvents(runtime, groupId)).at(-1)!;
+        // A presence write does not fence the group row: one that read the group before the grant committed after it.
+        const readBeforeGrant: GroupEvent = {
+            ...connected,
+            snapshotVersion: grant.snapshotVersion - 1,
+            causalRevision: { ...connected.causalRevision, groupRevision: grant.causalRevision.groupRevision - 1 }
+        };
+
+        const envelope = await expandAndCommitAlone(runtime, work, readBeforeGrant);
+
+        expect(toStamps(envelope)).toEqual({
+            event: readBeforeGrant.causalRevision,
+            predecessor: grant.causalRevision,
+            resulting: { groupRevision: grant.causalRevision.groupRevision, presenceRevision: grant.causalRevision.presenceRevision + 1 }
         });
+    });
+
+    it('claims the write of a heartbeat that changes its own principal\'s publication key', async () => {
+        const { runtime, work, groupId } = await seedConvergedGroup('own-key-change-room');
+        await heartbeat(runtime, { groupId, principalId: 'bob', publicationKey: RFC_7517_PUBLICATION_KEY, nowEpochMs: BASE_EPOCH_MS + 2_000 });
+        const keyChange = (await listEvents(runtime, groupId)).at(-1)!;
+
+        const envelope = await expandAndCommitAlone(runtime, work, keyChange);
+
+        expect(keyChange.eventType).toBe('session-heartbeat');
+        expect(claimsWrite(envelope)).toBe(true);
+        expect(envelope.sessions.map((session) => session.publicationKey)).toEqual([RFC_7517_PUBLICATION_KEY]);
+    });
+
+    it('claims the write when another principal only renewed its lease between the batch\'s claim and its read', async () => {
+        const { runtime, work, groupId } = await seedConvergedGroup('lease-renewal-room');
+        await connect(runtime, { groupId, principalId: 'alice', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 2_000 });
+        const connected = (await listEvents(runtime, groupId)).at(-1)!;
+        await heartbeat(runtime, { groupId, principalId: 'bob', publicationKey: null, nowEpochMs: BASE_EPOCH_MS + 3_000 });
+
+        const envelope = await expandAndCommitAlone(runtime, work, connected);
+
+        expect(claimsWrite(envelope)).toBe(true);
+    });
+
+    it('claims the write when another principal connected between the batch\'s claim and its read, its record left to the page\'s missing-record pull', async () => {
+        const { runtime, work, groupId } = await seedConvergedGroup('added-session-room', 'carol');
+        await connect(runtime, { groupId, principalId: 'alice', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 2_000 });
+        const connected = (await listEvents(runtime, groupId)).at(-1)!;
+        await connect(runtime, { groupId, principalId: 'carol', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 3_000 });
+
+        const envelope = await expandAndCommitAlone(runtime, work, connected);
+
+        expect(claimsWrite(envelope)).toBe(true);
+        expect(envelope.activeSessionIds).toContain(sessionId(groupId, 'carol'));
+        expect(envelope.sessions.map((session) => session.sessionId)).not.toContain(sessionId(groupId, 'carol'));
     });
 
     it('claims no write when another session changed between the batch\'s claim and its read', async () => {
@@ -265,6 +324,50 @@ function toStamps(envelope: GroupStateDeltaEnvelope) {
         predecessor: envelope.predecessorCausalRevision,
         resulting: envelope.resultingCausalRevision
     };
+}
+
+interface ConvergedGroup {
+    readonly runtime: GroupBarrierRepository;
+    readonly work: GroupPresenceSummaryWork;
+    readonly groupId: string;
+}
+
+/** bob connected (and an optional second member, not connected), with the summary converged on the last event. */
+async function seedConvergedGroup(groupId: string, secondMemberId?: string): Promise<ConvergedGroup> {
+    const runtime = new GroupBarrierRepository();
+    await seedOpenGroupWithMember(runtime, groupId, 'bob');
+    if (secondMemberId !== undefined) {
+        await createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+            .upsertMember(SCOPE, groupId, secondMemberId, {
+                status: 'active',
+                actorPrincipalId: 'alice',
+                requestId: `activate-${groupId}-${secondMemberId}`
+            });
+    }
+    await connect(runtime, { groupId, principalId: 'bob', generationId: 'generation-1', nowEpochMs: BASE_EPOCH_MS + 1_000 });
+    const work = createSummaryWork(runtime);
+    await expandAndCommitAlone(runtime, work, (await listEvents(runtime, groupId)).at(-1)!);
+    return { runtime, work, groupId };
+}
+
+interface HeartbeatStep {
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly publicationKey: GroupPresencePublicationKey | null;
+    readonly nowEpochMs: number;
+}
+
+/** A heartbeat of the member's generation-1 session. */
+async function heartbeat(runtime: GroupBarrierRepository, step: HeartbeatStep): Promise<void> {
+    const { groupId, principalId, publicationKey, nowEpochMs } = step;
+    await createService({ runtimeRepository: runtime, nowEpochMs, attemptCount: 1, injectedRandomId: undefined, timing: undefined })
+        .heartbeatPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
+            generationId: 'generation-1',
+            publicationKey,
+            actorPrincipalId: principalId,
+            lastHeartbeatAtEpochMs: nowEpochMs,
+            requestId: `heartbeat-${groupId}-${principalId}-${nowEpochMs}`
+        });
 }
 
 interface TwoGrantWrites {

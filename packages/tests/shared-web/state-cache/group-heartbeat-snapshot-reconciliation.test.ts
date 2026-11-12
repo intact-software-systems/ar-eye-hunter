@@ -1,5 +1,9 @@
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
+import {
+    setBrowserStateReadDiagnosticsSink,
+    type BrowserStateReadDiagnosticEvent
+} from '@shared-web/browser/state-read/diagnostics.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
@@ -89,9 +93,24 @@ describe('group heartbeat snapshot reconciliation', () => {
             options: { scope: { applicationId: 'app-1', workspaceId: 'workspace-b' } }
         });
 
-        expect(() => adoptGroupSnapshotsFromHeartbeat([observed], [returned])).not.toThrow();
-        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        const diagnostics: BrowserStateReadDiagnosticEvent[] = [];
+        setBrowserStateReadDiagnosticsSink((event) => diagnostics.push(event));
+
+        try {
+            expect(() => adoptGroupSnapshotsFromHeartbeat([observed], [returned])).not.toThrow();
+            await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        }
+        finally {
+            setBrowserStateReadDiagnosticsSink(undefined);
+        }
 
         expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(group.group)).toEqual(returned);
+        expect(diagnostics).toEqual([{
+            name: 'rallar.browser.state-read',
+            feature: 'group',
+            operation: 'heartbeat',
+            result: 'revision-conflict',
+            durationMs: 0
+        }]);
     });
 });

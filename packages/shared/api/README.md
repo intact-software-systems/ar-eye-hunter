@@ -27,11 +27,12 @@ validation.
    the `group-state.event` row payload under delta dissemination — the wrapped
    GroupEvent plus the resulting-state slice, chained CAS revisions, the
    complete resulting active-session identity set, and the persisted delivery
-   audience. An envelope whose batch does not carry the range up to its
-   resulting revision, or whose summary did not change, stamps no write
-   (predecessor equal to resulting), and a consumer behind it pulls — with
+   audience. An envelope whose batch does not carry every write from its
+   predecessor to its resulting revision, or whose summary did not change,
+   stamps no write (predecessor equal to resulting), and a consumer behind it
+   pulls.
    [validateGroupStateDeltaEnvelope](./group-state-delta.ts#validateGroupStateDeltaEnvelope)
-   as its exact-shape validator.
+   is its exact-shape validator.
 5. [WsDeliveryDiagnosticsEvent](../services/ws-queue-box-server/ws-queue-box-server-contracts.ts#WsDeliveryDiagnosticsEvent)
    is the per-send delivery diagnostics contract feeding the formation metrics
    recorder, and

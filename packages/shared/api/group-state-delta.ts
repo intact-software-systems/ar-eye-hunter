@@ -31,9 +31,10 @@ import type { StateScope } from './state-types.ts';
  * expansion read. An envelope claims the write from its predecessor only when
  * its expansion's batch carries that range; it is write-nothing
  * (`predecessorCausalRevision === resultingCausalRevision`) for a summary
- * no-op, and for a batch that does not cover the snapshot: a group write newer
- * than the batch's newest event, or an active session another principal
- * changed. A consumer behind a write-nothing envelope pulls the snapshot.
+ * no-op, and for a batch that does not cover the snapshot: a group revision
+ * after the predecessor's that no event of the batch wrote, or an active
+ * session another principal changed. A consumer behind a write-nothing
+ * envelope pulls the snapshot.
  * `activeSessionIds` is always the complete resulting identity set because
  * snapshot assembly TTL-filters sessions beyond the mutation's own slice.
  * `audienceSessionIds` is the persisted immutable delivery audience computed
