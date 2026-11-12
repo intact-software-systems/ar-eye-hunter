@@ -41,10 +41,6 @@
         "../../packages/ar-eye-hunter/*"
       ]
     },
-    // bun-types declares a global `fetch` with Bun-only members (preconnect, …) that break the
-    // vitest fetch mocks; skipLibCheck lets those .d.ts bodies and the Emscripten/undici lib
-    // errors stay out of scope while bun.d.ts below supplies the narrow `Bun.*` surface we import.
-    "skipLibCheck": true,
     "types": [
       "node",
       "vitest/globals"
@@ -58,6 +54,7 @@
     "**/*.d.ts"
   ],
   "exclude": [
+    "shared-server/rallar-system/websocket/native-receiver-receipts-child.ts",
     "shared-test/scenario-black-box-rtc-config.test.ts",
     "shared-test/rtc-client-provider/**",
     "repo/mutation-route-ownership/fixtures/mutation-boundary-capability-receivers/assertions.ts",

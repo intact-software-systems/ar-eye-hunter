@@ -13,6 +13,15 @@ import {
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const expectedTypeScriptVersion = '7.0.2';
+// These projects reach api-v1's PGlite adapter, and @electric-sql/pglite 0.5.4 ships declarations
+// that use the Emscripten globals of @types/emscripten without depending on it. Each entry leaves
+// this list once that declaration gap is closed; no other configuration may suppress library checks.
+const configsAwaitingPGliteDeclarations = [
+    'apps/api-v1/tsconfig.json',
+    'apps/ar-eye-hunter-server-v1/tsconfig.json',
+    'apps/relic-hunter-server-v1/tsconfig.json',
+    'packages/shared-test/tsconfig.json'
+];
 const ignoredDirectoryNames = new Set([
     '.claude',
     '.git',
@@ -41,6 +50,7 @@ interface TypeScriptConfig {
         baseUrl?: unknown;
         ignoreDeprecations?: unknown;
         paths?: Record<string, string[]>;
+        skipLibCheck?: unknown;
         types?: unknown;
     };
 }
@@ -136,6 +146,13 @@ describe('native TypeScript 7 repository boundaries', () => {
                 problems.push('declares forbidden ignoreDeprecations fallback');
             }
 
+            if (
+                compilerOptions.skipLibCheck === true &&
+                !configsAwaitingPGliteDeclarations.includes(relativePath(configPath))
+            ) {
+                problems.push('enables forbidden skipLibCheck suppression');
+            }
+
             if (!Array.isArray(compilerOptions.types)) {
                 problems.push('does not declare ambient types explicitly');
             }
@@ -163,6 +180,11 @@ describe('native TypeScript 7 repository boundaries', () => {
         });
 
         expect(configProblems).toEqual([]);
+        expect(
+            configsAwaitingPGliteDeclarations.filter((configPath) =>
+                readJson<TypeScriptConfig>(path.join(repositoryRoot, configPath)).compilerOptions?.skipLibCheck !== true
+            )
+        ).toEqual([]);
     });
 
     it('does not import TypeScript compiler APIs', () => {
@@ -235,56 +257,7 @@ function findFilesMatching(
 }
 
 function readJson<T>(filePath: string): T {
-    return JSON.parse(stripJsonComments(readFileSync(filePath, 'utf8'))) as T;
-}
-
-// tsconfig files carry `//` justification comments; strip them (while preserving quoted strings)
-// so JSON.parse can read the migrated apps' configs and packages/tests/tsconfig.json.
-function stripJsonComments(text: string): string {
-    let result = '';
-    let inString = false;
-    let inBlockComment = false;
-    for (let index = 0; index < text.length; index += 1) {
-        const character = text[index]!;
-        const next = text[index + 1];
-        if (inBlockComment) {
-            if (character === '*' && next === '/') {
-                inBlockComment = false;
-                index += 1;
-            }
-            continue;
-        }
-        if (inString) {
-            result += character;
-            if (character === '\\') {
-                result += next ?? '';
-                index += 1;
-            }
-            else if (character === '"') {
-                inString = false;
-            }
-            continue;
-        }
-        if (character === '"') {
-            inString = true;
-            result += character;
-            continue;
-        }
-        if (character === '/' && next === '/') {
-            while (index < text.length && text[index] !== '\n') {
-                index += 1;
-            }
-            index -= 1;
-            continue;
-        }
-        if (character === '/' && next === '*') {
-            inBlockComment = true;
-            index += 1;
-            continue;
-        }
-        result += character;
-    }
-    return result;
+    return JSON.parse(readFileSync(filePath, 'utf8')) as T;
 }
 
 function relativePath(filePath: string): string {
