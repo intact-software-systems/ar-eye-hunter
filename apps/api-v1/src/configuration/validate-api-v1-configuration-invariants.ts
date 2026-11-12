@@ -1,5 +1,9 @@
 import { validateWebSocketHost } from '@shared/websocket/validate-web-socket-host.ts';
 
+import {
+    BUN_MAX_IDLE_TIMEOUT_SECONDS,
+    computeHttpIdleTimeoutSeconds
+} from '@shared-server/http/compute-http-idle-timeout-seconds.ts';
 import type {
     ApiV1AppInboxConfiguration,
     ApiV1AuthenticationConfiguration,
@@ -12,10 +16,6 @@ import type {
     ApiV1StateApiConfiguration,
     ApiV1TopologyConfiguration
 } from './api-v1-configuration.ts';
-import {
-    BUN_MAX_IDLE_TIMEOUT_SECONDS,
-    computeApiHttpIdleTimeoutSeconds
-} from './compute-api-http-idle-timeout-seconds.ts';
 import { computeApiShutdownGraceMs } from './compute-api-shutdown-grace-ms.ts';
 
 export interface ApiV1ConfigurationInvariantCollector {
@@ -351,7 +351,7 @@ function validateHttpWaitBoundInvariants(
     if (!collector.isValid('appInbox.completionWait.maxElapsedMs')) {
         return;
     }
-    const idleTimeoutSeconds = computeApiHttpIdleTimeoutSeconds(configuration.appInbox.completionWait);
+    const idleTimeoutSeconds = computeHttpIdleTimeoutSeconds(configuration.appInbox.completionWait.maxElapsedMs);
     if (idleTimeoutSeconds > BUN_MAX_IDLE_TIMEOUT_SECONDS) {
         collector.invariant(
             'appInbox.completionWait.maxElapsedMs',

@@ -14,6 +14,7 @@ import { createRallarBlackBoxControlService } from './control-service.ts';
 import { ControlSnapshotPersistence } from './control-snapshot-persistence.ts';
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins } from './cors.ts';
 import { toDistributedRunRollup } from './distributed/distributed-run-evaluation.ts';
+import { CONTROL_HTTP_IDLE_TIMEOUT_SECONDS } from './http/control-http-idle-timeout-seconds.ts';
 import { createControlHttpResponses } from './http/control-http-responses.ts';
 import { ControlHttpSecurity } from './http/control-http-security.ts';
 import { createControlRequestBodyReader } from './http/control-request-body.ts';
@@ -116,6 +117,7 @@ const stopDeadlineSweep = startControlDeadlineSweep({
 
 const server = Bun.serve<ControlSocketData>({
     port,
+    idleTimeout: CONTROL_HTTP_IDLE_TIMEOUT_SECONDS,
     websocket: createControlWebSocketHandlers(routeDependencies),
     async fetch(request, server) {
         const response = await routeControlHttpRequest(request, routeDependencies, server);

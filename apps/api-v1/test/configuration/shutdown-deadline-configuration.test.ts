@@ -5,8 +5,8 @@ import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/defa
 
 import defaultsSource from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 
+import { computeHttpIdleTimeoutSeconds } from '@shared-server/http/compute-http-idle-timeout-seconds.ts';
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
-import { computeApiHttpIdleTimeoutSeconds } from '../../src/configuration/compute-api-http-idle-timeout-seconds.ts';
 import { computeApiShutdownGraceMs } from '../../src/configuration/compute-api-shutdown-grace-ms.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { readApiV1ConfigurationEnvironment } from '../../src/configuration/read-api-v1-configuration-environment.ts';
@@ -27,7 +27,7 @@ test('the shutdown deadline defaults to the shared server deadline and leaves th
     assert.equal(configuration.http.shutdownDeadlineMs, DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS);
     assert.ok(
         computeApiShutdownGraceMs(configuration.http) >=
-            computeApiHttpIdleTimeoutSeconds(configuration.appInbox.completionWait) * 1000
+            computeHttpIdleTimeoutSeconds(configuration.appInbox.completionWait.maxElapsedMs) * 1000
     );
     assert.ok(computeApiShutdownGraceMs(configuration.http) < configuration.http.shutdownDeadlineMs);
 });
