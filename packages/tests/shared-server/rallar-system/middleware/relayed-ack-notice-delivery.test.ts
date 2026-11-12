@@ -27,6 +27,7 @@ import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
 import { toTestALAckPayload } from '../../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
@@ -109,7 +110,7 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
     for (const sessionId of sessionIds) {
         sockets[sessionId] = new TestWebSocket(`ws://${sessionId}`);
         sockets[sessionId].open();
-        socket.addConnection(new ConnectionContext({ id: sessionId, socket: sockets[sessionId] }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: sockets[sessionId] }));
     }
     const duration = Temporal.Duration.from({ seconds: 10 });
     const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));

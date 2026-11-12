@@ -24,6 +24,7 @@ import {
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
 import { waitForSettledOutboundWork } from './wait-for-al-outbound-work.ts';
+import { attachTestWebSocket } from './websocket/attach-test-web-socket.ts';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
     it.each([
@@ -873,7 +874,7 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
                 this.sent.push({ connectionId, data: decodePersistedALMessage(data) });
             };
             this.sockets.set(connectionId, socket);
-            this.addConnection(new ConnectionContext({ id: connectionId, socket }));
+            attachTestWebSocket(this, new ConnectionContext({ id: connectionId, socket }));
         }
     }
 

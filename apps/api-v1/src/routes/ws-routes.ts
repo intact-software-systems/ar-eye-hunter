@@ -119,12 +119,12 @@ export function createApiWebSocketHandlers(
             });
             connectionBySocket.set(socket, connection);
             socketServer.registerConnection(connection);
-            socketServer.handleConnectionOpen(connection);
+            socketServer.dispatchConnectionOpen(connection);
         },
         message(ws, data) {
             const connection = connectionBySocket.get(ws as unknown as WebSocket);
             if (connection !== undefined) {
-                void socketServer.handleConnectionMessage(connection, data);
+                void socketServer.dispatchConnectionMessage(connection, data);
             }
         },
         close(ws, code, reason) {
@@ -135,13 +135,7 @@ export function createApiWebSocketHandlers(
                 generationId: ws.data.generationId,
                 generationStartedAtEpochMs: ws.data.generationStartedAtEpochMs
             });
-            socketServer.handleConnectionClose(connection, code, reason);
-        },
-        error(error, ws) {
-            const connection = connectionBySocket.get(ws as unknown as WebSocket);
-            if (connection !== undefined) {
-                socketServer.handleConnectionError(connection, error);
-            }
+            socketServer.dispatchConnectionClose(connection, code, reason);
         }
     };
 }

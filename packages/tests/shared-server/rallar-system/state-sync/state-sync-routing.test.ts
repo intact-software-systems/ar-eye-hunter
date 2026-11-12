@@ -22,6 +22,7 @@ import type {
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 
 const NOW = 1_000;
 
@@ -150,7 +151,7 @@ function createGroupEventEnvelope(
 function createWebSocketServer(sessionIds: readonly string[]): JsonWebSocketServer {
     const server = new JsonWebSocketServer();
     for (const sessionId of sessionIds) {
-        server.addConnection(new ConnectionContext({ id: sessionId, socket: new OpenSocket() }));
+        attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket: new OpenSocket() }));
     }
     return server;
 }

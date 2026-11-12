@@ -20,6 +20,7 @@ import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createGroupSnapshot } from '../../../../packages/tests/shared-server/rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 import { createOpenTestWebSocket } from '../../../../packages/tests/shared-server/rallar-system/websocket/test-support/open-test-websocket.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import {
     createLiveRoomRuntime,
     readOriginReceipts,
@@ -69,7 +70,7 @@ test('API authorized broadcast keeps exclusions and closed connections out of th
         await putRoomSnapshot(runtime.repository, snapshot);
         const closedSocket = createOpenTestWebSocket();
         Object.defineProperty(closedSocket, 'readyState', { value: WebSocket.CLOSED });
-        runtime.socket.addConnection(new ConnectionContext({ id: 'closed-session', socket: closedSocket }));
+        attachTestWebSocket(runtime.socket, new ConnectionContext({ id: 'closed-session', socket: closedSocket }));
         const message = newALBroadcastMessage(
             'session-1',
             newALEventRoute('room.chat', 'group-1', 'broadcast-1'),

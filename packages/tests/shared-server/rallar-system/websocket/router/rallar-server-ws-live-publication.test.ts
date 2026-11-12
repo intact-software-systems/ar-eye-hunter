@@ -14,6 +14,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshot } from '../../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 
@@ -79,7 +80,7 @@ describe('Rallar server WS live cluster publication', () => {
             const socket = new JsonWebSocketServer();
             const native = new TestWebSocket('ws://stale');
             native.open();
-            socket.addConnection(new ConnectionContext({ id: 'stale-session', socket: native }));
+            attachTestWebSocket(socket, new ConnectionContext({ id: 'stale-session', socket: native }));
             const service = createDefaultWsQueueBoxServerService({
                 inboundVolatileStores: undefined,
                 outbox: new InMemoryQueueBox(new Map()),
@@ -350,7 +351,7 @@ describe('Rallar server WS live cluster publication', () => {
         const socket = new JsonWebSocketServer();
         const native = new FailingWebSocket('ws://local');
         native.open();
-        socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'local-session', socket: native }));
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
@@ -445,7 +446,7 @@ describe('Rallar server WS live cluster publication', () => {
         const socket = new JsonWebSocketServer();
         const native = new TestWebSocket('ws://local');
         native.open();
-        socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'local-session', socket: native }));
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
@@ -801,8 +802,8 @@ describe('Rallar server WS live cluster publication', () => {
         const reconnectedSocket = new TestWebSocket('ws://other-workspace');
         roomSocket.open();
         reconnectedSocket.open();
-        socket.addConnection(new ConnectionContext({ id: 'room-session', socket: roomSocket }));
-        socket.addConnection(new ConnectionContext({ id: 'reconnected-session', socket: reconnectedSocket }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'room-session', socket: roomSocket }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'reconnected-session', socket: reconnectedSocket }));
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
@@ -860,7 +861,7 @@ describe('Rallar server WS live cluster publication', () => {
         const socket = new JsonWebSocketServer();
         const native = new TestWebSocket('ws://local');
         native.open();
-        socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'local-session', socket: native }));
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
@@ -916,7 +917,7 @@ describe('Rallar server WS live cluster publication', () => {
         const newNative = new TestWebSocket('ws://new');
         oldNative.open();
         newNative.open();
-        socket.addConnection(new ConnectionContext({ id: 'same-session', socket: oldNative, generationId: 'old' }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'same-session', socket: oldNative, generationId: 'old' }));
         const scope = { applicationId: 'app', workspaceId: 'space' };
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
@@ -932,7 +933,7 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         const originalEncode = socket.encode.bind(socket);
         vi.spyOn(socket, 'encode').mockImplementation((message) => {
-            socket.addConnection(new ConnectionContext({ id: 'same-session', socket: newNative, generationId: 'new' }));
+            attachTestWebSocket(socket, new ConnectionContext({ id: 'same-session', socket: newNative, generationId: 'new' }));
             return originalEncode(message);
         });
         let notices = 0;
@@ -970,7 +971,7 @@ describe('Rallar server WS live cluster publication', () => {
         const socket = new JsonWebSocketServer();
         const native = new TestWebSocket('ws://principal');
         native.open();
-        socket.addConnection(new ConnectionContext({ id: 'principal-session', socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'principal-session', socket: native }));
         const scope = { applicationId: 'app', workspaceId: 'space' };
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
@@ -1252,7 +1253,7 @@ function createScopedSocketsFixture(
     for (const sessionId of ['in-scope', 'foreign']) {
         const native = new TestWebSocket(`ws://${sessionId}`);
         native.open();
-        socket.addConnection(new ConnectionContext({ id: sessionId, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: native }));
         sockets.set(sessionId, native);
     }
     const service = createDefaultWsQueueBoxServerService({
@@ -1340,7 +1341,7 @@ async function createRoomClusterFixture(): Promise<RoomClusterFixture> {
     for (const sessionId of ['carol-1', 'dave-session']) {
         const native = new TestWebSocket(`ws://${sessionId}`);
         native.open();
-        socket.addConnection(new ConnectionContext({ id: sessionId, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: native }));
         sockets.set(sessionId, native);
     }
     const service = createDefaultWsQueueBoxServerService({

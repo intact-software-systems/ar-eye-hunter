@@ -28,6 +28,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { recordPGliteStatements } from '../../../../../apps/api-v1/test/db/record-p-glite-statements.ts';
 import { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { createPSqlAdmissionTestStorage } from '../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
@@ -171,7 +172,7 @@ async function createRelayServer(
 async function openConnection(socket: JsonWebSocketServer, id: string): Promise<SimulatedWebSocket> {
     const native = new SimulatedWebSocket(`ws://${id}`);
     await native.open();
-    socket.addConnection(new ConnectionContext({ id, socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
     return native;
 }
 

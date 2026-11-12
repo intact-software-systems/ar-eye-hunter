@@ -9,6 +9,7 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
@@ -39,7 +40,7 @@ describe('middleware remote live WS notices', () => {
         const socket = new JsonWebSocketServer();
         const native = new TestWebSocket('ws://remote');
         native.open();
-        socket.addConnection(new ConnectionContext({ id: 'remote-session', socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'remote-session', socket: native }));
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
@@ -128,7 +129,7 @@ describe('middleware remote live WS notices', () => {
         const socket = new JsonWebSocketServer();
         const native = new TestWebSocket('ws://remote');
         native.open();
-        socket.addConnection(new ConnectionContext({ id: 'remote-session', socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'remote-session', socket: native }));
         const duration = Temporal.Duration.from({ seconds: 10 });
         const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
         const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });

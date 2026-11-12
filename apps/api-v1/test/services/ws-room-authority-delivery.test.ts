@@ -33,6 +33,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import { createOpenTestWebSocket } from '../../../../packages/tests/shared-server/rallar-system/websocket/test-support/open-test-websocket.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
 
 interface RoomDeliveryState {
@@ -287,7 +288,7 @@ test('room reconnect delivers to the current open socket and ignores delayed old
         const oldSocket = createOpenTestWebSocket();
         const oldFrames: string[] = [];
         oldSocket.send = (frame) => oldFrames.push(String(frame));
-        harness.server.addConnection(new ConnectionContext({ id: 'bob', socket: oldSocket }));
+        attachTestWebSocket(harness.server, new ConnectionContext({ id: 'bob', socket: oldSocket }));
         const currentFrames = addRecordingConnection(harness.server, 'bob');
         oldSocket.dispatchEvent(new CloseEvent('close'));
         const message = roomMessage();
@@ -439,7 +440,7 @@ test('a socket closed during an awaited handler receives no authoritative live f
         Object.defineProperty(socket, 'readyState', { get: () => readyState });
         const frames: string[] = [];
         socket.send = (frame) => frames.push(String(frame));
-        harness.server.addConnection(new ConnectionContext({ id: 'bob', socket }));
+        attachTestWebSocket(harness.server, new ConnectionContext({ id: 'bob', socket }));
         harness.router.on({ topicId: 'room.chat' }, async () => {
             await Promise.resolve();
             readyState = WebSocket.CLOSED;
@@ -1093,7 +1094,7 @@ function addRecordingConnection(server: JsonWebSocketServer, sessionId: string):
         assert.equal(typeof frame, 'string');
         frames.push(String(frame));
     };
-    server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket }));
     return frames;
 }
 

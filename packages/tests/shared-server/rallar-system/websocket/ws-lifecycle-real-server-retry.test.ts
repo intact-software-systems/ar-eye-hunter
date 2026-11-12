@@ -12,6 +12,7 @@ import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/Resource
 import { toError } from '@shared/resilience/to-error.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 
 describe('real websocket close lifecycle retry ownership', () => {
     it('ignores an old in-flight failure after a newer generation succeeds', async () => {
@@ -61,15 +62,21 @@ describe('real websocket close lifecycle retry ownership', () => {
                 }
             });
             onTestFinished(() => runtime.stop());
-            server.addConnection(server.createConnectionContext(
-                { id: 'session-1', socket: oldSocket, generationId: 'generation-old', observedAtEpochMs: 1_000 }
-            ));
+            attachTestWebSocket(
+                server,
+                server.createConnectionContext(
+                    { id: 'session-1', socket: oldSocket, generationId: 'generation-old', observedAtEpochMs: 1_000 }
+                )
+            );
             oldSocket.dispatchClose();
             await oldStarted.promise;
 
-            server.addConnection(server.createConnectionContext(
-                { id: 'session-1', socket: newSocket, generationId: 'generation-new', observedAtEpochMs: 1_001 }
-            ));
+            attachTestWebSocket(
+                server,
+                server.createConnectionContext(
+                    { id: 'session-1', socket: newSocket, generationId: 'generation-new', observedAtEpochMs: 1_001 }
+                )
+            );
             newSocket.dispatchClose();
             await flushAsyncEvents();
             oldFailure.reject(new Error('late old failure'));
@@ -137,7 +144,7 @@ describe('real websocket close lifecycle retry ownership', () => {
                 }
             });
             onTestFinished(() => runtime.stop());
-            server.addConnection(connection);
+            attachTestWebSocket(server, connection);
 
             socket.dispatchClose();
             await flushAsyncEvents();
@@ -199,13 +206,19 @@ describe('real websocket close lifecycle retry ownership', () => {
             }
         });
         onTestFinished(() => runtime.stop());
-        server.addConnection(server.createConnectionContext(
-            { id: 'session-1', socket: oldSocket, generationId: 'generation-old', observedAtEpochMs: 1_000 }
-        ));
+        attachTestWebSocket(
+            server,
+            server.createConnectionContext(
+                { id: 'session-1', socket: oldSocket, generationId: 'generation-old', observedAtEpochMs: 1_000 }
+            )
+        );
 
-        server.addConnection(server.createConnectionContext(
-            { id: 'session-1', socket: newSocket, generationId: 'generation-new', observedAtEpochMs: 1_001 }
-        ));
+        attachTestWebSocket(
+            server,
+            server.createConnectionContext(
+                { id: 'session-1', socket: newSocket, generationId: 'generation-new', observedAtEpochMs: 1_001 }
+            )
+        );
         await flushAsyncEvents();
 
         expect(closed).toEqual(['client:generation-old', 'group:generation-old']);

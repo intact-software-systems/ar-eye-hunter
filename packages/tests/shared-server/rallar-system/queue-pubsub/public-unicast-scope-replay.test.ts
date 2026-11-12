@@ -16,6 +16,7 @@ import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -44,7 +45,7 @@ describe('persisted public unicast scope replay', () => {
         fixture.proof.scope = { ...SCOPE, workspaceId: 'another-workspace' };
         const replacement = new TestWebSocket('ws://replacement');
         replacement.open();
-        fixture.socket.addConnection(new ConnectionContext({ id: 'peer', socket: replacement }));
+        attachTestWebSocket(fixture.socket, new ConnectionContext({ id: 'peer', socket: replacement }));
 
         if (delivery === 'remote') {
             await fixture.bridge.subscriber?.(toPubSubMessage({ channel: 'events', publisherId: 'other', entry: admitted.entry }));
@@ -78,7 +79,7 @@ async function createReplayFixture(): Promise<ReplayFixture> {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://original');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: native }));
     const proof = { scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 };
     const engine = new InboxOutboxEngine();
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });

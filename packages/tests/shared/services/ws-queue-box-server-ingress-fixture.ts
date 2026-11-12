@@ -15,6 +15,7 @@ import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 export interface ServerIngressFixture {
     readonly service: WsQueueBoxServerService;
@@ -37,7 +38,7 @@ export async function createServerIngressFixture(
     const server = new JsonWebSocketServer();
     const socket = new SimulatedWebSocket('ws://server');
     await socket.open();
-    server.addConnection(new ConnectionContext({ id: peerId, socket }));
+    attachTestWebSocket(server, new ConnectionContext({ id: peerId, socket }));
     const nowMs = Date.now;
     vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(nowMs()));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs())));

@@ -9,6 +9,7 @@ import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { expect, it, onTestFinished } from 'vitest';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -42,7 +43,7 @@ it('delivers a durable move invalidation through prepared native sends only to c
     for (const id of recipients) {
         const native = new TestWebSocket(`ws://${id}`);
         native.open();
-        socket.addConnection(new ConnectionContext({ id, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
         natives.set(id, native);
     }
     const engine = new InboxOutboxEngine();

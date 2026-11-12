@@ -74,12 +74,12 @@ export class ArenaTournamentClusterNode {
                         socket: ws as unknown as WebSocket
                     });
                     this.socket.registerConnection(connection);
-                    this.socket.handleConnectionOpen(connection);
+                    this.socket.dispatchConnectionOpen(connection);
                 },
                 message: (ws, data) => {
                     const connection = this.socket.connections.get(ws.data.id);
                     if (connection !== undefined) {
-                        void this.socket.handleConnectionMessage(connection, data);
+                        void this.socket.dispatchConnectionMessage(connection, data);
                     }
                 },
                 close: (ws, code, reason) => {
@@ -88,7 +88,7 @@ export class ArenaTournamentClusterNode {
                         generationId: ws.data.generationId,
                         socket: ws as unknown as WebSocket
                     });
-                    this.socket.handleConnectionClose(connection, code, reason);
+                    this.socket.dispatchConnectionClose(connection, code, reason);
                 }
             }
         });

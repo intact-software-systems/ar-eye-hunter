@@ -8,6 +8,7 @@ import {
 
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from './attach-test-web-socket.ts';
 import { TestWebSocket } from './test-web-socket.ts';
 
 const FAR_FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
@@ -42,7 +43,7 @@ describe('JsonWebSocketServer', () => {
 
         const socket = new TestWebSocket('server');
         const connection = new ConnectionContext({ id: 'c1', socket });
-        server.addConnection(connection);
+        attachTestWebSocket(server, connection);
 
         socket.open();
         socket.receive(JSON.stringify({ ok: 1 }));
@@ -70,9 +71,9 @@ describe('JsonWebSocketServer', () => {
         second.readyState = TestWebSocket.OPEN;
         closed.readyState = TestWebSocket.CLOSED;
 
-        server.addConnection(new ConnectionContext({ id: 'one', socket: first }));
-        server.addConnection(new ConnectionContext({ id: 'two', socket: second }));
-        server.addConnection(new ConnectionContext({ id: 'three', socket: closed }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket: first }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'two', socket: second }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'three', socket: closed }));
 
         server.send('one', { hello: true });
 
@@ -99,8 +100,8 @@ describe('JsonWebSocketServer', () => {
         first.readyState = TestWebSocket.OPEN;
         second.readyState = TestWebSocket.OPEN;
 
-        server.addConnection(new ConnectionContext({ id: 'one', socket: first }));
-        server.addConnection(new ConnectionContext({ id: 'two', socket: second }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket: first }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'two', socket: second }));
 
         const encoded = server.encode({ fanout: true });
         server.sendEncoded('one', encoded);
@@ -115,7 +116,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('native');
         const evidence: { nativeCall: 'not-called' | 'invoked' | 'returned'; } = { nativeCall: 'not-called' };
-        server.addConnection(new ConnectionContext({ id: 'one', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket }));
         const encoded = server.encode({ receipt: true });
         expect(() => server.sendEncoded('one', encoded, evidence)).toThrow('connection not open');
         expect(evidence.nativeCall).toBe('not-called');
@@ -150,7 +151,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('native');
         socket.readyState = TestWebSocket.OPEN;
-        server.addConnection(new ConnectionContext({ id: 'one', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'one', socket }));
         const evidence: JsonWebSocketServer.SendEvidence = { nativeCall: 'not-called' };
         const original = new Error('encoded argument failure');
         const order: string[] = [];
@@ -189,10 +190,10 @@ describe('JsonWebSocketServer', () => {
         replacement.readyState = TestWebSocket.OPEN;
         const captured = new ConnectionContext({ id: 'session-1', socket: first, generationId: 'generation-1' });
         const current = new ConnectionContext({ id: 'session-1', socket: replacement, generationId: 'generation-2' });
-        server.addConnection(captured);
+        attachTestWebSocket(server, captured);
         const encoded = server.encode({ topology: true });
 
-        server.addConnection(current);
+        attachTestWebSocket(server, current);
 
         expect(server.trySendEncodedToContext(captured, encoded)).toBe(false);
         expect(server.trySendEncodedToContext(current, encoded)).toBe(true);
@@ -218,8 +219,8 @@ describe('JsonWebSocketServer', () => {
             }
         });
 
-        server.addConnection(firstContext);
-        server.addConnection(secondContext);
+        attachTestWebSocket(server, firstContext);
+        attachTestWebSocket(server, secondContext);
 
         expect(first.closedWith).toEqual({
             code: 1000,
@@ -250,7 +251,7 @@ describe('JsonWebSocketServer', () => {
         expect(holds.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => sent.push('first') })).toBe('held');
         expect(holds.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => sent.push('second') })).toBe('held');
         const socket = new TestWebSocket('session-1');
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...generation }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket, ...generation }));
         expect(sent).toEqual([]);
         expect(holds.isAwaiting('session-1')).toBe(true);
 
@@ -269,7 +270,7 @@ describe('JsonWebSocketServer', () => {
         server.expectedConnections.expect({ id: 'session-1', generationId: generation.generationId, expiresAtEpochMs: FAR_FUTURE_MS });
         server.expectedConnections.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => settled.push('held') });
         const socket = new TestWebSocket('session-1');
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...generation }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket, ...generation }));
 
         socket.disconnect(1006, 'client-gone');
 
@@ -293,7 +294,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const socket = new TestWebSocket('session');
         socket.readyState = TestWebSocket.OPEN;
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket }));
 
         expect(server.closeConnection('missing-session')).toBe(false);
         expect(server.closeConnection('session-1', 1000, 'auth-logout')).toBe(true);

@@ -33,6 +33,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload, toTestALNackPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const SERVER_ID = 'server';
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -568,7 +569,7 @@ async function createOrderedServer(options: OrderedServerOptions = {}): Promise<
     for (const peerId of ['a', 'b', 'c']) {
         const socket = new SimulatedWebSocket(`ws://${peerId}`);
         await socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: peerId, socket }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: peerId, socket }));
         sockets[peerId] = socket;
     }
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));

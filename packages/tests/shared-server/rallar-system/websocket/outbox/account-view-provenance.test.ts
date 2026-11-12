@@ -14,6 +14,7 @@ import { toWsQueueBoxServerCapturedSendInput } from '@shared/services/ws-queue-b
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -123,7 +124,7 @@ describe('account view invalidation authority', () => {
             native.open();
             natives.set(id, native);
             if (placement === 'local') {
-                socket.addConnection(new ConnectionContext({ id, socket: native }));
+                attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
             }
         }
         const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
@@ -156,7 +157,7 @@ describe('account view invalidation authority', () => {
         await expect.poll(() => bridge.published.length).toBe(1);
         if (placement === 'remote') {
             for (const [id, native] of natives) {
-                socket.addConnection(new ConnectionContext({ id, socket: native }));
+                attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
             }
             await bridge.subscriber?.({ ...bridge.published[0]!, publisherId: 'remote' });
         }
@@ -171,7 +172,7 @@ describe('account view invalidation authority', () => {
             const native = new TestWebSocket(`ws://${id}`);
             native.open();
             natives.set(id, native);
-            socket.addConnection(new ConnectionContext({ id, socket: native }));
+            attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
         }
         const service = createDefaultWsQueueBoxServerService({
             name: 'receiver',

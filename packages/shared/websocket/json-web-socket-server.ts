@@ -3,7 +3,6 @@ import { ExpectedConnectionHolds } from './expected-connection-holds.ts';
 
 export interface WebSocketServerCallbacks {
     onConnection?: (ctx: ConnectionContext) => void;
-    onError?: (ctx: ConnectionContext, ev: Event) => void;
     onClose?: (ctx: ConnectionContext, ev: CloseEvent) => void | Promise<void>;
 
     /**
@@ -24,9 +23,16 @@ export interface EncodedJsonWebSocketMessage {
 }
 
 export namespace ConnectionContext {
+    /** The server side of one socket as the runtime boundary (Bun's `ServerWebSocket`) exposes it. */
+    export interface Socket {
+        readonly readyState: number;
+        send(text: string): void;
+        close(code?: number, reason?: string): void;
+    }
+
     export interface Input {
         readonly id: string;
-        readonly socket: WebSocket;
+        readonly socket: Socket;
         readonly generationId?: string;
         readonly generationStartedAtEpochMs?: number;
     }
@@ -34,7 +40,7 @@ export namespace ConnectionContext {
 
 export class ConnectionContext {
     public readonly id: string;
-    public readonly socket: WebSocket;
+    public readonly socket: ConnectionContext.Socket;
     public readonly generationId: string;
     public readonly generationStartedAtEpochMs: number;
 
@@ -58,7 +64,7 @@ export namespace JsonWebSocketServer {
 
     export interface CreateConnectionInput extends MintGenerationInput {
         readonly id: string;
-        readonly socket: WebSocket;
+        readonly socket: ConnectionContext.Socket;
     }
 
     export interface MintGenerationInput {
@@ -133,15 +139,9 @@ export class JsonWebSocketServer {
     }
 
     // --------------------
-    // Add connection
+    // Connection lifecycle, dispatched by the runtime boundary
     // --------------------
 
-    addConnection(ctx: ConnectionContext): void {
-        this.registerConnection(ctx);
-        this.addAllEventListeners(ctx);
-    }
-
-    /** Registers a connection whose events a runtime boundary dispatches itself (no addEventListener on the socket). */
     registerConnection(ctx: ConnectionContext): void {
         const existing = this.connections.get(ctx.id);
         this.connections.set(ctx.id, ctx);
@@ -150,32 +150,15 @@ export class JsonWebSocketServer {
         }
     }
 
-    private addAllEventListeners(ctx: ConnectionContext): void {
-        ctx.socket.addEventListener('open', () => this.dispatchConnectionOpen(ctx));
-        ctx.socket.addEventListener('message', (event: MessageEvent) => this.dispatchMessage(ctx, event));
-        ctx.socket.addEventListener('error', (ev: Event) => this.dispatchConnectionError(ctx, ev));
-        ctx.socket.addEventListener('close', (ev: CloseEvent) => this.dispatchConnectionClose(ctx, ev));
-    }
-
-    /** Runtime-boundary entry points mirroring the socket events the addEventListener path attaches. */
-
-    handleConnectionOpen(ctx: ConnectionContext): void {
-        this.dispatchConnectionOpen(ctx);
-    }
-
-    handleConnectionMessage(ctx: ConnectionContext, data: unknown): Promise<void> {
+    dispatchConnectionMessage(ctx: ConnectionContext, data: unknown): Promise<void> {
         return this.dispatchMessage(ctx, { data } as MessageEvent);
     }
 
-    handleConnectionError(ctx: ConnectionContext, error: unknown): void {
-        this.dispatchConnectionError(ctx, error as Event);
+    dispatchConnectionClose(ctx: ConnectionContext, code?: number, reason?: string): void {
+        this.dispatchCloseEvent(ctx, { code, reason } as CloseEvent);
     }
 
-    handleConnectionClose(ctx: ConnectionContext, code?: number, reason?: string): void {
-        this.dispatchConnectionClose(ctx, { code, reason } as CloseEvent);
-    }
-
-    private dispatchConnectionOpen(ctx: ConnectionContext): void {
+    dispatchConnectionOpen(ctx: ConnectionContext): void {
         this.expectedConnections.open({ id: ctx.id, generationId: ctx.generationId });
         for (const cb of this.webSocketServerCallbacks.values()) {
             try {
@@ -187,18 +170,7 @@ export class JsonWebSocketServer {
         }
     }
 
-    private dispatchConnectionError(ctx: ConnectionContext, ev: Event): void {
-        for (const cb of this.webSocketServerCallbacks.values()) {
-            try {
-                cb.onError?.(ctx, ev);
-            }
-            catch (e) {
-                console.error('Callback onError failed:', e);
-            }
-        }
-    }
-
-    private dispatchConnectionClose(ctx: ConnectionContext, ev: CloseEvent): void {
+    private dispatchCloseEvent(ctx: ConnectionContext, ev: CloseEvent): void {
         if (this.connections.get(ctx.id) === ctx) {
             this.connections.delete(ctx.id);
         }

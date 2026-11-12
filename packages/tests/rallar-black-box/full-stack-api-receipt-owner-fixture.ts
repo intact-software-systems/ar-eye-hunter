@@ -37,6 +37,7 @@ import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 import { reserveNoResourceEntries } from '../shared/reserve-no-resource-entries.ts';
 
 import { toTestALAckPayload } from '../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../shared/websocket/attach-test-web-socket.ts';
 
 export type ReceiptOwnerScenario = 'native-return' | 'later-throw' | 'closed' | 'native-throw' | 'publish-return' | 'publish-throw' | 'direct-failure';
 
@@ -335,7 +336,7 @@ class ReceiptOwnerFixture {
                         throw new Error('publisher fixture failure');
                     }
                     if (scenario === 'direct-failure' && JSON.stringify(message.key) === this.effects.receiptKey) {
-                        this.socket.addConnection(new ConnectionContext({ id: 'origin', socket: this.origin }));
+                        attachTestWebSocket(this.socket, new ConnectionContext({ id: 'origin', socket: this.origin }));
                     }
                 }
             }
@@ -450,7 +451,7 @@ async function createSocket(): Promise<ReceiptOwnerSocket> {
     const recipient = new SimulatedWebSocket('ws://recipient');
     await origin.open();
     await recipient.open();
-    socket.addConnection(new ConnectionContext({ id: 'origin', socket: origin }));
-    socket.addConnection(new ConnectionContext({ id: 'recipient', socket: recipient }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'origin', socket: origin }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'recipient', socket: recipient }));
     return { socket, origin };
 }

@@ -20,6 +20,7 @@ import {
 } from 'vitest';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
+import { attachTestWebSocket } from '../../../../../shared/websocket/attach-test-web-socket.ts';
 
 describe('RtcTopologyReconnectHydrator', () => {
     afterEach(() => {
@@ -486,7 +487,7 @@ class ReconnectHydrationHarness implements RtcTopologyReconnectHydration.Topolog
         const webSocket = new FakeWebSocket();
         const context = new ConnectionContext({ id: sessionId, socket: webSocket, generationId, generationStartedAtEpochMs: 1_000 });
         this.#webSockets.set(context, webSocket);
-        this.socket.addConnection(context);
+        attachTestWebSocket(this.socket, context);
         return context;
     }
 
