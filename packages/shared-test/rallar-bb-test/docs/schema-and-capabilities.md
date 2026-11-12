@@ -712,8 +712,13 @@ orders.
 The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
 seq 300 on the same ordering key, a gap wider than the repair window, and the receiver receives the
 first send once and never the second. The verdict on the gapped send is asserted where it is made.
-Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its own RTC
-`admission-outcome` refusing the send as `not-handled`/`resync-required`. Over `ws` the WS server
+Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop, and an RTC frame states each
+recipient's prior (`ordering.priorSeqByRecipient`), so a bare jump from seq 1 to seq 300 reads as an
+omission there. The RTC sender therefore observes seq 1 `acknowledged` (the receiver holds position 1),
+holds seq 299 by the message id its send returned and never releases it (a late copy would be an
+omission; it expires held), and sends seq 300, whose record names 299, a sequence the receiver never
+received, 298 past its position. The receiver waits for its own RTC `admission-outcome` refusing the
+send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
 `control-admission` of that `al.control.nack.v3`, pinned on the gapped send's msgId through a wait

@@ -472,3 +472,78 @@ describe('ordering-resync observes the recovery owner', () => {
         expect(toCommandNames(receiver)).not.toContain('recovery-owner-invoked');
     });
 });
+
+// Since S4 an RTC frame states each recipient's prior (D525, D527): a bare jump from seq 1 to seq 300 reads as an
+// omission. The gap is real only when the prior names a sequence the receiver never received.
+describe('ordering-resync authors a real gap over the RTC carriers', () => {
+    it.each(ALM_CONFORMANCE_RTC_CARRIERS)(
+        'opens the %s gap once the receiver acknowledged seq 1, holding seq 299 so seq 300 names it as the prior',
+        (carrier) => {
+            const { sender } = findScenario(toConformanceInput(carrier), 'ordering-resync');
+
+            expect(toCommandNames(sender)).toEqual([
+                'ensure-group',
+                'ensure-member',
+                'connect',
+                'storage-counters-connected',
+                'send-1',
+                'observe-admitted-1',
+                'assert-admitted-1',
+                'observe-acknowledged-1',
+                'assert-acknowledged-1',
+                ...toHoldNames(carrier, 'hold'),
+                'send-299',
+                'observe-admitted-299',
+                'assert-admitted-299',
+                ...toHoldNames(carrier, 'hold-message-299'),
+                ...toHoldNames(carrier, 'release'),
+                'send-300',
+                'observe-admitted-300',
+                'assert-admitted-300',
+                'stats'
+            ]);
+            expect(sender.commands.filter((command) => command.kind === 'messages.send')).toMatchObject(
+                [1, 299, 300].map((seq) => ({
+                    carrier,
+                    reliability: 'at-least-once',
+                    orderingKey: `alm-${carrier}-ordering-resync`,
+                    seq
+                }))
+            );
+            for (const command of sender.commands) {
+                expect(validateRallarBlackBoxTestCommand(command), command.commandId).toEqual({ ok: true });
+            }
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_RTC_CARRIERS)('never releases the %s held seq 299: a late copy would reach the receiver as an omission', (carrier) => {
+        const { sender } = findScenario(toConformanceInput(carrier), 'ordering-resync');
+        const messageHolds = sender.commands.filter((command) => command.kind === 'fault.inject' && command.faultId.startsWith('hold-message-'));
+
+        expect(messageHolds).toMatchObject(
+            toHoldCarriers(carrier).map(() => ({
+                match: { msgId: `{resultCache.alm-${carrier}-ordering-resync-sender-send-299.value.msgId}` },
+                remaining: 'until-cleared'
+            }))
+        );
+    });
+
+    it('leaves the ws sender as recorded: the relay orders the track and refuses the jump itself', () => {
+        const { sender } = findScenario(toConformanceInput('ws'), 'ordering-resync');
+
+        expect(toCommandNames(sender)).toEqual([
+            'ensure-group',
+            'ensure-member',
+            'connect',
+            'storage-counters-connected',
+            'send-1',
+            'observe-admitted-1',
+            'assert-admitted-1',
+            'send-2',
+            'observe-admitted-2',
+            'assert-admitted-2',
+            'relay-resync-nack',
+            'stats'
+        ]);
+    });
+});

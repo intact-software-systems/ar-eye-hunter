@@ -5061,17 +5061,47 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-ordering-resync-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-ordering-resync-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-ordering-resync-sender-assert-acknowledged-1",
+            "source": "resultCache.alm-rtc-ordering-resync-sender-observe-acknowledged-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-ordering-resync-sender-hold-rtc",
+            "faultId": "hold-rtc-alm.conformance.rtc.ordering-resync",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc.ordering-resync"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
             "kind": "messages.send",
-            "commandId": "alm-rtc-ordering-resync-sender-send-2",
+            "commandId": "alm-rtc-ordering-resync-sender-send-299",
             "connection": "almConformanceSender",
             "carrier": "rtc",
             "typeId": "alm.conformance.rtc.ordering-resync",
             "topicId": "room.alm-conformance",
             "payload": {
               "marker": "ordering-resync",
-              "seq": 300
+              "seq": 299
             },
-            "handleId": "alm-rtc-ordering-resync-send-2",
+            "handleId": "alm-rtc-ordering-resync-send-299",
             "timeoutMs": 10000,
             "roomRef": {
               "applicationId": "rallar-server",
@@ -5080,13 +5110,13 @@
             },
             "reliability": "at-least-once",
             "orderingKey": "alm-rtc-ordering-resync",
-            "seq": 300
+            "seq": 299
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-ordering-resync-sender-observe-admitted-2",
+            "commandId": "alm-rtc-ordering-resync-sender-observe-admitted-299",
             "connection": "almConformanceSender",
-            "handleId": "alm-rtc-ordering-resync-send-2",
+            "handleId": "alm-rtc-ordering-resync-send-299",
             "state": [
               "staged",
               "rejected",
@@ -5105,8 +5135,83 @@
           },
           {
             "kind": "assert",
-            "commandId": "alm-rtc-ordering-resync-sender-assert-admitted-2",
-            "source": "resultCache.alm-rtc-ordering-resync-sender-observe-admitted-2.value.state",
+            "commandId": "alm-rtc-ordering-resync-sender-assert-admitted-299",
+            "source": "resultCache.alm-rtc-ordering-resync-sender-observe-admitted-299.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-ordering-resync-sender-hold-message-299-rtc",
+            "faultId": "hold-message-299-rtc-alm.conformance.rtc.ordering-resync",
+            "carrier": "rtc",
+            "match": {
+              "msgId": "{resultCache.alm-rtc-ordering-resync-sender-send-299.value.msgId}"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-ordering-resync-sender-release-rtc",
+            "faultId": "hold-rtc-alm.conformance.rtc.ordering-resync",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc.ordering-resync"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-ordering-resync-sender-send-300",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc.ordering-resync",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "ordering-resync",
+              "seq": 300
+            },
+            "handleId": "alm-rtc-ordering-resync-send-300",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "reliability": "at-least-once",
+            "orderingKey": "alm-rtc-ordering-resync",
+            "seq": 300
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-ordering-resync-sender-observe-admitted-300",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-ordering-resync-send-300",
+            "state": [
+              "staged",
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-ordering-resync-sender-assert-admitted-300",
+            "source": "resultCache.alm-rtc-ordering-resync-sender-observe-admitted-300.value.state",
             "operator": "matches",
             "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
             "timeoutMs": 2000
@@ -8067,17 +8172,59 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-assert-acknowledged-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-observe-acknowledged-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-hold-rtc",
+            "faultId": "hold-rtc-alm.conformance.rtc-with-ws-fallback.ordering-resync",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.ordering-resync"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-hold-ws",
+            "faultId": "hold-ws-alm.conformance.rtc-with-ws-fallback.ordering-resync",
+            "carrier": "ws",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.ordering-resync"
+            },
+            "action": "not-ready",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
             "kind": "messages.send",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-send-2",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-send-299",
             "connection": "almConformanceSender",
             "carrier": "rtc-with-ws-fallback",
             "typeId": "alm.conformance.rtc-with-ws-fallback.ordering-resync",
             "topicId": "room.alm-conformance",
             "payload": {
               "marker": "ordering-resync",
-              "seq": 300
+              "seq": 299
             },
-            "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-2",
+            "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-299",
             "timeoutMs": 10000,
             "roomRef": {
               "applicationId": "rallar-server",
@@ -8086,13 +8233,13 @@
             },
             "reliability": "at-least-once",
             "orderingKey": "alm-rtc-with-ws-fallback-ordering-resync",
-            "seq": 300
+            "seq": 299
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-2",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-299",
             "connection": "almConformanceSender",
-            "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-2",
+            "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-299",
             "state": [
               "staged",
               "rejected",
@@ -8111,8 +8258,107 @@
           },
           {
             "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-assert-admitted-2",
-            "source": "resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-2.value.state",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-assert-admitted-299",
+            "source": "resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-299.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-hold-message-299-rtc",
+            "faultId": "hold-message-299-rtc-alm.conformance.rtc-with-ws-fallback.ordering-resync",
+            "carrier": "rtc",
+            "match": {
+              "msgId": "{resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-send-299.value.msgId}"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-hold-message-299-ws",
+            "faultId": "hold-message-299-ws-alm.conformance.rtc-with-ws-fallback.ordering-resync",
+            "carrier": "ws",
+            "match": {
+              "msgId": "{resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-send-299.value.msgId}"
+            },
+            "action": "not-ready",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-release-rtc",
+            "faultId": "hold-rtc-alm.conformance.rtc-with-ws-fallback.ordering-resync",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.ordering-resync"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-release-ws",
+            "faultId": "hold-ws-alm.conformance.rtc-with-ws-fallback.ordering-resync",
+            "carrier": "ws",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.ordering-resync"
+            },
+            "action": "not-ready",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-send-300",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "ordering-resync",
+              "seq": 300
+            },
+            "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-300",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "reliability": "at-least-once",
+            "orderingKey": "alm-rtc-with-ws-fallback-ordering-resync",
+            "seq": 300
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-300",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-300",
+            "state": [
+              "staged",
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-assert-admitted-300",
+            "source": "resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-300.value.state",
             "operator": "matches",
             "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
             "timeoutMs": 2000
