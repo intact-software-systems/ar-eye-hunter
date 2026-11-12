@@ -319,7 +319,7 @@ test('a heartbeat neither scans dispatch nor evaluates the rollup; the deadline 
     registerFleetAgents(service, 2);
     const sockets = new ControlAgentSockets(service);
     for (const agentId of ['agent-01', 'agent-02']) {
-        sockets.register({ readyState: 1, send: () => undefined, close: () => undefined }, { runId: 'run-1', agentId });
+        sockets.register({ readyState: 1, send: (text) => text.length, close: () => undefined }, { runId: 'run-1', agentId });
     }
     assertRight(service.createDistributedRun(toDistributedManifest({
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-01', 'agent-02'] }

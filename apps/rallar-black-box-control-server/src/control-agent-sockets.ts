@@ -13,9 +13,10 @@ import { Either } from '@shared/resilience/Either.ts';
 import { toCommandIdSegment } from './control-command-queue-policy.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
 
+/** Bun's `ServerWebSocket`: `send` returns the bytes written, `-1` when queued behind backpressure, `0` when dropped. */
 export interface ControlAgentSocket {
     readonly readyState: number;
-    send(text: string): void;
+    send(text: string): number;
     close(code: number, reason: string): void;
 }
 
@@ -35,6 +36,7 @@ interface PendingResultRelease {
 }
 
 const OPEN_SOCKET_STATE = 1;
+const DROPPED_FRAME = 0;
 const DUPLICATE_AGENT_CLOSE_CODE = 4000;
 const RUN_DELETED_CLOSE_CODE = 1000;
 
@@ -72,7 +74,9 @@ export class ControlAgentSockets {
             this.resultReleases.set(request.requestId, { socket, finish });
             signal.addEventListener('abort', abort, { once: true });
             try {
-                socket.send(JSON.stringify(request));
+                if (socket.send(JSON.stringify(request)) === DROPPED_FRAME) {
+                    finish(Either.ofLeft('The agent socket dropped the release request.'));
+                }
             }
             catch (error) {
                 finish(Either.ofLeft(error instanceof Error ? error.message : String(error)));
@@ -192,12 +196,19 @@ export class ControlAgentSockets {
         const commandsByAgentId = this.controlService.takeDispatchableCommandsForAgents(runId, [...openSockets.keys()]);
         for (const [agentId, socket] of openSockets) {
             for (const command of commandsByAgentId.get(agentId) ?? []) {
-                socket.send(JSON.stringify(command));
+                sendControlFrame(socket, runId, agentId, command);
             }
             for (const resolution of this.controlService.takeBarrierResolutions(runId, agentId)) {
-                socket.send(JSON.stringify(resolution));
+                sendControlFrame(socket, runId, agentId, resolution);
             }
         }
+    }
+}
+
+/** A dispatched frame Bun dropped is already taken from the queue, so the loss is reported, never silent. */
+function sendControlFrame(socket: ControlAgentSocket, runId: string, agentId: string, frame: object): void {
+    if (socket.send(JSON.stringify(frame)) === DROPPED_FRAME) {
+        console.error(`Control socket dropped a dispatched frame for run ${runId} agent ${agentId}.`);
     }
 }
 
