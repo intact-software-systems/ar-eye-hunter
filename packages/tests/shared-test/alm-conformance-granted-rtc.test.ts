@@ -447,8 +447,11 @@ describe('the granted rtc cells', () => {
         expect(toStepIndex(receiver, '-cue-ready-received')).toBeLessThan(toStepIndex(receiver, '-cue-tree'));
         expect(toStepIndex(receiver, '-cue-recorded-received')).toBeLessThan(toStepIndex(receiver, '-topology-reset'));
         expect(recipientBGrants.map(({ request }) => request.body)).toEqual([
-            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }
+            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false },
+            { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
         ]);
+        expect(recipientBGrants.map(({ request }) => request.path?.includes('/revoke/'))).toEqual([false, true]);
+        expect(toStepIndex(receiver, '-revoke-recipient-b-s-request')).toBeLessThan(toStepIndex(receiver, '-grant-sender-p-request'));
         expect(toFlatCommands(sender).find((command) => command.kind === 'rtc.connect'))
             .toMatchObject({ readiness: { minReadyPeers: 1 } });
         expect(toStepIndex(sender, '-cue-tree-received')).toBeLessThan(toStepIndex(sender, '-publish'));
@@ -461,6 +464,17 @@ describe('the granted rtc cells', () => {
             expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)
                 .toEqual([expect.objectContaining({ commandId: `${recipe!.recipeId}-overlay-next-hops` })]);
         }
+    });
+
+    it('revokes the subscribe an earlier cell granted recipient-b before the ordered-relay sender is granted', () => {
+        const { receiver } = toGrantedRtcScenario('granted-rtc-ordered-relay');
+        const recipientBGrants = toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'));
+
+        expect(recipientBGrants.map(({ request }) => [request.path?.includes('/revoke/'), request.body])).toEqual([
+            [false, { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }],
+            [true, { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }]
+        ]);
+        expect(toStepIndex(receiver, '-revoke-recipient-b-s-request')).toBeLessThan(toStepIndex(receiver, '-grant-sender-p-request'));
     });
 
     it('publishes a minted receipted track over the path and holds p2 until its repair was dispatched, then releases it', () => {
@@ -550,7 +564,10 @@ describe('the granted rtc cells', () => {
         expect(
             toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'))
                 .map(({ request }) => request.body)
-        ).toEqual([{ topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }]);
+        ).toEqual([
+            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false },
+            { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
+        ]);
         expect(toPublicationAbsences(recipientB)).toEqual(['p1', 'p2', 'p3']);
         // The first absence's window for a late copy covers the others, which read the history alone.
         const [absenceWindow, ...historyReads] = toAbsenceTimeouts(recipientB);
