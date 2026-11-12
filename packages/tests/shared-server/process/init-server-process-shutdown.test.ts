@@ -62,7 +62,24 @@ describe('initServerProcessShutdown', () => {
         expect(process.exits).toEqual([1]);
     });
 
-    it('forces exit 1 on a second signal without starting a second stop', () => {
+    it('treats a stop that throws before returning its promise as a failed stop', async () => {
+        const process = new RecordingProcess();
+        initServerProcessShutdown({
+            process,
+            signals: ['SIGTERM'],
+            stop: () => {
+                throw new Error('stop step threw synchronously');
+            },
+            log: silent
+        });
+
+        expect(() => process.send('SIGTERM')).not.toThrow();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(process.exits).toEqual([1]);
+    });
+
+    it('forces exit 1 on a second signal without starting a second stop', async () => {
         const process = new RecordingProcess();
         const stops: string[] = [];
         initServerProcessShutdown({
@@ -76,7 +93,9 @@ describe('initServerProcessShutdown', () => {
         });
 
         process.send('SIGTERM');
+        await Promise.resolve();
         process.send('SIGINT');
+        await Promise.resolve();
 
         expect({ stops, exits: process.exits }).toEqual({ stops: ['stop'], exits: [1] });
     });

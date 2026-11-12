@@ -1,3 +1,5 @@
+import { toError } from '@shared/resilience/to-error.ts';
+
 export type ServerProcessSignal = 'SIGTERM' | 'SIGINT';
 
 /** The slice of `process` a server's signal shutdown needs. */
@@ -28,10 +30,11 @@ export function initServerProcessShutdown(input: ServerProcessShutdownInput): vo
         }
         stopping = true;
         input.log.log(`Received ${signal}; stopping the server.`);
-        input.stop().then(
+        // Starting the stop inside a promise turns a step that throws before returning into a failed stop.
+        Promise.resolve().then(input.stop).then(
             () => input.process.exit(0),
-            (error: Error) => {
-                input.log.error('Server stop failed:', error);
+            (error) => {
+                input.log.error('Server stop failed:', toError(error));
                 input.process.exit(1);
             }
         );
