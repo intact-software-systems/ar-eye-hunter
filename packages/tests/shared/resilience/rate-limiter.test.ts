@@ -139,6 +139,23 @@ describe('RateLimiter as a token bucket', () => {
         expect(limiter.allowAt(t0 + 5_500)).toBe(false);
     });
 
+    it('holds no more than one full bucket after hours idle', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 20, t0);
+        const afterHoursMs = t0 + 5 * 60 * 60_000;
+
+        expect(countAdmitted(limiter, Array.from({ length: 30 }, () => afterHoursMs))).toBe(20);
+    });
+
+    it('spends nothing on repeated refusals and admits again at the refill boundary, not one millisecond earlier', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 20, t0);
+
+        expect(countAdmitted(limiter, Array.from({ length: 20 }, () => t0))).toBe(20);
+        expect(countAdmitted(limiter, [t0 + 10, t0 + 20, t0 + 30])).toBe(0);
+        expect(limiter.allowAt(t0 + 49)).toBe(false);
+        expect(limiter.allowAt(t0 + 50)).toBe(true);
+        expect(limiter.allowAt(t0 + 50)).toBe(false);
+    });
+
     it('answers isAllowedAt without spending a token', () => {
         const limiter = RateLimiter.initWithTs(1_000, 2, t0);
 
