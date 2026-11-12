@@ -1,12 +1,36 @@
 # Deno → Bun branch verification plan
 
-Validation gate that runs **before** `claude/deno-to-bun-migration-plan` (PR #794) merges to `main`.
-It proves the Bun build behaves on the real Hetzner fleet, that the re-wired GitHub workflows still
-deploy, smoke, and run distributed recipes correctly, and that the scalability and performance gates
-hold. It changes no product code — it is the runbook for the pre-merge verification plus the
-resulting evidence.
+Runbook for verifying the Bun build (PR #794, with the three-replica scale-out of PR #801) on the
+real Hetzner fleet: that the re-wired GitHub workflows still deploy, smoke, and run distributed
+recipes correctly, and that the scalability and performance gates hold. It changes no product code.
 
-## Why before merge
+It was written as a pre-merge gate. The maintainer chose to merge with part of it still open, so the
+phases below now describe work that continues on `main`; "Status at merge" records what ran and what
+remains. Delete this file in the pull request that closes the last open item.
+
+## Status at merge (2026-11-12)
+
+Fleet runs used `Run GitHub Free Distributed Recipe` in `hetzner-control` mode with 50 agents against
+the Bun API on three replicas.
+
+| Item                                                  | State                                                                                                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Roles installed, services active on Bun (Phase 1)     | Done. The API host ran Bun units throughout; a rollout of pre-Bun source crash-looped the unit, which the rollout preflight in #794 now refuses. |
+| Manifest 21, ALM conformance, 50 agents               | Passed (run 43131389341). Failed once before (run 43124308651) after a mid-traffic RTT re-plan.                                                  |
+| Manifest 08, 20 Hz mesh, 50 agents                    | Passed with the limiter change of #809 (run 43268051973).                                                                                        |
+| Manifest 07, 20 Hz tree, 50 agents                    | Open. With #809 the sender reaches 0.9467 against a 0.95 threshold (run 43261878144); the remaining gap is the RTT re-plan addressed by #810.    |
+| Manifest 09, 5 Hz all-peer, 50 agents                 | Open. Fails on the same re-plan and on agents streaming before their edge is ready (run 43174902404). Rerun with #809 and #810.                  |
+| `Run Hetzner Supported Distributed Manifests`         | Open. Fires on push to `main`; it could not pass while `main` was Deno source on Bun units.                                                      |
+| Medium-scale and formation gates (Steps 2.5, 2.6)     | Open as dispatched runs against the fleet. The pull-request gates ran them in CI.                                                                |
+| State-write measurement, `diagnostic` mode (Step 2.7) | Open.                                                                                                                                            |
+| RTC performance observations (Step 2.8)               | Open.                                                                                                                                            |
+| Same recipes on a Deno build at 50 agents             | Never run. The 07, 09 and 21 failures trace to planning and browser routing code shared by both runtimes, which is inference, not a comparison.  |
+
+The cause of the 07, 09 and 21 failures: an RTT-only re-plan of a stable leaderless room is accepted
+without a churn gate, and browsers route only over the new layout's edges before they are open. #810
+adds the gate. Make-before-break routing in the browser is the complete fix and is not scheduled.
+
+## Why this needs a real fleet
 
 The Deno → Bun migration retires Deno Deploy and moves server hosting onto three Hetzner servers,
 split by role. CI already proves the code builds and passes its gates in ephemeral runners; this plan
@@ -217,7 +241,7 @@ Acceptance:
 
 ## Phase 4 — Acceptance
 
-Record evidence for each of these; the PR is not released to `main` until all are met:
+Record evidence for each of these in "Status at merge"; this runbook is complete when all are met:
 
 1. All three roles report their services `active` and their public health endpoints `200`.
 2. No `deno` binary, `deno.json`, or `deno.lock` exists on any VM checkout.
