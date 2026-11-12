@@ -102,6 +102,53 @@ describe('browser runtime construction', () => {
         expect(createDefaultBrowserRuntimeFoundation().subtle).toBe(globalThis.crypto.subtle);
     });
 
+    it('composes the participant core over the foundation and session QoS inputs it is given, using none until composed', async () => {
+        const { createBrowserParticipantCore } = await import('@shared-web/browser/composition/create-browser-participant-core.ts');
+        const { browserDeliveryComposition } = await import('@shared-web/browser/composition/browser-delivery-composition.ts');
+        const publicationKeyStore = new InMemoryPublicationKeyStore();
+        const foundation = createBrowserRuntimeFoundation({ subtle: globalThis.crypto.subtle, publicationKeyStore });
+        const qosProvider: ALQosInputProvider = {};
+        const volatileLimits: ALVolatileSessionLimits = { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3 };
+        const stageLimits: ALPublicationStageLimits = { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 };
+        let composed = false;
+        const recorded: [ALQosInputProvider, ALVolatileSessionLimits, ALPublicationStageLimits, string][] = [];
+        runtime.readSession.mockImplementation(() => {
+            if (!composed) {
+                throw new Error('The session was read before the participant core was composed.');
+            }
+            return runtime.middleware.session;
+        });
+        runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            const publicationCrypto = await options.publicationCrypto;
+            recorded.push([
+                options.qosProvider,
+                options.readVolatileSessionLimits(),
+                options.readPublicationStageLimits(),
+                publicationCrypto.kind === 'available' ? publicationCrypto.keyPair.keyId : publicationCrypto.kind
+            ]);
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+        });
+
+        const core = createBrowserParticipantCore({
+            foundation,
+            delivery: browserDeliveryComposition,
+            qosProvider,
+            readVolatileSessionLimits: () => volatileLimits,
+            readPublicationStageLimits: () => stageLimits
+        });
+        composed = true;
+        await core.session.session.connect();
+
+        expect(foundation.connectionRuntime.readMiddleware()?.middleware).toBe(runtime.middleware.middleware);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0][0]).toBe(qosProvider);
+        expect(recorded[0][1]).toBe(volatileLimits);
+        expect(recorded[0][2]).toBe(stageLimits);
+        expect(recorded[0][3]).toBe(publicationKeyStore.pairs.get(runtime.middleware.session.sessionId)?.keyId);
+        expect(core.realtime.wsController.facade).toBeDefined();
+        await core.session.session.disconnect();
+    });
+
     it('selects the conformance policy at black-box construction while ordinary facade construction keeps defaults', async () => {
         const { createBlackBoxBrowserRallarRuntimeDependency } = await import(
             '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts'

@@ -1,6 +1,5 @@
 import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
-    createBrowserRealtimeCoreComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
@@ -16,7 +15,6 @@ import {
     type BrowserRoomsComposition
 } from '@shared-web/browser/composition/browser-product-composition.ts';
 import {
-    createBrowserStateComposition,
     createDefaultBrowserRuntimeFoundation,
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
@@ -27,7 +25,7 @@ import {
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
-import { createBrowserSessionMessaging } from '@shared-web/browser/composition/create-browser-session-messaging.ts';
+import { createBrowserParticipantCore } from '@shared-web/browser/composition/create-browser-participant-core.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { BrowserRallarCrdtFacade } from '@shared-web/browser/crdt/create-rallar-crdt-facade.ts';
 import type {
@@ -236,9 +234,14 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const storageFaults = createScriptedStorageFaultPort();
     const congestion = createBlackBoxRallarCongestionCounters();
     const inboundStoreCounts = new ALInboundStoreCounts();
-    const { foundation, state, session, stateEvents, messaging, realtime } = createBlackBoxBrowserTransportComposition(
-        input
-    );
+    const foundation = createDefaultBrowserRuntimeFoundation();
+    const { state, session, stateEvents, messaging, realtime } = createBrowserParticipantCore({
+        foundation,
+        delivery: browserDeliveryComposition,
+        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+        readVolatileSessionLimits: input.readVolatileSessionLimits,
+        readPublicationStageLimits: input.readPublicationStageLimits
+    });
     const rooms = createBrowserRoomsComposition({
         state,
         stateEvents,
@@ -465,39 +468,4 @@ function toBlackBoxBrowserRuntimeDependency(
         peers,
         productSocket
     };
-}
-
-function createBlackBoxBrowserTransportComposition(
-    input: CreateBlackBoxBrowserRallarRuntimeDependencyInput
-): BlackBoxBrowserTransportComposition {
-    const foundation = createDefaultBrowserRuntimeFoundation();
-    const state = createBrowserStateComposition({
-        runtime: foundation.runtime,
-        stateRuntime: foundation.stateRuntime
-    });
-    const { session, stateEvents, messaging } = createBrowserSessionMessaging({
-        foundation,
-        state,
-        delivery: browserDeliveryComposition,
-        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
-        readVolatileSessionLimits: input.readVolatileSessionLimits,
-        readPublicationStageLimits: input.readPublicationStageLimits
-    });
-    const realtime = createBrowserRealtimeCoreComposition({
-        runtime: foundation.runtime,
-        transportRuntime: foundation.transportRuntime,
-        state,
-        session: session.session
-    });
-
-    return { foundation, state, session, stateEvents, messaging, realtime };
-}
-
-interface BlackBoxBrowserTransportComposition {
-    readonly foundation: BrowserRuntimeFoundation;
-    readonly state: BrowserStateComposition;
-    readonly session: BrowserSessionCoreComposition;
-    readonly stateEvents: BrowserStateEventComposition;
-    readonly messaging: BrowserMessagingComposition;
-    readonly realtime: BrowserRealtimeCoreComposition;
 }

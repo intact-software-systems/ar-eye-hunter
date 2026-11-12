@@ -36,6 +36,10 @@ registration, invocation, and cleanup without consulting a historical plan.
    [createBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
    takes those two platform inputs and creates the per-facade runtime ports and
    lifecycle coordinator.
+   [createBrowserParticipantCore](./composition/create-browser-participant-core.ts)
+   then composes steps 3–5 and the realtime core of step 6 over that foundation
+   and the root's session QoS inputs; the product root and the black-box runtime
+   root both call it.
 3. [createBrowserStateComposition](./composition/browser-runtime-composition.ts)
    creates [createRallarStateCacheReadPort](./state-cache/rallar-state-store.ts)
    before constructing both the room-state store and aggregate state store from
