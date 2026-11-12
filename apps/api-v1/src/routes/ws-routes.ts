@@ -170,6 +170,9 @@ async function registerAuthorisedWebSocket(
     if (context.req.raw.signal.aborted) {
         return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-abandoned' });
     }
+    if (!input.socketServer.isAcceptingConnections) {
+        return await writeClosedGenerationResponse(context, input, { connect, reason: 'server-shutting-down' });
+    }
     try {
         await input.upgradeWebSocket(
             context,

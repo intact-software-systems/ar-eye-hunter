@@ -1,7 +1,7 @@
 import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-box-control-production-env.ts';
 import { initServerProcessShutdown } from '@shared-server/process/init-server-process-shutdown.ts';
 import { createConsoleRallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { createDefaultBackgroundTimers, createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { ControlAgentSockets } from './control-agent-sockets.ts';
 import { ControlArtifactRecorder, DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG } from './control-artifact-recorder.ts';
@@ -130,7 +130,8 @@ initServerProcessShutdown({
     signals: ['SIGTERM', 'SIGINT'],
     stop: stopControlServer,
     log: console,
-    nowMs: timers.nowMs
+    timers: createDefaultBackgroundTimers(),
+    deadlineMs: security.shutdownDeadlineMs
 });
 
 /** Control state lives in memory until the flush, so sockets are cut first and the flush sees every last change. */

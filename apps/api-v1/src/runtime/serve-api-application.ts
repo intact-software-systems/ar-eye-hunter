@@ -1,11 +1,14 @@
 import { initServerProcessShutdown } from '@shared-server/process/init-server-process-shutdown.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
+import { createDefaultBackgroundTimers } from '@shared/resilience/timers.ts';
 import type { Hono } from 'hono';
 import { websocket, type BunWebSocketData } from 'hono/bun';
 import type { ApiV1Runtime } from '../composition/api-v1-runtime.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
+import { computeApiShutdownGraceMs } from '../configuration/compute-api-shutdown-grace-ms.ts';
 import { startApiProcess } from './api-process-startup.ts';
 import { stopApiOnRtcTopologyDeliveryHealthFailure } from './rtc-topology/rtc-topology-delivery-health-shutdown.ts';
+import { stopApiHttpServer } from './stop-api-http-server.ts';
 import { toApiBunServeOptions } from './to-api-bun-serve-options.ts';
 
 export interface ServeApiApplicationInput {
@@ -35,15 +38,15 @@ export async function serveApiApplication(
         signals: ['SIGTERM', 'SIGINT'],
         stop: () => stopApiApplication(input, startup.httpServer),
         log: console,
-        nowMs: Date.now
+        timers: createDefaultBackgroundTimers(),
+        deadlineMs: input.configuration.http.shutdownDeadlineMs
     });
     return startup.httpServer;
 }
 
 /**
- * A graceful `server.stop()` refuses new connections but lets in-flight requests finish, so an HTTP mutation
- * awaiting its AppInbox completion keeps the queue workers it waits on; open WebSockets would hold the drain
- * open, so they close first. Workers and background tasks (which close the database) stop only after the drain.
+ * The drain keeps the queue workers running, so an HTTP mutation awaiting its AppInbox completion can finish within
+ * the grace; workers and background tasks (which close the database) stop only after it.
  */
 async function stopApiApplication(
     input: ServeApiApplicationInput,
@@ -51,9 +54,16 @@ async function stopApiApplication(
 ): Promise<void> {
     await runApiStopSteps([
         async () => {
-            const drained = server.stop();
-            closeApiWebSockets(input, 1001, 'server-shutting-down');
-            await drained;
+            await stopApiHttpServer(server, {
+                graceMs: computeApiShutdownGraceMs(input.configuration.http),
+                timers: createDefaultBackgroundTimers(),
+                closeWebSockets: () =>
+                    input.rallar.runtime.wsQBoxServerService.socket.stopAcceptingConnections(
+                        1001,
+                        'server-shutting-down'
+                    ),
+                log: console
+            });
         },
         () => input.rallar.runtime.qboxEngine.stop(),
         () => input.rallar.runtime.backgroundTasks.stop()
@@ -88,13 +98,6 @@ async function runApiStopSteps(steps: readonly (() => void | Promise<void>)[], m
     }
 }
 
-function closeApiWebSockets({ rallar }: ServeApiApplicationInput, code: number, reason: string): void {
-    const socket = rallar.runtime.wsQBoxServerService.socket;
-    for (const connectionId of socket.connections.keys()) {
-        socket.closeConnection(connectionId, code, reason);
-    }
-}
-
 function installHealthShutdown(
     input: ServeApiApplicationInput,
     httpServer: Bun.Server<BunWebSocketData>
@@ -107,7 +110,11 @@ function installHealthShutdown(
         healthFailure: rallar.runtime.healthFailure,
         onHealthFailure: (error) => console.error('RTC topology delivery health failed; stopping API process:', error),
         stopQueueWorkers: () => rallar.runtime.qboxEngine.stop(),
-        closeWebSockets: () => closeApiWebSockets(input, 1012, 'rtc-topology-delivery-lease-lost'),
+        closeWebSockets: () =>
+            rallar.runtime.wsQBoxServerService.socket.stopAcceptingConnections(
+                1012,
+                'rtc-topology-delivery-lease-lost'
+            ),
         stopBackgroundTasks: () => rallar.runtime.backgroundTasks.stop(),
         shutdownHttp: async () => await httpServer.stop(),
         onShutdownStepFailure: (step, error) =>

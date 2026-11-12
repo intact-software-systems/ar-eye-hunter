@@ -100,6 +100,7 @@ export class JsonWebSocketServer {
     private readonly webSocketServerCallbacks = new Map<string, WebSocketServerCallbacks>();
     private readonly onMessageCallbacks = new Map<string, WebSocketServerOnMessageCallback>();
     private lastGenerationStartedAtEpochMs = -1;
+    private refusal: { readonly code: number; readonly reason: string; } | undefined;
 
     public readonly connections = new Map<string, ConnectionContext>();
     public readonly expectedConnections = new ExpectedConnectionHolds({
@@ -160,12 +161,33 @@ export class JsonWebSocketServer {
     // Connection lifecycle, dispatched by the runtime boundary
     // --------------------
 
-    registerConnection(ctx: ConnectionContext): void {
+    get isAcceptingConnections(): boolean {
+        return this.refusal === undefined;
+    }
+
+    /**
+     * Shutdown: closes every connection and every socket that registers afterwards. A connect that committed while
+     * the drain ran upgrades after this sweep, so registration itself must refuse it.
+     */
+    stopAcceptingConnections(code: number, reason: string): void {
+        this.refusal = { code, reason };
+        for (const ctx of this.connections.values()) {
+            this.closeContext(ctx, code, reason);
+        }
+    }
+
+    /** Returns false, after closing the socket, once shutdown has begun. */
+    registerConnection(ctx: ConnectionContext): boolean {
+        if (this.refusal !== undefined) {
+            this.closeContext(ctx, this.refusal.code, this.refusal.reason);
+            return false;
+        }
         const existing = this.connections.get(ctx.id);
         this.connections.set(ctx.id, ctx);
         if (existing && existing !== ctx) {
             this.closeContext(existing, 1000, 'connection-replaced');
         }
+        return true;
     }
 
     dispatchConnectionMessage(ctx: ConnectionContext, data: unknown): Promise<void> {

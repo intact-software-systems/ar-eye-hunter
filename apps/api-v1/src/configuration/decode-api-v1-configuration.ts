@@ -1,4 +1,5 @@
 import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
+import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import {
     MAX_APP_INBOX_FINISHED_RETENTION_MS,
     MIN_APP_INBOX_FINISHED_RETENTION_MS
@@ -127,8 +128,15 @@ function decodeHttp(
     return {
         port: decoder.integer('http.port', 1, 65_535),
         corsOrigins: structuredValues.originSet('http.corsOrigins'),
-        preflightMaxAgeSeconds: decoder.integer('http.preflightMaxAgeSeconds', 0)
+        preflightMaxAgeSeconds: decoder.integer('http.preflightMaxAgeSeconds', 0),
+        shutdownDeadlineMs: decodeShutdownDeadlineMs(decoder)
     };
+}
+
+/** The hosted units name the deadline; elsewhere the Bun servers share one default. */
+function decodeShutdownDeadlineMs(values: ApiV1ConfigurationValueDecoder): number {
+    const path = 'http.shutdownDeadlineMs';
+    return values.hasValue(path) ? values.integer(path, 1) : DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS;
 }
 
 function decodePublicApi(

@@ -115,6 +115,17 @@ describe('Bun server systemd units', () => {
             expect(unit.serviceLines.filter((line) => line.startsWith('EnvironmentFile='))).toEqual(expected.environment);
             expect(unit.serviceLines.filter((line) => bunServerHardening.includes(line))).toEqual(bunServerHardening);
             expect(unit.serviceLines.filter((line) => line.startsWith('ReadWritePaths='))).toEqual(expected.writes);
+            expect(readStopBounds(unit.serviceLines)).toEqual({ serverDeadlineSeconds: 60, systemdStopSeconds: 70 });
         }
     });
 });
+
+/** The server's own graceful-stop deadline and systemd's SIGKILL bound, which must come after it. */
+function readStopBounds(serviceLines: readonly string[]): Readonly<Record<string, number | undefined>> {
+    const deadline = serviceLines.find((line) => line.startsWith('Environment=RALLAR_SHUTDOWN_DEADLINE_MS='));
+    const timeout = serviceLines.find((line) => line.startsWith('TimeoutStopSec='));
+    return {
+        serverDeadlineSeconds: deadline === undefined ? undefined : Number(deadline.split('=').at(-1)) / 1000,
+        systemdStopSeconds: timeout === undefined ? undefined : Number(timeout.split('=').at(-1))
+    };
+}

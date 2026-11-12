@@ -43,7 +43,11 @@ The configuration reader recognizes only these operational overrides:
 
 - Profile: `RALLAR_API_CONFIGURATION_PROFILE`.
 - HTTP and public URLs: `PORT`, `CORS_ORIGINS`, `RALLAR_API_BASE_URL`,
-  `RALLAR_WS_BASE_URL`.
+  `RALLAR_WS_BASE_URL`, `RALLAR_SHUTDOWN_DEADLINE_MS`. No committed profile
+  names the shutdown deadline (`http.shutdownDeadlineMs`): the decoder applies
+  the shared Bun server default from `packages/shared-server/process`, and the
+  hosted units set the variable with their `TimeoutStopSec`. Its drain (the
+  deadline less 15 s) must outlast the HTTP idle bound.
 - Database: `RALLAR_SQL_BACKEND`, `RALLAR_PGLITE_DATA_DIR`,
   `RALLAR_PGLITE_SCHEMA_INIT`, `RALLAR_DB_PUBSUB`,
   `RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR`.

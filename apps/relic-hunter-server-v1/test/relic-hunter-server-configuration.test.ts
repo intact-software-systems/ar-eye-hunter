@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 
+import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import { readRelicHunterServerConfiguration } from '../src/relic-hunter-server-configuration.ts';
 
 const AUTHENTICATION_SECRET = 'relic-configuration-test-secret-at-least-32-characters';
@@ -50,7 +51,8 @@ describe('Relic Hunter server configuration', () => {
         expect(configuration.http).toEqual({
             port: 8090,
             corsOrigins: ['http://localhost:5175', 'https://relic.example.test'],
-            preflightMaxAgeSeconds: 600
+            preflightMaxAgeSeconds: 600,
+            shutdownDeadlineMs: DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS
         });
         expect(configuration.apiV1.tournaments.profiles).toEqual([{
             scope: { applicationId: 'rallar-server', workspaceId: 'default' },

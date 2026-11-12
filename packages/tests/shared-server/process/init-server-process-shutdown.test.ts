@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { Timers } from '@shared/resilience/timers.ts';
 
 import { initServerProcessShutdown, type ServerProcessSignal } from '@shared-server/process/init-server-process-shutdown.ts';
 
@@ -21,12 +23,43 @@ class RecordingProcess {
 
 const silent = { log: () => undefined, error: () => undefined };
 
-class ManualClock {
+/** A settable clock over the (possibly faked) global timers. */
+class ManualClock implements Timers {
     epochMs = 1_000;
     readonly nowMs = (): number => this.epochMs;
+
+    schedule(run: () => void, delayMs: number): () => void {
+        const handle = setTimeout(run, delayMs);
+        return () => clearTimeout(handle);
+    }
 }
 
 describe('initServerProcessShutdown', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('exits 1 at the deadline when the ordered stop never finishes', async () => {
+        vi.useFakeTimers();
+        const process = new RecordingProcess();
+        const clock = new ManualClock();
+        initServerProcessShutdown({
+            process,
+            signals: ['SIGTERM'],
+            stop: () => new Promise(() => undefined),
+            log: silent,
+            timers: clock,
+            deadlineMs: 5_000
+        });
+
+        process.send('SIGTERM');
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(process.exits).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(process.exits).toEqual([1]);
+    });
+
     it('exits 0 only after the graceful stop resolves', async () => {
         const process = new RecordingProcess();
         const clock = new ManualClock();
@@ -42,7 +75,8 @@ describe('initServerProcessShutdown', () => {
                 });
             },
             log: silent,
-            nowMs: clock.nowMs
+            timers: clock,
+            deadlineMs: 60_000
         });
 
         process.send('SIGTERM');
@@ -62,7 +96,8 @@ describe('initServerProcessShutdown', () => {
             signals: ['SIGINT'],
             stop: () => Promise.reject(new Error('drain failed')),
             log: silent,
-            nowMs: clock.nowMs
+            timers: clock,
+            deadlineMs: 60_000
         });
 
         process.send('SIGINT');
@@ -81,7 +116,8 @@ describe('initServerProcessShutdown', () => {
                 throw new Error('stop step threw synchronously');
             },
             log: silent,
-            nowMs: clock.nowMs
+            timers: clock,
+            deadlineMs: 60_000
         });
 
         expect(() => process.send('SIGTERM')).not.toThrow();
@@ -102,7 +138,8 @@ describe('initServerProcessShutdown', () => {
                 return new Promise(() => undefined);
             },
             log: silent,
-            nowMs: clock.nowMs
+            timers: clock,
+            deadlineMs: 60_000
         });
 
         process.send('SIGTERM');
@@ -129,7 +166,8 @@ describe('initServerProcessShutdown', () => {
                 });
             },
             log: silent,
-            nowMs: clock.nowMs
+            timers: clock,
+            deadlineMs: 60_000
         });
 
         process.send('SIGINT');

@@ -309,6 +309,33 @@ describe('JsonWebSocketServer', () => {
         expect(socket.readyState).toBe(TestWebSocket.CLOSED);
     });
 
+    it('closes every connection once shutdown begins and refuses a socket that upgrades after it', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const server = new JsonWebSocketServer();
+        const live = new TestWebSocket('live');
+        live.readyState = TestWebSocket.OPEN;
+        server.registerConnection(new ConnectionContext({ id: 'live', socket: live }));
+
+        server.stopAcceptingConnections(1001, 'server-shutting-down');
+        const late = new TestWebSocket('late');
+        late.readyState = TestWebSocket.OPEN;
+        const registered = server.registerConnection(new ConnectionContext({ id: 'late', socket: late }));
+
+        expect({
+            accepting: server.isAcceptingConnections,
+            registered,
+            liveClosed: live.closedWith,
+            lateClosed: late.closedWith,
+            lateTracked: server.connections.has('late')
+        }).toEqual({
+            accepting: false,
+            registered: false,
+            liveClosed: { code: 1001, reason: 'server-shutting-down' },
+            lateClosed: { code: 1001, reason: 'server-shutting-down' },
+            lateTracked: false
+        });
+    });
+
     describe('Bun send outcomes', () => {
         it('fails a send whose frame the socket dropped and keeps the native call unreturned', () => {
             const server = new JsonWebSocketServer();

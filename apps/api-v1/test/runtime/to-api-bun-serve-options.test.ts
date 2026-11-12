@@ -21,7 +21,11 @@ function decodeWithCompletionWait(maxElapsedMs: number | undefined) {
     const input = { ...validDecodeApiV1ConfigurationInput(), defaultsSource };
     input.environmentSource = {
         group: { roomOwnedAppDataBindings: [] },
-        ...(maxElapsedMs === undefined ? {} : { appInbox: { completionWait: { maxElapsedMs } } })
+        // A long wait needs a drain that outlasts it, so the deadline is raised with it.
+        ...(maxElapsedMs === undefined ? {} : {
+            appInbox: { completionWait: { maxElapsedMs } },
+            http: { shutdownDeadlineMs: 300_000 }
+        })
     };
     return decodeApiV1Configuration(input);
 }

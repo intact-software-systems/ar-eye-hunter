@@ -347,6 +347,22 @@ async function waitForQueuedConnectKey(reader: InboxQueueReader, sql: PGliteSql,
     throw new Error(`The ${generationId} connect was not queued`);
 }
 
+test('a connect that commits after shutdown began is refused before the upgrade and closes its generation', async () => {
+    await withPGliteSql(async (sql) => {
+        const fixture = await createWsConnectFixture(sql);
+        await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
+        fixture.socketServer.stopAcceptingConnections(1001, 'server-shutting-down');
+
+        assert.equal((await requestUpgrade(fixture, 'player-ticket')).status, 500);
+        assert.equal(fixture.upgradedSockets.length, 0);
+        assert.equal(fixture.socketServer.expectedConnections.isAwaiting(SESSION.sessionId), false);
+        assert.deepEqual(await readQueuedRows(sql), [
+            { type: 'CLIENT_AUTHORISED_WS_CONNECT', status: 'COMPLETED' },
+            { type: 'CLIENT_AUTHORISED_WS_DISCONNECT', status: 'NEW' }
+        ]);
+    });
+});
+
 test('an upgrade that fails after its connect committed closes that generation behind it', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createWsConnectFixture(sql, () => {

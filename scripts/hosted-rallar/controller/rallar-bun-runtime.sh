@@ -148,7 +148,13 @@ update_rallar_bun_checkout() {
 # the checkout and the service user's home are read-only, devices, kernel and cgroup settings are out of reach, no
 # privilege can be gained, and only IP and UNIX sockets open. Each argument is a directory the service writes; the
 # transpiler cache would write under the read-only home, so it is off.
+# One number bounds a Bun server's stop: the server exits 1 at this deadline, and systemd's SIGKILL comes after it.
+RALLAR_BUN_SHUTDOWN_DEADLINE_SECONDS="${RALLAR_BUN_SHUTDOWN_DEADLINE_SECONDS:-60}"
+RALLAR_BUN_SHUTDOWN_KILL_MARGIN_SECONDS=10
+
 print_rallar_bun_service_hardening() {
+	printf 'Environment=RALLAR_SHUTDOWN_DEADLINE_MS=%s\n' "$((RALLAR_BUN_SHUTDOWN_DEADLINE_SECONDS * 1000))"
+	printf 'TimeoutStopSec=%s\n' "$((RALLAR_BUN_SHUTDOWN_DEADLINE_SECONDS + RALLAR_BUN_SHUTDOWN_KILL_MARGIN_SECONDS))"
 	cat <<'EOF'
 Environment=BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 NoNewPrivileges=true

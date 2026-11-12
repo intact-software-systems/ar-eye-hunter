@@ -22,8 +22,9 @@ export function createJsonWebSocketEvents(
     return {
         onOpen: (_event, ws) => {
             connection = toConnection(ws);
-            socketServer.registerConnection(connection);
-            socketServer.dispatchConnectionOpen(connection);
+            if (socketServer.registerConnection(connection)) {
+                socketServer.dispatchConnectionOpen(connection);
+            }
         },
         onMessage: (event) => {
             if (connection !== undefined) {

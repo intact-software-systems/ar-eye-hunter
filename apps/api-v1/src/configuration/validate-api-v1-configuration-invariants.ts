@@ -16,6 +16,7 @@ import {
     BUN_MAX_IDLE_TIMEOUT_SECONDS,
     computeApiHttpIdleTimeoutSeconds
 } from './compute-api-http-idle-timeout-seconds.ts';
+import { computeApiShutdownGraceMs } from './compute-api-shutdown-grace-ms.ts';
 
 export interface ApiV1ConfigurationInvariantCollector {
     isValid(...paths: readonly string[]): boolean;
@@ -55,16 +56,7 @@ export function validateApiV1ConfigurationInvariants(
             'Initial AppInbox retry interval must not exceed the maximum retry interval.'
         );
     }
-    if (
-        collector.isValid('appInbox.completionWait.maxElapsedMs') &&
-        computeApiHttpIdleTimeoutSeconds(completionWait) > BUN_MAX_IDLE_TIMEOUT_SECONDS
-    ) {
-        collector.invariant(
-            'appInbox.completionWait.maxElapsedMs',
-            'completion-wait-exceeds-http-idle-bound',
-            `AppInbox completion wait must leave the HTTP idle bound within ${BUN_MAX_IDLE_TIMEOUT_SECONDS} seconds.`
-        );
-    }
+    validateHttpWaitBoundInvariants(collector, configuration);
     validateDatabaseModeInvariants(collector, configuration);
     if (
         collector.isValid('authentication.credentialSecret') &&
@@ -348,5 +340,33 @@ function hasExactProtocol(value: string, protocol: 'https:' | 'wss:'): boolean {
     }
     catch {
         return false;
+    }
+}
+
+/** A mutation request may wait its full completion wait: the idle bound and the shutdown drain must both outlast it. */
+function validateHttpWaitBoundInvariants(
+    collector: ApiV1ConfigurationInvariantCollector,
+    configuration: Pick<ValidateApiV1ConfigurationInvariantsInput, 'http' | 'appInbox'>
+): void {
+    if (!collector.isValid('appInbox.completionWait.maxElapsedMs')) {
+        return;
+    }
+    const idleTimeoutSeconds = computeApiHttpIdleTimeoutSeconds(configuration.appInbox.completionWait);
+    if (idleTimeoutSeconds > BUN_MAX_IDLE_TIMEOUT_SECONDS) {
+        collector.invariant(
+            'appInbox.completionWait.maxElapsedMs',
+            'completion-wait-exceeds-http-idle-bound',
+            `AppInbox completion wait must leave the HTTP idle bound within ${BUN_MAX_IDLE_TIMEOUT_SECONDS} seconds.`
+        );
+    }
+    if (
+        collector.isValid('http.shutdownDeadlineMs') &&
+        computeApiShutdownGraceMs(configuration.http) < idleTimeoutSeconds * 1000
+    ) {
+        collector.invariant(
+            'http.shutdownDeadlineMs',
+            'shutdown-deadline-cuts-completion-wait',
+            `The shutdown deadline must leave a drain of at least the ${idleTimeoutSeconds} s HTTP idle bound.`
+        );
     }
 }
