@@ -80,7 +80,7 @@ describe('RTC RTT refinement service', () => {
         expect(service.readRetainedEntryCounts()).toEqual({ observations: 1, decisions: 1 });
 
         // Past every earlier entry's expiry, so an eager prune would empty both maps.
-        nowEpochMs = 70_000;
+        nowEpochMs = 60_500;
         for (const index of [2, 3, 4, 5]) {
             claim(service, `observation-${index}`, `work-${index}`, { ...RTT, version: index }, 120_000);
         }
@@ -107,7 +107,7 @@ describe('RTC RTT refinement service', () => {
         // Same identities after expiry. The entries are still in the maps because
         // the prune budget is spent, so only the read-time expiry check can stop
         // the stale decision being replayed.
-        nowEpochMs = 70_000;
+        nowEpochMs = 60_500;
         expect(claim(service, 'observation-1', 'work-1', RTT)).toBe(true);
         expect(observeRtt).toHaveBeenCalledTimes(2);
     });

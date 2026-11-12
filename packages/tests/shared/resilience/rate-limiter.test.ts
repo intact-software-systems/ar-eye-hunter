@@ -75,3 +75,79 @@ describe('RateLimiter at a given time', () => {
         expect(limiter.allowAt(999)).toBe(false);
     });
 });
+
+describe('RateLimiter as a token bucket', () => {
+    const t0 = 1_791_883_286_000;
+    const lateJitterMs = [0, 7, 25, 3, 18, 11, 0, 22, 5, 14];
+
+    function countAdmitted(limiter: RateLimiter, instants: readonly number[]): number {
+        return instants.filter((instant) => limiter.allowAt(instant)).length;
+    }
+
+    function toJitteredGrid(sendCount: number): number[] {
+        return Array.from({ length: sendCount }, (_, index) => t0 + index * 50 + lateJitterMs[index % lateJitterMs.length]!);
+    }
+
+    it('admits every send of a 20 Hz stream with late timer jitter at a limit of 20 per second', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 20, t0);
+
+        expect(countAdmitted(limiter, toJitteredGrid(600))).toBe(600);
+    });
+
+    it('admits every send of a 20 Hz stream that stalls 300 ms and then catches up', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 20, t0);
+        const instants = toJitteredGrid(600);
+        const stallEndMs = t0 + 200 * 50 + 300;
+        for (let offset = 0; offset < 6; offset++) {
+            instants[200 + offset] = stallEndMs + offset * 2;
+        }
+
+        expect(countAdmitted(limiter, instants)).toBe(600);
+    });
+
+    it('caps a sustained 40 Hz stream at the declared rate plus one full bucket', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 20, t0);
+        const admitted = countAdmitted(limiter, Array.from({ length: 400 }, (_, index) => t0 + index * 25));
+
+        expect(admitted).toBeGreaterThanOrEqual(200);
+        expect(admitted).toBeLessThanOrEqual(20 + 200);
+    });
+
+    it('admits one full bucket in a burst and refills it at the declared rate', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 20, t0);
+
+        expect(countAdmitted(limiter, Array.from({ length: 25 }, () => t0))).toBe(20);
+        expect(countAdmitted(limiter, Array.from({ length: 25 }, () => t0 + 500))).toBe(10);
+    });
+
+    it('admits exactly one per window at a limit of one', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 1, t0);
+
+        expect(limiter.allowAt(t0)).toBe(true);
+        expect(limiter.allowAt(t0 + 999)).toBe(false);
+        expect(limiter.allowAt(t0 + 1_000)).toBe(true);
+    });
+
+    it('neither refills nor throws on a clock that steps back behind its last call', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 2, t0);
+
+        expect(limiter.allowAt(t0 + 5_000)).toBe(true);
+        expect(limiter.allowAt(t0 + 5_000)).toBe(true);
+        expect(limiter.allowAt(t0 + 4_000)).toBe(false);
+        expect(limiter.isAllowedAt(t0 + 4_999)).toBe(false);
+        expect(limiter.allowAt(t0 + 5_500)).toBe(true);
+        expect(limiter.allowAt(t0 + 5_500)).toBe(false);
+    });
+
+    it('answers isAllowedAt without spending a token', () => {
+        const limiter = RateLimiter.initWithTs(1_000, 2, t0);
+
+        for (let check = 0; check < 5; check++) {
+            expect(limiter.isAllowedAt(t0)).toBe(true);
+        }
+        expect(countAdmitted(limiter, [t0, t0, t0])).toBe(2);
+        expect(limiter.isAllowedAt(t0 + 499)).toBe(false);
+        expect(limiter.isAllowedAt(t0 + 500)).toBe(true);
+        expect(limiter.isAllowedAt(t0 + 500)).toBe(true);
+    });
+});
