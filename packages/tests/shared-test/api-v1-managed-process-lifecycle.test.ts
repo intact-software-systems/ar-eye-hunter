@@ -28,7 +28,7 @@ describe('managed API-v1 process lifecycle', () => {
                     resolveStatus({ success: false, code: 137, signal: signo });
                 }
             }
-        });
+        }, 'graceful');
 
         try {
             expect(signals).toEqual(['SIGTERM']);
@@ -42,4 +42,47 @@ describe('managed API-v1 process lifecycle', () => {
             vi.useRealTimers();
         }
     });
+
+    it('crashes a child with SIGKILL at once when the proof is about abrupt process death', async () => {
+        const child = new RecordingChild();
+
+        await stopManagedApiServer(child, 'crash');
+
+        expect(child.signals).toEqual(['SIGKILL']);
+    });
+
+    it('fails a graceful stop whose process exits non-zero', async () => {
+        const child = new RecordingChild({ exitCodeOnSigterm: 1 });
+
+        const outcome = await stopManagedApiServer(child, 'graceful').then(() => 'stopped', (error: Error) => error.message);
+
+        expect({ outcome, signals: child.signals }).toEqual({
+            outcome: 'Managed API-v1 exited 1 after SIGTERM instead of 0.',
+            signals: ['SIGTERM']
+        });
+    });
 });
+
+type ManagedStatus = Readonly<{ success: boolean; code: number; signal: NodeJS.Signals | null; }>;
+
+class RecordingChild {
+    readonly stdout = null;
+    readonly stderr = null;
+    readonly signals: NodeJS.Signals[] = [];
+    readonly status: Promise<ManagedStatus>;
+    readonly #exitCodeOnSigterm: number;
+    #resolve!: (status: ManagedStatus) => void;
+
+    constructor(options: Readonly<{ exitCodeOnSigterm?: number; }> = {}) {
+        this.#exitCodeOnSigterm = options.exitCodeOnSigterm ?? 0;
+        this.status = new Promise((resolve) => {
+            this.#resolve = resolve;
+        });
+    }
+
+    kill(signo: NodeJS.Signals = 'SIGTERM'): void {
+        this.signals.push(signo);
+        const code = signo === 'SIGKILL' ? 137 : this.#exitCodeOnSigterm;
+        this.#resolve({ success: code === 0, code, signal: null });
+    }
+}

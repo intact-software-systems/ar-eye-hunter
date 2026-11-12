@@ -167,34 +167,59 @@ export function startManagedApiServer(
 
 const GRACEFUL_STOP_BOUND_MS = 5000;
 
-/** The API exits on SIGTERM after its graceful stop; needing SIGKILL is a shutdown defect, so it fails the stop. */
-export async function stopManagedApiServer(child: ManagedApiChild | undefined): Promise<void> {
+/**
+ * `crash` kills the process outright, the abrupt death a recovery proof is about: no close frames, no drain.
+ * `graceful` is SIGTERM and the API's own ordered stop, which must exit 0 within the bound.
+ */
+export type ManagedApiStopMode = 'crash' | 'graceful';
+
+export async function stopManagedApiServer(
+    child: ManagedApiChild | undefined,
+    mode: ManagedApiStopMode
+): Promise<void> {
     if (!child) {
         return;
     }
+    if (mode === 'crash') {
+        killManagedApiChild(child);
+        await child.status.catch(() => undefined);
+        return;
+    }
+    await stopManagedApiServerGracefully(child);
+}
+
+/** Needing SIGKILL, or a non-zero exit, is a shutdown defect, so either fails the stop. */
+async function stopManagedApiServerGracefully(child: ManagedApiChild): Promise<void> {
     try {
         child.kill('SIGTERM');
     }
     catch (_error) {
         return;
     }
-    const stopped = await Promise.race([
-        child.status.then(() => true),
-        sleep(GRACEFUL_STOP_BOUND_MS).then(() => false)
+    const status = await Promise.race([
+        child.status,
+        sleep(GRACEFUL_STOP_BOUND_MS).then(() => undefined)
     ]);
-    if (stopped) {
+    if (status !== undefined) {
+        if (status.code !== 0) {
+            throw new Error(`Managed API-v1 exited ${status.code} after SIGTERM instead of 0.`);
+        }
         return;
     }
+    killManagedApiChild(child);
+    await child.status.catch(() => undefined);
+    const message = `Managed API-v1 did not exit within ${GRACEFUL_STOP_BOUND_MS} ms of SIGTERM and was killed.`;
+    console.error(message);
+    throw new Error(message);
+}
+
+function killManagedApiChild(child: ManagedApiChild): void {
     try {
         child.kill('SIGKILL');
     }
     catch (_error) {
         // Process already exited.
     }
-    await child.status.catch(() => undefined);
-    const message = `Managed API-v1 did not exit within ${GRACEFUL_STOP_BOUND_MS} ms of SIGTERM and was killed.`;
-    console.error(message);
-    throw new Error(message);
 }
 
 async function appendStreamToFile(

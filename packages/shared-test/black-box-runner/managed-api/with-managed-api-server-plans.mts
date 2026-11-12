@@ -1,7 +1,8 @@
 import type { WaitForManagedApiReadyInput } from './api-v1-managed-api-readiness.mts';
 import type {
     ManagedApiServer,
-    ManagedApiServerPlan as ManagedApiProcessPlan
+    ManagedApiServerPlan as ManagedApiProcessPlan,
+    ManagedApiStopMode
 } from './api-v1-managed-process-lifecycle.mts';
 
 export interface ManagedApiServerPlan extends ManagedApiProcessPlan {
@@ -16,7 +17,7 @@ export interface ManagedApiServerPlanLifecycleInput {
 }
 
 export interface ManagedApiServerLifecycleControls {
-    readonly stop: (port: number) => Promise<void>;
+    readonly stop: (port: number, mode: ManagedApiStopMode) => Promise<void>;
     readonly restart: (port: number, replacementPlan: ManagedApiServerPlan) => Promise<void>;
     readonly suspend: (port: number) => Promise<void>;
     readonly resume: (port: number) => Promise<void>;
@@ -36,7 +37,7 @@ export interface ManagedApiServerPlanLifecycleDependencies {
         artifactDir: string,
         serverLogPaths: readonly string[]
     ) => Promise<void>;
-    readonly stopServer: (child: ManagedApiServer['child']) => Promise<void>;
+    readonly stopServer: (child: ManagedApiServer['child'], mode: ManagedApiStopMode) => Promise<void>;
 }
 
 export async function withManagedApiServerPlans(
@@ -76,7 +77,7 @@ export async function withManagedApiServerPlans(
         });
     };
 
-    const stop = async (port: number): Promise<void> => {
+    const stop = async (port: number, mode: ManagedApiStopMode): Promise<void> => {
         const server = activeServers.get(port);
         if (!server) {
             throw new Error(`Managed API-v1 port ${port} is not running.`);
@@ -85,7 +86,7 @@ export async function withManagedApiServerPlans(
             server.child.kill('SIGCONT');
             suspendedServers.delete(server);
         }
-        await dependencies.stopServer(server.child);
+        await dependencies.stopServer(server.child, mode);
         await server.streamsDrained;
         activeServers.delete(port);
     };
@@ -160,7 +161,7 @@ export async function withManagedApiServerPlans(
                             suspendedServers.delete(server);
                         }
                     }
-                    await dependencies.stopServer(server.child);
+                    await dependencies.stopServer(server.child, 'graceful');
                     await server.streamsDrained;
                     activeServers.delete(plan.port);
                 })
