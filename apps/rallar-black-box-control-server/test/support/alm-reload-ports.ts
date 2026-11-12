@@ -45,6 +45,7 @@ import {
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { AlmReloadLiveArrivals } from './alm-reload-live-arrivals.ts';
 import {
@@ -342,9 +343,12 @@ export class AlmReloadPorts {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
                 }
                 if (role === 'sender') {
-                    this.publicationLane.connect(
-                        resolveAlmReloadPublicationLimits(command.rallar?.almPublicationLimits)
-                    );
+                    const namedLimits = command.rallar?.almPublicationLimits;
+                    const limits = namedLimits === undefined
+                        ? Either.ofRight<string, ALPublicationStageLimits>(AL_PUBLICATION_STAGE_LIMITS)
+                        : decodeAlmReloadPublicationLimits(namedLimits);
+                    assert(limits.right, limits.left);
+                    this.publicationLane.connect(limits.right);
                 }
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
@@ -1598,13 +1602,4 @@ function toPortDeliveryLifecycle(message: PortMessage): ALDeliveryLifecycle {
             reason: message.reason
         }
     };
-}
-
-function resolveAlmReloadPublicationLimits(value: unknown): ALPublicationStageLimits {
-    if (value === undefined) {
-        return AL_PUBLICATION_STAGE_LIMITS;
-    }
-    const limits = decodeAlmReloadPublicationLimits(value);
-    assert(limits.right, limits.left);
-    return limits.right;
 }
