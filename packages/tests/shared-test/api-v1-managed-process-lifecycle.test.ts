@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { stopManagedApiServer } from '@shared-test/black-box-runner/managed-api/api-v1-managed-process-lifecycle.mts';
 
 describe('managed API-v1 process lifecycle', () => {
-    it('uses SIGTERM before SIGKILL when the injected child does not stop', async () => {
+    it('kills a child that ignores SIGTERM and fails the stop, because a graceful exit is the contract', async () => {
         vi.useFakeTimers();
         const signals: ('SIGTERM' | 'SIGKILL')[] = [];
         let resolveStatus!: (
@@ -32,9 +32,10 @@ describe('managed API-v1 process lifecycle', () => {
 
         try {
             expect(signals).toEqual(['SIGTERM']);
+            const outcome = stopping.then(() => 'stopped', (error: Error) => error.message);
             await vi.advanceTimersByTimeAsync(5000);
-            await stopping;
 
+            expect(await outcome).toBe('Managed API-v1 did not exit within 5000 ms of SIGTERM and was killed.');
             expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
         }
         finally {

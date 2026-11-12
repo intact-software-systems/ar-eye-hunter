@@ -1,4 +1,5 @@
 import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-box-control-production-env.ts';
+import { initServerProcessShutdown } from '@shared-server/process/init-server-process-shutdown.ts';
 import { createConsoleRallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
@@ -113,13 +114,7 @@ const stopDeadlineSweep = startControlDeadlineSweep({
     intervalMs: security.deadlineSweepIntervalMs
 });
 
-if (security.storageDir) {
-    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-        process.on(signal, () => void stopControlServer());
-    }
-}
-
-Bun.serve<ControlSocketData>({
+const server = Bun.serve<ControlSocketData>({
     port,
     websocket: createControlWebSocketHandlers(routeDependencies),
     async fetch(request, server) {
@@ -130,11 +125,13 @@ Bun.serve<ControlSocketData>({
 
 console.log(`Rallar black-box control server listening on http://localhost:${port}`);
 console.log(`Agent WebSocket endpoint: ws://localhost:${port}/control`);
+initServerProcessShutdown({ process, signals: ['SIGTERM', 'SIGINT'], stop: stopControlServer, log: console });
 
+/** Control state lives in memory until the flush, so sockets are cut first and the flush sees every last change. */
 async function stopControlServer(): Promise<void> {
+    await server.stop(true);
     stopDeadlineSweep();
     stopRunCompletion();
     await completedRuns.stop();
     await Promise.all([snapshotPersistence.stop(), artifactRecorder.stop()]);
-    process.exit(0);
 }

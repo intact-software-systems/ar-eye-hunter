@@ -258,10 +258,19 @@ construction registers database notification, replay, delivery, expiry, and
 other background owners. WebSocket lifecycle adds its stop operation during
 installation.
 
-Process unload, startup failure, and topology-delivery health failure converge
+SIGTERM/SIGINT, startup failure, and topology-delivery health failure converge
 on `runtime.backgroundTasks.stop()`. Stops run in reverse registration order so
 workers and listeners release their database dependency before the database
 lifecycle closes.
+
+`serveApiApplication` registers the signal stop through
+`process/init-server-process-shutdown.ts`, which every Bun server (API-v1, the
+games that embed it, and the black-box control server) shares. The first signal
+runs the server's ordered stop and exits 0, or 1 when a step failed; a second
+signal exits 1 at once. For API-v1 the order is: a graceful `server.stop()` that
+refuses new connections while in-flight requests (including mutations awaiting
+their AppInbox completion) finish, WebSocket close with 1001, the drain, queue
+workers, then background tasks.
 
 ## Navigation probes
 

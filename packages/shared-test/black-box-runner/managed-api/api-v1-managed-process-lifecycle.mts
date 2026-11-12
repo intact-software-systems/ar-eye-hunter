@@ -165,6 +165,9 @@ export function startManagedApiServer(
     };
 }
 
+const GRACEFUL_STOP_BOUND_MS = 5000;
+
+/** The API exits on SIGTERM after its graceful stop; needing SIGKILL is a shutdown defect, so it fails the stop. */
 export async function stopManagedApiServer(child: ManagedApiChild | undefined): Promise<void> {
     if (!child) {
         return;
@@ -177,7 +180,7 @@ export async function stopManagedApiServer(child: ManagedApiChild | undefined): 
     }
     const stopped = await Promise.race([
         child.status.then(() => true),
-        sleep(5000).then(() => false)
+        sleep(GRACEFUL_STOP_BOUND_MS).then(() => false)
     ]);
     if (stopped) {
         return;
@@ -189,6 +192,9 @@ export async function stopManagedApiServer(child: ManagedApiChild | undefined): 
         // Process already exited.
     }
     await child.status.catch(() => undefined);
+    const message = `Managed API-v1 did not exit within ${GRACEFUL_STOP_BOUND_MS} ms of SIGTERM and was killed.`;
+    console.error(message);
+    throw new Error(message);
 }
 
 async function appendStreamToFile(
