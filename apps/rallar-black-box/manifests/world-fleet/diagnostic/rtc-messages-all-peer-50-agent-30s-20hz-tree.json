@@ -250,9 +250,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-delivery-poll",
-            "count": 21,
+            "count": 14,
             "intervalMs": 5000,
-            "maxCommands": 42,
+            "maxCommands": 28,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
@@ -269,7 +269,7 @@
               "minReceiveRatio": 0.8,
               "logicalFanoutMessages": 1470000,
               "purpose": "delivery-poll",
-              "pollWindowMs": 100000
+              "pollWindowMs": 65000
             },
             "commands": [
               {
@@ -425,7 +425,7 @@
       "streamFrames": 30000,
       "logicalFanoutMessages": 1470000
     },
-    "recommendedTerminalTimeoutSeconds": 425,
+    "recommendedTerminalTimeoutSeconds": 390,
     "worldFleet": true,
     "noSpawn": true
   }

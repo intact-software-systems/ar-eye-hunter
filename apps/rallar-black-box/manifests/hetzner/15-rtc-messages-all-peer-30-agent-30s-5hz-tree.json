@@ -250,9 +250,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-delivery-poll",
-            "count": 21,
+            "count": 14,
             "intervalMs": 5000,
-            "maxCommands": 42,
+            "maxCommands": 28,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
@@ -269,7 +269,7 @@
               "minReceiveRatio": 0.9,
               "logicalFanoutMessages": 130500,
               "purpose": "delivery-poll",
-              "pollWindowMs": 100000
+              "pollWindowMs": 65000
             },
             "commands": [
               {
@@ -428,7 +428,7 @@
       "streamFrames": 4500,
       "logicalFanoutMessages": 130500
     },
-    "recommendedTerminalTimeoutSeconds": 380
+    "recommendedTerminalTimeoutSeconds": 345
   },
   "description": "All 30 headless peers multicast RTC messages at 5 Hz through a forced tree topology."
 }

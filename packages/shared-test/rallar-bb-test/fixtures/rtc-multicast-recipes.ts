@@ -149,20 +149,28 @@ export interface RtcMessagesDeliveryPollWindowInput {
     /** The sender's warmup or the all-peer settle that precedes the stream. */
     readonly leadInMs: number;
     readonly durationSeconds: number;
+    /** Whether the receiver runs its own lead-in and stream before its delivery poll starts. */
+    readonly streamsBeforePoll: boolean;
 }
 
 /**
- * Peers connect at different times and the last one to connect streams last: measured from a peer's connect, the
- * latest sender is still streaming until the worst-case spread between connects, the lead-in and the stream are over.
+ * Peers connect at different times and the last one to connect streams last: measured from a receiver's connect, the
+ * latest sender streams until the worst-case spread between connects, the lead-in and the stream are over. A receiver
+ * that streams first has already spent its own lead-in and stream when its poll starts, so only the spread remains.
  */
-export function computeRtcMessagesLatestSenderStreamEndMs(input: RtcMessagesDeliveryPollWindowInput): number {
-    return computeRtcEstablishAndReadyCommandTimeoutMs(input.readinessTimeoutMs) + input.leadInMs +
-        input.durationSeconds * 1_000;
+export function computeRtcMessagesSenderStreamRemainingAtPollStartMs(
+    input: RtcMessagesDeliveryPollWindowInput
+): number {
+    const leadInAndStreamMs = input.leadInMs + input.durationSeconds * 1_000;
+    const latestSenderStreamEndMs = computeRtcEstablishAndReadyCommandTimeoutMs(input.readinessTimeoutMs) +
+        leadInAndStreamMs;
+    const earliestPollStartMs = input.streamsBeforePoll ? leadInAndStreamMs : 0;
+    return latestSenderStreamEndMs - earliestPollStartMs;
 }
 
-/** A peer's delivery is complete only once the latest sender's stream has ended and its tail has arrived. */
+/** A receiver's delivery is complete only once the latest sender's stream has ended and its tail has arrived. */
 export function computeRtcMessagesDeliveryPollWindowMs(input: RtcMessagesDeliveryPollWindowInput): number {
-    return computeRtcMessagesLatestSenderStreamEndMs(input) + RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS;
+    return computeRtcMessagesSenderStreamRemainingAtPollStartMs(input) + RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS;
 }
 
 export interface RtcMessagesRelayHoldInput {
@@ -170,17 +178,15 @@ export interface RtcMessagesRelayHoldInput {
     readonly intervalMs: number;
     readonly expectedInboundMessages: number;
     readonly minExpectedInboundMessages: number;
-    /** From this receiver's connect, the latest a sender can still be streaming. */
-    readonly latestSenderStreamEndMs: number;
-    /** From this receiver's connect, the earliest its delivery poll, and so its threshold, can first hold. */
-    readonly earliestPollStartMs: number;
+    /** The most stream the latest sender can still have once this receiver's delivery poll, and threshold, can hold. */
+    readonly senderStreamRemainingAtPollStartMs: number;
 }
 
 /**
  * A receiver that meets its threshold may still relay frames to descendants, and leaving closes its page, so it holds
  * for the most stream any one sender can still have left plus the tail. A sender's unsent frames count as unreceived,
  * so a shortfall the threshold tolerates that is shorter than one sender's stream bounds what any sender has left. A
- * longer shortfall can hide a sender that has not started yet; only the latest end of a sender's stream bounds it.
+ * longer shortfall can hide a sender that has not started yet; only the latest sender's remaining stream bounds it.
  */
 export function computeRtcMessagesRelayHoldMs(input: RtcMessagesRelayHoldInput): number {
     if (input.expectedInboundMessages <= 0) {
@@ -189,7 +195,7 @@ export function computeRtcMessagesRelayHoldMs(input: RtcMessagesRelayHoldInput):
     const shortfallMessages = input.expectedInboundMessages - input.minExpectedInboundMessages;
     const remainingStreamMs = shortfallMessages < input.frameCount
         ? shortfallMessages * input.intervalMs
-        : input.latestSenderStreamEndMs - input.earliestPollStartMs;
+        : input.senderStreamRemainingAtPollStartMs;
     return remainingStreamMs + RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS;
 }
 
@@ -552,6 +558,12 @@ function toPrincipalSenderStream(context: MulticastRecipeContext): RallarBlackBo
 function toPrincipalReceiverRecipe(context: MulticastRecipeContext): RallarBlackBoxTestRecipe {
     const { options, group, connection, plan, metadata, baseSetupCommands } = context;
     const roomRef = groupRoomRef(group);
+    const delivery = {
+        readinessTimeoutMs: resolveMulticastReadinessTimeoutMs(options.readyTimeoutMs),
+        leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS,
+        durationSeconds: plan.durationSeconds,
+        streamsBeforePoll: false
+    };
     return {
         schemaVersion: 1,
         recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
@@ -579,7 +591,7 @@ function toPrincipalReceiverRecipe(context: MulticastRecipeContext): RallarBlack
                 plan,
                 metadata,
                 roomRef,
-                leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS,
+                delivery,
                 options
             }),
             toMulticastRelayHold({
@@ -589,8 +601,7 @@ function toPrincipalReceiverRecipe(context: MulticastRecipeContext): RallarBlack
                 },
                 plan,
                 metadata,
-                leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS,
-                streamsBeforePoll: false,
+                delivery,
                 options
             }),
             {
@@ -607,6 +618,12 @@ function toAllPeerRecipe(
     settleMetadata: RallarBlackBoxTestRecord
 ): RallarBlackBoxTestRecipe {
     const { options, group, connection, plan, metadata } = context;
+    const delivery = {
+        readinessTimeoutMs: resolveMulticastReadinessTimeoutMs(options.readyTimeoutMs),
+        leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS,
+        durationSeconds: plan.durationSeconds,
+        streamsBeforePoll: true
+    };
     return {
         schemaVersion: 1,
         recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
@@ -646,7 +663,7 @@ function toAllPeerRecipe(
                 },
                 plan,
                 metadata,
-                leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS,
+                delivery,
                 options
             }),
             toMulticastRelayHold({
@@ -656,8 +673,7 @@ function toAllPeerRecipe(
                 },
                 plan,
                 metadata,
-                leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS,
-                streamsBeforePoll: true,
+                delivery,
                 options
             }),
             { kind: 'stats', commandId: 'rtc-messages-all-peer-final-stats', metadata }
@@ -669,10 +685,7 @@ interface MulticastRelayHoldInput {
     readonly commandIds: Readonly<{ hold: string; stats: string; }>;
     readonly plan: MulticastDeliveryPlan;
     readonly metadata: RallarBlackBoxTestRecord;
-    /** The sender's warmup or the all-peer settle that precedes every stream. */
-    readonly leadInMs: number;
-    /** Whether the receiver runs its own lead-in and stream before its delivery poll starts. */
-    readonly streamsBeforePoll: boolean;
+    readonly delivery: RtcMessagesDeliveryPollWindowInput;
     readonly options: RallarBlackBoxRtcMessagesMulticastRecipeOptions;
 }
 
@@ -681,17 +694,13 @@ interface MulticastDeliveryPollInput {
     readonly plan: MulticastDeliveryPlan;
     readonly metadata: RallarBlackBoxTestRecord;
     readonly roomRef?: RallarBlackBoxDistributedGroupRef;
-    readonly leadInMs: number;
+    readonly delivery: RtcMessagesDeliveryPollWindowInput;
     readonly options: RallarBlackBoxRtcMessagesMulticastRecipeOptions;
 }
 
 function toMulticastDeliveryPoll(input: MulticastDeliveryPollInput): RallarBlackBoxTestCommand {
     const { commandIds, plan, metadata, options } = input;
-    const windowMs = computeRtcMessagesDeliveryPollWindowMs({
-        readinessTimeoutMs: resolveMulticastReadinessTimeoutMs(options.readyTimeoutMs),
-        leadInMs: input.leadInMs,
-        durationSeconds: plan.durationSeconds
-    });
+    const windowMs = computeRtcMessagesDeliveryPollWindowMs(input.delivery);
     const intervalMs = options.midStreamStatsIntervalMs ?? RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_POLL_INTERVAL_MS;
     const count = Math.ceil(windowMs / intervalMs) + 1;
     return {
@@ -725,12 +734,7 @@ function toMulticastRelayHold(input: MulticastRelayHoldInput): RallarBlackBoxTes
     const { commandIds, plan, metadata, options } = input;
     const holdMs = computeRtcMessagesRelayHoldMs({
         ...plan,
-        latestSenderStreamEndMs: computeRtcMessagesLatestSenderStreamEndMs({
-            readinessTimeoutMs: resolveMulticastReadinessTimeoutMs(options.readyTimeoutMs),
-            leadInMs: input.leadInMs,
-            durationSeconds: plan.durationSeconds
-        }),
-        earliestPollStartMs: input.streamsBeforePoll ? input.leadInMs + plan.durationSeconds * 1_000 : 0
+        senderStreamRemainingAtPollStartMs: computeRtcMessagesSenderStreamRemainingAtPollStartMs(input.delivery)
     });
     const intervalMs = options.midStreamStatsIntervalMs ?? RALLAR_BLACK_BOX_RTC_MESSAGES_RELAY_HOLD_INTERVAL_MS;
     return toMulticastStatsLoop({

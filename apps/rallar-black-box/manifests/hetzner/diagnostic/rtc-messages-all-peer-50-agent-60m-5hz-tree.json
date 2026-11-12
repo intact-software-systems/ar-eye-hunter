@@ -250,9 +250,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-delivery-poll",
-            "count": 735,
+            "count": 14,
             "intervalMs": 5000,
-            "maxCommands": 1470,
+            "maxCommands": 28,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
@@ -269,7 +269,7 @@
               "minReceiveRatio": 0.9,
               "logicalFanoutMessages": 44100000,
               "purpose": "delivery-poll",
-              "pollWindowMs": 3670000
+              "pollWindowMs": 65000
             },
             "commands": [
               {
@@ -429,7 +429,7 @@
       "streamFrames": 900000,
       "logicalFanoutMessages": 44100000
     },
-    "recommendedTerminalTimeoutSeconds": 7545
+    "recommendedTerminalTimeoutSeconds": 3940
   },
   "description": "Long diagnostic all-peer RTC messages multicast run at 5 Hz for 60-minute tree soak validation."
 }

@@ -1,3 +1,6 @@
+import { load as loadYaml } from 'js-yaml';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import {
     describe,
     expect,
@@ -11,6 +14,37 @@ import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-bl
 import {
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts';
+import { createWorldFleetDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/world-fleet-distributed-manifests.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+
+const repoRoot = path.resolve(__dirname, '../../..');
+
+/** The time limit of the GitHub-hosted job that runs a hosted fleet's headless agents for the whole distributed run. */
+async function readHostedAgentJobTimeoutSeconds(): Promise<number> {
+    const workflow: unknown = loadYaml(
+        await readFile(path.join(repoRoot, '.github/workflows/github-free-distributed-recipe.yml'), 'utf8')
+    );
+    const schema = {
+        type: 'object',
+        required: ['jobs'],
+        properties: {
+            jobs: {
+                type: 'object',
+                required: ['github-agents'],
+                properties: {
+                    'github-agents': {
+                        type: 'object',
+                        required: ['timeout-minutes'],
+                        properties: { 'timeout-minutes': { type: 'integer' } }
+                    }
+                }
+            }
+        }
+    };
+    expect(validateJsonSchema(schema, workflow).ok).toBe(true);
+    return (workflow as { jobs: { 'github-agents': { 'timeout-minutes': number; }; }; }).jobs['github-agents']['timeout-minutes'] *
+        60;
+}
 
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
 const MATRIX_DURATION_SECONDS = [30, 300] as const;
@@ -79,9 +113,9 @@ describe('Hetzner multicast workloads', () => {
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
             // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 60 s, 5 settle
-            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 20 delivery-poll pauses of 5 s and 65
+            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 13 delivery-poll pauses of 5 s and 65
             // relay-hold pauses of 1 s, rounded up to the second.
-            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + 60 + 5 + 29.8 + 5 + 100 + 65),
+            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + 60 + 5 + 29.8 + 5 + 65 + 65),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
                 minExpectedInboundMessages: 6615,
@@ -276,6 +310,22 @@ describe('Hetzner multicast workloads', () => {
                     barrier: manifest.barrier
                 })
             );
+        }
+    });
+
+    it('ends every run a hosted agent job can stream within that job\'s own time limit', async () => {
+        const jobTimeoutSeconds = await readHostedAgentJobTimeoutSeconds();
+        const hostedRuns = [...createHetznerDistributedManifestCatalog(), ...createWorldFleetDistributedManifestCatalog()]
+            .map((entry) => entry.manifest)
+            .filter((manifest) =>
+                typeof manifest.metadata?.recommendedTerminalTimeoutSeconds === 'number' &&
+                Number(manifest.metadata.expectedDurationSeconds ?? 0) < jobTimeoutSeconds
+            );
+
+        expect(hostedRuns.length).toBeGreaterThan(0);
+        for (const manifest of hostedRuns) {
+            expect(manifest.metadata?.recommendedTerminalTimeoutSeconds, manifest.distributedRunId)
+                .toBeLessThanOrEqual(jobTimeoutSeconds);
         }
     });
 

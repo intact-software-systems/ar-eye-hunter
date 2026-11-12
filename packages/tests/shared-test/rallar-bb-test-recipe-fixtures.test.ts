@@ -186,9 +186,12 @@ describe('rallar-bb-test recipe fixtures', () => {
         const windowMs = computeRtcMessagesDeliveryPollWindowMs({
             readinessTimeoutMs: 45_000,
             leadInMs: 5_000,
-            durationSeconds: 30
+            durationSeconds: 30,
+            streamsBeforePoll: false
         });
 
+        // The receiver polls straight after its connect, so its window covers the connect spread, the sender's warmup,
+        // the whole stream and the tail.
         expect(windowMs).toBe(60_000 + 5_000 + 30_000 + 5_000);
         expect(poll).toMatchObject({
             kind: 'loop',
@@ -237,20 +240,18 @@ describe('rallar-bb-test recipe fixtures', () => {
             intervalMs: 50,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
-            latestSenderStreamEndMs: 60_000 + 5_000 + 30_000,
-            earliestPollStartMs: 0
+            senderStreamRemainingAtPollStartMs: 60_000 + 5_000 + 30_000
         })).toBe(1_500 + 5_000);
         expect(principalHold).toMatchObject({ metadata: { purpose: 'relay-hold', relayHoldMs: 6_500 }, count: 8 });
         // Manifest 09: the 735-message shortfall exceeds one sender's 150 frames, so a sender may not have started when
-        // the receiver's poll starts 35 s after its connect; that sender streams until the 60 s connect spread, the 5 s
-        // settle and the 30 s stream have passed.
+        // the receiver's poll starts after its own settle and stream; the latest sender, which connected up to the 60 s
+        // connect spread later, streams that much longer.
         expect(computeRtcMessagesRelayHoldMs({
             frameCount: 150,
             intervalMs: 200,
             expectedInboundMessages: 7_350,
             minExpectedInboundMessages: 6_615,
-            latestSenderStreamEndMs: 60_000 + 5_000 + 30_000,
-            earliestPollStartMs: 5_000 + 30_000
+            senderStreamRemainingAtPollStartMs: 60_000
         })).toBe(60_000 + 5_000);
     });
 
@@ -294,7 +295,8 @@ describe('rallar-bb-test recipe fixtures', () => {
         const pollWindowMs = computeRtcMessagesDeliveryPollWindowMs({
             readinessTimeoutMs: 45_000,
             leadInMs: 5_000,
-            durationSeconds: 30
+            durationSeconds: 30,
+            streamsBeforePoll: true
         });
 
         expect(recipe.recipeId).toBe(RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID);
@@ -362,7 +364,9 @@ describe('rallar-bb-test recipe fixtures', () => {
             kind: 'stats',
             commandId: 'rtc-messages-all-peer-final-stats'
         });
-        expect(pollWindowMs).toBe(100_000);
+        // Each peer polls only after its own settle and stream, which the latest other sender's settle and stream match,
+        // so its window covers the connect spread and the tail, each phase once.
+        expect(pollWindowMs).toBe(60_000 + 5_000);
         const allPeerPollIndex = recipe.commands.findIndex(
             (command) => command.commandId === 'rtc-messages-all-peer-delivery-poll'
         );

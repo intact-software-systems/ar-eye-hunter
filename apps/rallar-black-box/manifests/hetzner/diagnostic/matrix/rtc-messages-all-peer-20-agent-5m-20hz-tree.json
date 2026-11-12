@@ -250,9 +250,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-delivery-poll",
-            "count": 75,
+            "count": 14,
             "intervalMs": 5000,
-            "maxCommands": 150,
+            "maxCommands": 28,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
@@ -269,7 +269,7 @@
               "minReceiveRatio": 0.8,
               "logicalFanoutMessages": 2280000,
               "purpose": "delivery-poll",
-              "pollWindowMs": 370000
+              "pollWindowMs": 65000
             },
             "commands": [
               {
@@ -429,7 +429,7 @@
       "streamFrames": 120000,
       "logicalFanoutMessages": 2280000
     },
-    "recommendedTerminalTimeoutSeconds": 945
+    "recommendedTerminalTimeoutSeconds": 640
   },
   "description": "Diagnostic 20-agent all-peer RTC messages multicast run at 20 Hz for 5m through a forced tree topology."
 }
