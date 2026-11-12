@@ -9,6 +9,7 @@ import {
 
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import {
@@ -21,9 +22,18 @@ const repoRoot = path.resolve(__dirname, '../../..');
 
 /** The time limit of the GitHub-hosted job that runs a hosted fleet's headless agents for the whole distributed run. */
 async function readHostedAgentJobTimeoutSeconds(): Promise<number> {
-    const workflow: unknown = loadYaml(
+    const workflow = loadYaml(
         await readFile(path.join(repoRoot, '.github/workflows/github-free-distributed-recipe.yml'), 'utf8')
     );
+    return decodeHostedAgentJobTimeoutMinutes(workflow).fold(
+        (issue) => {
+            throw new Error(issue);
+        },
+        (minutes) => minutes * 60
+    );
+}
+
+function decodeHostedAgentJobTimeoutMinutes(value: unknown): Either<string, number> {
     const schema = {
         type: 'object',
         required: ['jobs'],
@@ -41,9 +51,9 @@ async function readHostedAgentJobTimeoutSeconds(): Promise<number> {
             }
         }
     };
-    expect(validateJsonSchema(schema, workflow).ok).toBe(true);
-    return (workflow as { jobs: { 'github-agents': { 'timeout-minutes': number; }; }; }).jobs['github-agents']['timeout-minutes'] *
-        60;
+    return validateJsonSchema(schema, value).ok
+        ? Either.ofRight((value as { jobs: { 'github-agents': { 'timeout-minutes': number; }; }; }).jobs['github-agents']['timeout-minutes'])
+        : Either.ofLeft('The hosted agent job names no integer timeout-minutes.');
 }
 
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
