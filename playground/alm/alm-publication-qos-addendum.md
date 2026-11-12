@@ -1448,8 +1448,8 @@ behavior: no wire shape, stored shape or OpenAPI document differs from Slice
   values are today's: an empty QoS input and the frozen shipped limits. No
   layer below the root chooses a default, so another root, such as the actor's,
   passes its own (§4.3). The WS server keeps an absent QoS input;
-- `createBrowserSessionMessaging` composes the session's messaging for the
-  product root and the black-box root;
+- `createBrowserParticipantCore` composes the session's state, messaging and
+  realtime core for the product root and the black-box root;
 - `decodeALVolatileSessionLimits` decodes the volatile limits as the stage
   limits are decoded, with positive safe integers, and `getOwnNumber` reads a
   number field for the three decoders;

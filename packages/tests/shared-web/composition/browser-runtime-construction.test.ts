@@ -102,7 +102,7 @@ describe('browser runtime construction', () => {
         expect(createDefaultBrowserRuntimeFoundation().subtle).toBe(globalThis.crypto.subtle);
     });
 
-    it('composes the participant core over the foundation and session QoS inputs it is given, using none until composed', async () => {
+    it('connects the participant core with the foundation, key store and session QoS inputs it is given, reading no session while composing', async () => {
         const { createBrowserParticipantCore } = await import('@shared-web/browser/composition/create-browser-participant-core.ts');
         const { browserDeliveryComposition } = await import('@shared-web/browser/composition/browser-delivery-composition.ts');
         const publicationKeyStore = new InMemoryPublicationKeyStore();
@@ -145,7 +145,12 @@ describe('browser runtime construction', () => {
         expect(recorded[0][1]).toBe(volatileLimits);
         expect(recorded[0][2]).toBe(stageLimits);
         expect(recorded[0][3]).toBe(publicationKeyStore.pairs.get(runtime.middleware.session.sessionId)?.keyId);
-        expect(core.realtime.wsController.facade).toBeDefined();
+        const health = runtime.middleware.middleware.webSocketQueueBox.readHealth();
+        expect(core.realtime.wsController.facade.status()).toMatchObject({
+            connectState: foundation.connectionRuntime.readConnectState(),
+            url: health.url,
+            maxReconnectAttempts: health.maxReconnectAttempts
+        });
         await core.session.session.disconnect();
     });
 
