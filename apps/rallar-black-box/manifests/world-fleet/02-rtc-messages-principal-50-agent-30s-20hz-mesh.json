@@ -561,7 +561,6 @@
     "receiverCount": 49,
     "rateHz": 20,
     "expectedDurationSeconds": 30,
-    "recommendedTerminalTimeoutSeconds": 330,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "16"
     },
@@ -574,6 +573,7 @@
       "streamFrames": 600,
       "logicalFanoutMessages": 29400
     },
+    "recommendedTerminalTimeoutSeconds": 387,
     "worldFleet": true,
     "noSpawn": true
   }

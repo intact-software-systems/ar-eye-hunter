@@ -671,7 +671,6 @@
     "receiverCount": 14,
     "rateHz": 20,
     "expectedDurationSeconds": 30,
-    "recommendedTerminalTimeoutSeconds": 330,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "16"
     },
@@ -683,7 +682,8 @@
     "loadEstimate": {
       "streamFrames": 600,
       "logicalFanoutMessages": 8400
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 342
   },
   "description": "One principal headless sender multicasts RTC messages at 20 Hz to 14 receivers through the default mesh topology."
 }

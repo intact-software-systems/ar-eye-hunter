@@ -1,4 +1,5 @@
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 import { createDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
@@ -164,8 +165,7 @@ function principalEntry(
             durationSeconds,
             rateHz: 20,
             minReceiveRatio: 0.95,
-            receiverExpectedFrames: durationSeconds * 20,
-            recommendedTerminalTimeoutSeconds: long ? 3_900 : 330
+            receiverExpectedFrames: durationSeconds * 20
         })
     });
 }
@@ -219,8 +219,7 @@ function allPeerEntry(
             durationSeconds: input.durationSeconds,
             rateHz: input.rateHz,
             minReceiveRatio: input.minReceiveRatio,
-            receiverExpectedFrames: input.receiverExpectedFrames,
-            recommendedTerminalTimeoutSeconds: long ? 4_500 : 330
+            receiverExpectedFrames: input.receiverExpectedFrames
         })
     });
 }
@@ -256,6 +255,12 @@ function createWorldFleetManifestEntry(input: WorldFleetManifestInput): WorldFle
             metadata: {
                 ...manifest.metadata,
                 ...input.metadata,
+                // What the ack, the barrier and the slowest recipe add up to, so the terminal wait outlasts every budget.
+                recommendedTerminalTimeoutSeconds: computeDistributedRunTerminalTimeoutSeconds({
+                    recipes,
+                    ackTimeoutMs: manifest.ackTimeoutMs,
+                    barrier: manifest.barrier
+                }),
                 worldFleet: true,
                 noSpawn: true
             }
@@ -288,7 +293,6 @@ function multicastMetadata(
         rateHz: number;
         minReceiveRatio: number;
         receiverExpectedFrames: number;
-        recommendedTerminalTimeoutSeconds: number;
     }>
 ): RallarBlackBoxDistributedRunManifest['metadata'] {
     const streamFrames = input.durationSeconds * input.rateHz * input.senderCount;
@@ -302,7 +306,6 @@ function multicastMetadata(
             : WORLD_FLEET_AGENT_COUNT - input.senderCount,
         rateHz: input.rateHz,
         expectedDurationSeconds: input.durationSeconds,
-        recommendedTerminalTimeoutSeconds: input.recommendedTerminalTimeoutSeconds,
         rtcTopologyEnv: {
             RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: input.topologyProfile === 'tree' ? '51' : '16'
         },

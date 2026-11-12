@@ -916,7 +916,6 @@
     "receiverCount": 49,
     "rateHz": 20,
     "expectedDurationSeconds": 30,
-    "recommendedTerminalTimeoutSeconds": 330,
     "catalogProfiles": [
       "github-free-smoke",
       "50-agent",
@@ -933,7 +932,8 @@
     "loadEstimate": {
       "streamFrames": 600,
       "logicalFanoutMessages": 29400
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 342
   },
   "description": "One principal headless sender multicasts RTC messages at 20 Hz to 49 receivers through a forced tree topology."
 }

@@ -417,7 +417,6 @@
     "receiverCount": 15,
     "rateHz": 5,
     "expectedDurationSeconds": 30,
-    "recommendedTerminalTimeoutSeconds": 330,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "16"
     },
@@ -429,7 +428,8 @@
     "loadEstimate": {
       "streamFrames": 2250,
       "logicalFanoutMessages": 31500
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 475
   },
   "description": "All 15 headless peers multicast RTC messages at 5 Hz through a forced tree topology."
 }

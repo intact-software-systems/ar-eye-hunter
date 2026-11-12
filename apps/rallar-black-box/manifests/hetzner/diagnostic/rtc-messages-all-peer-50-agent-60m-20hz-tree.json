@@ -418,7 +418,6 @@
     "receiverCount": 50,
     "rateHz": 20,
     "expectedDurationSeconds": 3600,
-    "recommendedTerminalTimeoutSeconds": 4500,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "51"
     },
@@ -430,7 +429,8 @@
     "loadEstimate": {
       "streamFrames": 3600000,
       "logicalFanoutMessages": 176400000
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 7640
   },
   "description": "Long diagnostic all-peer RTC messages multicast run at 20 Hz for 60-minute tree soak validation."
 }

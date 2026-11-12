@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 
 import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import {
@@ -49,7 +50,9 @@ describe('Hetzner multicast workloads', () => {
         expect(principalTree?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
+            // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 30 s each, connect
+            // 95 s, 27 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
+            recommendedTerminalTimeoutSeconds: 30 + 15 + 30 + 30 + 95 + 135 + 7,
             transport: 'messages.rtc',
             participantCount: 50,
             rateHz: 20,
@@ -75,7 +78,10 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerShort?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
+            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 30 s each, connect 95 s, 5 settle
+            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 27 delivery-poll pauses of 5 s and 100
+            // relay-hold pauses of 1 s, rounded up to the second.
+            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 30 + 30 + 95 + 5 + 29.8 + 5 + 135 + 100),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
                 minExpectedInboundMessages: 6615,
@@ -89,7 +95,6 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerDiagnostic?.diagnostic).toBe(true);
         expect(allPeerDiagnostic?.manifest.metadata).toMatchObject({
             expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
             receiverDelivery: {
                 expectedInboundMessages: 29400,
                 minExpectedInboundMessages: 23520,
@@ -99,7 +104,6 @@ describe('Hetzner multicast workloads', () => {
         expect(principalLong?.manifest.metadata).toMatchObject({
             diagnostic: true,
             expectedDurationSeconds: 3600,
-            recommendedTerminalTimeoutSeconds: 3900,
             loadEstimate: {
                 streamFrames: 72000,
                 logicalFanoutMessages: 3528000
@@ -108,7 +112,6 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerLong20?.manifest.metadata).toMatchObject({
             diagnostic: true,
             expectedDurationSeconds: 3600,
-            recommendedTerminalTimeoutSeconds: 4500,
             loadEstimate: {
                 streamFrames: 3600000,
                 logicalFanoutMessages: 176400000
@@ -226,7 +229,6 @@ describe('Hetzner multicast workloads', () => {
             senderCount: 1,
             rateHz: 2,
             expectedDurationSeconds: 4_680,
-            recommendedTerminalTimeoutSeconds: 5_400,
             receiverDelivery: { expectedInboundMessages: 9_360, minExpectedInboundMessages: 8_892 },
             rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16' }
         });
@@ -261,26 +263,19 @@ describe('Hetzner multicast workloads', () => {
         expect(withHistory).toEqual(['hetzner-rtc-messages-principal-15-agent-78m-2hz-tree']);
     });
 
-    it('recommends a terminal timeout that outlasts every multicast delivery poll window and relay hold', () => {
-        const waits = createHetznerDistributedManifestCatalog().flatMap((entry) =>
-            entry.manifest.recipes.flatMap((selection) => {
-                const loops = (selection.recipe?.commands ?? []).filter((command) =>
-                    command.kind === 'loop' &&
-                    (command.commandId?.endsWith('-delivery-poll') || command.commandId?.endsWith('-relay-hold'))
-                );
-                const windowMs = loops.reduce(
-                    (sum, command) => sum + (command.kind === 'loop' ? (command.count ?? 0) * (command.intervalMs ?? 0) : 0),
-                    0
-                );
-                return loops.length === 0 ? [] : [{ entry, loopCount: loops.length, windowMs }];
-            })
-        );
+    it('recommends the terminal timeout its ack, barrier and slowest recipe budget add up to for every multicast run', () => {
+        const multicast = createHetznerDistributedManifestCatalog()
+            .filter((entry) => /-rtc-messages-(principal|all-peer)-/.test(entry.manifest.distributedRunId));
 
-        expect(waits.length).toBeGreaterThan(0);
-        for (const { entry, loopCount, windowMs } of waits) {
-            const terminalSeconds = Number(entry.manifest.metadata?.recommendedTerminalTimeoutSeconds);
-            expect(loopCount, entry.manifest.distributedRunId).toBe(2);
-            expect(terminalSeconds * 1_000, entry.manifest.distributedRunId).toBeGreaterThan(windowMs);
+        expect(multicast.length).toBeGreaterThan(0);
+        for (const { manifest } of multicast) {
+            expect(manifest.metadata?.recommendedTerminalTimeoutSeconds, manifest.distributedRunId).toBe(
+                computeDistributedRunTerminalTimeoutSeconds({
+                    recipes: manifest.recipes.flatMap((selection) => selection.recipe ? [selection.recipe] : []),
+                    ackTimeoutMs: manifest.ackTimeoutMs,
+                    barrier: manifest.barrier
+                })
+            );
         }
     });
 

@@ -8,6 +8,7 @@ import {
 import type {
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '../../shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
@@ -36,21 +37,15 @@ describe('world fleet distributed manifest catalog', () => {
         }
     });
 
-    it('recommends a terminal timeout that outlasts every multicast delivery poll window and relay hold', () => {
-        for (const entry of createWorldFleetDistributedManifestCatalog()) {
-            const loops = manifestCommands(entry.manifest).filter(
-                (command) =>
-                    command.kind === 'loop' &&
-                    (command.commandId?.endsWith('-delivery-poll') || command.commandId?.endsWith('-relay-hold'))
+    it('recommends the terminal timeout its ack, barrier and slowest recipe budget add up to', () => {
+        for (const { manifest } of createWorldFleetDistributedManifestCatalog()) {
+            expect(manifest.metadata?.recommendedTerminalTimeoutSeconds, manifest.distributedRunId).toBe(
+                computeDistributedRunTerminalTimeoutSeconds({
+                    recipes: manifest.recipes.flatMap((selection) => selection.recipe ? [selection.recipe] : []),
+                    ackTimeoutMs: manifest.ackTimeoutMs,
+                    barrier: manifest.barrier
+                })
             );
-            const waitMs = loops.reduce(
-                (sum, command) => sum + (command.kind === 'loop' ? (command.count ?? 0) * (command.intervalMs ?? 0) : 0),
-                0
-            );
-            const terminalSeconds = Number(entry.manifest.metadata?.recommendedTerminalTimeoutSeconds);
-
-            expect(loops.length, entry.manifest.distributedRunId).toBe(2);
-            expect(terminalSeconds * 1_000, entry.manifest.distributedRunId).toBeGreaterThan(waitMs);
         }
     });
 

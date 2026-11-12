@@ -418,7 +418,6 @@
     "receiverCount": 30,
     "rateHz": 20,
     "expectedDurationSeconds": 30,
-    "recommendedTerminalTimeoutSeconds": 330,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "51"
     },
@@ -430,7 +429,8 @@
     "loadEstimate": {
       "streamFrames": 18000,
       "logicalFanoutMessages": 522000
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 475
   },
   "description": "Diagnostic 30-agent all-peer RTC messages multicast run at 20 Hz for 30s through a forced tree topology."
 }

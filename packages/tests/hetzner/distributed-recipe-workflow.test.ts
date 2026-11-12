@@ -1294,11 +1294,15 @@ describe('Hetzner workflow contracts and effects', () => {
 
     it('derives terminal timeout and prints load estimate from manifest metadata', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-manifest-timeout-gh-', secretResponses: completeSecretResponses });
+        const manifestPath = 'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json';
+        const { metadata } = JSON.parse(await readFile(path.join(repoRoot, manifestPath), 'utf8')) as {
+            metadata: { recommendedTerminalTimeoutSeconds: number; };
+        };
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
                 dispatchScriptPath,
-                'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json',
+                manifestPath,
                 '--allow-diagnostic',
                 '--run-id',
                 'long-principal'
@@ -1310,9 +1314,9 @@ describe('Hetzner workflow contracts and effects', () => {
         });
 
         const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
-        expect(args).toContain('terminal_timeout_seconds=3900');
+        expect(args).toContain(`terminal_timeout_seconds=${metadata.recommendedTerminalTimeoutSeconds}`);
         expect(args).toContain('agent_count=50');
-        expect(stdout).toContain('Timeout  : 3900');
+        expect(stdout).toContain(`Timeout  : ${metadata.recommendedTerminalTimeoutSeconds}`);
         expect(stdout).toContain('Topology : RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=51');
         expect(stdout).toContain('Load     : stream frames=72000, logical fanout=3528000');
     });
