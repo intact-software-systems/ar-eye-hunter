@@ -57,7 +57,7 @@ describe('group presence summary delta emission', () => {
                 event: result.command.event,
                 coalescedEvents: result.read.coalescedEvents,
                 summary: result.computed.summary,
-                summaryPredecessorCausalRevision: result.read.presence.current?.value.causalRevision ?? null,
+                summaryPredecessor: result.read.presence.current?.value ?? null,
                 snapshot: result.computed.snapshot
             })
         );

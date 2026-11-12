@@ -3,7 +3,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { isWithinStateSyncPayloadLimit } from '../../state-sync/state-sync-entry-computation.ts';
 import {
     computeGroupStateDeltaEnvelope,
-    toGroupPresenceSummaryPredecessorCausalRevision,
+    toGroupPresenceSummaryPredecessor,
     type GroupPresenceSummaryReservationRead,
     type GroupPresenceSummaryState,
     type GroupPresenceSummaryWorkRead
@@ -100,7 +100,7 @@ function fitsPage(input: ComputeGroupPresenceSummaryPageInput, size: number): bo
         event: items[0]!.work.event,
         coalescedEvents: items.map((item) => item.work.event),
         summary: input.state.summary,
-        summaryPredecessorCausalRevision: toGroupPresenceSummaryPredecessorCausalRevision(input.read.presence),
+        summaryPredecessor: toGroupPresenceSummaryPredecessor(input.read.presence),
         snapshot: input.state.snapshot
     }));
 }

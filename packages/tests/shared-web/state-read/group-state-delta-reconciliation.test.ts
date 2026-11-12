@@ -386,6 +386,46 @@ describe('browser group-state delta reconciliation', () => {
         expect(deltaApplyResults()).toEqual(['applied']);
     });
 
+    it.each(
+        [
+            ['two grants', 'after the pull lands'],
+            ['two grants', 'while the pull is in flight'],
+            ['an activation and a revoke', 'after the pull lands'],
+            ['an activation and a revoke', 'while the pull is in flight']
+        ] as const
+    )(
+        'pulls the server snapshot for the write-nothing deltas of a batch that does not cover its snapshot: %s, the later delta %s',
+        async (shape, arrival) => {
+            const runtime = new StateCacheRuntime();
+            const race = createExpansionRaceSequence(shape);
+            await runtime.hydrate([race.predecessor]);
+            const pullGate = Promise.withResolvers<void>();
+            if (arrival === 'after the pull lands') {
+                pullGate.resolve();
+            }
+            vi.stubGlobal(
+                'fetch',
+                vi.fn<typeof fetch>(async () => {
+                    await pullGate.promise;
+                    return groupSnapshotResponse(race.resulting);
+                })
+            );
+
+            const earlier = runtime.receiveDeltaMessage(race.uncoveredBatchDelta);
+            if (arrival === 'after the pull lands') {
+                await earlier;
+            }
+            const later = runtime.receiveDeltaMessage(race.laterEventDelta);
+            pullGate.resolve();
+            await Promise.all([earlier, later]);
+
+            expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(race.resulting.group)).toEqual(race.resulting);
+            expect(deltaApplyResults()).toEqual(
+                arrival === 'after the pull lands' ? ['gap-pull', 'no-op'] : ['gap-pull', 'gap-pull']
+            );
+        }
+    );
+
     function deltaApplyResults(): readonly string[] {
         return diagnostics
             .filter((event) => event.operation === 'delta-apply')
@@ -470,6 +510,59 @@ class StateCacheRuntime {
         for (const entry of entries) {
             await this.receiveMessage(decodePersistedALMessage(entry.resource));
         }
+    };
+}
+
+interface ExpansionRaceSequence {
+    readonly predecessor: GroupSnapshot;
+    readonly resulting: GroupSnapshot;
+    /** What the server sends for that batch now: a write-nothing delta for the earlier event at the snapshot's revision. */
+    readonly uncoveredBatchDelta: GroupStateDeltaEnvelope;
+    /** The later write's own delta, expanded after the summary reached its revision: write-nothing for its event. */
+    readonly laterEventDelta: GroupStateDeltaEnvelope;
+}
+
+/**
+ * Two group writes, A at revision 4 and B at revision 5, with A's batch claimed before B committed and read after: the
+ * lane's two shapes, two grants and an activation followed by a revoke.
+ */
+function createExpansionRaceSequence(shape: 'two grants' | 'an activation and a revoke'): ExpansionRaceSequence {
+    const groupId = 'room-expansion-race';
+    const roster = ['m-alpha', 'm-bravo', 'm-charlie'];
+    const feed = { 'room.feed': { publish: true, subscribe: false } };
+    const toGrants = (principalIds: readonly string[]) => principalIds.map((principalId) => deltaGrant(groupId, principalId, feed));
+    const twoGrants = shape === 'two grants';
+    const toSnapshot = (groupRevision: number, grants: readonly string[]): GroupSnapshot => ({
+        ...createDeltaGroupSnapshot({
+            groupId,
+            memberPrincipalIds: roster,
+            activePrincipalIds: [],
+            causalRevision: { groupRevision, presenceRevision: 0 }
+        }),
+        publicationGrants: toGrants(grants)
+    });
+    const predecessor = toSnapshot(3, twoGrants ? [] : ['m-bravo']);
+    const resulting = toSnapshot(5, twoGrants ? ['m-bravo', 'm-charlie'] : []);
+    const earlierEvent = {
+        resulting,
+        eventId: 'write-a',
+        eventType: twoGrants ? 'publication-grant-changed' : 'group-updated',
+        eventCausalRevision: { groupRevision: 4, presenceRevision: 0 },
+        publicationGrants: toGrants(twoGrants ? ['m-bravo'] : [])
+    } as const;
+    return {
+        predecessor,
+        resulting,
+        uncoveredBatchDelta: createDeltaEnvelope({ ...earlierEvent, predecessorCausalRevision: resulting.causalRevision }),
+        laterEventDelta: createDeltaEnvelope({
+            resulting,
+            predecessorCausalRevision: resulting.causalRevision,
+            eventId: 'write-b',
+            eventType: 'publication-grant-changed',
+            eventCausalRevision: resulting.causalRevision,
+            publicationGrants: toGrants(twoGrants ? ['m-charlie'] : []),
+            removedPublicationGrantPrincipalIds: twoGrants ? [] : ['m-bravo']
+        })
     };
 }
 
