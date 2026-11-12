@@ -338,15 +338,27 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
 }
 
 for (const carrier of ALM_CONFORMANCE_RTC_CARRIERS) {
-    Deno.test(`the ${carrier} repair-exhausted pair keeps the hold, spends the budget and reads the second send skipped`, async () => {
-        const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
-        const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+    // The sender opens the gap only once both recipients cued that they delivered the first frame, so the three pages
+    // replay in the lane's order around that gate: the first send, both recipients' arrival and cue, then the rest.
+    Deno.test(`the ${carrier} repair-exhausted trio keeps the hold, spends the budget and reads the second send skipped`, async () => {
+        const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
+        assert(recipientB);
+        const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
+        const firstSent = `alm-${carrier}-repair-exhausted-sender-assert-sent-1`;
+        const toCueSent = (role: string) => `alm-${carrier}-repair-exhausted-cues-${role}-cue-${role}-delivered-1-sent`;
 
-        const sent = await ports.sender.execute(toRecipeRun(sender));
-        const received = await ports.receiver.execute(toRecipeRun(receiver));
+        const results = [
+            await ports.sender.execute(toRecipeRun(toSegment(sender, undefined, firstSent))),
+            await ports.receiver.execute(toRecipeRun(toSegment(receiver, undefined, toCueSent('receiver')))),
+            await ports.recipientB.execute(toRecipeRun(toSegment(recipientB, undefined, toCueSent('recipient-b')))),
+            await ports.sender.execute(toRecipeRun(toSegment(sender, firstSent, undefined))),
+            await ports.receiver.execute(toRecipeRun(toSegment(receiver, toCueSent('receiver'), undefined))),
+            await ports.recipientB.execute(toRecipeRun(toSegment(recipientB, toCueSent('recipient-b'), undefined)))
+        ];
 
-        assertEquals(sent.ok, true, JSON.stringify(sent));
-        assertEquals(received.ok, true, JSON.stringify(received));
+        for (const result of results) {
+            assertEquals(result.ok, true, JSON.stringify(result));
+        }
         assertEquals(findMarked(ports, 'repair-exhausted').map((message) => [message.command.seq, message.state, message.buffered, message.failure]), [
             [1, 'acknowledged', false, undefined],
             [2, 'failed', false, { kind: 'skipped', reason: 'repair-exhausted' }],

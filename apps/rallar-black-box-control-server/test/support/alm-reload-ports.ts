@@ -197,6 +197,8 @@ export class AlmReloadPorts {
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
     readonly holds = new Map<string, PortHold>();
+    /** The handles of the sends a recipient page made itself. */
+    private readonly memberSendHandles = new Set<string>();
     /** Whether the receiver's connect installed the recording recovery owner on its channel. */
     recoveryOwnerInstalled = false;
     private deliveries = 0;
@@ -377,7 +379,7 @@ export class AlmReloadPorts {
         if (command.absent === true) {
             return undefined;
         }
-        const runtime = role === 'sender' ? this.sender : role === 'receiver' ? this.receiver : this.recipientB;
+        const runtime = this.toRuntime(role);
         const matched = (): boolean => resolveLatestWaitEvent(runtime.state().events, command.match) !== undefined;
         if (command.match.topic === 'rallar.browser.alm.outbound_diagnostics') {
             const deadline = computeWaitDeadlineEpochMs(command, this.now);
@@ -427,6 +429,9 @@ export class AlmReloadPorts {
                 if ('replayOnCarrier' in command) {
                     return this.replay(command);
                 }
+                if (role !== 'sender') {
+                    return this.publishMemberSend(role, command);
+                }
                 return command.purpose === 'live' ? this.stageLive(command) : this.send(command);
             case 'messages.observe':
                 return await this.observe(command);
@@ -439,7 +444,35 @@ export class AlmReloadPorts {
         }
     }
 
+    /**
+     * A recipient page's own send is a WS room publication, a cue: every other page of the room reads it at once and
+     * its handle has left the page. It rides no ordering track and holds no receipt, so the sender's model never sees it.
+     */
+    private publishMemberSend(
+        role: PortRole,
+        command: RallarBlackBoxTestMessagesSendCommand
+    ): RallarBlackBoxTestCommandOutcome {
+        assert(command.handleId);
+        this.memberSendHandles.add(command.handleId);
+        const msgId = `port-member-message-${this.memberSendHandles.size}`;
+        for (const { role: reader } of this.participants.filter((participant) => participant.role !== role)) {
+            this.toRuntime(reader).recordEvent(toMemberMessageEvent(reader, msgId, command));
+        }
+        return {
+            status: 'ok',
+            value: { msgId, handleId: command.handleId, carrier: command.carrier, status: 'accepted' }
+        };
+    }
+
+    private toRuntime(role: PortRole): RallarBlackBoxTestRuntime {
+        return role === 'sender' ? this.sender : role === 'receiver' ? this.receiver : this.recipientB;
+    }
+
     private async observe(command: PortCommand<'messages.observe'>): Promise<RallarBlackBoxTestCommandOutcome> {
+        if (this.memberSendHandles.has(command.handleId)) {
+            const observation = toPortDeliveryObservation(command.handleId, undefined);
+            return { status: 'ok', value: { ...observation, state: 'transport-accepted', submitted: true } };
+        }
         const message = this.handles.get(command.handleId);
         if (message === undefined) {
             return { status: 'ok', value: toPortDeliveryObservation(command.handleId, message) };
@@ -1357,6 +1390,20 @@ export class AlmReloadPorts {
         }
         message.deliveredRecipientRoles = deliveredRecipientRoles;
     }
+}
+
+/** A member's own publication as another page's channel records it. */
+function toMemberMessageEvent(
+    reader: PortRole,
+    msgId: string,
+    command: RallarBlackBoxTestMessagesSendCommand
+): RallarBlackBoxTestRuntimeEventInput {
+    return {
+        kind: 'message',
+        connection: reader === 'sender' ? 'almConformanceSender' : 'almConformanceReceiver',
+        topic: 'typed',
+        payload: { data: { msgId, typeId: command.typeId, transport: 'ws', payload: command.payload } }
+    };
 }
 
 /** The arrival as the recipient's page records it, with the roster its room target carried. */
