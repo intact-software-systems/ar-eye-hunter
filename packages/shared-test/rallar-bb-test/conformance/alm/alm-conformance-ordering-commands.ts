@@ -56,6 +56,13 @@ export function toHeldSecondSendCommands(sender: AlmConformanceStepInput): reado
     return [
         ...toOrderedSendCommands(sender, 1),
         ...toSentCommands({ ...sender, index: 1 }),
+        ...toHeldGapCommands(sender)
+    ];
+}
+
+/** The second ordered send held, the third sent past it, and the range NACK the third reveals admitted. */
+export function toHeldGapCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
         ...toHeldSendCommands({ ...sender, index: 2 }, toOrderedSendCommands(sender, 2)),
         ...toOrderedSendCommands(sender, 3),
         toControlAdmissionWait({
