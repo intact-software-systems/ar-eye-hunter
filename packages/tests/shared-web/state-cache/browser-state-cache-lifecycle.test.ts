@@ -1053,8 +1053,10 @@ describe('browser state cache lifecycle applied group revisions', () => {
             throw new Error('sink failed');
         };
         const { manager, receive } = initialiseWithSink(throwing);
-        const listener = vi.fn();
-        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
+        const notifiedRevisions: number[] = [];
+        const unsubscribe = browserStateCacheLifecycle.onChange((change) => {
+            notifiedRevisions.push(...change.groups.map((group) => group.causalRevision.groupRevision));
+        });
         const first = createRoomSnapshot(1);
         const advanced = createRoomSnapshot(2);
 
@@ -1071,8 +1073,10 @@ describe('browser state cache lifecycle applied group revisions', () => {
 
             expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(first.group)?.causalRevision)
                 .toEqual(advanced.causalRevision);
-            expect(manager.acceptGroupUpdate).toHaveBeenCalledTimes(2);
-            expect(listener).toHaveBeenCalledTimes(2);
+            expect(manager.acceptGroupUpdate).toHaveBeenCalledWith(
+                expect.objectContaining({ causalRevision: advanced.causalRevision })
+            );
+            expect(notifiedRevisions).toEqual([1, 2]);
         }
         finally {
             unsubscribe();
