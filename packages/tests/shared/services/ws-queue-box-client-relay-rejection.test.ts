@@ -510,6 +510,7 @@ async function createOriginClient(): Promise<OriginClient> {
     const settlements: ALDeliverySettlement[] = [];
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId: 'a',

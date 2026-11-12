@@ -218,6 +218,7 @@ function createOwnHopRetryFixture(): OwnHopRetryFixture {
     const controlAdmissions: ControlAdmissionObservation[] = [];
     const service = createOutboundRuntimeWithWorkTask(() =>
         createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             sessionId: 'self',
@@ -259,6 +260,7 @@ function createCheckpointedOwnHopRetryFixture(dbName: string): CheckpointedOwnHo
     queueEngine.start();
     const service = createOutboundRuntimeWithWorkTask(() =>
         createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             queueEngine,
             outbox: new InMemoryQueueBox(new Map()),
             socket,

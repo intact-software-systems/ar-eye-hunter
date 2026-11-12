@@ -39,6 +39,7 @@ describe('browser carrier cancellation ports', () => {
         const settlements: ALDeliverySettlement[] = [];
         const rtc = createRtcOwner(settlements);
         const ws = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort()),
             sessionId: 'self',

@@ -36,6 +36,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: outbox,
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -72,6 +73,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -156,6 +158,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: outbox,
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -203,6 +206,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: outbox,
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -258,6 +262,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -342,6 +347,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: outbox,
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -424,6 +430,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -482,6 +489,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -655,6 +663,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: outbox,
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -734,6 +743,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -771,6 +781,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const resyncs: ALInboundResyncRequired[] = [];
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -801,6 +812,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -833,6 +845,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -871,6 +884,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         );
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,
@@ -893,6 +907,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const socket = createFakeWsSocket();
         const service = createOutboundRuntimeWithWorkTask(() =>
             shared.createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket.client,
                 inboundDiagnostics: socket.inboundDiagnostics,

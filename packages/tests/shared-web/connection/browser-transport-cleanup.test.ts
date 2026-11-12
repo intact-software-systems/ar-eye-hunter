@@ -75,6 +75,7 @@ describe('Browser transport cleanup', () => {
         });
         const engine = new InboxOutboxEngine();
         const service = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             sessionId: 'session-1',
             serverPeerId: 'server',
             socket,

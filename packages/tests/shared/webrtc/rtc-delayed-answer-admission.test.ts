@@ -41,6 +41,7 @@ it('settles an answer delayed by admission conflict without applying it to a rep
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const socketClient = new JsonWebSocketClient('ws://signaling-test', createPassThroughTransportFaultPort());
     const queueBoxClient = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         queueEngine,
         socket: socketClient,
         outbox: new InMemoryQueueBox(),

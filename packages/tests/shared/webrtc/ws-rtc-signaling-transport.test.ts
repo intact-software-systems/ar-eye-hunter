@@ -248,6 +248,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
 function createSignalingQueueBox(): WsQueueBoxClientService {
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
 
         outbox: new InMemoryQueueBox(new Map()),

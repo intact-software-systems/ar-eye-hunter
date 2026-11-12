@@ -250,6 +250,7 @@ async function startNativeReceiptPeer(construction: NativeReceiptPeerConstructio
     const socket = new JsonWebSocketClient(url.toString(), createPassThroughTransportFaultPort());
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         socket,
         sessionId: construction.session.sessionId,
         serverPeerId: construction.fixture.runtime.wsQBoxServerService.name,

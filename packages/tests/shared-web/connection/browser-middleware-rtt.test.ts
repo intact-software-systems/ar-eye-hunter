@@ -113,6 +113,7 @@ async function createRttEgressFixture(): Promise<RttEgressFixture> {
     };
     const queueEngine = new InboxOutboxEngine();
     const service: WsQueueBoxClientService = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(),
         socket: client,
         sessionId: RTT_EGRESS_SESSION_ID,
