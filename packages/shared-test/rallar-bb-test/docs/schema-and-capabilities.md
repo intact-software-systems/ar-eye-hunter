@@ -754,7 +754,7 @@ own to show). The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
 one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
 receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
 
-The `repair-exhausted` conformance scenario runs over the RTC carriers (`rtc` and `rtc-with-ws-fallback`), on
+The `repair-exhausted` conformance scenario runs over `rtc` alone, on
 three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
 released. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
 (`maxRepairs`), still held, and the second receiver's report is another attempt identity and finds the budget spent.

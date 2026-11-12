@@ -73,7 +73,6 @@ describe('ALM run on an agent per role', () => {
                 'receipted-relay-path'
             ],
             'rtc-with-ws-fallback': [
-                'repair-exhausted',
                 'paced-isolation-lists',
                 ...fallbackScenarioKeys,
                 'leader-confirms',

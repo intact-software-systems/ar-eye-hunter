@@ -1,7 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_RTC_CARRIERS } from '../../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_RTC_ALONE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toHeldGapCommands, toOrderedSendCommands, toSentCommands } from '../../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
@@ -25,13 +25,15 @@ import {
  * finds it spent, so the sender settles the second frame `skipped` with reason `repair-exhausted`. Both receivers
  * delivered the first send only: the third and fourth wait for a second that never arrives. Over `ws` the server
  * orders the track and is the one requester of its gaps, so a held frame's repeated reports are one attempt: the
- * sender never states exhaustion there and the frame arrives on the hold's release.
+ * sender never states exhaustion there and the frame arrives on the hold's release. Over `rtc-with-ws-fallback` the
+ * held frame's run of `not-ready` attempts hands it to WS (D56), where it is no longer the RTC repair's to exhaust; what
+ * a handed-over held frame ends as is undocumented, so the cell asserts `rtc` alone.
  */
 export const repairExhausted: AlmConformanceScenarioDefinition = {
     scenarioId: 'repair-exhausted',
     scenarioKey: 'repair-exhausted',
     tags: FULL_TAGS,
-    carriers: ALM_CONFORMANCE_RTC_CARRIERS,
+    carriers: ALM_CONFORMANCE_RTC_ALONE_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toSenderCommands: toRepairExhaustedSenderCommands,

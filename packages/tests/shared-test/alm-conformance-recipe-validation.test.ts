@@ -168,7 +168,6 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
-        'repair-exhausted',
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
         'not-yet-in-sync',
