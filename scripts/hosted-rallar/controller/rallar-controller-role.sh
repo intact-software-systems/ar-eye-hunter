@@ -143,6 +143,7 @@ rallar_controller_role_url_origin() {
 }
 
 # Writes the api role's api-v1 replica systemd units and removes those the list no longer names.
+# Every replica learns the replica count, so it enforces its share of each per-client limit the env file names.
 # Each replica binds its own loopback port (from RALLAR_API_REPLICA_PORTS) and shares the one Postgres
 # store in the env file.
 write_rallar_api_replica_units() {
@@ -165,6 +166,7 @@ WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
 EnvironmentFile=/etc/rallar/api-v1.env
 EnvironmentFile=-/etc/rallar/api-v1.secrets.env
 Environment=RALLAR_HTTP_HOSTNAME=${RALLAR_API_REPLICA_HOSTNAME}
+Environment=RALLAR_API_REPLICA_COUNT=${#RALLAR_ROLE_APP_SERVICES[@]}
 ExecStart=/usr/bin/env PORT=${api_replica_port} /usr/local/bin/bun run src/main.ts
 SyslogIdentifier=${api_replica_service%.service}
 Restart=always

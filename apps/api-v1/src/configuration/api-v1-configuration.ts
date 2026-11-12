@@ -16,6 +16,8 @@ export interface ApiV1HttpConfiguration {
     /** The address the server binds; a host whose proxy reaches it over loopback binds only loopback. */
     readonly hostname: string;
     readonly port: number;
+    /** The replicas serving this fleet; each enforces its share of every process-local limit. */
+    readonly replicaCount: number;
     readonly corsOrigins: readonly string[];
     readonly preflightMaxAgeSeconds: number;
     /** The bound on the whole graceful stop after SIGTERM or SIGINT. */

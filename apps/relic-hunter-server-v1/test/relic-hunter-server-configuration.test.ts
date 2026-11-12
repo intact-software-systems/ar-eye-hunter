@@ -51,6 +51,7 @@ describe('Relic Hunter server configuration', () => {
         expect(configuration.http).toEqual({
             hostname: '0.0.0.0',
             port: 8090,
+            replicaCount: 1,
             corsOrigins: ['http://localhost:5175', 'https://relic.example.test'],
             preflightMaxAgeSeconds: 600,
             shutdownDeadlineMs: DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS

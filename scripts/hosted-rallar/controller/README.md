@@ -283,6 +283,19 @@ games   rallar-relic-hunter-server-v1.service
         rallar-ar-eye-hunter-server-v1.service
 ```
 
+The API replicas bind only `127.0.0.1` (`RALLAR_HTTP_HOSTNAME`), so nothing
+reaches them around Caddy. Each replica unit also carries
+`RALLAR_API_REPLICA_COUNT` (the length of the role's replica list), and every
+per-client limit the API env file names (login, registration and WebSocket
+ticket rate limits, state API, group admission, ICE, friends, parties,
+matchmaking and tournament quotas, and the password-derivation concurrency
+bound) is a fleet limit: each replica enforces its share, the limit divided by
+the replica count, rounded up and never below 1. The fleet limit is therefore
+approximate. Round-robin spreads one client's requests evenly only on average,
+so a client can be refused somewhat before the fleet limit when its requests
+cluster on one replica, and rounding up lets the fleet admit up to one request
+fewer than the replica count beyond the limit.
+
 Caddy is left running so HTTPS/static SPA stays available. To include Caddy:
 
 ```sh

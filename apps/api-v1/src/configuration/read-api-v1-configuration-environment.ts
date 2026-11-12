@@ -188,6 +188,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.http.port = value
     },
     {
+        name: 'RALLAR_API_REPLICA_COUNT',
+        decode: decodeNumber,
+        apply: (source, value) => source.http.replicaCount = value
+    },
+    {
         name: 'RALLAR_SHUTDOWN_DEADLINE_MS',
         decode: decodeNumber,
         apply: (source, value) => source.http.shutdownDeadlineMs = value
