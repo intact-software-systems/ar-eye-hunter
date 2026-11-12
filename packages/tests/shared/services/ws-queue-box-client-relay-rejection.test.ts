@@ -103,6 +103,26 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'resync-required' });
     });
 
+    it('NACKs the gapped send resync-required when it arrives while the first send of its track is still admitting', async () => {
+        const fixture = await createRelayFixture();
+        const first = orderedRoomMessage('ordered-1', 1, 'receiver');
+        const gapped = orderedRoomMessage('ordered-gapped', RESYNC_GAP_SEQ, 'receiver');
+
+        // Two frames of one socket are admitted side by side: the second reads the track before the first commits it.
+        await Promise.all([
+            fixture.server.acceptIncomingMessage(first, 'a'),
+            fixture.server.acceptIncomingMessage(gapped, 'a')
+        ]);
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readSentNacks(fixture.sockets.a).length;
+        }).toBe(1);
+
+        expect(readSentNacks(fixture.sockets.a).map((nack) => JSON.parse(nack.payload.resource))).toEqual([
+            expect.objectContaining({ msgId: 'ordered-gapped', reason: 'resync-required' })
+        ]);
+    });
+
     it('never relays a session NACK to the peer it names', async () => {
         const fixture = await createRelayFixture();
         const nack = newALNackControlMessage(

@@ -287,17 +287,16 @@ export class ALInboundStoreLane {
     }
 
     /**
-     * Only a retention that left a claimable row is announced — `pending-admission`, whether this call
-     * wrote the row or found one a previous attempt wrote. A conflict the plan does not retain never
-     * reaches retention; a message past its deadline is rejected before the write, or as a row written
-     * already expired; and a row in a terminal status holds no work for the worker.
+     * Every conflicted admission is retained, a dropped one included: a bundle that writes nothing never
+     * meets the fence, so the rolled-back one carried rows or effects — a NACK among them — that its
+     * replay plans afresh against the winner. Only a retention that left a claimable row is announced —
+     * `pending-admission`, whether this call wrote the row or found one a previous attempt wrote; a
+     * message past its deadline is rejected before the write, or as a row written already expired; and a
+     * row in a terminal status holds no work for the worker.
      */
     private async retainConflictedAdmission(
-        pending: ALInboundPendingAdmission | undefined
+        pending: ALInboundPendingAdmission
     ): Promise<ALInboundMessageRuntime.Acceptance> {
-        if (pending === undefined) {
-            return { kind: 'not-admitted', reason: 'conflict' };
-        }
         return this.announceRetention(await this.admission.retainPending(pending));
     }
 
