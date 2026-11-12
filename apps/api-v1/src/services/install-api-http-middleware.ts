@@ -38,14 +38,7 @@ export function installApiHttpMiddleware(app: Hono, input: InstallApiHttpMiddlew
     });
 
     app.use('/api/*', createHttpTimingMiddleware({ timing: input.timing }));
-    app.use('/api/*', async (context, next) => {
-        if (isWebSocketUpgradeRequest(context.req.path, context.req.header('upgrade'))) {
-            await next();
-            return;
-        }
-
-        return await apiCors(context, next);
-    });
+    app.use('/api/*', apiCors);
     app.use('/api/state/*', createStateApiResilienceMiddleware({ configuration: input.stateApi }));
 }
 
@@ -58,8 +51,4 @@ function resolveCorsOrigin(
     }
 
     return allowedOrigins.includes(origin) ? origin : undefined;
-}
-
-function isWebSocketUpgradeRequest(path: string, upgrade?: string): boolean {
-    return path.startsWith('/api/ws/') && upgrade?.trim().toLowerCase() === 'websocket';
 }

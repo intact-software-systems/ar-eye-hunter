@@ -15,7 +15,8 @@ import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/sta
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { JsonWebSocketServer, type ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
+import { WSContext, type WSEvents } from 'hono/ws';
 
 import { pauseNextAuthorisedWsConnectRead } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/app-inbox-ws-close-test-harness.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
@@ -23,13 +24,7 @@ import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-ser
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import {
-    createApiWebSocketHandlers,
-    upgradeApiWebSocket,
-    type ApiWebSocketConnectionData,
-    type ApiWebSocketUpgradeOutcome,
-    type RegisterWsRoutesInput
-} from '../../src/routes/ws-routes.ts';
+import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { releaseAuthorisedWsCloseFacts } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
@@ -55,9 +50,7 @@ interface WsConnectFixture {
     readonly socketServer: JsonWebSocketServer;
     readonly clients: ClientStateRepository;
     readonly upgradedSockets: TestWebSocket[];
-    readonly upgradeConnections: ApiWebSocketConnectionData[];
-    readonly wsInput: RegisterWsRoutesInput;
-    readonly wsHandlers: ReturnType<typeof createApiWebSocketHandlers>;
+    readonly upgradeEvents: WSEvents<ConnectionContext.Socket>[];
     readonly app: Hono;
 }
 
@@ -68,7 +61,7 @@ interface QueuedRow {
 
 async function createWsConnectFixture(
     sql: PGliteSql,
-    upgrade?: (request: Request, connection: ApiWebSocketConnectionData) => boolean
+    upgrade: () => void = () => undefined
 ): Promise<WsConnectFixture> {
     const runtime = new PSqlRuntimeStateRepository(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
@@ -99,26 +92,21 @@ async function createWsConnectFixture(
     });
     const socketServer = new JsonWebSocketServer();
     const upgradedSockets: TestWebSocket[] = [];
-    const upgradeConnections: ApiWebSocketConnectionData[] = [];
+    const upgradeEvents: WSEvents<ConnectionContext.Socket>[] = [];
     const app = createTracedApiTestApp();
-    const upgradeWebSocket = upgrade ?? ((): boolean => {
-        upgradedSockets.push(new TestWebSocket('ws://player'));
-        return true;
-    });
-    const wsInput: RegisterWsRoutesInput = {
+    registerWsRoutes(app, {
         socketServer,
         appClientInboxService: client,
         readWsConnectTicket: async (ticketDigest) => (await sessions.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
         readWsConnectSession: (sessionId) => sessions.findBySessionId(sessionId),
-        upgradeWebSocket: (request, connection) => {
-            const upgraded = upgradeWebSocket(request, connection);
-            if (upgraded) {
-                upgradeConnections.push(connection);
-            }
-            return upgraded;
+        upgradeWebSocket: async (_context, events) => {
+            upgrade();
+            upgradedSockets.push(new TestWebSocket('ws://player'));
+            upgradeEvents.push(events);
+            return new Response(null);
         },
         nowEpochMs: Date.now
-    };
+    });
     return {
         sql,
         sessions,
@@ -126,37 +114,41 @@ async function createWsConnectFixture(
         socketServer,
         clients: new ClientStateRepository(runtime, events),
         upgradedSockets,
-        upgradeConnections,
-        wsInput,
-        wsHandlers: createApiWebSocketHandlers(socketServer),
+        upgradeEvents,
         app
     };
 }
 
 /** Drives the lane the way the server's queue engine does while the upgrade request waits for its connect. */
-async function requestUpgrade(fixture: WsConnectFixture, ticket: string): Promise<ApiWebSocketUpgradeOutcome> {
+async function requestUpgrade(fixture: WsConnectFixture, ticket: string): Promise<Response> {
     let settled = false;
-    const outcome = upgradeApiWebSocket(
-        new Request(`http://localhost/api/ws/${SESSION.sessionId}?ticket=${ticket}`, {
-            headers: { upgrade: 'websocket', 'x-request-id': UPGRADE_TRACE_ID }
-        }),
-        fixture.wsInput
-    ).finally(() => {
+    const response = Promise.resolve(fixture.app.request(`http://localhost/api/ws/${SESSION.sessionId}?ticket=${ticket}`, {
+        headers: { upgrade: 'websocket', 'x-request-id': UPGRADE_TRACE_ID }
+    })).finally(() => {
         settled = true;
     });
     while (!settled) {
         await fixture.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await new Promise((resolve) => setTimeout(resolve, 2));
     }
-    return await outcome;
+    return await response;
 }
 
-/** The Bun websocket open callback runs once the handshake completes; the test drives it after the upgrade. */
+/** `hono/bun` fires the upgrade's open event once the handshake completes; the test fires it after the upgrade. */
 function openUpgradedSocket(fixture: WsConnectFixture): void {
     const socket = fixture.upgradedSockets[fixture.upgradedSockets.length - 1];
-    const connection = fixture.upgradeConnections[fixture.upgradeConnections.length - 1];
-    assert.ok(socket && connection, 'The upgrade must have produced a socket and connection data');
-    fixture.wsHandlers.open?.(Object.assign(socket, { data: connection }) as never);
+    const events = fixture.upgradeEvents[fixture.upgradeEvents.length - 1];
+    assert.ok(socket && events, 'The upgrade must have produced a socket and its events');
+    socket.open();
+    events.onOpen?.(
+        new Event('open'),
+        new WSContext({
+            raw: socket,
+            readyState: TestWebSocket.OPEN,
+            send: (data) => socket.send(data),
+            close: (code, reason) => socket.close(code, reason)
+        })
+    );
 }
 
 async function readQueuedRows(sql: PGliteSql): Promise<readonly QueuedRow[]> {
@@ -197,10 +189,10 @@ test('a WebSocket connect consumes its ticket in its own transaction: one lane i
         const ticketDigest = await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
         const before = sql.getExecutorCounters?.().statements ?? 0;
 
-        const outcome = await requestUpgrade(fixture, 'player-ticket');
+        const response = await requestUpgrade(fixture, 'player-ticket');
         const statements = (sql.getExecutorCounters?.().statements ?? 0) - before;
 
-        assert.equal(outcome.kind, 'upgraded');
+        assert.equal(response.status, 101);
         assert.deepEqual(await readQueuedRows(sql), [{ type: 'CLIENT_AUTHORISED_WS_CONNECT', status: 'COMPLETED' }]);
         assert.deepEqual(await fixture.sessions.readWebSocketTicketByDigestEntry(ticketDigest), {
             value: undefined,
@@ -224,8 +216,7 @@ test('a WebSocket connect is admitted under the trace of its upgrade request', a
         const fixture = await createWsConnectFixture(sql);
         await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
 
-        const outcome = await requestUpgrade(fixture, 'player-ticket');
-        assert.equal(outcome.kind, 'upgraded');
+        assert.equal((await requestUpgrade(fixture, 'player-ticket')).status, 101);
 
         const rows = await sql<{ traceId: string; }[]>`
             select ri_resource::jsonb #>> '{id,traceId}' as "traceId" from resource_inbox where ri_type_id = 'APP_INBOX'
@@ -255,12 +246,9 @@ test('a garbage, expired or foreign ticket for a known session is answered 401 w
         });
 
         for (const ticket of ['garbage-ticket', 'foreign-ticket', 'expired-ticket']) {
-            const outcome = await requestUpgrade(fixture, ticket);
-            assert.equal(outcome.kind, 'response', ticket);
-            if (outcome.kind === 'response') {
-                assert.equal(outcome.response.status, 401, ticket);
-                assert.deepEqual(await outcome.response.json(), { error: 'Unauthorized: Invalid or expired websocket auth ticket' });
-            }
+            const response = await requestUpgrade(fixture, ticket);
+            assert.equal(response.status, 401, ticket);
+            assert.deepEqual(await response.json(), { error: 'Unauthorized: Invalid or expired websocket auth ticket' });
         }
 
         assert.deepEqual(await readQueuedRows(sql), []);
@@ -274,17 +262,14 @@ test('a replayed WebSocket ticket is answered 401 and never upgrades or displace
         const fixture = await createWsConnectFixture(sql);
         await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
         const live = await requestUpgrade(fixture, 'player-ticket');
-        assert.equal(live.kind, 'upgraded');
+        assert.equal(live.status, 101);
         openUpgradedSocket(fixture);
         const liveConnection = fixture.socketServer.connections.get(SESSION.sessionId);
 
         const replay = await requestUpgrade(fixture, 'player-ticket');
 
-        assert.equal(replay.kind, 'response');
-        if (replay.kind === 'response') {
-            assert.equal(replay.response.status, 401);
-            assert.deepEqual(await replay.response.json(), { error: 'Unauthorized: Invalid or expired websocket auth ticket' });
-        }
+        assert.equal(replay.status, 401);
+        assert.deepEqual(await replay.json(), { error: 'Unauthorized: Invalid or expired websocket auth ticket' });
         assert.equal(fixture.upgradedSockets.length, 1);
         assert.equal(fixture.socketServer.connections.get(SESSION.sessionId), liveConnection);
         assert.equal(fixture.upgradedSockets[0]?.closedWith, undefined);
@@ -301,15 +286,12 @@ test('two upgrades racing on one ticket: the conditional delete admits exactly o
         const fixture = await createWsConnectFixture(sql);
         await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
 
-        const outcomes = await Promise.all([
+        const statuses = (await Promise.all([
             requestUpgrade(fixture, 'player-ticket'),
             requestUpgrade(fixture, 'player-ticket')
-        ]);
+        ])).map((response) => response.status).toSorted();
 
-        assert.deepEqual(
-            outcomes.map((outcome) => outcome.kind === 'upgraded' ? 200 : (outcome.kind === 'response' ? outcome.response.status : 0)).toSorted(),
-            [200, 401]
-        );
+        assert.deepEqual(statuses, [101, 401]);
         assert.equal(fixture.upgradedSockets.length, 1);
         releaseRegisteredFacts(fixture);
     });
@@ -372,11 +354,7 @@ test('an upgrade that fails after its connect committed closes that generation b
         });
         await putAuthorisedWsTestTicket(fixture.sessions, SESSION, 'player-ticket');
 
-        const outcome = await requestUpgrade(fixture, 'player-ticket');
-        assert.equal(outcome.kind, 'response');
-        if (outcome.kind === 'response') {
-            assert.equal(outcome.response.status, 500);
-        }
+        assert.equal((await requestUpgrade(fixture, 'player-ticket')).status, 500);
         assert.equal(fixture.socketServer.connections.has(SESSION.sessionId), false);
         assert.equal(fixture.socketServer.expectedConnections.isAwaiting(SESSION.sessionId), false);
         assert.deepEqual(await readQueuedRows(sql), [

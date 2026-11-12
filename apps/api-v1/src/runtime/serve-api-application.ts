@@ -1,10 +1,9 @@
 import { initServerProcessShutdown } from '@shared-server/process/init-server-process-shutdown.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import type { Hono } from 'hono';
+import { websocket, type BunWebSocketData } from 'hono/bun';
 import type { ApiV1Runtime } from '../composition/api-v1-runtime.ts';
-import { createApiWebSocketRouteDependencies } from '../composition/create-api-v1-route-installers.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
-import { createApiWebSocketServeHandlers, type ApiWebSocketConnectionData } from '../routes/ws-routes.ts';
 import { startApiProcess } from './api-process-startup.ts';
 import { stopApiOnRtcTopologyDeliveryHealthFailure } from './rtc-topology/rtc-topology-delivery-health-shutdown.ts';
 import { toApiBunServeOptions } from './to-api-bun-serve-options.ts';
@@ -18,16 +17,15 @@ export interface ServeApiApplicationInput {
 /** Embedded applications install their own routes and workers first, then share the API's startup/failure lifecycle. */
 export async function serveApiApplication(
     input: ServeApiApplicationInput
-): Promise<Bun.Server<ApiWebSocketConnectionData>> {
+): Promise<Bun.Server<BunWebSocketData>> {
     const { rallar, app, configuration } = input;
     rallar.installSystemTopics();
     rallar.installWebSocketLifecycle();
+    rallar.mountWebSocket(app);
     rallar.mountRest(app);
-    const wsDependencies = createApiWebSocketRouteDependencies(rallar.runtime, Date.now);
-    const wsHandlers = createApiWebSocketServeHandlers(wsDependencies, app);
     const startup = await startApiProcess({
         runtimeReadiness: rallar.runtime.readiness,
-        listen: () => Bun.serve(toApiBunServeOptions(configuration, wsHandlers)),
+        listen: () => Bun.serve(toApiBunServeOptions(configuration, { fetch: app.fetch, websocket })),
         startApplication: () => rallar.start({ queueWorkers: configuration.topology.replay.queueWorkers }),
         stopAfterStartupFailure: (server) => cleanupApiStartup(input, server)
     });
@@ -48,7 +46,7 @@ export async function serveApiApplication(
  */
 async function stopApiApplication(
     input: ServeApiApplicationInput,
-    server: Bun.Server<ApiWebSocketConnectionData>
+    server: Bun.Server<BunWebSocketData>
 ): Promise<void> {
     await runApiStopSteps([
         async () => {
@@ -63,7 +61,7 @@ async function stopApiApplication(
 
 async function cleanupApiStartup(
     input: ServeApiApplicationInput,
-    server: Bun.Server<ApiWebSocketConnectionData> | undefined
+    server: Bun.Server<BunWebSocketData> | undefined
 ): Promise<void> {
     await runApiStopSteps([
         () => input.rallar.runtime.qboxEngine.stop(),
@@ -98,7 +96,7 @@ function closeApiWebSockets({ rallar }: ServeApiApplicationInput, code: number, 
 
 function installHealthShutdown(
     input: ServeApiApplicationInput,
-    httpServer: Bun.Server<ApiWebSocketConnectionData>
+    httpServer: Bun.Server<BunWebSocketData>
 ): void {
     const { rallar } = input;
     if (!rallar.runtime.healthFailure) {

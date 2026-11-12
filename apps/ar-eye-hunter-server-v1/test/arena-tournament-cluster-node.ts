@@ -1,5 +1,6 @@
 import type { ApiV1DatabaseNotificationPort } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { createPostgresLiveWsNoticeTransport } from '@api-v1/src/db/create-postgres-live-ws-notice-transport.ts';
+import { createJsonWebSocketEvents } from '@api-v1/src/runtime/create-json-web-socket-events.ts';
 import {
     installLiveWsNoticeSubscriber,
     sendReceivedLiveWsNotice
@@ -9,16 +10,21 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { Hono } from 'hono';
+import { upgradeWebSocket, websocket, type BunWebSocketData } from 'hono/bun';
 import postgres from 'postgres';
 
-/** Controlled authenticated identities, production PostgreSQL notification transport, and native loopback WebSockets. */
+/**
+ * Controlled authenticated identities, production PostgreSQL notification transport, and native loopback
+ * WebSockets bridged into the server through the production `hono/bun` events.
+ */
 export class ArenaTournamentClusterNode {
     readonly physicalBytes: number[] = [];
     readonly socket = new JsonWebSocketServer();
     private readonly engine = new InboxOutboxEngine();
     private readonly database: ReturnType<typeof postgres>;
-    private readonly listener: Bun.Server<{ id: string; generationId: string; }>;
+    private readonly listener: Bun.Server<BunWebSocketData>;
     private readonly clients: WebSocket[] = [];
     readonly service;
     readonly transport;
@@ -56,42 +62,19 @@ export class ArenaTournamentClusterNode {
                 expiresAtEpochMs: Date.now() + 60000
             })
         });
-        this.listener = Bun.serve({
-            hostname: '127.0.0.1',
-            port: 0,
-            fetch: (request, server) => {
-                const [id, generationId] = new URL(request.url).pathname.slice(1).split('/');
-                if (server.upgrade(request, { data: { id, generationId } })) {
-                    return;
-                }
-                return new Response('Expected a WebSocket upgrade', { status: 400 });
-            },
-            websocket: {
-                open: (ws) => {
-                    const connection = new ConnectionContext({
-                        id: ws.data.id,
-                        generationId: ws.data.generationId,
-                        socket: ws
-                    });
-                    this.socket.registerConnection(connection);
-                    this.socket.dispatchConnectionOpen(connection);
-                },
-                message: (ws, data) => {
-                    const connection = this.socket.connections.get(ws.data.id);
-                    if (connection !== undefined) {
-                        void this.socket.dispatchConnectionMessage(connection, data);
-                    }
-                },
-                close: (ws, code, reason) => {
-                    const connection = this.socket.connections.get(ws.data.id) ?? new ConnectionContext({
-                        id: ws.data.id,
-                        generationId: ws.data.generationId,
-                        socket: ws
-                    });
-                    this.socket.dispatchConnectionClose(connection, code, reason);
-                }
-            }
+        const app = new Hono();
+        app.get('/:id/:generationId', async (context) => {
+            await upgradeWebSocket(
+                context,
+                createJsonWebSocketEvents(this.socket, {
+                    id: context.req.param('id'),
+                    generationId: context.req.param('generationId'),
+                    generationStartedAtEpochMs: Date.now()
+                })
+            );
+            return new Response(null, { status: 101 });
         });
+        this.listener = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: app.fetch, websocket });
     }
 
     async subscribe(): Promise<void> {
