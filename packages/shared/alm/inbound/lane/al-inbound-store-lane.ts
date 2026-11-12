@@ -32,7 +32,6 @@ import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
-import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
 import {
     toALInboundClaimIdentity,
     toALInboundClaimTrace,
@@ -182,7 +181,7 @@ export class ALInboundStoreLane {
         this.commitWork();
     }
 
-    /** A message its store cannot persist is not admitted: it wrote nothing, and its sender's receipt retries it. */
+    /** A message its store cannot persist is not admitted, and it wrote nothing. */
     async admitData(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
@@ -205,7 +204,13 @@ export class ALInboundStoreLane {
         }
         const result = attempt.right!;
         if (result.kind === 'conflict') {
-            return Either.ofRight(await this.retainConflictedAdmission(result.pending));
+            // Every conflicted admission is retained, a dropped one included: a bundle that writes nothing never
+            // meets the fence, so the rolled-back one carried rows or effects — a NACK among them — that its
+            // replay plans afresh against the winner. Only a retention that left a claimable row is announced —
+            // `pending-admission`, whether this call wrote the row or found one a previous attempt wrote; a
+            // message past its deadline is rejected before the write, or as a row written already expired; and a
+            // row in a terminal status holds no work for the worker.
+            return Either.ofRight(this.announceRetention(await this.admission.retainPending(result.pending)));
         }
         if (result.wroteWork) {
             this.input.stores.storageHealth?.recordRecoveryPoint(this.readNowMs());
@@ -284,20 +289,6 @@ export class ALInboundStoreLane {
             this.commitWork();
         }
         return admitted;
-    }
-
-    /**
-     * Every conflicted admission is retained, a dropped one included: a bundle that writes nothing never
-     * meets the fence, so the rolled-back one carried rows or effects — a NACK among them — that its
-     * replay plans afresh against the winner. Only a retention that left a claimable row is announced —
-     * `pending-admission`, whether this call wrote the row or found one a previous attempt wrote; a
-     * message past its deadline is rejected before the write, or as a row written already expired; and a
-     * row in a terminal status holds no work for the worker.
-     */
-    private async retainConflictedAdmission(
-        pending: ALInboundPendingAdmission
-    ): Promise<ALInboundMessageRuntime.Acceptance> {
-        return this.announceRetention(await this.admission.retainPending(pending));
     }
 
     private announceRetention(acceptance: ALInboundMessageRuntime.Acceptance): ALInboundMessageRuntime.Acceptance {

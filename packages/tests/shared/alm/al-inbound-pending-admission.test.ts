@@ -376,12 +376,12 @@ it('retains a resync-required drop whose commit conflicted, and its replay commi
     expect(gapped.right).toEqual({ kind: 'pending-admission' });
     await expect.poll(async () => {
         await dependencies.queueEngine.executeOnce();
-        return readSentNackResources(controls).length;
+        return toSentNackResources(controls).length;
     }).toBe(1);
     for (let pass = 0; pass < 4; pass++) {
         await dependencies.queueEngine.executeOnce();
     }
-    expect(readSentNackResources(controls)).toEqual([expect.objectContaining({ msgId: 'track-gapped', reason: 'resync-required' })]);
+    expect(toSentNackResources(controls)).toEqual([expect.objectContaining({ msgId: 'track-gapped', reason: 'resync-required' })]);
     expect(await readRetainedAdmissionStatus(stores)).toBe(EntityStatus.COMPLETED);
 });
 
@@ -416,7 +416,7 @@ it('answers a drop that owes nothing with its own reason when its track moved un
 });
 
 /** The resources of the NACK controls the runtime sent, in send order. */
-function readSentNackResources(controls: readonly ALMessage[]): readonly { readonly msgId: string; readonly reason: string; }[] {
+function toSentNackResources(controls: readonly ALMessage[]): readonly { readonly msgId: string; readonly reason: string; }[] {
     return controls
         .filter((control) => control.payload.typeId === AL_CONTROL_NACK_TYPE_ID)
         .map((control) => JSON.parse(control.payload.resource));

@@ -154,7 +154,9 @@ never refused for capacity (D74, D78). It counts in the ledger's inbound pool (D
 its count, its bytes and the age of the oldest counted admission, but never the track count, since the ledger records
 it with no ordering track (D179). The session's own send is refused, and `overloaded` read, only once the totals are at
 the limit and the own pool at its share as well, so arrivals alone refuse no own send. A duplicate, a rejected arrival and a message whose sender named no
-deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
+deadline count nothing, except a duplicate or a rejected arrival whose admission conflicted at the commit: it is retained
+`pending-admission` (D640) and counts as an admission does, until the earlier of its deadline and 30 s after its
+arrival, whatever its replay decides. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
 inbound plan never reads `overloaded` (R-S3c-ii-8), nor `backpressured` (D184): at its bound a session still delivers a best-effort arrival at
 once, still forwards it to the children it owns and still sends its ACKs and NACKs.
 
@@ -774,10 +776,14 @@ the transaction that commits its dedup, ordering and ACK rows: the holder's re-s
 claim past its message's deadline leaves the key free for the next claimant. A message with no deadline of its
 own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies (`durableEffectTtlMs`,
 the store's retention default); every browser send carries a `ttlMs`. Two claimants that both read a free key
-conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A claim
-retained on a conflict may have started its `admitted` receipt; the `held-by-other` NACK of its replay then ends
-the origin's receipt, because the origin reads that NACK as a refusal of the whole send whatever its receipt (the
-server's own aggregate runs to its deadline, and its late `timed-out` receipt changes nothing). A
+conflict at the commit, and the loser's retained admission is replayed and planned against the winner. Every
+conflicted admission is retained (D640), so on the WS server every replayed drop of a receipted room send, a
+`held-by-other` claim, a `resync-required` gap or any other drop its replay NACKs, first answers `pending-admission`
+and starts its `admitted` receipt. The replay's NACK ends the origin's receipt, because the origin reads a NACK as a
+refusal of the whole send whatever its receipt, and the handle reads `rejected`. The `admitted` receipt can reach the
+origin before or after that NACK: after it, the receipt re-creates the receipt row the NACK ended, which lives until
+the message deadline, and settles an `acknowledgement` after `relay-rejected`; the handle still reads `rejected`. The
+server's own aggregate runs to its deadline and ends `timed-out`. A
 `shared` message neither reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never
 reads or writes one, so a browser never drops a message for it.
 

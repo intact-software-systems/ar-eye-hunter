@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { AL_CONTROL_NACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALNackControlMessage,
     newALReceiptControlMessage,
@@ -45,6 +46,12 @@ interface RelayFixture {
     readonly server: WsQueueBoxServerService;
     readonly engine: InboxOutboxEngine;
     readonly sockets: Readonly<Record<'a' | 'b', SimulatedWebSocket>>;
+}
+
+interface SentControlSummary {
+    readonly typeId: string;
+    readonly msgId: string;
+    readonly verdict: string;
 }
 
 interface OriginClient {
@@ -121,6 +128,46 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         expect(readSentNacks(fixture.sockets.a).map((nack) => JSON.parse(nack.payload.resource))).toEqual([
             expect.objectContaining({ msgId: 'ordered-gapped', reason: 'resync-required' })
         ]);
+    });
+
+    it('characterization (D640): a conflicted receipted drop reaches the origin as the NACK, then its admitted receipt; the handle ends rejected', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const first = orderedRoomMessage('ordered-1', 1, 'receiver');
+        const gapped = orderedRoomMessage('ordered-gapped', RESYNC_GAP_SEQ, 'receiver');
+        for (const message of [first, gapped]) {
+            expect((await origin.service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
+        }
+
+        // The conflicted gapped send is retained `pending-admission`, so the server starts its receipt; its replay NACKs it.
+        await Promise.all([
+            fixture.server.acceptIncomingMessage(first, 'a'),
+            fixture.server.acceptIncomingMessage(gapped, 'a')
+        ]);
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return toSentControlSummaries(fixture.sockets.a);
+        }).toEqual([
+            { typeId: AL_CONTROL_NACK_TYPE_ID, msgId: 'ordered-gapped', verdict: 'resync-required' },
+            { typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: 'ordered-1', verdict: 'admitted' },
+            { typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: 'ordered-gapped', verdict: 'admitted' }
+        ]);
+        await relayFrames(fixture.sockets.a, origin);
+
+        const settlements = origin.settlements.filter((settlement) => settlement.msgId === 'ordered-gapped');
+        expect(settlements.map((settlement) => settlement.kind)).toEqual([
+            'attempt-started',
+            'attempt-settled',
+            'relay-rejected',
+            'acknowledgement'
+        ]);
+        const lifecycle = settlements.reduce(computeALDeliveryLifecycle, toInitialLifecycle('ordered-gapped', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'resync-required' });
+        // The late admitted receipt re-creates the receipt row the NACK ended; it lives until its deadline.
+        expect(
+            await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'ordered-gapped' })
+        ).toEqual(expect.objectContaining({ msgId: 'ordered-gapped', expectedPeerIds: ['b'], ackedPeerIds: [] }));
     });
 
     it('never relays a session NACK to the peer it names', async () => {
@@ -639,4 +686,21 @@ function readSentNacks(socket: SimulatedWebSocket): readonly ALMessage[] {
     return socket.sent
         .map((frame) => decodePersistedALMessage(frame))
         .filter((message) => message.payload.typeId === AL_CONTROL_NACK_TYPE_ID);
+}
+
+/** Each control frame the server sent the socket, in order: its type, the message it names, and its NACK reason or receipt phase. */
+function toSentControlSummaries(socket: SimulatedWebSocket): readonly SentControlSummary[] {
+    return socket.sent
+        .map((frame) => decodePersistedALMessage(frame))
+        .flatMap((message) => {
+            if (message.payload.typeId === AL_CONTROL_NACK_TYPE_ID) {
+                const nack = decodeALNackPayload(JSON.parse(message.payload.resource));
+                return [{ typeId: AL_CONTROL_NACK_TYPE_ID, msgId: nack.msgId, verdict: nack.reason }];
+            }
+            if (message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID) {
+                const receipt = decodeALReceiptPayload(JSON.parse(message.payload.resource));
+                return [{ typeId: AL_CONTROL_RECEIPT_TYPE_ID, msgId: receipt.msgId, verdict: receipt.phase }];
+            }
+            return [];
+        });
 }
