@@ -12,6 +12,10 @@ import type {
     ApiV1StateApiConfiguration,
     ApiV1TopologyConfiguration
 } from './api-v1-configuration.ts';
+import {
+    BUN_MAX_IDLE_TIMEOUT_SECONDS,
+    computeApiHttpIdleTimeoutSeconds
+} from './compute-api-http-idle-timeout-seconds.ts';
 
 export interface ApiV1ConfigurationInvariantCollector {
     isValid(...paths: readonly string[]): boolean;
@@ -49,6 +53,16 @@ export function validateApiV1ConfigurationInvariants(
             'appInbox.completionWait.retryIntervalMs',
             'retry-interval-exceeds-maximum',
             'Initial AppInbox retry interval must not exceed the maximum retry interval.'
+        );
+    }
+    if (
+        collector.isValid('appInbox.completionWait.maxElapsedMs') &&
+        computeApiHttpIdleTimeoutSeconds(completionWait) > BUN_MAX_IDLE_TIMEOUT_SECONDS
+    ) {
+        collector.invariant(
+            'appInbox.completionWait.maxElapsedMs',
+            'completion-wait-exceeds-http-idle-bound',
+            `AppInbox completion wait must leave the HTTP idle bound within ${BUN_MAX_IDLE_TIMEOUT_SECONDS} seconds.`
         );
     }
     validateDatabaseModeInvariants(collector, configuration);

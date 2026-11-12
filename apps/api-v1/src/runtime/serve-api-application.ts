@@ -7,6 +7,7 @@ import type { ApiV1Configuration } from '../configuration/api-v1-configuration.t
 import { createApiWebSocketServeHandlers, type ApiWebSocketConnectionData } from '../routes/ws-routes.ts';
 import { startApiProcess } from './api-process-startup.ts';
 import { stopApiOnRtcTopologyDeliveryHealthFailure } from './rtc-topology/rtc-topology-delivery-health-shutdown.ts';
+import { toApiBunServeOptions } from './to-api-bun-serve-options.ts';
 
 export interface ServeApiApplicationInput {
     readonly app: Hono;
@@ -26,12 +27,7 @@ export async function serveApiApplication(
     const wsHandlers = createApiWebSocketServeHandlers(wsDependencies, app);
     const startup = await startApiProcess({
         runtimeReadiness: rallar.runtime.readiness,
-        listen: () =>
-            Bun.serve({
-                port: configuration.http.port,
-                fetch: wsHandlers.fetch,
-                websocket: wsHandlers.websocket
-            }),
+        listen: () => Bun.serve(toApiBunServeOptions(configuration, wsHandlers)),
         startApplication: () => rallar.start({ queueWorkers: configuration.topology.replay.queueWorkers }),
         stopAfterStartupFailure: (server) => cleanupApiStartup(input, server)
     });
